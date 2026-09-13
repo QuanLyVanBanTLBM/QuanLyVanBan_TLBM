@@ -219,24 +219,8 @@ export default function MainLayout({
             className="ai-home-floating-btn"
             title="Quay về Trang chủ (Dashboard)"
             aria-label="Về trang chủ"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              height: '38px',
-              padding: '0 14px',
-              borderRadius: '9999px',
-              background: 'var(--bg-surface-elevated, #1e293b)',
-              color: 'var(--text-primary, #ffffff)',
-              border: '1px solid var(--border-subtle, rgba(255,255,255,0.15))',
-              boxShadow: '0 4px 14px rgba(0, 0, 0, 0.35)',
-              cursor: 'pointer',
-              fontSize: '0.84rem',
-              fontWeight: 600,
-              transition: 'all 0.2s ease',
-            }}
           >
-            <i className="bi bi-house-door-fill" style={{ fontSize: '1rem', color: 'var(--color-primary)' }} />
+            <i className="fa-solid fa-house ai-home-icon" />
             <span>Trang chủ</span>
           </button>
 
