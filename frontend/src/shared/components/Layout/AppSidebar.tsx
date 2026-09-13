@@ -27,9 +27,30 @@ export default function AppSidebar({
       className={`app-sidebar ${isMobileOpen ? 'mobile-open' : ''}`}
       onMouseLeave={onHoverLeave}
     >
-      {/* Dãy 6 Icon Phân Hệ Chuẩn Dock Nổi (Xóa nền, Rê chuột tới đâu chuyển trang tới đó) */}
+      {/* 1. Header của Sidebar Drawer (Logo + Nút đóng X) */}
+      <div className="sidebar-drawer-header">
+        <div className="brand-logo">
+          <div className="brand-icon-box">
+            <i className="fa-solid fa-file-shield" />
+          </div>
+          <div className="brand-text">
+            <span className="brand-title">TLBM SYSTEM</span>
+            <span className="brand-subtitle">Quản Lý Văn Bản &amp; TL</span>
+          </div>
+        </div>
 
-      {/* 2. Dãy 6 Icon Phân Hệ Chuẩn Dock Nổi (Xóa nền, Rê chuột tới đâu chuyển trang tới đó) */}
+        <button
+          type="button"
+          className="sidebar-close-mobile-btn"
+          onClick={onCloseMobile}
+          title="Đóng menu điều hướng"
+          aria-label="Đóng menu"
+        >
+          <i className="fa-solid fa-xmark" />
+        </button>
+      </div>
+
+      {/* 2. Dãy 6 Icon Phân Hệ Chuẩn Dock Nổi */}
       <div className="sidebar-nav-container-distributed">
         <div className="sidebar-nav-scroll-viewport">
           {MAIN_MODULES.map((mod) => {

@@ -125,8 +125,8 @@ export default function MainLayout({
         title="Bấm để mở menu điều hướng"
       />
 
-      {/* Lớp phủ mờ backdrop khi menu được mở rộng */}
-      {(isMobileOpen || (isSidebarHovered && typeof window !== 'undefined' && window.innerWidth <= 992)) && (
+      {/* Lớp phủ mờ backdrop khi menu được mở trên mobile/tablet */}
+      {isMobileOpen && (
         <div
           className="mobile-sidebar-backdrop"
           onClick={() => {
@@ -137,9 +137,9 @@ export default function MainLayout({
         />
       )}
 
-      {/* THANH BÊN TRÁI: Bị ẩn kéo sang trái (-100%), khi rê chuột vào thì trượt xổ ra mượt mà */}
+      {/* THANH BÊN TRÁI: Trượt xổ ra mượt mà, z-index 1001 nổi trên backdrop */}
       <div
-        className="sidebar-slide-wrapper"
+        className={`sidebar-slide-wrapper ${isMobileOpen ? 'mobile-drawer-open' : ''}`}
         onMouseEnter={() => setIsSidebarHovered(true)}
         onMouseLeave={() => {
           setIsSidebarHovered(false);
@@ -150,7 +150,7 @@ export default function MainLayout({
           left: 0,
           top: 0,
           bottom: 0,
-          zIndex: 300,
+          zIndex: 1001,
           transform: isSidebarHovered || isMobileOpen ? 'translateX(0)' : 'translateX(-100%)',
           transition: 'transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.28s ease',
           boxShadow: isSidebarHovered || isMobileOpen ? '12px 0 40px rgba(0, 0, 0, 0.55)' : 'none',
