@@ -88,7 +88,7 @@ export default function OrganizationsPage() {
   useEffect(() => {
     let isMounted = true;
     apiClient
-      .get<KhoiKhuVuc[] | { results: KhoiKhuVuc[] }>('/api/organizations/regions/')
+      .get<KhoiKhuVuc[] | { results: KhoiKhuVuc[] }>('/api/organizations/regions/?page_size=100')
       .then((res) => {
         if (!isMounted) return;
         const list = Array.isArray(res) ? res : res?.results || [];

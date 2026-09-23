@@ -34,6 +34,7 @@ class KhoiKhuVucViewSet(viewsets.ModelViewSet):
     queryset = KhoiKhuVuc.objects.prefetch_related("don_vi_list").all()
     serializer_class = KhoiKhuVucSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ["ten"]
     ordering_fields = ["thu_tu_hien_thi", "ten", "created_at"]

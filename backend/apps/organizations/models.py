@@ -128,8 +128,8 @@ class DonVi(models.Model):
         """
         Tính số thứ tự ưu tiên tiếp theo (Max + 1).
         """
-        max_stt = cls.objects.aggregate(max_val=Max("stt_uu_tien"))["max_val"]
-        return (max_stt or 0) + 1
+        latest = cls.objects.order_by("-stt_uu_tien").first()
+        return (latest.stt_uu_tien + 1) if latest else 1
 
     def save(self, *args, **kwargs):
         # Tự động gán stt_uu_tien nếu chưa được thiết lập

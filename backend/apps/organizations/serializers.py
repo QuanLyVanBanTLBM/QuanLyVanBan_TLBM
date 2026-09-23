@@ -2,6 +2,7 @@
 Serializers cho phân hệ Cơ cấu Tổ chức & Đơn vị (Module 7.3 - Nhóm 7).
 Tác giả: Lê Duy Khánh.
 """
+from django.db import transaction, IntegrityError
 from rest_framework import serializers
 from .models import KhoiKhuVuc, DonVi
 
@@ -95,6 +96,22 @@ class DonViSerializer(serializers.ModelSerializer):
         return attrs
 
     def create(self, validated_data):
-        if "stt_uu_tien" not in validated_data or validated_data["stt_uu_tien"] is None:
-            validated_data["stt_uu_tien"] = DonVi.get_next_stt()
-        return super().create(validated_data)
+        with transaction.atomic():
+            if "stt_uu_tien" not in validated_data or validated_data["stt_uu_tien"] is None:
+                latest = DonVi.objects.select_for_update().order_by("-stt_uu_tien").first()
+                validated_data["stt_uu_tien"] = (latest.stt_uu_tien + 1) if latest else 1
+            try:
+                return super().create(validated_data)
+            except IntegrityError:
+                raise serializers.ValidationError({
+                    "stt_uu_tien": "Số thứ tự ưu tiên đã bị trùng hoặc có thao tác ghi đồng thời. Vui lòng thử lại."
+                })
+
+    def update(self, instance, validated_data):
+        try:
+            with transaction.atomic():
+                return super().update(instance, validated_data)
+        except IntegrityError:
+            raise serializers.ValidationError({
+                "stt_uu_tien": "Số thứ tự ưu tiên đã bị trùng hoặc có thao tác ghi đồng thời. Vui lòng thử lại."
+            })

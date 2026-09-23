@@ -62,11 +62,13 @@ class OrganizationsTests(TestCase):
     # ── 1. Kiểm thử Khối / Khu vực ───────────────────────────────────────
 
     def test_list_regions(self):
-        """Kiểm tra lấy danh sách Khối / Khu vực."""
+        """Kiểm tra lấy danh sách Khối / Khu vực có phân trang chuẩn."""
         response = self.client.get("/api/organizations/regions/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        # DRF ViewSet không phân trang regions hoặc trả dạng list
-        results = response.data if isinstance(response.data, list) else response.data.get("results", [])
+        self.assertIn("results", response.data)
+        self.assertIn("count", response.data)
+        self.assertEqual(response.data["count"], 2)
+        results = response.data["results"]
         self.assertEqual(len(results), 2)
         self.assertEqual(results[0]["ten"], "KHU VỰC MIỀN NAM")
         self.assertEqual(results[0]["don_vi_count"], 2)
@@ -136,6 +138,17 @@ class OrganizationsTests(TestCase):
         response = self.client.post("/api/organizations/units/", payload)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("stt_uu_tien", response.data)
+
+    def test_concurrent_create_unit_auto_stt(self):
+        """Kiểm tra việc tính STT tự động an toàn khi nhiều request thêm mới liên tiếp."""
+        payload1 = {"khoi_id": self.khoi_1.id, "ten": "Đơn vị Tự động 1"}
+        payload2 = {"khoi_id": self.khoi_1.id, "ten": "Đơn vị Tự động 2"}
+        res1 = self.client.post("/api/organizations/units/", payload1)
+        res2 = self.client.post("/api/organizations/units/", payload2)
+        self.assertEqual(res1.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res2.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res1.data["stt_uu_tien"], 3)
+        self.assertEqual(res2.data["stt_uu_tien"], 4)
 
     def test_update_unit_success(self):
         """Cập nhật thông tin đơn vị thành công."""
