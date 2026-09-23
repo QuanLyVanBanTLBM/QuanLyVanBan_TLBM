@@ -128,21 +128,59 @@ def overview_view(request):
     ]
 
     # ── 4. Lịch phòng họp hôm nay ──────────────────────────────────────────
-    today_meetings = [
-        {
-            "id": f"room-{m.id}",
-            "room_name": m.room_name,
-            "roomName": m.room_name,
-            "meeting_title": m.meeting_title,
-            "topic": m.meeting_title,
-            "start_time": m.start_time.strftime("%H:%M"),
-            "end_time": m.end_time.strftime("%H:%M"),
-            "time": f"{m.start_time.strftime('%H:%M')} - {m.end_time.strftime('%H:%M')}",
-            "organizer": m.organizer,
-            "status": m.status or "ready",
-        }
-        for m in MeetingRoom.objects.filter(date=today)
-    ]
+    try:
+        from meetings.models import DatPhongHop
+        real_bookings = DatPhongHop.objects.filter(
+            thoi_gian_bat_dau__date=today,
+        ).exclude(trang_thai=DatPhongHop.STATUS_DA_HUY).select_related("phong_hop", "nguoi_dat")
+        if real_bookings.exists():
+            today_meetings = [
+                {
+                    "id": f"booking-{b.id}",
+                    "room_name": b.phong_hop.ten_phong,
+                    "roomName": b.phong_hop.ten_phong,
+                    "meeting_title": b.tieu_de,
+                    "topic": b.tieu_de,
+                    "start_time": timezone.localtime(b.thoi_gian_bat_dau).strftime("%H:%M"),
+                    "end_time": timezone.localtime(b.thoi_gian_ket_thuc).strftime("%H:%M"),
+                    "time": f"{timezone.localtime(b.thoi_gian_bat_dau).strftime('%H:%M')} - {timezone.localtime(b.thoi_gian_ket_thuc).strftime('%H:%M')}",
+                    "organizer": b.don_vi_to_chuc or (b.nguoi_dat.profile.full_name if hasattr(b.nguoi_dat, 'profile') else b.nguoi_dat.username),
+                    "status": "ready" if b.trang_thai == DatPhongHop.STATUS_DA_DAT else b.trang_thai,
+                }
+                for b in real_bookings
+            ]
+        else:
+            today_meetings = [
+                {
+                    "id": f"room-{m.id}",
+                    "room_name": m.room_name,
+                    "roomName": m.room_name,
+                    "meeting_title": m.meeting_title,
+                    "topic": m.meeting_title,
+                    "start_time": m.start_time.strftime("%H:%M"),
+                    "end_time": m.end_time.strftime("%H:%M"),
+                    "time": f"{m.start_time.strftime('%H:%M')} - {m.end_time.strftime('%H:%M')}",
+                    "organizer": m.organizer,
+                    "status": m.status or "ready",
+                }
+                for m in MeetingRoom.objects.filter(date=today)
+            ]
+    except Exception:
+        today_meetings = [
+            {
+                "id": f"room-{m.id}",
+                "room_name": m.room_name,
+                "roomName": m.room_name,
+                "meeting_title": m.meeting_title,
+                "topic": m.meeting_title,
+                "start_time": m.start_time.strftime("%H:%M"),
+                "end_time": m.end_time.strftime("%H:%M"),
+                "time": f"{m.start_time.strftime('%H:%M')} - {m.end_time.strftime('%H:%M')}",
+                "organizer": m.organizer,
+                "status": m.status or "ready",
+            }
+            for m in MeetingRoom.objects.filter(date=today)
+        ]
 
     # ── 5. Sinh nhật hôm nay (T) và ngày mai (T+1) ─────────────────────────
     today_profiles = StaffProfile.objects.filter(
