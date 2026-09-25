@@ -2,7 +2,7 @@
 Serializers cho phân hệ Cơ cấu Tổ chức & Đơn vị (Module 7.3 - Nhóm 7).
 Tác giả: Lê Duy Khánh.
 """
-from django.db import transaction, IntegrityError
+from django.db import transaction, IntegrityError, models
 from rest_framework import serializers
 from .models import KhoiKhuVuc, DonVi
 
@@ -97,9 +97,14 @@ class DonViSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         with transaction.atomic():
-            if "stt_uu_tien" not in validated_data or validated_data["stt_uu_tien"] is None:
-                latest = DonVi.objects.select_for_update().order_by("-stt_uu_tien").first()
-                validated_data["stt_uu_tien"] = (latest.stt_uu_tien + 1) if latest else 1
+            if not validated_data.get("stt_uu_tien"):
+                # Khóa bản ghi có STT lớn nhất hiện có để chống race condition
+                DonVi.objects.select_for_update().order_by("-stt_uu_tien").first()
+                locked_max = (
+                    DonVi.objects.select_for_update()
+                    .aggregate(max_val=models.Max("stt_uu_tien"))["max_val"]
+                )
+                validated_data["stt_uu_tien"] = (locked_max or 0) + 1
             try:
                 return super().create(validated_data)
             except IntegrityError:
