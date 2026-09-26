@@ -8,6 +8,8 @@ import AiAssistantPage from '@pages/ai/AiAssistantPage';
 import ProfilePage from '@pages/profile/ProfilePage';
 import PasswordChangePage from '@pages/profile/PasswordChangePage';
 import SettingsPage from '@pages/settings/SettingsPage';
+import DossiersPage from '@pages/records/DossiersPage';
+import DocumentTypesPage from '@pages/records/DocumentTypesPage';
 import SyllabusPreview from '@components/common/SyllabusPreview';
 
 interface RouterProps {
@@ -77,7 +79,8 @@ export default function AppRouter({
         <Route path="/documents/confidential" element={<SyllabusPreview activePage="documents_confidential" />} />
 
         {/* Phân hệ Hồ sơ & Tài nguyên (Nhóm 3 & Nhóm 4 phụ trách theo đề cương) */}
-        <Route path="/records" element={<SyllabusPreview activePage="records" />} />
+        <Route path="/records" element={<DossiersPage />} />
+        <Route path="/records/:dossierId/document-types" element={<DocumentTypesPage />} />
         <Route path="/resources" element={<SyllabusPreview activePage="resources" />} />
 
         {/* Phân hệ Quy trình & Điều hành (Nhóm 5 & Nhóm 6 phụ trách theo đề cương) */}
