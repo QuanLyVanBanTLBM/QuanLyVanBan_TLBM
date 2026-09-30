@@ -9,6 +9,7 @@ import ProfilePage from '@pages/profile/ProfilePage';
 import PasswordChangePage from '@pages/profile/PasswordChangePage';
 import SettingsPage from '@pages/settings/SettingsPage';
 import OrganizationsPage from '@pages/organizations/OrganizationsPage';
+import RolesPage from '@pages/roles/RolesPage';
 import SyllabusPreview from '@components/common/SyllabusPreview';
 
 interface RouterProps {
@@ -91,7 +92,7 @@ export default function AppRouter({
         <Route path="/organizations" element={<OrganizationsPage />} />
         <Route path="/employees" element={<SyllabusPreview activePage="employees" />} />
         <Route path="/positions" element={<SyllabusPreview activePage="positions" />} />
-        <Route path="/roles" element={<SyllabusPreview activePage="roles" />} />
+        <Route path="/roles" element={<RolesPage />} />
 
         {/* Tiện ích Cá nhân & Trợ lý AI (Nhóm 1 phụ trách) */}
         <Route path="/ai-assistant" element={<AiAssistantPage />} />

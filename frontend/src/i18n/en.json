@@ -480,6 +480,59 @@
       "exportPermissionDenied": "You do not have permission to export the unit list to Excel."
     }
   },
+  "roles": {
+    "title": "Roles & Permissions",
+    "desc": "Manage user role groups and their assigned permissions.",
+    "addBtn": "Add Role",
+    "editTitle": "Edit Role",
+    "createTitle": "Add Role",
+    "nameLabel": "Role Name",
+    "namePlaceholder": "Enter role name...",
+    "matrixPlaceholderTitle": "Role-based permission assignment",
+    "matrixPlaceholderStep1": "Select a role to set up its permissions",
+    "matrixPlaceholderStep2": "Configure the permissions used by the selected role",
+    "deleteConfirmTitle": "Confirm role deletion?",
+    "deleteConfirmDesc": "Are you sure you want to delete the role \"{name}\"? This action cannot be undone.",
+    "table": {
+      "name": "Role Name",
+      "userCount": "Users",
+      "permissionCount": "Permissions",
+      "actions": "Actions",
+      "loading": "Loading data...",
+      "empty": "No roles defined yet.",
+      "paginationInfo": "Showing {from} - {to} of {total}"
+    },
+    "actionsColumns": {
+      "view": "View",
+      "add": "Add",
+      "change": "Edit",
+      "delete": "Delete"
+    },
+    "actions": {
+      "searchPlaceholder": "Search by role name...",
+      "addGroup": "Add role",
+      "edit": "Edit",
+      "delete": "Delete",
+      "retry": "Retry",
+      "cancel": "Cancel",
+      "save": "Save",
+      "create": "Create",
+      "selectAll": "Select all",
+      "deselectAll": "Deselect all"
+    },
+    "messages": {
+      "fetchError": "Failed to load role list. Please check your network connection.",
+      "permissionDenied": "You do not have permission to perform this action.",
+      "groupNotFound": "Role not found.",
+      "groupHasUsers": "Cannot delete this role because it is still assigned to one or more users.",
+      "nameRequired": "Role name cannot be empty.",
+      "nameExists": "This role name already exists.",
+      "permissionInvalid": "One or more selected permissions are invalid.",
+      "createSuccess": "Role created successfully!",
+      "updateSuccess": "Role updated successfully!",
+      "deleteSuccess": "Role deleted successfully!"
+    }
+  },
   "auth": {
     "backToDashboard": "Go to Dashboard",
     "brandTitle": "Bao Long Document & Records Management",

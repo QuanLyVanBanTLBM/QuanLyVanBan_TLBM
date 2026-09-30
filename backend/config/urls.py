@@ -18,5 +18,8 @@ urlpatterns = [
     # ── Module Nhóm 7 — Quang ─────────────────────────────────────────────
     # API Quản lý Khối & Đơn vị: /api/organizations/...
     path("api/organizations/", include("organizations.urls", namespace="organizations")),
+
+    # API Phân quyền (Nhóm quyền & Quyền hạn): /api/authorization/... — Tân + Hiếu
+    path("api/authorization/", include("authorization.urls", namespace="authorization")),
 ]
 
