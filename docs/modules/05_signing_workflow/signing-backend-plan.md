@@ -524,7 +524,7 @@ Ràng buộc: CHECK `loai_doi_tuong` thuộc luồng ký (request/attempt/signer
 | Lỗi gửi | `loi_gui` | Text | | |
 | Ngày tạo | `created_at` | DateTime (auto) | | |
 
-#### `signing_key_unlock` — Mở khóa ký bằng PIN (dự kiến, Phase 6)
+#### `signing_key_unlock` — Mở khóa ký bằng PIN (Phase 6a)
 
 | Tên trường | Field | Kiểu dữ liệu | Bắt buộc | Ghi chú |
 |---|---|---|---|---|
@@ -641,7 +641,11 @@ Prefix `/api/v1/`. Tên đoạn đường dẫn theo convention tiếng Việt �
 - `POST /signing/khoa/{id}/kich-hoat/`: chuyển `HOAT_DONG` (khóa đã xác minh).
 - `POST /signing/khoa/{id}/xoay-vong/`
 - `POST /signing/khoa/{id}/thu-hoi/`
-- Dự kiến Phase 6 (bảo vệ khóa bằng PIN, mục 3.4): `POST /signing/khoa/{id}/dat-pin/`, `POST /signing/khoa/{id}/mo-khoa-ky/` (trả mảnh bí mật máy chủ sau khi xác minh PIN), `POST /signing/khoa/{id}/doi-pin/`.
+- Phase 6a (bảo vệ khóa bằng PIN, mục 3.4). Payload dùng `xac_minh_pin` = Base64 của verifier 32 byte (không có field CSDL tương ứng; server chỉ lưu HMAC):
+  - `POST /signing/khoa/{id}/dat-pin/`: `xac_minh_pin`, `tham_so_kdf` → 201, trả `manh_bi_mat` (k_srv, Base64) một lần.
+  - `POST /signing/khoa/{id}/mo-khoa-ky/`: `xac_minh_pin` → 200 kèm `manh_bi_mat`; sai → 400 `pin_khong_dung`; bị khóa → 423 `pin_tam_khoa` / `pin_khoa_cung`.
+  - `POST /signing/khoa/{id}/doi-pin/`: `xac_minh_pin_cu`, `xac_minh_pin_moi`, `tham_so_kdf` → 200 kèm `manh_bi_mat` (không đổi) để client bọc lại private key.
+  - Response có `Cache-Control: no-store`.
 - `GET /signing/requests/{id}/audit`
 - `GET /signing/attempts/{id}/manifest`: bằng chứng chuẩn hóa và trạng thái xác minh.
 

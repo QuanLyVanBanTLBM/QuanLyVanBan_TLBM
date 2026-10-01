@@ -20,7 +20,8 @@ Tài liệu này là lộ trình triển khai backend, sắp xếp từ phần �
 | 3 | 11 model còn lại + bất biến ở tầng model | Phase 2 | Hoàn thành (`e51cfda`) |
 | 4 | Service quy trình và khóa ký, ghi nhật ký | Phase 3 | Hoàn thành (`97e5950`) |
 | 5 | API quy trình và khóa ký, giới hạn theo quyền sở hữu | Phase 4 | Hoàn thành (`64ea1cd`) |
-| 6 | Phân quyền theo 8 quyền của phân hệ; bảo vệ khóa ký bằng PIN (Argon2id + `k_srv`) | Chốt model người dùng và cách gán quyền | Chờ quyết định |
+| 6a | Bảo vệ khóa ký bằng PIN (Argon2id + `k_srv`): model, service, API, nhật ký | Phase 5 | Hoàn thành (nhánh `feat/signing-phase6-pin`) |
+| 6b | Phân quyền theo 8 quyền của phân hệ; quản trị mở lại PIN bị khóa cứng | Chốt model người dùng và cách gán quyền | Chờ quyết định |
 | 7 | Yêu cầu trình ký, lượt trình, snapshot người ký | Bảng văn bản (Nhóm 2), `Chức vụ`, `Đơn vị` (Nhóm 7) | Chờ nhóm liên quan |
 | 8 | Hành động ký, từ chối, thu hồi; manifest; khóa dòng và chống trùng | Phase 7; PostgreSQL cho test đồng thời | Chờ Phase 7 |
 | 9 | Yêu cầu chỉnh sửa, ủy quyền, hạn xử lý, thông báo | Phase 8 | Chờ Phase 8 |
@@ -56,7 +57,15 @@ Tài liệu này là lộ trình triển khai backend, sắp xếp từ phần �
 - Challenge chứng minh sở hữu khóa là chuỗi cố định gắn dấu vân tay khóa, chưa có TTL/dùng một lần (xem `signing-backend-plan.md` mục 3.4).
 - Xác thực bắt buộc; giới hạn theo người sở hữu/người tạo ở server. Phân quyền chi tiết để Phase 6.
 
-### Phase 6 — Phân quyền (chờ quyết định)
+### Phase 6a — Bảo vệ khóa ký bằng PIN (hoàn thành)
+- Model `SigningKeyUnlock` (bảng `signing_key_unlock`, migration `0003_mo_khoa_ky_bang_pin`).
+- `services/pin.py`: `dat_pin`, `mo_khoa_ky`, `doi_pin`. Server nhận `xac_minh_pin` = Base64 của verifier 32 byte, không nhận PIN.
+- Lưu HMAC-SHA256(verifier) và `k_srv` mã hóa AES-256-GCM (gắn với id + dấu vân tay khóa); khóa dẫn xuất HKDF từ `SIGNING_PIN_SECRET` (dev: `SECRET_KEY`).
+- Sai 5 lần khóa 15 phút; sai 10 lần khóa cứng (HTTP 423). Bộ đếm cập nhật dưới `select_for_update` và commit trước khi trả lỗi.
+- Tham số Argon2id kiểm tra mức sàn `m >= 65536 KiB, t >= 3, p >= 1`. Chính sách PIN 8 chữ số kiểm tra ở frontend (server không thấy PIN).
+- Test: `tests/test_pin_phase6.py` (khóa theo ngưỡng, đếm đồng thời trên PostgreSQL, `k_srv` chỉ trả sau xác minh, không trả PIN/hash/bản bọc).
+
+### Phase 6b — Phân quyền (chờ quyết định)
 - 8 quyền theo CSDL chung: `view_trinhky`, `add_trinhky`, `sign_trinhky`, `manage_signing_process`, `send_trinhky`, `delegate_trinhky`, `cancel_trinhky`, `view_signing_audit`.
 - Cần chốt: model người dùng của hệ thống (`accounts_employee` hay `auth.User`) và cách kiểm tra quyền ở tầng API.
 - Bảo vệ khóa ký bằng PIN theo `signing-backend-plan.md` mục 3.4: bảng `signing_key_unlock`, endpoint `dat-pin`, `mo-khoa-ky`, `doi-pin`, khóa theo số lần sai (5 lần: 15 phút; 10 lần: khóa cứng), nhật ký sự kiện PIN. Service và model nằm ở backend; phần Argon2id WASM nằm ở frontend (Phase 10).

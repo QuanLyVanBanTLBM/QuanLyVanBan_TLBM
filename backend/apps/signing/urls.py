@@ -22,4 +22,9 @@ urlpatterns = [
     path("khoa/<int:pk>/kich-hoat/", views.KhoaActionView.as_view(action="kich-hoat"), name="khoa-kich-hoat"),
     path("khoa/<int:pk>/thu-hoi/", views.KhoaActionView.as_view(action="thu-hoi"), name="khoa-thu-hoi"),
     path("khoa/<int:pk>/xoay-vong/", views.KhoaActionView.as_view(action="xoay-vong"), name="khoa-xoay-vong"),
+
+    # PIN mở khóa ký (Phase 6)
+    path("khoa/<int:pk>/dat-pin/", views.KhoaPinView.as_view(action="dat-pin"), name="khoa-dat-pin"),
+    path("khoa/<int:pk>/mo-khoa-ky/", views.KhoaPinView.as_view(action="mo-khoa-ky"), name="khoa-mo-khoa-ky"),
+    path("khoa/<int:pk>/doi-pin/", views.KhoaPinView.as_view(action="doi-pin"), name="khoa-doi-pin"),
 ]

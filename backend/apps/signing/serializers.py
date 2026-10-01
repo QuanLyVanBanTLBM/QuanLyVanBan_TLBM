@@ -2,7 +2,7 @@ from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
 from . import enums
-from .models import SigningKey, SigningProcess, SigningProcessStep, SigningProcessStepSigner
+from .models import SigningKey, SigningKeyUnlock, SigningProcess, SigningProcessStep, SigningProcessStepSigner
 
 
 # ── Đầu vào: quy trình ───────────────────────────────────────────────────────
@@ -90,9 +90,33 @@ class XoayVongSerializer(serializers.Serializer):
 
 
 class KhoaSerializer(serializers.ModelSerializer):
+    da_dat_pin = serializers.SerializerMethodField()
+
     class Meta:
         model = SigningKey
         fields = ["id", "nguoi_so_huu", "ma_khoa", "dau_van_tay", "thuat_toan", "khoa_cong_khai",
                   "trang_thai", "thoi_diem_xac_minh_so_huu", "thoi_diem_kich_hoat", "ngay_hieu_luc",
-                  "ngay_het_han", "ngay_thu_hoi", "khoa_thay_the", "ghi_chu", "created_at"]
+                  "ngay_het_han", "ngay_thu_hoi", "khoa_thay_the", "ghi_chu", "created_at", "da_dat_pin"]
         read_only_fields = fields
+
+    def get_da_dat_pin(self, obj):
+        return SigningKeyUnlock.objects.filter(khoa=obj).exists()
+
+
+# ── PIN mở khóa ký (Phase 6) ─────────────────────────────────────────────────
+# xac_minh_pin = Base64 của verifier 32 byte do client dẫn xuất; server không nhận PIN.
+
+
+class DatPinSerializer(serializers.Serializer):
+    xac_minh_pin = serializers.CharField()
+    tham_so_kdf = serializers.JSONField()
+
+
+class MoKhoaKySerializer(serializers.Serializer):
+    xac_minh_pin = serializers.CharField()
+
+
+class DoiPinSerializer(serializers.Serializer):
+    xac_minh_pin_cu = serializers.CharField()
+    xac_minh_pin_moi = serializers.CharField()
+    tham_so_kdf = serializers.JSONField()

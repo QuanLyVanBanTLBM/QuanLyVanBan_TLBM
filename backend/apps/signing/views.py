@@ -1,3 +1,5 @@
+import base64
+
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework import status
@@ -8,10 +10,12 @@ from . import enums
 from .errors import SigningAPIView, SigningError
 from .models import SigningKey, SigningProcess
 from .serializers import (
-    KhoaDangKySerializer, KhoaSerializer, QuyTrinhInputSerializer, QuyTrinhSerializer,
-    ThuHoiKhoaSerializer, XacMinhSoHuuSerializer, XoayVongSerializer,
+    DatPinSerializer, DoiPinSerializer, KhoaDangKySerializer, KhoaSerializer, MoKhoaKySerializer,
+    QuyTrinhInputSerializer, QuyTrinhSerializer, ThuHoiKhoaSerializer, XacMinhSoHuuSerializer,
+    XoayVongSerializer,
 )
 from .services import keys as key_service
+from .services import pin as pin_service
 from .services import process as process_service
 
 
@@ -135,3 +139,44 @@ class KhoaActionView(SigningAPIView):
             khoa_moi = get_object_or_404(_khoa_cua_toi(request), pk=data.validated_data["khoa_moi"])
             result = key_service.xoay_vong(key, khoa_moi, request.user, ip)
         return Response(KhoaSerializer(result).data)
+
+
+# ── PIN mở khóa ký (Phase 6, plan mục 3.4) ───────────────────────────────────
+
+
+class KhoaPinView(SigningAPIView):
+    """
+    POST /khoa/<pk>/<action>/ với action = dat-pin | mo-khoa-ky | doi-pin.
+    Trả `manh_bi_mat` (k_srv, Base64) chỉ sau khi xác minh; không trả PIN, verifier hay bản bọc.
+    """
+
+    action = None
+
+    def post(self, request, pk):
+        key = get_object_or_404(_khoa_cua_toi(request), pk=pk)
+        ip = _ip(request)
+        http_status = status.HTTP_200_OK
+        if self.action == "dat-pin":
+            data = DatPinSerializer(data=request.data)
+            data.is_valid(raise_exception=True)
+            unlock, manh_bi_mat = pin_service.dat_pin(
+                key, request.user, data.validated_data["xac_minh_pin"], data.validated_data["tham_so_kdf"], ip,
+            )
+            http_status = status.HTTP_201_CREATED
+        elif self.action == "mo-khoa-ky":
+            data = MoKhoaKySerializer(data=request.data)
+            data.is_valid(raise_exception=True)
+            unlock, manh_bi_mat = pin_service.mo_khoa_ky(key, request.user, data.validated_data["xac_minh_pin"], ip)
+        else:  # doi-pin
+            data = DoiPinSerializer(data=request.data)
+            data.is_valid(raise_exception=True)
+            unlock, manh_bi_mat = pin_service.doi_pin(
+                key, request.user, data.validated_data["xac_minh_pin_cu"], data.validated_data["xac_minh_pin_moi"],
+                data.validated_data["tham_so_kdf"], ip,
+            )
+        response = Response(
+            {"khoa": key.pk, "manh_bi_mat": base64.b64encode(manh_bi_mat).decode(), "tham_so_kdf": unlock.tham_so_kdf},
+            status=http_status,
+        )
+        response["Cache-Control"] = "no-store"
+        return response

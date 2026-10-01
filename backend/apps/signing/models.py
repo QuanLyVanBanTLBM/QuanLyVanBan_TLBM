@@ -480,3 +480,31 @@ class SigningNotification(models.Model):
     class Meta:
         db_table = "signing_notification"
         indexes = [models.Index(fields=["trang_thai", "hen_gio_gui"], name="idx_signing_notif_outbox")]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 6 — mở khóa ký bằng PIN (signing-backend-plan.md mục 3.4, bảng signing_key_unlock)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class SigningKeyUnlock(models.Model):
+    """
+    Trạng thái mở khóa ký bằng PIN của một khóa ký. Bảng trạng thái (được cập nhật),
+    không phải bảng bằng chứng; mọi sự kiện ghi vào signing_audit_log.
+    Không lưu PIN, không lưu khóa bí mật hay bản bọc khóa bí mật.
+    """
+
+    khoa = models.OneToOneField(SigningKey, on_delete=models.PROTECT, related_name="mo_khoa_pin")
+    ma_bam_xac_minh_pin = models.TextField()  # HMAC của verifier, không lưu PIN
+    manh_bi_mat_ma_hoa = models.TextField()  # k_srv mã hóa khi lưu; không log
+    tham_so_kdf = models.JSONField()  # thuật toán, m, t, p, phiên bản
+    so_lan_sai = models.PositiveIntegerField(default=0)
+    khoa_den = models.DateTimeField(null=True, blank=True)  # rỗng: không bị khóa tạm
+    created_at = models.DateTimeField(auto_now_add=True)
+    update_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "signing_key_unlock"
+
+    def __str__(self):
+        return f"PIN của khóa {self.khoa_id} (sai {self.so_lan_sai} lần)"

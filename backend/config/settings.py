@@ -176,6 +176,11 @@ REST_FRAMEWORK = {
 # ─────────────────────────────────────────────────
 SIGNING_DOCUMENT_ROOT = os.environ.get("SIGNING_DOCUMENT_ROOT", "")
 
+# Trình ký — bí mật máy chủ để băm mã xác minh PIN và mã hóa k_srv (plan mục 3.4).
+# Bắt buộc đặt riêng trên Staging/Production; để trống thì dùng SECRET_KEY (chỉ cho môi trường dev).
+# Đổi giá trị này làm mọi PIN đã đặt mất hiệu lực (người dùng phải đặt lại).
+SIGNING_PIN_SECRET = os.environ.get("SIGNING_PIN_SECRET", "")
+
 # ─────────────────────────────────────────────────
 # SimpleJWT — Cấu hình token
 # ─────────────────────────────────────────────────
