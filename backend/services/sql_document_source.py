@@ -1,81 +1,29 @@
-"""Read-only access to QLVB PostgreSQL documents, applying account ACLs first."""
+"""Read AI document metadata through the dedicated PostgreSQL role and views."""
 
-import os
-from pathlib import Path
+from django.db import connection, connections, transaction
 
-from django.db import connections
-
-from backend.config import DATA_DIR
+from backend.services.ai_access import has_permission_codename
 
 
-DOCUMENT_TABLES = {
-    "vanbanden": ("documents_vanbanden", "view_vanbanden", "documents_vanbanden_nguoinhan", "documents_vanbanden_donvinhan", "vanbanden_id"),
-    "vanbandi": ("documents_vanbandi", "view_vanbandi", "documents_vanbandi_nguoinhan", "documents_vanbandi_donvinhan", "vanbandi_id"),
-    "vanbanmat": ("documents_vanbanmat", "view_vanbanmat", "documents_vanbanmat_nguoinhan", "documents_vanbanmat_donvinhan", "vanbanmat_id"),
+DOCUMENT_VIEWS = {
+    "vanbanden": ("ai_vanbanden", "view_vanbanden"),
+    "vanbandi": ("ai_vanbandi", "view_vanbandi"),
 }
-
-# Danh mục chi tiết các bảng và cột CSDL QLVB được truy vấn thô (Raw SQL)
-# Lưu ý rủi ro: Truy vấn thô phụ thuộc trực tiếp vào DDL, nếu CSDL thay đổi cấu trúc
-# cần cập nhật registry này và các câu lệnh SELECT tương ứng để tránh lỗi vỡ ngầm.
-SQL_SCHEMA_REGISTRY = {
-    "accounts_employee": {
-        "columns": ["id", "don_vi_id", "is_active", "trang_thai", "is_superuser"],
-        "description": "Bảng nhân viên QLVB - xác thực người dùng, trạng thái làm việc và đơn vị",
+READONLY_ROLE = "qlvb_readonly"
+SQL_VIEW_COLUMNS = {
+    "ai_vanbanden": {
+        "id", "so_hieu", "so_thu_tu", "nam", "ngay_den", "trich_yeu",
+        "noi_ban_hanh", "ngay_van_ban", "nguoi_ky", "chuc_vu", "hieu_luc",
+        "ngay_het_hieu_luc", "ghi_chu", "updated_at",
     },
-    "accounts_employee_groups": {
-        "columns": ["employee_id", "group_id"],
-        "description": "Bảng liên kết nhân viên với nhóm quyền",
+    "ai_vanbandi": {
+        "id", "so_hieu", "so_thu_tu", "nam", "ngay_ban_hanh", "trich_yeu",
+        "noi_ban_hanh", "ngay_van_ban", "nguoi_ky", "chuc_vu", "hieu_luc",
+        "ngay_het_hieu_luc", "ghi_chu", "updated_at",
     },
-    "auth_group_permissions": {
-        "columns": ["group_id", "permission_id"],
-        "description": "Bảng liên kết nhóm quyền với các quyền hạn cụ thể",
-    },
-    "auth_permission": {
-        "columns": ["id", "codename"],
-        "description": "Bảng định nghĩa mã quyền (use_aiassistant, view_vanbanden, view_vanbandi, view_vanbanmat, view_tailieu)",
-    },
-    "documents_vanbanden": {
-        "columns": [
-            "id", "so_hieu", "so_thu_tu", "nam", "ngay_den", "trich_yeu",
-            "noi_ban_hanh", "ngay_van_ban", "nguoi_ky", "chuc_vu",
-            "hieu_luc", "ngay_het_hieu_luc", "ghi_chu", "file_dinh_kem",
-            "updated_at", "hien_thi",
-        ],
-        "description": "Bảng văn bản đến",
-    },
-    "documents_vanbandi": {
-        "columns": [
-            "id", "so_hieu", "so", "nam", "ngay_ban_hanh", "trich_yeu",
-            "noi_ban_hanh", "ngay_van_ban", "nguoi_ky", "chuc_vu",
-            "hieu_luc", "ngay_het_hieu_luc", "ghi_chu", "file_dinh_kem",
-            "updated_at", "hien_thi",
-        ],
-        "description": "Bảng văn bản đi",
-    },
-    "documents_vanbanmat": {
-        "columns": [
-            "id", "so_hieu", "nam", "ngay_ban_hanh", "trich_yeu",
-            "noi_ban_hanh", "ngay_van_ban", "nguoi_ky", "chuc_vu",
-            "hieu_luc", "ngay_het_hieu_luc", "ghi_chu", "file_dinh_kem",
-            "updated_at", "hien_thi",
-        ],
-        "description": "Bảng văn bản mật (yêu cầu phân quyền nghiêm ngặt theo người nhận/đơn vị nhận)",
-    },
-    "documents_vanbanmat_nguoinhan": {
-        "columns": ["vanbanmat_id", "employee_id"],
-        "description": "Danh sách người nhận đích danh của văn bản mật",
-    },
-    "documents_vanbanmat_donvinhan": {
-        "columns": ["vanbanmat_id", "donvi_id"],
-        "description": "Danh sách đơn vị nhận của văn bản mật",
-    },
-    "records_chitiettailieu": {
-        "columns": [
-            "id", "ky_hieu", "tieu_de", "noi_ban_hanh", "hieu_luc",
-            "ngay_dang", "ngay_het_hieu_luc", "ghi_chu", "file_dinh_kem",
-            "updated_at", "hien_thi", "nguoi_tao",
-        ],
-        "description": "Bảng chi tiết tài liệu hồ sơ nghiệp vụ",
+    "ai_tailieu": {
+        "id", "ky_hieu", "tieu_de", "ngay_dang", "noi_ban_hanh", "hieu_luc",
+        "ngay_het_hieu_luc", "ghi_chu", "updated_at",
     },
 }
 
@@ -84,95 +32,58 @@ class SqlDocumentAccessError(Exception):
     """The SQL document source cannot safely serve this chat request."""
 
 
-def get_readonly_connection():
-    """
-    Lấy kết nối CSDL chỉ đọc (Read-only connection).
-    Ưu tiên alias 'readonly' đã được cấu hình cờ session default_transaction_read_only=on
-    để đảm bảo không thể thực hiện bất kỳ thao tác ghi/sửa/xóa nào trên CSDL QLVB.
-    """
-    if "readonly" in connections:
-        return connections["readonly"]
-    return connections["default"]
-
-
 def is_postgres_source():
-    return get_readonly_connection().vendor == "postgresql"
+    return connection.vendor == "postgresql"
 
 
 def verify_sql_schema():
-    """
-    Kiểm tra đối chiếu cấu trúc DDL thực tế của CSDL với danh mục bảng/cột cần thiết.
-    Giúp phát hiện sớm việc thay đổi schema gây 'vỡ ngầm' các truy vấn SQL thô.
-    """
+    """Compare the deployed AI view contract with the columns used by this source."""
     if not is_postgres_source():
-        return {"status": "skipped", "message": "Chỉ kiểm tra khi kết nối cơ sở dữ liệu PostgreSQL."}
-
-    conn = get_readonly_connection()
-    report = {
-        "status": "ok",
-        "checked_tables": 0,
-        "missing_tables": [],
-        "missing_columns": {},
-    }
+        return {"status": "skipped", "checked_views": 0, "missing_views": [], "missing_columns": {}}
+    if "readonly" not in connections.databases:
+        return {
+            "status": "mismatch",
+            "checked_views": len(SQL_VIEW_COLUMNS),
+            "missing_views": list(SQL_VIEW_COLUMNS),
+            "missing_columns": {},
+        }
 
     try:
-        with conn.cursor() as cursor:
-            for table_name, meta in SQL_SCHEMA_REGISTRY.items():
-                cursor.execute(
-                    """
-                    SELECT column_name
-                    FROM information_schema.columns
-                    WHERE table_schema = 'public' AND table_name = %s
-                    """,
-                    [table_name],
-                )
-                existing_cols = {row[0] for row in cursor.fetchall()}
-                if not existing_cols:
-                    report["missing_tables"].append(table_name)
-                    report["status"] = "mismatch"
-                    continue
+        with connections["readonly"].cursor() as cursor:
+            _assert_readonly_connection(cursor)
+            cursor.execute(
+                """
+                SELECT table_name, column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = ANY(%s)
+                """,
+                [list(SQL_VIEW_COLUMNS)],
+            )
+            present = {}
+            for table_name, column_name in cursor.fetchall():
+                present.setdefault(table_name, set()).add(column_name)
+    except Exception as error:
+        return {
+            "status": "unavailable",
+            "checked_views": len(SQL_VIEW_COLUMNS),
+            "missing_views": [],
+            "missing_columns": {},
+            "error": str(error),
+        }
 
-                report["checked_tables"] += 1
-                missing_cols = [c for c in meta["columns"] if c not in existing_cols]
-                if missing_cols:
-                    report["missing_columns"][table_name] = missing_cols
-                    report["status"] = "mismatch"
-    except Exception as exc:
-        return {"status": "error", "message": f"Không thể kiểm tra DDL: {exc}"}
-
-    return report
-
-
-def _employee_context(employee_id):
-    if not employee_id:
-        raise SqlDocumentAccessError("Cần danh tính nhân viên đã đăng nhập để tra cứu dữ liệu QLVB.")
-    conn = get_readonly_connection()
-    with conn.cursor() as cursor:
-        cursor.execute(
-            """
-            SELECT e.id, e.don_vi_id, e.is_active, e.trang_thai::text,
-                   e.is_superuser, array_remove(array_agg(DISTINCT p.codename), NULL)
-            FROM accounts_employee e
-            LEFT JOIN accounts_employee_groups eg ON eg.employee_id = e.id
-            LEFT JOIN auth_group_permissions gp ON gp.group_id = eg.group_id
-            LEFT JOIN auth_permission p ON p.id = gp.permission_id
-            WHERE e.id = %s
-            GROUP BY e.id
-            """,
-            [employee_id],
-        )
-        row = cursor.fetchone()
-    if not row or not row[2] or row[3] != "LAM_VIEC":
-        raise SqlDocumentAccessError("Tài khoản QLVB không hoạt động hoặc không tồn tại.")
-    employee = {
-        "id": row[0],
-        "department_id": row[1],
-        "is_superuser": bool(row[4]),
-        "permissions": set(row[5] or []),
+    missing_views = sorted(set(SQL_VIEW_COLUMNS) - set(present))
+    missing_columns = {
+        view: sorted(columns - present.get(view, set()))
+        for view, columns in SQL_VIEW_COLUMNS.items()
+        if view in present and columns - present[view]
     }
-    if not employee["is_superuser"] and "use_aiassistant" not in employee["permissions"]:
-        raise SqlDocumentAccessError("Tài khoản chưa được cấp quyền sử dụng trợ lý AI.")
-    return employee
+    return {
+        "status": "ok" if not missing_views and not missing_columns else "mismatch",
+        "checked_views": len(SQL_VIEW_COLUMNS),
+        "missing_views": missing_views,
+        "missing_columns": missing_columns,
+    }
 
 
 def _dict_rows(cursor):
@@ -180,122 +91,141 @@ def _dict_rows(cursor):
     return [dict(zip(columns, row)) for row in cursor.fetchall()]
 
 
-def accessible_documents(employee_id):
-    """
-    Trả về danh sách tài liệu SQL mà nhân viên đăng nhập ĐƯỢC PHÉP TRUY CẬP.
-    Áp dụng kiểm tra quyền nghiêm ngặt để triệt tiêu nguy cơ lộ lọt văn bản mật và tài liệu nội bộ.
-    """
+def _assert_readonly_connection(cursor):
+    cursor.execute(
+        """
+        SELECT current_user,
+               current_setting('transaction_read_only') = 'on',
+               role.rolsuper,
+               EXISTS (
+                   SELECT 1 FROM pg_class relation
+                   JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+                   WHERE namespace.nspname = 'public'
+                     AND relation.relkind IN ('r', 'p', 'f')
+                     AND has_table_privilege(current_user, relation.oid, 'SELECT')
+               )
+        FROM pg_roles role
+        WHERE role.rolname = current_user
+        """
+    )
+    row = cursor.fetchone()
+    if not row or row[0] != READONLY_ROLE or row[1] is not True or row[2] is not False or row[3] is not False:
+        raise SqlDocumentAccessError(
+            "Kết nối AI không dùng đúng role chỉ đọc qlvb_readonly hoặc role đang có quyền đọc bảng gốc."
+        )
+
+
+def _employee_id_value(employee_id):
+    try:
+        value = int(employee_id)
+    except (TypeError, ValueError):
+        raise SqlDocumentAccessError("Không xác định được mã nhân viên từ phiên đăng nhập QLVB.")
+    if value <= 0:
+        raise SqlDocumentAccessError("Mã nhân viên từ phiên đăng nhập QLVB không hợp lệ.")
+    return value
+
+
+def accessible_documents(user, employee_id=None):
+    """Return rows admitted by ``ai_*`` views and the user's document permissions."""
     if not is_postgres_source():
         return []
-    employee = _employee_context(employee_id)
+    if not has_permission_codename(user, "use_aiassistant"):
+        raise SqlDocumentAccessError("Tài khoản chưa được cấp quyền sử dụng trợ lý AI.")
+
+    permitted_views = [
+        (source_type, view_name)
+        for source_type, (view_name, permission) in DOCUMENT_VIEWS.items()
+        if has_permission_codename(user, permission)
+    ]
+    can_read_tailieu = has_permission_codename(user, "view_tailieu")
+    if can_read_tailieu:
+        try:
+            employee_id = _employee_id_value(employee_id)
+        except SqlDocumentAccessError:
+            # Superusers receive every codename implicitly; without a trusted
+            # employee mapping they simply do not read ai_tailieu. Accounts
+            # explicitly granted view_tailieu still fail closed.
+            if not getattr(user, "is_superuser", False):
+                raise
+            can_read_tailieu = False
+    if not permitted_views and not can_read_tailieu:
+        return []
+    if "readonly" not in connections.databases:
+        raise SqlDocumentAccessError("Thiếu cấu hình kết nối CSDL chỉ đọc cho AI.")
+
+    queries = {
+        "vanbanden": """
+            SELECT 'vanbanden'::text AS source_type, id AS source_id,
+                   so_hieu, so_thu_tu AS sort_number, nam,
+                   ngay_den AS document_date, trich_yeu, noi_ban_hanh,
+                   ngay_van_ban, nguoi_ky, chuc_vu, hieu_luc::text AS hieu_luc,
+                   ngay_het_hieu_luc, ghi_chu, updated_at
+            FROM ai_vanbanden
+            ORDER BY updated_at DESC
+        """,
+        "vanbandi": """
+            SELECT 'vanbandi'::text AS source_type, id AS source_id,
+                   so_hieu, so_thu_tu AS sort_number, nam,
+                   ngay_ban_hanh AS document_date, trich_yeu, noi_ban_hanh,
+                   ngay_van_ban, nguoi_ky, chuc_vu, hieu_luc::text AS hieu_luc,
+                   ngay_het_hieu_luc, ghi_chu, updated_at
+            FROM ai_vanbandi
+            ORDER BY updated_at DESC
+        """,
+    }
+    if can_read_tailieu:
+        queries["tailieu"] = """
+            SELECT 'tailieu'::text AS source_type, id AS source_id,
+                   ky_hieu AS so_hieu, NULL::integer AS sort_number,
+                   NULL::smallint AS nam, ngay_dang::timestamptz AS document_date,
+                   tieu_de AS trich_yeu, noi_ban_hanh,
+                   NULL::timestamptz AS ngay_van_ban, NULL::text AS nguoi_ky,
+                   NULL::text AS chuc_vu, hieu_luc::text AS hieu_luc,
+                   ngay_het_hieu_luc::timestamptz AS ngay_het_hieu_luc,
+                   ghi_chu, updated_at
+            FROM ai_tailieu
+            ORDER BY updated_at DESC
+        """
+
     docs = []
-    conn = get_readonly_connection()
-
-    for kind, (table, permission, recipient_people, recipient_units, fk) in DOCUMENT_TABLES.items():
-        if not employee["is_superuser"] and permission not in employee["permissions"]:
-            continue
-        if kind == "vanbanden":
-            date_field, number_field = "ngay_den", "so_thu_tu"
-        elif kind == "vanbandi":
-            date_field, number_field = "ngay_ban_hanh", "so"
-        else:
-            date_field, number_field = "ngay_ban_hanh", "NULL::integer"
-
-        acl = ""
-        params = [employee["id"]]
-        if kind == "vanbanmat":
-            # Văn bản mật: Chỉ đích danh người nhận hoặc người thuộc đơn vị nhận mới được truy cập
-            acl = f"""
-                AND (
-                    EXISTS (SELECT 1 FROM {recipient_people} rp
-                            WHERE rp.{fk} = d.id AND rp.employee_id = %s)
-                    OR EXISTS (SELECT 1 FROM {recipient_units} ru
-                                WHERE ru.{fk} = d.id AND ru.donvi_id IS NOT NULL AND ru.donvi_id = %s)
-                )
-            """
-            params.extend([employee["id"], employee["department_id"]])
-
-        query = f"""
-            SELECT %s::text AS source_type, d.id AS source_id,
-                   d.so_hieu, {number_field} AS sort_number, d.nam,
-                   d.{date_field} AS document_date, d.trich_yeu,
-                   d.noi_ban_hanh, d.ngay_van_ban, d.nguoi_ky,
-                   d.chuc_vu, d.hieu_luc::text AS hieu_luc,
-                   d.ngay_het_hieu_luc, d.ghi_chu, d.file_dinh_kem,
-                   d.updated_at
-            FROM {table} d
-            WHERE d.hien_thi = TRUE
-              AND EXISTS (
-                  SELECT 1 FROM accounts_employee e
-                  WHERE e.id = %s AND e.is_active = TRUE
-                    AND e.trang_thai::text = 'LAM_VIEC'
-              )
-              {acl}
-            ORDER BY d.updated_at DESC
-        """
-        # Bind values in the order they appear in the query.
-        query_params = [kind, employee["id"], *params[1:]]
-        with conn.cursor() as cursor:
-            cursor.execute(query, query_params)
-            for row in _dict_rows(cursor):
-                row["display_name"] = f"{row['so_hieu']} — {row['trich_yeu']}"[:240]
-                docs.append(row)
-
-    if employee["is_superuser"] or "view_tailieu" in employee["permissions"]:
-        tailieu_acl = """
-            AND (d.hien_thi::text = 'TAT_CA'
-                 OR (d.hien_thi::text = 'NOI_BO_PHONG_BAN'
-                     AND (d.nguoi_tao = %s OR (creator.don_vi_id IS NOT NULL AND creator.don_vi_id = %s))))
-        """
-        tailieu_params = [employee["id"], employee["department_id"]]
-        if employee["is_superuser"]:
-            # Quản trị viên tối cao có thể xem toàn bộ tài liệu
-            tailieu_acl = ""
-            tailieu_params = []
-
-        with conn.cursor() as cursor:
-            cursor.execute(
-                f"""
-                SELECT 'tailieu'::text AS source_type, d.id AS source_id,
-                       d.ky_hieu AS so_hieu, NULL::integer AS sort_number,
-                       NULL::smallint AS nam, d.ngay_dang::timestamptz AS document_date,
-                       d.tieu_de AS trich_yeu, d.noi_ban_hanh, NULL::timestamptz AS ngay_van_ban,
-                       NULL::text AS nguoi_ky, NULL::text AS chuc_vu,
-                       d.hieu_luc::text AS hieu_luc, d.ngay_het_hieu_luc::timestamptz AS ngay_het_hieu_luc,
-                       d.ghi_chu, d.file_dinh_kem, d.updated_at
-                FROM records_chitiettailieu d
-                LEFT JOIN accounts_employee creator ON creator.id = d.nguoi_tao
-                WHERE 1=1 {tailieu_acl}
-                ORDER BY d.updated_at DESC
-                """,
-                tailieu_params,
-            )
-            for row in _dict_rows(cursor):
-                row["display_name"] = f"{row['so_hieu'] or 'Tài liệu'} — {row['trich_yeu']}"[:240]
-                docs.append(row)
+    try:
+        with transaction.atomic(using="readonly"):
+            readonly = connections["readonly"]
+            with readonly.cursor() as cursor:
+                _assert_readonly_connection(cursor)
+            if can_read_tailieu:
+                with readonly.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT set_config('qlvb.employee_id', %s, true)",
+                        [str(employee_id)],
+                    )
+            for source_type, _view_name in permitted_views:
+                with readonly.cursor() as cursor:
+                    cursor.execute(queries[source_type])
+                    rows = _dict_rows(cursor)
+                for row in rows:
+                    row["display_name"] = f"{row['so_hieu']} — {row['trich_yeu']}"[:240]
+                    docs.append(row)
+            if can_read_tailieu:
+                with readonly.cursor() as cursor:
+                    cursor.execute(queries["tailieu"])
+                    rows = _dict_rows(cursor)
+                for row in rows:
+                    row["display_name"] = f"{row['so_hieu'] or 'Tài liệu'} — {row['trich_yeu']}"[:240]
+                    docs.append(row)
+    except SqlDocumentAccessError:
+        raise
+    except Exception as error:
+        raise SqlDocumentAccessError("Không thể truy cập nguồn CSDL chỉ đọc an toàn cho AI.") from error
 
     return docs
 
 
-def resolve_document_file(file_reference):
-    """Resolve a DB storage key inside the configured document root only."""
-    if not file_reference:
-        return None
-    root = Path(os.getenv("QLVB_STORAGE_ROOT", DATA_DIR / "docs")).expanduser().resolve()
-    reference = Path(str(file_reference))
-    candidate = reference if reference.is_absolute() else root / reference
-    try:
-        resolved = candidate.resolve(strict=True)
-        resolved.relative_to(root)
-    except (OSError, ValueError):
-        return None
-    return resolved if resolved.is_file() else None
-
-
-def get_accessible_document(employee_id, source_type, source_id):
+def get_accessible_document(user, source_type, source_id, employee_id=None):
     return next(
-        (doc for doc in accessible_documents(employee_id)
-         if doc["source_type"] == source_type and doc["source_id"] == int(source_id)),
+        (
+            doc for doc in accessible_documents(user, employee_id)
+            if doc["source_type"] == source_type and doc["source_id"] == int(source_id)
+        ),
         None,
     )
-

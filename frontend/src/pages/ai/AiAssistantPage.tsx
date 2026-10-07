@@ -6,6 +6,7 @@ import {
   askQuestion,
   getDocuments,
   getCategories,
+  getDocumentFile,
   deleteDocuments,
   deleteDocument,
   reclassifyDocument,
@@ -14,8 +15,6 @@ import {
 } from '../../api';
 import AISettingsModal from '../../components/AISettingsModal';
 import '@styles/ai-chat.css';
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 
 interface AiAssistantPageProps {
   onNavigate?: (page: ActivePageId) => void;
@@ -104,6 +103,7 @@ function getSessionUser() {
       return {
         fullName: parsed.fullName || 'Huỳnh Vương Thanh Nhã',
         role: parsed.roleTitle || 'Cán bộ chuyên môn (Nhóm 8)',
+        isAdmin: parsed.role === 'admin',
       };
     }
   } catch {
@@ -112,6 +112,7 @@ function getSessionUser() {
   return {
     fullName: 'Huỳnh Vương Thanh Nhã',
     role: 'Cán bộ chuyên môn (Nhóm 8)',
+    isAdmin: false,
   };
 }
 
@@ -215,6 +216,7 @@ function DocumentPreviewModal({ filename, onClose }: PreviewModalProps) {
   useEffect(() => {
     setLoading(true);
     setError('');
+    setData(null);
     previewDocument(filename)
       .then((res: PreviewData) => setData(res))
       .catch((err: any) => {
@@ -244,7 +246,34 @@ function DocumentPreviewModal({ filename, onClose }: PreviewModalProps) {
   };
 
   const isPdf = data?.render_mode === 'pdf';
-  const fileUrl = data?.file_url ? `${API_BASE_URL}${data.file_url}` : null;
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isPdf || !data?.file_url) {
+      setPdfUrl(null);
+      return;
+    }
+
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    setPdfUrl(null);
+    getDocumentFile(filename)
+      .then((file) => {
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(file);
+        setPdfUrl(objectUrl);
+      })
+      .catch((err: any) => {
+        if (!cancelled) setError(err.message || 'Không thể tải tệp PDF.');
+      });
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [data?.file_url, filename, isPdf]);
+
+  const fileUrl = pdfUrl;
 
   return (
     <div className="preview-backdrop" onClick={onClose}>
@@ -396,9 +425,15 @@ function CitationsBox({
           const isBusinessSpec = src.source_type === 'business_spec';
 
           const handleClick = () => {
-            if (src.targetPage && onNavigate) {
-              onNavigate(src.targetPage);
-            } else if (src.file_name && onPreview) {
+            const sourcePage: Partial<Record<string, ActivePageId>> = {
+              vanbanden: 'documents_incoming' as ActivePageId,
+              vanbandi: 'documents_outgoing' as ActivePageId,
+              tailieu: 'resources' as ActivePageId,
+            };
+            const targetPage = src.targetPage || sourcePage[src.source_type || ''];
+            if (targetPage && onNavigate) {
+              onNavigate(targetPage);
+            } else if (!src.source_type && src.file_name && onPreview) {
               onPreview(src.file_name);
             }
           };
@@ -436,6 +471,7 @@ function CitationsBox({
 
 // Component Chính AiAssistantPage
 export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
+  const currentUser = getSessionUser();
   // Sidebar states
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<'sessions' | 'docs'>('sessions');
@@ -529,9 +565,12 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
   }, [loadDocuments, loadCategories]);
 
   useEffect(() => {
-    getAISettings().then(setAiConfig).catch(console.error);
-    refreshDocuments();
-  }, [refreshDocuments]);
+    loadCategories();
+    if (currentUser.isAdmin) {
+      getAISettings().then(setAiConfig).catch(console.error);
+      loadDocuments();
+    }
+  }, [currentUser.isAdmin, loadCategories, loadDocuments]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -653,68 +692,6 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     }
   };
 
-  // Giả lập câu trả lời thông minh phong phú nếu Backend offline
-  const generateFallbackResponse = (q: string) => {
-    const lower = q.toLowerCase();
-    if (lower.includes('đến') || lower.includes('tiếp nhận') || lower.includes('vào sổ')) {
-      return {
-        text: `**Quy Trình Tiếp Nhận & Phân Phối Văn Bản Đến (Chuẩn TLBM):**\n\n1. **Bước 1 (Tiếp nhận & Vào sổ):** Văn thư tiếp nhận công văn giấy hoặc điện tử, kiểm tra dấu niêm phong, đóng dấu và cấp số đến tự động.\n2. **Bước 2 (Scan số hóa):** Quét tài liệu gốc định dạng PDF chất lượng cao, nhập trích yếu vào phân hệ Quản lý Văn Bản Đến.\n3. **Bước 3 (Bút phê lãnh đạo):** Trình Ban Giám Hiệu xem xét, phân công phòng ban xử lý chính và các đơn vị phối hợp.\n4. **Bước 4 (Theo dõi tiến độ):** Hệ thống tự động đẩy cảnh báo nhắc việc khi gần đến hạn xử lý.\n\n*Hệ thống đã liên kết đến phân hệ Văn bản Đến bên dưới:*`,
-        citations: [
-          {
-            label: 'Phân hệ Quản lý Văn bản Đến',
-            code: 'DOCS-INCOMING',
-            targetPage: 'documents_incoming' as ActivePageId,
-            type: 'incoming' as const,
-          },
-        ],
-      };
-    }
-    if (lower.includes('mật') || lower.includes('tuyệt mật') || lower.includes('bảo mật')) {
-      return {
-        text: `**Quy Định Bảo Vệ Bí Mật Nhà Nước & Tài Liệu Mật (TLBM · Phân hệ Mật):**\n\n- **Phân loại cấp độ:** Hệ thống hỗ trợ 3 cấp độ: *Mật*, *Tối Mật*, *Tuyệt Mật* theo đúng quy chuẩn Bộ Công An.\n- **Kiểm soát truy cập:** Chỉ tài khoản có thẩm quyền và được giao đích danh mới được mở tệp nội dung.\n- **Mã hóa & Xác thực:** Toàn bộ tệp mật được mã hóa AES-256 trên cơ sở dữ liệu. Truy cập tài liệu Tuyệt Mật yêu cầu mã xác thực 2 bước (2FA).\n- **Nhật ký truy vết (Audit Trail):** Mọi hành vi đọc, tải hoặc in ấn đều được ghi nhận vào sổ nhật ký không thể xóa sửa.`,
-        citations: [
-          {
-            label: 'Phân hệ Quản lý Tài liệu Mật',
-            code: 'DOCS-CONFIDENTIAL',
-            targetPage: 'documents_confidential' as ActivePageId,
-            type: 'confidential' as const,
-          },
-        ],
-      };
-    }
-    if (lower.includes('ký số') || lower.includes('trình ký') || lower.includes('phê duyệt')) {
-      return {
-        text: `**Quy Trình Trình Ký Số Điện Tử (Token PKI / Cloud HSM):**\n\n1. **Khởi tạo hồ sơ:** Cán bộ soạn thảo tờ trình, đính kèm dự thảo văn bản và tệp phụ lục.\n2. **Thiết lập luồng ký:** Chọn danh sách người ký duyệt (Trưởng phòng duyệt thể thức -> Lãnh đạo ký ban hành).\n3. **Ký số điện tử:** Lãnh đạo cắm Token PKI hoặc dùng chữ ký số đám mây (Cloud HSM) xác thực qua OTP.\n4. **Đóng dấu số & Chuyển luồng:** Văn thư đóng dấu cơ quan điện tử, hệ thống tự động sinh số hiệu văn bản đi và chuyển phát hành.`,
-        citations: [
-          {
-            label: 'Danh sách Hồ sơ Trình ký',
-            code: 'APPROVALS-LIST',
-            targetPage: 'approvals' as ActivePageId,
-            type: 'approval' as const,
-          },
-        ],
-      };
-    }
-    const user = getSessionUser();
-    return {
-      text: `**Trợ Lý AI TLBM (Chế độ RAG Tri Thức):**\n\nTôi đã ghi nhận câu hỏi của bạn: *"${q}"*.\n\n- **Cán bộ yêu cầu:** ${user.fullName} (${user.role})\n- **Phạm vi tra cứu:** Kho tài liệu đã lập chỉ mục và các quy chế hiện hành của cơ quan.\n\nNếu bạn có văn bản liên quan dưới dạng PDF hoặc DOCX, hãy kéo thả vào tab **Kho tài liệu** ở cột bên trái để tôi lập chỉ mục và trả lời chính xác từng điều khoản!`,
-      citations: [
-        {
-          label: 'Văn bản Đến',
-          code: 'INCOMING',
-          targetPage: 'documents_incoming' as ActivePageId,
-          type: 'incoming' as const,
-        },
-        {
-          label: 'Văn bản Đi',
-          code: 'OUTGOING',
-          targetPage: 'documents_outgoing' as ActivePageId,
-          type: 'outgoing' as const,
-        },
-      ],
-    };
-  };
-
   // Gửi câu hỏi đến AI
   const handleSend = async (overrideText?: string) => {
     const text = (overrideText || inputVal).trim();
@@ -778,19 +755,12 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
         )
       );
     } catch (err: any) {
-      console.warn('Backend call failed, using high-fidelity local fallback:', err);
-      // Dùng fallback thông minh
-      const fallback = generateFallbackResponse(text);
+      console.warn('Backend call failed:', err);
       const aiMsg: ChatMessage = {
         id: `ai-${Date.now()}`,
         sender: 'ai',
-        text: fallback.text,
+        text: err?.message || 'Không thể truy cập AI lúc này. Vui lòng thử lại sau.',
         time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-        citations: fallback.citations,
-        quickPrompts: [
-          'Xem thêm quy định chi tiết',
-          'Hướng dẫn các bước thực hiện',
-        ],
       };
 
       setSessions((prev) =>
@@ -893,8 +863,6 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     groupedDocs[cat].push(doc);
   }
 
-  const currentUser = getSessionUser();
-
   return (
     <div className="ai-chat-page-root">
       {/* ====================================================================
@@ -929,14 +897,14 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
               <i className="fa-regular fa-message" />
               <span>Hội thoại</span>
             </button>
-            <button
+            {currentUser.isAdmin && <button
               type="button"
               className={`sidebar-tab-pill ${sidebarTab === 'docs' ? 'active' : ''}`}
               onClick={() => setSidebarTab('docs')}
             >
               <i className="fa-solid fa-folder-open" />
               <span>Kho tài liệu ({documents.length})</span>
-            </button>
+            </button>}
           </div>
         )}
 
@@ -985,7 +953,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
         )}
 
         {/* Tab 2: Quản lý kho tài liệu */}
-        {isSidebarOpen && sidebarTab === 'docs' && (
+        {currentUser.isAdmin && isSidebarOpen && sidebarTab === 'docs' && (
           <div className="ai-sidebar-sessions-list p-2">
             <div className="ai-sidebar-search p-0 mb-2">
               <i className="fa-solid fa-magnifying-glass" />
@@ -1182,7 +1150,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
             )}
 
             {/* Nút Cài đặt AI */}
-            <button
+            {currentUser.isAdmin && <button
               type="button"
               className="chat-action-btn"
               onClick={() => setShowSettingsModal(true)}
@@ -1190,7 +1158,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
             >
               <i className="fa-solid fa-gear" />
               <span className="hidden xl:inline">Cài đặt AI</span>
-            </button>
+            </button>}
 
             {/* Nút Xuất file */}
             <button
@@ -1394,7 +1362,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
 
           <div className="input-box-container">
             {/* Input file ẩn */}
-            <input
+            {currentUser.isAdmin && <input
               ref={fileInputRef}
               type="file"
               className="hidden"
@@ -1404,17 +1372,17 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                 }
               }}
               accept=".pdf,.doc,.docx,.txt"
-            />
+            />}
 
             {/* Nút Đính kèm file */}
-            <button
+            {currentUser.isAdmin && <button
               type="button"
               className="input-tool-btn"
               onClick={() => fileInputRef.current?.click()}
               title="Đính kèm tài liệu (PDF, Word, TXT) để AI đọc & phân tích"
             >
               <i className="fa-solid fa-paperclip" />
-            </button>
+            </button>}
 
             {/* Khung gõ câu hỏi */}
             <textarea

@@ -20,24 +20,12 @@ interface RouterProps {
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = React.useState<boolean>(() => {
-    let session = localStorage.getItem('tlbm_session');
-    if (!session) {
-      const defaultUser = {
-        username: 'thanhnha',
-        fullName: 'Huỳnh Vương Thanh Nhã',
-        role: 'staff',
-        roleTitle: 'Cán bộ chuyên môn (Nhóm 8 · AI Chatbox)',
-        token: 'session-token-tlbm',
-      };
-      localStorage.setItem('tlbm_session', JSON.stringify(defaultUser));
-      session = JSON.stringify(defaultUser);
-    }
-    return Boolean(session);
+    return Boolean(localStorage.getItem('tlbm_access_token') || localStorage.getItem('tlbm_token'));
   });
 
   React.useEffect(() => {
     const handleAuth = () => {
-      setIsAuthenticated(Boolean(localStorage.getItem('tlbm_session')));
+      setIsAuthenticated(Boolean(localStorage.getItem('tlbm_access_token') || localStorage.getItem('tlbm_token')));
     };
     window.addEventListener('tlbm_auth_changed', handleAuth);
     window.addEventListener('storage', handleAuth);

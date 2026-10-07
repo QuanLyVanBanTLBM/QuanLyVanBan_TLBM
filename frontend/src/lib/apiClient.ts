@@ -25,7 +25,7 @@ export class ApiError extends Error {
   }
 }
 
-const BASE_URL = import.meta.env.VITE_API_URL || '';
+const BASE_URL = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || '';
 
 let isRefreshing = false;
 let failedQueue: Array<{
@@ -44,7 +44,13 @@ const processQueue = (error: unknown, token: string | null = null) => {
   failedQueue = [];
 };
 
-async function handleResponse<T>(res: Response): Promise<T> {
+type ApiRequestInit = RequestInit & { responseType?: 'json' | 'blob' };
+
+async function handleResponse<T>(res: Response, responseType: 'json' | 'blob' = 'json'): Promise<T> {
+  if (res.ok && responseType === 'blob') {
+    return (await res.blob()) as T;
+  }
+
   const headersObj = res.headers;
   const contentType = headersObj?.get ? headersObj.get('content-type') : null;
   const isJson = !contentType || contentType.includes('application/json');
@@ -69,14 +75,15 @@ async function handleResponse<T>(res: Response): Promise<T> {
 
 export async function apiClient<T = unknown>(
   endpoint: string,
-  options: RequestInit = {}
+  options: ApiRequestInit = {}
 ): Promise<T> {
+  const { responseType = 'json', ...requestOptions } = options;
   const url = endpoint.startsWith('http')
     ? endpoint
     : `${BASE_URL}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
 
-  const headers = new Headers(options.headers || {});
-  if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
+  const headers = new Headers(requestOptions.headers || {});
+  if (!headers.has('Content-Type') && !(requestOptions.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json');
   }
 
@@ -87,7 +94,7 @@ export async function apiClient<T = unknown>(
 
   let response: Response;
   try {
-    response = await fetch(url, { ...options, headers });
+    response = await fetch(url, { ...requestOptions, headers });
   } catch {
     throw new ApiError(0, {
       error: 'Không thể kết nối đến máy chủ Backend. Vui lòng kiểm tra lại đường truyền!',
@@ -120,8 +127,8 @@ export async function apiClient<T = unknown>(
 
               // Thực hiện lại request ban đầu với token mới và kiểm tra response.ok
               headers.set('Authorization', `Bearer ${newAccess}`);
-              const retryRes = await fetch(url, { ...options, headers });
-              return await handleResponse<T>(retryRes);
+              const retryRes = await fetch(url, { ...requestOptions, headers });
+              return await handleResponse<T>(retryRes, responseType);
             }
           }
           throw new Error('Refresh token invalid');
@@ -142,8 +149,8 @@ export async function apiClient<T = unknown>(
           failedQueue.push({
             resolve: (newToken: string) => {
               headers.set('Authorization', `Bearer ${newToken}`);
-              fetch(url, { ...options, headers })
-                .then((res) => handleResponse<T>(res))
+              fetch(url, { ...requestOptions, headers })
+                .then((res) => handleResponse<T>(res, responseType))
                 .then(resolve)
                 .catch(reject);
             },
@@ -154,7 +161,11 @@ export async function apiClient<T = unknown>(
     }
   }
 
-  return await handleResponse<T>(response);
+  return await handleResponse<T>(response, responseType);
+}
+
+export function apiClientBlob(endpoint: string, options: RequestInit = {}): Promise<Blob> {
+  return apiClient<Blob>(endpoint, { ...options, responseType: 'blob' });
 }
 
 apiClient.get = <T>(endpoint: string, options?: RequestInit) =>

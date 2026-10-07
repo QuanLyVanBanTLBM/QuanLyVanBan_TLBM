@@ -1,97 +1,61 @@
-import axios from "axios";
+import apiClient, { apiClientBlob } from "./lib/apiClient";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
-
-export const api = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 600000, // 10 phút cho các tác vụ nặng
-});
+const apiPath = (path) => `/api${path}`;
 
 export async function uploadDocument(file) {
   const formData = new FormData();
   formData.append("file", file);
-
-  const response = await api.post("/upload", formData, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
-
-  return response.data;
+  return apiClient(apiPath("/upload"), { method: "POST", body: formData });
 }
 
 export async function uploadDocumentAsync(file) {
   const formData = new FormData();
   formData.append("file", file);
-
-  // Trả về ngay lập tức với job_id, không chờ indexing xong
-  const response = await api.post("/upload/async", formData, {
-    headers: { "Content-Type": "multipart/form-data" },
-    timeout: 30000, // chỉ cần 30s để upload file
-  });
-
-  return response.data;
+  return apiClient(apiPath("/upload/async"), { method: "POST", body: formData });
 }
 
 export async function getUploadProgress(jobId) {
-  const response = await api.get(`/upload/progress/${jobId}`, {
-    timeout: 10000,
-  });
-  return response.data;
+  return apiClient(apiPath(`/upload/progress/${encodeURIComponent(jobId)}`));
 }
 
 export async function askQuestion(question, history = [], category = null) {
   const payload = { question, history };
-
-  if (category) {
-    payload.category = category;
-  }
-
-  const response = await api.post("/chat", payload);
-  return response.data;
+  if (category) payload.category = category;
+  return apiClient.post(apiPath("/chat"), payload);
 }
 
 export async function getDocuments() {
-  const response = await api.get("/documents");
-  return response.data;
+  return apiClient(apiPath("/documents"));
 }
 
 export async function getCategories() {
-  const response = await api.get("/categories");
-  return response.data;
+  return apiClient(apiPath("/categories"));
 }
 
 export async function deleteDocuments() {
-  const response = await api.delete("/documents");
-  return response.data;
+  return apiClient.delete(apiPath("/documents"));
 }
 
 export async function deleteDocument(filename) {
-  // URL encode the filename to handle special characters
-  const encodedFilename = encodeURIComponent(filename);
-  const response = await api.delete(`/documents/${encodedFilename}`);
-  return response.data;
+  return apiClient.delete(apiPath(`/documents/${encodeURIComponent(filename)}`));
 }
 
 export async function reclassifyDocument(filename) {
-  // URL encode the filename to handle special characters
-  const encodedFilename = encodeURIComponent(filename);
-  const response = await api.post(`/reclassify/${encodedFilename}`);
-  return response.data;
+  return apiClient.post(apiPath(`/reclassify/${encodeURIComponent(filename)}`));
 }
 
 export async function previewDocument(filename) {
-  // URL encode the filename to handle special characters
-  const encodedFilename = encodeURIComponent(filename);
-  const response = await api.get(`/documents/${encodedFilename}/preview`);
-  return response.data;
+  return apiClient(apiPath(`/documents/${encodeURIComponent(filename)}/preview`));
+}
+
+export async function getDocumentFile(filename) {
+  return apiClientBlob(apiPath(`/documents/${encodeURIComponent(filename)}/file`));
 }
 
 export async function getAISettings() {
-  const response = await api.get("/settings/ai");
-  return response.data;
+  return apiClient(apiPath("/settings/ai"));
 }
 
 export async function updateAISettings(settings) {
-  const response = await api.post("/settings/ai", settings);
-  return response.data;
+  return apiClient.post(apiPath("/settings/ai"), settings);
 }
-

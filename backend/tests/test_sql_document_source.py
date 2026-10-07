@@ -1,155 +1,152 @@
-import pytest
-from unittest.mock import MagicMock, patch
+from contextlib import nullcontext
+from types import SimpleNamespace
+from unittest.mock import patch
+
+from django.contrib.auth.models import Permission, User
+from django.contrib.contenttypes.models import ContentType
+from django.test import TestCase
 
 from backend.services.sql_document_source import (
-    DOCUMENT_TABLES,
-    SQL_SCHEMA_REGISTRY,
     SqlDocumentAccessError,
-    _employee_context,
     accessible_documents,
-    get_readonly_connection,
-    is_postgres_source,
     verify_sql_schema,
 )
 
 
-def test_sql_schema_registry_contains_all_required_tables():
-    """Kiểm tra đầy đủ 10 bảng CSDL QLVB trong danh mục truy vấn thô."""
-    expected_tables = {
-        "accounts_employee",
-        "accounts_employee_groups",
-        "auth_group_permissions",
-        "auth_permission",
-        "documents_vanbanden",
-        "documents_vanbandi",
-        "documents_vanbanmat",
-        "documents_vanbanmat_nguoinhan",
-        "documents_vanbanmat_donvinhan",
-        "records_chitiettailieu",
-    }
-    assert expected_tables.issubset(set(SQL_SCHEMA_REGISTRY.keys()))
-
-    for table_name in expected_tables:
-        meta = SQL_SCHEMA_REGISTRY[table_name]
-        assert "columns" in meta and len(meta["columns"]) > 0
-        assert "description" in meta and len(meta["description"]) > 0
+def grant_codename(user, codename):
+    content_type = ContentType.objects.get_for_model(User)
+    permission, _ = Permission.objects.get_or_create(
+        content_type=content_type,
+        codename=codename,
+        defaults={"name": codename},
+    )
+    user.user_permissions.add(permission)
 
 
-def test_get_readonly_connection_returns_valid_connection():
-    """Kiểm tra hàm get_readonly_connection luôn trả về kết nối hợp lệ."""
-    conn = get_readonly_connection()
-    assert conn is not None
-    assert hasattr(conn, "cursor")
+class FakeCursor:
+    def __init__(self, columns=(), rows=(), fetchone_row=None):
+        self.description = [(column,) for column in columns]
+        self.rows = rows
+        self.fetchone_row = fetchone_row
+        self.executed = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def execute(self, query, params=None):
+        self.executed.append((query, params))
+
+    def fetchall(self):
+        return self.rows
+
+    def fetchone(self):
+        return self.fetchone_row
 
 
-def test_verify_sql_schema_skips_cleanly_on_sqlite():
-    """Khi không chạy PostgreSQL, verify_sql_schema bỏ qua an toàn không báo lỗi."""
-    report = verify_sql_schema()
-    assert report["status"] in {"skipped", "ok"}
+class FakeReadonlyConnection:
+    def __init__(self, cursors):
+        self.cursors = iter(cursors)
+        self.used_cursors = []
+
+    def cursor(self):
+        cursor = next(self.cursors)
+        self.used_cursors.append(cursor)
+        return cursor
 
 
-def test_employee_context_raises_when_no_id():
-    """Từ chối tra cứu nếu không có employee_id của người đăng nhập."""
-    with pytest.raises(SqlDocumentAccessError) as exc_info:
-        _employee_context(None)
-    assert "danh tính nhân viên" in str(exc_info.value)
+class FakeConnections:
+    def __init__(self, readonly):
+        self.databases = {"readonly": {}}
+        self.readonly = readonly
+
+    def __getitem__(self, alias):
+        if alias != "readonly":
+            raise AssertionError(f"Unexpected database alias: {alias}")
+        return self.readonly
 
 
-@patch("backend.services.sql_document_source.get_readonly_connection")
-def test_employee_context_inactive_employee_denied(mock_get_conn):
-    """Từ chối tài khoản không hoạt động hoặc không ở trạng thái LAM_VIEC."""
-    mock_cursor = MagicMock()
-    # row: id, don_vi_id, is_active, trang_thai, is_superuser, permissions
-    mock_cursor.fetchone.return_value = (10, 2, False, "LAM_VIEC", False, ["use_aiassistant"])
-    mock_conn = MagicMock()
-    mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
-    mock_get_conn.return_value = mock_conn
+class SqlDocumentSourceTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="sql_ai", password="test-password")
+        grant_codename(self.user, "use_aiassistant")
 
-    with pytest.raises(SqlDocumentAccessError) as exc_info:
-        _employee_context(10)
-    assert "không hoạt động" in str(exc_info.value)
+    @patch("backend.services.sql_document_source.is_postgres_source", return_value=True)
+    def test_missing_ai_permission_fails_before_database_access(self, _is_postgres):
+        self.user.user_permissions.clear()
+        with self.assertRaises(SqlDocumentAccessError):
+            accessible_documents(self.user)
 
+    @patch("backend.services.sql_document_source.is_postgres_source", return_value=True)
+    def test_reads_only_permitted_view_and_never_selects_attachment_columns(self, _is_postgres):
+        grant_codename(self.user, "view_vanbanden")
+        role_cursor = FakeCursor(fetchone_row=("qlvb_readonly", True, False, False))
+        cursor = FakeCursor(
+            columns=("source_type", "source_id", "so_hieu", "trich_yeu"),
+            rows=(("vanbanden", 8, "01/AI", "Thông báo nội bộ"),),
+        )
+        readonly = FakeReadonlyConnection([role_cursor, cursor])
+        db_connections = FakeConnections(readonly)
+        with (
+            patch("backend.services.sql_document_source.connections", db_connections),
+            patch("backend.services.sql_document_source.transaction.atomic", return_value=nullcontext()),
+        ):
+            rows = accessible_documents(self.user)
 
-@patch("backend.services.sql_document_source.get_readonly_connection")
-def test_employee_context_status_not_working_denied(mock_get_conn):
-    """Từ chối tài khoản đã nghỉ việc."""
-    mock_cursor = MagicMock()
-    mock_cursor.fetchone.return_value = (10, 2, True, "NGHI_VIEC", False, ["use_aiassistant"])
-    mock_conn = MagicMock()
-    mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
-    mock_get_conn.return_value = mock_conn
+        self.assertEqual([row["source_type"] for row in rows], ["vanbanden"])
+        sql = cursor.executed[0][0]
+        self.assertIn("transaction_read_only", role_cursor.executed[0][0])
+        self.assertIn("pg_class", role_cursor.executed[0][0])
+        self.assertIn("FROM ai_vanbanden", sql)
+        self.assertNotIn("file_dinh_kem", sql)
+        self.assertNotIn("documents_vanbanden ", sql)
+        self.assertNotIn("vanbanmat", sql)
 
-    with pytest.raises(SqlDocumentAccessError) as exc_info:
-        _employee_context(10)
-    assert "không hoạt động" in str(exc_info.value)
+    @patch("backend.services.sql_document_source.is_postgres_source", return_value=True)
+    def test_rejects_wrong_or_privileged_database_role_before_reading_a_view(self, _is_postgres):
+        grant_codename(self.user, "view_vanbanden")
+        role_cursor = FakeCursor(fetchone_row=("postgres", True, True, True))
+        readonly = FakeReadonlyConnection([role_cursor])
+        db_connections = FakeConnections(readonly)
+        with (
+            patch("backend.services.sql_document_source.connections", db_connections),
+            patch("backend.services.sql_document_source.transaction.atomic", return_value=nullcontext()),
+        ):
+            with self.assertRaisesRegex(SqlDocumentAccessError, "qlvb_readonly"):
+                accessible_documents(self.user)
 
+        self.assertEqual(len(readonly.used_cursors), 1)
+        self.assertIn("FROM pg_roles", role_cursor.executed[0][0])
 
-@patch("backend.services.sql_document_source.get_readonly_connection")
-def test_employee_context_missing_ai_permission_denied(mock_get_conn):
-    """Từ chối tài khoản không có quyền use_aiassistant và không phải superuser."""
-    mock_cursor = MagicMock()
-    mock_cursor.fetchone.return_value = (10, 2, True, "LAM_VIEC", False, ["view_vanbanden"])
-    mock_conn = MagicMock()
-    mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
-    mock_get_conn.return_value = mock_conn
+    @patch("backend.services.sql_document_source.is_postgres_source", return_value=True)
+    def test_tailieu_requires_host_employee_identity_and_sets_transaction_local_context(self, _is_postgres):
+        grant_codename(self.user, "view_tailieu")
+        with self.assertRaisesRegex(SqlDocumentAccessError, "mã nhân viên"):
+            accessible_documents(self.user)
 
-    with pytest.raises(SqlDocumentAccessError) as exc_info:
-        _employee_context(10)
-    assert "chưa được cấp quyền sử dụng trợ lý AI" in str(exc_info.value)
+        role_cursor = FakeCursor(fetchone_row=("qlvb_readonly", True, False, False))
+        identity_cursor = FakeCursor()
+        view_cursor = FakeCursor(
+            columns=("source_type", "source_id", "so_hieu", "trich_yeu"),
+            rows=(("tailieu", 12, "TL-12", "Quy chế nội bộ"),),
+        )
+        readonly = FakeReadonlyConnection([role_cursor, identity_cursor, view_cursor])
+        db_connections = FakeConnections(readonly)
+        with (
+            patch("backend.services.sql_document_source.connections", db_connections),
+            patch("backend.services.sql_document_source.transaction.atomic", return_value=nullcontext()),
+        ):
+            rows = accessible_documents(self.user, employee_id=42)
 
+        self.assertEqual([row["source_type"] for row in rows], ["tailieu"])
+        self.assertIn("set_config('qlvb.employee_id'", identity_cursor.executed[0][0])
+        self.assertEqual(identity_cursor.executed[0][1], ["42"])
+        self.assertIn("FROM ai_tailieu", view_cursor.executed[0][0])
+        self.assertNotIn("records_chitiettailieu ", view_cursor.executed[0][0])
+        self.assertNotIn("file_dinh_kem", view_cursor.executed[0][0])
 
-@patch("backend.services.sql_document_source.get_readonly_connection")
-def test_employee_context_superuser_allowed_without_explicit_perm(mock_get_conn):
-    """Tài khoản superuser luôn được phép sử dụng trợ lý AI."""
-    mock_cursor = MagicMock()
-    mock_cursor.fetchone.return_value = (1, 1, True, "LAM_VIEC", True, [])
-    mock_conn = MagicMock()
-    mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
-    mock_get_conn.return_value = mock_conn
-
-    emp = _employee_context(1)
-    assert emp["id"] == 1
-    assert emp["is_superuser"] is True
-
-
-@patch("backend.services.sql_document_source.is_postgres_source", return_value=True)
-@patch("backend.services.sql_document_source._employee_context")
-@patch("backend.services.sql_document_source.get_readonly_connection")
-def test_accessible_documents_vanbanmat_applies_strict_acl(mock_get_conn, mock_emp, mock_is_pg):
-    """Kiểm tra văn bản mật bắt buộc áp dụng ACL người nhận và đơn vị nhận."""
-    mock_emp.return_value = {
-        "id": 99,
-        "department_id": 5,
-        "is_superuser": False,
-        "permissions": {"use_aiassistant", "view_vanbanmat"},
-    }
-
-    executed_queries = []
-    mock_cursor = MagicMock()
-    mock_cursor.description = [("source_type",), ("source_id",), ("so_hieu",), ("trich_yeu",)]
-    mock_cursor.fetchall.return_value = [
-        ("vanbanmat", 101, "01/MAT-UBND", "Nội dung văn bản mật"),
-    ]
-
-    def record_execute(sql, params):
-        executed_queries.append((sql, params))
-
-    mock_cursor.execute.side_effect = record_execute
-    mock_conn = MagicMock()
-    mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
-    mock_get_conn.return_value = mock_conn
-
-    docs = accessible_documents(99)
-
-    # Tìm truy vấn liên quan đến văn bản mật
-    vanbanmat_query = next((q for q in executed_queries if "documents_vanbanmat" in q[0]), None)
-    assert vanbanmat_query is not None
-    sql, params = vanbanmat_query
-
-    # Bắt buộc phải có điều kiện lọc theo người nhận hoặc đơn vị nhận
-    assert "documents_vanbanmat_nguoinhan" in sql
-    assert "documents_vanbanmat_donvinhan" in sql
-    assert 99 in params
-    assert 5 in params
-    assert len(docs) >= 1
-    assert docs[0]["source_type"] == "vanbanmat"
+    @patch("backend.services.sql_document_source.is_postgres_source", return_value=False)
+    def test_schema_verification_is_skipped_for_sqlite_development(self, _is_postgres):
+        self.assertEqual(verify_sql_schema()["status"], "skipped")

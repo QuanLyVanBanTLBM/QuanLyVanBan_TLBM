@@ -1,4 +1,3 @@
-import json
 import os
 import threading
 import uuid
@@ -8,10 +7,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import unquote
 
-from django.http import FileResponse, HttpResponse, JsonResponse
-from django.views.decorators.csrf import csrf_exempt
+from django.http import FileResponse, JsonResponse
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
 
 import backend.config as config
+from backend.services.ai_access import has_permission_codename, is_ai_admin, resolve_employee_id
 from backend.services.document_service import (
     add_to_registry,
     clear_documents,
@@ -21,20 +22,32 @@ from backend.services.document_service import (
     save_upload_file,
     update_category_in_registry,
 )
-from backend.services.sql_document_source import SqlDocumentAccessError, is_postgres_source
+from backend.services.sql_document_source import SqlDocumentAccessError
 _jobs = {}
 _jobs_lock = threading.Lock()
 
 
 def _json_body(request):
     try:
-        return json.loads(request.body or b"{}")
-    except (json.JSONDecodeError, UnicodeDecodeError):
+        return request.data
+    except Exception:
         return None
 
 
 def _error(message, status=400):
     return JsonResponse({"detail": message}, status=status)
+
+
+def _require_ai_access(request):
+    if not has_permission_codename(request.user, "use_aiassistant"):
+        return _error("Tài khoản chưa được cấp quyền sử dụng trợ lý AI.", 403)
+    return None
+
+
+def _require_ai_admin(request):
+    if not is_ai_admin(request.user):
+        return _error("Chỉ quản trị viên được phép thực hiện thao tác này.", 403)
+    return None
 
 
 def _set_job(job_id, **values):
@@ -66,7 +79,8 @@ def ai_health(request):
     return JsonResponse({"status": "ok", "provider": config.MODEL_PROVIDER, "llm_model": config.LLM_MODEL, "llm_available": has_key, "embed_model": config.EMBED_MODEL, "embed_available": has_key, "available_models": [config.LLM_MODEL, config.EMBED_MODEL]})
 
 
-@csrf_exempt
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def chat(request):
     if request.method != "POST":
         return _error("Phương thức không được hỗ trợ.", 405)
@@ -82,23 +96,19 @@ def chat(request):
         return _error("Câu hỏi không được vượt quá 4000 ký tự.")
     if not isinstance(history, list):
         return _error("Lịch sử hội thoại không hợp lệ.")
+    denied = _require_ai_access(request)
+    if denied:
+        return denied
     safe_history = [item for item in history[-8:] if isinstance(item, dict) and item.get("role") in {"user", "assistant"} and isinstance(item.get("content"), str)]
     try:
         from backend.services.rag_service import ask_document
 
-        employee_id = None
-        if is_postgres_source():
-            # Identity must come from the host QLVB authentication layer, never request JSON.
-            user = getattr(request, "user", None)
-            if getattr(request, "employee_id", None):
-                employee_id = request.employee_id
-            elif user is not None and getattr(user, "is_authenticated", False):
-                employee_id = getattr(user, "employee_id", None) or getattr(user, "pk", None)
-            if not employee_id:
-                return _error("Vui lòng đăng nhập QLVB để sử dụng trợ lý AI.", 401)
+        # Employee identity is supplied by host auth or resolved through trusted username mapping
+        employee_id = resolve_employee_id(request)
         result = ask_document(
             question.strip(), history=safe_history,
             category=category if isinstance(category, str) else None,
+            user=request.user,
             employee_id=employee_id,
         )
         return JsonResponse({"question": question.strip(), "category": category or None, **result})
@@ -119,8 +129,12 @@ def _validate_upload(upload):
     return ""
 
 
-@csrf_exempt
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def upload_async(request):
+    denied = _require_ai_admin(request)
+    if denied:
+        return denied
     if request.method != "POST":
         return _error("Phương thức không được hỗ trợ.", 405)
     upload = request.FILES.get("file")
@@ -134,14 +148,23 @@ def upload_async(request):
     return JsonResponse({"job_id": job_id, "filename": upload.name, "reupload": False, "message": "Đã nhận tệp, đang lập chỉ mục...", "poll_url": f"/upload/progress/{job_id}"}, status=202)
 
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def upload_progress(request, job_id):
+    denied = _require_ai_admin(request)
+    if denied:
+        return denied
     with _jobs_lock:
         job = dict(_jobs.get(job_id, {}))
     return JsonResponse(job or {"detail": f"Không tìm thấy job '{job_id}'"}, status=200 if job else 404)
 
 
-@csrf_exempt
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def upload_sync(request):
+    denied = _require_ai_admin(request)
+    if denied:
+        return denied
     if request.method != "POST":
         return _error("Phương thức không được hỗ trợ.", 405)
     upload = request.FILES.get("file")
@@ -160,7 +183,12 @@ def upload_sync(request):
         return _error(f"Lỗi xử lý tài liệu: {exc}", 500)
 
 
+@api_view(["GET", "DELETE"])
+@permission_classes([IsAuthenticated])
 def documents(request, filename=None):
+    denied = _require_ai_admin(request)
+    if denied:
+        return denied
     if request.method == "GET":
         return JsonResponse({"documents": list_documents()})
     if request.method == "DELETE":
@@ -172,11 +200,21 @@ def documents(request, filename=None):
     return _error("Phương thức không được hỗ trợ.", 405)
 
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def categories(request):
+    denied = _require_ai_access(request)
+    if denied:
+        return denied
     return JsonResponse({"categories": list_categories()})
 
 
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
 def document_detail(request, filename):
+    denied = _require_ai_admin(request)
+    if denied:
+        return denied
     safe_name = Path(unquote(filename)).name
     if safe_name != unquote(filename):
         return _error("Tên tệp không hợp lệ.", 400)
@@ -193,7 +231,12 @@ def document_detail(request, filename):
     return JsonResponse({"message": f"Đã xóa tài liệu '{safe_name}'." if existed else f"Không tìm thấy tài liệu '{safe_name}'.", "deleted": existed})
 
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def document_file(request, filename):
+    denied = _require_ai_admin(request)
+    if denied:
+        return denied
     safe_name = Path(unquote(filename)).name
     if safe_name != unquote(filename):
         return _error("Tên tệp không hợp lệ.", 400)
@@ -206,7 +249,12 @@ def document_file(request, filename):
     return response
 
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def preview_document(request, filename):
+    denied = _require_ai_admin(request)
+    if denied:
+        return denied
     safe_name = Path(unquote(filename)).name
     file_path = config.DOCS_DIR / safe_name
     if safe_name != unquote(filename) or not file_path.is_file():
@@ -233,8 +281,12 @@ def preview_document(request, filename):
     return JsonResponse({"filename": safe_name, "file_type": suffix[1:].upper(), "render_mode": "text", "total_pages": len(pages), "pages": pages, "full_text": full_text})
 
 
-@csrf_exempt
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def reclassify(request, filename):
+    denied = _require_ai_admin(request)
+    if denied:
+        return denied
     safe_name = Path(unquote(filename)).name
     doc = next((item for item in list_documents() if item["filename"] == safe_name), None)
     if not doc:
@@ -260,7 +312,12 @@ def reclassify(request, filename):
         return _error(f"Lỗi phân loại: {exc}", 500)
 
 
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
 def ai_settings(request):
+    denied = _require_ai_admin(request)
+    if denied:
+        return denied
     if request.method == "GET":
         key = config.GEMINI_API_KEY if config.MODEL_PROVIDER == "gemini" else os.getenv("OPENAI_API_KEY", "")
         masked = f"{key[:6]}...{key[-4:]}" if len(key) > 10 else ("********" if key else "")
@@ -289,10 +346,10 @@ def ai_settings(request):
         with urllib.request.urlopen(check, timeout=10) as response:
             valid = response.status == 200
         message = "API key không hợp lệ."
-    except (urllib.error.URLError, TimeoutError) as exc:
-        valid, message = False, f"Không thể xác thực API key: {exc}"
     except urllib.error.HTTPError as exc:
         valid, message = False, f"API key không hợp lệ (HTTP {exc.code})."
+    except (urllib.error.URLError, TimeoutError) as exc:
+        valid, message = False, f"Không thể xác thực API key: {exc}"
     if not valid:
         return _error(message)
     llm = str(payload.get("llm_model") or defaults[0]).strip()
@@ -302,7 +359,11 @@ def ai_settings(request):
     for name, value in updates.items():
         os.environ[name] = value
         setattr(config, name, value)
-    for env_path in (config.BASE_DIR / ".env", config.BASE_DIR / "backend" / ".env"):
+    target_env_paths = [config.BASE_DIR / "backend" / ".env"]
+    root_env = config.BASE_DIR / ".env"
+    if root_env.exists():
+        target_env_paths.append(root_env)
+    for env_path in target_env_paths:
         lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
         seen = set()
         output = []
