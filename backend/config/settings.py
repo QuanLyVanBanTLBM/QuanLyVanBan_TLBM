@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 from datetime import timedelta
 from dotenv import load_dotenv
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -25,6 +26,8 @@ load_dotenv(BASE_DIR.parent / ".env")
 
 # Cho phép Django nhận diện trực tiếp các app trong thư mục apps/
 sys.path.insert(0, str(BASE_DIR / "apps"))
+# Cho phép import gói backend.* (api, services) từ thư mục gốc repo
+sys.path.insert(0, str(BASE_DIR.parent))
 
 
 # Quick-start development settings - unsuitable for production
@@ -119,8 +122,23 @@ if not TESTING and DB_ENGINE in ("postgresql", "postgres"):
             "PASSWORD": os.getenv("DB_PASSWORD", ""),
             "HOST": os.getenv("DB_HOST", "localhost"),
             "PORT": os.getenv("DB_PORT", "5432"),
-        }
+        },
+        # AI chỉ đọc qua view ai_* bằng role qlvb_readonly; không có cấu hình thì AI từ chối chạy,
+        # không rơi về kết nối default.
+        "readonly": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": os.getenv("DB_READONLY_NAME", os.getenv("DB_NAME", "qlvb_db")),
+            "USER": os.getenv("DB_READONLY_USER", "").strip(),
+            "PASSWORD": os.getenv("DB_READONLY_PASSWORD", ""),
+            "HOST": os.getenv("DB_READONLY_HOST", os.getenv("DB_HOST", "localhost")),
+            "PORT": os.getenv("DB_READONLY_PORT", os.getenv("DB_PORT", "5432")),
+            "OPTIONS": {"options": "-c default_transaction_read_only=on"},
+        },
     }
+    if DATABASES["readonly"]["USER"] != "qlvb_readonly":
+        raise ImproperlyConfigured(
+            "DB_READONLY_USER phải là qlvb_readonly khi dùng PostgreSQL; AI không được dùng role mặc định."
+        )
 else:
     DATABASES = {
         "default": {
@@ -175,6 +193,10 @@ MAILERS = {
         "BACKEND": "django.core.mail.backends.console.EmailBackend",
     },
 }
+
+# Giới hạn tải lên (tài liệu PDF, DOCX, TXT cho Chatbox AI)
+DATA_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024
+FILE_UPLOAD_MAX_MEMORY_SIZE = 20 * 1024 * 1024
 
 # CORS Configuration (Cho phép Frontend kết nối API)
 CORS_ALLOW_ALL_ORIGINS = True
