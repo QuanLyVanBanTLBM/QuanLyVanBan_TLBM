@@ -103,9 +103,9 @@ def chat(request):
     try:
         from backend.services.rag_service import ask_document
 
-        # Employee identity is supplied by the host auth integration. Never use
-        # a request field or assume Django User.pk equals accounts_employee.id.
-        employee_id = getattr(request, "employee_id", None) or getattr(request.user, "employee_id", None)
+        # AUTH_USER_MODEL là accounts.Employee: mã nhân viên lấy từ phiên đã xác thực,
+        # không nhận từ trường nào của request.
+        employee_id = request.user.pk
         result = ask_document(
             question.strip(), history=safe_history,
             category=category if isinstance(category, str) else None,

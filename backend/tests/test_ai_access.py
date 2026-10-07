@@ -1,4 +1,6 @@
-from unittest.mock import patch
+import sys
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
@@ -65,3 +67,16 @@ class AIAccessTests(TestCase):
     def test_superuser_can_read_ai_settings(self):
         self.client.force_authenticate(self.superuser)
         self.assertEqual(self.client.get("/api/settings/ai").status_code, 200)
+
+    def test_chat_passes_authenticated_employee_id_not_request_body(self):
+        self.client.force_authenticate(self.ai_user)
+        ask = MagicMock(return_value={"answer": "ok"})
+        fake_rag = SimpleNamespace(ask_document=ask)
+        with patch.dict(sys.modules, {"backend.services.rag_service": fake_rag}):
+            response = self.client.post(
+                "/api/chat",
+                {"question": "Tìm văn bản", "employee_id": self.superuser.pk},
+                format="json",
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(ask.call_args.kwargs["employee_id"], self.ai_user.pk)
