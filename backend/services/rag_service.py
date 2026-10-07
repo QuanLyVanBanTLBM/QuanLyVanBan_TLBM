@@ -17,6 +17,7 @@ from llama_index.core import Settings, StorageContext, VectorStoreIndex
 from llama_index.core.node_parser import SentenceSplitter
 from llama_index.core.schema import Document
 from llama_index.core.vector_stores.types import (
+    FilterCondition,
     FilterOperator,
     MetadataFilter,
     MetadataFilters,
@@ -1407,6 +1408,8 @@ def index_document(file_path: Path, category=None, source_metadata=None, extra_t
     category = category or classify_document(text)
     print(f"CATEGORY: {category}")
 
+    if not source_metadata or not source_metadata.get("sql_doc_key"):
+        source_metadata = {**(source_metadata or {}), "source_class": "ai_knowledge_base"}
     documents = build_parent_child_documents(file_path, page_items, category=category, source_metadata=source_metadata)
 
     if not documents:
@@ -1421,19 +1424,7 @@ def index_document(file_path: Path, category=None, source_metadata=None, extra_t
     except Exception as error:
         print(f"⚠️  Không xóa được vector cũ của {file_path.name}: {error}")
 
-    collection = get_chroma_collection()
-    vector_store = ChromaVectorStore(chroma_collection=collection)
-
-    storage_context = StorageContext.from_defaults(
-        vector_store=vector_store
-    )
-
-    VectorStoreIndex.from_documents(
-        documents,
-        storage_context=storage_context,
-        embed_model=Settings.embed_model,
-        show_progress=True,
-    )
+    _insert_documents(documents)
 
     return {
         "document_count": len(documents),
@@ -1449,6 +1440,85 @@ def index_document(file_path: Path, category=None, source_metadata=None, extra_t
         "embedding_model": EMBED_MODEL,
         "llm_model": LLM_MODEL,
     }
+
+
+def _insert_documents(documents):
+    collection = get_chroma_collection()
+    vector_store = ChromaVectorStore(chroma_collection=collection)
+    storage_context = StorageContext.from_defaults(vector_store=vector_store)
+    return VectorStoreIndex.from_documents(
+        documents,
+        storage_context=storage_context,
+        embed_model=Settings.embed_model,
+        show_progress=True,
+    )
+
+
+def index_sql_document(record):
+    """Index only metadata returned by an authorized ai_* view; never read attachments."""
+    setup_llamaindex()
+    source_type = record["source_type"]
+    source_id = int(record["source_id"])
+    key = f"{source_type}:{source_id}"
+    title = str(record.get("display_name") or record.get("trich_yeu") or "Tài liệu")[:240]
+    fields = (
+        ("Số hiệu", "so_hieu"),
+        ("Trích yếu", "trich_yeu"),
+        ("Nơi ban hành", "noi_ban_hanh"),
+        ("Ngày văn bản", "ngay_van_ban"),
+        ("Ngày đến/phát hành", "document_date"),
+        ("Người ký", "nguoi_ky"),
+        ("Chức vụ", "chuc_vu"),
+        ("Hiệu lực", "hieu_luc"),
+        ("Ngày hết hiệu lực", "ngay_het_hieu_luc"),
+        ("Ghi chú", "ghi_chu"),
+    )
+    metadata_text = "\n".join(
+        f"{label}: {record[field]}"
+        for label, field in fields
+        if record.get(field) is not None and str(record[field]).strip()
+    )
+    content_hash = hashlib.sha256(
+        f"sql-metadata-v1\0{metadata_text}\0{record.get('updated_at') or ''}".encode("utf-8")
+    ).hexdigest()
+
+    collection = get_chroma_collection()
+    cached = collection.get(where={"sql_doc_key": key}, include=["metadatas"])
+    cached_metadata = cached.get("metadatas", [])
+    if metadata_text.strip() and cached_metadata and all(
+        metadata is not None
+        and metadata.get("source_hash") == content_hash
+        and metadata.get("sql_content_version") == "metadata-v1"
+        for metadata in cached_metadata
+    ):
+        return key
+
+    # Old SQL vectors may contain attachment text. Removal must succeed before new
+    # safe chunks are written; otherwise the request fails closed.
+    collection.delete(where={"sql_doc_key": key})
+    if len(metadata_text.strip()) < 20:
+        return None
+
+    source_metadata = {
+        "sql_doc_key": key,
+        "source_class": "official_document",
+        "sql_doc_type": source_type,
+        "sql_doc_id": source_id,
+        "source_hash": content_hash,
+        "sql_content_version": "metadata-v1",
+        "file_name": title,
+    }
+    page_items = [{"text": metadata_text, "page": None, "reader": "ai-sql-view"}]
+    documents = build_parent_child_documents(
+        Path(f"{source_type}-{source_id}.txt"),
+        page_items,
+        category=source_type,
+        source_metadata=source_metadata,
+    )
+    if not documents:
+        return None
+    _insert_documents(documents)
+    return key
 
 
 def build_answer_prompt(question: str, context: str, history) -> str:
@@ -1484,7 +1554,7 @@ QUY TẮC TRẢ LỜI:
 """
 
 
-def ask_document(question: str, history=None, category: str | None = None, employee_id=None):
+def ask_document(question: str, history=None, category: str | None = None, user=None, employee_id=None):
     question = (question or "").strip()
     if is_inappropriate_message(question):
         return {
@@ -1494,46 +1564,17 @@ def ask_document(question: str, history=None, category: str | None = None, emplo
 
     from backend.services.sql_document_source import (
         SqlDocumentAccessError, accessible_documents, is_postgres_source,
-        resolve_document_file,
     )
 
     sql_mode = is_postgres_source()
     allowed_keys = None
     if sql_mode:
-        # SQL mode is fail-closed: never answer using the shared local corpus.
-        records = accessible_documents(employee_id)
+        records = accessible_documents(user, employee_id)
         allowed_keys = set()
         for record in records:
-            file_path = resolve_document_file(record.get("file_dinh_kem"))
-            if not file_path:
-                continue
-            key = f"{record['source_type']}:{record['source_id']}"
-            source_hash = hashlib.sha256(
-                file_path.read_bytes() + str(record.get("updated_at") or "").encode("utf-8")
-            ).hexdigest()
-            collection = get_chroma_collection()
-            cached = collection.get(where={"sql_doc_key": key}, include=["metadatas"])
-            current_hashes = {m.get("source_hash") for m in cached.get("metadatas", []) if m}
-            if source_hash not in current_hashes:
-                title = record.get("display_name") or record.get("trich_yeu") or file_path.name
-                meta_text = "\n".join(
-                    f"{label}: {record.get(field)}" for label, field in (
-                        ("Số hiệu", "so_hieu"), ("Trích yếu", "trich_yeu"),
-                        ("Nơi ban hành", "noi_ban_hanh"), ("Ngày văn bản", "ngay_van_ban"),
-                        ("Ngày đến/phát hành", "document_date"), ("Người ký", "nguoi_ky"),
-                        ("Chức vụ", "chuc_vu"), ("Hiệu lực", "hieu_luc"),
-                        ("Ghi chú", "ghi_chu"),
-                    ) if record.get(field) is not None
-                )
-                index_document(
-                    file_path, category=record["source_type"],
-                    source_metadata={
-                        "sql_doc_key": key, "sql_doc_type": record["source_type"],
-                        "sql_doc_id": int(record["source_id"]), "source_hash": source_hash,
-                        "file_name": str(title)[:240],
-                    }, extra_text=meta_text,
-                )
-            allowed_keys.add(key)
+            key = index_sql_document(record)
+            if key:
+                allowed_keys.add(key)
 
     from backend.services.business_knowledge import match_business_sources
     business_sources = match_business_sources(question)
@@ -1547,20 +1588,37 @@ def ask_document(question: str, history=None, category: str | None = None, emplo
         retriever_kwargs = {"similarity_top_k": SIMILARITY_TOP_K}
         metadata_filters = build_category_filters(category)
         if sql_mode:
-            if not allowed_keys:
-                nodes = []
-            else:
-                metadata_filters = MetadataFilters(
-                    filters=[MetadataFilter(key="sql_doc_key", value=list(allowed_keys), operator=FilterOperator.IN)]
+            source_filters = [
+                MetadataFilter(
+                    key="source_class",
+                    value="ai_knowledge_base",
+                    operator=FilterOperator.EQ,
                 )
-                retriever_kwargs["filters"] = metadata_filters
-                retriever_kwargs["similarity_top_k"] = max(SIMILARITY_TOP_K * 3, 20)
+            ]
+            if allowed_keys:
+                source_filters.append(
+                    MetadataFilter(
+                        key="sql_doc_key",
+                        value=list(allowed_keys),
+                        operator=FilterOperator.IN,
+                    )
+                )
+            source_filter = MetadataFilters(
+                filters=source_filters,
+                condition=FilterCondition.OR,
+            )
+            retriever_kwargs["filters"] = source_filter
+            retriever_kwargs["similarity_top_k"] = max(SIMILARITY_TOP_K * 3, 20)
         elif metadata_filters:
             retriever_kwargs["filters"] = metadata_filters
             print(f"🔎 Lọc retrieval theo chủ đề: {category.strip()}")
         nodes = index.as_retriever(**retriever_kwargs).retrieve(retrieval_query)
         if sql_mode and nodes:
-            nodes = [node for node in nodes if (getattr(node, "metadata", {}) or {}).get("sql_doc_key") in allowed_keys]
+            nodes = [
+                node for node in nodes
+                if (getattr(node, "metadata", {}) or {}).get("sql_doc_key") in allowed_keys
+                or (getattr(node, "metadata", {}) or {}).get("source_class") == "ai_knowledge_base"
+            ]
         document_sources = build_sources(nodes, question) if nodes else []
         document_limit = max(0, MAX_VISIBLE_SOURCES - min(len(business_sources), MAX_VISIBLE_SOURCES))
         sources = (document_sources[:document_limit] + business_sources)[:MAX_VISIBLE_SOURCES]
