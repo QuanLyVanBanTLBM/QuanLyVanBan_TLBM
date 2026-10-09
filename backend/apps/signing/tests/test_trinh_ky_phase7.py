@@ -134,7 +134,8 @@ class TaoNhapTests(TrinhKyBase):
     def test_rejections(self):
         cases = [
             ({"tep": tep_pdf(b"khong phai pdf")}, 400, "tep_khong_phai_pdf"),
-            ({"van_ban_id": 11}, 400, "van_ban_han_che_khong_trinh_ky"),
+            # Văn bản hạn chế giả lập không có người tạo/người nhận cấp quyền xem.
+            ({"van_ban_id": 11}, 404, "khong_tim_thay_van_ban"),
             ({"van_ban_id": 99}, 404, "khong_tim_thay_van_ban"),
             ({"document_type": "vanbanden"}, 400, "du_lieu_khong_hop_le"),
             ({"muc_do": "SIEU_GAP"}, 400, "du_lieu_khong_hop_le"),
@@ -270,7 +271,7 @@ class GuiTests(TrinhKyBase):
         pk = self.tao_nhap().data["id"]
         SigningRequest.objects.filter(pk=pk).update(van_ban_id=11)  # văn bản thành HAN_CHE
         r = self.gui(pk)
-        self.assertEqual((r.status_code, r.data["code"]), (400, "van_ban_han_che_khong_trinh_ky"))
+        self.assertEqual((r.status_code, r.data["code"]), (404, "khong_tim_thay_van_ban"))
 
 
 class XemTests(TrinhKyBase):

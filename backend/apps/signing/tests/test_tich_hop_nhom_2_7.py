@@ -5,16 +5,18 @@ không giả lập lớp tích hợp.
 from unittest import mock
 
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db.models import ProtectedError
 from django.test import TestCase
 from documents.models import PhamVi, VanBanDi
 from rest_framework.test import APIClient
 
 from signing.errors import SigningError
-from signing.models import SigningProcessStepSigner
+from signing.models import SigningProcess, SigningProcessStepSigner, SigningRequest
 from signing.tich_hop import van_ban
 
 from .helpers import cap_quyen, tao_chuc_vu, tao_don_vi
+from .test_trinh_ky_phase7 import PDF
 
 User = get_user_model()
 QT = "/api/v1/signing/quy-trinh"
@@ -51,6 +53,42 @@ class VanBanNhom2Tests(TestCase):
     def test_restricted_and_missing_documents_rejected(self):
         self.assertEqual(self.ma_loi(self.tao, self.han_che.pk), (400, "van_ban_han_che_khong_trinh_ky"))
         self.assertEqual(self.ma_loi(self.tao, 999999), (404, "khong_tim_thay_van_ban"))
+
+    def test_api_restricted_document_error_respects_visibility(self):
+        viewer = User.objects.create_user("nguoi_co_quyen_xem_vb")
+        admin = User.objects.create_superuser(username="quan_tri_ngoai_danh_sach", password="test")
+        recipient = User.objects.create_user("nguoi_nhan_vb")
+        cap_quyen(viewer, "view_vanbandi")
+        self.han_che.nguoi_nhan.add(recipient)
+        process = SigningProcess.objects.create(
+            ma_quy_trinh="QT-QUYEN-XEM", ten_quy_trinh="Kiểm tra quyền xem văn bản",
+            pham_vi="CONG_TY", trang_thai="HOAT_DONG", create_by=self.tao,
+        )
+
+        # Quyền view_* và superuser không mở quyền xem HAN_CHE ngoài danh sách (#83).
+        for user, restricted_status in ((self.khac, 404), (viewer, 404), (admin, 404),
+                                        (self.tao, 400), (recipient, 400)):
+            cap_quyen(user, "add_trinhky")
+            client = APIClient()
+            client.force_authenticate(User.objects.get(pk=user.pk))
+            with self.subTest(user=user.username):
+                responses = {}
+                for label, document_id in (("restricted", self.han_che.pk), ("missing", 999999)):
+                    responses[label] = client.post("/api/v1/signing/trinh-ky/", {
+                        "document_type": "vanbandi", "van_ban_id": document_id,
+                        "quy_trinh": process.pk, "muc_do": "THUONG",
+                        "tep": SimpleUploadedFile("du-thao.pdf", PDF, content_type="application/pdf"),
+                    }, format="multipart")
+
+                self.assertEqual(responses["missing"].status_code, 404, responses["missing"].data)
+                self.assertEqual(responses["restricted"].status_code, restricted_status,
+                                 responses["restricted"].data)
+                if restricted_status == 404:
+                    self.assertEqual(responses["restricted"].data, responses["missing"].data)
+                else:
+                    # Người được xem vẫn bị chặn trình ký HAN_CHE, nhưng được nhận lỗi nghiệp vụ.
+                    self.assertEqual(responses["restricted"].data["code"], "van_ban_han_che_khong_trinh_ky")
+        self.assertFalse(SigningRequest.objects.exists())
 
     def test_search_excludes_restricted_and_filters_keyword(self):
         # Người không có quyền không nhìn thấy văn bản NOI_BO dù hien_thi=True.

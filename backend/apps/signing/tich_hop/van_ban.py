@@ -42,17 +42,14 @@ def kiem_tra_van_ban_trinh_ky(nguoi_dung, document_type, van_ban_id):
         raise SigningError(code="chi_trinh_ky_van_ban_di", detail="Trình ký chỉ nhận văn bản đi.",
                            fields={"document_type": ["Chỉ nhận 'vanbandi'."]})
     van_ban = _doc_van_ban_di(van_ban_id)
-    if van_ban is None:
+    if van_ban is None or not _xem_duoc(nguoi_dung, van_ban):
+        # Kiểm quyền trước phạm vi để không tiết lộ văn bản người dùng không được xem.
         raise SigningError(code="khong_tim_thay_van_ban", detail="Không tìm thấy văn bản đi.",
                            status_code=status.HTTP_404_NOT_FOUND, fields={"van_ban_id": ["Không tồn tại."]})
     if van_ban.pham_vi == PhamVi.HAN_CHE:
         raise SigningError(code="van_ban_han_che_khong_trinh_ky",
                            detail="Văn bản hạn chế không đi qua trình ký.",
                            fields={"van_ban_id": ["Văn bản có phạm vi HAN_CHE."]})
-    if not _xem_duoc(nguoi_dung, van_ban):
-        # Không tiết lộ sự tồn tại của văn bản người dùng không được xem
-        raise SigningError(code="khong_tim_thay_van_ban", detail="Không tìm thấy văn bản đi.",
-                           status_code=status.HTTP_404_NOT_FOUND, fields={"van_ban_id": ["Không tồn tại."]})
     return van_ban
 
 
