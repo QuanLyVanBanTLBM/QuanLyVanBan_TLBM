@@ -202,3 +202,34 @@ def logout_view(request):
         {"success": True, "message": "Đã đăng xuất", "detail": "Đã đăng xuất"},
         status=status.HTTP_200_OK,
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GET /api/accounts/staffs/ & GET /api/auth/staffs/
+# ─────────────────────────────────────────────────────────────────────────────
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def staffs_view(request):
+    """
+    GET /api/accounts/staffs/
+    Danh sách cán bộ / nhân viên theo phòng ban cho các phân hệ khác (Document, Records...).
+    """
+    from django.contrib.auth.models import User
+    department = request.query_params.get("department")
+    users = User.objects.all().select_related("profile")
+    data = []
+    for u in users:
+        profile = getattr(u, "profile", None)
+        dept = profile.department if (profile and profile.department) else ("Ban Giám hiệu" if u.is_superuser else "Phòng Hành chính - Tổng hợp")
+        if department and dept.strip().lower() != department.strip().lower():
+            continue
+        full_name = (profile.full_name if profile and profile.full_name else "") or u.get_full_name() or u.username
+        data.append({
+            "id": u.id,
+            "username": u.username,
+            "full_name": full_name,
+            "department": dept,
+        })
+    return Response(data, status=status.HTTP_200_OK)
+

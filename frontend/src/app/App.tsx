@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import AppRouter from './router';
 import { ThemeMode } from '@app-types/theme';
 import '@styles/global.css';
@@ -12,6 +12,7 @@ export default function App() {
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.setAttribute('data-ui-style', 'modern');
     localStorage.setItem('tlbm_theme', theme);
   }, [theme]);
 

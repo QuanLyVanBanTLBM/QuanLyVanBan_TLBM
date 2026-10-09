@@ -257,6 +257,31 @@ export async function downloadBlob(endpoint: string, defaultFilename?: string): 
   window.URL.revokeObjectURL(blobUrl);
 }
 
+export async function apiClientBlob(endpoint: string, options: RequestInit = {}): Promise<Blob> {
+  const url = endpoint.startsWith('http')
+    ? endpoint
+    : `${BASE_URL}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
+
+  const headers = new Headers(options.headers || {});
+  const token = localStorage.getItem('tlbm_access_token') || localStorage.getItem('tlbm_token');
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+
+  const response = await fetch(url, {
+    credentials: options.credentials || 'include',
+    ...options,
+    headers,
+  });
+
+  if (!response.ok) {
+    const errorData: ApiErrorResponse = { error: t('common.apiError', { status: String(response.status) }) };
+    throw new ApiError(response.status, errorData);
+  }
+
+  return await response.blob();
+}
+
 apiClient.blob = downloadBlob;
 
 export default apiClient;

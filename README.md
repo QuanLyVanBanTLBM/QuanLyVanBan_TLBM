@@ -1,94 +1,149 @@
-# TLBM — Hệ thống Quản lý Văn bản và Tài liệu
+# TLBM — Hệ thống Quản lý Văn bản và Tài liệu (Phân hệ AI Chatbox - Nhóm 8)
 
 TLBM là nền tảng quản lý văn bản, tài liệu và điều hành công việc nội bộ dành cho doanh nghiệp. Hệ thống đưa toàn bộ luồng giấy tờ, phê duyệt và trao đổi công việc của tổ chức lên môi trường số, giúp việc xử lý nhanh hơn, minh bạch hơn và dễ tra cứu hơn.
 
-Đồ án môn Django — Trường Cao đẳng Công nghệ Thông tin TP.HCM (ITC).
+Đồ án môn Django — Trường Cao đẳng Công nghệ Thông tin TP.HCM (ITC).  
+Nhánh: `8_ai_chatbox` — Module 8: Trợ lý AI Chatbox & RAG thông minh.
 
 ---
 
-## Tổng quan
+## Tổng quan Module 8 (Trợ lý AI Chatbox)
 
-Trong nhiều tổ chức, văn bản, hồ sơ và yêu cầu phê duyệt vẫn được luân chuyển qua giấy tờ, email và tin nhắn rời rạc, khó theo dõi và dễ thất lạc. TLBM giải quyết bài toán đó bằng một hệ thống tập trung, nơi mỗi văn bản, tài liệu và đầu việc đều có chủ thể phụ trách, trạng thái xử lý và lịch sử rõ ràng.
+Module 8 phụ trách xây dựng Trợ lý ảo AI thông minh, hỗ trợ cán bộ nhân viên tra cứu văn bản, quy chế nội bộ, hướng dẫn nghiệp vụ và hỏi đáp ngữ cảnh tự động dựa trên kiến trúc **RAG (Retrieval-Augmented Generation)** và **CSDL Chỉ đọc (Read-only Database)**.
 
-Hệ thống hướng tới ba mục tiêu:
+### Ba nguồn tri thức chính của Trợ lý AI:
+1. **Dữ liệu Văn bản & Hồ sơ CSDL (PostgreSQL View `ai_*`)**:
+   - Truy vấn qua tài khoản chỉ đọc (`qlvb_readonly`) trên các Security Barrier Views: `ai_vanbanden`, `ai_vanbandi`, `ai_tailieu`.
+   - Lọc phân quyền tự động theo User Token/Session và phòng ban (`qlvb.employee_id`).
+   - Tự động loại trừ 100% các văn bản thuộc phạm vi "HẠN CHẾ" (`pham_vi = 'HAN_CHE'`).
+2. **Kho tài liệu nghiệp vụ (Local ChromaDB)**:
+   - Các tài liệu hướng dẫn, quy định nội bộ được lập chỉ mục vector, lưu trữ an toàn trong ChromaDB.
+3. **Thẻ đặc tả nghiệp vụ phân hệ 1–7**:
+   - Kiến thức tổng quan về quy trình xử lý văn bản, ký số điện tử và phân quyền hệ thống.
 
-- **Tập trung**: một nơi duy nhất để lưu trữ, tra cứu và xử lý văn bản, tài liệu của toàn tổ chức.
-- **Minh bạch**: mọi bước luân chuyển, phê duyệt và truy cập đều được ghi nhận.
-- **An toàn**: dữ liệu được phân quyền theo vai trò và đơn vị; tài liệu hạn chế chỉ người được chỉ định mới truy cập được.
+---
 
-## Tính năng chính
+## Tính năng nổi bật của Trợ lý AI
 
-- Quản lý văn bản đến, văn bản đi và hồ sơ lưu trữ.
-- Kho tài liệu, biểu mẫu dùng chung trong tổ chức.
-- Luân chuyển và phê duyệt văn bản nhiều cấp với chữ ký điện tử nội bộ.
-- Giao việc, theo dõi tiến độ và duyệt kết quả công việc.
-- Quản trị cơ cấu tổ chức, nhân sự và phân quyền.
-- Tiện ích văn phòng: đặt phòng họp, thông báo nội bộ.
-- Trợ lý AI hỗ trợ tra cứu và hỏi đáp trên văn bản.
+- 🔍 **Tra cứu văn bản ngữ cảnh**: Tìm kiếm thông tin chính xác theo Số hiệu, Trích yếu, Ngày ban hành, Đơn vị ban hành.
+- 🎯 **Nguyên tắc "Zero-Hallucination"**: Chỉ trả lời dựa trên tài liệu được cấp phép; từ chối khi không có dữ liệu nguồn để bảo đảm tính chuẩn xác của văn bản hành chính.
+- 🛡️ **Bảo mật & Phân quyền RBAC**: Yêu cầu quyền `use_aiassistant` để tương tác; chức năng quản trị kho tài liệu và cài đặt AI dành riêng cho Quản trị viên (`is_superuser`).
+- ⚡ **Đa mô hình AI (LLM)**: Tích hợp Google Gemini (mặc định: `gemini-3.8-flash` với cơ chế tự động chuyển đổi fallback) và OpenAI GPT qua cấu hình giao diện.
+- 📄 **Xử lý tệp đa định dạng**: Hỗ trợ PDF, DOCX, TXT, CSV, PPTX, Markdown, ảnh số hóa văn bản (Vision OCR).
+- 💬 **Giao diện hiện đại**: Tích hợp trực tiếp vào App Shell chuẩn Staging (React + TypeScript + Vite), hỗ trợ Dark/Light theme và đa ngôn ngữ (Tiếng Việt, Tiếng Anh).
 
-## Kiến trúc
+---
 
-Hệ thống gồm hai thành phần độc lập, giao tiếp qua REST API:
+## Kiến trúc công nghệ
 
-- **Backend** cung cấp API, xác thực bằng JWT và phân quyền theo vai trò.
-- **Frontend** là ứng dụng web một trang, giao diện thống nhất, hỗ trợ chế độ sáng/tối và đa ngôn ngữ (Tiếng Việt, Tiếng Anh).
-
-| Thành phần | Công nghệ |
+| Thành phần | Công nghệ / Thư viện |
 |---|---|
-| Backend | Python, Django, Django REST Framework |
-| Frontend | React, TypeScript, Vite |
-| Cơ sở dữ liệu | PostgreSQL |
-| CI | GitHub Actions |
+| **Frontend** | React 19, TypeScript, Vite, Vanilla CSS Tokens, Axios / Fetch API Client |
+| **Backend** | Python 3.11+, Django 5 / 6, Django REST Framework, SimpleJWT |
+| **RAG & AI Engine** | LlamaIndex, ChromaDB, Gemini REST Client, OpenAI API |
+| **Cơ sở dữ liệu** | PostgreSQL (với các Database View `ai_*` và role `qlvb_readonly`), SQLite (Development/Test) |
+| **CI / Quality Gate** | GitHub Actions, Unittest & Pytest Suite |
 
-## Cài đặt
+---
 
-Yêu cầu: Python 3.12+, Node.js 22+, pnpm.
+## Cài đặt & Khởi chạy
 
-**Backend**
+### Yêu cầu tiên quyết:
+- Python 3.11+
+- Node.js 20+ và `pnpm`
+- Khóa API Google Gemini hoặc OpenAI (cấu hình trong file `.env`)
 
-```bash
+### 1. Khởi động Backend
+
+```powershell
+# Di chuyển vào thư mục backend và kích hoạt môi trường ảo
 cd backend
-python3 -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1    # Trên Linux/macOS: source .venv/bin/activate
+
+# Cài đặt thư viện phụ thuộc
 pip install -r requirements.txt
+
+# Cấu hình biến môi trường
+Copy-Item .env.example .env     # Cập nhật GEMINI_API_KEY trong .env
+
+# Chạy migrate và khởi động server
 python manage.py migrate
-python manage.py runserver
+python manage.py runserver 127.0.0.1:8000
 ```
 
-**Frontend**
+### 2. Khởi động Frontend
 
-```bash
+```powershell
+# Mở terminal mới, di chuyển vào thư mục frontend
 cd frontend
+
+# Cài đặt gói thư viện bằng pnpm
 pnpm install
+
+# Khởi chạy máy chủ phát triển
 pnpm dev
 ```
 
-Sau khi khởi động, truy cập ứng dụng tại `http://localhost:5173`. Cấu hình môi trường tham khảo `.env.example`.
-
-## Cấu trúc dự án
-
-```text
-.
-├── backend/     # Máy chủ API
-├── frontend/    # Ứng dụng web
-├── docs/        # Tài liệu dự án
-└── .github/     # Quy trình CI và mẫu đóng góp
-```
-
-## Tài liệu
-
-Tài liệu kiến trúc, quy chuẩn và đặc tả nghiệp vụ nằm trong thư mục [`docs/`](docs/).
-
-## Đóng góp
-
-Mọi thay đổi được thực hiện qua Pull Request vào nhánh `staging` và phải vượt qua kiểm tra tự động trước khi hợp nhất. Quy ước chi tiết xem tại `docs/common/guidelines/`.
-
-## Thực hiện
-
-Lớp **CD25CT_CLC** — Khoa Công nghệ Thông tin, Trường Cao đẳng Công nghệ Thông tin TP.HCM (ITC).
-
-Giảng viên hướng dẫn: NCS.ThS. Trần Phương Duy.
+Truy cập ứng dụng tại: `http://localhost:5173` (hoặc cổng hiển thị trên terminal).
 
 ---
 
-© 2026 Dự án QLVB&TL — Lớp CD25CT_CLC, giảng viên hướng dẫn NCS.ThS. Trần Phương Duy — Khoa Công nghệ Thông tin, Trường Cao đẳng Công nghệ Thông tin TP.HCM (ITC).
+## Cấu hình Biến môi trường Backend (`backend/.env`)
+
+| Tên biến | Giá trị mặc định | Giải thích |
+|---|---|---|
+| `MODEL_PROVIDER` | `gemini` | Nhà cung cấp mô hình (`gemini` hoặc `openai`) |
+| `GEMINI_API_KEY` | *(bỏ trống)* | API Key Gemini của Google |
+| `LLM_MODEL` | `gemini-3.8-flash` | Tên mô hình ngôn ngữ chính |
+| `EMBED_MODEL` | `models/gemini-embedding-001` | Mô hình nhúng vector |
+| `READONLY_DB_NAME` | *(tùy chọn)* | Tên CSDL PostgreSQL cho kết nối chỉ đọc |
+| `READONLY_DB_USER` | `qlvb_readonly` | Role chỉ đọc an toàn theo DDL mới |
+
+---
+
+## Kiểm thử Đơn vị (Unit Tests)
+
+Module 8 đi kèm bộ test suite kiểm tra toàn diện quyền truy cập và bảo mật View chỉ đọc:
+
+```powershell
+# Chạy toàn bộ test của phân hệ AI Chatbox
+$env:PYTHONPATH="."
+python backend/manage.py test tests.test_sql_document_source tests.test_ai_access
+```
+
+Bộ test bao gồm:
+- **`test_sql_document_source`**: Kiểm tra truy vấn qua View `ai_*`, chặn đọc file đính kèm, từ chối role có đặc quyền cao hoặc sai role chỉ đọc.
+- **`test_ai_access`**: Kiểm tra quyền RBAC `use_aiassistant`, xác thực tài khoản qua JWT và kiểm soát quyền admin trên các endpoint cấu hình.
+
+---
+
+## Cấu trúc thư mục
+
+```text
+.
+├── backend/
+│   ├── api/views.py                  # API endpoints cho Chat, Documents, Settings
+│   ├── config/                       # Settings & routing tập trung của Django
+│   ├── services/
+│   │   ├── ai_access.py              # Xác thực người dùng & kiểm tra quyền RBAC
+│   │   ├── rag_service.py            # Xử lý RAG, ChromaDB & System Prompt
+│   │   ├── sql_document_source.py    # Truy vấn an toàn qua Database View ai_*
+│   │   └── gemini_service.py         # Kết nối Gemini REST LLM & Embeddings
+│   └── tests/                        # Bộ kiểm thử đơn vị cho AI Module
+├── frontend/
+│   ├── src/pages/ai/                 # Giao diện Chatbox chính (AiAssistantPage.tsx)
+│   ├── src/components/               # Modal cấu hình AI, thanh điều hướng
+│   └── src/lib/apiClient.ts          # Client gọi API có đính kèm Bearer Token
+├── data/                             # Kho lưu trữ tệp, ChromaDB và registry JSON
+└── docs/                             # Tài liệu kỹ thuật, DDL và quy chuẩn dự án
+```
+
+---
+
+## Thực hiện
+
+- **Đồ án**: Quản lý Văn bản và Tài liệu (QLVB&TL)
+- **Lớp**: CD25CT_CLC — Khoa Công nghệ Thông tin, Trường Cao đẳng Công nghệ Thông tin TP.HCM (ITC).
+- **Giảng viên hướng dẫn**: NCS.ThS. Trần Phương Duy.
+- **Phân hệ**: Module 8 — Trợ lý AI Chatbox (branch `8_ai_chatbox`).

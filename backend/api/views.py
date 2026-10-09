@@ -12,7 +12,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 
 import backend.config as config
-from backend.services.ai_access import has_permission_codename, is_ai_admin
+from backend.services.ai_access import has_permission_codename, is_ai_admin, resolve_employee_id
 from backend.services.document_service import (
     add_to_registry,
     clear_documents,
@@ -74,6 +74,8 @@ def root(request):
     return JsonResponse({"message": "Quản lý Văn bản TLBM API đang hoạt động", "stack": ["Django", "React", "LlamaIndex", "ChromaDB"]})
 
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def ai_health(request):
     has_key = bool(config.GEMINI_API_KEY) if config.MODEL_PROVIDER == "gemini" else bool(os.getenv("OPENAI_API_KEY"))
     return JsonResponse({"status": "ok", "provider": config.MODEL_PROVIDER, "llm_model": config.LLM_MODEL, "llm_available": has_key, "embed_model": config.EMBED_MODEL, "embed_available": has_key, "available_models": [config.LLM_MODEL, config.EMBED_MODEL]})
@@ -103,9 +105,8 @@ def chat(request):
     try:
         from backend.services.rag_service import ask_document
 
-        # AUTH_USER_MODEL là accounts.Employee: mã nhân viên lấy từ phiên đã xác thực,
-        # không nhận từ trường nào của request.
-        employee_id = request.user.pk
+        # Employee identity is supplied by host auth or resolved through trusted username mapping
+        employee_id = resolve_employee_id(request)
         result = ask_document(
             question.strip(), history=safe_history,
             category=category if isinstance(category, str) else None,
@@ -347,10 +348,10 @@ def ai_settings(request):
         with urllib.request.urlopen(check, timeout=10) as response:
             valid = response.status == 200
         message = "API key không hợp lệ."
-    except (urllib.error.URLError, TimeoutError) as exc:
-        valid, message = False, f"Không thể xác thực API key: {exc}"
     except urllib.error.HTTPError as exc:
         valid, message = False, f"API key không hợp lệ (HTTP {exc.code})."
+    except (urllib.error.URLError, TimeoutError) as exc:
+        valid, message = False, f"Không thể xác thực API key: {exc}"
     if not valid:
         return _error(message)
     llm = str(payload.get("llm_model") or defaults[0]).strip()
@@ -360,7 +361,11 @@ def ai_settings(request):
     for name, value in updates.items():
         os.environ[name] = value
         setattr(config, name, value)
-    for env_path in (config.BASE_DIR / ".env", config.BASE_DIR / "backend" / ".env"):
+    target_env_paths = [config.BASE_DIR / "backend" / ".env"]
+    root_env = config.BASE_DIR / ".env"
+    if root_env.exists():
+        target_env_paths.append(root_env)
+    for env_path in target_env_paths:
         lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
         seen = set()
         output = []

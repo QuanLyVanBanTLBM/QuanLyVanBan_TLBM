@@ -3,12 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import { SAMPLE_STREAMS } from '@lib/constants';
 import { NotificationStreamType } from '@app-types/notification';
 import { useTranslation } from '@i18n/translate';
+import AlertModal from '@components/common/AlertModal';
 
 export default function NotificationStreams() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<NotificationStreamType>('incoming');
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertMsg, setAlertMsg] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Close when clicking outside (support both pointerdown and touchstart)
@@ -57,7 +60,7 @@ export default function NotificationStreams() {
                 <button
                   type="button"
                   className="text-xs text-primary font-semibold hover:underline bg-transparent border-0 cursor-pointer"
-                  onClick={() => alert('Đã đánh dấu đã đọc tất cả!')}
+                  onClick={() => { setAlertMsg('Đã đánh dấu đã đọc tất cả!'); setAlertOpen(true); }}
                 >
                   {t('notifications.markAllRead')}
                 </button>
@@ -169,6 +172,7 @@ export default function NotificationStreams() {
             )}
           </div>
       )}
+      <AlertModal open={alertOpen} onClose={()=>setAlertOpen(false)} message={alertMsg} />
     </div>
   );
 }

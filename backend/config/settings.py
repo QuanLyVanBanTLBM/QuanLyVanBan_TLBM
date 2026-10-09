@@ -24,10 +24,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 load_dotenv(BASE_DIR.parent / ".env")
 
-# Cho phép Django nhận diện trực tiếp các app trong thư mục apps/
+# Cho phép Django nhận diện trực tiếp các app trong thư mục apps/ và package backend/
 sys.path.insert(0, str(BASE_DIR / "apps"))
-# Cho phép import gói backend.* (api, services) từ thư mục gốc repo
-sys.path.insert(0, str(BASE_DIR.parent))
+if str(BASE_DIR.parent) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR.parent))
 
 
 # Quick-start development settings - unsuitable for production
@@ -39,7 +39,7 @@ SECRET_KEY = "django-insecure-gi-kkzr*^tx3ut+arcxs2i8=!3%es0clr2punmi*hg)nbg0)mr
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ["*"]
 
 
 # Application definition
@@ -55,10 +55,14 @@ INSTALLED_APPS = [
     "rest_framework",
     "rest_framework_simplejwt",
     "rest_framework_simplejwt.token_blacklist",
+    "django_filters",
     # Các app nghiệp vụ
     "accounts",
     "dashboard",
     "birthdays",
+    "documents",
+    "signing",
+    "document_templates",
     "organizations",
     "authorization",
 ]
@@ -170,7 +174,7 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/6.1/topics/i18n/
 
-LANGUAGE_CODE = "en-us"
+LANGUAGE_CODE = "vi"
 
 TIME_ZONE = "Asia/Ho_Chi_Minh"
 
@@ -184,6 +188,11 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 
+# Media files (File uploads)
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR.parent / "media"
+
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Email
 # https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
@@ -212,14 +221,35 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "rest_framework.authentication.SessionAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticated",
     ),
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": 10,
+    "DEFAULT_FILTER_BACKENDS": [
+        "django_filters.rest_framework.DjangoFilterBackend",
+    ],
     "DEFAULT_RENDERER_CLASSES": (
         "rest_framework.renderers.JSONRenderer",
     ),
 }
+
+# ─────────────────────────────────────────────────
+# Trình ký — thư mục gốc chứa tệp văn bản (adapter filesystem)
+# ─────────────────────────────────────────────────
+SIGNING_DOCUMENT_ROOT = os.environ.get("SIGNING_DOCUMENT_ROOT", "")
+
+# Trình ký — bí mật máy chủ để băm mã xác minh PIN và mã hóa k_srv (plan mục 3.4).
+# Bắt buộc đặt riêng trên Staging/Production; để trống thì dùng SECRET_KEY (chỉ cho môi trường dev).
+# Đổi giá trị này làm mọi PIN đã đặt mất hiệu lực (người dùng phải đặt lại).
+SIGNING_PIN_SECRET = os.environ.get("SIGNING_PIN_SECRET", "")
+
+# Trình ký — phông chữ có dấu tiếng Việt để in tệp PDF hoàn tất (Phase 10). Để trống thì tự dò phông hệ thống
+# (DejaVu Sans, Noto Sans, Liberation Sans, Arial); không có phông nào thì tạo tệp báo lỗi `thieu_phong_chu`.
+SIGNING_PDF_FONT = os.environ.get("SIGNING_PDF_FONT", "")
+SIGNING_PDF_FONT_BOLD = os.environ.get("SIGNING_PDF_FONT_BOLD", "")
 
 # ─────────────────────────────────────────────────
 # SimpleJWT — Cấu hình token
@@ -240,4 +270,3 @@ SIMPLE_JWT = {
     "USER_ID_FIELD": "id",
     "USER_ID_CLAIM": "user_id",
 }
-

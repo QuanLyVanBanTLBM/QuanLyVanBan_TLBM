@@ -139,7 +139,15 @@ def accessible_documents(user, employee_id=None):
     ]
     can_read_tailieu = has_permission_codename(user, "view_tailieu")
     if can_read_tailieu:
-        employee_id = _employee_id_value(employee_id)
+        try:
+            employee_id = _employee_id_value(employee_id)
+        except SqlDocumentAccessError:
+            # Superusers receive every codename implicitly; without a trusted
+            # employee mapping they simply do not read ai_tailieu. Accounts
+            # explicitly granted view_tailieu still fail closed.
+            if not getattr(user, "is_superuser", False):
+                raise
+            can_read_tailieu = False
     if not permitted_views and not can_read_tailieu:
         return []
     if "readonly" not in connections.databases:

@@ -8,12 +8,17 @@ import AiAssistantPage from '@pages/ai/AiAssistantPage';
 import ProfilePage from '@pages/profile/ProfilePage';
 import PasswordChangePage from '@pages/profile/PasswordChangePage';
 import SettingsPage from '@pages/settings/SettingsPage';
+import InboundDocumentPage from '@pages/InboundDocumentPage';
 import OrganizationsPage from '@pages/organizations/OrganizationsPage';
 import EmployeesPage from '@pages/employees/EmployeesPage';
 import PositionsPage from '@pages/positions/PositionsPage';
 import RolesPage from '@pages/roles/RolesPage';
 import SyllabusPreview from '@components/common/SyllabusPreview';
+import ResourceManagementPage from '@pages/resources/ResourceManagementPage';
 import BirthdayPage from '@pages/birthdays/BirthdayPage';
+
+// Phân hệ Trình ký (Nhóm 5): tải lười để tách khỏi bundle chính
+const SigningModule = React.lazy(() => import('@pages/signing/SigningModule'));
 
 interface RouterProps {
   currentTheme: ThemeMode;
@@ -77,16 +82,23 @@ export default function AppRouter({
         <Route path="/dashboard" element={<DashboardPage />} />
 
         {/* Phân hệ Văn bản (Nhóm 2 phụ trách theo đề cương) */}
-        <Route path="/documents/incoming" element={<SyllabusPreview activePage="documents_incoming" />} />
+        <Route path="/documents/incoming" element={<InboundDocumentPage />} />
         <Route path="/documents/outgoing" element={<SyllabusPreview activePage="documents_outgoing" />} />
         <Route path="/documents/confidential" element={<SyllabusPreview activePage="documents_confidential" />} />
 
         {/* Phân hệ Hồ sơ & Tài nguyên (Nhóm 3 & Nhóm 4 phụ trách theo đề cương) */}
         <Route path="/records" element={<SyllabusPreview activePage="records" />} />
-        <Route path="/resources" element={<SyllabusPreview activePage="resources" />} />
+        <Route path="/resources" element={<ResourceManagementPage />} />
 
         {/* Phân hệ Quy trình & Điều hành (Nhóm 5 & Nhóm 6 phụ trách theo đề cương) */}
-        <Route path="/approvals" element={<SyllabusPreview activePage="approvals" />} />
+        <Route
+          path="/approvals/*"
+          element={
+            <React.Suspense fallback={null}>
+              <SigningModule />
+            </React.Suspense>
+          }
+        />
         <Route path="/tasks" element={<SyllabusPreview activePage="tasks" />} />
         <Route path="/meetings" element={<SyllabusPreview activePage="meetings" />} />
         <Route path="/birthdays" element={<BirthdayPage />} />
@@ -109,5 +121,3 @@ export default function AppRouter({
     </Routes>
   );
 }
-
-

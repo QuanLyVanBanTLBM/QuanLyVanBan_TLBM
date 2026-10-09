@@ -1,8 +1,12 @@
 """
-URL configuration for config project.
+URL configuration for QLVB&TL project.
 """
+from django.conf import settings
+from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import include, path
+
+from accounts.views import staffs_view
 
 from backend.api import views as ai_views
 
@@ -10,12 +14,23 @@ urlpatterns = [
     # Django Admin
     path("admin/", admin.site.urls),
 
+    # API Cán bộ / Nhân viên (phục vụ liên nhóm)
+    path("api/accounts/staffs/", staffs_view, name="accounts_staffs"),
+
     # ── Module Nhóm 1 — Hiếu ──────────────────────────────────────────────
     # API Xác thực & Tài khoản: POST /api/auth/login/, GET /api/auth/profile/, ...
     path("api/auth/", include("accounts.urls", namespace="accounts")),
 
     # API Tổng quan Dashboard: GET /api/dashboard/overview/
     path("api/dashboard/", include("dashboard.urls", namespace="dashboard")),
+
+    # ── Module Nhóm 2 — Quản lý Văn bản (Kiệt) ───────────────────────────
+    path("api/", include("documents.urls")),
+
+    # ── Module Nhóm 5 — Trình ký ──────────────────────────────────────────
+    path("api/v1/signing/", include("signing.urls", namespace="signing")),
+    # ── Module Nhóm 4 — Tài liệu & Biểu mẫu (Nguyễn Chí Tín) ───────────────
+    path("api/resources/", include("document_templates.urls")),
 
     # ── Module Nhóm 7 — Quang ─────────────────────────────────────────────
     # API Quản lý Khối & Đơn vị: /api/organizations/...
@@ -51,3 +66,5 @@ urlpatterns = [
     path("api/settings/ai", ai_views.ai_settings),
 ]
 
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
