@@ -3,8 +3,8 @@ Selectors cho Module Văn Bản — Hỗ trợ quy tắc xem văn bản chuẩn 
 
 Cung cấp cho các phân hệ khác (Dashboard Nhóm 1, Hồ sơ Nhóm 3, Công việc Nhóm 6):
 - van_ban_xem_duoc(user, loai): Trả về QuerySet văn bản mà user được phép xem.
-  + NOI_BO: Người có quyền view_* hoặc admin/staff xem được.
-  + HAN_CHE: CHỈ người tạo (nguoi_tao), người nhận (nguoi_nhan), hoặc đơn vị nhận (donvinhan) xem được.
+  + NOI_BO: Chỉ người có quyền view_vanbanden/view_vanbandi xem được.
+  + HAN_CHE: CHỈ người tạo (nguoi_tao) hoặc người nhận cá nhân (nguoi_nhan) xem được.
     Tuyệt đối không ngoại lệ cho superuser hay quyền view_*.
     Tài khoản bị khóa (is_active = FALSE) mất quyền xem.
 - la_nguoi_xem_duoc(user, van_ban): Kiểm tra boolean quyền xem trên một đối tượng văn bản cụ thể.
@@ -19,8 +19,8 @@ def van_ban_xem_duoc(user, loai="DEN"):
     """
     Quy tắc xem văn bản chuẩn theo Issue #82 & Issue #83 & DDL:
     - user không tồn tại hoặc is_active = False: trả về none()
-    - NOI_BO: xem được nếu có quyền view_vanbanden/view_vanbandi hoặc là staff/admin, hoặc hien_thi = True
-    - HAN_CHE: chỉ người tạo (nguoi_tao = user), người nhận (nguoi_nhan = user), hoặc đơn vị nhận (donvinhan__donvi_id = user_don_vi_id).
+    - NOI_BO: chỉ xem được nếu có quyền view_vanbanden/view_vanbandi.
+    - HAN_CHE: chỉ người tạo (nguoi_tao = user) hoặc người nhận cá nhân (nguoi_nhan = user).
       Tuyệt đối KHÔNG có ngoại lệ cho superuser hay quyền view_*.
     """
     model = get_document_model(loai)
@@ -30,32 +30,15 @@ def van_ban_xem_duoc(user, loai="DEN"):
 
     model_name = getattr(model, "document_kind", "vanbanden")
 
-    # Điều kiện xem HAN_CHE (Issue #82 & #83 & N2-4): người tạo, người nhận, hoặc đơn vị nhận
-    # Tuyệt đối KHÔNG có ngoại lệ cho superuser hay quyền view_*
-    q_han_che_user = Q(nguoi_tao=user) | Q(nguoi_nhan=user)
-    user_don_vi_id = getattr(user, "don_vi_id", None)
-    if user_don_vi_id is None and hasattr(user, "don_vi"):
-        user_don_vi_id = getattr(user.don_vi, "id", None)
-
-    if user_don_vi_id is not None:
-        q_han_che = q_han_che_user | Q(donvinhan__donvi_id=user_don_vi_id)
-    else:
-        q_han_che = q_han_che_user
+    # HAN_CHE chỉ theo người tạo và danh sách người nhận cá nhân (#83).
+    # Đơn vị nhận không cấp quyền; không có ngoại lệ cho superuser hay view_*.
+    q_han_che = Q(nguoi_tao=user) | Q(nguoi_nhan=user)
 
     cond_han_che = Q(pham_vi=PhamVi.HAN_CHE) & q_han_che
 
-    # Điều kiện xem NOI_BO: Phân quyền theo mã chuẩn trong seed DDL (view_vanbanden, view_vanbandi)
-    has_view_perm = (
-        user.is_staff
-        or user.is_superuser
-        or user.has_perm(f"documents.view_{model_name}")
-        or user.has_perm(f"view_{model_name}")
-    )
-    if has_view_perm:
-        cond_noi_bo = Q(pham_vi=PhamVi.NOI_BO)
-    else:
-        # Cán bộ thường không có quyền view_* thì xem các văn bản nội bộ công khai (hien_thi = True)
-        cond_noi_bo = Q(pham_vi=PhamVi.NOI_BO, hien_thi=True)
+    # NOI_BO cần quyền xem theo seed RBAC; hien_thi và is_staff không cấp quyền.
+    has_view_perm = user.has_perm(f"documents.view_{model_name}") or user.has_perm(f"view_{model_name}")
+    cond_noi_bo = Q(pham_vi=PhamVi.NOI_BO) if has_view_perm else Q(pk__in=[])
 
     return model.objects.filter(cond_noi_bo | cond_han_che).distinct()
 
@@ -75,21 +58,9 @@ def la_nguoi_xem_duoc(user, van_ban):
             return True
         if hasattr(van_ban, "nguoi_nhan") and van_ban.nguoi_nhan.filter(pk=user.pk).exists():
             return True
-        user_don_vi_id = getattr(user, "don_vi_id", None)
-        if user_don_vi_id is None and hasattr(user, "don_vi"):
-            user_don_vi_id = getattr(user.don_vi, "id", None)
-        if user_don_vi_id is not None and hasattr(van_ban, "donvinhan"):
-            if van_ban.donvinhan.filter(donvi_id=user_don_vi_id).exists():
-                return True
         return False
 
-    # NOI_BO: Văn bản nội bộ hiển thị cho mọi cán bộ nhân viên đang hoạt động
-    if getattr(van_ban, "hien_thi", True):
-        return True
-
-    if user.is_staff or user.is_superuser:
-        return True
-
+    # NOI_BO: cờ hien_thi và is_staff không thay thế quyền view_*.
     model_name = getattr(van_ban, "document_kind", "vanbanden")
     try:
         return (

@@ -38,11 +38,13 @@ class VanBanNhom2Tests(TestCase):
         return ctx.exception.status_code, ctx.exception.detail.code
 
     def test_visibility_follows_group_2_rules(self):
-        self.assertEqual(van_ban.kiem_tra_van_ban_trinh_ky(self.khac, "vanbandi", self.cong_khai.pk).pk,
-                         self.cong_khai.pk)  # nội bộ công khai: ai cũng xem
+        # hien_thi=True không thay thế quyền view_vanbandi theo issue #83.
+        self.assertEqual(self.ma_loi(self.khac, self.cong_khai.pk), (404, "khong_tim_thay_van_ban"))
         self.assertEqual(self.ma_loi(self.khac, self.khong_cong_khai.pk), (404, "khong_tim_thay_van_ban"))
         cap_quyen(self.khac, "view_vanbandi")
         khac = User.objects.get(pk=self.khac.pk)
+        self.assertEqual(van_ban.kiem_tra_van_ban_trinh_ky(khac, "vanbandi", self.cong_khai.pk).pk,
+                         self.cong_khai.pk)
         self.assertEqual(van_ban.kiem_tra_van_ban_trinh_ky(khac, "vanbandi", self.khong_cong_khai.pk).pk,
                          self.khong_cong_khai.pk)
 
@@ -51,12 +53,12 @@ class VanBanNhom2Tests(TestCase):
         self.assertEqual(self.ma_loi(self.tao, 999999), (404, "khong_tim_thay_van_ban"))
 
     def test_search_excludes_restricted_and_filters_keyword(self):
-        # Không có quyền xem văn bản đi: chỉ thấy văn bản nội bộ công khai (quy tắc Nhóm 2)
-        self.assertEqual([v["so_hieu"] for v in van_ban.tim_van_ban_di(self.khac)], ["01/TTr"])
-        cap_quyen(self.tao, "view_vanbandi")
-        tao = User.objects.get(pk=self.tao.pk)
-        self.assertEqual([v["so_hieu"] for v in van_ban.tim_van_ban_di(tao)], ["02/TTr", "01/TTr"])
-        self.assertEqual([v["so_hieu"] for v in van_ban.tim_van_ban_di(tao, "01/")], ["01/TTr"])
+        # Người không có quyền không nhìn thấy văn bản NOI_BO dù hien_thi=True.
+        self.assertEqual(van_ban.tim_van_ban_di(self.khac), [])
+        cap_quyen(self.khac, "view_vanbandi")
+        khac = User.objects.get(pk=self.khac.pk)
+        self.assertEqual([v["so_hieu"] for v in van_ban.tim_van_ban_di(khac)], ["02/TTr", "01/TTr"])
+        self.assertEqual([v["so_hieu"] for v in van_ban.tim_van_ban_di(khac, "01/")], ["01/TTr"])
 
     def test_description_for_evidence(self):
         self.assertEqual(van_ban.mo_ta_van_ban("vanbandi", self.cong_khai.pk),

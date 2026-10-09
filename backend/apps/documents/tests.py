@@ -258,6 +258,8 @@ class DocumentAPITests(TestCase):
             user_kwargs["first_name"] = "Văn"
             user_kwargs["last_name"] = "Nguyễn"
         self.user = User.objects.create_user(**user_kwargs)
+        from django.contrib.auth.models import Permission
+        self.user.user_permissions.add(Permission.objects.get(codename="view_vanbanden"))
         self.client = APIClient()
         self.client.force_authenticate(user=self.user)
 
@@ -493,9 +495,9 @@ class JunctionAndThroughModelTests(TestCase):
         self.assertEqual(self.doc_di.donvinhan.first(), dvn_di)
         self.assertEqual(self.doc_di.noibanhanh_links.first(), nbh_di)
 
-    def test_restricted_document_visible_to_recipient_department(self):
-        """Văn bản hạn chế xem được bởi CBNV thuộc đơn vị nhận (donvinhan)."""
-        from documents.selectors import van_ban_xem_duoc
+    def test_restricted_document_not_visible_to_recipient_department(self):
+        """Đơn vị nhận không cấp quyền xem HAN_CHE nếu nhân viên không được nhận cá nhân."""
+        from documents.selectors import la_nguoi_xem_duoc, van_ban_xem_duoc
         user_dept = User.objects.create_user(username="dept_user", password="pwd")
         user_dept.don_vi_id = 999  # Giả lập employee thuộc đơn vị 999
 
@@ -509,15 +511,43 @@ class JunctionAndThroughModelTests(TestCase):
         )
         VanBanDenDonViNhan.objects.create(vanbanden=doc_restricted, donvi_id=999)
 
-        # CBNV thuộc đơn vị nhận xem được
+        # Chỉ trùng đơn vị nhận, không có trong danh sách người nhận cá nhân.
         qs = van_ban_xem_duoc(user_dept, "DEN")
-        self.assertIn(doc_restricted, qs)
+        self.assertNotIn(doc_restricted, qs)
+        self.assertFalse(la_nguoi_xem_duoc(user_dept, doc_restricted))
 
         # Người lạ không thuộc đơn vị nhận không xem được
         stranger = User.objects.create_user(username="dept_stranger", password="pwd")
         stranger.don_vi_id = 111
         qs_stranger = van_ban_xem_duoc(stranger, "DEN")
         self.assertNotIn(doc_restricted, qs_stranger)
+
+
+class DocumentVisibilityContractTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="no_document_permission", password="test")
+        self.document = VanBanDen.objects.create(
+            nam=2026,
+            so_hieu="VB-PUBLIC-VISIBILITY",
+            so_thu_tu=1,
+            trich_yeu="Văn bản nội bộ đang hiển thị",
+            nguoi_tao=self.user,
+            hien_thi=True,
+        )
+
+    def test_noi_bo_public_does_not_replace_view_permission(self):
+        from documents.selectors import la_nguoi_xem_duoc, van_ban_xem_duoc
+
+        self.assertFalse(van_ban_xem_duoc(self.user, "DEN").filter(pk=self.document.pk).exists())
+        self.assertFalse(la_nguoi_xem_duoc(self.user, self.document))
+
+    def test_noi_bo_is_visible_with_view_permission(self):
+        from unittest.mock import patch
+        from documents.selectors import la_nguoi_xem_duoc, van_ban_xem_duoc
+
+        with patch.object(self.user, "has_perm", return_value=True):
+            self.assertTrue(van_ban_xem_duoc(self.user, "DEN").filter(pk=self.document.pk).exists())
+            self.assertTrue(la_nguoi_xem_duoc(self.user, self.document))
 
 
 class DocumentAutoExpireTests(TestCase):
@@ -621,6 +651,10 @@ class DocumentPermissionOption2Tests(TestCase):
         self.admin = User.objects.create_superuser(username="admin_perm", password="password", is_staff=True)
         self.staff1 = User.objects.create_user(username="staff1", password="password")
         self.staff2 = User.objects.create_user(username="staff2", password="password")
+        from django.contrib.auth.models import Permission
+        view_permission = Permission.objects.get(codename="view_vanbanden")
+        self.staff1.user_permissions.add(view_permission)
+        self.staff2.user_permissions.add(view_permission)
 
         self.doc_staff1 = VanBanDen.objects.create(
             nam=2026, so_hieu="10/CV-STAFF1", so_thu_tu=1,
