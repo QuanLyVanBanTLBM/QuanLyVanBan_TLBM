@@ -30,6 +30,7 @@ Lịch sử & Nhật ký:
 """
 
 import os
+from .confidential_models import ConfidentialKey, ConfidentialDocument, ConfidentialGrant, ConfidentialEvent  # noqa: F401
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, models, transaction

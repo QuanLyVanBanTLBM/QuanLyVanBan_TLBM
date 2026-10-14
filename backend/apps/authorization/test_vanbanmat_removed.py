@@ -35,7 +35,9 @@ class VanBanMatRemovedTest(TestCase):
         self.assertFalse(Permission.objects.filter(codename__contains="vanbanmat").exists())
         with connection.cursor() as cursor:
             cursor.execute("SELECT COUNT(*) FROM auth_permission WHERE module_ten <> ''")
-            self.assertEqual(cursor.fetchone()[0], 77)
+            # Legacy 77 permissions remain; E2EE adds creation only, never a read override.
+            self.assertEqual(cursor.fetchone()[0], 78)
+        self.assertTrue(Permission.objects.filter(codename="create_confidential_document").exists())
 
     def test_migration_removes_existing_vanbanmat_permissions_and_grants(self):
         with connection.cursor() as cursor:

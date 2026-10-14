@@ -21,6 +21,7 @@ import BirthdayPage from '@pages/birthdays/BirthdayPage';
 
 // Phân hệ Trình ký (Nhóm 5): tải lười để tách khỏi bundle chính
 const SigningModule = React.lazy(() => import('@pages/signing/SigningModule'));
+const ConfidentialDocumentPage = React.lazy(() => import('@pages/ConfidentialDocumentPage'));
 
 interface RouterProps {
   currentTheme: ThemeMode;
@@ -86,7 +87,7 @@ export default function AppRouter({
         {/* Phân hệ Văn bản (Nhóm 2 phụ trách theo đề cương) */}
         <Route path="/documents/incoming" element={<InboundDocumentPage />} />
         <Route path="/documents/outgoing" element={<OutboundDocumentPage />} />
-        <Route path="/documents/confidential" element={<SyllabusPreview activePage="documents_confidential" />} />
+        <Route path="/documents/confidential" element={<React.Suspense fallback={null}><ConfidentialDocumentPage /></React.Suspense>} />
 
         {/* Phân hệ Hồ sơ & Tài nguyên (Nhóm 3 & Nhóm 4 phụ trách theo đề cương) */}
         <Route path="/records" element={<SyllabusPreview activePage="records" />} />
