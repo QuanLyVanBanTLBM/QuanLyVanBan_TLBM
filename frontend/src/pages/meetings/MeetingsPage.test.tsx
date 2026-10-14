@@ -319,5 +319,65 @@ describe('MeetingsPage Component (Issue #22)', () => {
     const bookButtons = screen.getAllByText('Đặt phòng này');
     expect(bookButtons).toHaveLength(1);
   });
+
+  it('lọc danh sách phòng theo tầng (floor filter) chính xác', async () => {
+    render(
+      <MemoryRouter>
+        <MeetingsPage />
+      </MemoryRouter>
+    );
+
+    // Chuyển sang Tab Danh mục phòng họp
+    fireEvent.click(screen.getByText('Danh mục phòng họp'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Phòng Hội thảo A')).toBeInTheDocument();
+      expect(screen.getByText('Phòng Họp B')).toBeInTheDocument();
+    });
+
+    // Tìm select lọc tầng
+    const floorSelects = screen.getAllByRole('combobox');
+    const floorSelect = floorSelects[0]; // Filter combobox in Rooms tab
+    expect(floorSelect).toBeInTheDocument();
+
+    // Lọc theo Tầng 2
+    fireEvent.change(floorSelect, { target: { value: 'Tầng 2' } });
+
+    expect(screen.getByText('Phòng Hội thảo A')).toBeInTheDocument();
+    expect(screen.queryByText('Phòng Họp B')).not.toBeInTheDocument();
+
+    // Lọc theo Tầng 3
+    fireEvent.change(floorSelect, { target: { value: 'Tầng 3' } });
+
+    expect(screen.queryByText('Phòng Hội thảo A')).not.toBeInTheDocument();
+    expect(screen.getByText('Phòng Họp B')).toBeInTheDocument();
+
+    // Reset về Tất cả các tầng
+    fireEvent.change(floorSelect, { target: { value: 'all' } });
+
+    expect(screen.getByText('Phòng Hội thảo A')).toBeInTheDocument();
+    expect(screen.getByText('Phòng Họp B')).toBeInTheDocument();
+  });
+
+  it('mở modal chi tiết khi nhấn Xem chi tiết ở danh sách lịch đặt', async () => {
+    render(
+      <MemoryRouter>
+        <MeetingsPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Họp giao ban tuần 40')).toBeInTheDocument();
+    });
+
+    const detailBtn = screen.getByText('Xem chi tiết');
+    fireEvent.click(detailBtn);
+
+    await waitFor(() => {
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Họp giao ban tuần 40' })).toBeInTheDocument();
+      expect(screen.getByText('Chi tiết cuộc họp')).toBeInTheDocument();
+    });
+  });
 });
 
