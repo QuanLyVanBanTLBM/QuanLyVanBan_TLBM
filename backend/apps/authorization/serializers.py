@@ -27,6 +27,7 @@ class GroupSerializer(serializers.ModelSerializer):
         error_messages={
             "blank": "roles.messages.nameRequired",
             "required": "roles.messages.nameRequired",
+            "max_length": "roles.messages.nameTooLong",
         },
     )
     user_count = serializers.IntegerField(source="user_set.count", read_only=True)

@@ -54,6 +54,8 @@ function mockApi(options: { permissions?: string[]; rolesError?: unknown } = {})
   });
 }
 
+const SEARCH_PLACEHOLDER = 'Tìm quyền theo tên, mã quyền hoặc module...';
+
 function renderPage() {
   return render(<RolesPage />);
 }
@@ -84,11 +86,73 @@ describe('RolesPage (Issue #21)', () => {
   });
 
   it('shows the error state with a retry button when roles cannot be loaded', async () => {
+    mockApi({ rolesError: new ApiError(500, { detail: 'roles.messages.fetchError' }) });
+    renderPage();
+
+    expect(await screen.findAllByText(/Không thể tải danh sách nhóm quyền/)).not.toHaveLength(0);
+    expect(screen.getByRole('button', { name: /Thử lại/ })).toBeInTheDocument();
+  });
+
+  it('shows no retry button when the user has no permission to view roles (B7)', async () => {
     mockApi({ rolesError: new ApiError(403, { detail: 'roles.messages.permissionDenied' }) });
     renderPage();
 
     expect(await screen.findAllByText('Bạn không có quyền thực hiện thao tác này.')).not.toHaveLength(0);
-    expect(screen.getByRole('button', { name: /Thử lại/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Thử lại/ })).not.toBeInTheDocument();
+  });
+
+  it('select all / deselect all only change the permissions visible in the search (B2)', async () => {
+    mockApi();
+    renderPage();
+
+    await selectRole('Văn thư');
+    const search = await screen.findByPlaceholderText(SEARCH_PLACEHOLDER);
+
+    fireEvent.change(search, { target: { value: 'excel' } });
+    expect(await screen.findAllByRole('checkbox')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: /Chọn tất cả/ }));
+
+    fireEvent.change(search, { target: { value: '' } });
+    let checkboxes = await screen.findAllByRole('checkbox');
+    expect(checkboxes.map((c) => (c as HTMLInputElement).checked)).toEqual([true, false, true]);
+
+    fireEvent.change(search, { target: { value: 'chuc vu' } });
+    expect(await screen.findAllByRole('checkbox')).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: /Bỏ chọn/ }));
+
+    fireEvent.change(search, { target: { value: '' } });
+    checkboxes = await screen.findAllByRole('checkbox');
+    expect(checkboxes.map((c) => (c as HTMLInputElement).checked)).toEqual([false, false, true]);
+  });
+
+  it('asks before switching role when there are unsaved permission changes (B5)', async () => {
+    mockApi();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    renderPage();
+
+    await selectRole('Văn thư');
+    fireEvent.click((await screen.findAllByRole('checkbox'))[1]);
+
+    await selectRole('Nhóm tự tạo');
+    expect(confirmSpy).toHaveBeenCalledWith('Bạn có thay đổi quyền chưa lưu. Bỏ các thay đổi này?');
+    // Người dùng bấm Hủy: vẫn ở nhóm cũ và giữ ô vừa tick
+    expect((await screen.findAllByRole('checkbox'))[1]).toBeChecked();
+
+    confirmSpy.mockReturnValue(true);
+    await selectRole('Nhóm tự tạo');
+    (await screen.findAllByRole('checkbox')).forEach((checkbox) => expect(checkbox).not.toBeChecked());
+    confirmSpy.mockRestore();
+  });
+
+  it('switches role without asking when nothing was changed', async () => {
+    mockApi();
+    const confirmSpy = vi.spyOn(window, 'confirm');
+    renderPage();
+
+    await selectRole('Văn thư');
+    await selectRole('Nhóm tự tạo');
+    expect(confirmSpy).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
   });
 
   it('hides write actions and makes the matrix read-only when the user only has view permission', async () => {

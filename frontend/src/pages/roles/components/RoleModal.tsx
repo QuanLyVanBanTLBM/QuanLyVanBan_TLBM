@@ -89,6 +89,7 @@ export const RoleModal: React.FC<RoleModalProps> = ({
                 if (errorKey) setErrorKey(null);
               }}
               placeholder={t('roles.namePlaceholder')}
+              maxLength={150}
               className="w-full px-3.5 py-2 text-sm bg-surface-elevated border border-border-subtle rounded-lg text-main placeholder-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
               autoFocus
             />

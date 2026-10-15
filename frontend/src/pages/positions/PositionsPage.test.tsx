@@ -89,6 +89,8 @@ describe('PositionsPage (Issue #20)', () => {
     expect(screen.queryByRole('button', { name: /Import Excel/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Chỉnh sửa Tổng Giám đốc/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Xóa Tổng Giám đốc/ })).not.toBeInTheDocument();
+    // C1: không còn cột Thao tác trống
+    expect(screen.queryByRole('columnheader', { name: /Thao tác/i })).not.toBeInTheDocument();
   });
 
   it('shows write actions when the user has the permissions', async () => {
@@ -99,6 +101,7 @@ describe('PositionsPage (Issue #20)', () => {
     expect(screen.getByRole('button', { name: /Import Excel/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Chỉnh sửa Tổng Giám đốc/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Xóa Tổng Giám đốc/ })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /Thao tác/i })).toBeInTheDocument();
   });
 
   it('shows the empty state', async () => {
@@ -111,6 +114,8 @@ describe('PositionsPage (Issue #20)', () => {
     mockApi({ listError: new ApiError(403, { detail: 'positions.messages.permissionDenied' }) });
     renderPage();
     expect(await screen.findByText('Bạn không có quyền thực hiện thao tác này.')).toBeInTheDocument();
+    // Thử lại cũng vẫn bị chặn nên không hiện nút
+    expect(screen.queryByRole('button', { name: /Thử lại/ })).not.toBeInTheDocument();
   });
 
   it('shows an error state with retry that reloads the list', async () => {
