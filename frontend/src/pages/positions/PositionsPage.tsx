@@ -109,7 +109,9 @@ export default function PositionsPage() {
     }
   };
 
-  const columnCount = 5;
+  // Người chỉ có quyền xem: không có nút sửa/xóa nên ẩn luôn cột Thao tác (tránh cột trống).
+  const showActions = can('change_chucvu') || can('delete_chucvu');
+  const columnCount = showActions ? 5 : 4;
 
   return (
     <div className="space-y-6">
@@ -179,7 +181,7 @@ export default function PositionsPage() {
                 <th className="px-4 py-3">{t('positions.table.name')}</th>
                 <th className="px-4 py-3 text-center">{t('positions.table.status')}</th>
                 <th className="px-4 py-3">{t('positions.table.notes')}</th>
-                <th className="px-4 py-3 text-center w-28">{t('positions.table.actions')}</th>
+                {showActions && <th className="px-4 py-3 text-center w-28">{t('positions.table.actions')}</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -195,6 +197,7 @@ export default function PositionsPage() {
                   <td colSpan={columnCount} className="text-center py-12 text-danger" role="alert">
                     <i className="fa-solid fa-circle-exclamation text-3xl mb-2 block" />
                     {t(loadErrorKey)}
+                    {loadErrorKey !== 'positions.messages.permissionDenied' && (
                     <div className="mt-3">
                       <Button
                         variant="outline"
@@ -207,6 +210,7 @@ export default function PositionsPage() {
                         {t('positions.actions.retry')}
                       </Button>
                     </div>
+                    )}
                   </td>
                 </tr>
               ) : positions.length === 0 ? (
@@ -239,6 +243,7 @@ export default function PositionsPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-secondary">{position.note || t('positions.table.emptyValue')}</td>
+                    {showActions && (
                     <td className="px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-1">
                         {can('change_chucvu') && (
@@ -271,6 +276,7 @@ export default function PositionsPage() {
                         )}
                       </div>
                     </td>
+                    )}
                   </tr>
                 ))
               )}

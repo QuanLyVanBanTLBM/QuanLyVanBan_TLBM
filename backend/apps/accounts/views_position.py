@@ -4,7 +4,7 @@ API Danh mục Chức vụ (Issue #20): /api/positions/...
 Quyền (codename theo RBAC contract Issue #21): view_chucvu, add_chucvu, change_chucvu, delete_chucvu, import_chucvu.
 Chức vụ is_public = False chỉ hiển thị với quản trị (superuser hoặc có change_chucvu).
 """
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.db.models import ProtectedError
 from django.http import HttpResponse
 from rest_framework import status
@@ -15,6 +15,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from authorization.permissions import require_permission
+from organizations.references import position_in_use
 
 from .excel_position import ImportFileError, generate_position_template, import_positions_from_excel
 from .models import Position
@@ -86,10 +87,15 @@ def position_detail_view(request, pk):
         return Response(PositionSerializer(position).data)
 
     if request.method == "DELETE":
+        if position_in_use(position.pk):
+            return Response({"detail": "positions.messages.inUseByModule"}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            position.delete()
+            with transaction.atomic():
+                position.delete()
         except ProtectedError:
             return Response({"detail": "positions.messages.inUse"}, status=status.HTTP_400_BAD_REQUEST)
+        except IntegrityError:  # DB dựng từ DDL chặn bằng ON DELETE RESTRICT
+            return Response({"detail": "positions.messages.inUseByModule"}, status=status.HTTP_400_BAD_REQUEST)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     serializer = PositionSerializer(position, data=request.data, partial=request.method == "PATCH")

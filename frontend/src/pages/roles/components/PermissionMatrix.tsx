@@ -1,11 +1,15 @@
 import React, { useState } from 'react';
 import { useTranslation } from '@i18n/translate';
 import { Permission } from '@app-types/authorization';
+import { filterPermissions } from './permissionFilter';
 
 interface PermissionMatrixProps {
   permissions: Permission[];
   selectedIds: Set<number>;
   onToggle: (permId: number) => void;
+  /** Ô tìm do trang cha giữ (để "Chọn tất cả"/"Bỏ chọn" chỉ tác động lên các quyền đang hiện); bỏ trống thì tự giữ. */
+  query?: string;
+  onQueryChange?: (query: string) => void;
   /** Chỉ xem: người dùng không có quyền sửa nhóm quyền thì không bật/tắt được ô nào (backend vẫn chặn thật). */
   readOnly?: boolean;
 }
@@ -30,26 +34,18 @@ function groupByModule(permissions: Permission[]): ModuleGroup[] {
   return Array.from(map.values());
 }
 
-// Bỏ dấu tiếng Việt và hoa/thường để tìm "chuc vu" vẫn ra "Chức vụ".
-function normalizeText(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/đ/g, 'd')
-    .replace(/Đ/g, 'D')
-    .toLowerCase();
-}
-
-function matchesQuery(perm: Permission, normalizedQuery: string): boolean {
-  if (!normalizedQuery) return true;
-  return [perm.name, perm.codename, perm.module_ten].some((field) => normalizeText(field || '').includes(normalizedQuery));
-}
-
-export const PermissionMatrix: React.FC<PermissionMatrixProps> = ({ permissions, selectedIds, onToggle, readOnly = false }) => {
+export const PermissionMatrix: React.FC<PermissionMatrixProps> = ({
+  permissions,
+  selectedIds,
+  onToggle,
+  query,
+  onQueryChange,
+  readOnly = false,
+}) => {
   const { t } = useTranslation();
-  const [query, setQuery] = useState('');
-  const normalizedQuery = normalizeText(query.trim());
-  const groups = groupByModule(permissions.filter((perm) => matchesQuery(perm, normalizedQuery)));
+  const [ownQuery, setOwnQuery] = useState('');
+  const currentQuery = query ?? ownQuery;
+  const groups = groupByModule(filterPermissions(permissions, currentQuery));
 
   if (permissions.length === 0) {
     return (
@@ -66,8 +62,8 @@ export const PermissionMatrix: React.FC<PermissionMatrixProps> = ({ permissions,
         <i className="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-muted text-sm" />
         <input
           type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          value={currentQuery}
+          onChange={(e) => (onQueryChange ?? setOwnQuery)(e.target.value)}
           placeholder={t('roles.matrixSearchPlaceholder')}
           aria-label={t('roles.matrixSearchPlaceholder')}
           className="w-full pl-10 pr-3.5 py-2 text-sm bg-surface border border-border rounded-lg text-main placeholder-muted focus:outline-none focus:border-primary"

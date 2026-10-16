@@ -2,6 +2,7 @@ import io
 import openpyxl
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
+from django.db import IntegrityError, transaction
 from django.db.models import Q, ProtectedError
 from django.http import HttpResponse
 from rest_framework import status
@@ -12,6 +13,7 @@ from rest_framework.response import Response
 
 from .excel_i18n import get_excel_translations
 from .models import KhoiKhuVuc, DonVi
+from .references import unit_in_use
 from .serializers import KhoiKhuVucSerializer, DonViSerializer
 
 
@@ -206,13 +208,22 @@ def unit_detail_view(request, pk):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     elif request.method == "DELETE":
+        in_use = Response(
+            {"detail": "organizations.messages.unitInUse", "key": "organizations.messages.unitInUse"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+        if unit_in_use(unit.pk):
+            return in_use
         try:
-            unit.delete()
+            with transaction.atomic():
+                unit.delete()
         except ProtectedError:
             return Response(
                 {"detail": "organizations.messages.unitHasEmployees", "key": "organizations.messages.unitHasEmployees"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        except IntegrityError:  # DB dựng từ DDL chặn bằng ON DELETE RESTRICT
+            return in_use
         return Response(
             {"detail": "organizations.messages.deleteSuccess", "key": "organizations.messages.deleteSuccess"},
             status=status.HTTP_204_NO_CONTENT,
