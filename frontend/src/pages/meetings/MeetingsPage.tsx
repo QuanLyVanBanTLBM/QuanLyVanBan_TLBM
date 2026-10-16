@@ -9,7 +9,7 @@ import { RoomModal } from '@components/meetings/RoomModal';
 import { MeetingDetailModal } from '@components/meetings/MeetingDetailModal';
 import { useTranslation } from '@i18n/translate';
 import { usePermissions } from '@lib/permissions';
-import { extractFloor, getFloorKey } from '@lib/meetingFloor';
+import { extractFloor, getFloorKey, compareRoomsByFloor } from '@lib/meetingFloor';
 
 interface PaginatedResponse<T> {
   count?: number;
@@ -318,7 +318,7 @@ export const MeetingsPage: React.FC = () => {
             selectedFloorFilter === rFloorKey;
 
       return matchesSearch && matchesStatus && matchesVisibility && matchesFloor;
-    });
+    }).sort(compareRoomsByFloor);
   }, [rooms, roomSearchTerm, roomStatusFilter, roomVisibilityFilter, selectedFloorFilter, canChangeRoom, currentLang]);
 
   // Lọc danh sách cuộc họp theo tầng ở Tab 1
@@ -1166,6 +1166,7 @@ export const MeetingsPage: React.FC = () => {
 
       {/* Modal Thêm/Sửa phòng họp */}
       <RoomModal
+        key={roomToEdit ? `edit-room-${roomToEdit.id}` : 'create-new-room'}
         isOpen={isRoomModalOpen}
         onClose={() => {
           setIsRoomModalOpen(false);

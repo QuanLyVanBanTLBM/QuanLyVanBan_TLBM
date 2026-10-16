@@ -64,3 +64,39 @@ export const extractFloor = (location?: string | null, lang: 'vi' | 'en' = 'vi')
   if (!key) return '';
   return formatFloorName(key, lang);
 };
+
+/**
+ * Trọng số sắp xếp tầng:
+ * - Trệt / Ground ('G'): 0
+ * - Tầng số nguyên (1, 2, 3...): chính số đó (1, 2, 3...)
+ * - Tầng có ký hiệu chữ khác: 999990
+ * - Không xác định tầng / null / rỗng: 999999 (đưa về cuối cùng)
+ */
+export const getFloorWeight = (location?: string | null): number => {
+  const key = getFloorKey(location);
+  if (!key) return 999999;
+  if (key === 'G' || key.toLowerCase() === 'trệt') return 0;
+  const num = parseInt(key, 10);
+  if (!isNaN(num)) return num;
+  return 999990;
+};
+
+/**
+ * Hàm so sánh sắp xếp danh sách phòng họp theo Tầng tăng dần, sau đó theo tên phòng (A -> Z).
+ */
+export const compareRoomsByFloor = (
+  a: { location?: string | null; name?: string },
+  b: { location?: string | null; name?: string }
+): number => {
+  const weightA = getFloorWeight(a.location);
+  const weightB = getFloorWeight(b.location);
+  if (weightA !== weightB) {
+    return weightA - weightB;
+  }
+  const keyA = getFloorKey(a.location) || '';
+  const keyB = getFloorKey(b.location) || '';
+  if (keyA !== keyB) {
+    return keyA.localeCompare(keyB, undefined, { numeric: true });
+  }
+  return (a.name || '').localeCompare(b.name || '', undefined, { numeric: true, sensitivity: 'base' });
+};

@@ -379,5 +379,88 @@ describe('MeetingsPage Component (Issue #22)', () => {
       expect(screen.getByText('Chi tiết cuộc họp')).toBeInTheDocument();
     });
   });
+
+  it('sắp xếp danh sách phòng họp theo Tầng tăng dần (Trệt -> Tầng 1 -> Tầng 2 -> ...)', async () => {
+    const unsortedRooms = [
+      {
+        id: 10,
+        name: 'Phòng VIP 601',
+        location: 'Tầng 6, Tòa Nhà A',
+        capacity: 20,
+        amenities: '',
+        is_public: true,
+        trang_thai: 'AVAILABLE',
+        ghi_chu: '',
+      },
+      {
+        id: 11,
+        name: 'Phòng Hội thảo G',
+        location: 'Tầng trệt',
+        capacity: 50,
+        amenities: '',
+        is_public: true,
+        trang_thai: 'AVAILABLE',
+        ghi_chu: '',
+      },
+      {
+        id: 12,
+        name: 'Phòng 201',
+        location: 'Tầng 2, Tòa Nhà B',
+        capacity: 15,
+        amenities: '',
+        is_public: true,
+        trang_thai: 'AVAILABLE',
+        ghi_chu: '',
+      },
+      {
+        id: 13,
+        name: 'Phòng 102',
+        location: 'Tầng 1',
+        capacity: 10,
+        amenities: '',
+        is_public: true,
+        trang_thai: 'AVAILABLE',
+        ghi_chu: '',
+      },
+    ];
+
+    apiClient.get = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/meeting-rooms/')) {
+        return Promise.resolve({ results: unsortedRooms });
+      }
+      if (url.includes('/api/meeting-bookings/')) {
+        return Promise.resolve({ results: [] });
+      }
+      if (url.includes('/api/auth/profile/')) {
+        return Promise.resolve(mockProfile);
+      }
+      return Promise.resolve({});
+    });
+
+    render(
+      <MemoryRouter>
+        <MeetingsPage />
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByText('Danh mục phòng họp'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Phòng Hội thảo G')).toBeInTheDocument();
+      expect(screen.getByText('Phòng 102')).toBeInTheDocument();
+      expect(screen.getByText('Phòng 201')).toBeInTheDocument();
+      expect(screen.getByText('Phòng VIP 601')).toBeInTheDocument();
+    });
+
+    const roomHeadings = screen.getAllByRole('heading', { level: 3 });
+    const renderedRoomNames = roomHeadings.map((h) => h.textContent);
+
+    expect(renderedRoomNames).toEqual([
+      'Phòng Hội thảo G',
+      'Phòng 102',
+      'Phòng 201',
+      'Phòng VIP 601',
+    ]);
+  });
 });
 
