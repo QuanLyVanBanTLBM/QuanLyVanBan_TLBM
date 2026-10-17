@@ -1,4 +1,12 @@
 -- =====================================================================
+-- THAY ĐỔI CÁN BỘ NHÂN VIÊN (Nhóm 7; issue #24; đánh dấu [CBNV] tại vị trí)
+-- Căn cứ: issue #24; migration accounts 0006_employeeassignment; migration authorization 0005_add_export_cbnv_permission.
+--   1) Thêm bảng accounts_employee_assignment lưu phân công kiêm nhiệm (employee_id CASCADE,
+--      don_vi_id RESTRICT, chuc_vu_id RESTRICT, chuc_danh VARCHAR(150), created_at TIMESTAMPTZ,
+--      UNIQUE (employee_id, don_vi_id, chuc_vu_id), 3 index trên 3 khóa ngoại).
+--   2) Thêm quyền export_cbnv ('Xuất Excel danh sách CBNV', module_ten 'Cán bộ nhân viên'),
+--      phân quyền cho 3 nhóm TP, BGD, ADMIN.
+-- =====================================================================
 -- THAY ĐỔI PHASE 10 LÕI TRÌNH KÝ (Nhóm 5; issue #80; đánh dấu [P10] tại vị trí)
 -- Căn cứ: issue #80 mục D; signing-backend-plan.md mục 3.2 "Phẳng hóa"; migration signing 0007_tep_hoan_tat.
 --   signing_attempt thêm trang_thai_tep_hoan_tat (NULL khi lượt chưa hoàn thành; DANG_XU_LY | LOI | THANH_CONG)
@@ -20,7 +28,7 @@
 --      của đơn vị mình; quy trình CONG_TY vẫn chỉ quản trị quản lý (kiểm ở tầng ứng dụng).
 --   6) Cột của các bảng signing_* theo tên chuẩn hóa ở #96 (nguoi_tao_id, nguoi_cap_nhat_id, updated_at,
 --      document_id); migration signing 0009_doi_ten_cot_theo_ddl_chuan_hoa đổi tên cột cho DB dựng bằng migration.
--- Quy mô sau [P7] và [P10] (nạp sạch): 55 bảng vật lý | 20 kiểu ENUM | 77 quyền thao tác | 5 nhóm quyền chuẩn | 197 lượt phân quyền.
+-- Quy mô sau [CBNV], [P7] và [P10] (nạp sạch): 56 bảng vật lý | 20 kiểu ENUM | 78 quyền thao tác | 5 nhóm quyền chuẩn | 200 lượt phân quyền.
 -- =====================================================================
 -- THAY ĐỔI PHASE 6c TRÌNH KÝ (Nhóm 5; issue #79; đánh dấu [6c] tại vị trí)
 -- Căn cứ: docs/modules/05_signing_workflow/danh-gia-nghiep-vu-va-de-xuat.md mục 2 (đã chốt ở PR #78),
@@ -365,6 +373,23 @@ CREATE TABLE accounts_employee_user_permissions (
     permission_id BIGINT NOT NULL REFERENCES auth_permission (id) ON DELETE CASCADE,
     CONSTRAINT uq_employee_permission UNIQUE (employee_id, permission_id)
 );
+
+-- Phân công kiêm nhiệm của CBNV (Issue #24; đánh dấu [CBNV])
+CREATE TABLE accounts_employee_assignment (
+    id BIGSERIAL PRIMARY KEY,
+    employee_id BIGINT NOT NULL REFERENCES accounts_employee (id) ON DELETE CASCADE,
+    don_vi_id BIGINT NOT NULL REFERENCES organizations_donvi (id) ON DELETE RESTRICT,
+    chuc_vu_id BIGINT NOT NULL REFERENCES accounts_position (id) ON DELETE RESTRICT,
+    chuc_danh VARCHAR(150),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uq_employee_assignment UNIQUE (employee_id, don_vi_id, chuc_vu_id)
+);
+
+CREATE INDEX idx_emp_assign_emp ON accounts_employee_assignment (employee_id);
+
+CREATE INDEX idx_emp_assign_donvi ON accounts_employee_assignment (don_vi_id);
+
+CREATE INDEX idx_emp_assign_chucvu ON accounts_employee_assignment (chuc_vu_id);
 
 -- Ghi chú: spec mới (tab "Đvị, phòngban") không có trường "Trưởng đơn vị"
 -- trên organizations_donvi -> không tạo cột manager_id.
@@ -2116,6 +2141,11 @@ VALUES
         'import_cbnv',
         'CBNV'
     ),
+    (
+        'Xuất Excel danh sách CBNV',
+        'export_cbnv',
+        'Cán bộ nhân viên'
+    ),
     -- Văn bản đến (Nhóm 2)
     (
         'Xem danh sách/chi tiết văn bản đến',
@@ -2461,7 +2491,8 @@ WHERE
         'change_own_datphonghop',
         'view_sinhnhat',
         'send_wish_sinhnhat',
-        'use_aiassistant'
+        'use_aiassistant',
+        'export_cbnv'
     ) ON CONFLICT (group_id, permission_id) DO NOTHING;
 
 -- Nhóm TP (Trưởng phòng): Quyền xem, ký duyệt phòng ban, giao việc, xem việc phòng ban, đặt phòng họp, AI
@@ -2499,7 +2530,8 @@ WHERE
         'change_own_datphonghop',
         'view_sinhnhat',
         'send_wish_sinhnhat',
-        'use_aiassistant'
+        'use_aiassistant',
+        'export_cbnv'
     ) ON CONFLICT (group_id, permission_id) DO NOTHING;
 
 -- Nhóm CV (Chuyên viên): Xử lý nghiệp vụ chuyên môn, xem việc phòng ban (view_dept_congviec). Quyền duyệt công việc phân quyền theo ngữ cảnh task_participant (Người tạo, Chủ trì, Chỉ đạo)

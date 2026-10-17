@@ -238,3 +238,55 @@ class Employee(AbstractBaseUser, PermissionsMixin):
         if self.trang_thai == self.Status.NGHI_VIEC:
             self.is_active = False
         super().save(*args, **kwargs)
+
+
+class EmployeeAssignment(models.Model):
+    """
+    Phân công công tác / Kiêm nhiệm đơn vị & chức vụ của Cán bộ nhân viên (Issue #24).
+    Cho phép một nhân viên có thể thuộc nhiều phòng ban và đảm nhiệm nhiều chức vụ khác nhau.
+    """
+
+    employee = models.ForeignKey(
+        Employee,
+        on_delete=models.CASCADE,
+        related_name="assignments",
+        verbose_name="Cán bộ nhân viên",
+    )
+    don_vi = models.ForeignKey(
+        "organizations.DonVi",
+        on_delete=models.PROTECT,
+        related_name="employee_assignments",
+        verbose_name="Đơn vị / Phòng ban",
+    )
+    chuc_vu = models.ForeignKey(
+        Position,
+        on_delete=models.PROTECT,
+        related_name="employee_assignments",
+        verbose_name="Chức vụ",
+    )
+    chuc_danh = models.CharField(
+        max_length=150,
+        null=True,
+        blank=True,
+        default="",
+        verbose_name="Chức danh kiêm nhiệm (tự do)",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        db_default=DbNow(),
+        verbose_name="Ngày phân công",
+    )
+
+    class Meta:
+        db_table = "accounts_employee_assignment"
+        verbose_name = "Phân công kiêm nhiệm"
+        verbose_name_plural = "Danh sách phân công kiêm nhiệm"
+        unique_together = ("employee", "don_vi", "chuc_vu")
+        indexes = [
+            models.Index(fields=["employee"], name="idx_emp_assign_emp"),
+            models.Index(fields=["don_vi"], name="idx_emp_assign_donvi"),
+            models.Index(fields=["chuc_vu"], name="idx_emp_assign_chucvu"),
+        ]
+
+    def __str__(self):
+        return f"{self.employee.ho_ten} - {self.don_vi.ten} ({self.chuc_vu.name})"

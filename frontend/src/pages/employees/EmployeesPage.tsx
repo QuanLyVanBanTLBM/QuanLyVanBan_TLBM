@@ -43,7 +43,7 @@ export default function EmployeesPage() {
 
   // Trạng thái tải & thông báo
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [isDownloadingTemplate, setIsDownloadingTemplate] = useState<boolean>(false);
+  const [isExporting, setIsExporting] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<{ text: string; isError?: boolean } | null>(null);
 
   // Quản lý Modal
@@ -59,6 +59,7 @@ export default function EmployeesPage() {
   const [deletingEmployee, setDeletingEmployee] = useState<Employee | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const [deleteErrorMessage, setDeleteErrorMessage] = useState<string | null>(null);
+  const [isDeletingLastClerkWarning, setIsDeletingLastClerkWarning] = useState<boolean>(false);
 
   // Hiển thị Toast tự tắt sau 4s
   const showToast = useCallback((text: string, isError = false) => {
@@ -126,16 +127,23 @@ export default function EmployeesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage, searchQuery, selectedUnitId, selectedPositionId, selectedStatus, reloadKey]);
 
-  // Tải file Excel mẫu
-  const handleDownloadTemplate = async () => {
+  // Xuất file Excel toàn bộ danh sách CBNV (Yêu cầu 1 & 4)
+  const handleExportExcel = async () => {
     try {
-      setIsDownloadingTemplate(true);
-      await downloadBlob('/api/accounts/employees/template/', 'mau_danh_sach_cbnv.xlsx');
-      showToast(t('employees.messages.downloadSuccess'));
+      setIsExporting(true);
+      const params = new URLSearchParams();
+      if (searchQuery.trim()) params.append('search', searchQuery.trim());
+      if (selectedUnitId) params.append('don_vi_id', selectedUnitId);
+      if (selectedPositionId) params.append('chuc_vu_id', selectedPositionId);
+      if (selectedStatus) params.append('trang_thai', selectedStatus);
+
+      const queryString = params.toString() ? `?${params.toString()}` : '';
+      await downloadBlob(`/api/accounts/employees/export/${queryString}`, 'danh_sach_cbnv.xlsx');
+      showToast(t('employees.messages.exportSuccess'));
     } catch {
-      showToast(t('employees.messages.downloadError'), true);
+      showToast(t('employees.messages.exportError'), true);
     } finally {
-      setIsDownloadingTemplate(false);
+      setIsExporting(false);
     }
   };
 
@@ -166,18 +174,23 @@ export default function EmployeesPage() {
   };
 
   // Xóa CBNV
-  const handleConfirmDelete = async () => {
+  const handleConfirmDelete = async (confirmRisk?: boolean) => {
     if (!deletingEmployee) return;
     try {
       setIsDeleting(true);
       setDeleteErrorMessage(null);
-      await apiClient.delete(`/api/accounts/employees/${deletingEmployee.id}/`);
+      const queryParam = confirmRisk ? '?confirm_last_clerk=true' : '';
+      await apiClient.delete(`/api/accounts/employees/${deletingEmployee.id}/${queryParam}`);
       showToast(t('employees.messages.deleteSuccess'));
       setDeletingEmployee(null);
+      setIsDeletingLastClerkWarning(false);
       refreshList();
     } catch (err: unknown) {
       if (err && typeof err === 'object' && 'data' in err) {
-        const errorData = (err as { data: { detail?: string } }).data;
+        const errorData = (err as { data: { detail?: string; is_last_clerk?: boolean } }).data;
+        if (errorData?.is_last_clerk) {
+          setIsDeletingLastClerkWarning(true);
+        }
         if (errorData?.detail) {
           setDeleteErrorMessage(t(errorData.detail));
           return;
@@ -202,7 +215,7 @@ export default function EmployeesPage() {
   const totalPages = Math.ceil(totalCount / pageSize) || 1;
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto">
+    <div className="space-y-6">
       {/* Toast Notification */}
       {toastMessage && (
         <div
@@ -237,15 +250,15 @@ export default function EmployeesPage() {
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2.5 flex-wrap">
-          {can('import_cbnv') && (
+          {can('export_cbnv') && (
             <Button
               type="button"
               variant="secondary"
-              onClick={handleDownloadTemplate}
-              isLoading={isDownloadingTemplate}
+              onClick={handleExportExcel}
+              isLoading={isExporting}
               icon="fa-file-excel"
             >
-              {t('employees.actions.template')}
+              {t('employees.actions.exportExcel')}
             </Button>
           )}
 
@@ -470,6 +483,24 @@ export default function EmployeesPage() {
                             {emp.khoi_ten}
                           </span>
                         )}
+                        {emp.assignments && emp.assignments.length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            <span
+                              className="inline-flex items-center gap-1 text-[10px] font-medium text-primary bg-primary-subtle px-1.5 py-0.5 rounded"
+                              title={emp.assignments
+                                .map(
+                                  (a) =>
+                                    `${a.don_vi_ten} (${a.chuc_vu_ten}${
+                                      a.chuc_danh ? ` - ${a.chuc_danh}` : ''
+                                    })`
+                                )
+                                .join('; ')}
+                            >
+                              <i className="fa-solid fa-briefcase text-[9px]" />
+                              {t('employees.fields.concurrentBadge', { count: emp.assignments.length })}
+                            </span>
+                          </div>
+                        )}
                       </td>
 
                       {/* Chức vụ & Chức danh */}
@@ -558,6 +589,7 @@ export default function EmployeesPage() {
                               type="button"
                               onClick={() => {
                                 setDeleteErrorMessage(null);
+                                setIsDeletingLastClerkWarning(Boolean(emp.is_last_unit_clerk));
                                 setDeletingEmployee(emp);
                               }}
                               className="p-1.5 rounded-lg text-secondary hover:text-danger hover:bg-danger-subtle transition-colors cursor-pointer"
@@ -641,23 +673,29 @@ export default function EmployeesPage() {
         }}
       />
 
-      <EmployeeImportModal
-        isOpen={isImportModalOpen}
-        onClose={() => setIsImportModalOpen(false)}
-        onSuccess={(count) => {
-          showToast(t('employees.messages.importSuccess', { count }));
-          refreshList();
-        }}
-      />
+      {isImportModalOpen && (
+        <EmployeeImportModal
+          isOpen={isImportModalOpen}
+          onClose={() => setIsImportModalOpen(false)}
+          onSuccess={(count) => {
+            showToast(t('employees.messages.importSuccess', { count }));
+            refreshList();
+          }}
+        />
+      )}
 
       <DeleteConfirmModal
+        key={deletingEmployee?.id ? `del-${deletingEmployee.id}` : 'del-closed'}
         isOpen={Boolean(deletingEmployee)}
         onClose={() => {
           setDeletingEmployee(null);
           setDeleteErrorMessage(null);
+          setIsDeletingLastClerkWarning(false);
         }}
         onConfirm={handleConfirmDelete}
         name={deletingEmployee?.ho_ten || ''}
+        unitName={deletingEmployee?.don_vi_ten || ''}
+        isLastClerk={Boolean(deletingEmployee?.is_last_unit_clerk || isDeletingLastClerkWarning)}
         isLoading={isDeleting}
         errorMessage={deleteErrorMessage}
       />

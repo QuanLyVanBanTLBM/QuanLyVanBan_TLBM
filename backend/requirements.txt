@@ -13,9 +13,10 @@ djangorestframework>=3.18,<4
 # JWT Authentication
 djangorestframework-simplejwt>=5.5,<6
 
-# Filtering & Excel Export
+# Filtering & Excel Export / Import (.xlsx and .xls)
 django-filter>=24.0
 openpyxl>=3.1.5
+xlrd>=2.0.1
 
 # Utilities
 python-dotenv>=1.2,<2

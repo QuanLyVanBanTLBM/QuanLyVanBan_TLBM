@@ -3,24 +3,28 @@ Bộ kiểm thử toàn diện cho phân hệ Quản lý Cán bộ Nhân viên (
 Tác giả: Lê Duy Khánh (leduykhanhdevs).
 Bao gồm:
 1. CRUD nhân viên (tạo, đọc, sửa, xóa, tìm kiếm, lọc, sắp xếp theo STT Đơn vị -> Chức vụ).
-2. Kiểm tra tính bảo mật & quyền riêng tư (che năm sinh DD/MM/---- và ẩn nhóm quyền nếu thiếu quyền view_full_cbnv).
+2. Kiểm tra tính bảo mật & quyền riêng tư (che năm sinh DD/MM/19xx hoặc DD/MM/20xx và ẩn nhóm quyền nếu thiếu quyền view_full_cbnv).
 3. Kiểm tra logic nghiệp vụ: trạng thái 'NGHI_VIEC' tự động vô hiệu hóa user.is_active = False.
 4. Kiểm tra danh mục Chức vụ (Position) và Nhóm quyền (Group).
 5. Kiểm tra Tải tệp mẫu Excel và Nhập Excel validate từng dòng dữ liệu.
 """
+import base64
 from io import BytesIO
+import os
 from datetime import date, timedelta
 from unittest.mock import patch
 import openpyxl
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, Permission
+from django.db import connection
 from django.db.models import ProtectedError, RestrictedError
+from django.test import TestCase
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
 from organizations.models import KhoiKhuVuc, DonVi
-from accounts.models import Employee, Position
+from accounts.models import Employee, Position, EmployeeAssignment
 
 User = get_user_model()
 
@@ -98,13 +102,16 @@ class EmployeeBaseTestCase(APITestCase):
         self.perm_view_list = Permission.objects.get(codename="view_list_cbnv")
         self.perm_sensitive = Permission.objects.get(codename="view_full_cbnv")
         self.perm_import = Permission.objects.get(codename="import_cbnv")
+        self.perm_export = Permission.objects.get(codename="export_cbnv")
         self.perm_add = Permission.objects.get(codename="add_cbnv")
         self.perm_change_full = Permission.objects.get(codename="change_full_cbnv")
         self.perm_change_self = Permission.objects.get(codename="change_self_cbnv")
         self.perm_delete = Permission.objects.get(codename="delete_cbnv")
 
         self.normal_user.user_permissions.add(self.perm_view_list)
-        self.sensitive_user.user_permissions.add(self.perm_view_list, self.perm_sensitive, self.perm_import)
+        self.sensitive_user.user_permissions.add(
+            self.perm_view_list, self.perm_sensitive, self.perm_import, self.perm_export
+        )
 
         # User không có quyền nào (để test 403)
         self.no_perm_user = User.objects.create_user(
@@ -133,6 +140,7 @@ class EmployeeBaseTestCase(APITestCase):
         self.group_list_url = "/api/accounts/groups/"
         self.template_url = "/api/accounts/employees/template/"
         self.import_url = "/api/accounts/employees/import/"
+        self.export_url = "/api/accounts/employees/export/"
 
 
 class EmployeeCRUDAndFilterTests(EmployeeBaseTestCase):
@@ -261,6 +269,68 @@ class EmployeeCRUDAndFilterTests(EmployeeBaseTestCase):
         self.assertEqual(res.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(User.objects.filter(id=target_user_id).exists())
 
+    def test_delete_last_clerk_in_unit_requires_confirmation(self):
+        """Xóa Văn thư duy nhất của đơn vị phải cảnh báo và yêu cầu cờ confirm_last_clerk."""
+        self.client.force_authenticate(user=self.admin_user)
+        clerk = User.objects.create_user(
+            username="clerk_single",
+            email="clerk_single@donvi.gov.vn",
+            password="Password123",
+            ho_ten="Văn Thư Duy Nhất",
+            ngay_sinh=date(1992, 1, 1),
+            don_vi=self.don_vi_2,
+            chuc_vu=self.cv_chuyen_vien,
+            chuc_danh="Văn thư lưu trữ",
+        )
+        clerk.groups.add(self.group_van_thu)
+
+        # 1. Thử xóa không có cờ confirm_last_clerk -> trả về 400 kèm cảnh báo
+        detail_url = f"{self.employee_list_url}{clerk.id}/"
+        res = self.client.delete(detail_url)
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(res.data.get("detail"), "employees.messages.warnLastUnitClerk")
+        self.assertTrue(res.data.get("is_last_clerk"))
+        self.assertEqual(res.data.get("unit_name"), self.don_vi_2.ten)
+        self.assertTrue(User.objects.filter(id=clerk.id).exists())
+
+        # 2. Xóa kèm cờ confirm_last_clerk=true -> xóa thành công 204
+        res_confirmed = self.client.delete(f"{detail_url}?confirm_last_clerk=true")
+        self.assertEqual(res_confirmed.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(User.objects.filter(id=clerk.id).exists())
+
+    def test_delete_clerk_when_another_clerk_exists_in_unit_succeeds_directly(self):
+        """Xóa Văn thư khi đơn vị vẫn còn cán bộ văn thư khác hoạt động thì xóa trực tiếp."""
+        self.client.force_authenticate(user=self.admin_user)
+        clerk_1 = User.objects.create_user(
+            username="clerk_1",
+            email="clerk_1@donvi.gov.vn",
+            password="Password123",
+            ho_ten="Văn Thư 1",
+            ngay_sinh=date(1990, 1, 1),
+            don_vi=self.don_vi_2,
+            chuc_vu=self.cv_chuyen_vien,
+            chuc_danh="Văn thư 1",
+        )
+        clerk_1.groups.add(self.group_van_thu)
+
+        clerk_2 = User.objects.create_user(
+            username="clerk_2",
+            email="clerk_2@donvi.gov.vn",
+            password="Password123",
+            ho_ten="Văn Thư 2",
+            ngay_sinh=date(1991, 1, 1),
+            don_vi=self.don_vi_2,
+            chuc_vu=self.cv_chuyen_vien,
+            chuc_danh="Văn thư 2",
+        )
+        clerk_2.groups.add(self.group_van_thu)
+
+        # Xóa clerk_1 không cần cờ confirm vì đơn vị vẫn còn clerk_2
+        res = self.client.delete(f"{self.employee_list_url}{clerk_1.id}/")
+        self.assertEqual(res.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(User.objects.filter(id=clerk_1.id).exists())
+        self.assertTrue(User.objects.filter(id=clerk_2.id).exists())
+
 
     def test_create_employee_requires_unit_and_position(self):
         """SQL_Fix4: don_vi_id và chuc_vu_id NOT NULL -> thiếu là 400."""
@@ -293,21 +363,22 @@ class EmployeeSecurityAndPrivacyTests(EmployeeBaseTestCase):
     """Kiểm tra các quy tắc bảo mật & quyền riêng tư trường dữ liệu nhạy cảm."""
 
     def test_birthday_masked_for_user_without_sensitive_perm(self):
-        """User thường không có quyền view_full_cbnv: ngày sinh bị che thành DD/MM/---- và nhóm quyền rỗng."""
+        """User thường không có quyền view_full_cbnv: ngày sinh bị che thành DD/MM/{century}xx và nhóm quyền rỗng."""
         self.client.force_authenticate(user=self.normal_user)
         detail_url = f"{self.employee_list_url}{self.sensitive_user.id}/"
         res = self.client.get(detail_url)
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         data = res.json()
 
-        # Ngày sinh gốc là 1988-10-15 -> phải được format thành 15/10/----
-        self.assertEqual(data["ngay_sinh"], "15/10/----")
+        # Ngày sinh gốc là 1988-10-15 -> phải được format thành 15/10/19xx
+        self.assertEqual(data["ngay_sinh"], "15/10/19xx")
+        self.assertIsNone(data.get("ngay_sinh_iso"))
         self.assertTrue(data["is_birthday_masked"])
         self.assertFalse(data["has_sensitive_permission"])
         self.assertEqual(data["nhom_quyen"], [])
 
     def test_birthday_full_for_user_with_sensitive_perm(self):
-        """User có quyền view_full_cbnv: xem được ngày sinh đầy đủ YYYY-MM-DD và nhóm quyền."""
+        """User có quyền view_full_cbnv: xem được ngày sinh đầy đủ DD/MM/YYYY và nhóm quyền."""
         self.client.force_authenticate(user=self.sensitive_user)
         # Gán nhóm quyền cho normal_profile
         self.normal_user.groups.add(self.group_van_thu)
@@ -317,8 +388,9 @@ class EmployeeSecurityAndPrivacyTests(EmployeeBaseTestCase):
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         data = res.json()
 
-        # Ngày sinh gốc 1995-05-20 -> trả về đúng 1995-05-20
-        self.assertEqual(data["ngay_sinh"], "1995-05-20")
+        # Ngày sinh gốc 1995-05-20 -> trả về đúng 20/05/1995 và ngay_sinh_iso là 1995-05-20
+        self.assertEqual(data["ngay_sinh"], "20/05/1995")
+        self.assertEqual(data.get("ngay_sinh_iso"), "1995-05-20")
         self.assertFalse(data["is_birthday_masked"])
         self.assertTrue(data["has_sensitive_permission"])
         self.assertEqual(len(data["nhom_quyen"]), 1)
@@ -331,7 +403,8 @@ class EmployeeSecurityAndPrivacyTests(EmployeeBaseTestCase):
         res = self.client.get(detail_url)
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         data = res.json()
-        self.assertEqual(data["ngay_sinh"], "1995-05-20")
+        self.assertEqual(data["ngay_sinh"], "20/05/1995")
+        self.assertEqual(data.get("ngay_sinh_iso"), "1995-05-20")
         self.assertFalse(data["is_birthday_masked"])
 
     def test_owner_sees_unmasked_birthday(self):
@@ -341,7 +414,8 @@ class EmployeeSecurityAndPrivacyTests(EmployeeBaseTestCase):
         res = self.client.get(own_url)
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         data = res.json()
-        self.assertEqual(data["ngay_sinh"], "1995-05-20")
+        self.assertEqual(data["ngay_sinh"], "20/05/1995")
+        self.assertEqual(data.get("ngay_sinh_iso"), "1995-05-20")
         self.assertFalse(data["is_birthday_masked"])
 
     def test_status_nghi_viec_deactivates_user(self):
@@ -459,6 +533,132 @@ class EmployeeExcelImportExportTests(EmployeeBaseTestCase):
         self.assertTrue(User.objects.filter(email="doanvanhau@donvi.gov.vn").exists())
         self.assertTrue(User.objects.filter(ho_ten="Đoàn Văn Hậu", don_vi=self.don_vi_1).exists())
 
+    def test_import_excel_xls_format_success(self):
+        """Nhập tệp Excel định dạng cũ (.xls) hợp lệ tạo nhân viên thành công."""
+        self.client.force_authenticate(user=self.sensitive_user)
+
+        fixture_file = os.path.join(os.path.dirname(__file__), "fixtures", "cbnv_import_sample.xls")
+        if os.path.exists(fixture_file):
+            with open(fixture_file, "rb") as f:
+                bio = BytesIO(f.read())
+        else:
+            # Verified BIFF8 .xls fixture matching test row
+            xls_b64 = (
+                "0M8R4KGxGuEAAAAAAAAAAAAAAAAAAAAAPgADAP7/CQAGAAAAAAAAAAAAAAABAAAACQAAAAAAAAAAEAAA"
+                "/v///wAAAAD+////AAAAAAgAAAD/////////////////////////////////////////////////////"
+                "////////////////////////////////////////////////////////////////////////////////"
+                "////////////////////////////////////////////////////////////////////////////////"
+                "////////////////////////////////////////////////////////////////////////////////"
+                "////////////////////////////////////////////////////////////////////////////////"
+                "////////////////////////////////////////////////////////////////////////////////"
+                "////////////////////////////////////////////////////////////////////////////////"
+                "//////////////////////////////////////////8JCBAAAAYFALsNzAcAAAAABgAAAOEAAgCwBMEA"
+                "AgAAAOIAAABcAHAATm9uZSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg"
+                "ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg"
+                "ICAgIEIAAgCwBGEBAgAAAD0BAgABAJwAAgAOABkAAgAAABIAAgAAAGMAAgAAABMAAgAAAK8BAgAAALwB"
+                "AgAAAEAAAgAAAI0AAgAAAD0AEgDgAVoAzz9OKjgAAAAAAAEAWAIiAAIAAAAOAAIAAQC3AQIAAADaAAIA"
+                "AAAxABUAyAAAAP9/kAEAAAAAAQAFAEFyaWFsMQAVAMgAAAD/f5ABAAAAAAEABQBBcmlhbDEAFQDIAAAA"
+                "/3+QAQAAAAABAAUAQXJpYWwxABUAyAAAAP9/kAEAAAAAAQAFAEFyaWFsMQAVAMgAAAD/f5ABAAAAAAEA"
+                "BQBBcmlhbDEAFQDIAAAA/3+QAQAAAAABAAUAQXJpYWwxABUAyAAAAP9/kAEAAAAAAQAFAEFyaWFsHgQM"
+                "AKQABwAAR2VuZXJhbOAAFAAGAKQA9f8gAAD0AAAAAAAAAADAIOAAFAAGAKQA9f8gAAD0AAAAAAAAAADA"
+                "IOAAFAAGAKQA9f8gAAD0AAAAAAAAAADAIOAAFAAGAKQA9f8gAAD0AAAAAAAAAADAIOAAFAAGAKQA9f8g"
+                "AAD0AAAAAAAAAADAIOAAFAAGAKQA9f8gAAD0AAAAAAAAAADAIOAAFAAGAKQA9f8gAAD0AAAAAAAAAADA"
+                "IOAAFAAGAKQA9f8gAAD0AAAAAAAAAADAIOAAFAAGAKQA9f8gAAD0AAAAAAAAAADAIOAAFAAGAKQA9f8g"
+                "AAD0AAAAAAAAAADAIOAAFAAGAKQA9f8gAAD0AAAAAAAAAADAIOAAFAAGAKQA9f8gAAD0AAAAAAAAAADA"
+                "IOAAFAAGAKQA9f8gAAD0AAAAAAAAAADAIOAAFAAGAKQA9f8gAAD0AAAAAAAAAADAIOAAFAAGAKQA9f8g"
+                "AAD0AAAAAAAAAADAIOAAFAAGAKQA9f8gAAD0AAAAAAAAAADAIOAAFAAGAKQAAQAgAAD4AAAAAAAAAADA"
+                "IOAAFAAHAKQAAQAgAAD4AAAAAAAAAADAIJMCBAAAgAD/YAECAAEAhQAWAFsFAAAAAA4ARGFuaCBTYWNo"
+                "IENCTlb8AK4BEwAAABIAAAADAABTVFQNAAFIAM0eIAB2AOAAIAB0AOoAbgAgACgAKgApAA0AAE5n4Hkg"
+                "c2luaCAoKikJAABFbWFpbCAoKikNAAFTANEeIAARAWkAxx5uACAAdABoAG8AoR5pABoAAVQA6gBuACAA"
+                "EAGhAW4AIAB2AMseIAAvACAAUABoAPIAbgBnACAAYgBhAG4AIAAoACoAKQAPAAFUAOoAbgAgAEMAaADp"
+                "HmMAIAB2AOUeIAAoACoAKQAPAAFDAGgA6R5jACAAZABhAG4AaAAgAHQA8R4gAGQAbwAKAAFUAHIAoR5u"
+                "AGcAIAB0AGgA4QBpAAcAAEdoaSBjaPoMAAFRAHUAvx4gAE4AZwDNHmMAIABIAKMeaQAKAAAxOTkzLTA1"
+                "LTE1FwAAcXVlbmdvY2hhaUBkb252aS5nb3Yudm4KAAAwOTg3NjU0MzIxDgABVgADAW4AIABwAGgA8gBu"
+                "AGcAIABWAGkAxx5uAAsAAENodXnqbiB2aepuCgABEAHZHmkAIAB0AHIAsAHfHm4AZwANAAEQAWEAbgBn"
+                "ACAAbADgAG0AIAB2AGkAxx5jAAoAAAAJCBAAAAYQALsNzAcAAAAABgAAAA0AAgABAAwAAgBkAA8AAgAB"
+                "ABEAAgAAABAACAD8qfHSTWJQP18AAgAAAIAACAAAAAAAAQAAACUCBAAAAP8AgQACAAEMAAIOAAAAAAAC"
+                "AAAAAAAKAAAAKgACAAAAKwACAAAAggACAAEAGwACAAAAGgACAAAAFAAFAAIAACZQFQAFAAIAACZGgwAC"
+                "AAEAhAACAAAAJgAIADMzMzMzM9M/JwAIADMzMzMzM9M/KAAIAIXrUbgeheM/KQAIAK5H4XoUrtc/oQAi"
+                "AAkAZAABAAEAAQCDACwBLAGamZmZmZm5P5qZmZmZmbk/AQASAAIAAADdAAIAAAAZAAIAAABjAAIAAAAT"
+                "AAIAAAAIAhAAAAAAAAoA/wAAAAAAAAEPAP0ACgAAAAAAEQAAAAAA/QAKAAAAAQARAAEAAAD9AAoAAAAC"
+                "ABEAAgAAAP0ACgAAAAMAEQADAAAA/QAKAAAABAARAAQAAAD9AAoAAAAFABEABQAAAP0ACgAAAAYAEQAG"
+                "AAAA/QAKAAAABwARAAcAAAD9AAoAAAAIABEACAAAAP0ACgAAAAkAEQAJAAAACAIQAAEAAAAKAP8AAAAA"
+                "AAABDwB+AgoAAQAAABEABgAAAP0ACgABAAEAEQAKAAAA/QAKAAEAAgARAAsAAAD9AAoAAQADABEADAAA"
+                "AP0ACgABAAQAEQANAAAA/QAKAAEABQARAA4AAAD9AAoAAQAGABEADwAAAP0ACgABAAcAEQAQAAAA/QAK"
+                "AAEACAARABEAAAD9AAoAAQAJABEACQAAAD4CEgC2AgAAAABAAAAAAAAAAAAAAAAKAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAIAAAADAAAA"
+                "BAAAAAUAAAAGAAAABwAAAP7////9/////v//////////////////////////////////////////////"
+                "////////////////////////////////////////////////////////////////////////////////"
+                "////////////////////////////////////////////////////////////////////////////////"
+                "////////////////////////////////////////////////////////////////////////////////"
+                "////////////////////////////////////////////////////////////////////////////////"
+                "////////////////////////////////////////////////////////////////////////////////"
+                "////////////////////////////////////////////////////////////////////////////////"
+                "////////////////////////////////////////////////////////////////////////////////"
+                "//////////////////////////9SAG8AbwB0ACAARQBuAHQAcgB5AAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFgAFAf//////////AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAP7///8AAAAAAAAAAFcAbwByAGsAYgBvAG8AawAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAASAAIB////////////////AAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH///////////////8AAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD+////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf//////////"
+                "/////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP7///8AAAAAAAAAAA=="
+            )
+            bio = BytesIO(base64.b64decode(xls_b64))
+
+        bio.name = "danh_sach_hop_le.xls"
+
+        res = self.client.post(self.import_url, {"file": bio}, format="multipart")
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        data = res.json()
+        self.assertTrue(data["success"])
+        self.assertEqual(data["created_count"], 1)
+        self.assertTrue(User.objects.filter(email="quengochai@donvi.gov.vn").exists())
+
+    def test_import_excel_invalid_extension_rejected(self):
+        """Tải tệp không có phần mở rộng .xlsx hoặc .xls bị từ chối 400."""
+        self.client.force_authenticate(user=self.sensitive_user)
+        bio = BytesIO(b"fake content")
+        bio.name = "tai_lieu.pdf"
+        res = self.client.post(self.import_url, {"file": bio}, format="multipart")
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(res.json()["detail"], "employees.messages.fileInvalidType")
+
     def test_import_excel_does_not_create_position_on_error(self):
         """Review PR #71: Không tự ý tạo Chức vụ mới khi import nếu không tồn tại; phải báo lỗi dòng."""
         self.client.force_authenticate(user=self.sensitive_user)
@@ -507,6 +707,230 @@ class EmployeeExcelImportExportTests(EmployeeBaseTestCase):
         data = res.json()
         self.assertFalse(data["success"])
         self.assertTrue(any("trùng lặp giữa nhiều Khối/Khu vực" in err["message"] for err in data["errors"]))
+
+    def test_export_excel_forbidden_without_export_cbnv(self):
+        """User thiếu quyền export_cbnv hoặc chưa đăng nhập bị từ chối xuất Excel."""
+        # Chưa đăng nhập -> 401
+        res = self.client.get(self.export_url)
+        self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        # Không có quyền nào -> 403
+        self.client.force_authenticate(user=self.no_perm_user)
+        res = self.client.get(self.export_url)
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+        # Có view_list_cbnv nhưng không có export_cbnv -> 403
+        self.client.force_authenticate(user=self.normal_user)
+        res = self.client.get(self.export_url)
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_export_excel_rbac_roles_access(self):
+        """
+        Kiểm tra phân quyền RBAC:
+        - TP (Trưởng phòng), BGD (Ban Giám đốc), ADMIN (Quản trị hệ thống) được phép xuất (200).
+        - CV (Chuyên viên), VT (Văn thư) không có quyền export_cbnv -> bị từ chối 403.
+        """
+        # 1. Nhóm Trưởng phòng (TP)
+        tp_group, _ = Group.objects.get_or_create(name="Trưởng phòng")
+        tp_user = User.objects.create_user(
+            username="tp_test_user",
+            email="tp@donvi.gov.vn",
+            password="Password123",
+            ho_ten="Trưởng Phòng Test",
+            don_vi=self.don_vi_1,
+            chuc_vu=self.cv_truong_phong,
+        )
+        tp_user.groups.add(tp_group)
+        self.client.force_authenticate(user=tp_user)
+        res = self.client.get(self.export_url)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+        # 2. Nhóm Ban Giám đốc (BGD)
+        bgd_group, _ = Group.objects.get_or_create(name="Ban Giám đốc")
+        bgd_user = User.objects.create_user(
+            username="bgd_test_user",
+            email="bgd@donvi.gov.vn",
+            password="Password123",
+            ho_ten="Ban Giám Đốc Test",
+            don_vi=self.don_vi_1,
+            chuc_vu=self.cv_truong_phong,
+        )
+        bgd_user.groups.add(bgd_group)
+        self.client.force_authenticate(user=bgd_user)
+        res = self.client.get(self.export_url)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+        # 3. Superuser / ADMIN
+        self.client.force_authenticate(user=self.admin_user)
+        res = self.client.get(self.export_url)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+        # 4. Nhóm Chuyên viên (CV) -> 403
+        cv_group, _ = Group.objects.get_or_create(name="Chuyên viên")
+        cv_user = User.objects.create_user(
+            username="cv_test_user",
+            email="cv@donvi.gov.vn",
+            password="Password123",
+            ho_ten="Chuyên Viên Test",
+            don_vi=self.don_vi_1,
+            chuc_vu=self.cv_chuyen_vien,
+        )
+        cv_user.groups.add(cv_group)
+        self.client.force_authenticate(user=cv_user)
+        res = self.client.get(self.export_url)
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+        # 5. Nhóm Văn thư (VT) -> 403
+        vt_user = User.objects.create_user(
+            username="vt_test_user",
+            email="vt@donvi.gov.vn",
+            password="Password123",
+            ho_ten="Văn Thư Test",
+            don_vi=self.don_vi_1,
+            chuc_vu=self.cv_chuyen_vien,
+        )
+        vt_user.groups.add(self.group_van_thu)
+        self.client.force_authenticate(user=vt_user)
+        res = self.client.get(self.export_url)
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_export_excel_hierarchical_directory_format_and_formula_safe(self):
+        """
+        Kiểm tra danh bạ xuất Excel theo phân cấp Khối -> Đơn vị -> Nhân sự (6 cột)
+        và chống Formula Injection bằng cách ép cell.data_type = 's'.
+        """
+        # Tạo nhân sự chứa ký tự công thức độc hại
+        User.objects.create_user(
+            username="formula_user",
+            email="formula@donvi.gov.vn",
+            password="Password123",
+            ho_ten="=1+1",
+            chuc_danh="@SUM(A1:B1)",
+            don_vi=self.don_vi_1,
+            chuc_vu=self.cv_chuyen_vien,
+            sdt="+84912345678",
+        )
+
+        self.client.force_authenticate(user=self.sensitive_user)
+        res = self.client.get(self.export_url)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            res["Content-Type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        self.assertIn("danh_sach_cbnv.xlsx", res["Content-Disposition"])
+
+        wb = openpyxl.load_workbook(BytesIO(res.content))
+        ws = wb.active
+        self.assertEqual(ws.title, "Danh Ba CBNV")
+
+        # 1. Header Banner
+        self.assertIn("DANH BẠ ĐIỆN THOẠI", ws["A1"].value)
+
+        # 2. Tiêu đề 6 cột tại dòng 5
+        headers = [ws.cell(row=5, column=col).value for col in range(1, 7)]
+        self.assertEqual(headers, ["STT", "Họ và tên", "Chức vụ", "Chức danh", "Điện thoại", "Email"])
+
+        # 3. Duyệt kiểm tra các dòng dữ liệu và an toàn kiểu dữ liệu (ép kiểu string 's')
+        found_formula_user = False
+        for row in range(6, ws.max_row + 1):
+            val_b = ws.cell(row=row, column=2).value
+            if val_b == "=1+1":
+                found_formula_user = True
+                # Đảm bảo ô cell lưu dạng string ("s"), không bị Excel tự động diễn giải thành công thức ("f")
+                self.assertEqual(ws.cell(row=row, column=2).data_type, "s")
+                self.assertEqual(ws.cell(row=row, column=4).data_type, "s")
+                self.assertEqual(ws.cell(row=row, column=5).data_type, "s")
+        self.assertTrue(found_formula_user)
+
+    def test_export_excel_active_only_and_privacy(self):
+        """
+        Xuất danh bạ chỉ gồm nhân sự đang làm việc (trang_thai = 'LAM_VIEC', is_active = True).
+        Nhân sự nội bộ (is_public = False) chỉ xuất hiện khi người xuất có quyền view_full_cbnv.
+        """
+        # Tạo nhân sự đã nghỉ việc
+        User.objects.create_user(
+            username="retired_user",
+            email="retired@donvi.gov.vn",
+            password="Password123",
+            ho_ten="Nguyễn Đã Nghỉ Việc",
+            don_vi=self.don_vi_1,
+            chuc_vu=self.cv_chuyen_vien,
+            trang_thai="NGHI_VIEC",
+            is_active=False,
+        )
+
+        # Tạo nhân sự nội bộ (is_public = False) đang làm việc
+        User.objects.create_user(
+            username="private_user",
+            email="private@donvi.gov.vn",
+            password="Password123",
+            ho_ten="Trần Nội Bộ",
+            don_vi=self.don_vi_1,
+            chuc_vu=self.cv_chuyen_vien,
+            trang_thai="LAM_VIEC",
+            is_active=True,
+            is_public=False,
+        )
+
+        # 1. Người xuất có quyền view_full_cbnv (sensitive_user)
+        self.client.force_authenticate(user=self.sensitive_user)
+        res = self.client.get(self.export_url)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        wb = openpyxl.load_workbook(BytesIO(res.content))
+        ws = wb.active
+        all_names = [ws.cell(row=r, column=2).value for r in range(6, ws.max_row + 1)]
+        # Nhân sự nghỉ việc KHÔNG xuất hiện
+        self.assertNotIn("Nguyễn Đã Nghỉ Việc", all_names)
+        # Nhân sự nội bộ ĐƯỢC xuất hiện vì có view_full_cbnv
+        self.assertIn("Trần Nội Bộ", all_names)
+
+        # 2. Người xuất có export_cbnv nhưng KHÔNG có view_full_cbnv
+        user_export_only = User.objects.create_user(
+            username="export_only_user",
+            email="export_only@donvi.gov.vn",
+            password="Password123",
+            ho_ten="Người Chỉ Có Quyền Xuất",
+            don_vi=self.don_vi_1,
+            chuc_vu=self.cv_chuyen_vien,
+        )
+        user_export_only.user_permissions.add(self.perm_export)
+        self.client.force_authenticate(user=user_export_only)
+        res = self.client.get(self.export_url)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        wb = openpyxl.load_workbook(BytesIO(res.content))
+        ws = wb.active
+        all_names_no_full = [ws.cell(row=r, column=2).value for r in range(6, ws.max_row + 1)]
+        # Cả nhân sự nghỉ việc và nhân sự nội bộ đều KHÔNG xuất hiện
+        self.assertNotIn("Nguyễn Đã Nghỉ Việc", all_names_no_full)
+        self.assertNotIn("Trần Nội Bộ", all_names_no_full)
+
+    def test_export_excel_concurrent_assignments(self):
+        """
+        Cán bộ kiêm nhiệm xuất hiện dưới từng đơn vị họ phụ trách.
+        STT đánh số lại từ 1 tại mỗi đơn vị.
+        """
+        # normal_user có đơn vị chính là don_vi_1; kiêm nhiệm thêm don_vi_2
+        EmployeeAssignment.objects.create(
+            employee=self.normal_user,
+            don_vi=self.don_vi_2,
+            chuc_vu=self.cv_truong_phong,
+            chuc_danh="Trưởng ban kiêm nhiệm",
+        )
+
+        self.client.force_authenticate(user=self.sensitive_user)
+        res = self.client.get(self.export_url)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+        wb = openpyxl.load_workbook(BytesIO(res.content))
+        ws = wb.active
+
+        # Đếm số lần normal_user xuất hiện trong bảng (phải là 2 lần: ở don_vi_1 và don_vi_2)
+        normal_user_count = 0
+        for r in range(6, ws.max_row + 1):
+            if ws.cell(row=r, column=2).value == self.normal_user.ho_ten:
+                normal_user_count += 1
+        self.assertEqual(normal_user_count, 2)
 
 
 class EmployeePermissionSecurityTests(EmployeeBaseTestCase):
@@ -1099,3 +1523,190 @@ class SeedDbCommandTests(APITestCase):
         call_command("seed_db", verbosity=0)
         self.assertEqual(DonVi.objects.count(), 82)
         self.assertEqual(Position.objects.count(), 7)
+
+
+class EmployeeAssignmentTests(EmployeeBaseTestCase):
+    """Kiểm tra chức năng Đa phòng ban & Đa chức vụ (EmployeeAssignment)."""
+
+    def test_create_employee_with_assignments_success(self):
+        """Tạo nhân viên kèm danh sách phòng ban & chức vụ kiêm nhiệm."""
+        self.client.force_authenticate(user=self.admin_user)
+        payload = {
+            "ho_ten": "Hoàng Đa Nhiệm",
+            "email": "daniem@donvi.gov.vn",
+            "ngay_sinh": "1991-03-15",
+            "don_vi_id": self.don_vi_1.id,
+            "chuc_vu_id": self.cv_chuyen_vien.id,
+            "chuc_danh": "Chuyên viên chính",
+            "sdt": "0988776655",
+            "trang_thai": "LAM_VIEC",
+            "assignments": [
+                {
+                    "don_vi_id": self.don_vi_2.id,
+                    "chuc_vu_id": self.cv_truong_phong.id,
+                    "chuc_danh": "Phó phòng kiêm nhiệm",
+                }
+            ],
+        }
+        res = self.client.post(self.employee_list_url, payload, format="json")
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        data = res.json()
+        self.assertEqual(len(data.get("assignments", [])), 1)
+        self.assertEqual(data["assignments"][0]["don_vi_id"], self.don_vi_2.id)
+        self.assertEqual(data["assignments"][0]["chuc_vu_id"], self.cv_truong_phong.id)
+        self.assertEqual(data["assignments"][0]["chuc_danh"], "Phó phòng kiêm nhiệm")
+
+        # Kiểm tra trong DB
+        user = User.objects.get(email="daniem@donvi.gov.vn")
+        assignments = EmployeeAssignment.objects.filter(employee=user)
+        self.assertEqual(assignments.count(), 1)
+        self.assertEqual(assignments.first().don_vi, self.don_vi_2)
+        self.assertEqual(assignments.first().chuc_vu, self.cv_truong_phong)
+
+    def test_create_employee_duplicate_assignment_with_primary_unit_fails(self):
+        """Phòng ban kiêm nhiệm trùng với phòng ban chính phải bị từ chối 400."""
+        self.client.force_authenticate(user=self.admin_user)
+        payload = {
+            "ho_ten": "Trùng Phòng Ban Chính",
+            "email": "trungchinh@donvi.gov.vn",
+            "ngay_sinh": "1991-03-15",
+            "don_vi_id": self.don_vi_1.id,
+            "chuc_vu_id": self.cv_chuyen_vien.id,
+            "assignments": [
+                {
+                    "don_vi_id": self.don_vi_1.id,
+                    "chuc_vu_id": self.cv_truong_phong.id,
+                }
+            ],
+        }
+        res = self.client.post(self.employee_list_url, payload, format="json")
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("assignments", res.json())
+
+    def test_create_employee_duplicate_units_among_assignments_fails(self):
+        """Hai phòng ban kiêm nhiệm trùng nhau phải bị từ chối 400."""
+        # Tạo thêm đơn vị 3
+        don_vi_3 = DonVi.objects.create(ten="Phòng Khoa học & Công nghệ", khoi=self.khoi, stt_uu_tien=3)
+        self.client.force_authenticate(user=self.admin_user)
+        payload = {
+            "ho_ten": "Trùng Kiêm Nhiệm",
+            "email": "trungkiem@donvi.gov.vn",
+            "ngay_sinh": "1991-03-15",
+            "don_vi_id": self.don_vi_1.id,
+            "chuc_vu_id": self.cv_chuyen_vien.id,
+            "assignments": [
+                {
+                    "don_vi_id": don_vi_3.id,
+                    "chuc_vu_id": self.cv_truong_phong.id,
+                },
+                {
+                    "don_vi_id": don_vi_3.id,
+                    "chuc_vu_id": self.cv_chuyen_vien.id,
+                },
+            ],
+        }
+        res = self.client.post(self.employee_list_url, payload, format="json")
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("assignments", res.json())
+
+    def test_update_employee_assignments(self):
+        """Cập nhật thay thế danh sách phòng ban kiêm nhiệm thành công."""
+        self.client.force_authenticate(user=self.admin_user)
+        don_vi_3 = DonVi.objects.create(ten="Phòng Hành chính", khoi=self.khoi, stt_uu_tien=3)
+
+        # Cán bộ ban đầu kiêm nhiệm don_vi_2
+        EmployeeAssignment.objects.create(
+            employee=self.normal_user,
+            don_vi=self.don_vi_2,
+            chuc_vu=self.cv_truong_phong,
+            chuc_danh="Tổ trưởng",
+        )
+
+        detail_url = f"{self.employee_list_url}{self.normal_user.id}/"
+        payload = {
+            "assignments": [
+                {
+                    "don_vi_id": don_vi_3.id,
+                    "chuc_vu_id": self.cv_chuyen_vien.id,
+                    "chuc_danh": "Phụ trách hành chính",
+                }
+            ]
+        }
+        res = self.client.patch(detail_url, payload, format="json")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        data = res.json()
+        self.assertEqual(len(data["assignments"]), 1)
+        self.assertEqual(data["assignments"][0]["don_vi_id"], don_vi_3.id)
+
+        # Kiểm tra DB: don_vi_2 đã được thay bằng don_vi_3
+        assignments = EmployeeAssignment.objects.filter(employee=self.normal_user)
+        self.assertEqual(assignments.count(), 1)
+        self.assertEqual(assignments.first().don_vi, don_vi_3)
+
+    def test_protect_delete_don_vi_when_assigned_concurrently(self):
+        """Không thể xóa Đơn vị khi đang có cán bộ kiêm nhiệm (on_delete=PROTECT)."""
+        EmployeeAssignment.objects.create(
+            employee=self.normal_user,
+            don_vi=self.don_vi_2,
+            chuc_vu=self.cv_chuyen_vien,
+        )
+        with self.assertRaises(ProtectedError):
+            self.don_vi_2.delete()
+
+    def test_protect_delete_chuc_vu_when_assigned_concurrently(self):
+        """Không thể xóa Chức vụ khi đang có cán bộ kiêm nhiệm (on_delete=PROTECT)."""
+        EmployeeAssignment.objects.create(
+            employee=self.normal_user,
+            don_vi=self.don_vi_2,
+            chuc_vu=self.cv_chuyen_vien,
+        )
+        with self.assertRaises(ProtectedError):
+            self.cv_chuyen_vien.delete()
+
+    def test_validate_assignment_chuc_danh_max_length(self):
+        """Chức danh kiêm nhiệm không được vượt quá 150 ký tự."""
+        self.client.force_authenticate(user=self.admin_user)
+        payload = {
+            "assignments": [
+                {
+                    "don_vi_id": self.don_vi_2.id,
+                    "chuc_vu_id": self.cv_chuyen_vien.id,
+                    "chuc_danh": "A" * 151,
+                }
+            ]
+        }
+        detail_url = f"{self.employee_list_url}{self.normal_user.id}/"
+        res = self.client.patch(detail_url, payload, format="json")
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("assignments", res.json())
+
+
+class ExportCbnvMigrationTests(TestCase):
+    """Kiểm tra tính lũy đẳng (idempotent) của migration add_export_cbnv_permission."""
+
+    def test_migration_add_export_cbnv_idempotent(self):
+        from importlib import import_module
+
+        try:
+            mig = import_module("authorization.migrations.0006_add_export_cbnv_permission")
+        except ModuleNotFoundError:
+            mig = import_module("authorization.migrations.0005_add_export_cbnv_permission")
+
+        add_export_cbnv_permission = mig.add_export_cbnv_permission
+        CODENAME = mig.CODENAME
+
+        class SchemaStub:
+            connection = connection
+
+        # Chạy lại hàm migration 2 lần liên tiếp không gây lỗi duplicate key
+        add_export_cbnv_permission(None, SchemaStub)
+        add_export_cbnv_permission(None, SchemaStub)
+
+        perm = Permission.objects.filter(codename=CODENAME)
+        self.assertEqual(perm.count(), 1)
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT module_ten FROM auth_permission WHERE codename = %s", [CODENAME])
+            row = cursor.fetchone()
+            self.assertIsNotNone(row)
+            self.assertEqual(row[0], "Cán bộ nhân viên")
+

@@ -3,7 +3,7 @@ API ViewSets cho phân hệ Quản lý Cán bộ Nhân viên (CBNV - Issue #24).
 Tác giả: Lê Duy Khánh (leduykhanhdevs).
 """
 from django.db import transaction
-from django.db.models import Q, ProtectedError, RestrictedError
+from django.db.models import Q, ProtectedError, RestrictedError, Prefetch
 from django.contrib.auth.models import Group
 from django.http import HttpResponse
 from rest_framework import viewsets, status
@@ -14,15 +14,16 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import Employee
+from .models import Employee, EmployeeAssignment
 from .serializers import (
     GroupSimpleSerializer,
     EmployeeSerializer,
     EmployeeCreateSerializer,
     EmployeeUpdateSerializer,
     user_can_view_sensitive,
+    is_last_clerk_in_unit,
 )
-from .excel_cbnv import generate_cbnv_template, import_cbnv_from_excel
+from .excel_cbnv import generate_cbnv_template, import_cbnv_from_excel, export_cbnv_to_excel
 from .permissions import CanChangeEmployeePermission, CanViewGroupPermission, require_permission
 
 
@@ -62,13 +63,15 @@ class GroupViewSet(viewsets.ReadOnlyModelViewSet):
 class EmployeeViewSet(viewsets.ModelViewSet):
     """
     API Quản lý Cán bộ Nhân viên (CBNV - Issue #24).
-    Hỗ trợ tìm kiếm, lọc theo đơn vị/chức vụ/trạng thái, tải file mẫu và import Excel.
+    Hỗ trợ tìm kiếm, lọc theo đơn vị/chức vụ/trạng thái, tải file mẫu, xuất Excel và import Excel.
     """
     pagination_class = StandardEmployeePagination
 
     def get_permissions(self):
         if self.action in ["list", "retrieve", "template"]:
             permission_classes = [IsAuthenticated, require_permission("view_list_cbnv")]
+        elif self.action == "export":
+            permission_classes = [IsAuthenticated, require_permission("export_cbnv")]
         elif self.action == "create":
             permission_classes = [IsAuthenticated, require_permission("add_cbnv")]
         elif self.action in ["update", "partial_update"]:
@@ -84,7 +87,13 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = (
             Employee.objects.select_related("don_vi__khoi", "chuc_vu")
-            .prefetch_related("groups")
+            .prefetch_related(
+                "groups",
+                Prefetch(
+                    "assignments",
+                    queryset=EmployeeAssignment.objects.select_related("don_vi__khoi", "chuc_vu").order_by("id"),
+                ),
+            )
             .all()
         )
 
@@ -283,6 +292,21 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
+        # 4. Ràng buộc & Cảnh báo: Văn thư duy nhất của đơn vị
+        if is_last_clerk_in_unit(instance):
+            confirm_last_clerk = (
+                request.query_params.get("confirm_last_clerk", "").strip().lower() in ["true", "1"]
+            )
+            if not confirm_last_clerk:
+                return Response(
+                    {
+                        "detail": "employees.messages.warnLastUnitClerk",
+                        "is_last_clerk": True,
+                        "unit_name": instance.don_vi.ten if instance.don_vi else "",
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
         try:
             with transaction.atomic():
                 instance.delete()
@@ -306,10 +330,22 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         response["Content-Disposition"] = 'attachment; filename="mau_danh_sach_cbnv.xlsx"'
         return response
 
+    @action(detail=False, methods=["get"], url_path="export")
+    def export(self, request):
+        """Xuất toàn bộ danh sách cán bộ nhân viên ra tệp Excel (.xlsx)."""
+        queryset = self.filter_queryset(self.get_queryset())
+        buffer = export_cbnv_to_excel(queryset, request.user)
+        response = HttpResponse(
+            buffer.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = 'attachment; filename="danh_sach_cbnv.xlsx"'
+        return response
+
     @action(detail=False, methods=["post"], url_path="import", parser_classes=[MultiPartParser, FormParser])
     def import_excel(self, request):
         """
-        Nhập danh sách cán bộ nhân viên từ tệp Excel (.xlsx).
+        Nhập danh sách cán bộ nhân viên từ tệp Excel (.xlsx, .xls).
         Yêu cầu quyền import_cbnv hoặc superuser (kiểm soát bởi get_permissions).
         """
 
@@ -320,7 +356,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if not file_obj.name.lower().endswith(".xlsx"):
+        filename_lower = file_obj.name.lower()
+        if not (filename_lower.endswith(".xlsx") or filename_lower.endswith(".xls")):
             return Response(
                 {"detail": "employees.messages.fileInvalidType"},
                 status=status.HTTP_400_BAD_REQUEST,

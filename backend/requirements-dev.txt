@@ -1,0 +1,5 @@
+# Requirements dành riêng cho môi trường phát triển và kiểm thử (Dev & Test)
+-r requirements.txt
+
+# Tạo tệp Excel .xls cũ cho unit test
+xlwt>=1.3.0

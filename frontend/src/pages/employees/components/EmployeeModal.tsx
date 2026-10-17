@@ -33,6 +33,16 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
   const { can } = usePermissions();
   const isSelfEditOnly = Boolean(initialData && !can('change_full_cbnv'));
 
+  const toIsoDateString = (dateStr?: string | null): string => {
+    if (!dateStr) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
+      const [d, m, y] = dateStr.split('/');
+      return `${y}-${m}-${d}`;
+    }
+    return '';
+  };
+
   const [formData, setFormData] = useState(() => {
     if (initialData) {
       return {
@@ -40,7 +50,9 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
         email: initialData.email || '',
         username: initialData.username || '',
         password: '',
-        ngay_sinh: initialData.is_birthday_masked ? '' : initialData.ngay_sinh || '',
+        ngay_sinh: initialData.is_birthday_masked
+          ? ''
+          : initialData.ngay_sinh_iso || toIsoDateString(initialData.ngay_sinh),
         don_vi_id: initialData.don_vi_id ? String(initialData.don_vi_id) : '',
         chuc_vu_id: initialData.chuc_vu_id ? String(initialData.chuc_vu_id) : '',
         chuc_danh: initialData.chuc_danh || '',
@@ -49,6 +61,13 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
         trang_thai: initialData.trang_thai || 'LAM_VIEC',
         is_public: initialData.is_public ?? true,
         ghi_chu: initialData.ghi_chu || '',
+        assignments: initialData.assignments
+          ? initialData.assignments.map((a) => ({
+              don_vi_id: String(a.don_vi_id),
+              chuc_vu_id: String(a.chuc_vu_id),
+              chuc_danh: a.chuc_danh || '',
+            }))
+          : [],
       };
     }
     return {
@@ -65,12 +84,53 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
       trang_thai: 'LAM_VIEC' as const,
       is_public: true,
       ghi_chu: '',
+      assignments: [] as Array<{ don_vi_id: string; chuc_vu_id: string; chuc_danh: string }>,
     };
   });
 
   const [errorKey, setErrorKey] = useState<string | null>(null);
   const [createdPassword, setCreatedPassword] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState<boolean>(false);
+
+  const handleAddAssignment = () => {
+    const usedUnitIds = new Set([
+      formData.don_vi_id,
+      ...formData.assignments.map((a) => a.don_vi_id),
+    ]);
+    const availableUnit = units.find((u) => !usedUnitIds.has(String(u.id)));
+    const defaultUnitId = availableUnit
+      ? String(availableUnit.id)
+      : (units[0] ? String(units[0].id) : '');
+    const defaultPosId = positions[0] ? String(positions[0].id) : '';
+
+    setFormData((prev) => ({
+      ...prev,
+      assignments: [
+        ...prev.assignments,
+        { don_vi_id: defaultUnitId, chuc_vu_id: defaultPosId, chuc_danh: '' },
+      ],
+    }));
+  };
+
+  const handleRemoveAssignment = (index: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      assignments: prev.assignments.filter((_, i) => i !== index),
+    }));
+  };
+
+  const handleAssignmentChange = (
+    index: number,
+    field: 'don_vi_id' | 'chuc_vu_id' | 'chuc_danh',
+    value: string
+  ) => {
+    setFormData((prev) => {
+      const next = [...prev.assignments];
+      next[index] = { ...next[index], [field]: value };
+      return { ...prev, assignments: next };
+    });
+    if (errorKey) setErrorKey(null);
+  };
 
   if (!isOpen) return null;
 
@@ -129,6 +189,26 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
           ngay_sinh: formData.ngay_sinh,
         };
       } else {
+        // Validate assignments kiêm nhiệm
+        if (formData.assignments.length > 0) {
+          const pUnit = formData.don_vi_id;
+          for (const a of formData.assignments) {
+            if (!a.don_vi_id || !a.chuc_vu_id) {
+              setErrorKey(t('employees.fields.duplicateAssignmentUnit'));
+              return;
+            }
+            if (a.don_vi_id === pUnit) {
+              setErrorKey(t('employees.fields.duplicateAssignmentUnit'));
+              return;
+            }
+          }
+          const seenUnits = new Set(formData.assignments.map((a) => a.don_vi_id));
+          if (seenUnits.size !== formData.assignments.length) {
+            setErrorKey(t('employees.fields.duplicateAssignmentUnit'));
+            return;
+          }
+        }
+
         payload = {
           ho_ten: formData.ho_ten.trim(),
           email: formData.email.trim(),
@@ -141,6 +221,11 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
           trang_thai: formData.trang_thai,
           is_public: formData.is_public,
           ghi_chu: formData.ghi_chu.trim(),
+          assignments: formData.assignments.map((a) => ({
+            don_vi_id: Number(a.don_vi_id),
+            chuc_vu_id: Number(a.chuc_vu_id),
+            chuc_danh: a.chuc_danh.trim(),
+          })),
         };
 
         if (!initialData) {
@@ -195,7 +280,7 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-backdrop backdrop-blur-sm animate-fade-in">
-      <div className="bg-surface border border-border rounded-xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden animate-scale-up">
+      <div className="bg-surface border border-border rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden animate-scale-up">
         {/* Modal Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-surface-elevated">
           <div className="flex items-center gap-3">
@@ -466,6 +551,93 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                 </span>
               </div>
             </div>
+
+            {/* Phân công kiêm nhiệm (Đa phòng ban & chức vụ - Yêu cầu 3) */}
+            {!isSelfEditOnly && (
+              <div className="border border-border rounded-xl p-4 bg-surface-elevated space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <i className="fa-solid fa-network-wired text-primary" />
+                    <span className="text-sm font-semibold text-main">
+                      {t('employees.fields.concurrentAssignments')}
+                    </span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleAddAssignment}
+                    icon="fa-plus"
+                  >
+                    {t('employees.fields.addAssignment')}
+                  </Button>
+                </div>
+
+                {formData.assignments.length === 0 ? (
+                  <p className="text-xs text-muted italic">
+                    {t('employees.fields.noAssignments')}
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {formData.assignments.map((item, idx) => (
+                      <div
+                        key={idx}
+                        className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 p-3 bg-surface border border-border rounded-lg"
+                      >
+                        <div className="flex-1">
+                          <Select
+                            name={`assign_unit_${idx}`}
+                            value={item.don_vi_id}
+                            onChange={(val) =>
+                              handleAssignmentChange(idx, 'don_vi_id', val)
+                            }
+                            placeholder={t('employees.placeholders.selectUnit')}
+                            options={units.map((u) => ({
+                              value: String(u.id),
+                              label: u.ten,
+                              group: u.khoi_ten || undefined,
+                            }))}
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <Select
+                            name={`assign_pos_${idx}`}
+                            value={item.chuc_vu_id}
+                            onChange={(val) =>
+                              handleAssignmentChange(idx, 'chuc_vu_id', val)
+                            }
+                            placeholder={t('employees.placeholders.selectPosition')}
+                            options={positions.map((pos) => ({
+                              value: String(pos.id),
+                              label: pos.name,
+                            }))}
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <input
+                            type="text"
+                            value={item.chuc_danh}
+                            onChange={(e) =>
+                              handleAssignmentChange(idx, 'chuc_danh', e.target.value)
+                            }
+                            placeholder={t('employees.fields.assignmentTitle')}
+                            className="w-full px-3 py-2 text-sm bg-surface-elevated border border-border rounded-lg text-main placeholder-muted focus:outline-none focus:border-primary"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveAssignment(idx)}
+                          className="p-2 text-danger hover:bg-danger-subtle rounded-lg transition-colors shrink-0 self-end sm:self-center"
+                          title={t('employees.fields.removeAssignment')}
+                        >
+                          <i className="fa-solid fa-trash-can" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Nhóm quyền (RBAC) */}
             {groups.length > 0 && (
