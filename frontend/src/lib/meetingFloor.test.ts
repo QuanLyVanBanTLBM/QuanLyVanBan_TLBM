@@ -50,11 +50,24 @@ describe('meetingFloor utility', () => {
       expect(getFloorKey('L3')).toBe('3');
     });
 
-    it('trả về null nếu không có thông tin tầng hoặc từ ngữ không phải tầng số', () => {
+    it('ưu tiên nhận diện tầng số khi có kèm tên tòa/khu mang tiền tố B (Tòa B2, Block B1, Khu B3)', () => {
+      expect(getFloorKey('Tầng 3, Tòa B2')).toBe('3');
+      expect(getFloorKey('Block B1, Tầng 5')).toBe('5');
+      expect(getFloorKey('Tầng 4 - Khu B3')).toBe('4');
+      expect(getFloorKey('Tầng trệt, Tòa B1')).toBe('G');
+      expect(getFloorKey('Tòa B1, Tầng hầm')).toBe('B');
+      expect(getFloorKey('Tòa B1, Tầng 2')).toBe('2');
+    });
+
+    it('trả về null nếu chuỗi chỉ chứa tên tòa/khu/tổ hợp như Tòa B2, Block B1 mà không có thông tin tầng', () => {
       expect(getFloorKey(null)).toBeNull();
       expect(getFloorKey(undefined)).toBeNull();
       expect(getFloorKey('')).toBeNull();
       expect(getFloorKey('Tòa nhà văn phòng')).toBeNull();
+      expect(getFloorKey('Tòa B2')).toBeNull();
+      expect(getFloorKey('Block B1')).toBeNull();
+      expect(getFloorKey('Khu B3')).toBeNull();
+      expect(getFloorKey('Building B2')).toBeNull();
       expect(getFloorKey('Tòa nhà Floor Plaza')).toBeNull(); // Không nhận diện nhầm Floor Plaza thành tầng Plaza
     });
   });
@@ -159,6 +172,25 @@ describe('meetingFloor utility', () => {
       const sorted = [...roomsSameFloor].sort(compareRoomsByFloor);
       expect(sorted[0].name).toBe('Phòng Ban Giám Đốc (Nội bộ)');
       expect(sorted[1].name).toBe('Phòng Họp Ban Giám Đốc (VIP 1)');
+    });
+
+    it('không nhầm lẫn tên tòa/block B1, B2 với tầng hầm khi sắp xếp (Tòa B2, Block B1 phải xếp sau Trệt theo đúng số tầng)', () => {
+      const complexRooms = [
+        { id: 1, name: 'Phòng Hội Thảo Block B1', location: 'Block B1, Tầng 5' },
+        { id: 2, name: 'Phòng Trệt Tòa B1', location: 'Tầng trệt, Tòa B1' },
+        { id: 3, name: 'Phòng Họp Khu B3', location: 'Tầng 4 - Khu B3' },
+        { id: 4, name: 'Phòng Thảo Luận Tòa B2', location: 'Tầng 3, Tòa B2' },
+        { id: 5, name: 'Phòng Hầm Chuẩn', location: 'Tầng hầm B1' },
+      ];
+
+      const sorted = [...complexRooms].sort(compareRoomsByFloor);
+      expect(sorted.map((r) => r.name)).toEqual([
+        'Phòng Hầm Chuẩn',          // Hầm B1 (-1)
+        'Phòng Trệt Tòa B1',        // Trệt (0)
+        'Phòng Thảo Luận Tòa B2',   // Tầng 3 (3), không bị nhầm thành Hầm B2
+        'Phòng Họp Khu B3',         // Tầng 4 (4), không bị nhầm thành Hầm B3
+        'Phòng Hội Thảo Block B1',  // Tầng 5 (5), không bị nhầm thành Hầm B1
+      ]);
     });
   });
 });

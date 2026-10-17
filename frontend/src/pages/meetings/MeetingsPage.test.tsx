@@ -477,13 +477,20 @@ describe('MeetingsPage Component (Issue #22)', () => {
       },
     ];
 
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+
+    const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const tomorrowStr = `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth() + 1)}-${pad(tomorrow.getDate())}`;
+
     const tomorrowBooking = [
       {
         id: 999,
         room: 1,
         room_detail: singleRoom[0],
         title: 'Họp ngày mai',
-        date: '2026-10-18',
+        date: tomorrowStr,
         start_time: '08:00:00',
         end_time: '18:00:00',
         attendees_count: 10,
@@ -496,11 +503,12 @@ describe('MeetingsPage Component (Issue #22)', () => {
         return Promise.resolve({ results: singleRoom });
       }
       if (url.includes('/api/meeting-bookings/')) {
-        // Request lấy lịch hôm nay cho Tab Danh mục: trả về rỗng (hôm nay không có lịch)
-        if (url.includes('page_size=100')) {
+        // Phân biệt chính xác bằng tham số date=:
+        // - Request lịch hôm nay (cho Tab Danh mục hoặc khi Tab 1 xem hôm nay): trả về [] (hôm nay không có lịch)
+        if (url.includes(`date=${todayStr}`)) {
           return Promise.resolve({ results: [] });
         }
-        // Request của tab Lịch đặt (ngày khác): có lịch
+        // - Request lịch ngày khác (khi Tab 1 xem ngày mai): trả về có lịch
         return Promise.resolve({ results: tomorrowBooking });
       }
       if (url.includes('/api/auth/profile/')) {
@@ -515,6 +523,11 @@ describe('MeetingsPage Component (Issue #22)', () => {
       </MemoryRouter>
     );
 
+    // 1. Ở Tab 1, chuyển bộ lọc ngày sang ngày mai (lúc này tab 1 có lịch ngày mai)
+    const dateInput = screen.getByDisplayValue(todayStr);
+    fireEvent.change(dateInput, { target: { value: tomorrowStr } });
+
+    // 2. Chuyển sang Tab 2 (Danh mục phòng họp)
     fireEvent.click(screen.getByText('Danh mục phòng họp'));
 
     await waitFor(() => {
@@ -523,6 +536,8 @@ describe('MeetingsPage Component (Issue #22)', () => {
 
     const roomTitle = screen.getByText('Phòng Hội Thảo A');
     const roomCard = roomTitle.closest('.p-5');
+    // Hôm nay không có lịch => Thẻ phòng phải hiển thị Sẵn sàng & Trống lịch trong ngày,
+    // tuyệt đối không dùng nhầm lịch ngày mai của Tab 1
     expect(roomCard).toHaveTextContent('Sẵn sàng');
     expect(roomCard).toHaveTextContent('Trống lịch trong ngày');
     expect(roomCard).not.toHaveTextContent('Có lịch trong ngày');

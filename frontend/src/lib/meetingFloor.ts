@@ -23,14 +23,11 @@ export const getFloorKey = (location?: string | null): string | null => {
   if (!location) return null;
   const trimmed = location.trim();
 
-  // 1. Kiểm tra tầng hầm (Basement): B1, B2, Hầm B1, Tầng hầm, Basement...
-  const basementWithNum = trimmed.match(/(?:\b(?:t[ầaà]ng\s+)?h[ầaà]m\s*(?:b)?([0-9]+)\b|\bbasement\s*([0-9]+)\b|\bb([0-9]+)\b)/i);
-  if (basementWithNum) {
-    const num = basementWithNum[1] || basementWithNum[2] || basementWithNum[3];
-    return `B${num}`;
-  }
-  if (/(?:\b(?:t[ầaà]ng\s+)?h[ầaà]m\b|\bbasement\b)/i.test(trimmed)) {
-    return 'B';
+  // 1. Kiểm tra các mẫu tầng số chuẩn trước: Tầng X, Lầu X, Floor X, Level X
+  // (Đảm bảo 'Tầng 3, Tòa B2' hay 'Block B1, Tầng 5' nhận diện đúng tầng số thay vì nhầm B1/B2)
+  const standardMatch = trimmed.match(/(?:\bt[ầaà]ng|\bl[ầaà]u|\bfloor|\blevel)\s*([0-9]+)\b/i);
+  if (standardMatch) {
+    return standardMatch[1];
   }
 
   // 2. Kiểm tra tầng trệt / ground floor / tầng G
@@ -43,16 +40,36 @@ export const getFloorKey = (location?: string | null): string | null => {
     return 'M';
   }
 
-  // 4. Kiểm tra các mẫu chuẩn chỉ nhận số: Tầng X, Lầu X, Floor X, Level X
-  const standardMatch = trimmed.match(/(?:\bt[ầaà]ng|\bl[ầaà]u|\bfloor|\blevel)\s*([0-9]+)\b/i);
-  if (standardMatch) {
-    return standardMatch[1];
+  // 4. Kiểm tra tầng hầm (Basement) có từ khóa rõ ràng:
+  // - 'Tầng hầm B1', 'Hầm B2', 'Tầng hầm 1', 'Basement 2', 'Tầng B1', 'Floor B2'...
+  const explicitBasementWithNum = trimmed.match(
+    /(?:\b(?:t[ầaà]ng\s+)?h[ầaà]m\s*(?:b)?([0-9]+)\b|\bbasement\s*(?:b)?([0-9]+)\b|(?:\bt[ầaà]ng|\bl[ầaà]u|\bfloor|\blevel)\s*b([0-9]+)\b)/i
+  );
+  if (explicitBasementWithNum) {
+    const num = explicitBasementWithNum[1] || explicitBasementWithNum[2] || explicitBasementWithNum[3];
+    return `B${num}`;
+  }
+  if (/(?:\b(?:t[ầaà]ng\s+)?h[ầaà]m\b|\bbasement\b|(?:\bt[ầaà]ng|\bl[ầaà]u|\bfloor|\blevel)\s*b\b)/i.test(trimmed)) {
+    return 'B';
   }
 
-  // 5. Kiểm tra các mẫu viết tắt: T2, F3, L1
+  // 5. Kiểm tra B + số đứng độc lập (chỉ nhận khi không đi sau Tòa / Block / Khu / Building)
+  // Ví dụ: 'B1, Tòa A', 'B2' -> B1, B2. Nhưng 'Tòa B2', 'Block B1', 'Khu B3' -> không nhận.
+  const standaloneBMatch = trimmed.match(/\bb([0-9]+)\b/i);
+  if (standaloneBMatch) {
+    const prefixBeforeB = trimmed.slice(0, standaloneBMatch.index);
+    if (!/(?:t[òo]a(?:\s+nh[àa])?|block|khu|building)\s*$/i.test(prefixBeforeB.trim())) {
+      return `B${standaloneBMatch[1]}`;
+    }
+  }
+
+  // 6. Kiểm tra các mẫu viết tắt: T2, F3, L1 (chỉ nhận khi không đi liền sau Block/Khu/Tòa)
   const shortMatch = trimmed.match(/\b([TFL])([0-9]+)\b/i);
   if (shortMatch) {
-    return shortMatch[2];
+    const prefixBeforeShort = trimmed.slice(0, shortMatch.index);
+    if (!/(?:t[òo]a(?:\s+nh[àa])?|block|khu|building|l[ôo])\s*$/i.test(prefixBeforeShort.trim())) {
+      return shortMatch[2];
+    }
   }
 
   return null;
