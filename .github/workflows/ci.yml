@@ -22,6 +22,8 @@ jobs:
     name: backend
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      DJANGO_SECRET_KEY: "ci-only-not-for-production"
     defaults:
       run:
         working-directory: backend
@@ -83,3 +85,41 @@ jobs:
 
       - name: Type check and build
         run: pnpm build
+
+      - name: Upload frontend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist/
+          if-no-files-found: error
+
+  deploy-frontend:
+    name: Deploy frontend to Ubuntu
+    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
+    needs: [frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: dist
+
+      - name: Deploy frontend over SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_SSH_PRIVATE_KEY"
+          test -n "$DEPLOY_KNOWN_HOSTS"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          rsync -az -e 'ssh -i ~/.ssh/id_ed25519 -p 2150' dist/ "$DEPLOY_USER@$DEPLOY_HOST:/var/www/qlvb/"

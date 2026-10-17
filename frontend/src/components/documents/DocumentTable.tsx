@@ -1,8 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { DocumentItem } from '@app-types/document';
 import { Badge } from '@components/common/Badge';
 import { Button } from '@components/common/Button';
 import { formatDate } from '@lib/dateUtils';
+import { authService } from '@lib/authService';
+
 
 export interface DocumentTableProps {
   documents: DocumentItem[];
@@ -17,6 +19,7 @@ export interface DocumentTableProps {
   onEdit?: (doc: DocumentItem) => void;
   onDelete?: (id: number, soHieu: string) => void;
   isConfidential?: boolean;
+  loai?: 'DEN' | 'DI';
 }
 
 export const DocumentTable: React.FC<DocumentTableProps> = ({
@@ -31,7 +34,11 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
   onEdit,
   onDelete,
   isConfidential = false,
+  loai = 'DEN',
 }) => {
+  // Lấy thông tin phiên làm việc hiện tại để phân quyền hiển thị tác vụ
+  const currentSession = useMemo(() => authService.getSession(), []);
+
   // Quản lý menu 3 chấm ⋮ mở trên dòng nào
   const [activeMenuId, setActiveMenuId] = useState<number | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -86,7 +93,7 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
         <table className="w-full text-left text-sm border-collapse min-w-[950px]">
           <thead>
             <tr className="bg-surface-elevated/70 text-xs font-bold text-muted uppercase tracking-wider border-b border-border-subtle">
-              <th className="px-4 py-3 text-center w-16">Số đến</th>
+              <th className="px-4 py-3 text-center w-16">{loai === 'DI' ? 'Số đi' : 'Số đến'}</th>
               <th className="px-4 py-3 w-40">Số, ký hiệu</th>
               <th className="px-4 py-3 w-40">Ngày văn bản</th>
               <th className="px-4 py-3 min-w-[280px]">Trích yếu nội dung</th>
@@ -135,7 +142,7 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
                       <i className="fa-solid fa-folder-open text-muted" />
                     </div>
                     <span className="text-sm font-semibold text-secondary">
-                      Không tìm thấy văn bản đến nào
+                      {loai === 'DI' ? 'Không tìm thấy văn bản đi nào' : 'Không tìm thấy văn bản đến nào'}
                     </span>
                     <span className="text-xs text-muted max-w-sm">
                       Không có văn bản nào phù hợp với điều kiện tìm kiếm. Hãy thử chọn năm khác hoặc đặt lại bộ lọc.
@@ -153,9 +160,27 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
                 const isActiveRow = activeMenuId === doc.id;
                 const isNearBottom = index >= documents.length - 2 && documents.length > 2;
 
-                // Quyền sửa & xóa: Cán bộ có thể thao tác khi có hàm xử lý
-                const canEdit = !isConfidential && Boolean(onEdit);
-                const canDelete = !isConfidential && Boolean(onDelete);
+                // Phân quyền sửa & xóa văn bản:
+                // - Văn bản hạn chế (HAN_CHE) hoặc chế độ bảo mật: tuyệt đối không được xóa
+                // - Admin (vai trò admin hoặc tài khoản canbo): toàn quyền sửa / xóa
+                // - Người tạo văn bản: có quyền sửa văn bản của chính mình
+                // - Cán bộ thường không được phân quyền: ẩn hoàn toàn nút Chỉnh sửa và Xóa
+                const isDocConfidential = isConfidential || doc.pham_vi === 'HAN_CHE';
+                const isAdmin =
+                  currentSession?.role === 'admin' ||
+                  currentSession?.username === 'admin' ||
+                  currentSession?.username === 'canbo';
+                const isCreator = Boolean(
+                  currentSession?.username &&
+                  doc.nguoi_tao_username &&
+                  currentSession.username === doc.nguoi_tao_username
+                );
+
+                const userCanEdit = doc.can_edit !== undefined ? doc.can_edit : (!currentSession || isAdmin || isCreator);
+                const userCanDelete = doc.can_delete !== undefined ? doc.can_delete : (!isDocConfidential && (!currentSession || isAdmin || isCreator));
+
+                const canEdit = !isDocConfidential && Boolean(onEdit) && userCanEdit;
+                const canDelete = !isDocConfidential && Boolean(onDelete) && userCanDelete;
 
                 // Tông màu hàng theo trạng thái hiệu lực:
                 // - Văn bản có hiệu lực: tông xanh lá nhẹ + viền trái xanh lá
@@ -227,6 +252,49 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
                           </div>
                         )}
                         {(() => {
+                          const hasDirectionalData = Boolean(
+                            (doc.thay_the_cho && doc.thay_the_cho.length > 0) ||
+                            (doc.bi_thay_boi && doc.bi_thay_boi.length > 0)
+                          );
+
+                          if (hasDirectionalData) {
+                            return (
+                              <>
+                                {/* 1. Các văn bản mà tài liệu này đi thay thế */}
+                                {(doc.thay_the_cho || []).map((targetSoHieu, idx) => {
+                                  const isPartial = doc.hieu_luc === 'CON_HIEU_LUC_1_PHAN';
+                                  return (
+                                    <div
+                                      key={`thay-the-${idx}`}
+                                      className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-md border ${
+                                        isPartial
+                                          ? 'text-purple-700 dark:text-purple-400 bg-purple-500/10 border-purple-500/20'
+                                          : 'text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+                                      }`}
+                                      title={`Văn bản này thay thế cho văn bản cũ: ${targetSoHieu}`}
+                                    >
+                                      <i className={`fa-solid fa-repeat text-xs ${isPartial ? 'text-purple-600 dark:text-purple-400' : 'text-emerald-600 dark:text-emerald-400'}`} />
+                                      <span>Thay thế cho: <strong className="font-mono">{targetSoHieu}</strong></span>
+                                    </div>
+                                  );
+                                })}
+
+                                {/* 2. Các văn bản mới đã đến thay thế tài liệu này */}
+                                {(doc.bi_thay_boi || []).map((targetSoHieu, idx) => (
+                                  <div
+                                    key={`bi-thay-${idx}`}
+                                    className="inline-flex items-center gap-1 text-xs font-medium text-warning-text bg-warning/10 px-2 py-0.5 rounded-md border border-warning/30"
+                                    title={`Văn bản này đã bị thay thế bởi: ${targetSoHieu}`}
+                                  >
+                                    <i className="fa-solid fa-triangle-exclamation text-warning text-xs" />
+                                    <span>Bị thay bởi: <strong className="font-mono">{targetSoHieu}</strong></span>
+                                  </div>
+                                ))}
+                              </>
+                            );
+                          }
+
+                          // Fallback khi chưa có dữ liệu 2 chiều
                           const repList: string[] = (doc.danh_sach_thay_the && doc.danh_sach_thay_the.length > 0)
                             ? doc.danh_sach_thay_the
                             : (doc.link_thay_the ? doc.link_thay_the.split(',').map((s) => s.trim()).filter(Boolean) : []);
@@ -270,7 +338,6 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
                                 </div>
                               );
                             }
-                            // Khi văn bản đã hết hiệu lực theo ngày nhưng vẫn lưu giữ lịch sử thay thế
                             return (
                               <div
                                 key={idx}
@@ -459,8 +526,8 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
                 onClick={() => onPageChange(p)}
                 disabled={isLoading}
                 className={`min-w-[28px] h-7 px-2 rounded-lg text-xs font-semibold transition-all ${page === p
-                    ? 'bg-primary text-white shadow-sm'
-                    : 'text-secondary hover:text-main hover:bg-surface-elevated'
+                  ? 'bg-primary text-white shadow-sm'
+                  : 'text-secondary hover:text-main hover:bg-surface-elevated'
                   }`}
               >
                 {p}

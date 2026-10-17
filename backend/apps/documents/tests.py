@@ -1079,4 +1079,88 @@ class RestrictedDocumentSecurityIssue82Tests(TestCase):
         )
         self.assertGreaterEqual(doc2.so_thu_tu, 101)
 
+    def test_directional_replacement_relations_and_circular_prevention(self):
+        """Test phân định quan hệ thay thế 2 chiều và chặn vòng lặp thay thế A <-> B."""
+        from documents.services import get_replacement_relations, sync_replacement_document
+        from documents.serializers import DocumentCreateUpdateSerializer
+        from rest_framework.exceptions import ValidationError
+
+        # Tạo văn bản gốc A
+        doc_a = VanBanDen.objects.create(
+            nam=2026, so_hieu="VB-A/2026", so_thu_tu=201,
+            trich_yeu="Văn bản cũ A", noi_ban_hanh="ITC",
+            hieu_luc=HieuLuc.CON_HIEU_LUC,
+        )
+
+        # Tạo văn bản B thay thế A
+        doc_b = VanBanDen.objects.create(
+            nam=2026, so_hieu="VB-B/2026", so_thu_tu=202,
+            trich_yeu="Văn bản mới B thay thế A", noi_ban_hanh="ITC",
+            hieu_luc=HieuLuc.CON_HIEU_LUC,
+            link_thay_the="VB-A/2026",
+        )
+        sync_replacement_document(doc_b)
+        doc_a.refresh_from_db()
+
+        # Quan hệ của A: bị B thay thế
+        rel_a = get_replacement_relations(doc_a)
+        self.assertIn("VB-B/2026", rel_a["bi_thay_boi"])
+        self.assertEqual(rel_a["thay_the_cho"], [])
+
+        # Quan hệ của B: thay thế A
+        rel_b = get_replacement_relations(doc_b)
+        self.assertIn("VB-A/2026", rel_b["thay_the_cho"])
+        self.assertEqual(rel_b["bi_thay_boi"], [])
+
+        # Chặn tự thay thế chính mình
+        ser_self = DocumentCreateUpdateSerializer(
+            instance=doc_b,
+            data={"so_hieu": "VB-B/2026", "link_thay_the": "VB-B/2026", "noi_ban_hanh": "ITC", "trich_yeu": "Test"},
+            partial=True,
+        )
+        with self.assertRaises(ValidationError):
+            ser_self.is_valid(raise_exception=True)
+
+        # Chặn A thay thế ngược lại B (Circular Replacement)
+        ser_circ = DocumentCreateUpdateSerializer(
+            instance=doc_a,
+            data={"so_hieu": "VB-A/2026", "link_thay_the": "VB-B/2026", "noi_ban_hanh": "ITC", "trich_yeu": "Test"},
+            partial=True,
+        )
+        with self.assertRaises(ValidationError):
+            ser_circ.is_valid(raise_exception=True)
+
+    def test_reject_nonexistent_replacement_target(self):
+        """Khóa nghiệp vụ: Chặn nhập số hiệu văn bản không tồn tại trong hệ thống (như '12')."""
+        from documents.serializers import DocumentCreateUpdateSerializer
+        doc = VanBanDen.objects.create(
+            nam=2026, so_hieu="112/TB-SGDĐT", so_thu_tu=210,
+            trich_yeu="Văn bản thông báo", noi_ban_hanh="SGDĐT",
+            hieu_luc=HieuLuc.HET_VA_THAY_THE,
+            link_thay_the="",
+        )
+        # Thử gán link_thay_the là số '12' (không tồn tại trong CSDL)
+        ser = DocumentCreateUpdateSerializer(
+            instance=doc,
+            data={"link_thay_the": "12"},
+            partial=True,
+        )
+        self.assertFalse(ser.is_valid())
+        self.assertIn("link_thay_the", ser.errors)
+        self.assertIn("không tồn tại", str(ser.errors["link_thay_the"][0]))
+
+    def test_get_replacement_relations_ignores_nonexistent_target(self):
+        """Engine quan hệ thay thế tuyệt đối không sinh badge cho văn bản ma/không tồn tại trong DB."""
+        from documents.services import get_replacement_relations
+        doc = VanBanDen.objects.create(
+            nam=2026, so_hieu="112/TB-SGDĐT", so_thu_tu=211,
+            trich_yeu="Văn bản thông báo", noi_ban_hanh="SGDĐT",
+            hieu_luc=HieuLuc.HET_HIEU_LUC,
+            link_thay_the="12",  # Giả sử trong DB có chuỗi 12 chưa xóa
+        )
+        rel = get_replacement_relations(doc)
+        self.assertEqual(rel["thay_the_cho"], [])
+        self.assertEqual(rel["bi_thay_boi"], [])
+
+
 

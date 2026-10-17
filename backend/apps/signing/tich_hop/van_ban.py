@@ -43,10 +43,18 @@ class VanBanDi:
     trich_yeu: str
 
 
+def _thong_tin_cot(cursor):
+    """Xác định cột hỗ trợ cả schema chuẩn hóa (#96) lẫn schema cũ từ DDL trước đó."""
+    cot = {c.name for c in connection.introspection.get_table_description(cursor, BANG_VAN_BAN_DI)}
+    cot_nguoi_tao = "nguoi_tao_id" if "nguoi_tao_id" in cot else "nguoi_tao"
+    co_pham_vi = "pham_vi" in cot
+    return cot_nguoi_tao, co_pham_vi
+
+
 def _cot_nguoi_tao(cursor):
     """Cột người tạo văn bản: `nguoi_tao_id` theo DDL chuẩn hóa (#96), `nguoi_tao` với DDL trước đó."""
-    cot = {c.name for c in connection.introspection.get_table_description(cursor, BANG_VAN_BAN_DI)}
-    return "nguoi_tao_id" if "nguoi_tao_id" in cot else "nguoi_tao"
+    cot_nguoi_tao, _ = _thong_tin_cot(cursor)
+    return cot_nguoi_tao
 
 
 def _doc_van_ban_di(van_ban_id):
@@ -57,8 +65,10 @@ def _doc_van_ban_di(van_ban_id):
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
     with connection.cursor() as cursor:
+        cot_nguoi_tao, co_pham_vi = _thong_tin_cot(cursor)
+        cot_pv = "pham_vi" if co_pham_vi else "'NOI_BO' AS pham_vi"
         cursor.execute(
-            f"SELECT id, pham_vi, {_cot_nguoi_tao(cursor)}, so_hieu, trich_yeu FROM {BANG_VAN_BAN_DI} WHERE id = %s",
+            f"SELECT id, {cot_pv}, {cot_nguoi_tao}, so_hieu, trich_yeu FROM {BANG_VAN_BAN_DI} WHERE id = %s",
             [van_ban_id],
         )
         row = cursor.fetchone()
@@ -118,16 +128,19 @@ def tim_van_ban_di(nguoi_dung, tu_khoa=""):
     """
     if BANG_VAN_BAN_DI not in connection.introspection.table_names():
         return []
-    sql = f"SELECT id, so_hieu, trich_yeu FROM {BANG_VAN_BAN_DI} WHERE pham_vi <> %s"
-    tham_so = [PHAM_VI_HAN_CHE]
-    if not co_quyen(nguoi_dung, "view_vanbandi"):
-        with connection.cursor() as cursor:
-            sql += f" AND {_cot_nguoi_tao(cursor)} = %s"
-        tham_so.append(nguoi_dung.pk)
-    if tu_khoa:
-        sql += " AND (UPPER(so_hieu) LIKE UPPER(%s) OR UPPER(trich_yeu) LIKE UPPER(%s))"
-        tham_so += [f"%{tu_khoa}%", f"%{tu_khoa}%"]
-    sql += f" ORDER BY id DESC LIMIT {TOI_DA_TIM}"
     with connection.cursor() as cursor:
+        cot_nguoi_tao, co_pham_vi = _thong_tin_cot(cursor)
+        sql = f"SELECT id, so_hieu, trich_yeu FROM {BANG_VAN_BAN_DI} WHERE 1=1"
+        tham_so = []
+        if co_pham_vi:
+            sql += " AND pham_vi <> %s"
+            tham_so.append(PHAM_VI_HAN_CHE)
+        if not co_quyen(nguoi_dung, "view_vanbandi"):
+            sql += f" AND {cot_nguoi_tao} = %s"
+            tham_so.append(nguoi_dung.pk)
+        if tu_khoa:
+            sql += " AND (UPPER(so_hieu) LIKE UPPER(%s) OR UPPER(trich_yeu) LIKE UPPER(%s))"
+            tham_so += [f"%{tu_khoa}%", f"%{tu_khoa}%"]
+        sql += f" ORDER BY id DESC LIMIT {TOI_DA_TIM}"
         cursor.execute(sql, tham_so)
         return [{"id": r[0], "so_hieu": r[1] or "", "trich_yeu": r[2] or ""} for r in cursor.fetchall()]

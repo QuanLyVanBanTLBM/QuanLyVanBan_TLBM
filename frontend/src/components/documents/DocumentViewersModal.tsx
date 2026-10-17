@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { DocumentViewer, PaginatedResponse } from '@app-types/document';
 import { Button } from '@components/common/Button';
@@ -22,69 +22,64 @@ export const DocumentViewersModal: React.FC<DocumentViewersModalProps> = ({
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState<string>('');
-
-  // Fetch danh sách người đã xem
-  const fetchViewers = useCallback(async (id: number) => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const endpoint = `/api/documents/${id}/viewers/`;
-      const response = await apiClient.get<PaginatedResponse<DocumentViewer> | DocumentViewer[]>(endpoint);
-
-      if (response && 'results' in response && Array.isArray(response.results)) {
-        setViewers(response.results);
-        setTotalCount(response.count ?? response.results.length);
-      } else if (Array.isArray(response)) {
-        setViewers(response);
-        setTotalCount(response.length);
-      } else {
-        setViewers([]);
-        setTotalCount(0);
-      }
-    } catch {
-      // Nếu API trả về lỗi hoặc chạy offline
-      const session = authService.getSession();
-      const currentUserName = session?.fullName || session?.username || 'Cán bộ hiện tại';
-      const currentUserUsername = session?.username || 'can_bo';
-      const fallbackViewer: DocumentViewer = {
-        id: 1,
-        user_id: 1,
-        username: currentUserUsername,
-        full_name: currentUserName,
-        chuc_danh: 'Văn thư / Cán bộ xử lý',
-        don_vi: 'Bộ phận Tiếp nhận Văn bản',
-        viewed_at: new Date().toISOString(),
-      };
-
-      // Nếu lỗi kết nối, hiển thị fallback lượt xem hiện tại thay vì để modal bị treo lỗi
-      setViewers([fallbackViewer]);
-      setTotalCount(1);
-      setError(null);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const [reloadKey, setReloadKey] = useState<number>(0);
 
   useEffect(() => {
-    let cancelled = false;
-    if (isOpen && documentId) {
-      Promise.resolve().then(() => {
-        if (!cancelled) void fetchViewers(documentId);
-      });
-    } else {
-      Promise.resolve().then(() => {
-        if (!cancelled) {
+    if (!isOpen || !documentId) {
+      return;
+    }
+    let ignore = false;
+    (async () => {
+      await Promise.resolve();
+      if (ignore) return;
+      setIsLoading(true);
+      setError(null);
+      try {
+        const endpoint = `/api/documents/${documentId}/viewers/`;
+        const response = await apiClient.get<PaginatedResponse<DocumentViewer> | DocumentViewer[]>(endpoint);
+
+        if (ignore) return;
+        if (response && 'results' in response && Array.isArray(response.results)) {
+          setViewers(response.results);
+          setTotalCount(response.count ?? response.results.length);
+        } else if (Array.isArray(response)) {
+          setViewers(response);
+          setTotalCount(response.length);
+        } else {
           setViewers([]);
           setTotalCount(0);
-          setSearchTerm('');
-          setError(null);
         }
-      });
-    }
+      } catch {
+        if (ignore) return;
+        // Nếu API trả về lỗi hoặc chạy offline
+        const session = authService.getSession();
+        const currentUserName = session?.fullName || session?.username || 'Cán bộ hiện tại';
+        const currentUserUsername = session?.username || 'can_bo';
+        const fallbackViewer: DocumentViewer = {
+          id: 1,
+          user_id: 1,
+          username: currentUserUsername,
+          full_name: currentUserName,
+          chuc_danh: 'Văn thư / Cán bộ xử lý',
+          don_vi: 'Bộ phận Tiếp nhận Văn bản',
+          viewed_at: new Date().toISOString(),
+        };
+
+        // Nếu lỗi kết nối, hiển thị fallback lượt xem hiện tại thay vì để modal bị treo lỗi
+        setViewers([fallbackViewer]);
+        setTotalCount(1);
+        setError(null);
+      } finally {
+        if (!ignore) {
+          setIsLoading(false);
+        }
+      }
+    })();
+
     return () => {
-      cancelled = true;
+      ignore = true;
     };
-  }, [isOpen, documentId, fetchViewers]);
+  }, [isOpen, documentId, reloadKey]);
 
   // Đóng bằng phím ESC
   useEffect(() => {
@@ -184,7 +179,7 @@ export const DocumentViewersModal: React.FC<DocumentViewersModalProps> = ({
               variant="secondary"
               size="sm"
               icon="fa-rotate"
-              onClick={() => fetchViewers(documentId)}
+              onClick={() => setReloadKey(k => k + 1)}
               isLoading={isLoading}
               title="Tải lại danh sách"
             >
@@ -211,7 +206,7 @@ export const DocumentViewersModal: React.FC<DocumentViewersModalProps> = ({
               {documentId && (
                 <button
                   type="button"
-                  onClick={() => fetchViewers(documentId)}
+                  onClick={() => setReloadKey(k => k + 1)}
                   className="underline font-semibold hover:text-danger-hover"
                 >
                   Thử lại

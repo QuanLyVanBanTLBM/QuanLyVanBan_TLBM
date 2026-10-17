@@ -13,7 +13,8 @@ load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 
-DATA_DIR = BASE_DIR / "data"
+# Server đặt AI_DATA_DIR ra thư mục dùng chung để tài liệu/vector store không nằm trong thư mục release.
+DATA_DIR = Path(os.getenv("AI_DATA_DIR") or BASE_DIR / "data")
 DOCS_DIR = DATA_DIR / "docs"
 CHROMA_DIR = DATA_DIR / "chroma_db"
 DOC_REGISTRY_PATH = DATA_DIR / "doc_registry.json"

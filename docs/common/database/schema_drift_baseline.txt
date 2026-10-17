@@ -1,0 +1,269 @@
+# Lệch schema đã biết giữa Django migration và release_DDL.sql, chờ nhóm phụ trách sửa.
+# Sinh bởi .github/scripts/compare_schema_ddl.py --write-baseline. Sửa xong lệch nào thì xóa dòng đó.
+accounts_employee_groups.group_id: migration int4() null=NO default=None | DDL int8() null=NO default=None
+accounts_employee_groups: thiếu constraint FOREIGN KEY (employee_id) REFERENCES accounts_employee(id) ON DELETE CASCADE
+accounts_employee_groups: thiếu constraint FOREIGN KEY (group_id) REFERENCES auth_group(id) ON DELETE CASCADE
+accounts_employee_groups: constraint không có trong DDL FOREIGN KEY (employee_id) REFERENCES accounts_employee(id)
+accounts_employee_groups: constraint không có trong DDL FOREIGN KEY (group_id) REFERENCES auth_group(id)
+accounts_employee_user_permissions.permission_id: migration int4() null=NO default=None | DDL int8() null=NO default=None
+accounts_employee_user_permissions: thiếu constraint FOREIGN KEY (employee_id) REFERENCES accounts_employee(id) ON DELETE CASCADE
+accounts_employee_user_permissions: thiếu constraint FOREIGN KEY (permission_id) REFERENCES auth_permission(id) ON DELETE CASCADE
+accounts_employee_user_permissions: constraint không có trong DDL FOREIGN KEY (employee_id) REFERENCES accounts_employee(id)
+accounts_employee_user_permissions: constraint không có trong DDL FOREIGN KEY (permission_id) REFERENCES auth_permission(id)
+auth_group.id: migration int4() null=NO default=<tự tăng> | DDL int8() null=NO default=<tự tăng>
+auth_group: thiếu constraint UNIQUE (ma_nhom_quyen)
+auth_group_permissions.group_id: migration int4() null=NO default=None | DDL int8() null=NO default=None
+auth_group_permissions.permission_id: migration int4() null=NO default=None | DDL int8() null=NO default=None
+auth_group_permissions: thiếu constraint FOREIGN KEY (group_id) REFERENCES auth_group(id) ON DELETE CASCADE
+auth_group_permissions: thiếu constraint FOREIGN KEY (permission_id) REFERENCES auth_permission(id) ON DELETE CASCADE
+auth_group_permissions: constraint không có trong DDL FOREIGN KEY (group_id) REFERENCES auth_group(id)
+auth_group_permissions: constraint không có trong DDL FOREIGN KEY (permission_id) REFERENCES auth_permission(id)
+auth_permission.content_type_id: migration int4() null=YES default=None | DDL int8() null=YES default=None
+auth_permission.id: migration int4() null=NO default=<tự tăng> | DDL int8() null=NO default=<tự tăng>
+auth_permission.module_ten: migration varchar(150) null=NO default='' | DDL varchar(150) null=NO default=None
+auth_permission: thiếu constraint UNIQUE (codename)
+auth_permission: constraint không có trong DDL FOREIGN KEY (content_type_id) REFERENCES django_content_type(id)
+auth_permission: constraint không có trong DDL UNIQUE (content_type_id, codename)
+auth_permission: index UNIQUE không có trong DDL UNIQUE USING btree (content_type_id, codename)
+birthdays_birthdayemaillog: thiếu constraint FOREIGN KEY (employee_id) REFERENCES accounts_employee(id) ON DELETE CASCADE
+birthdays_birthdayemaillog: constraint không có trong DDL FOREIGN KEY (employee_id) REFERENCES accounts_employee(id)
+birthdays_birthdaywish: thiếu constraint FOREIGN KEY (employee_id) REFERENCES accounts_employee(id) ON DELETE CASCADE
+birthdays_birthdaywish: constraint không có trong DDL FOREIGN KEY (employee_id) REFERENCES accounts_employee(id)
+dashboard_incomingdocument: bảng không có trong DDL
+dashboard_meetingroom: bảng không có trong DDL
+dashboard_outgoingdocument: bảng không có trong DDL
+documents_access_log.created_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+documents_access_log.document_type: migration varchar(20) null=NO default=None | DDL document_kind() null=NO default=None
+documents_vanbanden.chuc_vu: migration varchar(255) null=NO default=None | DDL varchar(255) null=YES default=None
+documents_vanbanden.created_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+documents_vanbanden.ghi_chu: migration text() null=NO default=None | DDL text() null=YES default=None
+documents_vanbanden.gui_mail_toan_he_thong: migration bool() null=NO default=None | DDL bool() null=NO default=false
+documents_vanbanden.hien_thi: migration bool() null=NO default=None | DDL bool() null=NO default=true
+documents_vanbanden.hieu_luc: migration varchar(20) null=NO default=None | DDL hieu_luc_status() null=NO default=None
+documents_vanbanden.link_thay_the: migration varchar(500) null=NO default=None | DDL varchar(500) null=YES default=None
+documents_vanbanden.ngay_van_ban: migration timestamptz() null=NO default=None | DDL timestamptz() null=YES default=None
+documents_vanbanden.nguoi_ky: migration varchar(255) null=NO default=None | DDL varchar(255) null=YES default=None
+documents_vanbanden.noi_ban_hanh: migration varchar(500) null=NO default=None | DDL varchar(500) null=YES default=None
+documents_vanbanden.pham_vi: migration varchar(20) null=NO default=None | DDL varchar(20) null=NO default='NOI_BO'
+documents_vanbanden.updated_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+documents_vanbanden: thiếu constraint CHECK (((hieu_luc <> 'HET_VA_THAY_THE') OR ((link_thay_the IS NOT NULL) AND (btrim((link_thay_the)) <> ''))))
+documents_vanbanden: thiếu constraint FOREIGN KEY (nguoi_tao_id) REFERENCES accounts_employee(id) ON DELETE SET NULL
+documents_vanbanden: constraint không có trong DDL CHECK ((nam >= 0))
+documents_vanbanden: constraint không có trong DDL CHECK ((so_thu_tu >= 0))
+documents_vanbanden: constraint không có trong DDL FOREIGN KEY (nguoi_tao_id) REFERENCES accounts_employee(id)
+documents_vanbanden_attachment.created_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+documents_vanbanden_attachment.is_deleted: migration bool() null=NO default=None | DDL bool() null=NO default=false
+documents_vanbanden_attachment: thiếu constraint FOREIGN KEY (document_id) REFERENCES documents_vanbanden(id) ON DELETE CASCADE
+documents_vanbanden_attachment: thiếu constraint FOREIGN KEY (nguoi_tao_id) REFERENCES accounts_employee(id) ON DELETE SET NULL
+documents_vanbanden_attachment: constraint không có trong DDL FOREIGN KEY (document_id) REFERENCES documents_vanbanden(id)
+documents_vanbanden_attachment: constraint không có trong DDL FOREIGN KEY (nguoi_tao_id) REFERENCES accounts_employee(id)
+documents_vanbanden_danhmuc: thiếu constraint FOREIGN KEY (loaivanban_id) REFERENCES records_loaivanban(id)
+documents_vanbanden_danhmuc: thiếu constraint FOREIGN KEY (vanbanden_id) REFERENCES documents_vanbanden(id) ON DELETE CASCADE
+documents_vanbanden_danhmuc: thiếu constraint PRIMARY KEY (vanbanden_id, loaivanban_id)
+documents_vanbanden_danhmuc: constraint không có trong DDL FOREIGN KEY (vanbanden_id) REFERENCES documents_vanbanden(id)
+documents_vanbanden_danhmuc: thiếu index UNIQUE USING btree (vanbanden_id, loaivanban_id)
+documents_vanbanden_donvinhan: thiếu constraint FOREIGN KEY (donvi_id) REFERENCES organizations_donvi(id)
+documents_vanbanden_donvinhan: thiếu constraint FOREIGN KEY (vanbanden_id) REFERENCES documents_vanbanden(id) ON DELETE CASCADE
+documents_vanbanden_donvinhan: thiếu constraint PRIMARY KEY (vanbanden_id, donvi_id)
+documents_vanbanden_donvinhan: constraint không có trong DDL FOREIGN KEY (vanbanden_id) REFERENCES documents_vanbanden(id)
+documents_vanbanden_donvinhan: thiếu index UNIQUE USING btree (vanbanden_id, donvi_id)
+documents_vanbanden_hoso: thiếu constraint FOREIGN KEY (hoso_id) REFERENCES records_hoso(id)
+documents_vanbanden_hoso: thiếu constraint FOREIGN KEY (vanbanden_id) REFERENCES documents_vanbanden(id) ON DELETE CASCADE
+documents_vanbanden_hoso: thiếu constraint PRIMARY KEY (vanbanden_id, hoso_id)
+documents_vanbanden_hoso: constraint không có trong DDL FOREIGN KEY (vanbanden_id) REFERENCES documents_vanbanden(id)
+documents_vanbanden_hoso: thiếu index UNIQUE USING btree (vanbanden_id, hoso_id)
+documents_vanbanden_nguoinhan: thiếu constraint FOREIGN KEY (vanbanden_id) REFERENCES documents_vanbanden(id) ON DELETE CASCADE
+documents_vanbanden_nguoinhan: thiếu constraint PRIMARY KEY (vanbanden_id, employee_id)
+documents_vanbanden_nguoinhan: constraint không có trong DDL FOREIGN KEY (vanbanden_id) REFERENCES documents_vanbanden(id)
+documents_vanbanden_nguoinhan: thiếu index UNIQUE USING btree (vanbanden_id, employee_id)
+documents_vanbandi.chuc_vu: migration varchar(255) null=NO default=None | DDL varchar(255) null=YES default=None
+documents_vanbandi.created_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+documents_vanbandi.ghi_chu: migration text() null=NO default=None | DDL text() null=YES default=None
+documents_vanbandi.gui_mail_toan_he_thong: migration bool() null=NO default=None | DDL bool() null=NO default=false
+documents_vanbandi.hien_thi: migration bool() null=NO default=None | DDL bool() null=NO default=true
+documents_vanbandi.hieu_luc: migration varchar(20) null=NO default=None | DDL hieu_luc_status() null=NO default=None
+documents_vanbandi.link_thay_the: migration varchar(500) null=NO default=None | DDL varchar(500) null=YES default=None
+documents_vanbandi.nguoi_ky: migration varchar(255) null=NO default=None | DDL varchar(255) null=YES default=None
+documents_vanbandi.pham_vi: migration varchar(20) null=NO default=None | DDL varchar(20) null=NO default='NOI_BO'
+documents_vanbandi.updated_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+documents_vanbandi: thiếu constraint CHECK (((hieu_luc <> 'HET_VA_THAY_THE') OR ((link_thay_the IS NOT NULL) AND (btrim((link_thay_the)) <> ''))))
+documents_vanbandi: thiếu constraint FOREIGN KEY (nguoi_tao_id) REFERENCES accounts_employee(id) ON DELETE SET NULL
+documents_vanbandi: constraint không có trong DDL CHECK ((nam >= 0))
+documents_vanbandi: constraint không có trong DDL CHECK ((so_thu_tu >= 0))
+documents_vanbandi: constraint không có trong DDL FOREIGN KEY (nguoi_tao_id) REFERENCES accounts_employee(id)
+documents_vanbandi_attachment.created_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+documents_vanbandi_attachment.is_deleted: migration bool() null=NO default=None | DDL bool() null=NO default=false
+documents_vanbandi_attachment: thiếu constraint FOREIGN KEY (document_id) REFERENCES documents_vanbandi(id) ON DELETE CASCADE
+documents_vanbandi_attachment: thiếu constraint FOREIGN KEY (nguoi_tao_id) REFERENCES accounts_employee(id) ON DELETE SET NULL
+documents_vanbandi_attachment: constraint không có trong DDL FOREIGN KEY (document_id) REFERENCES documents_vanbandi(id)
+documents_vanbandi_attachment: constraint không có trong DDL FOREIGN KEY (nguoi_tao_id) REFERENCES accounts_employee(id)
+documents_vanbandi_danhmuc: thiếu constraint FOREIGN KEY (loaivanban_id) REFERENCES records_loaivanban(id)
+documents_vanbandi_danhmuc: thiếu constraint FOREIGN KEY (vanbandi_id) REFERENCES documents_vanbandi(id) ON DELETE CASCADE
+documents_vanbandi_danhmuc: thiếu constraint PRIMARY KEY (vanbandi_id, loaivanban_id)
+documents_vanbandi_danhmuc: constraint không có trong DDL FOREIGN KEY (vanbandi_id) REFERENCES documents_vanbandi(id)
+documents_vanbandi_danhmuc: thiếu index UNIQUE USING btree (vanbandi_id, loaivanban_id)
+documents_vanbandi_donvinhan: thiếu constraint FOREIGN KEY (donvi_id) REFERENCES organizations_donvi(id)
+documents_vanbandi_donvinhan: thiếu constraint FOREIGN KEY (vanbandi_id) REFERENCES documents_vanbandi(id) ON DELETE CASCADE
+documents_vanbandi_donvinhan: thiếu constraint PRIMARY KEY (vanbandi_id, donvi_id)
+documents_vanbandi_donvinhan: constraint không có trong DDL FOREIGN KEY (vanbandi_id) REFERENCES documents_vanbandi(id)
+documents_vanbandi_donvinhan: thiếu index UNIQUE USING btree (vanbandi_id, donvi_id)
+documents_vanbandi_hoso: thiếu constraint FOREIGN KEY (hoso_id) REFERENCES records_hoso(id)
+documents_vanbandi_hoso: thiếu constraint FOREIGN KEY (vanbandi_id) REFERENCES documents_vanbandi(id) ON DELETE CASCADE
+documents_vanbandi_hoso: thiếu constraint PRIMARY KEY (vanbandi_id, hoso_id)
+documents_vanbandi_hoso: constraint không có trong DDL FOREIGN KEY (vanbandi_id) REFERENCES documents_vanbandi(id)
+documents_vanbandi_hoso: thiếu index UNIQUE USING btree (vanbandi_id, hoso_id)
+documents_vanbandi_nguoinhan: thiếu constraint FOREIGN KEY (vanbandi_id) REFERENCES documents_vanbandi(id) ON DELETE CASCADE
+documents_vanbandi_nguoinhan: thiếu constraint PRIMARY KEY (vanbandi_id, employee_id)
+documents_vanbandi_nguoinhan: constraint không có trong DDL FOREIGN KEY (vanbandi_id) REFERENCES documents_vanbandi(id)
+documents_vanbandi_nguoinhan: thiếu index UNIQUE USING btree (vanbandi_id, employee_id)
+documents_vanbandi_noibanhanh: thiếu constraint FOREIGN KEY (donvi_id) REFERENCES organizations_donvi(id)
+documents_vanbandi_noibanhanh: thiếu constraint FOREIGN KEY (vanbandi_id) REFERENCES documents_vanbandi(id) ON DELETE CASCADE
+documents_vanbandi_noibanhanh: thiếu constraint PRIMARY KEY (vanbandi_id, donvi_id)
+documents_vanbandi_noibanhanh: constraint không có trong DDL FOREIGN KEY (vanbandi_id) REFERENCES documents_vanbandi(id)
+documents_vanbandi_noibanhanh: thiếu index UNIQUE USING btree (vanbandi_id, donvi_id)
+documents_view_log.document_type: migration varchar(20) null=NO default=None | DDL document_kind() null=NO default=None
+documents_view_log: thiếu constraint FOREIGN KEY (user_id) REFERENCES accounts_employee(id) ON DELETE CASCADE
+documents_view_log: constraint không có trong DDL CHECK ((document_id >= 0))
+documents_view_log: constraint không có trong DDL FOREIGN KEY (user_id) REFERENCES accounts_employee(id)
+documents_view_log: thiếu index USING btree (document_type, document_id)
+meetings_meetingbooking: thiếu constraint FOREIGN KEY (department_id) REFERENCES organizations_donvi(id) ON DELETE SET NULL
+meetings_meetingbooking: constraint không có trong DDL FOREIGN KEY (department_id) REFERENCES organizations_donvi(id)
+records_chitiettailieu.created_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+records_chitiettailieu.hien_thi: migration varchar(30) null=NO default=None | DDL chitiettailieu_hienthi() null=NO default=None
+records_chitiettailieu.hieu_luc: migration varchar(30) null=NO default=None | DDL hieu_luc_status() null=NO default=None
+records_chitiettailieu.updated_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+records_chitiettailieu: thiếu constraint FOREIGN KEY (don_vi_id) REFERENCES organizations_donvi(id)
+records_chitiettailieu: thiếu constraint FOREIGN KEY (nguoi_tao_id) REFERENCES accounts_employee(id) ON DELETE SET NULL
+records_chitiettailieu: constraint không có trong DDL FOREIGN KEY (nguoi_tao_id) REFERENCES accounts_employee(id)
+records_chitiettailieu_attachment.created_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+records_chitiettailieu_attachment.is_deleted: migration bool() null=NO default=None | DDL bool() null=NO default=false
+records_chitiettailieu_attachment: thiếu constraint CHECK ((file_size >= 0))
+records_chitiettailieu_attachment: thiếu constraint FOREIGN KEY (document_id) REFERENCES records_chitiettailieu(id) ON DELETE CASCADE
+records_chitiettailieu_attachment: thiếu constraint FOREIGN KEY (nguoi_tao_id) REFERENCES accounts_employee(id) ON DELETE SET NULL
+records_chitiettailieu_attachment: constraint không có trong DDL FOREIGN KEY (document_id) REFERENCES records_chitiettailieu(id)
+records_chitiettailieu_attachment: constraint không có trong DDL FOREIGN KEY (nguoi_tao_id) REFERENCES accounts_employee(id)
+records_chitiettailieu_loaitailieu: thiếu constraint FOREIGN KEY (chitiettailieu_id) REFERENCES records_chitiettailieu(id) ON DELETE CASCADE
+records_chitiettailieu_loaitailieu: constraint không có trong DDL FOREIGN KEY (chitiettailieu_id) REFERENCES records_chitiettailieu(id)
+records_hoso: thiếu bảng
+records_loaitailieu.created_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+records_loaitailieu.is_public: migration bool() null=NO default=None | DDL bool() null=NO default=true
+records_loaitailieu.updated_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+records_loaivanban: thiếu bảng
+records_tailieu.created_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+records_tailieu.nguoi_lap_id: migration int8() null=YES default=None | DDL int8() null=NO default=None
+records_tailieu.updated_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+signing_attempt.created_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+signing_attempt.loi_tep_hoan_tat: migration varchar(100) null=NO default=None | DDL varchar(100) null=NO default=''
+signing_attempt.ly_do: migration text() null=NO default=None | DDL text() null=NO default=''
+signing_attempt.ma_bam_tep_hoan_tat: migration varchar(64) null=NO default=None | DDL varchar(64) null=NO default=''
+signing_attempt.trang_thai: migration varchar(20) null=NO default=None | DDL varchar(20) null=NO default='NHAP'
+signing_attempt.updated_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+signing_attempt.vi_tri_tep_hoan_tat: migration varchar(500) null=NO default=None | DDL varchar(500) null=NO default=''
+signing_attempt: thiếu constraint FOREIGN KEY (nguoi_cap_nhat_id) REFERENCES accounts_employee(id) ON DELETE SET NULL
+signing_attempt: constraint không có trong DDL FOREIGN KEY (nguoi_cap_nhat_id) REFERENCES accounts_employee(id)
+signing_audit_log.chi_tiet: migration text() null=NO default=None | DDL text() null=NO default=''
+signing_audit_log.created_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+signing_audit_log.trang_thai_sau: migration varchar(20) null=NO default=None | DDL varchar(20) null=NO default=''
+signing_audit_log.trang_thai_truoc: migration varchar(20) null=NO default=None | DDL varchar(20) null=NO default=''
+signing_change_message.created_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+signing_change_thread.created_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+signing_change_thread.trang_thai: migration varchar(20) null=NO default=None | DDL varchar(20) null=NO default='DANG_MO'
+signing_change_thread.updated_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+signing_key.created_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+signing_key.ghi_chu: migration text() null=NO default=None | DDL text() null=NO default=''
+signing_key.thuat_toan: migration varchar(50) null=NO default=None | DDL varchar(50) null=NO default='Ed25519'
+signing_key.trang_thai: migration varchar(20) null=NO default=None | DDL varchar(20) null=NO default='CHO_KICH_HOAT'
+signing_key_unlock.created_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+signing_key_unlock.so_lan_sai: migration int4() null=NO default=None | DDL int4() null=NO default=0
+signing_key_unlock.updated_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+signing_key_unlock: thiếu constraint FOREIGN KEY (khoa_id) REFERENCES signing_key(id) ON DELETE CASCADE
+signing_key_unlock: constraint không có trong DDL FOREIGN KEY (khoa_id) REFERENCES signing_key(id)
+signing_manifest.created_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+signing_manifest.phien_ban_bang_chung: migration int2() null=NO default=None | DDL int2() null=NO default=1
+signing_manifest.trang_thai: migration varchar(20) null=NO default=None | DDL varchar(20) null=NO default='NHAP'
+signing_notification.created_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+signing_notification.loi_gui: migration text() null=NO default=None | DDL text() null=NO default=''
+signing_notification.so_lan_gui_lai: migration int4() null=NO default=None | DDL int4() null=NO default=0
+signing_notification.trang_thai: migration varchar(20) null=NO default=None | DDL varchar(20) null=NO default='CHO_GUI'
+signing_notification: thiếu constraint FOREIGN KEY (buoc_ky_id) REFERENCES signing_request_step_signer(id) ON DELETE CASCADE
+signing_notification: thiếu constraint FOREIGN KEY (trinh_ky_id) REFERENCES signing_request(id) ON DELETE CASCADE
+signing_notification: constraint không có trong DDL FOREIGN KEY (buoc_ky_id) REFERENCES signing_request_step_signer(id)
+signing_notification: constraint không có trong DDL FOREIGN KEY (trinh_ky_id) REFERENCES signing_request(id)
+signing_process.created_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+signing_process.mo_ta: migration text() null=NO default=None | DDL text() null=NO default=''
+signing_process.phien_ban: migration int2() null=NO default=None | DDL int2() null=NO default=1
+signing_process.trang_thai: migration varchar(20) null=NO default=None | DDL varchar(20) null=NO default='NHAP'
+signing_process.updated_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+signing_process: thiếu constraint FOREIGN KEY (don_vi_ap_dung_id) REFERENCES organizations_donvi(id)
+signing_process: thiếu constraint FOREIGN KEY (nguoi_cap_nhat_id) REFERENCES accounts_employee(id) ON DELETE SET NULL
+signing_process: constraint không có trong DDL FOREIGN KEY (nguoi_cap_nhat_id) REFERENCES accounts_employee(id)
+signing_process: thiếu index USING btree (don_vi_ap_dung_id)
+signing_process_step.created_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+signing_process_step.dang_ap_dung: migration bool() null=NO default=None | DDL bool() null=NO default=true
+signing_process_step.ghi_chu: migration text() null=NO default=None | DDL text() null=NO default=''
+signing_process_step: thiếu constraint FOREIGN KEY (don_vi_id) REFERENCES organizations_donvi(id) ON DELETE SET NULL
+signing_process_step: thiếu constraint FOREIGN KEY (quy_trinh_id) REFERENCES signing_process(id) ON DELETE CASCADE
+signing_process_step: constraint không có trong DDL FOREIGN KEY (quy_trinh_id) REFERENCES signing_process(id)
+signing_process_step_signer.chan_ky_chinh: migration bool() null=NO default=None | DDL bool() null=NO default=true
+signing_process_step_signer.created_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+signing_process_step_signer.vai_tro_ky: migration varchar(20) null=NO default=None | DDL varchar(20) null=NO default='KY_CHINH'
+signing_process_step_signer: thiếu constraint CHECK ((((chuc_vu_id IS NULL) AND (nguoi_ky_id IS NOT NULL)) OR ((chuc_vu_id IS NOT NULL) AND (nguoi_ky_id IS NULL))))
+signing_process_step_signer: thiếu constraint FOREIGN KEY (buoc_quy_trinh_id) REFERENCES signing_process_step(id) ON DELETE CASCADE
+signing_process_step_signer: thiếu constraint FOREIGN KEY (chuc_vu_id) REFERENCES accounts_position(id)
+signing_process_step_signer: constraint không có trong DDL CHECK ((((nguoi_ky_id IS NOT NULL) AND (chuc_vu_id IS NULL)) OR ((nguoi_ky_id IS NULL) AND (chuc_vu_id IS NOT NULL))))
+signing_process_step_signer: constraint không có trong DDL FOREIGN KEY (buoc_quy_trinh_id) REFERENCES signing_process_step(id)
+signing_request.created_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+signing_request.document_type: migration varchar(20) null=NO default=None | DDL document_kind() null=NO default=None
+signing_request.ghi_chu: migration text() null=NO default=None | DDL text() null=NO default=''
+signing_request.ly_do_huy: migration text() null=NO default=None | DDL text() null=NO default=''
+signing_request.ly_do_tu_choi: migration text() null=NO default=None | DDL text() null=NO default=''
+signing_request.trang_thai: migration varchar(20) null=NO default=None | DDL varchar(20) null=NO default='NHAP'
+signing_request.updated_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+signing_request: thiếu constraint FOREIGN KEY (nguoi_cap_nhat_id) REFERENCES accounts_employee(id) ON DELETE SET NULL
+signing_request: constraint không có trong DDL FOREIGN KEY (nguoi_cap_nhat_id) REFERENCES accounts_employee(id)
+signing_request_step.created_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+signing_request_step.ghi_chu: migration text() null=NO default=None | DDL text() null=NO default=''
+signing_request_step.trang_thai: migration varchar(20) null=NO default=None | DDL varchar(20) null=NO default='CHUA_MO'
+signing_request_step_signer.chan_ky_chinh: migration bool() null=NO default=None | DDL bool() null=NO default=true
+signing_request_step_signer.created_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+signing_request_step_signer.ly_do_tu_choi: migration text() null=NO default=None | DDL text() null=NO default=''
+signing_request_step_signer.ly_do_uy_quyen: migration text() null=NO default=None | DDL text() null=NO default=''
+signing_request_step_signer.trang_thai: migration varchar(20) null=NO default=None | DDL varchar(20) null=NO default='CHO_KY'
+signing_request_step_signer: thiếu constraint FOREIGN KEY (chu_ky_hien_hanh_id) REFERENCES signing_signature(id) ON DELETE SET NULL
+signing_request_step_signer: thiếu constraint FOREIGN KEY (chuc_vu_id) REFERENCES accounts_position(id) ON DELETE SET NULL
+signing_request_step_signer: constraint không có trong DDL FOREIGN KEY (chu_ky_hien_hanh_id) REFERENCES signing_signature(id)
+signing_signature.created_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+signing_signature.ghi_chu_ky: migration text() null=NO default=None | DDL text() null=NO default=''
+signing_signature.ky_tre_han: migration bool() null=NO default=None | DDL bool() null=NO default=false
+signing_signature.ma_bam_anh_chu_ky: migration varchar(64) null=NO default=None | DDL varchar(64) null=NO default=''
+signing_signature.ngay_ky: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
+signing_signature.trang_thai_xac_minh: migration varchar(20) null=NO default=None | DDL varchar(20) null=NO default='HOP_LE'
+signing_signature.vi_tri_anh_chu_ky: migration varchar(500) null=NO default=None | DDL varchar(500) null=NO default=''
+task_attachment: thiếu bảng
+task_comment: thiếu bảng
+task_congviec: thiếu bảng
+task_congviec_donvi: thiếu bảng
+task_participant: thiếu bảng
+ENUM chitiettailieu_hienthi: thiếu (TAT_CA,NOI_BO_PHONG_BAN)
+ENUM document_kind: thiếu (vanbanden,vanbandi)
+ENUM hieu_luc_status: thiếu (CON_HIEU_LUC,CON_HIEU_LUC_1_PHAN,HET_HIEU_LUC,HET_VA_THAY_THE)
+ENUM signing_attempt_status: thiếu (DRAFT,CHO_KY,YEU_CAU_SUA,HOAN_THANH,TU_CHOI,HUY,QUA_HAN)
+ENUM signing_manifest_status: thiếu (DRAFT,FINAL)
+ENUM signing_notify_channel: thiếu (IN_APP,EMAIL)
+ENUM signing_notify_status: thiếu (CHO_GUI,DA_GUI,THAT_BAI)
+ENUM signing_process_status: thiếu (DRAFT,HOAT_DONG,NGUNG)
+ENUM signing_request_status: thiếu (NHAP,CHO_KY,HOAN_THANH,TU_CHOI,HUY,QUA_HAN)
+ENUM signing_scope: thiếu (DEPARTMENT,COMPANY)
+ENUM signing_step_status: thiếu (CHO_KY,DA_KY,TU_CHOI,BO_QUA,YEU_CAU_SUA,THU_HOI)
+ENUM signing_thread_status: thiếu (OPEN,RELEASED,RESOLVED)
+ENUM signing_verify_status: thiếu (CHUA_XAC_MINH,HOP_LE,KHONG_HOP_LE)
+ENUM task_attachment_loai: thiếu (GIAO_VIEC,BANG_CHUNG)
+ENUM task_vaitro: thiếu (CHU_TRI,CHI_DAO,THAM_GIA)
+VIEW ai_tailieu: thiếu
+VIEW ai_vanbanden: thiếu
+VIEW ai_vanbanden_donvinhan: thiếu
+VIEW ai_vanbanden_nguoinhan: thiếu
+VIEW ai_vanbandi: thiếu
+VIEW ai_vanbandi_donvinhan: thiếu
+VIEW ai_vanbandi_nguoinhan: thiếu
+VIEW ai_vanbandi_noibanhanh: thiếu

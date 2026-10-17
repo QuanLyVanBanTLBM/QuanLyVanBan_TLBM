@@ -200,19 +200,28 @@ describe('DocumentFormModal', () => {
     const hieuLucSelect = screen.getByDisplayValue('Còn hiệu lực');
     fireEvent.change(hieuLucSelect, { target: { value: 'HET_HIEU_LUC' } });
     expect(hieuLucSelect).toHaveValue('HET_HIEU_LUC');
+
+    await waitFor(() => {
+      expect(screen.getByText('-- Chọn đơn vị nhận --')).toBeInTheDocument();
+    });
   });
 
   it('tìm kiếm và gợi ý văn bản thay thế khi tick chọn thay thế cho văn bản khác lúc thêm mới', async () => {
-    vi.mocked(apiClient.get).mockResolvedValueOnce({
-      results: [
-        {
-          id: 99,
-          so_hieu: '88/QD-SNN',
-          trich_yeu: 'Quyết định triển khai dự án',
-          noi_ban_hanh: 'Sở Nông Nghiệp',
-          loai_display: 'Văn bản Đến',
-        },
-      ],
+    vi.mocked(apiClient.get).mockImplementation(async (url: string) => {
+      if (url.includes('/api/accounts/staffs/')) {
+        return [];
+      }
+      return {
+        results: [
+          {
+            id: 99,
+            so_hieu: '88/QD-SNN',
+            trich_yeu: 'Quyết định triển khai dự án',
+            noi_ban_hanh: 'Sở Nông Nghiệp',
+            loai_display: 'Văn bản Đến',
+          },
+        ],
+      };
     });
 
     render(<DocumentFormModal open={true} onClose={vi.fn()} />);
