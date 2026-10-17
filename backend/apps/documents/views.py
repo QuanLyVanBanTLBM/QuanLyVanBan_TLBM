@@ -106,6 +106,8 @@ def can_edit_document(user, instance):
     """Kiểm tra quyền chỉnh sửa văn bản."""
     if not user or not user.is_authenticated:
         return False
+    if getattr(instance, "pham_vi", None) == PhamVi.HAN_CHE:
+        return is_admin_user(user) or instance.nguoi_tao == user
     if is_admin_user(user):
         return True
     if instance.nguoi_tao == user:
@@ -140,6 +142,8 @@ def can_create_document(user, loai="DEN"):
 def can_delete_document(user, instance):
     """Kiểm tra quyền xóa văn bản."""
     if not user or not user.is_authenticated:
+        return False
+    if getattr(instance, "pham_vi", None) == PhamVi.HAN_CHE:
         return False
     if is_admin_user(user):
         return True
@@ -261,10 +265,10 @@ class DocumentViewSet(viewsets.ViewSet):
         paginator = self.pagination_class()
         page = paginator.paginate_queryset(filtered_qs, request, view=self)
         if page is not None:
-            serializer = DocumentListSerializer(page, many=True)
+            serializer = DocumentListSerializer(page, many=True, context={"request": request})
             return paginator.get_paginated_response(serializer.data)
 
-        serializer = DocumentListSerializer(filtered_qs, many=True)
+        serializer = DocumentListSerializer(filtered_qs, many=True, context={"request": request})
         return Response(serializer.data)
 
     def retrieve(self, request, pk=None):
@@ -274,7 +278,7 @@ class DocumentViewSet(viewsets.ViewSet):
             record_log=True,
             action_type=DocumentAccessLog.HanhDong.XEM,
         )
-        serializer = DocumentDetailSerializer(instance)
+        serializer = DocumentDetailSerializer(instance, context={"request": request})
         return Response(serializer.data)
 
     def create(self, request):
@@ -313,7 +317,7 @@ class DocumentViewSet(viewsets.ViewSet):
         if str(auto_update).lower() in ("true", "1") and instance.link_thay_the:
             sync_replacement_document(instance)
 
-        out_serializer = DocumentDetailSerializer(instance)
+        out_serializer = DocumentDetailSerializer(instance, context={"request": request})
         return Response(out_serializer.data, status=status.HTTP_201_CREATED)
 
     def partial_update(self, request, pk=None):
@@ -362,7 +366,7 @@ class DocumentViewSet(viewsets.ViewSet):
         if str(auto_update).lower() in ("true", "1") and doc.link_thay_the:
             sync_replacement_document(doc)
 
-        out_serializer = DocumentDetailSerializer(doc)
+        out_serializer = DocumentDetailSerializer(doc, context={"request": request})
         return Response(out_serializer.data, status=status.HTTP_200_OK)
 
     def destroy(self, request, pk=None):
@@ -557,9 +561,11 @@ class VanBanDenViewSet(viewsets.ModelViewSet):
             if obj.pham_vi == PhamVi.HAN_CHE:
                 log_access("vanbanden", obj.pk, request.user, DocumentAccessLog.HanhDong.BI_TU_CHOI, dia_chi_ip=get_client_ip(request))
                 raise NotFound(f"Không tìm thấy văn bản với ID {pk}.")
-            raise PermissionDenied("Bạn không có quyền xóa văn bản này.")
+            raise PermissionDenied("Bạn không có quyền xem văn bản này.")
         if obj.pham_vi == PhamVi.HAN_CHE:
             raise PermissionDenied("Văn bản hạn chế không được phép xóa.")
+        if not can_delete_document(request.user, obj):
+            raise PermissionDenied("Bạn không có quyền xóa văn bản này.")
         cleanup_replacement_links_on_delete(obj)
         return super().destroy(request, *args, **kwargs)
 
@@ -608,9 +614,11 @@ class VanBanDiViewSet(viewsets.ModelViewSet):
             if obj.pham_vi == PhamVi.HAN_CHE:
                 log_access("vanbandi", obj.pk, request.user, DocumentAccessLog.HanhDong.BI_TU_CHOI, dia_chi_ip=get_client_ip(request))
                 raise NotFound(f"Không tìm thấy văn bản với ID {pk}.")
-            raise PermissionDenied("Bạn không có quyền xóa văn bản này.")
+            raise PermissionDenied("Bạn không có quyền xem văn bản này.")
         if obj.pham_vi == PhamVi.HAN_CHE:
             raise PermissionDenied("Văn bản hạn chế không được phép xóa.")
+        if not can_delete_document(request.user, obj):
+            raise PermissionDenied("Bạn không có quyền xóa văn bản này.")
         cleanup_replacement_links_on_delete(obj)
         return super().destroy(request, *args, **kwargs)
 

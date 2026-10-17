@@ -1,0 +1,37 @@
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: qlvb_dev
+      POSTGRES_USER: qlvb_dev
+      POSTGRES_PASSWORD: qlvb_local_only
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - qlvb_local_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qlvb_dev -d qlvb_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  pgadmin:
+    image: dpage/pgadmin4:9.17
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@qlvb.local
+      PGADMIN_DEFAULT_PASSWORD: qlvb_pgadmin_local_only
+      PGADMIN_CONFIG_ALLOW_SPECIAL_EMAIL_DOMAINS: "['local']"
+    ports:
+      - "127.0.0.1:5050:80"
+    volumes:
+      - qlvb_local_pgadmin_data:/var/lib/pgadmin
+      - ./docker/pgadmin/servers.json:/pgadmin4/servers.json:ro
+
+volumes:
+  qlvb_local_pgdata:
+  qlvb_local_pgadmin_data:

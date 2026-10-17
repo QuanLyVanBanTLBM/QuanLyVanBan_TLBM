@@ -39,53 +39,86 @@ Module 8 phụ trách xây dựng Trợ lý ảo AI thông minh, hỗ trợ cán
 | Thành phần | Công nghệ / Thư viện |
 |---|---|
 | **Frontend** | React 19, TypeScript, Vite, Vanilla CSS Tokens, Axios / Fetch API Client |
-| **Backend** | Python 3.11+, Django 5 / 6, Django REST Framework, SimpleJWT |
+| **Backend** | Python 3.12+, Django 6.1, Django REST Framework, SimpleJWT |
 | **RAG & AI Engine** | LlamaIndex, ChromaDB, Gemini REST Client, OpenAI API |
-| **Cơ sở dữ liệu** | PostgreSQL (với các Database View `ai_*` và role `qlvb_readonly`), SQLite (Development/Test) |
+| **Cơ sở dữ liệu** | PostgreSQL (với các Database View `ai_*` và role `qlvb_readonly`), SQLite (kiểm thử/dự phòng) |
 | **CI / Quality Gate** | GitHub Actions, Unittest & Pytest Suite |
 
 ---
 
-## Cài đặt & Khởi chạy
+## Cài đặt và chạy local
 
-### Yêu cầu tiên quyết:
-- Python 3.11+
-- Node.js 20+ và `pnpm`
-- Khóa API Google Gemini hoặc OpenAI (cấu hình trong file `.env`)
+### Yêu cầu
 
-### 1. Khởi động Backend
+- Docker Desktop đã mở và Docker Engine đang chạy.
+- Node.js theo phiên bản khai báo trong `package.json` ở thư mục gốc; `pnpm` đã được cài.
+- Python 3.12 trở lên. Lệnh backend sẽ tự tạo `backend/.venv` (môi trường Python riêng) và tự cài thư viện; không cần tự tạo hoặc bật môi trường ảo.
+
+### Thiết lập lần đầu sau khi clone dự án
+
+Mở Terminal (cửa sổ nhập lệnh) tại thư mục gốc có file `package.json`, rồi chạy:
 
 ```powershell
-# Di chuyển vào thư mục backend và kích hoạt môi trường ảo
-cd backend
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1    # Trên Linux/macOS: source .venv/bin/activate
-
-# Cài đặt thư viện phụ thuộc
-pip install -r requirements.txt
-
-# Cấu hình biến môi trường
-Copy-Item .env.example .env     # Cập nhật GEMINI_API_KEY trong .env
-
-# Chạy migrate và khởi động server
-python manage.py migrate
-python manage.py runserver 127.0.0.1:8000
+pnpm setup:frontend
+pnpm db:setup
 ```
 
-### 2. Khởi động Frontend
+`pnpm setup:frontend` cài các gói giao diện theo lockfile (file khóa phiên bản thư viện). `pnpm db:setup` khởi động PostgreSQL và pgAdmin bằng Docker Compose (công cụ chạy các dịch vụ Docker), sau đó tự tạo môi trường Python và áp dụng các migration (bản thay đổi cấu trúc DB do Django quản lý).
+
+Nếu cần cấu hình khóa Gemini, sao chép `.env.example` thành `.env` ở thư mục gốc và điền khóa API. Không commit file `.env`.
+
+### Chạy dự án — hai Terminal riêng
+
+`pnpm db:setup` chỉ cần chạy một lần cho DB local mới. Dữ liệu DB được lưu trong Docker volume, nên các lần mở dự án sau không cần dựng lại DB. Mỗi ngày, mở Docker Desktop và chờ Docker Engine sẵn sàng; nếu container DB đang chạy thì không cần chạy thêm lệnh DB.
+
+Nếu trước đó mày đã chạy `pnpm db:stop` hoặc container DB đang dừng, mở Terminal tại thư mục gốc rồi chạy:
 
 ```powershell
-# Mở terminal mới, di chuyển vào thư mục frontend
-cd frontend
+pnpm db:start
+```
 
-# Cài đặt gói thư viện bằng pnpm
-pnpm install
+Sau đó chạy hai lệnh dưới đây trong hai Terminal riêng, đều đứng tại thư mục gốc:
 
-# Khởi chạy máy chủ phát triển
+Terminal 1 — Backend (máy chủ xử lý API):
+
+```powershell
+pnpm runserver
+```
+
+Lệnh này kiểm tra Docker Engine và DB trước. Nếu Docker chưa chạy hoặc DB chưa sẵn sàng, sẽ báo cách xử lý ngay. Khi DB sẵn sàng, lệnh tự tạo `backend/.venv` nếu chưa có, cài hoặc cập nhật thư viện khi `backend/requirements.txt` thay đổi, rồi chạy Django tại `http://127.0.0.1:8000`. Backend kết nối cố định tới PostgreSQL local `127.0.0.1:55432`; không lấy thông tin kết nối DB từ `.env`.
+
+Terminal 2 — Frontend (giao diện):
+
+```powershell
 pnpm dev
 ```
 
-Truy cập ứng dụng tại: `http://localhost:5173` (hoặc cổng hiển thị trên terminal).
+Mở địa chỉ do Vite in trong Terminal, mặc định là `http://localhost:5173`. Khi có migration Django mới, chạy riêng `pnpm db:migrate`; backend không tự áp dụng migration khi khởi động.
+
+### pgAdmin và kết nối DB local
+
+pgAdmin (trang web quản trị PostgreSQL) được mở tại `http://127.0.0.1:5050`.
+
+- Email đăng nhập: `admin@qlvb.local`
+- Mật khẩu pgAdmin: `qlvb_pgadmin_local_only`
+- Máy chủ DB đã được khai báo sẵn trong pgAdmin. Nếu cần nhập thủ công, dùng host `db`, cổng `5432` trong mạng Docker; tên DB và user là `qlvb_dev`, mật khẩu là `qlvb_local_only`.
+- Từ ứng dụng chạy trên máy Windows, dùng host `127.0.0.1`, cổng `55432`, database `qlvb_dev`, user `qlvb_dev`, mật khẩu `qlvb_local_only`.
+
+Các cổng DB và pgAdmin chỉ bind vào `127.0.0.1` (chỉ truy cập từ máy local).
+
+### Lệnh DB thường dùng
+
+Chạy tại thư mục gốc:
+
+- `pnpm db:setup`: khởi động DB và pgAdmin, tạo môi trường Python nếu thiếu, rồi chạy migration.
+- `pnpm db:start`: chỉ khởi động DB và pgAdmin; giữ nguyên dữ liệu local hiện có.
+- `pnpm db:status`: xem trạng thái container DB/pgAdmin và địa chỉ truy cập.
+- `pnpm db:migrate`: áp dụng migration Django mới vào DB local sau khi code có migration mới.
+- `pnpm db:migrations`: xem danh sách migration và trạng thái đã áp dụng/chưa áp dụng.
+- `pnpm db:reset`: xóa dữ liệu trong DB local `qlvb_dev`, tạo lại DB rỗng rồi áp dụng migration; phải gõ `RESET` để xác nhận. Lệnh này không xóa dữ liệu production.
+- `pnpm db:stop`: dừng DB và pgAdmin nhưng giữ volume (kho dữ liệu bền vững của Docker).
+
+Không cần xóa volume khi chỉ muốn làm DB trống; dùng `pnpm db:reset` để chỉ reset đúng database local của dự án.
 
 ---
 

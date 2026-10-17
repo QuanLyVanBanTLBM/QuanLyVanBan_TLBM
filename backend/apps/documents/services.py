@@ -88,47 +88,115 @@ def check_and_update_expired_documents() -> int:
 # 2.1 TRUY VẤN ĐỘNG VÀ ĐỒNG BỘ QUAN HỆ THAY THẾ (Replacements)
 # ═══════════════════════════════════════════════════════════════════
 
+def get_replacement_relations(doc) -> dict:
+    """
+    Phân định rõ ràng 2 chiều quan hệ thay thế:
+    - thay_the_cho (list[str]): Các số hiệu văn bản cũ mà doc đi thay thế (Active replaces).
+    - bi_thay_boi (list[str]): Các số hiệu văn bản mới đã thay thế doc (Superseded by).
+    """
+    if isinstance(doc, str):
+        so_hieu = doc.strip()
+        doc_obj = None
+    else:
+        so_hieu = (getattr(doc, "so_hieu", "") or "").strip()
+        doc_obj = doc
+
+    so_hieu_clean = so_hieu.lower()
+    thay_the_cho: list[str] = []
+    bi_thay_boi: list[str] = []
+
+    if not so_hieu:
+        return {"thay_the_cho": [], "bi_thay_boi": []}
+
+    from .models import VanBanDen, VanBanDi, HieuLuc
+    doc_date = (
+        getattr(doc_obj, "ngay_van_ban", None)
+        or getattr(doc_obj, "ngay_den", None)
+        or getattr(doc_obj, "ngay_ban_hanh", None)
+    ) if doc_obj else None
+
+    # Chiều 1: doc.link_thay_the chứa các số hiệu mục tiêu
+    own_link = (getattr(doc_obj, "link_thay_the", "") or "").strip() if doc_obj else ""
+    target_numbers = [s.strip() for s in own_link.split(",") if s.strip() and s.strip().lower() != so_hieu_clean]
+
+    # Chiều 2: Các văn bản khác có link_thay_the chứa so_hieu của doc
+    referencing_docs = []
+    for model in (VanBanDen, VanBanDi):
+        try:
+            qs = model.objects.filter(link_thay_the__icontains=so_hieu)
+            if doc_obj and getattr(doc_obj, "pk", None):
+                qs = qs.exclude(pk=doc_obj.pk)
+            for other in qs:
+                other_links = [t.strip().lower() for t in (other.link_thay_the or "").split(",") if t.strip()]
+                if so_hieu_clean in other_links and other.so_hieu:
+                    referencing_docs.append(other)
+        except Exception:
+            pass
+
+    # Phân loại theo bản chất quan hệ, thời gian và trạng thái hiệu lực
+    for target_so in target_numbers:
+        target_obj = None
+        for model in (VanBanDen, VanBanDi):
+            target_obj = model.objects.filter(so_hieu__iexact=target_so).first()
+            if target_obj:
+                break
+
+        if target_obj:
+            target_date = (
+                getattr(target_obj, "ngay_van_ban", None)
+                or getattr(target_obj, "ngay_den", None)
+                or getattr(target_obj, "ngay_ban_hanh", None)
+            )
+            if getattr(doc_obj, "hieu_luc", "") in (HieuLuc.HET_VA_THAY_THE, HieuLuc.HET_HIEU_LUC):
+                if target_obj.so_hieu not in bi_thay_boi:
+                    bi_thay_boi.append(target_obj.so_hieu)
+            elif target_obj.hieu_luc == HieuLuc.HET_VA_THAY_THE and (not doc_date or not target_date or target_date <= doc_date):
+                if target_obj.so_hieu not in thay_the_cho:
+                    thay_the_cho.append(target_obj.so_hieu)
+            elif getattr(doc_obj, "hieu_luc", "") in (HieuLuc.CON_HIEU_LUC, HieuLuc.CON_HIEU_LUC_1_PHAN):
+                if target_obj.so_hieu not in thay_the_cho:
+                    thay_the_cho.append(target_obj.so_hieu)
+            else:
+                if target_obj.so_hieu not in bi_thay_boi:
+                    bi_thay_boi.append(target_obj.so_hieu)
+        # Nếu target_obj không tồn tại trong CSDL: Bỏ qua hoàn toàn, không tạo badge cho số hiệu không tồn tại.
+
+    for ref_doc in referencing_docs:
+        ref_so = ref_doc.so_hieu
+        ref_date = (
+            getattr(ref_doc, "ngay_van_ban", None)
+            or getattr(ref_doc, "ngay_den", None)
+            or getattr(ref_doc, "ngay_ban_hanh", None)
+        )
+        if ref_doc.hieu_luc in (HieuLuc.CON_HIEU_LUC, HieuLuc.CON_HIEU_LUC_1_PHAN) or (doc_date and ref_date and ref_date > doc_date):
+            if ref_so not in bi_thay_boi and ref_so not in thay_the_cho:
+                bi_thay_boi.append(ref_so)
+        elif ref_doc.hieu_luc == HieuLuc.HET_VA_THAY_THE and (not doc_date or not ref_date or ref_date <= doc_date):
+            if ref_so not in thay_the_cho and ref_so not in bi_thay_boi:
+                thay_the_cho.append(ref_so)
+        elif getattr(doc_obj, "hieu_luc", "") == HieuLuc.HET_VA_THAY_THE:
+            if ref_so not in bi_thay_boi and ref_so not in thay_the_cho:
+                bi_thay_boi.append(ref_so)
+        else:
+            if ref_so not in thay_the_cho and ref_so not in bi_thay_boi:
+                thay_the_cho.append(ref_so)
+
+    return {
+        "thay_the_cho": thay_the_cho,
+        "bi_thay_boi": bi_thay_boi,
+    }
+
+
 def get_dynamic_replacements(doc) -> list[str]:
     """
-    Truy vấn động quan hệ thay thế 2 chiều:
-    1. Lấy danh sách số hiệu trong doc.link_thay_the (hỗ trợ phân tách bằng dấu phẩy).
-    2. Quét ngược trong DB: Tìm các văn bản (Đến, Đi) có link_thay_the chứa doc.so_hieu.
-    3. Hợp nhất danh sách và loại bỏ trùng lặp.
-    Hỗ trợ doc là model instance hoặc chuỗi số hiệu (str).
+    Truy vấn động quan hệ thay thế tổng hợp (hợp nhất thay_the_cho và bi_thay_boi).
+    Đảm bảo tương thích ngược 100% cho mọi serializer và component.
     """
+    rels = get_replacement_relations(doc)
     results: list[str] = []
-    if isinstance(doc, str):
-        own_link = ""
-        so_hieu = doc.strip()
-    else:
-        own_link = getattr(doc, "link_thay_the", "") or ""
-        so_hieu = getattr(doc, "so_hieu", "") or ""
-    so_hieu_clean = so_hieu.strip().lower()
-
-    if own_link:
-        for item in own_link.split(","):
-            s = item.strip()
-            if s and s.lower() != so_hieu_clean and s not in results:
-                results.append(s)
-
-    if so_hieu:
-        from .models import VanBanDen, VanBanDi
-        for model in (VanBanDen, VanBanDi):
-            try:
-                pk_val = getattr(doc, "pk", None) if not isinstance(doc, str) else None
-                qs = model.objects.filter(link_thay_the__icontains=so_hieu)
-                if pk_val:
-                    qs = qs.exclude(pk=pk_val)
-                for other in qs:
-                    other_link = getattr(other, "link_thay_the", "") or ""
-                    tokens = [t.strip().lower() for t in other_link.split(",") if t.strip()]
-                    if so_hieu_clean in tokens and other.so_hieu:
-                        target = other.so_hieu.strip()
-                        if target and target.lower() != so_hieu_clean and target not in results:
-                            results.append(target)
-            except Exception:
-                pass
-
+    for item in rels.get("thay_the_cho", []) + rels.get("bi_thay_boi", []):
+        if item not in results:
+            results.append(item)
     return results
 
 

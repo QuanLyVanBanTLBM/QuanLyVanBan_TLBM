@@ -76,7 +76,11 @@ Theo quyết định thống nhất từ GVHD (PR #92, Issue #82, Issue #83), ph
 
 ## 🧪 4. Trạng Thái Kiểm Thử (Quality Gate)
 
+Chi tiết kịch bản kiểm thử toàn diện vui lòng xem tại: [Tài liệu đặc tả kiểm thử](file:///docs/modules/02_documents/TEST_SPECIFICATION.md).
+
 - **Backend Django Check**: `python manage.py check` ➔ **0 issues (OK)**
-- **Backend Unit Tests**: `python manage.py test documents` ➔ **54/54 tests PASS (100%)**
-- **Frontend Vitest**: `npm test` ➔ **67/67 tests PASS (100%)**
+- **Backend Unit Tests**: `python manage.py test documents` ➔ **56/56 tests PASS (100%)**
+- **Frontend Vitest**: `npm test` ➔ **28 test suites, 176/176 tests PASS (100%)**
+- **Frontend Lint**: `npm run lint` ➔ **0 errors, 0 warnings (100% Clean)**
+- **Frontend Build**: `npm run build` ➔ **Exit code 0 (100% OK)**
 - **Đồng bộ mã nguồn**: Đã đồng bộ hoàn chỉnh giữa upstream và nhánh phát triển của nhóm.

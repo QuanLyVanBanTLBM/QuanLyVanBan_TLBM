@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useTranslation } from '@i18n/translate';
-import AlertModal from '@components/common/AlertModal';
 
 export interface LoginFormProps {
   isLoading: boolean;
@@ -27,8 +26,6 @@ export const LoginForm: React.FC<LoginFormProps> = ({
   const [username, setUsername] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [showPassword, setShowPassword] = useState<boolean>(false);
-   const [alertOpen, setAlertOpen] = useState(false);
-   const [alertMsg, setAlertMsg] = useState('');
 
   const toggleShowPassword = () => {
     const nextShow = !showPassword;
@@ -116,17 +113,16 @@ export const LoginForm: React.FC<LoginFormProps> = ({
             />
             <span>{t('auth.rememberMe')}</span>
           </label>
-           <a
-             href="#forgot"
-             onClick={(e) => {
-               e.preventDefault();
-               setAlertMsg(t('auth.forgotPasswordAlert'));
-               setAlertOpen(true);
-             }}
-             className="font-semibold text-main hover:text-primary transition-fast hover:underline"
-           >
-             {t('auth.forgotPassword')}
-           </a>
+          <a
+            href="#forgot"
+            onClick={(e) => {
+              e.preventDefault();
+              alert(t('auth.forgotPasswordAlert'));
+            }}
+            className="font-semibold text-main hover:text-primary transition-fast hover:underline"
+          >
+            {t('auth.forgotPassword')}
+          </a>
         </div>
 
         <button
@@ -139,7 +135,6 @@ export const LoginForm: React.FC<LoginFormProps> = ({
           {!isSuccess && <i className="fa-solid fa-arrow-right text-xs" />}
         </button>
       </form>
-       <AlertModal open={alertOpen} onClose={()=>setAlertOpen(false)} message={alertMsg} />
     </div>
   );
 };

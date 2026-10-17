@@ -27,6 +27,7 @@ concurrency:
 
 env:
   DJANGO_SETTINGS_MODULE: config.settings_ci
+  DJANGO_SECRET_KEY: "ci-only-not-for-production"
   POSTGRES_HOST: localhost
   POSTGRES_PORT: '5432'
   POSTGRES_DB: tlbm_ci
@@ -41,7 +42,7 @@ jobs:
     timeout-minutes: 15
     services:
       postgres:
-        image: postgres:17
+        image: postgres:16
         env:
           POSTGRES_DB: tlbm_ci
           POSTGRES_USER: postgres
@@ -80,6 +81,22 @@ jobs:
       - name: Kiểm tra không còn migration chưa áp dụng
         run: python manage.py migrate --noinput --check
 
+      - name: So sánh schema từ migration với DDL phát hành
+        run: |
+          PGPASSWORD="$POSTGRES_PASSWORD" createdb \
+            -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" \
+            tlbm_ddl_expected
+
+          PGPASSWORD="$POSTGRES_PASSWORD" psql \
+            -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" \
+            -d tlbm_ddl_expected -v ON_ERROR_STOP=1 -q \
+            -f ../docs/common/database/release_DDL.sql
+
+          # So theo catalog (không so văn bản pg_dump), bỏ qua khác biệt Django luôn sinh ra.
+          # Lệch đã biết nằm trong baseline; lệch mới hoặc baseline đã hết lệch đều làm job fail.
+          python ../.github/scripts/compare_schema_ddl.py \
+            "$POSTGRES_DB" tlbm_ddl_expected ../docs/common/database/schema_drift_baseline.txt
+
       - name: Django tests trên PostgreSQL
         run: python manage.py test
 
@@ -90,7 +107,7 @@ jobs:
     timeout-minutes: 20
     services:
       postgres:
-        image: postgres:17
+        image: postgres:16
         env:
           POSTGRES_DB: tlbm_ci
           POSTGRES_USER: postgres

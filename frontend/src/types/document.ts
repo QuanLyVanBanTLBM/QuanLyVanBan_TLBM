@@ -53,9 +53,15 @@ export interface DocumentItem {
   ngay_het_hieu_luc?: string | null;
   link_thay_the?: string;
   danh_sach_thay_the?: string[];
+  thay_the_cho?: string[];
+  bi_thay_boi?: string[];
   hien_thi: boolean;
+  pham_vi?: 'NOI_BO' | 'HAN_CHE';
+  pham_vi_display?: string;
   nguoi_tao_name?: string | null;
   nguoi_tao_username?: string | null;
+  can_edit?: boolean;
+  can_delete?: boolean;
   attachment_count: number;
   created_at: string;
 }

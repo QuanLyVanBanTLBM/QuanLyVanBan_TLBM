@@ -8,7 +8,7 @@
 
 - **Framework**: Django 6.1.x (Python Web Framework)
 - **Python**: Bắt buộc Python 3.12 trở lên (Django 6.1 không hỗ trợ Python thấp hơn)
-- **Database**: SQLite (môi trường phát triển nội bộ), có thể chuyển đổi PostgreSQL cho Production
+- **Database**: PostgreSQL 16 trong Docker cho môi trường local; SQLite vẫn là cấu hình dự phòng của Django
 - **API Architecture**: RESTful API, JSON responses
 
 ---
@@ -33,34 +33,21 @@ backend/
 
 ---
 
-## 🚀 3. Hướng dẫn cài đặt & Khởi chạy
+## 🚀 3. Hướng dẫn chạy local
 
-```bash
-# 1. Di chuyển vào thư mục backend
-cd backend
+Chạy mọi lệnh từ thư mục gốc của dự án, không cần chuyển vào `backend` và không cần tự bật môi trường ảo:
 
-# 2. Khởi tạo môi trường ảo (tùy chọn nhưng khuyến nghị)
-python -m venv venv
+1. Lần đầu dựng DB local mới: mở Docker Desktop, rồi chạy `pnpm db:setup` tại thư mục gốc. Chỉ cần làm một lần; dữ liệu DB được giữ trong Docker volume.
+2. Những lần chạy dự án sau: mở Docker Desktop và chờ Docker Engine sẵn sàng. Nếu DB đang chạy, không cần chạy lại lệnh dựng DB. Nếu đã dừng DB bằng `pnpm db:stop`, chạy `pnpm db:start` tại thư mục gốc.
+3. Mở Terminal backend tại thư mục gốc và chạy `pnpm runserver`. Lệnh kiểm tra Docker và DB trước, rồi mới tự chuẩn bị môi trường Python và chạy Django. Nếu Docker hoặc DB chưa sẵn sàng, lệnh báo lỗi kèm hướng xử lý.
+4. Mở Terminal frontend khác tại thư mục gốc và chạy `pnpm dev`.
 
-# Kích hoạt môi trường ảo:
-# Trên Windows PowerShell:
-.\venv\Scripts\Activate.ps1
-# Trên Windows Command Prompt:
-.\venv\Scripts\activate.bat
+Khi có migration Django mới, chạy `pnpm db:migrate` tại thư mục gốc trước hoặc sau khi khởi động backend. `pnpm db:status`, `pnpm db:migrations`, `pnpm db:reset` và `pnpm db:stop` lần lượt xem container, xem trạng thái migration, tạo lại DB local có xác nhận, và dừng dịch vụ mà vẫn giữ dữ liệu.
 
-# 3. Cập nhật các bảng cơ sở dữ liệu
-python manage.py migrate
-
-# 4. (Tùy chọn) Tạo tài khoản quản trị tối cao Django Admin
-python manage.py createsuperuser
-
-# 5. Khởi chạy máy chủ Backend (Port 8000)
-python manage.py runserver 127.0.0.1:8000
-```
-
-Truy cập:
-- **Trang chủ Backend**: `http://127.0.0.1:8000/`
-- **Django Admin Portal**: `http://127.0.0.1:8000/admin/`
+- API Backend: `http://127.0.0.1:8000/`
+- Django Admin: `http://127.0.0.1:8000/admin/`
+- pgAdmin local: `http://127.0.0.1:5050/` (đăng nhập bằng `admin@qlvb.local` / `qlvb_pgadmin_local_only`)
+- Cổng PostgreSQL từ máy Windows: `127.0.0.1:55432`, database `qlvb_dev`
 
 ---
 

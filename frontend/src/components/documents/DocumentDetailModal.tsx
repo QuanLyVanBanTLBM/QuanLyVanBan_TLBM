@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { DocumentDetail } from '@app-types/document';
 import { Badge } from '@components/common/Badge';
@@ -20,41 +20,40 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
   const [document, setDocument] = useState<DocumentDetail | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Fetch chi tiết văn bản (Backend tự động ghi nhận vào DocumentViewLog khi gọi endpoint này)
-  const fetchDetail = useCallback(async (id: number) => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const data = await apiClient.get<DocumentDetail>(`/api/documents/${id}/`);
-      setDocument(data);
-    } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : 'Không thể tải chi tiết văn bản.';
-      setError(errMsg);
-      setDocument(null);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const [reloadKey, setReloadKey] = useState<number>(0);
 
   useEffect(() => {
-    let cancelled = false;
-    if (isOpen && documentId) {
-      Promise.resolve().then(() => {
-        if (!cancelled) void fetchDetail(documentId);
-      });
-    } else {
-      Promise.resolve().then(() => {
-        if (!cancelled) {
-          setDocument(null);
-          setError(null);
-        }
-      });
+    if (!isOpen || !documentId) {
+      return;
     }
+    let ignore = false;
+    (async () => {
+      await Promise.resolve();
+      if (ignore) return;
+      setIsLoading(true);
+      setError(null);
+      try {
+        const data = await apiClient.get<DocumentDetail>(`/api/documents/${documentId}/`);
+        if (!ignore) {
+          setDocument(data);
+        }
+      } catch (err: unknown) {
+        if (!ignore) {
+          const errMsg = err instanceof Error ? err.message : 'Không thể tải chi tiết văn bản.';
+          setError(errMsg);
+          setDocument(null);
+        }
+      } finally {
+        if (!ignore) {
+          setIsLoading(false);
+        }
+      }
+    })();
+
     return () => {
-      cancelled = true;
+      ignore = true;
     };
-  }, [isOpen, documentId, fetchDetail]);
+  }, [isOpen, documentId, reloadKey]);
 
   // Đóng bằng phím ESC
   useEffect(() => {
@@ -137,7 +136,7 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
               {documentId && (
                 <button
                   type="button"
-                  onClick={() => fetchDetail(documentId)}
+                  onClick={() => setReloadKey(k => k + 1)}
                   className="underline font-semibold hover:text-danger-hover"
                 >
                   Thử lại
@@ -273,10 +272,10 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                         document.hieu_luc === 'CON_HIEU_LUC'
                           ? 'success'
                           : document.hieu_luc === 'CON_HIEU_LUC_1_PHAN'
-                          ? 'purple'
-                          : document.hieu_luc === 'HET_HIEU_LUC'
-                          ? 'danger'
-                          : 'secondary'
+                            ? 'purple'
+                            : document.hieu_luc === 'HET_HIEU_LUC'
+                              ? 'danger'
+                              : 'secondary'
                       }
                       size="sm"
                     >
@@ -293,7 +292,36 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                     </div>
                   )}
 
-                  {document.link_thay_the && (
+                  {/* Hiển thị chi tiết thay thế 2 chiều phân định rõ ràng */}
+                  {(document.thay_the_cho && document.thay_the_cho.length > 0) ||
+                  (document.bi_thay_boi && document.bi_thay_boi.length > 0) ? (
+                    <>
+                      {document.thay_the_cho && document.thay_the_cho.length > 0 && (
+                        <div className="flex justify-between items-start text-xs py-1">
+                          <span className="text-secondary shrink-0 pt-0.5">Thay thế cho:</span>
+                          <div className="flex flex-wrap justify-end gap-1 max-w-[220px]">
+                            {document.thay_the_cho.map((s: string, idx: number) => (
+                              <span key={`ttc-${idx}`} className="font-semibold font-mono text-[0.7rem] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">
+                                {s.trim()}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {document.bi_thay_boi && document.bi_thay_boi.length > 0 && (
+                        <div className="flex justify-between items-start text-xs py-1">
+                          <span className="text-secondary shrink-0 pt-0.5">Bị thay bởi:</span>
+                          <div className="flex flex-wrap justify-end gap-1 max-w-[220px]">
+                            {document.bi_thay_boi.map((s: string, idx: number) => (
+                              <span key={`btb-${idx}`} className="font-semibold font-mono text-[0.7rem] px-1.5 py-0.5 rounded bg-warning/10 text-warning-text border border-warning/30">
+                                {s.trim()}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : document.link_thay_the ? (
                     <div className="flex justify-between items-start text-xs py-1">
                       <span className="text-secondary shrink-0 pt-0.5">
                         {document.hieu_luc === 'CON_HIEU_LUC' || document.hieu_luc === 'CON_HIEU_LUC_1_PHAN' ? 'Thay thế cho:' : 'Bị thay bởi:'}
@@ -306,7 +334,7 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                         ))}
                       </div>
                     </div>
-                  )}
+                  ) : null}
                 </div>
               </div>
 

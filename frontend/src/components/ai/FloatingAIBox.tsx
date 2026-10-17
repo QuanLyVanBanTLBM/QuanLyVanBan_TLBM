@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { ActivePageId } from '@app-types/navigation';
 
 interface FloatingAIBoxProps {
@@ -69,7 +69,7 @@ export default function FloatingAIBox({ onNavigate }: FloatingAIBoxProps) {
     const q = query.toLowerCase();
 
     if (q.includes('văn bản đến') || q.includes('tiếp nhận') || q.includes('đến')) {
-      return `**Quy Trình Tiếp Nhận Văn Bản Đến:**\n1. **Tiếp nhận & Vào sổ:** Văn thư tiếp nhận văn bản giấy hoặc điện tử, kiểm tra dấu và tính hợp lệ.\n2. **Số hóa & Phân loại:** Quét scan tài liệu PDF đính kèm, gắn số đến, phân loại phạm vi lưu hành (Nội bộ / Hạn chế).\n3. **Trình Bút phê:** Chuyển Ban Giám Hiệu duyệt phân công đơn vị chủ trì xử lý qua hệ thống.`;
+      return `**Quy Trình Tiếp Nhận Văn Bản Đến:**\n1. **Tiếp nhận & Vào sổ:** Văn thư tiếp nhận văn bản giấy hoặc điện tử, kiểm tra dấu và tính hợp lệ.\n2. **Số hóa & Phân loại:** Quét scan tài liệu PDF đính kèm, gắn số đến, phân loại độ khẩn (Thường/Khẩn/Hỏa tốc).\n3. **Trình Bút phê:** Chuyển Ban Giám Hiệu duyệt phân công đơn vị chủ trì xử lý qua hệ thống.`;
     }
 
     if (q.includes('mật') || q.includes('tuyệt mật') || q.includes('bảo mật')) {

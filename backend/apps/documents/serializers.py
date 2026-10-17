@@ -102,12 +102,31 @@ class DocumentListSerializer(serializers.Serializer):
     hieu_luc_display = serializers.CharField(source="get_hieu_luc_display", read_only=True)
     link_thay_the = serializers.SerializerMethodField()
     danh_sach_thay_the = serializers.SerializerMethodField()
+    thay_the_cho = serializers.SerializerMethodField()
+    bi_thay_boi = serializers.SerializerMethodField()
     pham_vi = serializers.CharField(read_only=True, default="NOI_BO")
     pham_vi_display = serializers.SerializerMethodField()
     hien_thi = serializers.BooleanField(read_only=True)
     nguoi_tao_name = serializers.SerializerMethodField()
+    nguoi_tao_username = serializers.CharField(source="nguoi_tao.username", read_only=True, default=None)
+    can_edit = serializers.SerializerMethodField()
+    can_delete = serializers.SerializerMethodField()
     attachment_count = serializers.SerializerMethodField()
     created_at = serializers.DateTimeField(read_only=True)
+
+    def get_can_edit(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user or not request.user.is_authenticated:
+            return False
+        from .views import can_edit_document
+        return can_edit_document(request.user, obj)
+
+    def get_can_delete(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user or not request.user.is_authenticated:
+            return False
+        from .views import can_delete_document
+        return can_delete_document(request.user, obj)
 
     def get_pham_vi_display(self, obj):
         pv = getattr(obj, "pham_vi", "NOI_BO")
@@ -116,6 +135,14 @@ class DocumentListSerializer(serializers.Serializer):
     def get_danh_sach_thay_the(self, obj):
         from .services import get_dynamic_replacements
         return get_dynamic_replacements(obj)
+
+    def get_thay_the_cho(self, obj):
+        from .services import get_replacement_relations
+        return get_replacement_relations(obj).get("thay_the_cho", [])
+
+    def get_bi_thay_boi(self, obj):
+        from .services import get_replacement_relations
+        return get_replacement_relations(obj).get("bi_thay_boi", [])
 
     def get_link_thay_the(self, obj):
         from .services import get_dynamic_replacements
@@ -164,6 +191,8 @@ class DocumentDetailSerializer(serializers.Serializer):
     ngay_het_hieu_luc = serializers.DateTimeField(read_only=True, default=None)
     link_thay_the = serializers.SerializerMethodField()
     danh_sach_thay_the = serializers.SerializerMethodField()
+    thay_the_cho = serializers.SerializerMethodField()
+    bi_thay_boi = serializers.SerializerMethodField()
     pham_vi = serializers.CharField(read_only=True, default="NOI_BO")
     pham_vi_display = serializers.SerializerMethodField()
     ghi_chu = serializers.CharField(read_only=True, default="")
@@ -172,9 +201,25 @@ class DocumentDetailSerializer(serializers.Serializer):
     attachments = serializers.SerializerMethodField()
     nguoi_tao_name = serializers.SerializerMethodField()
     nguoi_tao_username = serializers.CharField(source="nguoi_tao.username", read_only=True, default=None)
+    can_edit = serializers.SerializerMethodField()
+    can_delete = serializers.SerializerMethodField()
     nguoi_nhan_list = serializers.SerializerMethodField()
     created_at = serializers.DateTimeField(read_only=True)
     updated_at = serializers.DateTimeField(read_only=True)
+
+    def get_can_edit(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user or not request.user.is_authenticated:
+            return False
+        from .views import can_edit_document
+        return can_edit_document(request.user, obj)
+
+    def get_can_delete(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user or not request.user.is_authenticated:
+            return False
+        from .views import can_delete_document
+        return can_delete_document(request.user, obj)
 
     def get_pham_vi_display(self, obj):
         pv = getattr(obj, "pham_vi", "NOI_BO")
@@ -183,6 +228,14 @@ class DocumentDetailSerializer(serializers.Serializer):
     def get_danh_sach_thay_the(self, obj):
         from .services import get_dynamic_replacements
         return get_dynamic_replacements(obj)
+
+    def get_thay_the_cho(self, obj):
+        from .services import get_replacement_relations
+        return get_replacement_relations(obj).get("thay_the_cho", [])
+
+    def get_bi_thay_boi(self, obj):
+        from .services import get_replacement_relations
+        return get_replacement_relations(obj).get("bi_thay_boi", [])
 
     def get_link_thay_the(self, obj):
         from .services import get_dynamic_replacements
@@ -273,6 +326,40 @@ class DocumentCreateUpdateSerializer(serializers.Serializer):
                 raise serializers.ValidationError(
                     {"link_thay_the": "Văn bản hết hiệu lực và được thay thế bắt buộc phải có liên kết văn bản thay thế (link_thay_the)."}
                 )
+
+        # Chặn tự thay thế, chặn văn bản không tồn tại và vòng lặp thay thế 2 chiều (Replacement Guard)
+        so_hieu = (attrs.get("so_hieu") or (getattr(self.instance, "so_hieu", "") if self.instance else "")).strip()
+        raw_link = attrs.get("link_thay_the") if "link_thay_the" in attrs else (getattr(self.instance, "link_thay_the", "") if self.instance else "")
+        raw_link_str = str(raw_link or "").strip()
+        if raw_link_str:
+            targets = [t.strip() for t in raw_link_str.split(",") if t.strip()]
+            for target in targets:
+                # 1. Chặn tự thay thế chính mình
+                if so_hieu and target.lower() == so_hieu.lower():
+                    raise serializers.ValidationError(
+                        {"link_thay_the": "Văn bản không thể tự thiết lập thay thế chính nó."}
+                    )
+
+                # 2. Khóa nghiệp vụ: Bắt buộc văn bản mục tiêu phải tồn tại trong hệ thống
+                target_found = False
+                for M in (VanBanDen, VanBanDi):
+                    other_docs = M.objects.filter(so_hieu__iexact=target)
+                    if self.instance and getattr(self.instance, "pk", None):
+                        other_docs = other_docs.exclude(pk=self.instance.pk)
+                    if other_docs.exists():
+                        target_found = True
+                    for other in other_docs:
+                        other_links = [s.strip().lower() for s in (other.link_thay_the or "").split(",") if s.strip()]
+                        # 3. Chỉ chặn khi other là văn bản đang còn hiệu lực và đã thiết lập thay thế văn bản hiện tại
+                        if so_hieu and so_hieu.lower() in other_links and other.hieu_luc in (HieuLuc.CON_HIEU_LUC, HieuLuc.CON_HIEU_LUC_1_PHAN):
+                            raise serializers.ValidationError(
+                                {"link_thay_the": f"Xung đột nghiệp vụ: Văn bản '{other.so_hieu}' đang còn hiệu lực và đã được thiết lập thay thế cho văn bản này. Không thể tạo vòng lặp thay thế hai chiều!"}
+                            )
+
+                if not target_found:
+                    raise serializers.ValidationError(
+                        {"link_thay_the": f"Văn bản mục tiêu '{target}' không tồn tại trong hệ thống. Vui lòng chọn văn bản hợp lệ từ danh sách gợi ý."}
+                    )
 
         # Issue #82: Quy tắc nghiệp vụ văn bản hạn chế (HAN_CHE)
         if self.instance and "pham_vi" in attrs and attrs["pham_vi"] != self.instance.pham_vi:

@@ -99,9 +99,12 @@ def ma_nhom_cua(nguoi_dung):
         group_info = apps.get_model("authorization", "GroupInfo")
     except LookupError:
         return None
-    nhom = nguoi_dung.groups.values_list("pk", flat=True)
-    return set(group_info.objects.filter(pk__in=list(nhom)).exclude(ma_nhom_quyen=None)
-               .values_list("ma_nhom_quyen", flat=True))
+    nhom = list(nguoi_dung.groups.values_list("pk", flat=True))
+    if not nhom:
+        return None
+    ma = set(group_info.objects.filter(pk__in=nhom).exclude(ma_nhom_quyen=None)
+             .values_list("ma_nhom_quyen", flat=True))
+    return ma if ma else None
 
 
 def la_quan_tri(nguoi_dung):

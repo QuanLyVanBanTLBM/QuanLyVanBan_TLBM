@@ -354,7 +354,7 @@ export default function MainLayout({
               isAiPage ? 'overflow-hidden h-full' : 'overflow-y-auto overflow-x-hidden'
             }`}>
               <div className={`page-content-wrapper flex-1 w-full mx-auto ${
-                isAiPage ? 'p-0 max-w-none h-full flex flex-col overflow-hidden' : 'p-2 sm:p-4 w-full max-w-none'
+                isAiPage ? 'p-0 max-w-none h-full flex flex-col overflow-hidden' : 'p-4 sm:p-6 max-w-[1600px]'
               }`}>
                 {children || <Outlet />}
               </div>

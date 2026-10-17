@@ -9,6 +9,7 @@ import ProfilePage from '@pages/profile/ProfilePage';
 import PasswordChangePage from '@pages/profile/PasswordChangePage';
 import SettingsPage from '@pages/settings/SettingsPage';
 import InboundDocumentPage from '@pages/InboundDocumentPage';
+import OutboundDocumentPage from '@pages/OutboundDocumentPage';
 import OrganizationsPage from '@pages/organizations/OrganizationsPage';
 import MeetingsPage from '@pages/meetings/MeetingsPage';
 import EmployeesPage from '@pages/employees/EmployeesPage';
@@ -84,7 +85,7 @@ export default function AppRouter({
 
         {/* Phân hệ Văn bản (Nhóm 2 phụ trách theo đề cương) */}
         <Route path="/documents/incoming" element={<InboundDocumentPage />} />
-        <Route path="/documents/outgoing" element={<SyllabusPreview activePage="documents_outgoing" />} />
+        <Route path="/documents/outgoing" element={<OutboundDocumentPage />} />
         <Route path="/documents/confidential" element={<SyllabusPreview activePage="documents_confidential" />} />
 
         {/* Phân hệ Hồ sơ & Tài nguyên (Nhóm 3 & Nhóm 4 phụ trách theo đề cương) */}

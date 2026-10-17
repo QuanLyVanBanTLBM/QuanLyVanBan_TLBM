@@ -68,10 +68,6 @@
   --color-pink-border: rgba(236, 72, 153, 0.35);
 }
 
-body {
-  font-family: var(--font-sans);
-}
-
 /* ==========================================================================
    THEME PALETTES (Eye-Care Balanced Contrast)
    ========================================================================== */
@@ -110,18 +106,6 @@ body {
   --sidebar-border-right: rgba(255, 255, 255, 0.07);
   --color-warning-text: #f59e0b;
   --bg-backdrop: rgba(0, 0, 0, 0.7);
-}
-
-/* Ensure table text is readable when dark theme is active (force black on white cards) */
-[data-theme='dark'] .bg-white.rounded.shadow.overflow-auto,
-[data-theme='dark'] .bg-white.rounded.shadow.overflow-auto table,
-[data-theme='dark'] .bg-white.rounded.shadow.overflow-auto td {
-  color: #000 !important;
-}
-
-/* keep header text light in dark theme */
-[data-theme='dark'] .bg-white.rounded.shadow.overflow-auto th {
-  color: var(--text-main) !important;
 }
 
 /* 2. Modern Clean Light Theme (Màu sắc và nền chuẩn i chang hình: Nền #f1f4f9, Card #ffffff, Viền #e2e8f0) */
@@ -246,22 +230,6 @@ body {
                            inset -2px -2px 3px rgba(0, 0, 0, 0.40);
 }
 
-/* Document modal (form) - force readable inputs in dark theme */
-[data-theme='dark'] .document-modal {
-  background: #0b1116 !important;
-  border: 1px solid rgba(255,255,255,0.04);
-}
-[data-theme='dark'] .document-modal input,
-[data-theme='dark'] .document-modal select,
-[data-theme='dark'] .document-modal textarea {
-  background: #0f1720 !important;
-  color: #fff !important;
-  border: 1px solid rgba(255,255,255,0.06) !important;
-}
-[data-theme='dark'] .document-modal .bg-surface {
-  background: #0f1720 !important;
-}
-
 /* ==========================================================================
    CLAYMORPHISM 3D SURFACES (Chất liệu đất sét 3D bo tròn, phồng mềm)
    ========================================================================== */
@@ -332,23 +300,6 @@ body {
 [data-ui-style='modern'][data-theme='light'] .main-container {
   background: #ffffff !important;
 }
-
-/* Hide default date placeholder text for our search date inputs - REMOVED to keep text visible */
-
-.search-date { text-align: center; }
-
-/* compact date input with icon */
-.search-date-icon { padding-top: 6px !important; padding-bottom: 6px !important; padding-left: 36px !important; padding-right: 10px !important; width: 120px; }
-.search-date-icon::-webkit-calendar-picker-indicator { opacity: 0; }
-.search-date-icon:hover::-webkit-calendar-picker-indicator { opacity: 1; }
-
-.search-date-icon:focus { outline: none; box-shadow: 0 0 0 3px rgba(59,130,246,0.12); }
-
-/* Icon-only compact date trigger */
-.date-icon-only { display:none; }
-
-/* compact search date: one-third width */
-.search-date-compact { width: 120px !important; padding-left: 8px !important; padding-right: 8px !important; }
 
 [data-ui-style='modern'][data-theme='dark'] .page-viewport,
 [data-ui-style='modern'][data-theme='dark'] .main-container {
