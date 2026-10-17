@@ -18,6 +18,8 @@ export interface BookingModalProps {
   bookingToEdit?: MeetingBooking | null;
   initialDate?: string;
   currentUser?: BookingUser | null;
+  initialRoomId?: number | null;
+  existingBookings?: MeetingBooking[];
 }
 
 interface BookingFormProps {
@@ -27,6 +29,8 @@ interface BookingFormProps {
   bookingToEdit?: MeetingBooking | null;
   initialDate?: string;
   currentUser?: BookingUser | null;
+  initialRoomId?: number | null;
+  existingBookings?: MeetingBooking[];
 }
 
 const padZero = (n: number): string => n.toString().padStart(2, '0');
@@ -51,6 +55,8 @@ const BookingForm: React.FC<BookingFormProps> = ({
   bookingToEdit,
   initialDate,
   currentUser,
+  initialRoomId,
+  existingBookings,
 }) => {
   const { t } = useTranslation();
   // Tính toán giá trị mặc định ban đầu
@@ -76,8 +82,11 @@ const BookingForm: React.FC<BookingFormProps> = ({
       return `${now.getFullYear()}-${padZero(now.getMonth() + 1)}-${padZero(now.getDate())}`;
     })();
 
-    // Mặc định chọn phòng đầu tiên có trạng thái sẵn sàng (AVAILABLE)
-    const defaultRoom = rooms.find((r) => (r.trang_thai || 'AVAILABLE') === 'AVAILABLE') || rooms[0];
+    // Mặc định chọn phòng được truyền vào hoặc phòng đầu tiên có trạng thái sẵn sàng (AVAILABLE)
+    const targetRoom = initialRoomId
+      ? rooms.find((r) => r.id === Number(initialRoomId))
+      : null;
+    const defaultRoom = targetRoom || rooms.find((r) => (r.trang_thai || 'AVAILABLE') === 'AVAILABLE') || rooms[0];
 
     return {
       roomId: defaultRoom ? defaultRoom.id : '',
@@ -89,7 +98,7 @@ const BookingForm: React.FC<BookingFormProps> = ({
       attendees: 5,
       note: '',
     };
-  }, [bookingToEdit, rooms, initialDate, currentUser]);
+  }, [bookingToEdit, rooms, initialDate, currentUser, initialRoomId]);
 
   const [roomId, setRoomId] = useState<number | ''>(initialValues.roomId);
   const [title, setTitle] = useState(initialValues.title);
@@ -107,6 +116,53 @@ const BookingForm: React.FC<BookingFormProps> = ({
   const selectedRoom = useMemo(() => {
     return rooms.find((r) => r.id === Number(roomId));
   }, [rooms, roomId]);
+
+  const [dateBookings, setDateBookings] = useState<MeetingBooking[]>(existingBookings || []);
+
+  // Tải lịch của ngày được chọn trong form để phát hiện xung đột chính xác khi đổi ngày
+  useEffect(() => {
+    let isMounted = true;
+    if (!date) return;
+
+    apiClient
+      .get<{ results?: MeetingBooking[] } | MeetingBooking[]>(
+        `/api/meeting-bookings/?date=${date}&page_size=100`
+      )
+      .then((res) => {
+        if (!isMounted) return;
+        const list = Array.isArray(res) ? res : res?.results || [];
+        setDateBookings(list);
+      })
+      .catch(() => {
+        if (isMounted && existingBookings) {
+          setDateBookings(existingBookings);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [date, existingBookings]);
+
+  // Các khung giờ đã có lịch đặt ở phòng này trong ngày được chọn
+  const bookedSlotsInRoom = useMemo(() => {
+    if (!roomId) return [];
+    return dateBookings.filter(
+      (b) =>
+        b.room === Number(roomId) &&
+        b.date === date &&
+        b.trang_thai !== 'CANCELLED' &&
+        b.id !== bookingToEdit?.id
+    );
+  }, [roomId, date, dateBookings, bookingToEdit]);
+
+  // Kiểm tra xung đột khung giờ theo thời gian thực (Real-time conflict detection)
+  const conflictingSlot = useMemo(() => {
+    if (!startTime || !endTime || startTime >= endTime) return null;
+    return bookedSlotsInRoom.find(
+      (b) => b.start_time.slice(0, 5) < endTime && b.end_time.slice(0, 5) > startTime
+    );
+  }, [startTime, endTime, bookedSlotsInRoom]);
 
   const validate = (): boolean => {
     const errors: Record<string, string> = {};
@@ -128,6 +184,12 @@ const BookingForm: React.FC<BookingFormProps> = ({
       errors.end_time = t('meetings.messages.endTimeRequired');
     } else if (startTime && startTime >= endTime) {
       errors.end_time = t('meetings.messages.invalidTimeRange');
+    } else if (conflictingSlot) {
+      errors.start_time = t('meetings.conflictWarning', {
+        title: conflictingSlot.title,
+        start: conflictingSlot.start_time.slice(0, 5),
+        end: conflictingSlot.end_time.slice(0, 5),
+      });
     }
 
     if (!attendees || attendees <= 0) {
@@ -341,6 +403,28 @@ const BookingForm: React.FC<BookingFormProps> = ({
               )}
             </div>
           )}
+
+          {/* Danh sách các khung giờ đã bận tại phòng này */}
+          {bookedSlotsInRoom.length > 0 && (
+            <div className="mt-2.5 p-3 rounded-xl bg-warning-subtle/40 border border-warning/35 space-y-1.5 animate-fadeIn">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-warning-text">
+                <i className="fa-solid fa-clock-rotate-left" />
+                <span>{t('meetings.existingSlotsNotice')}</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {bookedSlotsInRoom.map((slot) => (
+                  <span
+                    key={slot.id}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-surface text-warning-text border border-warning/30 shadow-2xs"
+                  >
+                    <i className="fa-solid fa-clock text-[10px] text-warning" />
+                    <span>{slot.start_time.slice(0, 5)} - {slot.end_time.slice(0, 5)}</span>
+                    <span className="text-muted font-normal truncate max-w-[150px]">({slot.title})</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Tiêu đề cuộc họp */}
@@ -486,6 +570,25 @@ const BookingForm: React.FC<BookingFormProps> = ({
           {fieldErrors.end_time && (
             <p className="text-xs text-danger font-medium">{fieldErrors.end_time}</p>
           )}
+
+          {/* Cảnh báo xung đột khung giờ trực quan */}
+          {conflictingSlot && (
+            <div className="mt-2 p-3 rounded-xl bg-danger-subtle/50 border border-danger/40 text-danger text-xs flex items-start gap-2.5 animate-fadeIn">
+              <i className="fa-solid fa-triangle-exclamation text-base shrink-0 mt-0.5 text-danger" />
+              <div>
+                <p className="font-bold">
+                  {t('meetings.conflictWarning', {
+                    title: conflictingSlot.title,
+                    start: conflictingSlot.start_time.slice(0, 5),
+                    end: conflictingSlot.end_time.slice(0, 5),
+                  })}
+                </p>
+                <p className="text-[11px] opacity-80 mt-0.5">
+                  {t('meetings.conflictHint')}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Ghi chú */}
@@ -547,10 +650,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, ...props }) 
 
   if (!isOpen) return null;
 
-  // Sử dụng key để reset state hoàn toàn khi mở lại modal hoặc chuyển đổi booking
+  // Sử dụng key để reset state hoàn toàn khi mở lại modal hoặc chuyển đổi booking / phòng chọn trước
   const formKey = props.bookingToEdit
     ? `edit-${props.bookingToEdit.id}`
-    : `new-${props.initialDate || 'default'}`;
+    : `new-${props.initialDate || 'default'}-${props.initialRoomId || 'any'}`;
 
   return (
     <div

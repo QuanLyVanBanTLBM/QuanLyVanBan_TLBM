@@ -83,6 +83,7 @@ describe('BookingModal Component (Issue #22 - Phase 3)', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    (apiClient.get as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
   });
 
   it('không render khi isOpen là false', () => {
@@ -255,5 +256,35 @@ describe('BookingModal Component (Issue #22 - Phase 3)', () => {
     expect(internalOption).toBeDefined();
     expect(internalOption?.disabled).toBe(false);
     expect(internalOption?.textContent).toContain('[Nội bộ]');
+  });
+
+  it('tải lịch của ngày mới qua API khi người dùng thay đổi ngày họp để cảnh báo trùng lịch', async () => {
+    (apiClient.get as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      results: [
+        {
+          id: 501,
+          room: 1,
+          title: 'Họp cổ đông',
+          date: '2026-10-15',
+          start_time: '09:00',
+          end_time: '11:00',
+          trang_thai: 'CONFIRMED',
+          organizer_detail: {
+            ho_ten: 'Lê Văn C',
+          },
+        },
+      ],
+    });
+
+    render(<BookingModal {...defaultProps} />);
+
+    const dateInput = screen.getByLabelText(/^ngày họp/i);
+    fireEvent.change(dateInput, { target: { value: '2026-10-15' } });
+
+    await waitFor(() => {
+      expect(apiClient.get).toHaveBeenCalledWith(
+        expect.stringContaining('/api/meeting-bookings/?date=2026-10-15')
+      );
+    });
   });
 });

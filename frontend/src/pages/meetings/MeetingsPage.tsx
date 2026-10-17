@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { MeetingRoom, MeetingBooking, BookingUser } from '@app-types/meeting';
 import { apiClient, ApiError } from '@lib/apiClient';
 import { Button } from '@components/common/Button';
@@ -6,8 +6,10 @@ import { Badge } from '@components/common/Badge';
 import { Card } from '@components/common/Card';
 import { BookingModal } from '@components/meetings/BookingModal';
 import { RoomModal } from '@components/meetings/RoomModal';
+import { MeetingDetailModal } from '@components/meetings/MeetingDetailModal';
 import { useTranslation } from '@i18n/translate';
 import { usePermissions } from '@lib/permissions';
+import { extractFloor, getFloorKey, getFloorWeight, compareRoomsByFloor } from '@lib/meetingFloor';
 
 interface PaginatedResponse<T> {
   count?: number;
@@ -24,7 +26,7 @@ interface UserProfileResponse {
 }
 
 export const MeetingsPage: React.FC = () => {
-  const { t } = useTranslation();
+  const { t, currentLang } = useTranslation();
   const { can } = usePermissions();
 
   // Tab hiện tại: 'schedule' (Lịch đặt) | 'rooms' (Danh mục phòng)
@@ -46,6 +48,11 @@ export const MeetingsPage: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState<string>(() => formatLocalDate());
   const [selectedRoomFilter, setSelectedRoomFilter] = useState<string>('all');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('all');
+  const [selectedFloorFilter, setSelectedFloorFilter] = useState<string>('all');
+
+  // Lịch đặt của ngày hôm nay cho Tab 2 (Danh mục phòng), hoàn toàn không bị ảnh hưởng bởi bộ lọc của Tab 1
+  const [todayBookings, setTodayBookings] = useState<MeetingBooking[]>([]);
+  const todayStr = useMemo(() => formatLocalDate(), []);
 
   // Bộ lọc danh mục phòng
   const [roomSearchTerm, setRoomSearchTerm] = useState('');
@@ -64,9 +71,13 @@ export const MeetingsPage: React.FC = () => {
   // Modals
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
   const [bookingToEdit, setBookingToEdit] = useState<MeetingBooking | null>(null);
+  const [selectedRoomForBooking, setSelectedRoomForBooking] = useState<number | null>(null);
 
   const [isRoomModalOpen, setIsRoomModalOpen] = useState(false);
   const [roomToEdit, setRoomToEdit] = useState<MeetingRoom | null>(null);
+
+  // Modal xem chi tiết cuộc họp
+  const [selectedBookingDetail, setSelectedBookingDetail] = useState<MeetingBooking | null>(null);
 
   // Modal xác nhận hủy lịch
   const [cancellingBooking, setCancellingBooking] = useState<MeetingBooking | null>(null);
@@ -178,6 +189,27 @@ export const MeetingsPage: React.FC = () => {
     };
   }, [selectedDate, selectedRoomFilter, selectedStatusFilter, reloadBookingsTrigger]);
 
+  // 4. Tải lịch của ngày hôm nay cho Tab Danh mục phòng (không lọc room hay trang_thai)
+  useEffect(() => {
+    let isMounted = true;
+    apiClient
+      .get<PaginatedResponse<MeetingBooking> | MeetingBooking[]>(
+        `/api/meeting-bookings/?date=${todayStr}&page_size=100`
+      )
+      .then((res) => {
+        if (!isMounted) return;
+        const list = Array.isArray(res) ? res : res.results || [];
+        setTodayBookings(list);
+      })
+      .catch(() => {
+        // ignore
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [todayStr, reloadBookingsTrigger]);
+
   // Điều khiển ngày: Hôm nay, trước, sau
   const handleDateChange = (daysDelta: number) => {
     const parts = selectedDate.split('-');
@@ -241,28 +273,77 @@ export const MeetingsPage: React.FC = () => {
   const canChangeOwnBooking = can('change_own_datphonghop');
   const canChangeAnyBooking = can('change_any_datphonghop');
 
+  // Danh sách các tầng xuất hiện trong danh mục phòng
+  const availableFloors = useMemo(() => {
+    const setFloors = new Set<string>();
+    rooms.forEach((r) => {
+      const f = extractFloor(r.location, currentLang);
+      if (f) setFloors.add(f);
+    });
+    return Array.from(setFloors).sort((a, b) => {
+      const weightA = getFloorWeight(a);
+      const weightB = getFloorWeight(b);
+      if (weightA !== weightB) return weightA - weightB;
+      return a.localeCompare(b, undefined, { numeric: true });
+    });
+  }, [rooms, currentLang]);
+
   // Lọc danh mục phòng ở Tab 2
-  const filteredRooms = rooms.filter((r) => {
-    const matchesSearch =
-      r.name.toLowerCase().includes(roomSearchTerm.toLowerCase()) ||
-      (r.location && r.location.toLowerCase().includes(roomSearchTerm.toLowerCase())) ||
-      (r.amenities && r.amenities.toLowerCase().includes(roomSearchTerm.toLowerCase()));
+  const filteredRooms = useMemo(() => {
+    return rooms.filter((r) => {
+      const matchesSearch =
+        r.name.toLowerCase().includes(roomSearchTerm.toLowerCase()) ||
+        (r.location && r.location.toLowerCase().includes(roomSearchTerm.toLowerCase())) ||
+        (r.amenities && r.amenities.toLowerCase().includes(roomSearchTerm.toLowerCase()));
 
-    const currentStatus = r.trang_thai || 'AVAILABLE';
-    const matchesStatus =
-      roomStatusFilter === 'all'
-        ? true
-        : currentStatus === roomStatusFilter;
+      const currentStatus = r.trang_thai || 'AVAILABLE';
+      const matchesStatus =
+        roomStatusFilter === 'all'
+          ? true
+          : currentStatus === roomStatusFilter;
 
-    const matchesVisibility =
-      !canChangeRoom || roomVisibilityFilter === 'all'
-        ? true
-        : roomVisibilityFilter === 'public'
-        ? r.is_public
-        : !r.is_public;
+      const matchesVisibility =
+        !canChangeRoom || roomVisibilityFilter === 'all'
+          ? true
+          : roomVisibilityFilter === 'public'
+          ? r.is_public
+          : !r.is_public;
 
-    return matchesSearch && matchesStatus && matchesVisibility;
-  });
+      const rFloor = extractFloor(r.location, currentLang);
+      const rFloorVi = extractFloor(r.location, 'vi');
+      const rFloorEn = extractFloor(r.location, 'en');
+      const rFloorKey = getFloorKey(r.location);
+
+      const matchesFloor =
+        !selectedFloorFilter || selectedFloorFilter.toLowerCase() === 'all'
+          ? true
+          : selectedFloorFilter === rFloor ||
+            selectedFloorFilter === rFloorVi ||
+            selectedFloorFilter === rFloorEn ||
+            selectedFloorFilter === rFloorKey;
+
+      return matchesSearch && matchesStatus && matchesVisibility && matchesFloor;
+    }).sort(compareRoomsByFloor);
+  }, [rooms, roomSearchTerm, roomStatusFilter, roomVisibilityFilter, selectedFloorFilter, canChangeRoom, currentLang]);
+
+  // Lọc danh sách cuộc họp theo tầng ở Tab 1
+  const displayBookings = useMemo(() => {
+    if (!selectedFloorFilter || selectedFloorFilter.toLowerCase() === 'all') return bookings;
+    return bookings.filter((b) => {
+      const room = rooms.find((r) => r.id === b.room) || b.room_detail;
+      const rFloor = extractFloor(room?.location, currentLang);
+      const rFloorVi = extractFloor(room?.location, 'vi');
+      const rFloorEn = extractFloor(room?.location, 'en');
+      const rFloorKey = getFloorKey(room?.location);
+
+      return (
+        selectedFloorFilter === rFloor ||
+        selectedFloorFilter === rFloorVi ||
+        selectedFloorFilter === rFloorEn ||
+        selectedFloorFilter === rFloorKey
+      );
+    });
+  }, [bookings, selectedFloorFilter, rooms, currentLang]);
 
   // Thống kê nhanh trong ngày
   const totalInDay = bookings.length;
@@ -483,6 +564,23 @@ export const MeetingsPage: React.FC = () => {
               </div>
 
               <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-secondary">{t('meetings.filterFloor')}:</span>
+                <select
+                  value={selectedFloorFilter}
+                  onChange={(e) => setSelectedFloorFilter(e.target.value)}
+                  className="px-3 py-1.5 rounded-lg bg-surface-elevated border border-border-subtle text-main text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer"
+                  aria-label={t('meetings.filterFloorAria')}
+                >
+                  <option value="all">{t('meetings.allFloors')}</option>
+                  {availableFloors.map((floor) => (
+                    <option key={floor} value={floor}>
+                      {floor}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2">
                 <span className="text-xs font-bold text-secondary">{t('meetings.table.status')}:</span>
                 <select
                   value={selectedStatusFilter}
@@ -504,7 +602,7 @@ export const MeetingsPage: React.FC = () => {
               <i className="fa-solid fa-spinner fa-spin text-3xl text-primary mb-3" />
               <p className="text-sm font-medium">{t('meetings.loadingBookings')}</p>
             </div>
-          ) : bookings.length === 0 ? (
+          ) : displayBookings.length === 0 ? (
             <div className="bg-surface rounded-2xl border border-border-subtle p-12 text-center">
               <div className="w-16 h-16 rounded-2xl bg-surface-elevated mx-auto flex items-center justify-center text-muted text-2xl mb-4">
                 <i className="fa-regular fa-calendar-xmark" />
@@ -530,7 +628,7 @@ export const MeetingsPage: React.FC = () => {
             </div>
           ) : (
             <div className="space-y-3">
-              {bookings.map((booking) => {
+              {displayBookings.map((booking) => {
                 const timeRangeStr = `${booking.start_time.slice(0, 5)} - ${booking.end_time.slice(0, 5)}`;
 
                 const isOwner = currentUser && booking.organizer === currentUser.id;
@@ -630,32 +728,43 @@ export const MeetingsPage: React.FC = () => {
                       </div>
 
                       {/* Cột phải: Thao tác */}
-                      {booking.trang_thai !== 'CANCELLED' && booking.trang_thai !== 'COMPLETED' && canModify && (
-                        <div className="flex items-center gap-2 self-end lg:self-center">
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            icon="fa-pen-to-square"
-                            onClick={() => {
-                              setBookingToEdit(booking);
-                              setIsBookingModalOpen(true);
-                            }}
-                          >
-                            {t('meetings.actions.edit')}
-                          </Button>
-                          <Button
-                            variant="danger"
-                            size="sm"
-                            icon="fa-ban"
-                            onClick={() => {
-                              setCancellingBooking(booking);
-                              setCancelReason('');
-                            }}
-                          >
-                            {t('meetings.actions.cancel')}
-                          </Button>
-                        </div>
-                      )}
+                      <div className="flex items-center gap-2 self-end lg:self-center flex-wrap">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          icon="fa-circle-info"
+                          onClick={() => setSelectedBookingDetail(booking)}
+                        >
+                          {t('meetings.viewDetailBtn')}
+                        </Button>
+
+                        {booking.trang_thai !== 'CANCELLED' && booking.trang_thai !== 'COMPLETED' && canModify && (
+                          <>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              icon="fa-pen-to-square"
+                              onClick={() => {
+                                setBookingToEdit(booking);
+                                setIsBookingModalOpen(true);
+                              }}
+                            >
+                              {t('meetings.actions.edit')}
+                            </Button>
+                            <Button
+                              variant="danger"
+                              size="sm"
+                              icon="fa-ban"
+                              onClick={() => {
+                                setCancellingBooking(booking);
+                                setCancelReason('');
+                              }}
+                            >
+                              {t('meetings.actions.cancel')}
+                            </Button>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </Card>
                 );
@@ -684,6 +793,21 @@ export const MeetingsPage: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-3 w-full md:w-auto flex-wrap">
+              {/* Bộ lọc theo tầng */}
+              <select
+                value={selectedFloorFilter}
+                onChange={(e) => setSelectedFloorFilter(e.target.value)}
+                className="px-3.5 py-2 rounded-xl bg-surface-elevated border border-border-subtle text-main text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer"
+                aria-label={t('meetings.filterFloorAria')}
+              >
+                <option value="all">{t('meetings.allFloors')}</option>
+                {availableFloors.map((floor) => (
+                  <option key={floor} value={floor}>
+                    {floor}
+                  </option>
+                ))}
+              </select>
+
               <select
                 value={roomStatusFilter}
                 onChange={(e) => setRoomStatusFilter(e.target.value)}
@@ -741,110 +865,260 @@ export const MeetingsPage: React.FC = () => {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {filteredRooms.map((room) => (
-                <Card key={room.id} hoverable className="p-5 flex flex-col justify-between h-full">
-                  <div>
-                    <div className="flex items-start justify-between gap-3 mb-3">
-                      <div>
-                        <h3 className="text-base font-bold text-main">{room.name}</h3>
-                        <p className="text-xs text-muted flex items-center gap-1.5 mt-0.5">
-                          <i className="fa-solid fa-location-dot text-primary" />
-                          {room.location || t('meetings.table.notUpdated')}
+              {filteredRooms.map((room) => {
+                const isAvailable = (room.trang_thai || 'AVAILABLE') === 'AVAILABLE';
+                const roomBookingsToday = todayBookings.filter(
+                  (b) => b.room === room.id && b.trang_thai !== 'CANCELLED'
+                );
+
+                const now = new Date();
+                const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                const isOccupiedNow = roomBookingsToday.some(
+                  (b) => b.date === todayStr && b.start_time.slice(0, 5) <= currentTimeStr && currentTimeStr < b.end_time.slice(0, 5)
+                );
+
+                return (
+                  <Card
+                    key={room.id}
+                    hoverable
+                    role={isAvailable && canAddBooking ? 'button' : undefined}
+                    tabIndex={isAvailable && canAddBooking ? 0 : undefined}
+                    aria-label={isAvailable && canAddBooking ? `${room.name} - ${t('meetings.table.bookThisRoom')}` : room.name}
+                    className={`p-5 flex flex-col justify-between h-full transition-all ${
+                      isAvailable && canAddBooking
+                        ? 'cursor-pointer hover:border-primary/60 hover:shadow-lg border-2 border-transparent focus:outline-none focus:ring-2 focus:ring-primary'
+                        : ''
+                    }`}
+                    onClick={(e) => {
+                      if ((e.target as HTMLElement).closest('button')) return;
+                      if (isAvailable && canAddBooking) {
+                        setSelectedRoomForBooking(room.id);
+                        setBookingToEdit(null);
+                        setIsBookingModalOpen(true);
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if ((e.key === 'Enter' || e.key === ' ') && isAvailable && canAddBooking) {
+                        if ((e.target as HTMLElement).closest('button')) return;
+                        e.preventDefault();
+                        setSelectedRoomForBooking(room.id);
+                        setBookingToEdit(null);
+                        setIsBookingModalOpen(true);
+                      }
+                    }}
+                  >
+                    <div>
+                      <div className="flex items-start justify-between gap-3 mb-3">
+                        <div>
+                          <h3 className="text-base font-bold text-main">{room.name}</h3>
+                          <p className="text-xs text-muted flex items-center gap-1.5 mt-0.5">
+                            <i className="fa-solid fa-location-dot text-primary" />
+                            {room.location || t('meetings.table.notUpdated')}
+                          </p>
+                        </div>
+                        <div className="flex flex-col items-end gap-1.5">
+                          {room.trang_thai === 'MAINTENANCE' ? (
+                            <Badge variant="warning" size="sm" withDot>
+                              {t('meetings.status.maintenance')}
+                            </Badge>
+                          ) : room.trang_thai === 'UNAVAILABLE' ? (
+                            <Badge variant="danger" size="sm" withDot>
+                              {t('meetings.status.unavailable')}
+                            </Badge>
+                          ) : isOccupiedNow ? (
+                            <Badge variant="danger" size="sm" withDot>
+                              {t('meetings.occupied')}
+                            </Badge>
+                          ) : (
+                            <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                              <Badge variant="success" size="sm" withDot>
+                                {t('meetings.status.available')}
+                              </Badge>
+                              {roomBookingsToday.length > 0 && (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-warning-subtle text-warning-text border border-warning/30 flex items-center gap-1 shadow-2xs">
+                                  <i className="fa-solid fa-clock text-[9px]" />
+                                  {t('meetings.hasScheduleToday')}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          {canChangeRoom && (
+                            <Badge variant="secondary" size="sm">
+                              {room.is_public ? t('meetings.status.public') : t('meetings.status.private')}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Sức chứa */}
+                      <div className="p-3 rounded-xl bg-surface-elevated border border-border-subtle mb-3 flex items-center justify-between">
+                        <span className="text-xs text-secondary font-medium">{t('meetings.table.capacityMax')}</span>
+                        <span className="text-sm font-black text-primary flex items-center gap-1">
+                          <i className="fa-solid fa-users text-xs" />
+                          {room.capacity} {t('meetings.table.attendees')}
+                        </span>
+                      </div>
+
+                      {/* Thiết bị */}
+                      <div className="space-y-1 mb-4">
+                        <p className="text-[11px] font-bold text-muted uppercase tracking-wider">{t('meetings.table.amenitiesLabel')}</p>
+                        <p className="text-xs text-secondary line-clamp-2">
+                          {room.amenities || t('meetings.table.noAmenities')}
                         </p>
                       </div>
-                      <div className="flex flex-col items-end gap-1.5">
-                        {room.trang_thai === 'MAINTENANCE' ? (
-                          <Badge variant="warning" size="sm" withDot>
-                            {t('meetings.status.maintenance')}
-                          </Badge>
-                        ) : room.trang_thai === 'UNAVAILABLE' ? (
-                          <Badge variant="danger" size="sm" withDot>
-                            {t('meetings.status.unavailable')}
-                          </Badge>
-                        ) : (
-                          <Badge variant="success" size="sm" withDot>
-                            {t('meetings.status.available')}
-                          </Badge>
-                        )}
-                        {canChangeRoom && (
-                          <Badge variant="secondary" size="sm">
-                            {room.is_public ? t('meetings.status.public') : t('meetings.status.private')}
-                          </Badge>
-                        )}
+
+                      {room.ghi_chu && (
+                        <p className="text-[11px] text-muted italic bg-surface-elevated px-2 py-1 rounded">
+                          * {room.ghi_chu}
+                        </p>
+                      )}
+
+                      {/* Trạng thái đặt phòng theo ô trực quan */}
+                      <div className="mt-4 pt-3 border-t border-border-subtle space-y-2">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-secondary uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                            <i className="fa-regular fa-calendar-days text-primary text-xs" />
+                            {t('meetings.today')}:
+                          </span>
+                          {roomBookingsToday.length > 0 ? (
+                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-warning-subtle text-warning-text border border-warning/40 flex items-center gap-1.5 shadow-xs">
+                              <i className="fa-solid fa-calendar-check text-[10px] text-warning" />
+                              {t('meetings.roomBookedToday', { count: roomBookingsToday.length })}
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-success-subtle text-success border border-success/30 flex items-center gap-1">
+                              <i className="fa-regular fa-calendar-check text-[10px]" />
+                              {t('meetings.noBookingsToday')}
+                            </span>
+                          )}
+                        </div>
+
+                        {roomBookingsToday.length > 0 ? (
+                          <div className="space-y-2 max-h-40 overflow-y-auto pr-0.5">
+                            {roomBookingsToday.map((b) => {
+                              const isCurrentMeeting = b.date === selectedDate && b.start_time.slice(0, 5) <= currentTimeStr && currentTimeStr < b.end_time.slice(0, 5);
+                              const timeRange = `${b.start_time.slice(0, 5)} - ${b.end_time.slice(0, 5)}`;
+
+                              return (
+                                <button
+                                  key={b.id}
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedBookingDetail(b);
+                                  }}
+                                  className={`w-full text-left p-2.5 rounded-xl border flex items-center justify-between gap-2.5 group transition-all cursor-pointer shadow-xs ${
+                                    isCurrentMeeting
+                                      ? 'bg-danger-subtle/40 hover:bg-danger-subtle/70 border-l-4 border-l-danger border-danger/40'
+                                      : 'bg-warning-subtle/35 hover:bg-warning-subtle/60 border-l-4 border-l-warning border-warning/35'
+                                  }`}
+                                  title={t('meetings.viewDetailBtn')}
+                                >
+                                  <div className="min-w-0 flex-1 space-y-1">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-black shadow-2xs border ${
+                                        isCurrentMeeting
+                                          ? 'bg-surface text-danger border-danger/30'
+                                          : 'bg-surface text-warning-text border-warning/30'
+                                      }`}>
+                                        <i className={`fa-solid fa-clock text-[10px] ${isCurrentMeeting ? 'text-danger' : 'text-warning'}`} />
+                                        <span>{timeRange}</span>
+                                      </span>
+
+                                      <span className={`text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                                        isCurrentMeeting
+                                          ? 'bg-danger text-white flex items-center gap-1'
+                                          : 'bg-warning/20 text-warning-text'
+                                      }`}>
+                                        {isCurrentMeeting && <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />}
+                                        {isCurrentMeeting ? t('meetings.inProgress') : t('meetings.bookedBadge')}
+                                      </span>
+                                    </div>
+
+                                    <p className="text-xs font-bold text-main truncate group-hover:text-primary transition-colors">
+                                      {b.title}
+                                    </p>
+                                    <p className="text-[11px] text-muted flex items-center gap-1">
+                                      <i className="fa-solid fa-user-tie text-[10px]" />
+                                      <span className="truncate">{b.organizer_detail?.ho_ten || b.organizer_detail?.username || t('meetings.table.staffFallback')}</span>
+                                    </p>
+                                  </div>
+
+                                  <span className={`text-xs font-bold p-1.5 rounded-lg bg-surface border group-hover:scale-110 transition-transform shadow-2xs ${
+                                    isCurrentMeeting
+                                      ? 'text-danger border-danger/30'
+                                      : 'text-warning-text border-warning/30'
+                                  }`}>
+                                    <i className="fa-solid fa-circle-info" />
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : isAvailable && canAddBooking ? (
+                          <div className="p-2.5 rounded-xl bg-success-subtle/50 border border-success/20 text-center">
+                            <p className="text-xs text-success font-semibold flex items-center justify-center gap-1.5">
+                              <i className="fa-solid fa-calendar-plus" />
+                              {t('meetings.bookDirectPrompt')}
+                            </p>
+                          </div>
+                        ) : null}
                       </div>
                     </div>
 
-                    {/* Sức chứa */}
-                    <div className="p-3 rounded-xl bg-surface-elevated border border-border-subtle mb-3 flex items-center justify-between">
-                      <span className="text-xs text-secondary font-medium">{t('meetings.table.capacityMax')}</span>
-                      <span className="text-sm font-black text-primary flex items-center gap-1">
-                        <i className="fa-solid fa-users text-xs" />
-                        {room.capacity} {t('meetings.table.attendees')}
-                      </span>
+                    {/* Actions */}
+                    <div className="pt-4 mt-4 border-t border-border-subtle flex items-center justify-between">
+                      {canAddBooking && isAvailable ? (
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          icon="fa-calendar-plus"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedRoomForBooking(room.id);
+                            setBookingToEdit(null);
+                            setIsBookingModalOpen(true);
+                          }}
+                        >
+                          {t('meetings.table.bookThisRoom')}
+                        </Button>
+                      ) : <div />}
+
+                      {(canChangeRoom || canDeleteRoom) && (
+                        <div className="flex items-center gap-1.5">
+                          {canChangeRoom && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setRoomToEdit(room);
+                                setIsRoomModalOpen(true);
+                              }}
+                              title={t('meetings.actions.edit')}
+                            >
+                              <i className="fa-solid fa-pen-to-square text-secondary hover:text-main" />
+                            </Button>
+                          )}
+                          {canDeleteRoom && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeletingRoom(room);
+                              }}
+                              title={t('meetings.actions.delete')}
+                            >
+                              <i className="fa-solid fa-trash-can text-danger hover:opacity-80" />
+                            </Button>
+                          )}
+                        </div>
+                      )}
                     </div>
-
-                    {/* Thiết bị */}
-                    <div className="space-y-1 mb-4">
-                      <p className="text-[11px] font-bold text-muted uppercase tracking-wider">{t('meetings.table.amenitiesLabel')}</p>
-                      <p className="text-xs text-secondary line-clamp-2">
-                        {room.amenities || t('meetings.table.noAmenities')}
-                      </p>
-                    </div>
-
-                    {room.ghi_chu && (
-                      <p className="text-[11px] text-muted italic bg-surface-elevated px-2 py-1 rounded">
-                        * {room.ghi_chu}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Actions */}
-                  <div className="pt-4 mt-4 border-t border-border-subtle flex items-center justify-between">
-                    {canAddBooking && (room.trang_thai || 'AVAILABLE') === 'AVAILABLE' ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        icon="fa-calendar-plus"
-                        onClick={() => {
-                          setSelectedRoomFilter(String(room.id));
-                          setActiveTab('schedule');
-                          setIsBookingModalOpen(true);
-                        }}
-                      >
-                        {t('meetings.table.bookThisRoom')}
-                      </Button>
-                    ) : <div />}
-
-                    {(canChangeRoom || canDeleteRoom) && (
-                      <div className="flex items-center gap-1.5">
-                        {canChangeRoom && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              setRoomToEdit(room);
-                              setIsRoomModalOpen(true);
-                            }}
-                            title={t('meetings.actions.edit')}
-                          >
-                            <i className="fa-solid fa-pen-to-square text-secondary hover:text-main" />
-                          </Button>
-                        )}
-                        {canDeleteRoom && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setDeletingRoom(room)}
-                            title={t('meetings.actions.delete')}
-                          >
-                            <i className="fa-solid fa-trash-can text-danger hover:opacity-80" />
-                          </Button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </Card>
-              ))}
+                  </Card>
+                );
+              })}
             </div>
           )}
         </div>
@@ -856,6 +1130,7 @@ export const MeetingsPage: React.FC = () => {
         onClose={() => {
           setIsBookingModalOpen(false);
           setBookingToEdit(null);
+          setSelectedRoomForBooking(null);
         }}
         onSuccess={() => {
           showToast('success', bookingToEdit ? t('meetings.messages.updateBookingSuccess') : t('meetings.messages.saveBookingSuccess'));
@@ -864,11 +1139,38 @@ export const MeetingsPage: React.FC = () => {
         rooms={rooms}
         bookingToEdit={bookingToEdit}
         initialDate={selectedDate}
+        initialRoomId={selectedRoomForBooking}
         currentUser={currentUser}
+        existingBookings={bookings}
+      />
+
+      {/* Modal Xem chi tiết cuộc họp */}
+      <MeetingDetailModal
+        isOpen={Boolean(selectedBookingDetail)}
+        onClose={() => setSelectedBookingDetail(null)}
+        booking={selectedBookingDetail}
+        room={selectedBookingDetail ? rooms.find((r) => r.id === selectedBookingDetail.room) : null}
+        canModify={Boolean(
+          selectedBookingDetail && (
+            (currentUser && selectedBookingDetail.organizer === currentUser.id && canChangeOwnBooking) ||
+            canChangeAnyBooking
+          )
+        )}
+        onEdit={(b) => {
+          setSelectedBookingDetail(null);
+          setBookingToEdit(b);
+          setIsBookingModalOpen(true);
+        }}
+        onCancel={(b) => {
+          setSelectedBookingDetail(null);
+          setCancellingBooking(b);
+          setCancelReason('');
+        }}
       />
 
       {/* Modal Thêm/Sửa phòng họp */}
       <RoomModal
+        key={roomToEdit ? `edit-room-${roomToEdit.id}` : 'create-new-room'}
         isOpen={isRoomModalOpen}
         onClose={() => {
           setIsRoomModalOpen(false);

@@ -319,5 +319,229 @@ describe('MeetingsPage Component (Issue #22)', () => {
     const bookButtons = screen.getAllByText('Đặt phòng này');
     expect(bookButtons).toHaveLength(1);
   });
+
+  it('lọc danh sách phòng theo tầng (floor filter) chính xác', async () => {
+    render(
+      <MemoryRouter>
+        <MeetingsPage />
+      </MemoryRouter>
+    );
+
+    // Chuyển sang Tab Danh mục phòng họp
+    fireEvent.click(screen.getByText('Danh mục phòng họp'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Phòng Hội thảo A')).toBeInTheDocument();
+      expect(screen.getByText('Phòng Họp B')).toBeInTheDocument();
+    });
+
+    // Tìm select lọc tầng
+    const floorSelects = screen.getAllByRole('combobox');
+    const floorSelect = floorSelects[0]; // Filter combobox in Rooms tab
+    expect(floorSelect).toBeInTheDocument();
+
+    // Lọc theo Tầng 2
+    fireEvent.change(floorSelect, { target: { value: 'Tầng 2' } });
+
+    expect(screen.getByText('Phòng Hội thảo A')).toBeInTheDocument();
+    expect(screen.queryByText('Phòng Họp B')).not.toBeInTheDocument();
+
+    // Lọc theo Tầng 3
+    fireEvent.change(floorSelect, { target: { value: 'Tầng 3' } });
+
+    expect(screen.queryByText('Phòng Hội thảo A')).not.toBeInTheDocument();
+    expect(screen.getByText('Phòng Họp B')).toBeInTheDocument();
+
+    // Reset về Tất cả các tầng
+    fireEvent.change(floorSelect, { target: { value: 'all' } });
+
+    expect(screen.getByText('Phòng Hội thảo A')).toBeInTheDocument();
+    expect(screen.getByText('Phòng Họp B')).toBeInTheDocument();
+  });
+
+  it('mở modal chi tiết khi nhấn Xem chi tiết ở danh sách lịch đặt', async () => {
+    render(
+      <MemoryRouter>
+        <MeetingsPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Họp giao ban tuần 40')).toBeInTheDocument();
+    });
+
+    const detailBtn = screen.getByText('Xem chi tiết');
+    fireEvent.click(detailBtn);
+
+    await waitFor(() => {
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Họp giao ban tuần 40' })).toBeInTheDocument();
+      expect(screen.getByText('Chi tiết cuộc họp')).toBeInTheDocument();
+    });
+  });
+
+  it('sắp xếp danh sách phòng họp theo Tầng tăng dần (Trệt -> Tầng 1 -> Tầng 2 -> ...)', async () => {
+    const unsortedRooms = [
+      {
+        id: 10,
+        name: 'Phòng VIP 601',
+        location: 'Tầng 6, Tòa Nhà A',
+        capacity: 20,
+        amenities: '',
+        is_public: true,
+        trang_thai: 'AVAILABLE',
+        ghi_chu: '',
+      },
+      {
+        id: 11,
+        name: 'Phòng Hội thảo G',
+        location: 'Tầng trệt',
+        capacity: 50,
+        amenities: '',
+        is_public: true,
+        trang_thai: 'AVAILABLE',
+        ghi_chu: '',
+      },
+      {
+        id: 12,
+        name: 'Phòng 201',
+        location: 'Tầng 2, Tòa Nhà B',
+        capacity: 15,
+        amenities: '',
+        is_public: true,
+        trang_thai: 'AVAILABLE',
+        ghi_chu: '',
+      },
+      {
+        id: 13,
+        name: 'Phòng 102',
+        location: 'Tầng 1',
+        capacity: 10,
+        amenities: '',
+        is_public: true,
+        trang_thai: 'AVAILABLE',
+        ghi_chu: '',
+      },
+    ];
+
+    apiClient.get = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/meeting-rooms/')) {
+        return Promise.resolve({ results: unsortedRooms });
+      }
+      if (url.includes('/api/meeting-bookings/')) {
+        return Promise.resolve({ results: [] });
+      }
+      if (url.includes('/api/auth/profile/')) {
+        return Promise.resolve(mockProfile);
+      }
+      return Promise.resolve({});
+    });
+
+    render(
+      <MemoryRouter>
+        <MeetingsPage />
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByText('Danh mục phòng họp'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Phòng Hội thảo G')).toBeInTheDocument();
+      expect(screen.getByText('Phòng 102')).toBeInTheDocument();
+      expect(screen.getByText('Phòng 201')).toBeInTheDocument();
+      expect(screen.getByText('Phòng VIP 601')).toBeInTheDocument();
+    });
+
+    const roomHeadings = screen.getAllByRole('heading', { level: 3 });
+    const renderedRoomNames = roomHeadings.map((h) => h.textContent);
+
+    expect(renderedRoomNames).toEqual([
+      'Phòng Hội thảo G',
+      'Phòng 102',
+      'Phòng 201',
+      'Phòng VIP 601',
+    ]);
+  });
+
+  it('thẻ phòng ở Tab Danh mục luôn dùng lịch hôm nay (todayBookings), không dùng nhầm lịch ngày khác của tab Lịch', async () => {
+    const singleRoom = [
+      {
+        id: 1,
+        name: 'Phòng Hội Thảo A',
+        location: 'Tầng 2, Tòa A',
+        capacity: 30,
+        amenities: 'Máy chiếu',
+        is_public: true,
+        trang_thai: 'AVAILABLE',
+        ghi_chu: '',
+      },
+    ];
+
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+
+    const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const tomorrowStr = `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth() + 1)}-${pad(tomorrow.getDate())}`;
+
+    const tomorrowBooking = [
+      {
+        id: 999,
+        room: 1,
+        room_detail: singleRoom[0],
+        title: 'Họp ngày mai',
+        date: tomorrowStr,
+        start_time: '08:00:00',
+        end_time: '18:00:00',
+        attendees_count: 10,
+        trang_thai: 'CONFIRMED',
+      },
+    ];
+
+    apiClient.get = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/meeting-rooms/')) {
+        return Promise.resolve({ results: singleRoom });
+      }
+      if (url.includes('/api/meeting-bookings/')) {
+        // Phân biệt chính xác bằng tham số date=:
+        // - Request lịch hôm nay (cho Tab Danh mục hoặc khi Tab 1 xem hôm nay): trả về [] (hôm nay không có lịch)
+        if (url.includes(`date=${todayStr}`)) {
+          return Promise.resolve({ results: [] });
+        }
+        // - Request lịch ngày khác (khi Tab 1 xem ngày mai): trả về có lịch
+        return Promise.resolve({ results: tomorrowBooking });
+      }
+      if (url.includes('/api/auth/profile/')) {
+        return Promise.resolve(mockProfile);
+      }
+      return Promise.resolve({});
+    });
+
+    render(
+      <MemoryRouter>
+        <MeetingsPage />
+      </MemoryRouter>
+    );
+
+    // 1. Ở Tab 1, chuyển bộ lọc ngày sang ngày mai (lúc này tab 1 có lịch ngày mai)
+    const dateInput = screen.getByDisplayValue(todayStr);
+    fireEvent.change(dateInput, { target: { value: tomorrowStr } });
+
+    // 2. Chuyển sang Tab 2 (Danh mục phòng họp)
+    fireEvent.click(screen.getByText('Danh mục phòng họp'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Phòng Hội Thảo A')).toBeInTheDocument();
+    });
+
+    const roomTitle = screen.getByText('Phòng Hội Thảo A');
+    const roomCard = roomTitle.closest('.p-5');
+    // Hôm nay không có lịch => Thẻ phòng phải hiển thị Sẵn sàng & Trống lịch trong ngày,
+    // tuyệt đối không dùng nhầm lịch ngày mai của Tab 1
+    expect(roomCard).toHaveTextContent('Sẵn sàng');
+    expect(roomCard).toHaveTextContent('Trống lịch trong ngày');
+    expect(roomCard).not.toHaveTextContent('Có lịch trong ngày');
+    expect(roomCard).not.toHaveTextContent('Đang họp');
+  });
 });
 
