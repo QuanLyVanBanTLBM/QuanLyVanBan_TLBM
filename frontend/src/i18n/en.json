@@ -475,6 +475,7 @@
       "createSuccess": "Created successfully!",
       "updateSuccess": "Updated successfully!",
       "deleteSuccess": "Deleted successfully!",
+      "deleteError": "Cannot delete this unit. Please try again later.",
       "exportSuccess": "Exported to Excel successfully!",
       "exportError": "Failed to download Excel file. Please try again.",
       "fetchError": "Failed to load data list. Please check your network connection.",

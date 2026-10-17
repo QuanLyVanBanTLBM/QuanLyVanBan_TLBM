@@ -27,6 +27,18 @@ def _invalid_region_filter(region_id):
     return None
 
 
+def _can_see_internal_units(user) -> bool:
+    """Đơn vị is_public = False (nội bộ) chỉ hiển thị với quản trị: superuser hoặc có change_donvi (giống Chức vụ)."""
+    return bool(user.is_superuser or user.has_perm("change_donvi"))
+
+
+def _visible_units(user):
+    queryset = DonVi.objects.select_related("khoi").order_by("stt_uu_tien", "ten")
+    if not _can_see_internal_units(user):
+        queryset = queryset.filter(is_public=True)
+    return queryset
+
+
 class StandardPagination(PageNumberPagination):
     page_size = 10
     page_size_query_param = "page_size"
@@ -146,7 +158,7 @@ def unit_list_create_view(request):
         return _permission_denied()
 
     if request.method == "GET":
-        queryset = DonVi.objects.select_related("khoi").all().order_by("stt_uu_tien", "ten")
+        queryset = _visible_units(request.user)
 
         region_id = request.query_params.get("region_id")
         invalid = _invalid_region_filter(region_id)
@@ -163,6 +175,11 @@ def unit_list_create_view(request):
                 Q(email__icontains=search_query) |
                 Q(dia_chi__icontains=search_query)
             )
+
+        # Trả về toàn bộ danh sách không phân trang nếu có all=true (dành cho dropdown/select, giống API Khối)
+        if request.query_params.get("all", "").lower() == "true":
+            serializer = DonViSerializer(queryset, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
 
         paginator = StandardPagination()
         page = paginator.paginate_queryset(queryset, request)
@@ -188,7 +205,7 @@ def unit_detail_view(request, pk):
         return _permission_denied()
 
     try:
-        unit = DonVi.objects.select_related("khoi").get(pk=pk)
+        unit = _visible_units(request.user).get(pk=pk)
     except DonVi.DoesNotExist:
         return Response(
             {"detail": "organizations.messages.unitNotFound", "key": "organizations.messages.unitNotFound"},
@@ -236,7 +253,7 @@ def unit_export_excel_view(request):
     lang = request.query_params.get("lang", "vi").lower()
     i18n = get_excel_translations(lang)
 
-    queryset = DonVi.objects.select_related("khoi").all().order_by("stt_uu_tien", "ten")
+    queryset = _visible_units(request.user)
 
     region_id = request.query_params.get("region_id")
     invalid = _invalid_region_filter(region_id)
