@@ -1,30 +1,6 @@
 # Lệch schema đã biết giữa Django migration và release_DDL.sql, chờ nhóm phụ trách sửa.
 # Sinh bởi .github/scripts/compare_schema_ddl.py --write-baseline. Sửa xong lệch nào thì xóa dòng đó.
-accounts_employee_groups.group_id: migration int4() null=NO default=None | DDL int8() null=NO default=None
-accounts_employee_groups: thiếu constraint FOREIGN KEY (employee_id) REFERENCES accounts_employee(id) ON DELETE CASCADE
-accounts_employee_groups: thiếu constraint FOREIGN KEY (group_id) REFERENCES auth_group(id) ON DELETE CASCADE
-accounts_employee_groups: constraint không có trong DDL FOREIGN KEY (employee_id) REFERENCES accounts_employee(id)
-accounts_employee_groups: constraint không có trong DDL FOREIGN KEY (group_id) REFERENCES auth_group(id)
-accounts_employee_user_permissions.permission_id: migration int4() null=NO default=None | DDL int8() null=NO default=None
-accounts_employee_user_permissions: thiếu constraint FOREIGN KEY (employee_id) REFERENCES accounts_employee(id) ON DELETE CASCADE
-accounts_employee_user_permissions: thiếu constraint FOREIGN KEY (permission_id) REFERENCES auth_permission(id) ON DELETE CASCADE
-accounts_employee_user_permissions: constraint không có trong DDL FOREIGN KEY (employee_id) REFERENCES accounts_employee(id)
-accounts_employee_user_permissions: constraint không có trong DDL FOREIGN KEY (permission_id) REFERENCES auth_permission(id)
-auth_group.id: migration int4() null=NO default=<tự tăng> | DDL int8() null=NO default=<tự tăng>
-auth_group: thiếu constraint UNIQUE (ma_nhom_quyen)
-auth_group_permissions.group_id: migration int4() null=NO default=None | DDL int8() null=NO default=None
-auth_group_permissions.permission_id: migration int4() null=NO default=None | DDL int8() null=NO default=None
-auth_group_permissions: thiếu constraint FOREIGN KEY (group_id) REFERENCES auth_group(id) ON DELETE CASCADE
-auth_group_permissions: thiếu constraint FOREIGN KEY (permission_id) REFERENCES auth_permission(id) ON DELETE CASCADE
-auth_group_permissions: constraint không có trong DDL FOREIGN KEY (group_id) REFERENCES auth_group(id)
-auth_group_permissions: constraint không có trong DDL FOREIGN KEY (permission_id) REFERENCES auth_permission(id)
-auth_permission.content_type_id: migration int4() null=YES default=None | DDL int8() null=YES default=None
-auth_permission.id: migration int4() null=NO default=<tự tăng> | DDL int8() null=NO default=<tự tăng>
 auth_permission.module_ten: migration varchar(150) null=NO default='' | DDL varchar(150) null=NO default=None
-auth_permission: thiếu constraint UNIQUE (codename)
-auth_permission: constraint không có trong DDL FOREIGN KEY (content_type_id) REFERENCES django_content_type(id)
-auth_permission: constraint không có trong DDL UNIQUE (content_type_id, codename)
-auth_permission: index UNIQUE không có trong DDL UNIQUE USING btree (content_type_id, codename)
 birthdays_birthdayemaillog: thiếu constraint FOREIGN KEY (employee_id) REFERENCES accounts_employee(id) ON DELETE CASCADE
 birthdays_birthdayemaillog: constraint không có trong DDL FOREIGN KEY (employee_id) REFERENCES accounts_employee(id)
 birthdays_birthdaywish: thiếu constraint FOREIGN KEY (employee_id) REFERENCES accounts_employee(id) ON DELETE CASCADE
