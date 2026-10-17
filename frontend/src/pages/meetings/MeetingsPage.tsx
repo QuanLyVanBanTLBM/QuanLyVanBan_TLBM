@@ -9,7 +9,7 @@ import { RoomModal } from '@components/meetings/RoomModal';
 import { MeetingDetailModal } from '@components/meetings/MeetingDetailModal';
 import { useTranslation } from '@i18n/translate';
 import { usePermissions } from '@lib/permissions';
-import { extractFloor, getFloorKey, compareRoomsByFloor } from '@lib/meetingFloor';
+import { extractFloor, getFloorKey, getFloorWeight, compareRoomsByFloor } from '@lib/meetingFloor';
 
 interface PaginatedResponse<T> {
   count?: number;
@@ -280,7 +280,12 @@ export const MeetingsPage: React.FC = () => {
       const f = extractFloor(r.location, currentLang);
       if (f) setFloors.add(f);
     });
-    return Array.from(setFloors).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    return Array.from(setFloors).sort((a, b) => {
+      const weightA = getFloorWeight(a);
+      const weightB = getFloorWeight(b);
+      if (weightA !== weightB) return weightA - weightB;
+      return a.localeCompare(b, undefined, { numeric: true });
+    });
   }, [rooms, currentLang]);
 
   // Lọc danh mục phòng ở Tab 2
@@ -862,15 +867,14 @@ export const MeetingsPage: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {filteredRooms.map((room) => {
                 const isAvailable = (room.trang_thai || 'AVAILABLE') === 'AVAILABLE';
-                const relevantBookings = todayBookings.length > 0 ? todayBookings : bookings;
-                const roomBookingsToday = relevantBookings.filter(
+                const roomBookingsToday = todayBookings.filter(
                   (b) => b.room === room.id && b.trang_thai !== 'CANCELLED'
                 );
 
                 const now = new Date();
                 const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
                 const isOccupiedNow = roomBookingsToday.some(
-                  (b) => (b.date === todayStr || b.date === selectedDate) && b.start_time.slice(0, 5) <= currentTimeStr && currentTimeStr < b.end_time.slice(0, 5)
+                  (b) => b.date === todayStr && b.start_time.slice(0, 5) <= currentTimeStr && currentTimeStr < b.end_time.slice(0, 5)
                 );
 
                 return (

@@ -462,5 +462,71 @@ describe('MeetingsPage Component (Issue #22)', () => {
       'Phòng VIP 601',
     ]);
   });
+
+  it('thẻ phòng ở Tab Danh mục luôn dùng lịch hôm nay (todayBookings), không dùng nhầm lịch ngày khác của tab Lịch', async () => {
+    const singleRoom = [
+      {
+        id: 1,
+        name: 'Phòng Hội Thảo A',
+        location: 'Tầng 2, Tòa A',
+        capacity: 30,
+        amenities: 'Máy chiếu',
+        is_public: true,
+        trang_thai: 'AVAILABLE',
+        ghi_chu: '',
+      },
+    ];
+
+    const tomorrowBooking = [
+      {
+        id: 999,
+        room: 1,
+        room_detail: singleRoom[0],
+        title: 'Họp ngày mai',
+        date: '2026-10-18',
+        start_time: '08:00:00',
+        end_time: '18:00:00',
+        attendees_count: 10,
+        trang_thai: 'CONFIRMED',
+      },
+    ];
+
+    apiClient.get = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/meeting-rooms/')) {
+        return Promise.resolve({ results: singleRoom });
+      }
+      if (url.includes('/api/meeting-bookings/')) {
+        // Request lấy lịch hôm nay cho Tab Danh mục: trả về rỗng (hôm nay không có lịch)
+        if (url.includes('page_size=100')) {
+          return Promise.resolve({ results: [] });
+        }
+        // Request của tab Lịch đặt (ngày khác): có lịch
+        return Promise.resolve({ results: tomorrowBooking });
+      }
+      if (url.includes('/api/auth/profile/')) {
+        return Promise.resolve(mockProfile);
+      }
+      return Promise.resolve({});
+    });
+
+    render(
+      <MemoryRouter>
+        <MeetingsPage />
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByText('Danh mục phòng họp'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Phòng Hội Thảo A')).toBeInTheDocument();
+    });
+
+    const roomTitle = screen.getByText('Phòng Hội Thảo A');
+    const roomCard = roomTitle.closest('.p-5');
+    expect(roomCard).toHaveTextContent('Sẵn sàng');
+    expect(roomCard).toHaveTextContent('Trống lịch trong ngày');
+    expect(roomCard).not.toHaveTextContent('Có lịch trong ngày');
+    expect(roomCard).not.toHaveTextContent('Đang họp');
+  });
 });
 

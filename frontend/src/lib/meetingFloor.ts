@@ -23,20 +23,33 @@ export const getFloorKey = (location?: string | null): string | null => {
   if (!location) return null;
   const trimmed = location.trim();
 
-  // 1. Kiểm tra tầng trệt / ground floor / tầng G
+  // 1. Kiểm tra tầng hầm (Basement): B1, B2, Hầm B1, Tầng hầm, Basement...
+  const basementWithNum = trimmed.match(/(?:\b(?:t[ầaà]ng\s+)?h[ầaà]m\s*(?:b)?([0-9]+)\b|\bbasement\s*([0-9]+)\b|\bb([0-9]+)\b)/i);
+  if (basementWithNum) {
+    const num = basementWithNum[1] || basementWithNum[2] || basementWithNum[3];
+    return `B${num}`;
+  }
+  if (/(?:\b(?:t[ầaà]ng\s+)?h[ầaà]m\b|\bbasement\b)/i.test(trimmed)) {
+    return 'B';
+  }
+
+  // 2. Kiểm tra tầng trệt / ground floor / tầng G
   if (/(?:\b(?:t[ầaà]ng|l[ầaà]u|floor|level)\s+(?:tr[ệe]t|g\b)|\btr[ệe]t\b|\bground(?:\s*floor)?\b)/i.test(trimmed)) {
     return 'G';
   }
 
-  // 2. Kiểm tra các mẫu chuẩn: Tầng X, Lầu X, Floor X, Level X
-  const standardMatch = trimmed.match(/(?:t[ầaà]ng|l[ầaà]u|floor|level)\s*([0-9]+|[a-zA-Z0-9]+)/i);
-  if (standardMatch) {
-    const rawVal = standardMatch[1].toUpperCase();
-    if (rawVal === 'TRỆT' || rawVal === 'TRET' || rawVal === 'G') return 'G';
-    return rawVal;
+  // 3. Kiểm tra tầng lửng (Mezzanine): Tầng lửng, Lửng, Mezzanine, Tầng L, Tầng M...
+  if (/(?:\b(?:t[ầaà]ng|l[ầaà]u)\s+(?:l[ửu]ng|[lm]\b)|\bl[ửu]ng\b|\bmezzanine\b)/i.test(trimmed)) {
+    return 'M';
   }
 
-  // 3. Kiểm tra các mẫu viết tắt: T2, F3, L1
+  // 4. Kiểm tra các mẫu chuẩn chỉ nhận số: Tầng X, Lầu X, Floor X, Level X
+  const standardMatch = trimmed.match(/(?:\bt[ầaà]ng|\bl[ầaà]u|\bfloor|\blevel)\s*([0-9]+)\b/i);
+  if (standardMatch) {
+    return standardMatch[1];
+  }
+
+  // 5. Kiểm tra các mẫu viết tắt: T2, F3, L1
   const shortMatch = trimmed.match(/\b([TFL])([0-9]+)\b/i);
   if (shortMatch) {
     return shortMatch[2];
@@ -53,6 +66,16 @@ export const formatFloorName = (floorKey: string, lang: 'vi' | 'en' = 'vi'): str
   if (floorKey === 'G' || floorKey.toLowerCase() === 'trệt') {
     return isEn ? 'Ground Floor' : 'Tầng trệt';
   }
+  if (floorKey === 'M' || floorKey.toLowerCase() === 'lửng') {
+    return isEn ? 'Mezzanine' : 'Tầng lửng';
+  }
+  if (floorKey === 'B' || floorKey.toLowerCase() === 'hầm') {
+    return isEn ? 'Basement' : 'Tầng hầm';
+  }
+  if (floorKey.startsWith('B') && /^[0-9]+$/.test(floorKey.slice(1))) {
+    const num = floorKey.slice(1);
+    return isEn ? `Basement ${num}` : `Tầng hầm B${num}`;
+  }
   return isEn ? `Floor ${floorKey}` : `Tầng ${floorKey}`;
 };
 
@@ -67,7 +90,9 @@ export const extractFloor = (location?: string | null, lang: 'vi' | 'en' = 'vi')
 
 /**
  * Trọng số sắp xếp tầng:
+ * - Hầm (B2, B1, B): số âm, B2 (-2) < B1 (-1) < Trệt (0)
  * - Trệt / Ground ('G'): 0
+ * - Lửng / Mezzanine ('M'): 0.5
  * - Tầng số nguyên (1, 2, 3...): chính số đó (1, 2, 3...)
  * - Tầng có ký hiệu chữ khác: 999990
  * - Không xác định tầng / null / rỗng: 999999 (đưa về cuối cùng)
@@ -76,6 +101,12 @@ export const getFloorWeight = (location?: string | null): number => {
   const key = getFloorKey(location);
   if (!key) return 999999;
   if (key === 'G' || key.toLowerCase() === 'trệt') return 0;
+  if (key === 'M' || key.toLowerCase() === 'lửng') return 0.5;
+  if (key === 'B' || key.toLowerCase() === 'hầm') return -1;
+  if (key.startsWith('B') && /^[0-9]+$/.test(key.slice(1))) {
+    const num = parseInt(key.slice(1), 10);
+    return -num;
+  }
   const num = parseInt(key, 10);
   if (!isNaN(num)) return num;
   return 999990;

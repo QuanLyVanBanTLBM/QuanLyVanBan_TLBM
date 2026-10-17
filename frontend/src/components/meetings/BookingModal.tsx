@@ -124,27 +124,20 @@ const BookingForm: React.FC<BookingFormProps> = ({
     let isMounted = true;
     if (!date) return;
 
-    try {
-      const promise = apiClient?.get<{ results?: MeetingBooking[] } | MeetingBooking[]>(
+    apiClient
+      .get<{ results?: MeetingBooking[] } | MeetingBooking[]>(
         `/api/meeting-bookings/?date=${date}&page_size=100`
-      );
-
-      if (promise && typeof promise.then === 'function') {
-        promise
-          .then((res) => {
-            if (!isMounted) return;
-            const list = Array.isArray(res) ? res : res?.results || [];
-            setDateBookings(list);
-          })
-          .catch(() => {
-            if (isMounted && existingBookings) {
-              setDateBookings(existingBookings);
-            }
-          });
-      }
-    } catch {
-      // Fallback silently if apiClient is not available
-    }
+      )
+      .then((res) => {
+        if (!isMounted) return;
+        const list = Array.isArray(res) ? res : res?.results || [];
+        setDateBookings(list);
+      })
+      .catch(() => {
+        if (isMounted && existingBookings) {
+          setDateBookings(existingBookings);
+        }
+      });
 
     return () => {
       isMounted = false;
