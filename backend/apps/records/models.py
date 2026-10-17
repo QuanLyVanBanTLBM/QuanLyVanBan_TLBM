@@ -2,12 +2,19 @@ from django.conf import settings
 from django.core.validators import MinValueValidator
 from django.db import connections, models, router, transaction
 from django.db.models import Max, Q, Value
-from django.db.models.functions import Lower, Trim
+from django.db.models.functions import Lower, Now, Trim
 from django.db.models.lookups import Exact
 
 
+class DbNow(Now):
+    """Use the release DDL's transaction timestamp for PostgreSQL defaults."""
+
+    def as_postgresql(self, compiler, connection, **extra_context):
+        return self.as_sql(compiler, connection, template="now()", **extra_context)
+
+
 class HoSo(models.Model):
-    stt_uu_tien = models.PositiveIntegerField(
+    stt_uu_tien = models.IntegerField(
         unique=True, validators=[MinValueValidator(1)]
     )
     so_ky_hieu = models.CharField(max_length=255, unique=True)
@@ -20,24 +27,24 @@ class HoSo(models.Model):
     )
     ngay_lap = models.DateTimeField(null=True, blank=True)
     ghi_chu = models.TextField(null=True, blank=True)
-    is_he_thong = models.BooleanField(default=False, editable=False)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    is_he_thong = models.BooleanField(default=False, db_default=False, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True, db_default=DbNow())
+    updated_at = models.DateTimeField(auto_now=True, db_default=DbNow())
 
     class Meta:
         db_table = "records_hoso"
         ordering = ["-is_he_thong", "stt_uu_tien", "id"]
         constraints = [
             models.CheckConstraint(
-                condition=Q(stt_uu_tien__gt=0), name="ck_records_hoso_stt_positive"
+                condition=Q(stt_uu_tien__gt=0), name="records_hoso_stt_uu_tien_check"
             ),
             models.CheckConstraint(
                 condition=~Exact(Trim("so_ky_hieu"), Value("")),
-                name="ck_records_hoso_so_ky_hieu_not_blank",
+                name="records_hoso_so_ky_hieu_check",
             ),
             models.CheckConstraint(
                 condition=~Exact(Trim("ten_ho_so"), Value("")),
-                name="ck_records_hoso_ten_ho_so_not_blank",
+                name="records_hoso_ten_ho_so_check",
             ),
             models.UniqueConstraint(
                 fields=["is_he_thong"],
@@ -101,8 +108,8 @@ class LoaiVanBan(models.Model):
     ten_loai = models.CharField(max_length=255)
     ngay_lap = models.DateTimeField(null=True, blank=True)
     ghi_chu = models.TextField(null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_default=DbNow())
+    updated_at = models.DateTimeField(auto_now=True, db_default=DbNow())
 
     class Meta:
         db_table = "records_loaivanban"
@@ -110,7 +117,7 @@ class LoaiVanBan(models.Model):
         constraints = [
             models.CheckConstraint(
                 condition=~Exact(Trim("ten_loai"), Value("")),
-                name="ck_records_loaivanban_ten_loai_not_blank",
+                name="records_loaivanban_ten_loai_check",
             ),
             models.UniqueConstraint(
                 models.F("ho_so"),

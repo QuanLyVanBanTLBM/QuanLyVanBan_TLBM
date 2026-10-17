@@ -57,13 +57,13 @@ class BootstrapReadinessPlanningTests(TestCase):
     def test_ready_database_does_not_plan_backwards_to_old_core_target(self):
         targets = bootstrap_verifier.final_migration_targets(bootstrap_verifier)
         self.assertEqual(len(targets), len({app for app, name in targets}))
-        self.assertEqual(dict(targets)['records'], '0005_canonical_fk_indexes')
+        self.assertEqual(dict(targets)['records'], '0006_align_release_schema')
         self.assertEqual(MigrationExecutor(connection).migration_plan(targets), [])
 
     def test_missing_final_migration_is_still_reported_as_forward_pending(self):
-        MigrationRecorder(connection).record_unapplied('records', '0005_canonical_fk_indexes')
+        MigrationRecorder(connection).record_unapplied('records', '0006_align_release_schema')
         targets = bootstrap_verifier.final_migration_targets(bootstrap_verifier)
         plan = MigrationExecutor(connection).migration_plan(targets)
         self.assertEqual([(migration.app_label, migration.name, backwards)
                           for migration, backwards in plan],
-                         [('records', '0005_canonical_fk_indexes', False)])
+                         [('records', '0006_align_release_schema', False)])
