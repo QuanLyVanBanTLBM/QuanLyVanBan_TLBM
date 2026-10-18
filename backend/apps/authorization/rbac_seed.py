@@ -275,10 +275,10 @@ EXTRA_PERMISSIONS = [
     ("Thêm nhóm quyền", "add_nhomquyen", "Phân quyền"),
     ("Sửa nhóm quyền", "change_nhomquyen", "Phân quyền"),
     ("Xóa nhóm quyền", "delete_nhomquyen", "Phân quyền"),
-    ("Import file chức vụ", "import_chucvu", "Chức vụ"),
-    ("Thêm phòng họp", "add_phonghop", "Phòng họp (danh mục)"),
-    ("Sửa phòng họp", "change_phonghop", "Phòng họp (danh mục)"),
-    ("Xóa phòng họp", "delete_phonghop", "Phòng họp (danh mục)"),
+    ("Import chức vụ từ Excel", "import_chucvu", "Chức vụ"),
+    ("Thêm phòng họp (danh mục)", "add_phonghop", "Phòng họp (danh mục)"),
+    ("Sửa phòng họp (danh mục)", "change_phonghop", "Phòng họp (danh mục)"),
+    ("Xóa phòng họp (danh mục)", "delete_phonghop", "Phòng họp (danh mục)"),
 ]
 EXTRA_GROUP_PERMISSIONS = {
     "Quản trị hệ thống": [codename for _, codename, _ in EXTRA_PERMISSIONS],
