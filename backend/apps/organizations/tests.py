@@ -431,3 +431,66 @@ class OrganizationPermissionAPITest(TestCase):
         client = APIClient()
         client.force_authenticate(user=root)
         self.assertEqual(client.post("/api/organizations/regions/", {"ten": "Khối Root"}, format="json").status_code, status.HTTP_201_CREATED)
+
+
+class UnitAllParamAndInternalVisibilityTest(TestCase):
+    """?all=true trả đủ đơn vị (không cắt ở 10); đơn vị nội bộ (is_public=False) chỉ quản trị mới thấy."""
+
+    def setUp(self):
+        self.region = KhoiKhuVuc.objects.create(ten="Khối Hiển thị")
+        for index in range(1, 13):
+            DonVi.objects.create(khoi=self.region, stt_uu_tien=index, ten=f"Đơn vị công khai {index}", is_public=True)
+        self.internal = DonVi.objects.create(khoi=self.region, stt_uu_tien=13, ten="Đơn vị nội bộ", is_public=False)
+        User = get_user_model()
+        home = DonVi.objects.first()
+
+        def make(username, *codenames, superuser=False):
+            if superuser:
+                user = User.objects.create_superuser(username=username, password="x", email=f"{username}@example.com", don_vi=home)
+            else:
+                user = User.objects.create_user(username=username, password="x", don_vi=home)
+                user.user_permissions.add(*Permission.objects.filter(codename__in=codenames))
+            client = APIClient()
+            client.force_authenticate(user=user)
+            return client
+
+        self.viewer = make("vis_viewer", "view_donvi", "export_donvi")
+        self.manager = make("vis_manager", "view_donvi", "change_donvi", "export_donvi")
+        self.root = make("vis_root", superuser=True)
+
+    def test_all_true_returns_every_visible_unit_not_only_first_page(self):
+        response = self.viewer.get("/api/organizations/units/?all=true")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsInstance(response.data, list)
+        self.assertEqual(len(response.data), 12)
+        paged = self.viewer.get("/api/organizations/units/")
+        self.assertEqual(paged.data["count"], 12)
+        self.assertEqual(len(paged.data["results"]), 10)
+
+    def test_all_true_keeps_search_and_region_filters(self):
+        found = self.viewer.get("/api/organizations/units/?all=true&search=công khai 12")
+        self.assertEqual([u["ten"] for u in found.data], ["Đơn vị công khai 12"])
+        other = KhoiKhuVuc.objects.create(ten="Khối khác")
+        self.assertEqual(self.viewer.get(f"/api/organizations/units/?all=true&region_id={other.id}").data, [])
+
+    def test_internal_unit_hidden_from_non_admin_everywhere(self):
+        names = lambda data: [u["ten"] for u in data]
+        self.assertNotIn("Đơn vị nội bộ", names(self.viewer.get("/api/organizations/units/?page_size=100").data["results"]))
+        self.assertNotIn("Đơn vị nội bộ", names(self.viewer.get("/api/organizations/units/?all=true").data))
+        self.assertNotIn("Đơn vị nội bộ", names(self.viewer.get("/api/organizations/units/?search=nội bộ&all=true").data))
+        self.assertEqual(self.viewer.get(f"/api/organizations/units/{self.internal.id}/").status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_internal_unit_hidden_from_non_admin_export(self):
+        response = self.viewer.get("/api/organizations/units/export/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        sheet = openpyxl.load_workbook(io.BytesIO(response.content)).active
+        exported = [row[1] for row in sheet.iter_rows(min_row=2, values_only=True)]
+        self.assertEqual(len(exported), 12)
+        self.assertNotIn("Đơn vị nội bộ", exported)
+
+    def test_admin_with_change_permission_and_superuser_see_internal_unit(self):
+        for client in (self.manager, self.root):
+            self.assertEqual(len(client.get("/api/organizations/units/?all=true").data), 13)
+            self.assertEqual(client.get(f"/api/organizations/units/{self.internal.id}/").status_code, status.HTTP_200_OK)
+            sheet = openpyxl.load_workbook(io.BytesIO(client.get("/api/organizations/units/export/").content)).active
+            self.assertIn("Đơn vị nội bộ", [row[1] for row in sheet.iter_rows(min_row=2, values_only=True)])
