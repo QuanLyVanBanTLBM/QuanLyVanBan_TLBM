@@ -1,0 +1,147 @@
+# Người duyệt mặc định theo thư mục. Dòng khớp sau cùng được áp dụng.
+# Thành viên lấy theo groupConfigs trong .github/workflows/team-pr-review.yml (chỉ tài khoản có quyền ghi repo).
+
+*                                                   @thanhhau15112000-dev
+
+# Nhóm 1: khung giao diện, trang chủ, đăng nhập, hồ sơ cá nhân, cài đặt
+/backend/apps/dashboard/                            @kietphuchau-create
+/frontend/src/app/                                  @kietphuchau-create
+/frontend/src/layouts/                              @kietphuchau-create
+/frontend/src/styles/                               @kietphuchau-create
+/frontend/src/assets/                               @kietphuchau-create
+/frontend/src/main.tsx                              @kietphuchau-create
+/frontend/src/components/layout/                    @kietphuchau-create
+/frontend/src/components/common/                    @kietphuchau-create
+/frontend/src/components/dashboard/                 @kietphuchau-create
+/frontend/src/components/auth/                      @kietphuchau-create
+/frontend/src/pages/dashboard/                      @kietphuchau-create
+/frontend/src/pages/auth/                           @kietphuchau-create
+/frontend/src/pages/profile/                        @kietphuchau-create
+/frontend/src/pages/settings/                       @kietphuchau-create
+/frontend/src/i18n/translate.ts                     @kietphuchau-create
+/frontend/src/i18n/translate.test.tsx               @kietphuchau-create
+/frontend/src/i18n/layout/                          @kietphuchau-create
+/frontend/src/i18n/dashboard/                       @kietphuchau-create
+/frontend/src/i18n/auth/                            @kietphuchau-create
+/frontend/src/i18n/profile/                         @kietphuchau-create
+/frontend/src/i18n/settings/                        @kietphuchau-create
+/frontend/src/lib/apiClient*                        @kietphuchau-create
+/frontend/src/lib/authService*                      @kietphuchau-create
+/frontend/src/lib/constants.ts                      @kietphuchau-create
+/frontend/src/lib/routes*                           @kietphuchau-create
+/frontend/src/lib/dateUtils*                        @kietphuchau-create
+/frontend/src/lib/fileUtils.ts                      @kietphuchau-create
+/frontend/src/types/auth.ts                         @kietphuchau-create
+/frontend/src/types/navigation.ts                   @kietphuchau-create
+/frontend/src/types/notification.ts                 @kietphuchau-create
+/frontend/src/types/theme.ts                        @kietphuchau-create
+/frontend/src/types/user.ts                         @kietphuchau-create
+/docs/modules/01_layout_dashboard/                  @kietphuchau-create
+
+# Nhóm 2: văn bản đến, văn bản đi, văn bản mật
+/backend/apps/documents/                            @kietle205thll-bot
+/frontend/src/pages/documents/                      @kietle205thll-bot
+/frontend/src/pages/InboundDocumentPage*            @kietle205thll-bot
+/frontend/src/pages/OutboundDocumentPage*           @kietle205thll-bot
+/frontend/src/pages/ConfidentialDocumentPage*       @kietle205thll-bot
+/frontend/src/components/documents/                 @kietle205thll-bot
+/frontend/src/i18n/documents/                       @kietle205thll-bot
+/frontend/src/types/document.ts                     @kietle205thll-bot
+/docs/modules/02_documents/                         @kietle205thll-bot
+
+# Nhóm 3: hồ sơ
+/backend/apps/records/                              @thinhabc27-sys
+/frontend/src/pages/records/                        @thinhabc27-sys
+/frontend/src/components/records/                   @thinhabc27-sys
+/frontend/src/i18n/records/                         @thinhabc27-sys
+/frontend/src/lib/records*                          @thinhabc27-sys
+/frontend/src/types/records.ts                      @thinhabc27-sys
+/docs/modules/03_dossiers_records/                  @thinhabc27-sys
+
+# Nhóm 4: tài liệu, biểu mẫu
+/backend/apps/document_templates/                   @woqzxje
+/frontend/src/pages/resources/                      @woqzxje
+/frontend/src/components/resources/                 @woqzxje
+/frontend/src/i18n/resources/                       @woqzxje
+/frontend/src/types/resource.ts                     @woqzxje
+/docs/modules/04_document_templates/                @woqzxje
+
+# Nhóm 5: trình ký
+/backend/apps/signing/                              @thanhhau15112000-dev @krvin2007
+/frontend/src/pages/signing/                        @thanhhau15112000-dev @krvin2007
+/frontend/src/components/signing/                   @thanhhau15112000-dev @krvin2007
+/frontend/src/lib/signing/                          @thanhhau15112000-dev @krvin2007
+/frontend/src/i18n/signing/                         @thanhhau15112000-dev @krvin2007
+/docs/modules/05_signing_workflow/                  @thanhhau15112000-dev @krvin2007
+
+# Nhóm 6: công việc
+/backend/apps/work/                                 @phantahuuduc
+/frontend/src/modules/work/                         @phantahuuduc
+/frontend/src/i18n/work/                            @phantahuuduc
+/docs/modules/06_tasks_management/                  @phantahuuduc
+/docs/work/                                         @phantahuuduc
+
+# Nhóm 7: phòng họp, sinh nhật, quản trị hệ thống (tổ chức, nhân sự, chức vụ, vai trò)
+/backend/apps/accounts/                             @Thanhtan1208 @domanhquang2006-ops @kietphuchau-create
+/backend/apps/authorization/                        @Thanhtan1208 @domanhquang2006-ops
+/backend/apps/organizations/                        @Thanhtan1208 @domanhquang2006-ops
+/backend/apps/meetings/                             @Thanhtan1208 @domanhquang2006-ops
+/backend/apps/birthdays/                            @Thanhtan1208 @domanhquang2006-ops
+/frontend/src/pages/meetings/                       @Thanhtan1208 @domanhquang2006-ops
+/frontend/src/pages/birthdays/                      @Thanhtan1208 @domanhquang2006-ops
+/frontend/src/pages/organizations/                  @Thanhtan1208 @domanhquang2006-ops
+/frontend/src/pages/employees/                      @Thanhtan1208 @domanhquang2006-ops
+/frontend/src/pages/positions/                      @Thanhtan1208 @domanhquang2006-ops
+/frontend/src/pages/roles/                          @Thanhtan1208 @domanhquang2006-ops
+/frontend/src/components/meetings/                  @Thanhtan1208 @domanhquang2006-ops
+/frontend/src/i18n/meetings/                        @Thanhtan1208 @domanhquang2006-ops
+/frontend/src/i18n/birthdays/                       @Thanhtan1208 @domanhquang2006-ops
+/frontend/src/i18n/organizations/                   @Thanhtan1208 @domanhquang2006-ops
+/frontend/src/i18n/employees/                       @Thanhtan1208 @domanhquang2006-ops
+/frontend/src/i18n/positions/                       @Thanhtan1208 @domanhquang2006-ops
+/frontend/src/i18n/roles/                           @Thanhtan1208 @domanhquang2006-ops
+/frontend/src/lib/permissions.ts                    @Thanhtan1208 @domanhquang2006-ops
+/frontend/src/types/authorization.ts                @Thanhtan1208 @domanhquang2006-ops
+/frontend/src/types/employee.ts                     @Thanhtan1208 @domanhquang2006-ops
+/frontend/src/types/meeting.ts                      @Thanhtan1208 @domanhquang2006-ops
+/frontend/src/types/organization.ts                 @Thanhtan1208 @domanhquang2006-ops
+/frontend/src/types/position.ts                     @Thanhtan1208 @domanhquang2006-ops
+/docs/modules/07_system_admin_meetings/             @Thanhtan1208 @domanhquang2006-ops
+
+# Nhóm 8: trợ lý AI, thư mục tài liệu AI
+/backend/api/                                       @teiusoa-web
+/backend/services/                                  @teiusoa-web
+/backend/tests/                                     @teiusoa-web
+/frontend/src/pages/ai/                             @teiusoa-web
+/frontend/src/components/ai/                        @teiusoa-web
+/frontend/src/components/folders/                   @teiusoa-web
+/frontend/src/components/AISettingsModal.jsx        @teiusoa-web
+/frontend/src/api.js                                @teiusoa-web
+/frontend/src/lib/folderService.ts                  @teiusoa-web
+/frontend/src/i18n/ai/                              @teiusoa-web
+/frontend/src/i18n/folders/                         @teiusoa-web
+/data/                                              @teiusoa-web
+/tai_lieu_test_ai/                                  @teiusoa-web
+
+# Vận hành, CI/CD, schema, cấu hình và dependency dùng chung
+/.github/                                           @thanhhau15112000-dev
+/deploy/                                            @thanhhau15112000-dev
+/docker/                                            @thanhhau15112000-dev
+/scripts/                                           @thanhhau15112000-dev
+/docs/common/database/                              @thanhhau15112000-dev
+/backend/config/                                    @thanhhau15112000-dev
+/backend/requirements.txt                           @thanhhau15112000-dev
+/backend/requirements-linux-py312.lock              @thanhhau15112000-dev
+/frontend/package.json                              @thanhhau15112000-dev
+/frontend/pnpm-lock.yaml                            @thanhhau15112000-dev
+/frontend/package-lock.json                         @thanhhau15112000-dev
+/frontend/scripts/                                  @thanhhau15112000-dev
+/frontend/vite.config.*                             @thanhhau15112000-dev
+/frontend/tsconfig*.json                            @thanhhau15112000-dev
+/frontend/eslint.config.js                          @thanhhau15112000-dev
+/frontend/.env.example                              @thanhhau15112000-dev
+/package.json                                       @thanhhau15112000-dev
+/pnpm-lock.yaml                                     @thanhhau15112000-dev
+/compose.yaml                                       @thanhhau15112000-dev
+/.env.example                                       @thanhhau15112000-dev
+/AGENTS.md                                          @thanhhau15112000-dev
