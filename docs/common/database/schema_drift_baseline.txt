@@ -1,10 +1,6 @@
 # Lệch schema đã biết giữa Django migration và release_DDL.sql, chờ nhóm phụ trách sửa.
 # Sinh bởi .github/scripts/compare_schema_ddl.py --write-baseline. Sửa xong lệch nào thì xóa dòng đó.
 auth_permission.module_ten: migration varchar(150) null=NO default='' | DDL varchar(150) null=NO default=None
-birthdays_birthdayemaillog: thiếu constraint FOREIGN KEY (employee_id) REFERENCES accounts_employee(id) ON DELETE CASCADE
-birthdays_birthdayemaillog: constraint không có trong DDL FOREIGN KEY (employee_id) REFERENCES accounts_employee(id)
-birthdays_birthdaywish: thiếu constraint FOREIGN KEY (employee_id) REFERENCES accounts_employee(id) ON DELETE CASCADE
-birthdays_birthdaywish: constraint không có trong DDL FOREIGN KEY (employee_id) REFERENCES accounts_employee(id)
 dashboard_incomingdocument: bảng không có trong DDL
 dashboard_meetingroom: bảng không có trong DDL
 dashboard_outgoingdocument: bảng không có trong DDL
@@ -102,8 +98,6 @@ documents_view_log: thiếu constraint FOREIGN KEY (user_id) REFERENCES accounts
 documents_view_log: constraint không có trong DDL CHECK ((document_id >= 0))
 documents_view_log: constraint không có trong DDL FOREIGN KEY (user_id) REFERENCES accounts_employee(id)
 documents_view_log: thiếu index USING btree (document_type, document_id)
-meetings_meetingbooking: thiếu constraint FOREIGN KEY (department_id) REFERENCES organizations_donvi(id) ON DELETE SET NULL
-meetings_meetingbooking: constraint không có trong DDL FOREIGN KEY (department_id) REFERENCES organizations_donvi(id)
 records_chitiettailieu.created_at: migration timestamptz() null=NO default=None | DDL timestamptz() null=NO default=now()
 records_chitiettailieu.hien_thi: migration varchar(30) null=NO default=None | DDL chitiettailieu_hienthi() null=NO default=None
 records_chitiettailieu.hieu_luc: migration varchar(30) null=NO default=None | DDL hieu_luc_status() null=NO default=None

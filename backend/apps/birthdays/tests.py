@@ -257,9 +257,17 @@ class BirthdaySystemTests(TestCase):
             subject="Chúc mừng sinh nhật",
             trang_thai=BirthdayEmailStatus.SENDING,
         )
-        BirthdayEmailLog.objects.filter(pk=stale_log.pk).update(
-            updated_at=timezone.now() - timedelta(minutes=31),
-        )
+        with connection.cursor() as cursor:
+            # DB dựng từ release_DDL.sql có trigger BEFORE UPDATE luôn ghi đè updated_at bằng now():
+            # tạm bỏ qua trigger (chỉ trong giao dịch của test) để lùi giờ updated_at khi dựng dữ liệu
+            # "bản ghi SENDING quá hạn".
+            if connection.vendor == "postgresql":
+                cursor.execute("SET LOCAL session_replication_role = replica")
+            BirthdayEmailLog.objects.filter(pk=stale_log.pk).update(
+                updated_at=timezone.now() - timedelta(minutes=31),
+            )
+            if connection.vendor == "postgresql":
+                cursor.execute("SET LOCAL session_replication_role = DEFAULT")
 
         results = send_automated_birthday_emails(target_date=target_date, allow_test_email_backend=True)
 
