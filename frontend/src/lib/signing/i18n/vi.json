@@ -1,14 +1,14 @@
 {
   "tieuDe": "Trình ký",
   "nav": {
-    "canToiKy": "Cần tôi ký duyệt",
-    "toiGui": "Tôi đã gửi trình",
-    "tatCa": "Hồ sơ theo quyền",
+    "canToiKy": "Chờ tôi ký",
+    "toiGui": "Tôi đã trình",
+    "tatCa": "Hồ sơ liên quan",
     "taoMoi": "Tạo hồ sơ trình ký",
-    "quyTrinh": "Quy trình",
-    "khoaCuaToi": "Khóa ký & PIN",
+    "quyTrinh": "Quy trình ký",
+    "khoaCuaToi": "Chữ ký số của tôi",
     "thongBao": "Thông báo",
-    "taiLieu": "Tài liệu"
+    "taiLieu": "Tệp trình ký"
   },
   "chung": {
     "dangTai": "Đang tải…",
@@ -251,12 +251,12 @@
     "pin_khong_dung": "PIN không đúng.",
     "pin_tam_khoa": "Nhập sai PIN quá nhiều lần; khóa ký tạm khóa 15 phút.",
     "pin_khoa_cung": "Khóa ký đã bị khóa do sai PIN nhiều lần. Liên hệ quản trị.",
-    "thieu_ban_boc_thiet_bi": "Thiết bị này không giữ khóa ký đang hoạt động. Vào “Khóa ký & PIN” để tạo khóa cho thiết bị này.",
+    "thieu_ban_boc_thiet_bi": "Thiết bị này không giữ khóa ký đang hoạt động. Vào “Chữ ký số của tôi” để tạo khóa cho thiết bị này.",
     "ma_bam_khong_khop": "Tệp đã thay đổi so với lượt trình; tải lại hồ sơ trước khi ký.",
     "chua_den_luot_ky": "Chưa đến lượt bạn ký (đang chờ ký nháy) hoặc bạn đã xử lý.",
     "khong_phai_nguoi_ky_dang_mo": "Bạn không có lượt ký đang mở trên hồ sơ này.",
     "luot_trinh_khong_cho_ky": "Lượt trình không còn chờ ký (đã trả sửa, từ chối, hủy hoặc hoàn tất).",
-    "khoa_ky_khong_hoat_dong": "Khóa ký không còn hoạt động. Tạo khóa mới trong “Khóa ký & PIN”.",
+    "khoa_ky_khong_hoat_dong": "Khóa ký không còn hoạt động. Tạo khóa mới trong “Chữ ký số của tôi”.",
     "can_chon_nguoi_ky": "Có chức vụ nhiều người phù hợp — hãy chọn người ký.",
     "khong_xac_dinh_duoc_nguoi_ky": "Không xác định được người ký (người ký nghỉ việc hoặc không có ai giữ chức vụ).",
     "vi_tri_ky_khong_hop_le": "Vị trí ký không hợp lệ với số trang của tệp.",

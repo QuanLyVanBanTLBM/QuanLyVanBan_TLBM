@@ -3,12 +3,12 @@
   "nav": {
     "canToiKy": "Awaiting my signature",
     "toiGui": "Submitted by me",
-    "tatCa": "Requests I can view",
+    "tatCa": "Related requests",
     "taoMoi": "New signing request",
-    "quyTrinh": "Workflows",
-    "khoaCuaToi": "Signing key & PIN",
+    "quyTrinh": "Signing workflows",
+    "khoaCuaToi": "My signing key",
     "thongBao": "Notifications",
-    "taiLieu": "Documents"
+    "taiLieu": "Signing files"
   },
   "chung": {
     "dangTai": "Loading…",
@@ -251,12 +251,12 @@
     "pin_khong_dung": "Incorrect PIN.",
     "pin_tam_khoa": "Too many wrong PINs; the signing key is locked for 15 minutes.",
     "pin_khoa_cung": "The signing key is locked after too many wrong PINs. Contact an administrator.",
-    "thieu_ban_boc_thiet_bi": "This device does not hold your active signing key. Open “Signing key & PIN” to create one for this device.",
+    "thieu_ban_boc_thiet_bi": "This device does not hold your active signing key. Open “My signing key” to create one for this device.",
     "ma_bam_khong_khop": "The file changed since this round started; reload the request before signing.",
     "chua_den_luot_ky": "It is not your turn yet (waiting for initials) or you already acted.",
     "khong_phai_nguoi_ky_dang_mo": "You have no open signing step on this request.",
     "luot_trinh_khong_cho_ky": "This round is no longer awaiting signatures (returned, rejected, cancelled or completed).",
-    "khoa_ky_khong_hoat_dong": "Your signing key is no longer active. Create a new one in “Signing key & PIN”.",
+    "khoa_ky_khong_hoat_dong": "Your signing key is no longer active. Create a new one in “My signing key”.",
     "can_chon_nguoi_ky": "Several people hold a position — choose the signer.",
     "khong_xac_dinh_duoc_nguoi_ky": "A signer could not be determined (inactive signer or nobody holds the position).",
     "vi_tri_ky_khong_hop_le": "A signature position does not fit the file's pages.",

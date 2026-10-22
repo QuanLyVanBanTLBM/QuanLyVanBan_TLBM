@@ -66,22 +66,22 @@ describe('SigningModule', () => {
     api.toi.mockResolvedValue(TOI);
     api.danhSach.mockResolvedValue([]);
     render(<MemoryRouter initialEntries={['/approvals']}><SigningModule /></MemoryRouter>);
-    expect(await screen.findByRole('link', { name: /Cần tôi ký duyệt/ })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Khóa ký & PIN/ })).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: /Chờ tôi ký/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Chữ ký số của tôi/ })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Tạo hồ sơ trình ký/ })).not.toBeInTheDocument();
     expect(screen.queryByText(/Ký số & Phê duyệt điện tử/)).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 1, name: 'Trình ký' })).toBeInTheDocument();
   });
 
-  it('tab "Cần tôi ký duyệt" hiện số hồ sơ đang chờ; tab phụ nằm trong nhóm riêng', async () => {
+  it('tab "Chờ tôi ký" hiện số hồ sơ đang chờ; tab phụ nằm trong nhóm riêng', async () => {
     api.toi.mockResolvedValue(TOI);
     api.danhSach.mockResolvedValue([]);
     render(<MemoryRouter initialEntries={['/approvals']}><SigningModule /></MemoryRouter>);
-    const tabKy = await screen.findByRole('link', { name: /Cần tôi ký duyệt/ });
+    const tabKy = await screen.findByRole('link', { name: /Chờ tôi ký/ });
     await waitFor(() => expect(tabKy).toHaveTextContent('1'));
     expect(api.thongKe).toHaveBeenCalledWith('can_toi_ky');
     const nav = within(screen.getByRole('navigation'));
-    for (const ten of [/Tôi đã gửi trình/, /Hồ sơ theo quyền/, /Tài liệu/, /Thông báo/, /Khóa ký & PIN/]) {
+    for (const ten of [/Tôi đã trình/, /Hồ sơ liên quan/, /Tệp trình ký/, /Thông báo/, /Chữ ký số của tôi/]) {
       expect(nav.getByRole('link', { name: ten })).toBeInTheDocument();
     }
     expect(nav.queryByRole('link', { name: /^Quy trình/ })).toBeInTheDocument();
