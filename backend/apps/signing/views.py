@@ -711,7 +711,8 @@ class NguoiDungView(SigningAPIView):
         ket_qua = []
         for u in User.objects.filter(is_active=True).select_related(*lien_quan).order_by("pk").iterator(chunk_size=500):
             ten, chuc_vu, don_vi = to_chuc.ten_hien_thi(u), to_chuc.ten_chuc_vu(u), to_chuc.ten_don_vi(u)
-            if tu_khoa and tu_khoa not in self._bo_dau(" ".join((ten, u.get_username(), chuc_vu, don_vi))):
+            chuc_danh = getattr(u, "chuc_danh", "") or ""
+            if tu_khoa and tu_khoa not in self._bo_dau(" ".join((ten, u.get_username(), chuc_vu, chuc_danh, don_vi))):
                 continue
             ket_qua.append({"id": u.pk, "ten": ten, "ten_dang_nhap": u.get_username(), "chuc_vu": chuc_vu or None,
                             "don_vi_id": to_chuc.don_vi_cua(u), "don_vi": don_vi or None})
