@@ -51,7 +51,7 @@ export default function SigningModule() {
             <Button size="md" icon="fa-plus" onClick={() => dieuHuong('/approvals/tao-moi')}>{t('nav.taoMoi')}</Button>
           )}
         </header>
-        <nav className="flex flex-wrap items-end justify-between gap-x-4 border-b border-border-subtle" aria-label={t('tieuDe')}>
+        <nav className="flex flex-wrap items-end gap-x-1 border-b border-border-subtle" aria-label={t('tieuDe')}>
           <div className="flex flex-wrap gap-1">
             {tabChinh.map((m) => (
               <NavLink key={m.den} to={m.den} end={m.end}
@@ -63,11 +63,12 @@ export default function SigningModule() {
               </NavLink>
             ))}
           </div>
+          <div className="mx-1.5 mb-2.5 h-4 w-px bg-border-subtle" aria-hidden="true" />
           <div className="flex flex-wrap gap-1">
             {tabPhu.map((m) => (
               <NavLink key={m.den} to={m.den}
-                className={({ isActive }) => `-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-medium transition-colors duration-fast ${
-                  isActive ? 'border-primary text-primary' : 'border-transparent text-muted hover:text-main hover:border-border'}`}>
+                className={({ isActive }) => `-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors duration-fast ${
+                  isActive ? 'border-primary text-primary' : 'border-transparent text-secondary hover:text-main hover:border-border'}`}>
                 <i className={`fa-solid ${m.icon}`} aria-hidden="true" />
                 <span>{m.nhan}</span>
               </NavLink>
