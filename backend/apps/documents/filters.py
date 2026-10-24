@@ -219,13 +219,14 @@ class BaseDocumentFilter(django_filters.FilterSet):
         if not value:
             return queryset
         val = str(value).strip()
+        if val.isdecimal():
+            if not hasattr(queryset.model, "danhmuc"):
+                return queryset.none()
+            return queryset.filter(danhmuc__loaivanban_id=int(val)).distinct()
         fields = [f.name for f in queryset.model._meta.fields]
         q_cond = Q()
         if "ten_loai_van_ban" in fields:
             q_cond |= Q(ten_loai_van_ban__icontains=val)
-        if hasattr(queryset.model, "danhmuc") and val.isdigit():
-            q_cond |= Q(danhmuc__loaivanban_id=int(val))
-
         type_abbr_map = {
             "QUYẾT ĐỊNH": ["QĐ", "QD", "QUYẾT ĐỊNH"],
             "THÔNG BÁO": ["TB", "THÔNG BÁO"],
