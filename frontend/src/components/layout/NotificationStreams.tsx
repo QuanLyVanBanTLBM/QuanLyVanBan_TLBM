@@ -144,6 +144,10 @@ export default function NotificationStreams() {
 
   const handleOpenDoc = (item: NotificationItem) => {
     setIsOpen(false);
+    if (activeTab === 'approvals' || item.id.startsWith('task-')) {
+      navigate('/approvals');
+      return;
+    }
     setPreviewDoc({
       code: item.code,
       title: item.title,

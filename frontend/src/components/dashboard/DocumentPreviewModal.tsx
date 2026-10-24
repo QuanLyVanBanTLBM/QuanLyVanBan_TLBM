@@ -1,4 +1,5 @@
 import React, { useEffect, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from '@i18n/translate';
 import { Badge } from '@components/common';
 import { DocumentItem, DocumentAttachment } from './ModernDashboardView';
@@ -753,9 +754,9 @@ Ngày ký: ${document.date}
       ? t('documentPreview.modalTitleOutgoing')
       : t('documentPreview.modalTitleResource');
 
-  return (
+  const modalContent = (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-5 overflow-y-auto animate-in fade-in duration-200"
+      className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-5 overflow-y-auto animate-in fade-in duration-200"
       role="dialog"
       aria-modal="true"
       aria-labelledby="document-detail-modal-title"
@@ -1103,4 +1104,8 @@ Ngày ký: ${document.date}
       </div>
     </div>
   );
+
+  return typeof window !== 'undefined' && window.document?.body
+    ? createPortal(modalContent, window.document.body)
+    : modalContent;
 }
