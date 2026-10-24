@@ -21,6 +21,11 @@ class DocumentTemplateDdlIntegrityTests(TestCase):
     def setUpTestData(cls):
         cls.user = Employee.objects.create_user(username="template_ddl_integrity_user", password="pw")
         cls.unit = DonVi.objects.exclude(pk=cls.user.don_vi_id).order_by("id").first()
+        if cls.unit is None:
+            from organizations.models import KhoiKhuVuc
+            khoi = KhoiKhuVuc.objects.first() or KhoiKhuVuc.objects.create(ten="Khối Mẫu")
+            next_stt = (DonVi.objects.order_by("-stt_uu_tien").values_list("stt_uu_tien", flat=True).first() or 0) + 1
+            cls.unit = DonVi.objects.create(khoi=khoi, stt_uu_tien=next_stt, ten="Đơn vị kiểm tra toàn vẹn")
         cls.category = DanhMucTaiLieu.objects.create(
             stt_uu_tien=0,
             ten_tai_lieu="Danh mục kiểm tra toàn vẹn",

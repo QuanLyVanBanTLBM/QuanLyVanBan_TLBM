@@ -26,10 +26,27 @@ interface ApiTaskItem {
   due?: string;
 }
 
+interface ApiSigningItem {
+  id?: number | string;
+  ma_trinh_ky?: string;
+  tieu_de?: string;
+  nguoi_trinh?: string;
+  ngay_gui?: string;
+  trang_thai?: string;
+  trang_thai_display?: string;
+}
+
 interface DashboardOverviewApiResponse {
+  kpis?: {
+    incomingCount?: number;
+    outgoingCount?: number;
+    tasksCount?: number;
+    signingCount?: number;
+  };
   recentIncoming?: ApiDocumentItem[];
   recentOutgoing?: ApiDocumentItem[];
   tasks?: ApiTaskItem[];
+  recentSigning?: ApiSigningItem[];
 }
 
 export default function NotificationStreams() {
@@ -52,6 +69,8 @@ export default function NotificationStreams() {
         const recentIncoming = data.recentIncoming || [];
         const recentOutgoing = data.recentOutgoing || [];
         const tasks = data.tasks || [];
+        const recentSigning = data.recentSigning || [];
+        const signingCount = data.kpis?.signingCount ?? recentSigning.length;
 
         const inItems: NotificationItem[] = recentIncoming
           .filter((d: ApiDocumentItem) => d.scope !== 'HAN_CHE')
@@ -91,16 +110,25 @@ export default function NotificationStreams() {
           scope: 'HAN_CHE',
         }));
 
-        const approvalItems: NotificationItem[] = tasks
-          .filter((t: ApiTaskItem) => t.status === 'pending')
-          .map((t: ApiTaskItem) => ({
-            id: `task-${t.id}`,
-            code: `CV-${t.id}`,
-            title: t.title || '',
-            senderOrDept: t.statusLabel || 'Chờ duyệt',
-            time: t.due || '',
-            isRead: false,
-          }));
+        const approvalItems: NotificationItem[] = recentSigning.length > 0
+          ? recentSigning.map((s: ApiSigningItem) => ({
+              id: `sign-${s.id}`,
+              code: s.ma_trinh_ky || `TK-${s.id}`,
+              title: s.tieu_de || 'Phiếu trình ký văn bản',
+              senderOrDept: s.nguoi_trinh ? `Người trình: ${s.nguoi_trinh}` : 'Chờ ký',
+              time: s.ngay_gui || '',
+              isRead: false,
+            }))
+          : tasks
+              .filter((t: ApiTaskItem) => t.status === 'pending')
+              .map((t: ApiTaskItem) => ({
+                id: `task-${t.id}`,
+                code: `CV-${t.id}`,
+                title: t.title || '',
+                senderOrDept: t.statusLabel || 'Chờ duyệt',
+                time: t.due || '',
+                isRead: false,
+              }));
 
         setStreams([
           {
@@ -132,7 +160,7 @@ export default function NotificationStreams() {
             label: 'Chờ Duyệt',
             icon: 'fa-signature',
             color: 'amber',
-            unreadCount: approvalItems.length,
+            unreadCount: signingCount !== undefined ? signingCount : approvalItems.length,
             items: approvalItems,
           },
         ]);
@@ -144,6 +172,15 @@ export default function NotificationStreams() {
 
   const handleOpenDoc = (item: NotificationItem) => {
     setIsOpen(false);
+    if (item.id.startsWith('sign-')) {
+      const signingId = item.id.replace('sign-', '');
+      navigate(`/approvals/${signingId}`);
+      return;
+    }
+    if (activeTab === 'approvals') {
+      navigate('/approvals');
+      return;
+    }
     setPreviewDoc({
       code: item.code,
       title: item.title,

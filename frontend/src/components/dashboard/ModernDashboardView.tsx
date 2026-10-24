@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import { ActivePageId } from '@app-types/navigation';
 import { useTranslation } from '@i18n/translate';
 import { Badge } from '@components/common';
@@ -59,15 +60,36 @@ export interface ResourceTemplateItem {
   format: string;
 }
 
+export interface SigningRequestItem {
+  id: number | string;
+  code?: string;
+  ma_trinh_ky?: string;
+  title?: string;
+  tieu_de?: string;
+  submitter?: string;
+  nguoi_trinh?: string;
+  date?: string;
+  ngay_gui?: string;
+  status?: string;
+  trang_thai?: string;
+  statusLabel?: string;
+  nhan_trang_thai?: string;
+  trang_thai_display?: string;
+  can_toi_ky?: boolean;
+  variant?: 'success' | 'warning' | 'info' | 'danger';
+}
+
 export interface ModernDashboardViewProps {
   onNavigate?: (page: ActivePageId) => void;
   incomingCount?: number;
   outgoingCount?: number;
   tasksCount?: number;
+  signingCount?: number;
   incomingDocuments?: DocumentItem[];
   outgoingDocuments?: DocumentItem[];
   tasks?: TaskItem[];
   resources?: ResourceTemplateItem[];
+  signingRequests?: SigningRequestItem[];
   birthdays?: BirthdayEmployee[];
 }
 
@@ -76,13 +98,16 @@ export default function ModernDashboardView({
   incomingCount = 0,
   outgoingCount = 0,
   tasksCount = 0,
+  signingCount = 0,
   incomingDocuments = [],
   outgoingDocuments = [],
   tasks = [],
   resources = [],
+  signingRequests = [],
   birthdays,
 }: ModernDashboardViewProps) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [taskFilter, setTaskFilter] = useState<'processing' | 'completed' | 'overdue' | 'pending'>('processing');
   const [selectedTask, setSelectedTask] = useState<TaskItem | null>(null);
@@ -177,6 +202,17 @@ export default function ModernDashboardView({
     );
   }, [resources, searchTerm]);
 
+  const filteredSigning = useMemo(() => {
+    if (!searchTerm.trim()) return signingRequests;
+    const term = searchTerm.toLowerCase();
+    return signingRequests.filter((s) => {
+      const code = (s.ma_trinh_ky || s.code || '').toLowerCase();
+      const title = (s.tieu_de || s.title || '').toLowerCase();
+      const submitter = (s.nguoi_trinh || s.submitter || '').toLowerCase();
+      return code.includes(term) || title.includes(term) || submitter.includes(term);
+    });
+  }, [signingRequests, searchTerm]);
+
   return (
     <>
       {/* Thanh tìm kiếm thu nhỏ tự động neo bên cạnh breadcrumb 'Home' khi lăn chuột xuống */}
@@ -254,8 +290,8 @@ export default function ModernDashboardView({
         </button>
       </div>
 
-      {/* 2. Modern KPI Deck (Icon nằm ngang với số đếm, tiêu đề hàng trên hiển thị trọn vẹn, bố cục luôn cân đối trên mọi màn hình) */}
-      <div className="grid grid-cols-3 gap-1.5 sm:gap-3 md:gap-5">
+      {/* 2. Modern KPI Deck (4 cards cân đối: Đến, Đi, Nhiệm vụ, Chờ Ký) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-1.5 sm:gap-3 md:gap-5">
         {/* Card 1: VB Đến */}
         <div
           onClick={() => onNavigate('documents_incoming')}
@@ -327,6 +363,30 @@ export default function ModernDashboardView({
             {tasksCount > 0 ? `${tasksCount} ${t('dashboardDetails.tasksToProcess')}` : t('dashboardDetails.noTasksPending')}
           </div>
         </div>
+
+        {/* Card 4: Hồ sơ chờ ký */}
+        <div
+          onClick={() => onNavigate('approvals')}
+          className="bg-surface border border-border-subtle rounded-xl md:rounded-2xl p-2 sm:p-3 md:p-5 flex flex-col justify-between shadow-2xs md:shadow-sm cursor-pointer hover:border-warning-border transition-all"
+        >
+          <div>
+            <div className="text-[10px] sm:text-xs md:text-sm uppercase tracking-tight sm:tracking-normal md:tracking-wider font-semibold text-muted leading-tight md:leading-normal truncate">
+              <span className="md:hidden">{t('dashboardDetails.signingCardShort') || 'CHỜ KÝ'}</span>
+              <span className="hidden md:inline">{t('dashboardDetails.signingCard')}</span>
+            </div>
+            <div className="flex items-center gap-1.5 sm:gap-2.5 mt-1 sm:mt-1.5 md:mt-2">
+              <div className="w-6 h-6 sm:w-8 sm:h-8 md:w-12 md:h-12 rounded-md md:rounded-2xl bg-warning-subtle text-warning flex items-center justify-center text-xs sm:text-base md:text-2xl shrink-0 shadow-2xs">
+                <i className="fa-solid fa-file-signature" />
+              </div>
+              <div className="text-base sm:text-2xl md:text-4xl font-extrabold text-main leading-none">
+                {signingCount.toLocaleString()}
+              </div>
+            </div>
+          </div>
+          <div className="hidden md:block text-sm text-secondary md:mt-1 truncate">
+            {signingCount > 0 ? `${signingCount} ${t('dashboardDetails.signingToProcess')}` : t('dashboardDetails.noSigningPending')}
+          </div>
+        </div>
       </div>
 
       {/* Dải Marquee Chúc Mừng Sinh Nhật CBNV */}
@@ -383,7 +443,11 @@ export default function ModernDashboardView({
                             </button>
                           </div>
                         </td>
-                        <td className="p-2.5 text-main group-hover:text-primary transition-colors">{row.title}</td>
+                        <td className="p-2.5 text-main group-hover:text-primary transition-colors">
+                          <div className="line-clamp-2 leading-snug break-words" title={row.title}>
+                            {row.title}
+                          </div>
+                        </td>
                         <td className="p-2.5 text-muted whitespace-nowrap">{row.date}</td>
                       </tr>
                     ))}
@@ -454,7 +518,11 @@ export default function ModernDashboardView({
                             </button>
                           </div>
                         </td>
-                        <td className="p-2.5 text-main group-hover:text-success transition-colors">{row.title}</td>
+                        <td className="p-2.5 text-main group-hover:text-success transition-colors">
+                          <div className="line-clamp-2 leading-snug break-words" title={row.title}>
+                            {row.title}
+                          </div>
+                        </td>
                         <td className="p-2.5 text-muted whitespace-nowrap">{row.date}</td>
                       </tr>
                     ))}
@@ -632,7 +700,11 @@ export default function ModernDashboardView({
                               <span className="whitespace-nowrap">{row.code}</span>
                             </div>
                           </td>
-                          <td className="p-2.5 text-main group-hover:text-primary transition-colors">{row.title}</td>
+                          <td className="p-2.5 text-main group-hover:text-primary transition-colors">
+                            <div className="line-clamp-2 leading-snug break-words" title={row.title}>
+                              {row.title}
+                            </div>
+                          </td>
                           <td className="p-2.5 text-center whitespace-nowrap">
                             <span className="px-2.5 py-0.5 rounded text-xs font-bold bg-primary-subtle text-primary uppercase">
                               {row.format}
@@ -657,6 +729,120 @@ export default function ModernDashboardView({
               <i className="fa-solid fa-arrow-right text-xs" />
             </button>
           </div>
+        </div>
+      </div>
+
+      {/* 5. Khối Danh Sách Phiếu Trình Ký Gần Nhất Của Cán Bộ (Nhóm 5) */}
+      <div className="bg-surface border border-border-subtle rounded-2xl p-3 sm:p-4 md:p-5 shadow-sm flex flex-col">
+        <div className="flex justify-between items-center mb-3">
+          <div className="font-bold text-sm sm:text-base text-main flex items-center gap-2 sm:gap-2.5">
+            <i className="fa-solid fa-file-signature text-warning text-sm sm:text-base md:text-lg shrink-0" />
+            <span>{t('dashboardDetails.recentSigningTitle') || 'Danh Sách Phiếu Trình Ký Cần Xử Lý (Nhóm 5)'}</span>
+          </div>
+          <span className="text-[11px] font-semibold text-secondary px-2.5 py-0.5 rounded-full bg-surface-elevated border border-border-subtle">
+            Nhóm 5 · Trình ký số
+          </span>
+        </div>
+
+        <div className="flex-1 min-h-[160px] flex flex-col justify-start">
+          {filteredSigning.length === 0 ? (
+            <div className="flex-1 p-8 text-center text-muted flex flex-col items-center justify-center">
+              <i className="fa-solid fa-file-signature text-3xl mb-2 opacity-30 text-warning" />
+              <span className="text-sm font-medium">{t('dashboardDetails.noSigningData') || 'Không có phiếu trình ký nào cần xử lý'}</span>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-border-subtle text-muted text-left">
+                    <th className="p-2.5 whitespace-nowrap min-w-[120px]">{t('dashboardDetails.signingCode')}</th>
+                    <th className="p-2.5 min-w-[280px]">{t('dashboardDetails.signingTitle')}</th>
+                    <th className="p-2.5 whitespace-nowrap min-w-[140px]">{t('dashboardDetails.signingSubmitter')}</th>
+                    <th className="p-2.5 w-28 whitespace-nowrap">{t('dashboardDetails.signingDate')}</th>
+                    <th className="p-2.5 w-28 text-center whitespace-nowrap">{t('dashboardDetails.signingStatus')}</th>
+                    <th className="p-2.5 w-28 text-center whitespace-nowrap">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredSigning.slice(0, 5).map((row) => {
+                    const code = row.ma_trinh_ky || row.code || `TK-${row.id}`;
+                    const title = row.tieu_de || row.title || 'Hồ sơ trình ký';
+                    const submitter = row.nguoi_trinh || row.submitter || 'Cán bộ';
+                    const date = row.ngay_gui || row.date || '';
+                    const status = row.trang_thai || row.status || 'CHO_KY';
+                    const isPending = status === 'CHO_KY' || status === 'pending';
+                    const isSigned = status === 'DA_KY' || status === 'completed';
+                    const isRejected = status === 'TU_CHOI' || status === 'rejected';
+                    const statusVariant = row.variant || (isSigned ? 'success' : isRejected ? 'danger' : isPending ? 'warning' : 'secondary');
+                    const statusLabel = row.nhan_trang_thai || row.trang_thai_display || row.statusLabel || (isPending ? 'Chờ ký' : isSigned ? 'Đã ký' : isRejected ? 'Từ chối' : status);
+                    const canSign = !!row.can_toi_ky;
+
+                    return (
+                      <tr
+                        key={row.id}
+                        onClick={() => navigate(`/approvals/${row.id}`)}
+                        className="border-b border-border-subtle hover:bg-warning-subtle/20 transition-colors cursor-pointer group"
+                        title={title}
+                      >
+                        <td className="p-2.5 font-semibold text-primary group-hover:underline whitespace-nowrap">
+                          <div className="flex items-center gap-1.5 whitespace-nowrap font-mono text-xs">
+                            <i className="fa-solid fa-file-signature text-warning text-xs opacity-80 shrink-0" />
+                            <span>{code}</span>
+                          </div>
+                        </td>
+                        <td className="p-2.5 text-main group-hover:text-primary transition-colors">
+                          <div className="line-clamp-2 leading-snug break-words font-medium" title={title}>
+                            {title}
+                          </div>
+                        </td>
+                        <td className="p-2.5 text-secondary whitespace-nowrap">
+                          <div className="flex items-center gap-1.5 text-xs">
+                            <i className="fa-regular fa-user text-muted shrink-0" />
+                            <span>{submitter}</span>
+                          </div>
+                        </td>
+                        <td className="p-2.5 text-muted whitespace-nowrap text-xs">{date}</td>
+                        <td className="p-2.5 text-center whitespace-nowrap">
+                          <Badge variant={statusVariant} size="sm">
+                            {statusLabel}
+                          </Badge>
+                        </td>
+                        <td className="p-2.5 text-center whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/approvals/${row.id}`);
+                            }}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1 transition-all shadow-2xs cursor-pointer ${
+                              canSign
+                                ? 'bg-primary hover:bg-primary-hover text-white'
+                                : 'bg-surface-elevated hover:bg-surface-hover text-secondary border border-border-subtle'
+                            }`}
+                            title={canSign ? (t('dashboardDetails.signNowBtn') || 'Ký ngay') : (t('dashboardDetails.viewDetailBtn') || 'Xem chi tiết')}
+                          >
+                            <i className={`fa-solid ${canSign ? 'fa-pen-nib text-[10px]' : 'fa-eye text-[10px]'}`} />
+                            <span>{canSign ? (t('dashboardDetails.signNowBtn') || 'Ký ngay') : (t('dashboardDetails.viewDetailBtn') || 'Xem chi tiết')}</span>
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-auto pt-3 border-t border-border-subtle text-left">
+          <button
+            type="button"
+            onClick={() => onNavigate('approvals')}
+            className="text-sm font-semibold text-warning hover:underline inline-flex items-center gap-1.5 cursor-pointer"
+          >
+            <span>{t('dashboardDetails.viewMoreSigning')}</span>
+            <i className="fa-solid fa-arrow-right text-xs" />
+          </button>
         </div>
       </div>
 

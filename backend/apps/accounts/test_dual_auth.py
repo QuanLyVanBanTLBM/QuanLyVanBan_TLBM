@@ -70,7 +70,14 @@ class DualAuthenticationTests(TestCase):
         self.assertEqual(response.data["auth_provider"], "local")
 
     def test_api_check_pass_login(self):
-        """Xác thực thành công với tài khoản Ngân hàng Bảo Long qua API check pass."""
+        """Xác thực thành công với tài khoản Ngân hàng Bảo Long qua API check pass khi tài khoản đã được cấp trong hệ thống."""
+        # Tài khoản CBNV đã được Quản trị viên khởi tạo trước trong hệ thống
+        dung_user = User.objects.create_user(
+            username="phanquocdung",
+            password="InitialLocalPassword#123",
+            email="phanquocdung@baolong.vn",
+            ho_ten="Phan Quốc Dũng",
+        )
         self.provider.side_effect = None
         self.provider.return_value.__enter__.return_value.read.return_value = json.dumps({"Success": True, "Data": 7}).encode()
         response = self.client.post(
@@ -82,17 +89,58 @@ class DualAuthenticationTests(TestCase):
         self.assertTrue(response.data["success"])
         self.assertIn("token", response.data)
         self.assertEqual(response.data["auth_provider"], "alpaca_api")
+        self.assertEqual(response.data["user"]["fullName"], "Phan Quốc Dũng")
 
-        # Kiểm tra user được tự động đồng bộ vào database
-        self.assertTrue(User.objects.filter(username="phanquocdung").exists())
-        user = User.objects.get(username="phanquocdung")
-        self.assertTrue(user.is_active)
-        self.assertEqual(user.ho_ten, "Phan Quốc Dũng")
+        # [Điểm 2]: Mật khẩu cục bộ KHÔNG bị ghi đè bởi mật khẩu Alpaca
+        dung_user.refresh_from_db()
+        self.assertTrue(dung_user.check_password("InitialLocalPassword#123"))
+
+    def test_unprovisioned_alpaca_user_returns_403(self):
+        """[Điểm 3]: Tài khoản Alpaca hợp lệ nhưng chưa được Quản trị viên cấp trong hệ thống -> 403 Forbidden, không tự tạo."""
+        self.provider.side_effect = None
+        self.provider.return_value.__enter__.return_value.read.return_value = json.dumps({"Success": True, "Data": 7}).encode()
+        response = self.client.post(
+            "/api/auth/login/",
+            {"username": "unprovisioned_user", "password": "Alpaca#2025"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn("chưa được phân quyền", response.data.get("error", ""))
+        self.assertFalse(User.objects.filter(username="unprovisioned_user").exists())
+
+    def test_privileged_user_never_calls_external_api_on_failed_local_auth(self):
+        """[Điểm 1 & Điểm 2]: Tài khoản admin/staff nhập sai mật khẩu cục bộ thì trả 401 ngay, TUYỆT ĐỐI không gọi Alpaca API."""
+        with patch("accounts.views.check_alpaca_auth") as mock_check_alpaca:
+            response = self.client.post("/api/auth/login/", {
+                "username": self.admin.username,
+                "password": "WrongAdminPassword@123",
+            })
+            self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+            mock_check_alpaca.assert_not_called()
 
     def test_admin_set_password_endpoint(self):
         """Admin đổi mật khẩu cho nhân viên, sau đó nhân viên đăng nhập bằng mật khẩu mới."""
-        # Xác thực bằng admin
+        # 1. User thường không có quyền đổi mật khẩu người khác -> 403 Forbidden
+        self.client.force_authenticate(user=self.staff)
+        res_forbidden = self.client.post(
+            "/api/auth/admin-set-password/",
+            {"username": "staff_test", "new_password": "NewSecretPass#2026"},
+            format="json",
+        )
+        self.assertEqual(res_forbidden.status_code, status.HTTP_403_FORBIDDEN)
+
+        # 2. Xác thực bằng admin (có quyền RBAC hoặc is_superuser)
         self.client.force_authenticate(user=self.admin)
+
+        # 2.1 Thử đặt mật khẩu yếu -> Bị từ chối bởi validate_password của Django (400)
+        res_weak = self.client.post(
+            "/api/auth/admin-set-password/",
+            {"username": "staff_test", "new_password": "123"},
+            format="json",
+        )
+        self.assertEqual(res_weak.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # 2.2 Đặt mật khẩu hợp lệ -> 200 OK
         res_change = self.client.post(
             "/api/auth/admin-set-password/",
             {"username": "staff_test", "new_password": "NewSecretPass#2026"},
@@ -101,7 +149,7 @@ class DualAuthenticationTests(TestCase):
         self.assertEqual(res_change.status_code, status.HTTP_200_OK)
         self.assertTrue(res_change.data["success"])
 
-        # Bỏ authenticate admin và thử đăng nhập bằng mật khẩu mới của staff
+        # 3. Bỏ authenticate admin và thử đăng nhập bằng mật khẩu mới của staff
         self.client.force_authenticate(user=None)
         res_login_old = self.client.post(
             "/api/auth/login/",
@@ -159,11 +207,16 @@ class DualAuthenticationTests(TestCase):
         self.assertFalse(self.staff.is_active)
         self.assertEqual(self.staff.password, old_hash)
 
-    def test_external_success_updates_active_account_password(self):
+    def test_external_success_does_not_overwrite_local_password(self):
+        """[Điểm 2]: Khi xác thực Alpaca thành công, mật khẩu cục bộ KHÔNG bị ghi đè."""
+        old_password_hash = self.staff.password
         with patch("accounts.views.check_alpaca_auth", return_value={"success": True}):
             response = self.client.post("/api/auth/login/", {
                 "username": self.staff.username, "password": "ExternalPassword123",
             })
         self.assertEqual(response.status_code, 200)
         self.staff.refresh_from_db()
-        self.assertTrue(self.staff.check_password("ExternalPassword123"))
+        self.assertEqual(self.staff.password, old_password_hash)
+        self.assertTrue(self.staff.check_password("InitialPassword@123"))
+        self.assertFalse(self.staff.check_password("ExternalPassword123"))
+

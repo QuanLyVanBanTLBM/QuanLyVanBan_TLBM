@@ -55,10 +55,10 @@ class DashboardAPITests(TestCase):
         self.client.force_authenticate(user=self.staff_user)
         response = self.client.get("/api/dashboard/overview/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        for key in ("kpis", "recentIncoming", "recentOutgoing", "tasks", "meetingRooms", "birthdays"):
+        for key in ("kpis", "recentIncoming", "recentOutgoing", "recentSigning", "tasks", "meetingRooms", "birthdays"):
             self.assertIn(key, response.data)
         self.assertEqual(
-            set(response.data["kpis"]), {"incomingCount", "outgoingCount", "tasksCount"}
+            set(response.data["kpis"]), {"incomingCount", "outgoingCount", "signingCount", "tasksCount"}
         )
 
     def test_documents_use_shared_visibility_for_counts_and_recent_lists(self):

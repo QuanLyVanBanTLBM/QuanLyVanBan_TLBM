@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ActivePageId } from '@app-types/navigation';
 import { pageIdToPath } from '@lib/routes';
 import { apiClient, ApiError } from '@lib/apiClient';
-import ModernDashboardView, { DocumentItem, TaskItem, ResourceTemplateItem } from '@components/dashboard/ModernDashboardView';
+import ModernDashboardView, { DocumentItem, TaskItem, ResourceTemplateItem, SigningRequestItem } from '@components/dashboard/ModernDashboardView';
 import { BirthdayEmployee } from '@components/dashboard/BirthdaysWidget';
 
 export interface DashboardMeetingItem {
@@ -23,6 +23,7 @@ export interface DashboardKpis {
   incomingCount: number;
   outgoingCount: number;
   tasksCount: number;
+  signingCount?: number;
 }
 
 export interface DashboardOverviewResponse {
@@ -31,6 +32,7 @@ export interface DashboardOverviewResponse {
   recentOutgoing?: DocumentItem[];
   tasks?: TaskItem[];
   resources?: ResourceTemplateItem[];
+  recentSigning?: SigningRequestItem[];
   meetingRooms?: DashboardMeetingItem[];
   birthdays?: BirthdayEmployee[];
   error?: string;
@@ -154,10 +156,12 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
       incomingCount={data?.kpis?.incomingCount ?? 0}
       outgoingCount={data?.kpis?.outgoingCount ?? 0}
       tasksCount={data?.kpis?.tasksCount ?? 0}
+      signingCount={data?.kpis?.signingCount ?? 0}
       incomingDocuments={data?.recentIncoming ?? []}
       outgoingDocuments={data?.recentOutgoing ?? []}
       tasks={data?.tasks ?? []}
       resources={data?.resources ?? []}
+      signingRequests={data?.recentSigning ?? []}
       birthdays={data?.birthdays}
     />
   );

@@ -120,10 +120,12 @@ describe('DashboardPage Component (Issue #10 Real Data)', () => {
         incomingCount: 0,
         outgoingCount: 0,
         tasksCount: 0,
+        signingCount: 0,
       },
       recentIncoming: [],
       recentOutgoing: [],
       tasks: [],
+      recentSigning: [],
       birthdays: [],
     });
 
@@ -134,10 +136,11 @@ describe('DashboardPage Component (Issue #10 Real Data)', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getAllByText('0')).toHaveLength(3);
+      expect(screen.getAllByText('0')).toHaveLength(4);
     });
 
     expect(screen.getByText('Chưa có phát sinh trong ngày')).toBeInTheDocument();
+    expect(screen.getByText('Không có hồ sơ chờ ký')).toBeInTheDocument();
   });
 
   it('triggers onNavigate callback when meeting room button is clicked', async () => {

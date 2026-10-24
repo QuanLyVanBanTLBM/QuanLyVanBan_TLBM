@@ -200,7 +200,7 @@ export default function AppSidebar({
           }}
           title="Bảo Long Insurance - Về Trang Chủ"
         >
-          <Logo size="lg" className="h-9 sm:h-10" />
+          <Logo size="md" className="h-7 sm:h-8" />
         </div>
         <div className="flex items-center gap-1.5">
           {/* Nút Ghim cố định Sidebar (chỉ hiển thị trên Desktop >= 1024px) */}

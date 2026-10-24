@@ -13,17 +13,19 @@ describe('ModernDashboardView Component (Zero Mock Data)', () => {
       </MemoryRouter>
     );
 
-    // 3 KPI cards show 0 by default
-    expect(screen.getAllByText('0')).toHaveLength(3);
+    // 4 KPI cards show 0 by default (Incoming, Outgoing, Tasks, Signing)
+    expect(screen.getAllByText('0')).toHaveLength(4);
     expect(screen.getByText('Chưa có phát sinh trong ngày')).toBeInTheDocument();
     expect(screen.getByText('Chưa có phát hành hôm nay')).toBeInTheDocument();
     expect(screen.getByText('Không có nhiệm vụ cần xử lý')).toBeInTheDocument();
+    expect(screen.getByText('Không có hồ sơ chờ ký')).toBeInTheDocument();
 
     // Tables show empty states
     expect(screen.getByText('Chưa có dữ liệu văn bản đến')).toBeInTheDocument();
     expect(screen.getByText('Chưa có dữ liệu văn bản đi')).toBeInTheDocument();
     expect(screen.getByText('Chưa có nhiệm vụ nào cần xử lý')).toBeInTheDocument();
     expect(screen.getByText('Chưa có dữ liệu tài liệu & biểu mẫu')).toBeInTheDocument();
+    expect(screen.getByText('Không có phiếu trình ký nào cần xử lý')).toBeInTheDocument();
 
     // No mock text
     expect(screen.queryByText(/Mock Filter/i)).not.toBeInTheDocument();
@@ -184,6 +186,43 @@ describe('ModernDashboardView Component (Zero Mock Data)', () => {
     }
   });
 
+  it('renders signing requests table and handles navigation', () => {
+    const mockNavigate = vi.fn();
+    const mockSigning = [
+      {
+        id: '1',
+        ma_trinh_ky: '15/TTr-VP',
+        tieu_de: 'Tờ trình phê duyệt mua sắm máy quét tài liệu',
+        nguoi_trinh: 'Lê Thanh Hậu',
+        ngay_gui: '23/10/2026',
+        trang_thai: 'CHO_KY',
+        nhan_trang_thai: 'Chờ ký',
+        can_toi_ky: true,
+      },
+    ];
+
+    render(
+      <MemoryRouter>
+        <ModernDashboardView
+          onNavigate={mockNavigate}
+          signingCount={1}
+          signingRequests={mockSigning}
+        />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText('15/TTr-VP')).toBeInTheDocument();
+    expect(screen.getByText('Tờ trình phê duyệt mua sắm máy quét tài liệu')).toBeInTheDocument();
+    expect(screen.getByText('Lê Thanh Hậu')).toBeInTheDocument();
+    expect(screen.getByText('Chờ ký')).toBeInTheDocument();
+
+    const signBtn = screen.getByText('Ký ngay');
+    fireEvent.click(signBtn);
+
+    const viewAllBtn = screen.getByText('Xem tất cả hồ sơ trình ký');
+    fireEvent.click(viewAllBtn);
+    expect(mockNavigate).toHaveBeenCalledWith('approvals');
+  });
 });
 
 
