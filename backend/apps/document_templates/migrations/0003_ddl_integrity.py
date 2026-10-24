@@ -101,7 +101,7 @@ def _standalone_unique_index(cursor, table, columns):
              AND index_meta.indpred IS NULL AND index_meta.indexprs IS NULL
              AND index_meta.indnkeyatts = %s AND index_meta.indnatts = %s
              AND ARRAY(
-                 SELECT att.attname
+                 SELECT att.attname::text
                  FROM unnest(index_meta.indkey::smallint[]) WITH ORDINALITY AS key(attnum, ord)
                  JOIN pg_attribute att ON att.attrelid = index_meta.indrelid AND att.attnum = key.attnum
                  ORDER BY key.ord
