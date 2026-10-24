@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { Badge, Button, Card } from '@components/common';
+import type { BadgeProps } from '@components/common/Badge';
 import { DangTai, LoiTai, Rong } from '@components/signing/ChungUI';
 import XemPdf from '@components/signing/XemPdf';
 import { signingApi } from '@lib/signing/api';
@@ -16,9 +17,14 @@ import type { BoLocTaiLieu, LoaiTepTaiLieu, TepTaiLieu } from '@lib/signing/type
 
 const LOAI: LoaiTepTaiLieu[] = ['DU_THAO', 'LUOT', 'HOAN_TAT'];
 const BIEU_TUONG: Record<LoaiTepTaiLieu, string> = {
-  DU_THAO: 'fa-file-pen text-secondary',
-  LUOT: 'fa-file-pdf text-secondary',
+  DU_THAO: 'fa-file-pen text-warning-text',
+  LUOT: 'fa-file-pdf text-primary',
   HOAN_TAT: 'fa-file-circle-check text-success',
+};
+const MAU_LOAI_TEP: Record<LoaiTepTaiLieu, BadgeProps['variant']> = {
+  DU_THAO: 'warning',
+  LUOT: 'primary',
+  HOAN_TAT: 'success',
 };
 const LOP_NHAN = 'mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-secondary';
 
@@ -155,7 +161,7 @@ export default function TaiLieuPage() {
                         <span className="truncate group-hover:underline underline-offset-2">{tep.ten_tep}</span>
                       </button>
                     </td>
-                    <td className="px-2.5 py-3 text-center whitespace-nowrap"><Badge variant="info" size="sm">{t(`taiLieu.loai.${tep.loai}`)}</Badge></td>
+                    <td className="px-2.5 py-3 text-center whitespace-nowrap"><Badge variant={MAU_LOAI_TEP[tep.loai]} size="sm">{t(`taiLieu.loai.${tep.loai}`)}</Badge></td>
                     <td className="px-3 py-3 text-left whitespace-nowrap font-medium text-secondary">
                       <Link to={`/approvals/${tep.trinh_ky}`} className="hover:text-primary hover:underline">#{tep.trinh_ky}</Link>
                     </td>
@@ -185,7 +191,7 @@ export default function TaiLieuPage() {
                 <div className="flex items-center gap-2">
                   <i className={`fa-solid ${BIEU_TUONG[tepXem.loai]} text-lg shrink-0`} aria-hidden="true" />
                   <h2 className="text-base sm:text-lg font-bold text-main truncate">{tepXem.ten_tep}</h2>
-                  <Badge variant="info" size="sm">{t(`taiLieu.loai.${tepXem.loai}`)}</Badge>
+                  <Badge variant={MAU_LOAI_TEP[tepXem.loai]} size="sm">{t(`taiLieu.loai.${tepXem.loai}`)}</Badge>
                 </div>
                 <div className="text-xs text-secondary truncate mt-0.5">
                   <Link to={`/approvals/${tepXem.trinh_ky}`} className="font-bold text-primary hover:underline mr-2">
