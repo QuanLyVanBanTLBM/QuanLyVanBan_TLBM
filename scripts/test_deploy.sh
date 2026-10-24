@@ -380,7 +380,40 @@ assert_event_absent stop
 assert_event_absent restart
 assert_event_absent backup
 test -d "$RELEASE_DIR" || fail "existing release was removed during early failure"
+grep -q 'khong phai ban dang chay' "$CASE_ROOT/output.log" || fail "non-current existing release reason was not logged"
 pass "existing target release leaves the initially active service untouched"
+
+make_case already-running-release
+mkdir -p "$RELEASE_DIR"
+echo "$RELEASE_DIR" > "$CURRENT_FILE"
+if ! run_deploy; then
+  cat "$CASE_ROOT/output.log" >&2
+  cat "$EVENTS" >&2
+  fail "redeploy of the running release failed instead of skipping"
+fi
+expect_state "$RELEASE_DIR" active
+assert_eq "$(cat "$EVENTS")" "" "events for already-running release"
+test -d "$RELEASE_DIR" || fail "running release was removed during skip"
+grep -q 'bo qua deploy' "$CASE_ROOT/output.log" || fail "skip reason was not logged"
+pass "redeploy of the running release with an active service is a no-op success"
+
+make_case running-release-service-inactive inactive
+mkdir -p "$RELEASE_DIR"
+echo "$RELEASE_DIR" > "$CURRENT_FILE"
+expect_failure
+expect_state "$RELEASE_DIR" inactive
+assert_eq "$(cat "$EVENTS")" "" "events for running release with inactive service"
+test -d "$RELEASE_DIR" || fail "running release was removed during early failure"
+pass "redeploy of the running release with an inactive service fails without changes"
+
+make_case running-release-rebuild
+mkdir -p "$RELEASE_DIR"
+echo "$RELEASE_DIR" > "$CURRENT_FILE"
+expect_failure rebuild
+expect_state "$RELEASE_DIR" active
+assert_eq "$(cat "$EVENTS")" "" "events for rebuild of running release"
+test -d "$RELEASE_DIR" || fail "running release was removed during early failure"
+pass "rebuild requested for the running release is rejected instead of skipped"
 
 make_case service-query-error
 export MOCK_SYSTEMCTL_QUERY_ERROR=1

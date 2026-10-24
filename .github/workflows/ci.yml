@@ -258,7 +258,9 @@ jobs:
   deploy-frontend:
     name: Deploy frontend to Ubuntu
     if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
-    needs: [backend, frontend]
+    # Chi day frontend sau khi deploy.sh xac nhan release cua commit nay dang chay;
+    # re-run commit cu bi deploy.sh tu choi thi frontend cu khong de len ban moi.
+    needs: deploy-backend
     runs-on: ubuntu-latest
     steps:
       - name: Download frontend artifact

@@ -8,6 +8,8 @@
 #         nginx cai truoc khi dung service: loi nginx chi khoi phuc cau hinh cu, chua cham service/DB/release.
 #         Service dung ca deploy, ke ca sync khong co migration cho; loi truoc DB change co the phuc hoi release cu.
 #         Sau DB mutation attempt, deploy fail-closed va giu service dung.
+#         Chay lai cung release (push trung, re-run): neu release do dang la current, service active va DB_MODE=sync
+#         thi bo qua, exit 0; release ton tai o moi trang thai khac van tu choi deploy.
 # DB_MODE (bien moi truong, mac dinh sync):
 #   sync     xac minh marker/history; thu migration tren ban khoi phuc va so schema voi release DDL/baseline,
 #            sau do chay migration that tren DB hien tai. Khong dung lai DB.
@@ -104,9 +106,18 @@ step "1/9 Kiem tra dau vao ($NAME, DB_MODE=$DB_MODE)"
 [ -s "$NGINX_NEW" ] || { echo "Thieu file cau hinh nginx $NGINX_NEW"; exit 1; }
 [ -f "$NGINX_SITE" ] && [ -r "$NGINX_SITE" ] \
   || { echo "Khong doc duoc cau hinh nginx dang chay $NGINX_SITE; khong co ban de khoi phuc."; exit 1; }
-[ ! -e "$REL" ] || { echo "Release $NAME da ton tai"; exit 1; }
 PREV=$(readlink -f "$BASE/current")
 echo "Ban hien tai: $PREV"
+if [ -e "$REL" ]; then
+  [ "$PREV" = "$REL" ] \
+    || { echo "Release $NAME da ton tai nhung khong phai ban dang chay; tu choi deploy."; exit 1; }
+  [ "$DB_MODE" = sync ] \
+    || { echo "Release $NAME dang chay; DB_MODE=$DB_MODE khong duoc bo qua, tu choi deploy."; exit 1; }
+  systemctl is-active --quiet "$SERVICE" \
+    || { echo "Release $NAME dang chay nhung $SERVICE khong active; tu choi deploy."; exit 1; }
+  echo "Release $NAME da ton tai va dang chay ($SERVICE active); bo qua deploy."
+  exit 0
+fi
 if systemctl is-active --quiet "$SERVICE"; then
   SERVICE_WAS_ACTIVE=1
 else
