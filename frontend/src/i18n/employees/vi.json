@@ -25,7 +25,9 @@
       "cancel": "Hủy bỏ",
       "save": "Lưu thay đổi",
       "create": "Thêm mới",
-      "close": "Đóng"
+      "close": "Đóng",
+      "exportExcel": "Xuất Excel",
+      "exporting": "Đang xuất tệp..."
     },
     "table": {
       "employee": "Cán bộ nhân viên",
@@ -57,7 +59,7 @@
       "unit": "Đơn vị / Phòng ban",
       "region": "Khối",
       "position": "Chức vụ",
-      "title": "Chức danh tự do",
+      "title": "Chức danh",
       "status": "Trạng thái làm việc",
       "groups": "Nhóm quyền (RBAC)",
       "notes": "Ghi chú",
@@ -65,7 +67,16 @@
       "isPublicHelp": "Cho phép hiển thị thông tin liên lạc trong danh bạ nội bộ toàn viện.",
       "public": "Công khai",
       "internalOnly": "Nội bộ",
-      "joined": "Ngày tham gia"
+      "joined": "Ngày tham gia",
+      "concurrentAssignments": "Đơn vị & Chức vụ kiêm nhiệm",
+      "addAssignment": "Thêm phòng ban kiêm nhiệm",
+      "noAssignments": "Chưa có phân công kiêm nhiệm.",
+      "assignmentUnit": "Đơn vị kiêm nhiệm",
+      "assignmentPosition": "Chức vụ kiêm nhiệm",
+      "assignmentTitle": "Chức danh kiêm nhiệm (tùy chọn)",
+      "removeAssignment": "Xóa dòng",
+      "concurrentBadge": "+{count} kiêm nhiệm",
+      "duplicateAssignmentUnit": "Đơn vị kiêm nhiệm không được trùng với đơn vị chính hoặc đơn vị đã chọn."
     },
     "placeholders": {
       "search": "Tìm theo họ tên, username, email, sđt...",
@@ -98,7 +109,8 @@
       "successTitle": "Thêm Nhân Viên Thành Công!",
       "passwordNotice": "Hệ thống đã tự động tạo tài khoản và sinh mật khẩu tạm thời. Hãy sao chép và gửi cho nhân viên:",
       "copyPassword": "Sao chép mật khẩu",
-      "copied": "Đã sao chép!"
+      "copied": "Đã sao chép!",
+      "clickToCopy": "Bấm vào mật khẩu hoặc biểu tượng để sao chép"
     },
     "detail": {
       "title": "Thông Tin Chi Tiết Cán Bộ Nhân Viên",
@@ -106,7 +118,10 @@
     },
     "delete": {
       "confirmTitle": "Xác nhận xóa cán bộ nhân viên",
-      "confirmDesc": "Bạn có chắc chắn muốn xóa cán bộ \"{name}\"? Tài khoản người dùng liên kết cũng sẽ bị xóa vĩnh viễn khỏi hệ thống."
+      "confirmDesc": "Bạn có chắc chắn muốn xóa cán bộ \"{name}\"? Tài khoản người dùng liên kết cũng sẽ bị xóa vĩnh viễn khỏi hệ thống.",
+      "passwordLabel": "Mật khẩu xác nhận của bạn",
+      "passwordPlaceholder": "Nhập mật khẩu tài khoản đang đăng nhập...",
+      "confirmCheckbox": "Tôi xác nhận muốn xóa cán bộ nhân viên này khỏi hệ thống."
     },
     "import": {
       "title": "Nhập Danh Sách CBNV Từ Excel",
@@ -143,13 +158,16 @@
         "duplicateEmailInFile": "Email '{value}' bị trùng lặp trong chính tệp Excel tải lên.",
         "unitRequired": "Tên Đơn vị / Phòng ban không được để trống.",
         "positionRequired": "Tên Chức vụ không được để trống."
-      }
+      },
+      "removeFile": "Xóa tệp đã chọn"
     },
     "validation": {
       "nameRequired": "Họ và tên nhân viên không được để trống.",
       "emailRequired": "Địa chỉ email không được để trống.",
       "birthdayRequired": "Vui lòng chọn ngày sinh cho nhân viên.",
-      "phoneInvalid": "Số điện thoại không hợp lệ theo chuẩn Việt Nam."
+      "phoneInvalid": "Số điện thoại không hợp lệ theo chuẩn Việt Nam.",
+      "roleRequired": "Vui lòng chọn ít nhất một nhóm quyền cho cán bộ nhân viên.",
+      "positionRequired": "Vui lòng chọn chức vụ cho cán bộ nhân viên."
     },
     "messages": {
       "fetchError": "Không thể tải danh sách cán bộ nhân viên.",
@@ -174,8 +192,8 @@
       "invalidDataFormat": "Dữ liệu yêu cầu phải là một JSON object.",
       "invalidOrdering": "Tham số sắp xếp không hợp lệ.",
       "invalidFilterParam": "Tham số bộ lọc không hợp lệ.",
-      "emailExists": "Địa chỉ email đã tồn tại trong hệ thống.",
-      "usernameExists": "Tên đăng nhập đã tồn tại trong hệ thống.",
+      "emailExists": "Địa chỉ email '{value}' đã tồn tại trong hệ thống.",
+      "usernameExists": "Tên đăng nhập '{value}' đã tồn tại trong hệ thống.",
       "unitNotFound": "Không tìm thấy Đơn vị có tên '{value}' trong hệ thống.",
       "unitAmbiguous": "Tên Đơn vị '{value}' trùng lặp giữa nhiều Khối/Khu vực. Vui lòng ghi rõ hoặc chọn đơn vị chính xác.",
       "positionNotFound": "Không tìm thấy Chức vụ có tên '{value}' trong hệ thống.",
@@ -186,7 +204,14 @@
       "saveError": "Không thể lưu thông tin cán bộ nhân viên.",
       "loading": "Đang tải dữ liệu...",
       "noData": "Không tìm thấy cán bộ nhân viên nào",
-      "noDataHelp": "Thử thay đổi từ khóa tìm kiếm hoặc bộ lọc để hiển thị kết quả."
+      "noDataHelp": "Thử thay đổi từ khóa tìm kiếm hoặc bộ lọc để hiển thị kết quả.",
+      "exportSuccess": "Xuất tệp Excel danh sách nhân viên thành công!",
+      "exportError": "Không thể xuất tệp Excel. Vui lòng thử lại sau.",
+      "duplicateAssignmentUnit": "Đơn vị kiêm nhiệm không được trùng với đơn vị chính hoặc đơn vị đã chọn.",
+      "assignmentTitleTooLong": "Chức danh kiêm nhiệm không được vượt quá 150 ký tự.",
+      "invalidPassword": "Mật khẩu xác nhận không chính xác. Vui lòng thử lại.",
+      "deleteRequiresPassword": "Vui lòng nhập mật khẩu xác nhận của bạn.",
+      "deleteRequiresConfirmation": "Vui lòng tích chọn xác nhận trước khi xóa cán bộ."
     },
     "pagination": {
       "showing": "Hiển thị {from} - {to} trong tổng số {total} CBNV"

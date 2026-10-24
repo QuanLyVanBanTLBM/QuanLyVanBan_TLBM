@@ -35,7 +35,7 @@ class VanBanMatRemovedTest(TestCase):
         self.assertFalse(Permission.objects.filter(codename__contains="vanbanmat").exists())
         with connection.cursor() as cursor:
             cursor.execute("SELECT COUNT(*) FROM auth_permission WHERE module_ten <> ''")
-            self.assertEqual(cursor.fetchone()[0], 77)
+            self.assertEqual(cursor.fetchone()[0], 78)
 
     def test_migration_removes_existing_vanbanmat_permissions_and_grants(self):
         with connection.cursor() as cursor:

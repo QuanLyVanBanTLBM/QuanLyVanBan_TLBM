@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from '@i18n/translate';
 import { Button } from '@components/common/Button';
 import { apiClient, downloadBlob } from '@lib/apiClient';
@@ -25,12 +25,55 @@ export const EmployeeImportModal: React.FC<EmployeeImportModalProps> = ({
   const [generalError, setGeneralError] = useState<string | null>(null);
   const [errorList, setErrorList] = useState<ExcelImportError[]>([]);
 
+  const resetState = useCallback(() => {
+    setSelectedFile(null);
+    setIsDragging(false);
+    setIsUploading(false);
+    setIsDownloadingTemplate(false);
+    setGeneralError(null);
+    setErrorList([]);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  }, []);
+
+  const handleClose = useCallback(() => {
+    resetState();
+    onClose();
+  }, [resetState, onClose]);
+
+  const handleClearFile = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedFile(null);
+    setGeneralError(null);
+    setErrorList([]);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen && !isUploading) {
+        handleClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, isUploading, handleClose]);
+
   if (!isOpen) return null;
+
+  const isExcelFile = (fileName: string) => {
+    const lower = fileName.toLowerCase();
+    return lower.endsWith('.xlsx');
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
-      if (!file.name.toLowerCase().endsWith('.xlsx')) {
+      if (!isExcelFile(file.name)) {
         setGeneralError(t('employees.import.invalidFileType'));
         setSelectedFile(null);
         return;
@@ -55,7 +98,7 @@ export const EmployeeImportModal: React.FC<EmployeeImportModalProps> = ({
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
-      if (!file.name.toLowerCase().endsWith('.xlsx')) {
+      if (!isExcelFile(file.name)) {
         setGeneralError(t('employees.import.invalidFileType'));
         setSelectedFile(null);
         return;
@@ -91,14 +134,17 @@ export const EmployeeImportModal: React.FC<EmployeeImportModalProps> = ({
       const formData = new FormData();
       formData.append('file', selectedFile);
 
-      const res = await apiClient.post<ExcelImportResponse>(
+      const res = await apiClient<ExcelImportResponse>(
         '/api/accounts/employees/import/',
-        formData
+        {
+          method: 'POST',
+          body: formData,
+        }
       );
 
       if (res.success) {
         onSuccess(res.created_count || 0);
-        onClose();
+        handleClose();
       }
     } catch (err: unknown) {
       if (err && typeof err === 'object' && 'data' in err) {
@@ -126,8 +172,14 @@ export const EmployeeImportModal: React.FC<EmployeeImportModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-backdrop backdrop-blur-sm animate-fade-in">
-      <div className="bg-surface border border-border rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden animate-scale-up">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-backdrop backdrop-blur-sm animate-fade-in"
+      onClick={handleClose}
+    >
+      <div
+        className="bg-surface border border-border rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden animate-scale-up"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Modal Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-surface-elevated">
           <div className="flex items-center gap-3">
@@ -145,8 +197,9 @@ export const EmployeeImportModal: React.FC<EmployeeImportModalProps> = ({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             className="text-secondary hover:text-main p-2 rounded-lg hover:bg-surface-hover transition-colors"
+            title={t('employees.actions.close')}
           >
             <i className="fa-solid fa-xmark text-lg" />
           </button>
@@ -193,21 +246,43 @@ export const EmployeeImportModal: React.FC<EmployeeImportModalProps> = ({
             <input
               ref={fileInputRef}
               type="file"
-              accept=".xlsx"
+              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               onChange={handleFileChange}
               className="hidden"
             />
             <div className="w-14 h-14 rounded-full bg-primary-subtle text-primary flex items-center justify-center mx-auto text-2xl mb-3">
               <i className="fa-solid fa-cloud-arrow-up" />
             </div>
-            <p className="text-sm font-semibold text-main">
-              {selectedFile ? selectedFile.name : t('employees.import.dragDropPrompt')}
-            </p>
-            <p className="text-xs text-muted mt-1">
-              {selectedFile
-                ? `${(selectedFile.size / 1024).toFixed(1)} KB`
-                : t('employees.import.formatNotice')}
-            </p>
+            {selectedFile ? (
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-main break-all">
+                  {selectedFile.name}
+                </p>
+                <p className="text-xs text-muted">
+                  {(selectedFile.size / 1024).toFixed(1)} KB
+                </p>
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={handleClearFile}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium text-danger hover:text-white bg-danger-subtle hover:bg-danger border border-danger-border rounded-lg transition-colors cursor-pointer"
+                    title={t('employees.import.removeFile')}
+                  >
+                    <i className="fa-solid fa-xmark text-xs" />
+                    <span>{t('employees.import.removeFile')}</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <p className="text-sm font-semibold text-main">
+                  {t('employees.import.dragDropPrompt')}
+                </p>
+                <p className="text-xs text-muted mt-1">
+                  {t('employees.import.formatNotice')}
+                </p>
+              </>
+            )}
           </div>
 
           {/* General Error Message */}
@@ -269,7 +344,7 @@ export const EmployeeImportModal: React.FC<EmployeeImportModalProps> = ({
 
         {/* Modal Footer */}
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border bg-surface-elevated">
-          <Button type="button" variant="secondary" onClick={onClose} disabled={isUploading}>
+          <Button type="button" variant="secondary" onClick={handleClose} disabled={isUploading}>
             {t('employees.actions.cancel')}
           </Button>
           <Button

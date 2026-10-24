@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useTranslation } from '@i18n/translate';
 import { Employee, Position, GroupSimple, EmployeeCreatePayload, EmployeeUpdatePayload, EmployeeStatus } from '@app-types/employee';
 import { Unit } from '@app-types/organization';
@@ -31,7 +31,40 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
 }) => {
   const { t } = useTranslation();
   const { can } = usePermissions();
+  const formRef = useRef<HTMLFormElement>(null);
   const isSelfEditOnly = Boolean(initialData && !can('change_full_cbnv'));
+
+  const toDisplayDateString = (dateStr?: string | null): string => {
+    if (!dateStr) return '';
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) return dateStr;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      const [y, m, d] = dateStr.split('-');
+      return `${d}/${m}/${y}`;
+    }
+    return '';
+  };
+
+  const parseToIso = (dateStr: string): string | null => {
+    const trimmed = dateStr.trim();
+    if (!trimmed) return null;
+    const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(trimmed);
+    if (match) {
+      const d = match[1].padStart(2, '0');
+      const m = match[2].padStart(2, '0');
+      const y = match[3];
+      const day = parseInt(d, 10);
+      const month = parseInt(m, 10);
+      const year = parseInt(y, 10);
+      if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+      const dt = new Date(year, month - 1, day);
+      if (dt.getFullYear() !== year || dt.getMonth() !== month - 1 || dt.getDate() !== day) return null;
+      return `${y}-${m}-${d}`;
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      return trimmed;
+    }
+    return null;
+  };
 
   const [formData, setFormData] = useState(() => {
     if (initialData) {
@@ -40,7 +73,9 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
         email: initialData.email || '',
         username: initialData.username || '',
         password: '',
-        ngay_sinh: initialData.is_birthday_masked ? '' : initialData.ngay_sinh || '',
+        ngay_sinh: initialData.is_birthday_masked
+          ? ''
+          : toDisplayDateString(initialData.ngay_sinh_iso || initialData.ngay_sinh),
         don_vi_id: initialData.don_vi_id ? String(initialData.don_vi_id) : '',
         chuc_vu_id: initialData.chuc_vu_id ? String(initialData.chuc_vu_id) : '',
         chuc_danh: initialData.chuc_danh || '',
@@ -49,6 +84,13 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
         trang_thai: initialData.trang_thai || 'LAM_VIEC',
         is_public: initialData.is_public ?? true,
         ghi_chu: initialData.ghi_chu || '',
+        assignments: initialData.assignments
+          ? initialData.assignments.map((a) => ({
+              don_vi_id: String(a.don_vi_id),
+              chuc_vu_id: String(a.chuc_vu_id),
+              chuc_danh: a.chuc_danh || '',
+            }))
+          : [],
       };
     }
     return {
@@ -58,19 +100,60 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
       password: '',
       ngay_sinh: '',
       don_vi_id: units.length > 0 ? String(units[0].id) : '',
-      chuc_vu_id: positions.length > 0 ? String(positions[0].id) : '',
+      chuc_vu_id: '',
       chuc_danh: '',
       sdt: '',
       nhom_quyen_ids: [] as number[],
       trang_thai: 'LAM_VIEC' as const,
       is_public: true,
       ghi_chu: '',
+      assignments: [] as Array<{ don_vi_id: string; chuc_vu_id: string; chuc_danh: string }>,
     };
   });
 
   const [errorKey, setErrorKey] = useState<string | null>(null);
   const [createdPassword, setCreatedPassword] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState<boolean>(false);
+
+  const handleAddAssignment = () => {
+    const usedUnitIds = new Set([
+      formData.don_vi_id,
+      ...formData.assignments.map((a) => a.don_vi_id),
+    ]);
+    const availableUnit = units.find((u) => !usedUnitIds.has(String(u.id)));
+    const defaultUnitId = availableUnit
+      ? String(availableUnit.id)
+      : (units[0] ? String(units[0].id) : '');
+    const defaultPosId = '';
+
+    setFormData((prev) => ({
+      ...prev,
+      assignments: [
+        ...prev.assignments,
+        { don_vi_id: defaultUnitId, chuc_vu_id: defaultPosId, chuc_danh: '' },
+      ],
+    }));
+  };
+
+  const handleRemoveAssignment = (index: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      assignments: prev.assignments.filter((_, i) => i !== index),
+    }));
+  };
+
+  const handleAssignmentChange = (
+    index: number,
+    field: 'don_vi_id' | 'chuc_vu_id' | 'chuc_danh',
+    value: string
+  ) => {
+    setFormData((prev) => {
+      const next = [...prev.assignments];
+      next[index] = { ...next[index], [field]: value };
+      return { ...prev, assignments: next };
+    });
+    if (errorKey) setErrorKey(null);
+  };
 
   if (!isOpen) return null;
 
@@ -81,6 +164,7 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
     if (type === 'checkbox') {
       const checked = (e.target as HTMLInputElement).checked;
       setFormData((prev) => ({ ...prev, [name]: checked }));
+
     } else {
       setFormData((prev) => ({ ...prev, [name]: value }));
     }
@@ -99,24 +183,60 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
     });
   };
 
+  const resolveErrorMessage = (rawError: string): string => {
+    if (rawError.includes('emailExists')) {
+      return t('employees.messages.emailExists', { value: formData.email });
+    }
+    if (rawError.includes('usernameExists')) {
+      return t('employees.messages.usernameExists', { value: formData.username || '' });
+    }
+    if (rawError.includes('duplicateAssignmentUnit')) {
+      return t('employees.fields.duplicateAssignmentUnit');
+    }
+    if (rawError.includes('invalidBirthday')) {
+      return t('employees.import.errors.invalidBirthday', { value: formData.ngay_sinh });
+    }
+    return t(rawError);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.ho_ten.trim()) {
-      setErrorKey(t('employees.validation.nameRequired'));
+      const msg = t('employees.validation.nameRequired');
+      setErrorKey(msg);
+      formRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     if (!formData.email.trim()) {
-      setErrorKey(t('employees.validation.emailRequired'));
+      const msg = t('employees.validation.emailRequired');
+      setErrorKey(msg);
+      formRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
-    if (!initialData && !formData.ngay_sinh) {
-      setErrorKey(t('employees.validation.birthdayRequired'));
+
+    let isoBirthday: string | null = null;
+    if (formData.ngay_sinh) {
+      isoBirthday = parseToIso(formData.ngay_sinh);
+      if (!isoBirthday) {
+        const msg = t('employees.import.errors.invalidBirthday', { value: formData.ngay_sinh });
+        setErrorKey(msg);
+        formRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+    } else if (!initialData) {
+      const msg = t('employees.validation.birthdayRequired');
+      setErrorKey(msg);
+      formRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
+
     if (formData.sdt && !/^(0|\+84)[1-9][0-9]{7,9}$/.test(formData.sdt.replace(/\s+/g, ''))) {
-      setErrorKey(t('employees.validation.phoneInvalid'));
+      const msg = t('employees.validation.phoneInvalid');
+      setErrorKey(msg);
+      formRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
+
 
     try {
       let payload: EmployeeCreatePayload | EmployeeUpdatePayload;
@@ -126,13 +246,52 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
         payload = {
           email: formData.email.trim(),
           sdt: formData.sdt.trim(),
-          ngay_sinh: formData.ngay_sinh,
+          ngay_sinh: isoBirthday || formData.ngay_sinh,
         };
       } else {
+        if (!initialData && !formData.chuc_vu_id) {
+          const msg = t('employees.validation.positionRequired');
+          setErrorKey(msg);
+          formRef.current?.scrollTo?.({ top: 0, behavior: 'smooth' });
+          return;
+        }
+
+        // Validate assignments kiêm nhiệm
+        if (formData.assignments.length > 0) {
+          const pUnit = formData.don_vi_id;
+          for (const a of formData.assignments) {
+            if (!a.don_vi_id) {
+              const msg = t('employees.fields.duplicateAssignmentUnit');
+              setErrorKey(msg);
+              formRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+              return;
+            }
+            if (!a.chuc_vu_id) {
+              const msg = t('employees.validation.positionRequired');
+              setErrorKey(msg);
+              formRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+              return;
+            }
+            if (a.don_vi_id === pUnit) {
+              const msg = t('employees.fields.duplicateAssignmentUnit');
+              setErrorKey(msg);
+              formRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+              return;
+            }
+          }
+          const seenUnits = new Set(formData.assignments.map((a) => a.don_vi_id));
+          if (seenUnits.size !== formData.assignments.length) {
+            const msg = t('employees.fields.duplicateAssignmentUnit');
+            setErrorKey(msg);
+            formRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+            return;
+          }
+        }
+
         payload = {
           ho_ten: formData.ho_ten.trim(),
           email: formData.email.trim(),
-          ngay_sinh: formData.ngay_sinh,
+          ngay_sinh: isoBirthday || formData.ngay_sinh,
           don_vi_id: formData.don_vi_id ? Number(formData.don_vi_id) : null,
           chuc_vu_id: formData.chuc_vu_id ? Number(formData.chuc_vu_id) : null,
           chuc_danh: formData.chuc_danh.trim(),
@@ -141,6 +300,11 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
           trang_thai: formData.trang_thai,
           is_public: formData.is_public,
           ghi_chu: formData.ghi_chu.trim(),
+          assignments: formData.assignments.map((a) => ({
+            don_vi_id: Number(a.don_vi_id),
+            chuc_vu_id: Number(a.chuc_vu_id),
+            chuc_danh: a.chuc_danh.trim(),
+          })),
         };
 
         if (!initialData) {
@@ -160,28 +324,30 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
         onClose();
       }
     } catch (err: unknown) {
+      let resolvedMsg = t('employees.messages.saveError');
       if (err instanceof ApiError) {
         const detail = err.data?.detail || err.data?.error || err.data?.message;
         if (typeof detail === 'string') {
-          setErrorKey(t(detail));
+          resolvedMsg = resolveErrorMessage(detail);
         } else if (err.data && typeof err.data === 'object') {
           const firstKey = Object.keys(err.data)[0];
           const val = (err.data as Record<string, unknown>)[firstKey];
           if (Array.isArray(val) && val.length > 0) {
-            setErrorKey(t(String(val[0])));
+            resolvedMsg = resolveErrorMessage(String(val[0]));
           } else if (typeof val === 'string') {
-            setErrorKey(t(val));
+            resolvedMsg = resolveErrorMessage(val);
           } else {
-            setErrorKey(t(err.message));
+            resolvedMsg = resolveErrorMessage(err.message);
           }
         } else {
-          setErrorKey(t(err.message));
+          resolvedMsg = resolveErrorMessage(err.message);
         }
       } else if (err instanceof Error) {
-        setErrorKey(t(err.message));
-      } else {
-        setErrorKey(t('employees.messages.saveError'));
+        resolvedMsg = resolveErrorMessage(err.message);
       }
+
+      setErrorKey(resolvedMsg);
+      formRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
 
@@ -195,7 +361,7 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-backdrop backdrop-blur-sm animate-fade-in">
-      <div className="bg-surface border border-border rounded-xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden animate-scale-up">
+      <div className="bg-surface border border-border rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden animate-scale-up">
         {/* Modal Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-surface-elevated">
           <div className="flex items-center gap-3">
@@ -223,28 +389,49 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
         {/* Modal Content */}
         {createdPassword ? (
           <div className="p-6 space-y-6">
-            <div className="p-5 bg-success-subtle border border-success-border rounded-xl text-center space-y-3">
-              <div className="w-12 h-12 rounded-full bg-success text-white flex items-center justify-center mx-auto text-xl">
+            <div className="p-6 bg-success-subtle border border-success-border rounded-xl text-center space-y-5">
+              <div className="w-14 h-14 rounded-full bg-success text-white flex items-center justify-center mx-auto text-2xl shadow-sm">
                 <i className="fa-solid fa-check" />
               </div>
-              <h3 className="font-bold text-lg text-main">
+              <h3 className="font-bold text-xl text-main">
                 {t('employees.created.successTitle')}
               </h3>
               <p className="text-sm text-secondary">
                 {t('employees.created.passwordNotice')}
               </p>
-              <div className="flex items-center justify-center gap-3 pt-2">
-                <span className="font-mono text-xl font-bold px-4 py-2 bg-surface border border-border rounded-lg text-main select-all tracking-wider">
-                  {createdPassword}
-                </span>
-                <Button
+
+              {/* Cụm hiển thị mật khẩu: click vào mật khẩu hoặc bấm icon copy đều tự động sao chép */}
+              <div className="flex flex-col items-center justify-center gap-2 pt-1">
+                <button
                   type="button"
-                  variant="secondary"
                   onClick={handleCopyPassword}
-                  icon={isCopied ? 'fa-check' : 'fa-copy'}
+                  title={isCopied ? t('employees.created.copied') : t('employees.created.copyPassword')}
+                  aria-label={isCopied ? t('employees.created.copied') : t('employees.created.copyPassword')}
+                  className="group relative inline-flex items-center gap-3 px-5 py-2.5 bg-surface border-2 border-border hover:border-primary/60 rounded-xl cursor-pointer shadow-sm hover:shadow transition-all duration-200 select-none active:scale-[0.98]"
                 >
-                  {isCopied ? t('employees.created.copied') : t('employees.created.copyPassword')}
-                </Button>
+                  <span className="font-mono text-xl font-bold tracking-widest text-main group-hover:text-primary transition-colors">
+                    {createdPassword}
+                  </span>
+                  <span
+                    className={`w-9 h-9 rounded-lg transition-colors flex items-center justify-center shrink-0 ${
+                      isCopied
+                        ? 'bg-success text-white'
+                        : 'bg-surface-elevated text-secondary group-hover:text-primary group-hover:bg-primary-subtle'
+                    }`}
+                  >
+                    <i className={`fa-solid ${isCopied ? 'fa-check' : 'fa-copy'} text-base`} />
+                  </span>
+
+                  {isCopied && (
+                    <span className="absolute -top-9 left-1/2 -translate-x-1/2 px-2.5 py-1 text-xs font-semibold bg-success text-white rounded-md shadow-md animate-fade-in pointer-events-none whitespace-nowrap">
+                      {t('employees.created.copied')}
+                    </span>
+                  )}
+                </button>
+                <span className="text-xs text-secondary/80 flex items-center gap-1.5">
+                  <i className="fa-regular fa-hand-pointer text-[11px]" />
+                  {t('employees.created.clickToCopy')}
+                </span>
               </div>
             </div>
 
@@ -255,7 +442,7 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
             </div>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-4">
+          <form ref={formRef} onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-4">
             {isSelfEditOnly && (
               <div className="p-3 text-xs bg-primary-subtle text-primary border border-primary-border rounded-lg flex items-center gap-2">
                 <i className="fa-solid fa-circle-info text-sm shrink-0" />
@@ -264,9 +451,26 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
             )}
 
             {errorKey && (
-              <div className="p-3 text-sm text-danger bg-danger-subtle border border-danger-border rounded-lg flex items-center gap-2">
-                <i className="fa-solid fa-circle-exclamation shrink-0" />
-                <span>{errorKey}</span>
+              <div className="p-4 text-sm text-danger bg-danger-subtle border-2 border-danger rounded-xl flex items-start gap-3 shadow-md animate-shake">
+                <div className="w-8 h-8 rounded-full bg-danger text-white flex items-center justify-center shrink-0 mt-0.5 text-base">
+                  <i className="fa-solid fa-triangle-exclamation" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="font-bold text-danger text-sm mb-0.5">
+                    {t('employees.messages.saveError')}
+                  </h4>
+                  <p className="text-danger leading-relaxed font-semibold">
+                    {errorKey}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setErrorKey(null)}
+                  className="text-danger hover:opacity-75 transition-opacity p-1 text-base"
+                  title={t('employees.actions.close')}
+                >
+                  <i className="fa-solid fa-xmark" />
+                </button>
               </div>
             )}
 
@@ -344,19 +548,53 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                 </div>
               ) : null}
 
-              {/* Ngày sinh */}
+              {/* Ngày sinh (Định dạng DD/MM/YYYY) */}
               <div>
                 <label className="block text-sm font-semibold text-secondary mb-1.5">
                   {t('employees.fields.birthday')} {!initialData && <span className="text-danger">*</span>}
                 </label>
-                <input
-                  type="date"
-                  name="ngay_sinh"
-                  value={formData.ngay_sinh}
-                  onChange={handleChange}
-                  className="w-full px-3.5 py-2 text-sm bg-surface-elevated border border-border rounded-lg text-main focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
-                  required={!initialData}
-                />
+                <div className="relative flex items-center">
+                  <input
+                    type="text"
+                    name="ngay_sinh"
+                    value={formData.ngay_sinh}
+                    onChange={(e) => {
+                      let val = e.target.value.replace(/[^\d/]/g, '');
+                      if (/^\d{2}$/.test(val) && !formData.ngay_sinh.endsWith('/')) {
+                        val = val + '/';
+                      } else if (/^\d{2}\/\d{2}$/.test(val) && !formData.ngay_sinh.endsWith('/')) {
+                        val = val + '/';
+                      }
+                      if (val.length <= 10) {
+                        setFormData((prev) => ({ ...prev, ngay_sinh: val }));
+                      }
+                      if (errorKey) setErrorKey(null);
+                    }}
+                    placeholder="DD/MM/YYYY"
+                    maxLength={10}
+                    className="w-full pl-3.5 pr-10 py-2 text-sm bg-surface-elevated border border-border rounded-lg text-main placeholder-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+                    required={!initialData}
+                  />
+                  <label
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-primary cursor-pointer transition-colors p-1"
+                    title="Chọn ngày sinh từ lịch"
+                  >
+                    <i className="fa-solid fa-calendar-days text-sm" />
+                    <input
+                      type="date"
+                      className="sr-only"
+                      onChange={(e) => {
+                        const iso = e.target.value;
+                        if (iso) {
+                          const [y, m, d] = iso.split('-');
+                          setFormData((prev) => ({ ...prev, ngay_sinh: `${d}/${m}/${y}` }));
+                          if (errorKey) setErrorKey(null);
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+                <span className="text-xs text-muted block mt-1">Định dạng: DD/MM/YYYY (Ví dụ: 15/06/2003)</span>
               </div>
 
               {/* Số điện thoại */}
@@ -403,6 +641,7 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                   label={t('employees.fields.position')}
                   name="chuc_vu_id"
                   value={formData.chuc_vu_id}
+                  required={!isSelfEditOnly}
                   disabled={isSelfEditOnly}
                   onChange={(val) => {
                     setFormData((prev) => ({ ...prev, chuc_vu_id: val }));
@@ -418,7 +657,7 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                 />
               </div>
 
-              {/* Chức danh tự do */}
+              {/* Chức danh */}
               <div>
                 <label className="block text-sm font-semibold text-secondary mb-1.5">
                   {t('employees.fields.title')}
@@ -466,6 +705,93 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                 </span>
               </div>
             </div>
+
+            {/* Phân công kiêm nhiệm (Đa phòng ban & chức vụ - Yêu cầu 3) */}
+            {!isSelfEditOnly && (
+              <div className="border border-border rounded-xl p-4 bg-surface-elevated space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <i className="fa-solid fa-network-wired text-primary" />
+                    <span className="text-sm font-semibold text-main">
+                      {t('employees.fields.concurrentAssignments')}
+                    </span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleAddAssignment}
+                    icon="fa-plus"
+                  >
+                    {t('employees.fields.addAssignment')}
+                  </Button>
+                </div>
+
+                {formData.assignments.length === 0 ? (
+                  <p className="text-xs text-muted italic">
+                    {t('employees.fields.noAssignments')}
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {formData.assignments.map((item, idx) => (
+                      <div
+                        key={idx}
+                        className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 p-3 bg-surface border border-border rounded-lg"
+                      >
+                        <div className="flex-1">
+                          <Select
+                            name={`assign_unit_${idx}`}
+                            value={item.don_vi_id}
+                            onChange={(val) =>
+                              handleAssignmentChange(idx, 'don_vi_id', val)
+                            }
+                            placeholder={t('employees.placeholders.selectUnit')}
+                            options={units.map((u) => ({
+                              value: String(u.id),
+                              label: u.ten,
+                              group: u.khoi_ten || undefined,
+                            }))}
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <Select
+                            name={`assign_pos_${idx}`}
+                            value={item.chuc_vu_id}
+                            onChange={(val) =>
+                              handleAssignmentChange(idx, 'chuc_vu_id', val)
+                            }
+                            placeholder={t('employees.placeholders.selectPosition')}
+                            options={positions.map((pos) => ({
+                              value: String(pos.id),
+                              label: pos.name,
+                            }))}
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <input
+                            type="text"
+                            value={item.chuc_danh}
+                            onChange={(e) =>
+                              handleAssignmentChange(idx, 'chuc_danh', e.target.value)
+                            }
+                            placeholder={t('employees.fields.assignmentTitle')}
+                            className="w-full px-3 py-2 text-sm bg-surface-elevated border border-border rounded-lg text-main placeholder-muted focus:outline-none focus:border-primary"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveAssignment(idx)}
+                          className="p-2 text-danger hover:bg-danger-subtle rounded-lg transition-colors shrink-0 self-end sm:self-center"
+                          title={t('employees.fields.removeAssignment')}
+                        >
+                          <i className="fa-solid fa-trash-can" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Nhóm quyền (RBAC) */}
             {groups.length > 0 && (

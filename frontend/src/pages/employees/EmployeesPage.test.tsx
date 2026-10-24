@@ -30,7 +30,7 @@ const mockEmployeeData = [
     username: 'binhnv',
     email: 'binhnv@donvi.gov.vn',
     ho_ten: 'Nguyễn Văn Bình',
-    ngay_sinh: '20/05/----',
+    ngay_sinh: '20/05/19xx',
     is_birthday_masked: true,
     don_vi_id: 1,
     don_vi_ten: 'Văn phòng Viện',
@@ -46,6 +46,16 @@ const mockEmployeeData = [
     ghi_chu: 'Ghi chú nhân viên',
     nhom_quyen: [],
     has_sensitive_permission: false,
+    assignments: [
+      {
+        id: 10,
+        don_vi_id: 2,
+        don_vi_ten: 'Phòng Kế toán',
+        chuc_vu_id: 2,
+        chuc_vu_ten: 'Phó phòng',
+        chuc_danh: 'Phó phòng kiêm nhiệm',
+      },
+    ],
     created_at: '2026-01-15T08:00:00Z',
     updated_at: '2026-01-15T08:00:00Z',
   },
@@ -54,7 +64,7 @@ const mockEmployeeData = [
     username: 'hungtv',
     email: 'hungtv@donvi.gov.vn',
     ho_ten: 'Trần Văn Hùng',
-    ngay_sinh: '1988-10-15',
+    ngay_sinh: '15/10/1988',
     is_birthday_masked: false,
     don_vi_id: 2,
     don_vi_ten: 'Phòng Kế toán',
@@ -70,6 +80,7 @@ const mockEmployeeData = [
     ghi_chu: '',
     nhom_quyen: [{ id: 1, name: 'Lãnh đạo đơn vị' }],
     has_sensitive_permission: true,
+    assignments: [],
     created_at: '2026-01-10T08:00:00Z',
     updated_at: '2026-01-10T08:00:00Z',
   },
@@ -79,12 +90,16 @@ describe('EmployeesPage Component (Issue #24)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetPermissionsCache();
-    mockedApiClient.mockImplementation(async (endpoint: string) => {
+    mockedApiClient.mockImplementation(async (endpoint: string, options?: RequestInit) => {
+      if (options?.method === 'POST') {
+        return mockedApiClient.post(endpoint, options.body, options);
+      }
       if (endpoint.includes('/api/auth/me/permissions/')) {
         return {
           is_superuser: true,
           permissions: [
             'view_list_cbnv',
+            'export_cbnv',
             'add_cbnv',
             'change_full_cbnv',
             'change_self_cbnv',
@@ -102,8 +117,9 @@ describe('EmployeesPage Component (Issue #24)', () => {
       }
       if (endpoint.includes('/api/positions/')) {
         return [
-          { id: 1, name: 'Chuyên viên', display_order: 1, is_public: true, note: '' },
-          { id: 2, name: 'Trưởng phòng', display_order: 2, is_public: true, note: '' },
+          { id: 1, name: 'Quản trị viên', display_order: 1, is_public: true, note: '' },
+          { id: 2, name: 'Chuyên viên', display_order: 2, is_public: true, note: '' },
+          { id: 3, name: 'Trưởng phòng', display_order: 3, is_public: true, note: '' },
         ];
       }
       if (endpoint.includes('/accounts/groups/')) {
@@ -148,8 +164,8 @@ describe('EmployeesPage Component (Issue #24)', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('20/05/----')).toBeInTheDocument();
-      expect(screen.getByText('1988-10-15')).toBeInTheDocument();
+      expect(screen.getByText('20/05/19xx')).toBeInTheDocument();
+      expect(screen.getByText('15/10/1988')).toBeInTheDocument();
     });
   });
 
@@ -170,6 +186,36 @@ describe('EmployeesPage Component (Issue #24)', () => {
     await waitFor(() => {
       expect(screen.getByText('Thêm Mới Cán Bộ Nhân Viên')).toBeInTheDocument();
     });
+  });
+
+  it('requires an explicit position instead of defaulting a new employee to the first position', async () => {
+    const { container } = render(
+      <MemoryRouter>
+        <EmployeesPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Nguyễn Văn Bình')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Thêm nhân viên/i }));
+    await screen.findByText('Thêm Mới Cán Bộ Nhân Viên');
+
+    expect(container.querySelector('input[name="chuc_vu_id"]')).toHaveValue('');
+
+    fireEvent.change(container.querySelector('input[name="ho_ten"]')!, {
+      target: { value: 'Nhân viên kiểm tra chức vụ' },
+    });
+    fireEvent.change(container.querySelector('input[name="email"]')!, {
+      target: { value: 'position-required@donvi.gov.vn' },
+    });
+    fireEvent.change(container.querySelector('input[name="ngay_sinh"]')!, {
+      target: { value: '01/01/1990' },
+    });
+    fireEvent.submit(container.querySelector('form')!);
+
+    expect(await screen.findByText('Vui lòng chọn chức vụ cho cán bộ nhân viên.')).toBeInTheDocument();
+    expect(mockedApiClient.post).not.toHaveBeenCalled();
   });
 
   it('opens import modal on clicking Import Excel button', async () => {
@@ -242,10 +288,11 @@ describe('EmployeesPage Component (Issue #24)', () => {
       expect(screen.getByText('Nguyễn Văn Bình')).toBeInTheDocument();
     });
 
-    // Header buttons should be hidden
+    // Header administrative buttons should be hidden
     expect(screen.queryByRole('button', { name: /Thêm nhân viên/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Nhập từ Excel/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Tải mẫu/i })).not.toBeInTheDocument();
+    // Export Excel is gated by export_cbnv and must be hidden
+    expect(screen.queryByRole('button', { name: /Xuất Excel/i })).not.toBeInTheDocument();
 
     // Row edit and delete buttons should be hidden
     expect(screen.queryByTitle('Chỉnh sửa')).not.toBeInTheDocument();
@@ -364,16 +411,101 @@ describe('EmployeesPage Component (Issue #24)', () => {
       expect(screen.getByText('Xác nhận xóa cán bộ nhân viên')).toBeInTheDocument();
     });
 
+    const passwordInput = screen.getByPlaceholderText(/Nhập mật khẩu/i);
+    fireEvent.change(passwordInput, { target: { value: 'Admin@123' } });
+
+    const confirmCheck = screen.getByRole('checkbox');
+    fireEvent.click(confirmCheck);
+
     // The modal's confirm button is the last button with text "Xóa"
     const deleteActionBtns = screen.getAllByRole('button', { name: /^Xóa$/i });
     const confirmBtn = deleteActionBtns[deleteActionBtns.length - 1];
+    expect(confirmBtn).not.toBeDisabled();
     fireEvent.click(confirmBtn);
 
-    expect(mockedApiClient.delete).toHaveBeenCalled();
+    expect(mockedApiClient.delete).toHaveBeenCalledWith(
+      '/api/accounts/employees/1/',
+      expect.objectContaining({
+        body: JSON.stringify({ password: 'Admin@123' }),
+      })
+    );
 
     await waitFor(() => {
       expect(screen.getByText('Bạn không thể tự xóa tài khoản của chính mình.')).toBeInTheDocument();
     });
+  });
+
+  it('requires password and confirmation checkbox to delete employee', async () => {
+    const targetEmployee = {
+      ...mockEmployeeData[0],
+      id: 99,
+      ho_ten: 'Lê Văn Thử',
+      don_vi_id: 1,
+      don_vi_ten: 'Văn phòng Viện',
+    };
+
+    mockedApiClient.mockImplementation(async (endpoint: string) => {
+      if (endpoint.includes('/api/auth/me/permissions/')) {
+        return {
+          is_superuser: true,
+          permissions: ['view_list_cbnv', 'delete_cbnv'],
+        };
+      }
+      if (endpoint.includes('/accounts/employees/')) {
+        return {
+          count: 1,
+          next: null,
+          previous: null,
+          results: [targetEmployee],
+        };
+      }
+      return [];
+    });
+
+    mockedApiClient.delete.mockResolvedValueOnce({});
+
+    render(
+      <MemoryRouter>
+        <EmployeesPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Lê Văn Thử')).toBeInTheDocument();
+    });
+
+    // 1. Bấm nút xóa cán bộ
+    const deleteBtn = screen.getByTitle('Xóa');
+    fireEvent.click(deleteBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText('Xác nhận xóa cán bộ nhân viên')).toBeInTheDocument();
+    });
+
+    // 2. Nút Xóa phải bị vô hiệu hóa khi chưa nhập mật khẩu và chưa tick checkbox xác nhận
+    const deleteActionBtns = screen.getAllByRole('button', { name: /^Xóa$/i });
+    const confirmBtn = deleteActionBtns[deleteActionBtns.length - 1];
+    expect(confirmBtn).toBeDisabled();
+
+    // Nhập mật khẩu
+    const passwordInput = screen.getByPlaceholderText(/Nhập mật khẩu/i);
+    fireEvent.change(passwordInput, { target: { value: 'Admin@123' } });
+
+    // Tick vào checkbox
+    const checkbox = screen.getByRole('checkbox');
+    fireEvent.click(checkbox);
+
+    // 4. Nút Xóa được kích hoạt
+    expect(confirmBtn).not.toBeDisabled();
+    fireEvent.click(confirmBtn);
+
+    // 5. API DELETE được gọi với body chứa password
+    expect(mockedApiClient.delete).toHaveBeenCalledWith(
+      '/api/accounts/employees/99/',
+      expect.objectContaining({
+        body: JSON.stringify({ password: 'Admin@123' }),
+      })
+    );
   });
 
   it('displays localized row errors when excel import fails with error codes', async () => {
@@ -429,9 +561,197 @@ describe('EmployeesPage Component (Issue #24)', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Dữ liệu tệp Excel chứa lỗi. Vui lòng kiểm tra lại theo danh sách bên dưới.')).toBeInTheDocument();
-      expect(screen.getByText(/Địa chỉ email đã tồn tại trong hệ thống/i)).toBeInTheDocument();
+      expect(screen.getByText(/Địa chỉ email.*đã tồn tại/i)).toBeInTheDocument();
       expect(screen.getByText(/Không tìm thấy Đơn vị có tên 'Phòng Ảo' trong hệ thống/i)).toBeInTheDocument();
     });
   });
+
+  it('clears file and error cache when clicking remove file or close button (x)', async () => {
+    mockedApiClient.post.mockRejectedValue({
+      status: 400,
+      data: {
+        success: false,
+        message: 'employees.messages.importHasErrors',
+        errors: [
+          {
+            row: 4,
+            field: 'email',
+            code: 'employees.messages.emailExists',
+            value: 'dup@donvi.gov.vn',
+            message: "Email 'dup@donvi.gov.vn' đã tồn tại trong hệ thống.",
+          },
+        ],
+      },
+    });
+
+    render(
+      <MemoryRouter>
+        <EmployeesPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Nguyễn Văn Bình')).toBeInTheDocument();
+    });
+
+    // 1. Mở modal nhập Excel
+    const importBtn = screen.getByRole('button', { name: /Nhập từ Excel/i });
+    fireEvent.click(importBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText('Nhập Danh Sách CBNV Từ Excel')).toBeInTheDocument();
+    });
+
+    // 2. Chọn file lỗi và nhấn nạp
+    const file = new File(['error content'], 'mau_danh_sach_cbnv (1).xlsx', {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const fileInput = document.querySelector<HTMLInputElement>('input[type="file"]')!;
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    expect(screen.getByText('mau_danh_sach_cbnv (1).xlsx')).toBeInTheDocument();
+
+    const submitBtn = screen.getByRole('button', { name: /Tiến hành nạp dữ liệu/i });
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText('Dữ liệu tệp Excel chứa lỗi. Vui lòng kiểm tra lại theo danh sách bên dưới.')).toBeInTheDocument();
+      expect(screen.getByText(/Địa chỉ email.*đã tồn tại/i)).toBeInTheDocument();
+    });
+
+    // 3. Bấm nút "Xóa tệp đã chọn" (nút x tại preview file) -> xóa cache dữ liệu cũ ngay trên màn hình
+    const removeFileBtn = screen.getByTitle('Xóa tệp đã chọn');
+    fireEvent.click(removeFileBtn);
+
+    expect(screen.queryByText('mau_danh_sach_cbnv (1).xlsx')).not.toBeInTheDocument();
+    expect(screen.queryByText('Dữ liệu tệp Excel chứa lỗi. Vui lòng kiểm tra lại theo danh sách bên dưới.')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Địa chỉ email.*đã tồn tại/i)).not.toBeInTheDocument();
+
+    // 4. Chọn lại file và nạp lại để có lỗi
+    const newFileInput = document.querySelector<HTMLInputElement>('input[type="file"]')!;
+    fireEvent.change(newFileInput, { target: { files: [file] } });
+    fireEvent.click(screen.getByRole('button', { name: /Tiến hành nạp dữ liệu/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Địa chỉ email.*đã tồn tại/i)).toBeInTheDocument();
+    });
+
+    // 5. Bấm nút "x" ở góc trên bên phải modal để đóng
+    const closeHeaderBtn = screen.getByTitle('Đóng');
+    fireEvent.click(closeHeaderBtn);
+
+    // Modal đã đóng
+    await waitFor(() => {
+      expect(screen.queryByText('Nhập Danh Sách CBNV Từ Excel')).not.toBeInTheDocument();
+    });
+
+    // 6. Mở lại modal -> toàn bộ dữ liệu lỗi và file cũ đã bị xóa sạch (cache clear)
+    fireEvent.click(screen.getByRole('button', { name: /Nhập từ Excel/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Nhập Danh Sách CBNV Từ Excel')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText('mau_danh_sach_cbnv (1).xlsx')).not.toBeInTheDocument();
+    expect(screen.queryByText('Dữ liệu tệp Excel chứa lỗi. Vui lòng kiểm tra lại theo danh sách bên dưới.')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Địa chỉ email.*đã tồn tại/i)).not.toBeInTheDocument();
+    expect(screen.getByText('Kéo thả tệp .xlsx vào đây hoặc bấm để chọn tệp')).toBeInTheDocument();
+  });
+
+  it('supports selecting and importing valid .xlsx Excel files', async () => {
+    mockedApiClient.post.mockResolvedValue({
+      success: true,
+      message: 'employees.messages.importSuccess',
+      created_count: 2,
+    });
+
+    render(
+      <MemoryRouter>
+        <EmployeesPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Nguyễn Văn Bình')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Nhập từ Excel/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Nhập Danh Sách CBNV Từ Excel')).toBeInTheDocument();
+    });
+
+    const file = new File(['xls dummy content'], 'danh_sach.xlsx', {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const fileInput = document.querySelector<HTMLInputElement>('input[type="file"]')!;
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    expect(screen.getByText('danh_sach.xlsx')).toBeInTheDocument();
+
+    const submitBtn = screen.getByRole('button', { name: /Tiến hành nạp dữ liệu/i });
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText('Nhập thành công cán bộ nhân viên từ Excel!')).toBeInTheDocument();
+    });
+  });
+
+  it('renders concurrent assignments badge on employee unit cell', async () => {
+    render(
+      <MemoryRouter>
+        <EmployeesPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Nguyễn Văn Bình')).toBeInTheDocument();
+    });
+
+    // Cán bộ 1 có 1 phòng ban kiêm nhiệm -> hiển thị badge '+1 kiêm nhiệm'
+    expect(screen.getByText('+1 kiêm nhiệm')).toBeInTheDocument();
+  });
+
+  it('triggers export excel download on clicking Export Excel button', async () => {
+    const mockBlob = new Blob(['test-excel-content'], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    vi.mocked(apiClientModule.downloadBlob).mockReturnValue(undefined);
+
+    mockedApiClient.mockImplementation(async (endpoint: string) => {
+      if (endpoint.includes('/accounts/employees/export/')) {
+        return mockBlob;
+      }
+      if (endpoint.includes('/api/auth/me/permissions/')) {
+        return { is_superuser: false, permissions: ['view_list_cbnv', 'export_cbnv'] };
+      }
+      if (endpoint.includes('/accounts/employees/')) {
+        return { count: 2, next: null, previous: null, results: mockEmployeeData };
+      }
+      return [];
+    });
+
+    render(
+      <MemoryRouter>
+        <EmployeesPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Nguyễn Văn Bình')).toBeInTheDocument();
+    });
+
+    const exportBtn = screen.getByRole('button', { name: /Xuất Excel/i });
+    expect(exportBtn).toBeInTheDocument();
+    fireEvent.click(exportBtn);
+
+    await waitFor(() => {
+      expect(apiClientModule.downloadBlob).toHaveBeenCalledWith(
+        expect.stringContaining('/api/accounts/employees/export/'),
+        'danh_sach_cbnv.xlsx'
+      );
+    });
+  });
 });
+
 

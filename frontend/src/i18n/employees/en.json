@@ -25,7 +25,9 @@
       "cancel": "Cancel",
       "save": "Save Changes",
       "create": "Create Employee",
-      "close": "Close"
+      "close": "Close",
+      "exportExcel": "Export Excel",
+      "exporting": "Exporting..."
     },
     "table": {
       "employee": "Employee",
@@ -57,7 +59,7 @@
       "unit": "Unit / Department",
       "region": "Region",
       "position": "Position",
-      "title": "Custom Title",
+      "title": "Title",
       "status": "Employment Status",
       "groups": "Permission Groups (RBAC)",
       "notes": "Notes",
@@ -65,7 +67,16 @@
       "isPublicHelp": "Allow contact details to appear in the internal employee directory.",
       "public": "Public",
       "internalOnly": "Internal",
-      "joined": "Joined Date"
+      "joined": "Joined Date",
+      "concurrentAssignments": "Concurrent Units & Positions",
+      "addAssignment": "Add Concurrent Unit",
+      "noAssignments": "No concurrent assignments.",
+      "assignmentUnit": "Concurrent Unit",
+      "assignmentPosition": "Concurrent Position",
+      "assignmentTitle": "Concurrent Title (Optional)",
+      "removeAssignment": "Remove",
+      "concurrentBadge": "+{count} concurrent",
+      "duplicateAssignmentUnit": "Concurrent unit cannot duplicate primary or selected units."
     },
     "placeholders": {
       "search": "Search by name, username, email, phone...",
@@ -98,7 +109,8 @@
       "successTitle": "Employee Created Successfully!",
       "passwordNotice": "A system account and temporary password have been generated. Please copy and provide it to the employee:",
       "copyPassword": "Copy Password",
-      "copied": "Copied!"
+      "copied": "Copied!",
+      "clickToCopy": "Click password or icon to copy"
     },
     "detail": {
       "title": "Employee Details",
@@ -106,7 +118,10 @@
     },
     "delete": {
       "confirmTitle": "Confirm Employee Deletion",
-      "confirmDesc": "Are you sure you want to delete employee \"{name}\"? The associated user account will also be permanently deleted."
+      "confirmDesc": "Are you sure you want to delete employee \"{name}\"? The associated user account will also be permanently deleted.",
+      "passwordLabel": "Your confirmation password",
+      "passwordPlaceholder": "Enter your login password...",
+      "confirmCheckbox": "I confirm that I want to delete this employee from the system."
     },
     "import": {
       "title": "Import Employees From Excel",
@@ -143,13 +158,16 @@
         "duplicateEmailInFile": "Email '{value}' is duplicated within the Excel file.",
         "unitRequired": "Unit / Department name is required.",
         "positionRequired": "Position name is required."
-      }
+      },
+      "removeFile": "Remove selected file"
     },
     "validation": {
       "nameRequired": "Employee full name is required.",
       "emailRequired": "Email address is required.",
       "birthdayRequired": "Birthday is required.",
-      "phoneInvalid": "Phone number is not valid."
+      "phoneInvalid": "Phone number is not valid.",
+      "roleRequired": "Please select at least one role/group for the employee.",
+      "positionRequired": "Please select a position for the employee."
     },
     "messages": {
       "fetchError": "Failed to load employee list.",
@@ -174,19 +192,26 @@
       "invalidDataFormat": "Request data must be a JSON object.",
       "invalidOrdering": "Invalid ordering parameter.",
       "invalidFilterParam": "Filter parameter is invalid.",
-      "emailExists": "Email address already exists in the system.",
-      "usernameExists": "Username already exists in the system.",
+      "emailExists": "Email address '{value}' already exists in the system.",
+      "usernameExists": "Username '{value}' already exists in the system.",
       "unitNotFound": "Unit '{value}' was not found in the system.",
       "unitAmbiguous": "Unit '{value}' is ambiguous across multiple regions. Please specify clearly.",
       "positionNotFound": "Position '{value}' was not found in the system.",
       "fileRequired": "Please select an Excel (.xlsx) file to upload.",
-      "fileInvalidType": "Unsupported file format. Please upload a .xlsx file.",
+      "fileInvalidType": "File format not supported. Please use a .xlsx file.",
       "importHasErrors": "The Excel file contains errors. Please review the details below.",
       "importSuccess": "Successfully imported employees from Excel!",
       "saveError": "Failed to save employee profile.",
       "loading": "Loading data...",
       "noData": "No employees found",
-      "noDataHelp": "Try adjusting your search query or filters."
+      "noDataHelp": "Try adjusting your search query or filters.",
+      "exportSuccess": "Employee list exported to Excel successfully!",
+      "exportError": "Failed to export employee list. Please try again.",
+      "duplicateAssignmentUnit": "Concurrent unit cannot duplicate primary or selected units.",
+      "assignmentTitleTooLong": "Concurrent assignment title must not exceed 150 characters.",
+      "invalidPassword": "The confirmation password is incorrect. Please try again.",
+      "deleteRequiresPassword": "Please enter your confirmation password.",
+      "deleteRequiresConfirmation": "Please check the confirmation box before deleting."
     },
     "pagination": {
       "showing": "Showing {from} - {to} of {total} employees"

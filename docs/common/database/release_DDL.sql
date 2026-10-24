@@ -1,4 +1,13 @@
 -- =====================================================================
+-- THAY ĐỔI CÁN BỘ NHÂN VIÊN (Nhóm 7; issue #24; đánh dấu [CBNV] tại vị trí)
+-- Căn cứ: issue #24; accounts 0010_employeeassignment/0011_employeeassignment_fk_cascade_ddl;
+--   authorization 0009_add_export_cbnv_permission.
+--   1) Thêm accounts_employee_assignment với các cột employee_id, don_vi_id, chuc_vu_id,
+--      chuc_danh và ràng buộc UNIQUE (employee_id, don_vi_id, chuc_vu_id).
+--   2) Thêm quyền export_cbnv cho các nhóm TP, BGD, ADMIN.
+-- Quy mô sau [CBNV] (nạp sạch): 58 bảng vật lý | 20 kiểu ENUM | 78 quyền thao tác | 7 nhóm quyền chuẩn | 208 lượt phân quyền.
+-- =====================================================================
+-- =====================================================================
 -- THAY ĐỔI NHÓM QUYỀN BỔ SUNG (Nhóm 7; issue #228; đánh dấu [NQBS] tại vị trí)
 -- Căn cứ: bảng nhóm quyền mặc định theo 25 chức vụ (nhóm trưởng chốt 21/10/2026, PR #211).
 --   Thêm 2 nhóm chuẩn chỉ chứa quyền cộng thêm, gán cùng nhóm CV:
@@ -132,7 +141,7 @@
 -- =====================================================================
 -- HỆ THỐNG QUẢN LÝ VĂN BẢN VÀ TÀI LIỆU (QLVB&TL) — PostgreSQL DDL
 -- Sinh tự động & đồng bộ từ đặc tả: CSDL QLVB&TL.md
--- Quy mô: 61 bảng vật lý | 21 kiểu ENUM | 81 quyền thao tác | 5 nhóm quyền chuẩn | 206 lượt phân quyền
+-- Quy mô: 58 bảng vật lý | 20 kiểu ENUM | 78 quyền thao tác | 7 nhóm quyền chuẩn | 208 lượt phân quyền
 -- =====================================================================
 -- GHI CHÚ VỀ CÁC QUYẾT ĐỊNH THIẾT KẾ & ĐỒNG BỘ KIẾN TRÚC:
 --
@@ -385,6 +394,23 @@ CREATE TABLE accounts_employee_user_permissions (
     permission_id BIGINT NOT NULL REFERENCES auth_permission (id) ON DELETE CASCADE,
     CONSTRAINT uq_employee_permission UNIQUE (employee_id, permission_id)
 );
+
+-- Phân công kiêm nhiệm của CBNV (Issue #24; đánh dấu [CBNV])
+CREATE TABLE accounts_employee_assignment (
+    id BIGSERIAL PRIMARY KEY,
+    employee_id BIGINT NOT NULL REFERENCES accounts_employee (id) ON DELETE CASCADE,
+    don_vi_id BIGINT NOT NULL REFERENCES organizations_donvi (id) ON DELETE RESTRICT,
+    chuc_vu_id BIGINT NOT NULL REFERENCES accounts_position (id) ON DELETE RESTRICT,
+    chuc_danh VARCHAR(150),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uq_employee_assignment UNIQUE (employee_id, don_vi_id, chuc_vu_id)
+);
+
+CREATE INDEX idx_emp_assign_emp ON accounts_employee_assignment (employee_id);
+
+CREATE INDEX idx_emp_assign_donvi ON accounts_employee_assignment (don_vi_id);
+
+CREATE INDEX idx_emp_assign_chucvu ON accounts_employee_assignment (chuc_vu_id);
 
 -- Ghi chú: spec mới (tab "Đvị, phòngban") không có trường "Trưởng đơn vị"
 -- trên organizations_donvi -> không tạo cột manager_id.
@@ -2144,6 +2170,11 @@ VALUES
         'import_cbnv',
         'CBNV'
     ),
+    (
+        'Xuất Excel danh sách CBNV',
+        'export_cbnv',
+        'CBNV'
+    ),
     -- Văn bản đến (Nhóm 2)
     (
         'Xem danh sách/chi tiết văn bản đến',
@@ -2466,6 +2497,7 @@ WHERE
         'view_loaitailieubieumau',
         'view_list_cbnv',
         'change_self_cbnv',
+        'export_cbnv',
         'view_vanbanden',
         'view_vanbandi',
         'view_read_log_vanbanden',
@@ -2505,6 +2537,7 @@ WHERE
         'view_loaitailieubieumau',
         'view_list_cbnv',
         'change_self_cbnv',
+        'export_cbnv',
         'view_vanbanden',
         'view_vanbandi',
         'view_read_log_vanbanden',

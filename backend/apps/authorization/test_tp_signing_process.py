@@ -32,7 +32,7 @@ class TruongPhongSigningProcessTest(TestCase):
     def test_database_after_migrate_matches_ddl(self):
         tp = Group.objects.get(name="Trưởng phòng")
         self.assertTrue(tp.permissions.filter(codename="manage_signing_process").exists())
-        self.assertEqual(tp.permissions.count(), 28)
+        self.assertEqual(tp.permissions.count(), 29)
 
     def test_migration_grants_missing_permission_once(self):
         tp = Group.objects.get(name="Trưởng phòng")
@@ -43,4 +43,4 @@ class TruongPhongSigningProcessTest(TestCase):
         grant_tp.grant_tp_manage_signing_process(None, SchemaEditorStub)
 
         self.assertEqual(tp.permissions.filter(pk=perm.pk).count(), 1)
-        self.assertEqual(tp.permissions.count(), 28)
+        self.assertEqual(tp.permissions.count(), 29)
