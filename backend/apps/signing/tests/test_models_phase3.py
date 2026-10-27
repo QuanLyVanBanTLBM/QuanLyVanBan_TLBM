@@ -89,8 +89,8 @@ class RequestAttemptTests(Base):
         self.assertEqual(sorted(f.name for f in SigningRequest._meta.concrete_fields), [
             "create_by", "created_at", "document_type", "ghi_chu", "han_chot", "ho_so_goc", "id", "ly_do_huy",
             "ly_do_tu_choi", "ma_bam_tai_lieu", "ngay_gui", "ngay_hoan_thanh", "ngay_huy",
-            "ngay_tu_choi", "phien_ban_quy_trinh", "phien_ban_van_ban", "quy_trinh", "trang_thai",
-            "update_at", "update_by", "van_ban_id", "vi_tri_luu_tep",
+            "ngay_tu_choi", "phien_ban_quy_trinh", "phien_ban_van_ban", "quy_trinh", "so_hieu_van_ban", "trang_thai",
+            "trich_yeu_van_ban", "update_at", "update_by", "van_ban_id", "vi_tri_luu_tep",
         ])
         for loai in ("vanbanden", "vanbanmat"):
             yeu_cau = SigningRequest(document_type=loai, van_ban_id=1, quy_trinh=self.process,

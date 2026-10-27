@@ -11,8 +11,10 @@ import AlertModal from '@components/common/AlertModal';
 import ConfirmModal from '@components/common/ConfirmModal';
 import { Button } from '@components/common/Button';
 import apiClient from '@lib/apiClient';
+import { useTranslation } from '@i18n/translate';
 
 export const ConfidentialDocumentPage: React.FC = () => {
+  const { t } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
   const loaiVanBanParam = searchParams.get('loai_van_ban');
   const phamViParam = searchParams.get('pham_vi');
@@ -436,13 +438,13 @@ export const ConfidentialDocumentPage: React.FC = () => {
             <span className="w-8 h-8 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center font-bold text-sm">
               <i className="fa-solid fa-shield-halved text-base" />
             </span>
-            <h1 className="text-xl md:text-2xl font-bold text-main m-0">Quản Lý Văn Bản Mật</h1>
+            <h1 className="text-xl md:text-2xl font-bold text-main m-0">{t('pages.documents_confidential.title') || 'Quản Lý Văn Bản Mật'}</h1>
             <span className="px-2 py-0.5 rounded-md text-xs font-bold uppercase bg-rose-500/15 text-rose-600 border border-rose-500/25">
-              Bảo mật
+              {t('documents_ui.table.restrictedBadge') || 'Bảo mật'}
             </span>
           </div>
           <p className="text-xs md:text-sm text-secondary m-0">
-            Lưu trữ, tra cứu và phân quyền văn bản mật theo các quy định an toàn thông tin & kiểm toán truy cập.
+            {t('pages.documents_confidential.desc') || 'Lưu trữ, tra cứu và phân quyền văn bản mật theo các quy định an toàn thông tin & kiểm toán truy cập.'}
           </p>
         </div>
 
@@ -454,9 +456,9 @@ export const ConfidentialDocumentPage: React.FC = () => {
             size="sm"
             icon="fa-plus"
             onClick={handleOpenCreate}
-            title="Thêm văn bản mật mới"
+            title={t('documents_incoming_page.addBtn') || 'Thêm văn bản mật mới'}
           >
-            Thêm mới
+            {t('documents_incoming_page.addBtn') || 'Thêm mới'}
           </Button>
 
           <Button
@@ -465,9 +467,9 @@ export const ConfidentialDocumentPage: React.FC = () => {
             size="sm"
             icon="fa-file-excel"
             onClick={() => setIsImportOpen(true)}
-            title="Nhập danh sách văn bản mật từ tệp Excel"
+            title={t('documents_ui.actions.importExcelTitle') || 'Nhập danh sách văn bản mật từ tệp Excel'}
           >
-            Import Excel
+            {t('documents_ui.actions.importExcel') || 'Import Excel'}
           </Button>
 
           <Button
@@ -476,9 +478,9 @@ export const ConfidentialDocumentPage: React.FC = () => {
             size="sm"
             icon="fa-file-export"
             onClick={handleExportExcel}
-            title="Xuất dữ liệu văn bản mật ra file Excel"
+            title={t('documents_ui.actions.exportExcelTitle') || 'Xuất dữ liệu văn bản mật ra file Excel'}
           >
-            Xuất Excel
+            {t('documents_ui.actions.exportExcel') || 'Xuất Excel'}
           </Button>
 
           <Button
@@ -491,9 +493,9 @@ export const ConfidentialDocumentPage: React.FC = () => {
               fetchStats();
             }}
             isLoading={isLoading}
-            title="Làm mới danh sách"
+            title={t('documents_ui.actions.refreshTitle') || 'Làm mới danh sách'}
           >
-            Làm mới
+            {t('documents_ui.actions.refresh') || 'Làm mới'}
           </Button>
         </div>
       </div>
@@ -521,10 +523,10 @@ export const ConfidentialDocumentPage: React.FC = () => {
               <i className="fa-solid fa-shield-halved" />
             </div>
             <div>
-              <span className="text-sm text-muted block mb-0.5 font-medium">Tổng số văn bản mật</span>
+              <span className="text-sm text-muted block mb-0.5 font-medium">{t('documents_ui.topCard.totalConfidential') || 'Tổng số văn bản mật'}</span>
               <div className="flex items-baseline gap-2">
                 <span className="text-2xl sm:text-3xl font-bold text-main">{countActive}</span>
-                <span className="text-sm text-muted font-medium">văn bản mật còn hiệu lực</span>
+                <span className="text-sm text-muted font-medium">{t('documents_ui.topCard.activeConfidentialDocs') || 'văn bản mật còn hiệu lực'}</span>
               </div>
             </div>
           </div>
@@ -546,10 +548,10 @@ export const ConfidentialDocumentPage: React.FC = () => {
                   ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/25 ring-2 ring-emerald-500/40'
                   : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25 hover:bg-emerald-500/20'
               }`}
-              title="Lọc danh sách theo văn bản còn hiệu lực"
+              title={t('documents_ui.topCard.activeFilterTitle') || 'Lọc danh sách theo văn bản còn hiệu lực'}
             >
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shadow-sm shadow-emerald-500/50" />
-              <span>Còn hiệu lực</span>
+              <span>{t('documents_ui.topCard.activeBtn') || 'Còn hiệu lực'}</span>
               <span
                 className={`ml-1 px-2.5 py-0.5 rounded-full text-xs font-bold ${
                   filters.hieu_luc === 'HIEU_LUC'
@@ -570,17 +572,17 @@ export const ConfidentialDocumentPage: React.FC = () => {
           <div className="flex items-center gap-2">
             <i className="fa-solid fa-filter text-primary" />
             <span>
-              Đang lọc danh sách theo Loại văn bản: <strong>#{filters.loai_van_ban}</strong>
+              {t('documents_ui.scopeTabs.loaiVanBanFilterNotice') || 'Đang lọc danh sách theo Loại văn bản (từ phân hệ Hồ sơ):'} <strong>#{filters.loai_van_ban}</strong>
             </span>
           </div>
           <button
             type="button"
             onClick={handleClearLoaiVanBan}
             className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-surface hover:bg-surface-elevated text-secondary hover:text-main text-xs border border-border-subtle transition-all cursor-pointer shadow-2xs"
-            title="Xóa bộ lọc loại văn bản"
+            title={t('documents_ui.scopeTabs.clearLoaiVanBanTitle') || 'Xóa bộ lọc loại văn bản'}
           >
             <i className="fa-solid fa-xmark text-danger" />
-            <span>Bỏ lọc</span>
+            <span>{t('documents_ui.scopeTabs.clearFilter') || 'Bỏ lọc'}</span>
           </button>
         </div>
       )}

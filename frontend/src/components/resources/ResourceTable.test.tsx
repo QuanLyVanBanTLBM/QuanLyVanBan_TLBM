@@ -350,4 +350,35 @@ describe('ResourceTable Component', () => {
     expect(handleViewDetail).toHaveBeenCalledWith(mockItems[0]);
     expect(handleDrillDown).not.toHaveBeenCalled();
   });
+
+  it('keeps scheduled document active with expiry date badge when expiration date is in the future', () => {
+    const futureItem: ResourceItem = {
+      id: 99,
+      dm_tai_lieu: 1,
+      loai_tai_lieu: [1],
+      tieu_de: 'Tài liệu hết hạn tương lai',
+      ngay_dang: '2026-01-01',
+      hieu_luc: 'HET_HIEU_LUC',
+      ngay_het_hieu_luc: '2099-12-31',
+      file_dinh_kem: '/media/test.pdf',
+      hien_thi: 'TAT_CA',
+    };
+
+    const { container } = render(
+      <ResourceTable
+        items={[futureItem]}
+        currentPage={1}
+        totalPages={1}
+        pageSize={10}
+        totalCount={1}
+        onPageChange={vi.fn()}
+        onViewDetail={vi.fn()}
+      />
+    );
+
+    const row = container.querySelector('tbody tr');
+    expect(row?.className).not.toContain('bg-slate-100/70');
+    expect(screen.getByText('Còn hiệu lực')).toBeInTheDocument();
+    expect(screen.getByText(/31\/12\/2099/)).toBeInTheDocument();
+  });
 });

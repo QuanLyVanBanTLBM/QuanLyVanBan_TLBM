@@ -519,6 +519,11 @@ class BaseVanBan(models.Model):
     def delete(self, *args, **kwargs):
         if self.pham_vi == self.PhamVi.HAN_CHE:
             raise ValidationError("Văn bản hạn chế không được phép xóa.")
+        # Dọn dẹp liên kết Loại văn bản và Hồ sơ trước để thỏa mãn Trigger CSDL PostgreSQL
+        if hasattr(self, "danhmuc"):
+            self.danhmuc.all().delete()
+        if hasattr(self, "hoso"):
+            self.hoso.all().delete()
         return super().delete(*args, **kwargs)
 
     @property

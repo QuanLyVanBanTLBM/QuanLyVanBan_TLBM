@@ -11,8 +11,10 @@ import ConfirmModal from '@components/common/ConfirmModal';
 import AlertModal from '@components/common/AlertModal';
 import { Button } from '@components/common/Button';
 import apiClient from '@lib/apiClient';
+import { useTranslation } from '@i18n/translate';
 
 export const OutboundDocumentPage: React.FC = () => {
+  const { t } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
   const loaiVanBanParam = searchParams.get('loai_van_ban');
   const phamViParam = searchParams.get('pham_vi');
@@ -154,6 +156,9 @@ export const OutboundDocumentPage: React.FC = () => {
   const [alertMsg, setAlertMsg] = useState<string>('');
   const [isAlertOpen, setIsAlertOpen] = useState<boolean>(false);
   const [availableYears, setAvailableYears] = useState<number[]>([]);
+  const [availableDocTypes, setAvailableDocTypes] = useState<string[]>([]);
+  const [availableFolders, setAvailableFolders] = useState<string[]>([]);
+  const [folderDocTypesMap, setFolderDocTypesMap] = useState<Record<string, string[]>>({});
   const [allStatsItems, setAllStatsItems] = useState<DocumentItem[]>([]);
 
   // Lấy danh sách các năm thực tế có văn bản đi trong CSDL
@@ -171,14 +176,77 @@ export const OutboundDocumentPage: React.FC = () => {
   // Lấy thống kê số lượng văn bản đi theo trạng thái
   const fetchStats = useCallback(async () => {
     try {
-      const extraQuery = filters.loai_van_ban ? `&loai_van_ban=${encodeURIComponent(String(filters.loai_van_ban))}` : '';
-      const res = await apiClient.get<PaginatedResponse<DocumentItem>>(`/api/documents/?loai=DI&page_size=1000${extraQuery}`);
+      const res = await apiClient.get<PaginatedResponse<DocumentItem>>('/api/documents/?loai=DI&page_size=1000');
       const items = res && Array.isArray(res.results) ? res.results : (Array.isArray(res) ? (res as DocumentItem[]) : []);
       setAllStatsItems(items);
+
+      // Trích xuất các Loại văn bản và ánh xạ Danh mục hồ sơ -> Loại văn bản thực tế từ các văn bản trong hệ thống
+      const extractedTypes = new Set<string>();
+      const extractedFolders = new Set<string>();
+      const folderTypeMapping: Record<string, Set<string>> = {};
+
+      const typeMapping: Record<string, string> = {
+        'QĐ': 'Quyết định',
+        'QD': 'Quyết định',
+        'TB': 'Thông báo',
+        'CV': 'Công văn',
+        'HD': 'Hướng dẫn',
+        'KH': 'Kế hoạch',
+        'CT': 'Chỉ thị',
+        'BC': 'Báo cáo',
+        'TTR': 'Tờ trình',
+        'NQ': 'Nghị quyết',
+      };
+
+      items.forEach((d) => {
+        const rawItem = d as unknown as Record<string, unknown>;
+        const rawDocType = rawItem.ten_loai_van_ban || rawItem.loai_van_ban;
+        let detectedType = typeof rawDocType === 'string' && rawDocType.trim() ? rawDocType.trim() : '';
+
+        if (!detectedType) {
+          const match = d.so_hieu ? d.so_hieu.match(/\/([A-ZĐ]+)(?:-|$)/i) : null;
+          if (match && typeMapping[match[1].toUpperCase()]) {
+            detectedType = typeMapping[match[1].toUpperCase()];
+          } else if (d.trich_yeu) {
+            const trichYeuUpper = d.trich_yeu.trim().toUpperCase();
+            for (const name of Object.values(typeMapping)) {
+              if (trichYeuUpper.startsWith(name.toUpperCase())) {
+                detectedType = name;
+                break;
+              }
+            }
+          }
+        }
+
+        if (detectedType) {
+          extractedTypes.add(detectedType);
+        }
+
+        const rawFolder = rawItem.danh_muc_ho_so || rawItem.ho_so;
+        if (typeof rawFolder === 'string' && rawFolder.trim()) {
+          const folderName = rawFolder.trim();
+          extractedFolders.add(folderName);
+          if (!folderTypeMapping[folderName]) {
+            folderTypeMapping[folderName] = new Set<string>();
+          }
+          if (detectedType) {
+            folderTypeMapping[folderName].add(detectedType);
+          }
+        }
+      });
+
+      const serializableFolderMap: Record<string, string[]> = {};
+      Object.entries(folderTypeMapping).forEach(([folder, typeSet]) => {
+        serializableFolderMap[folder] = Array.from(typeSet).sort((a, b) => a.localeCompare(b, 'vi'));
+      });
+
+      setAvailableDocTypes(Array.from(extractedTypes).sort((a, b) => a.localeCompare(b, 'vi')));
+      setAvailableFolders(Array.from(extractedFolders).sort((a, b) => a.localeCompare(b, 'vi')));
+      setFolderDocTypesMap(serializableFolderMap);
     } catch {
       // Giữ nguyên trạng thái hiện tại nếu lỗi
     }
-  }, [filters.loai_van_ban]);
+  }, []);
 
   useEffect(() => {
     let ignore = false;
@@ -209,6 +277,7 @@ export const OutboundDocumentPage: React.FC = () => {
       if (filters.den_ngay) params.append('den_ngay', filters.den_ngay);
       if (filters.hieu_luc) params.append('hieu_luc', filters.hieu_luc);
       if (filters.loai_van_ban) params.append('loai_van_ban', String(filters.loai_van_ban));
+      if (filters.ho_so) params.append('ho_so', filters.ho_so.trim());
       const targetPhamVi = filters.pham_vi || 'NOI_BO';
       if (targetPhamVi !== 'ALL') params.append('pham_vi', targetPhamVi);
 
@@ -459,10 +528,10 @@ export const OutboundDocumentPage: React.FC = () => {
             <span className="w-8 h-8 rounded-lg bg-primary-subtle text-primary flex items-center justify-center font-bold text-sm">
               <i className="fa-solid fa-paper-plane text-base" />
             </span>
-            <h1 className="text-xl md:text-2xl font-bold text-main m-0">Quản Lý Văn Bản Đi</h1>
+            <h1 className="text-xl md:text-2xl font-bold text-main m-0">{t('pages.documents_outgoing.title') || 'Quản Lý Văn Bản Đi'}</h1>
           </div>
           <p className="text-xs md:text-sm text-secondary m-0">
-            Theo dõi, tra cứu, quản lý và số hóa toàn bộ hệ thống văn bản phát hành nội bộ và gửi cơ quan bên ngoài.
+            {t('pages.documents_outgoing.desc') || 'Theo dõi, tra cứu, quản lý và số hóa toàn bộ hệ thống văn bản phát hành nội bộ và gửi cơ quan bên ngoài.'}
           </p>
         </div>
 
@@ -474,9 +543,9 @@ export const OutboundDocumentPage: React.FC = () => {
             size="sm"
             icon="fa-plus"
             onClick={handleOpenCreate}
-            title="Thêm văn bản đi mới"
+            title={t('documents_incoming_page.addBtn') || 'Thêm mới'}
           >
-            Thêm mới
+            {t('documents_incoming_page.addBtn') || 'Thêm mới'}
           </Button>
 
           {/* Dropdown Import Excel */}
@@ -491,9 +560,9 @@ export const OutboundDocumentPage: React.FC = () => {
                 setExportMenuOpen(false);
               }}
               className={`transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 ${importMenuOpen ? 'border-primary/50 shadow-xs bg-surface-elevated' : ''}`}
-              title="Nhập danh sách từ tệp Excel"
+              title={t('documents_ui.actions.importExcelTitle') || 'Nhập danh sách từ tệp Excel'}
             >
-              <span>Import Excel</span>
+              <span>{t('documents_ui.actions.importExcel') || 'Import Excel'}</span>
               <i className={`fa-solid fa-chevron-down text-[10px] ml-1 text-secondary transition-transform duration-200 ${importMenuOpen ? 'rotate-180' : ''}`} />
             </Button>
 
@@ -511,7 +580,7 @@ export const OutboundDocumentPage: React.FC = () => {
                   <span className="w-6 h-6 rounded-lg bg-surface-elevated group-hover:bg-primary/10 flex items-center justify-center transition-colors">
                     <i className="fa-regular fa-file-lines text-secondary group-hover:text-primary text-xs transition-colors" />
                   </span>
-                  <span>Nhập văn bản thường</span>
+                  <span>{t('documents_ui.actions.importInternal') || 'Nhập văn bản thường'}</span>
                 </button>
                 <button
                   type="button"
@@ -525,7 +594,7 @@ export const OutboundDocumentPage: React.FC = () => {
                   <span className="w-6 h-6 rounded-lg bg-surface-elevated group-hover:bg-primary/10 flex items-center justify-center transition-colors">
                     <i className="fa-solid fa-shield-halved text-secondary group-hover:text-primary text-xs transition-colors" />
                   </span>
-                  <span>Nhập văn bản hạn chế</span>
+                  <span>{t('documents_ui.actions.importRestricted') || 'Nhập văn bản hạn chế'}</span>
                 </button>
               </div>
             )}
@@ -543,9 +612,9 @@ export const OutboundDocumentPage: React.FC = () => {
                 setImportMenuOpen(false);
               }}
               className={`transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 ${exportMenuOpen ? 'border-primary/50 shadow-xs bg-surface-elevated' : ''}`}
-              title="Xuất dữ liệu ra file Excel"
+              title={t('documents_ui.actions.exportExcelTitle') || 'Xuất dữ liệu ra file Excel'}
             >
-              <span>Xuất Excel</span>
+              <span>{t('documents_ui.actions.exportExcel') || 'Xuất Excel'}</span>
               <i className={`fa-solid fa-chevron-down text-[10px] ml-1 text-secondary transition-transform duration-200 ${exportMenuOpen ? 'rotate-180' : ''}`} />
             </Button>
 
@@ -562,7 +631,7 @@ export const OutboundDocumentPage: React.FC = () => {
                   <span className="w-6 h-6 rounded-lg bg-surface-elevated group-hover:bg-primary/10 flex items-center justify-center transition-colors">
                     <i className="fa-regular fa-file-lines text-secondary group-hover:text-primary text-xs transition-colors" />
                   </span>
-                  <span>Xuất văn bản thường</span>
+                  <span>{t('documents_ui.actions.exportInternal') || 'Xuất văn bản thường'}</span>
                 </button>
                 <button
                   type="button"
@@ -575,7 +644,7 @@ export const OutboundDocumentPage: React.FC = () => {
                   <span className="w-6 h-6 rounded-lg bg-surface-elevated group-hover:bg-primary/10 flex items-center justify-center transition-colors">
                     <i className="fa-solid fa-shield-halved text-secondary group-hover:text-primary text-xs transition-colors" />
                   </span>
-                  <span>Xuất văn bản hạn chế</span>
+                  <span>{t('documents_ui.actions.exportRestricted') || 'Xuất văn bản hạn chế'}</span>
                 </button>
                 <div className="h-px bg-border-subtle my-1 mx-2" />
                 <button
@@ -589,7 +658,7 @@ export const OutboundDocumentPage: React.FC = () => {
                   <span className="w-6 h-6 rounded-lg bg-surface-elevated group-hover:bg-primary/10 flex items-center justify-center transition-colors">
                     <i className="fa-solid fa-layer-group text-secondary group-hover:text-primary text-xs transition-colors" />
                   </span>
-                  <span>Xuất tất cả văn bản</span>
+                  <span>{t('documents_ui.actions.exportAll') || 'Xuất tất cả văn bản'}</span>
                 </button>
               </div>
             )}
@@ -605,9 +674,9 @@ export const OutboundDocumentPage: React.FC = () => {
               fetchStats();
             }}
             isLoading={isLoading}
-            title="Làm mới danh sách"
+            title={t('documents_ui.actions.refreshTitle') || 'Làm mới danh sách'}
           >
-            Làm mới
+            {t('documents_ui.actions.refresh') || 'Làm mới'}
           </Button>
         </div>
       </div>
@@ -622,14 +691,14 @@ export const OutboundDocumentPage: React.FC = () => {
             </div>
             <div>
               <span className="text-sm text-muted block mb-0.5 font-medium">
-                <span>Tổng số văn bản đi</span>
-                {currentPhamVi === 'HAN_CHE' && <span className="ml-1 text-rose-500 font-semibold">(Hạn chế)</span>}
-                {currentPhamVi === 'ALL' && <span className="ml-1 text-primary font-semibold">(Tất cả)</span>}
-                {currentPhamVi === 'NOI_BO' && <span className="ml-1 text-secondary font-medium">(Nội bộ)</span>}
+                <span>{t('documents_ui.topCard.totalOutbound') || 'Tổng số văn bản đi'}</span>
+                {currentPhamVi === 'HAN_CHE' && <span className="ml-1 text-rose-500 font-semibold">{t('documents_ui.topCard.scopeRestricted') || '(Hạn chế)'}</span>}
+                {currentPhamVi === 'ALL' && <span className="ml-1 text-primary font-semibold">{t('documents_ui.topCard.scopeAll') || '(Tất cả)'}</span>}
+                {currentPhamVi === 'NOI_BO' && <span className="ml-1 text-secondary font-medium">{t('documents_ui.topCard.scopeInternal') || '(Nội bộ)'}</span>}
               </span>
               <div className="flex items-baseline gap-2">
                 <span className="text-2xl sm:text-3xl font-bold text-main">{countActive}</span>
-                <span className="text-sm text-muted font-medium">văn bản còn hiệu lực</span>
+                <span className="text-sm text-muted font-medium">{t('documents_ui.topCard.activeDocs') || 'văn bản còn hiệu lực'}</span>
               </div>
             </div>
           </div>
@@ -652,10 +721,10 @@ export const OutboundDocumentPage: React.FC = () => {
                   ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/25 ring-2 ring-emerald-600/30'
                   : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20'
               }`}
-              title="Lọc danh sách theo văn bản còn hiệu lực (bao gồm cả hiệu lực 1 phần)"
+              title={t('documents_ui.topCard.activeFilterTitle') || 'Lọc danh sách theo văn bản còn hiệu lực (bao gồm cả hiệu lực 1 phần)'}
             >
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>Còn hiệu lực</span>
+              <span>{t('documents_ui.topCard.activeBtn') || 'Còn hiệu lực'}</span>
               <span
                 className={`ml-1 px-2.5 py-0.5 rounded-full text-xs font-bold ${
                   filters.hieu_luc === 'HIEU_LUC'
@@ -676,17 +745,17 @@ export const OutboundDocumentPage: React.FC = () => {
           <div className="flex items-center gap-2">
             <i className="fa-solid fa-filter text-primary" />
             <span>
-              Đang lọc danh sách theo Loại văn bản (từ phân hệ Hồ sơ): <strong>#{filters.loai_van_ban}</strong>
+              {t('documents_ui.scopeTabs.loaiVanBanFilterNotice') || 'Đang lọc danh sách theo Loại văn bản (từ phân hệ Hồ sơ):'} <strong>#{filters.loai_van_ban}</strong>
             </span>
           </div>
           <button
             type="button"
             onClick={handleClearLoaiVanBan}
             className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-surface hover:bg-surface-elevated text-secondary hover:text-main text-xs border border-border-subtle transition-all cursor-pointer shadow-2xs"
-            title="Xóa bộ lọc loại văn bản"
+            title={t('documents_ui.scopeTabs.clearLoaiVanBanTitle') || 'Xóa bộ lọc loại văn bản'}
           >
             <i className="fa-solid fa-xmark text-danger" />
-            <span>Bỏ lọc</span>
+            <span>{t('documents_ui.scopeTabs.clearFilter') || 'Bỏ lọc'}</span>
           </button>
         </div>
       )}
@@ -708,7 +777,7 @@ export const OutboundDocumentPage: React.FC = () => {
             }`}
           >
             <i className="fa-solid fa-folder-open text-xs" />
-            <span>Văn bản Nội bộ</span>
+            <span>{t('documents_ui.scopeTabs.internal') || 'Văn bản Nội bộ'}</span>
           </button>
 
           <button
@@ -725,7 +794,7 @@ export const OutboundDocumentPage: React.FC = () => {
             }`}
           >
             <i className={`fa-solid fa-shield-halved text-xs ${filters.pham_vi === 'HAN_CHE' ? 'text-white' : 'text-rose-500'}`} />
-            <span>Văn bản Hạn chế</span>
+            <span>{t('documents_ui.scopeTabs.restricted') || 'Văn bản Hạn chế'}</span>
           </button>
 
           <button
@@ -741,7 +810,7 @@ export const OutboundDocumentPage: React.FC = () => {
                 : 'text-muted hover:text-secondary hover:bg-canvas/60'
             }`}
           >
-            <span>Tất cả</span>
+            <span>{t('documents_ui.scopeTabs.all') || 'Tất cả'}</span>
           </button>
         </div>
 
@@ -750,17 +819,17 @@ export const OutboundDocumentPage: React.FC = () => {
             <div className="flex items-center gap-2">
               <i className="fa-solid fa-shield-halved text-amber-600 dark:text-amber-400" />
               <span>
-                Đang lọc danh sách theo phạm vi: <strong>Văn bản hạn chế (Mật)</strong> — Chỉ hiển thị văn bản bạn có thẩm quyền tiếp cận.
+                {t('documents_ui.scopeTabs.restrictedNotice') || 'Đang lọc danh sách theo phạm vi: Văn bản hạn chế (Mật) — Chỉ hiển thị văn bản bạn có thẩm quyền tiếp cận.'}
               </span>
             </div>
             <button
               type="button"
               onClick={handleClearPhamVi}
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-surface hover:bg-surface-elevated text-secondary hover:text-main text-xs border border-border-subtle transition-all cursor-pointer shadow-2xs"
-              title="Xóa bộ lọc phạm vi"
+              title={t('documents_ui.scopeTabs.clearFilterTitle') || 'Xóa bộ lọc phạm vi'}
             >
               <i className="fa-solid fa-xmark text-danger" />
-              <span>Bỏ lọc</span>
+              <span>{t('documents_ui.scopeTabs.clearFilter') || 'Bỏ lọc'}</span>
             </button>
           </div>
         )}
@@ -774,6 +843,9 @@ export const OutboundDocumentPage: React.FC = () => {
         onReset={handleResetFilters}
         isLoading={isLoading}
         availableYears={availableYears}
+        availableFolders={availableFolders}
+        availableDocTypes={availableDocTypes}
+        folderDocTypesMap={folderDocTypesMap}
         documentType="DI"
       />
 

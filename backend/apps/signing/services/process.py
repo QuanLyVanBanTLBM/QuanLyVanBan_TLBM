@@ -111,6 +111,8 @@ def tao_quy_trinh(nguoi_tao, *, ma_quy_trinh, ten_quy_trinh, pham_vi, don_vi_ap_
     _kiem_tra_tham_chieu(
         DonVi, don_vi_ap_dung_id, field="don_vi_ap_dung_id", code="don_vi_khong_ton_tai", ten="Đơn vị"
     )
+    if SigningProcess.objects.filter(ma_quy_trinh__iexact=ma_quy_trinh).exists():  # "qt-1" và "QT-1" là một mã
+        raise ConflictError(code="quy_trinh_trung_ma", detail="Mã quy trình đã tồn tại.")
     try:
         with transaction.atomic():
             process = SigningProcess.objects.create(
@@ -273,13 +275,19 @@ def sua_quy_trinh(process, nguoi_thuc_hien, *, ten_quy_trinh, pham_vi, don_vi_ap
 
 @transaction.atomic
 def xoa_quy_trinh(process, nguoi_thuc_hien):
-    """Xóa quy trình nháp chưa có hồ sơ nào dùng; quy trình đã dùng thì chỉ ngừng (giữ lịch sử)."""
+    """
+    Xóa một phiên bản quy trình khi không còn hồ sơ trình ký nào (mọi trạng thái, kể cả đã hủy, hoàn thành) dùng phiên
+    bản đó (#275 mục 1). Trạng thái quy trình không chặn việc xóa; phiên bản đã có hồ sơ chỉ ngừng được (giữ lịch sử,
+    bằng chứng). Sửa quy trình vẫn chỉ áp dụng cho bản nháp. Khóa dòng quy trình để hồ sơ tạo đồng thời không lọt qua.
+    """
     process = _khoa(process.pk)
-    if process.trang_thai != enums.TrangThaiQuyTrinh.NHAP:
-        raise ConflictError(code="quy_trinh_khong_the_xoa",
-                            detail="Chỉ xóa được quy trình nháp; quy trình đã kích hoạt hãy ngừng sử dụng.")
-    if SigningRequest.objects.filter(quy_trinh=process).exists():
-        raise ConflictError(code="quy_trinh_da_duoc_dung", detail="Quy trình đã có hồ sơ dùng, không xóa được.")
+    so_ho_so = SigningRequest.objects.filter(quy_trinh=process).count()
+    if so_ho_so:
+        raise ConflictError(
+            code="quy_trinh_da_duoc_dung",
+            detail=f"Quy trình đang có {so_ho_so} hồ sơ trình ký sử dụng, không xóa được. Hãy ngừng quy trình thay vì xóa.",
+            fields={"so_ho_so": [so_ho_so]},
+        )
     ghi_nhat_ky(nguoi_thuc_hien, LOAI, process.pk, "XOA_QUY_TRINH", trang_thai_truoc=process.trang_thai,
                 du_lieu_kem_theo={"ma_quy_trinh": process.ma_quy_trinh, "phien_ban": process.phien_ban})
     process.delete()

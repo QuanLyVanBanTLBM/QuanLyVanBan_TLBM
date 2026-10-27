@@ -1,16 +1,18 @@
 /**
  * Trang tài liệu: mọi tệp của các hồ sơ người dùng được xem — bản dự thảo, tệp từng lượt trình, tệp hoàn tất — kèm tìm
- * kiếm, lọc loại tệp và khoảng ngày, tải về (kiểm quyền ở máy chủ). Tệp lưu ở máy chủ theo trinh_ky/ và hoan_tat/<năm>/<tháng>/.
+ * kiếm, lọc loại tệp và khoảng ngày, tải về (kiểm quyền ở máy chủ). Phân trang phía server như danh sách hồ sơ
+ * (10 tệp mỗi trang; đổi bộ lọc thì về trang 1). Tệp lưu ở máy chủ theo trinh_ky/ và hoan_tat/<năm>/<tháng>/.
  */
-import { useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useEffect, useId, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Badge, Button, Card } from '@components/common';
 import type { BadgeProps } from '@components/common/Badge';
-import { DangTai, LoiTai, Rong } from '@components/signing/ChungUI';
+import { DangTai, KhungModal, LoiTai, Rong, ThongBao } from '@components/signing/ChungUI';
+import LocKhoangNgay from '@components/signing/LocKhoangNgay';
+import { PhanTrang } from '@components/signing/PhanTrang';
 import XemPdf from '@components/signing/XemPdf';
-import { signingApi } from '@lib/signing/api';
-import { dinhDangNgay, LOP_O_NHAP } from '@lib/signing/dinhDang';
+import { docLoi, SO_HO_SO_MOI_TRANG, signingApi } from '@lib/signing/api';
+import { dinhDangNgay, LOP_O_NHAP, moTaVanBan, taiXuong } from '@lib/signing/dinhDang';
 import { useTai } from '@lib/signing/hooks';
 import { useSigningT } from '@lib/signing/i18n';
 import type { BoLocTaiLieu, LoaiTepTaiLieu, TepTaiLieu } from '@lib/signing/types';
@@ -26,6 +28,7 @@ const MAU_LOAI_TEP: Record<LoaiTepTaiLieu, BadgeProps['variant']> = {
   LUOT: 'primary',
   HOAN_TAT: 'success',
 };
+const TRE_TIM_KIEM_MS = 300;
 const LOP_NHAN = 'mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-secondary';
 
 
@@ -41,10 +44,30 @@ export default function TaiLieuPage() {
   const [tuKhoa, setTuKhoa] = useState('');
   const [tepXem, setTepXem] = useState<TepTaiLieu | null>(null);
   const [duLieuXem, setDuLieuXem] = useState<{ buf: ArrayBuffer | null; dangTai: boolean; loi: unknown } | null>(null);
-  const ds = useTai(() => signingApi.taiLieu(loc), [loc]);
-  const dat = (thay_doi: BoLocTaiLieu) => setLoc((cu) => ({ ...cu, ...thay_doi }));
+  const [taiVe, setTaiVe] = useState<{ dang: boolean; loi: unknown }>({ dang: false, loi: null });
+  const [trang, setTrang] = useState(1);
+  const nhanId = useId();
+  const ds = useTai(() => signingApi.taiLieu(loc, trang).catch((err) => {
+    if (trang > 1 && docLoi(err).status === 404) setTrang(1);  // trang cuối không còn: về trang 1
+    throw err;
+  }), [loc, trang]);
+  const dsTep = ds.duLieu?.results;
+  const dat = (thay_doi: BoLocTaiLieu) => {
+    setLoc((cu) => ({ ...cu, ...thay_doi }));
+    setTrang(1);
+  };
   const coLoc = Object.values(loc).some(Boolean);
 
+  // Gõ xong thì tự áp dụng (như danh sách hồ sơ); nút Lọc hoặc Enter áp dụng ngay
+  useEffect(() => {
+    const q = tuKhoa.trim();
+    if (q === (loc.q ?? '')) return undefined;
+    const hen = setTimeout(() => {
+      setLoc((cu) => ({ ...cu, q }));
+      setTrang(1);
+    }, TRE_TIM_KIEM_MS);
+    return () => clearTimeout(hen);
+  }, [tuKhoa, loc.q]);
 
   const xemChiTiet = async (tep: TepTaiLieu) => {
     setTepXem(tep);
@@ -61,14 +84,20 @@ export default function TaiLieuPage() {
   const dongXem = () => {
     setTepXem(null);
     setDuLieuXem(null);
+    setTaiVe({ dang: false, loi: null });
   };
 
-  useEffect(() => {
-    if (!tepXem) return undefined;
-    const esc = (e: KeyboardEvent) => e.key === 'Escape' && dongXem();
-    window.addEventListener('keydown', esc);
-    return () => window.removeEventListener('keydown', esc);
-  }, [tepXem]);
+  // Cùng nguồn với lúc xem (kiểm quyền ở máy chủ) và cùng tên tệp với cột "Tệp"
+  const taiTepXem = async () => {
+    if (!tepXem || taiVe.dang) return;
+    setTaiVe({ dang: true, loi: null });
+    try {
+      taiXuong(await layTep(tepXem), tepXem.ten_tep);
+      setTaiVe({ dang: false, loi: null });
+    } catch (err) {
+      setTaiVe({ dang: false, loi: err });
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -90,18 +119,11 @@ export default function TaiLieuPage() {
               {LOAI.map((l) => <option key={l} value={l}>{t(`taiLieu.loai.${l}`)}</option>)}
             </select>
           </label>
-          <label className="block lg:col-span-2">
-            <span className={LOP_NHAN}>{t('danhSach.tuNgay')}</span>
-            <input className={LOP_O_NHAP} type="date" value={loc.tu_ngay ?? ''} onChange={(e) => dat({ tu_ngay: e.target.value })} />
-          </label>
-          <label className="block lg:col-span-2">
-            <span className={LOP_NHAN}>{t('danhSach.denNgay')}</span>
-            <input className={LOP_O_NHAP} type="date" value={loc.den_ngay ?? ''} onChange={(e) => dat({ den_ngay: e.target.value })} />
-          </label>
+          <LocKhoangNgay tuNgay={loc.tu_ngay} denNgay={loc.den_ngay} onDoi={dat} lopO="lg:col-span-2" />
           <div className="flex gap-2 lg:col-span-2">
             <Button type="submit" size="sm" icon="fa-filter">{t('danhSach.loc')}</Button>
             {coLoc && (
-              <Button type="button" size="sm" variant="secondary" icon="fa-rotate-left" onClick={() => { setTuKhoa(''); setLoc({}); }}>
+              <Button type="button" size="sm" variant="secondary" icon="fa-rotate-left" onClick={() => { setTuKhoa(''); setLoc({}); setTrang(1); }}>
                 {t('danhSach.xoaLoc')}
               </Button>
             )}
@@ -111,32 +133,55 @@ export default function TaiLieuPage() {
       <Card className="p-4 space-y-3">
         {ds.dangTai && <DangTai />}
         {ds.loi && <LoiTai thongBao={loi(ds.loi)} onThuLai={ds.tai} />}
-        {!ds.dangTai && !ds.loi && ds.duLieu?.length === 0 && (
+        {!ds.dangTai && !ds.loi && dsTep?.length === 0 && (
           <Rong icon="fa-folder-open">{t(coLoc ? 'taiLieu.khongKhopLoc' : 'taiLieu.rong')}</Rong>
         )}
-        {!ds.dangTai && !ds.loi && !!ds.duLieu?.length && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm table-fixed min-w-[850px]">
+        {!ds.dangTai && !ds.loi && !!dsTep?.length && (
+          <>
+          {/* Dưới 1280px: dạng thẻ (bảng 7 cột cần bề rộng đủ để không cắt ngày và tên tệp) */}
+          <ul className="divide-y divide-border-subtle xl:hidden">
+            {dsTep.map((tep) => (
+              <li key={`the-${tep.loai}-${tep.trinh_ky}-${tep.luot ?? 0}`} className="space-y-1 py-3">
+                <div className="flex items-start justify-between gap-2">
+                  <button type="button" onClick={() => xemChiTiet(tep)}
+                    className="min-w-0 break-words text-left font-semibold text-main hover:text-primary hover:underline line-clamp-3"
+                    title={moTaVanBan(tep.van_ban, tep.trinh_ky)}>
+                    {moTaVanBan(tep.van_ban, tep.trinh_ky)}
+                  </button>
+                  <Badge variant="info" size="sm">{t(`taiLieu.loai.${tep.loai}`)}</Badge>
+                </div>
+                <button type="button" onClick={() => xemChiTiet(tep)} title={t('chiTiet.xemChiTiet')}
+                  className="block break-all text-left text-xs text-secondary hover:text-primary hover:underline">{tep.ten_tep}</button>
+                <div className="flex flex-wrap gap-x-2 text-xs text-muted">
+                  <Link to={`/approvals/${tep.trinh_ky}`} className="font-medium text-secondary hover:text-primary hover:underline">#{tep.trinh_ky}</Link>
+                  <span>{tep.ten_quy_trinh}</span>
+                  <span>{dinhDangNgay(tep.thoi_diem, lang)}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
+          <div className="hidden overflow-x-auto xl:block">
+            <table className="w-full min-w-[60rem] text-sm table-fixed">
               <thead>
                 <tr className="border-b border-border-subtle bg-surface-elevated/70 text-xs font-bold uppercase tracking-wider text-muted">
-                  <th className="px-3 py-2.5 text-left whitespace-nowrap w-[14%]">{t('taiLieu.soHieu')}</th>
-                  <th className="px-3.5 py-2.5 text-left w-[28%]">{t('taiLieu.trichYeu')}</th>
-                  <th className="px-3 py-2.5 text-left whitespace-nowrap w-[18%]">{t('taiLieu.tep')}</th>
+                  <th className="px-3 py-2.5 text-center whitespace-nowrap w-[12%]">{t('taiLieu.soHieu')}</th>
+                  <th className="px-3.5 py-2.5 text-center w-[29%]">{t('taiLieu.trichYeu')}</th>
+                  <th className="px-3 py-2.5 text-center whitespace-nowrap w-[17%]">{t('taiLieu.tep')}</th>
                   <th className="px-2.5 py-2.5 text-center whitespace-nowrap w-[10%]">{t('taiLieu.loaiTep')}</th>
-                  <th className="px-3 py-2.5 text-left whitespace-nowrap w-[8%]">{t('danhSach.maHoSo')}</th>
-                  <th className="px-3 py-2.5 text-left whitespace-nowrap w-[12%]">{t('danhSach.quyTrinh')}</th>
-                  <th className="px-3 py-2.5 text-left whitespace-nowrap w-[10%]">{t('taiLieu.ngay')}</th>
+                  <th className="px-3 py-2.5 text-center whitespace-nowrap w-[6%]">{t('danhSach.maHoSo')}</th>
+                  <th className="px-3 py-2.5 text-center whitespace-nowrap w-[14%]">{t('danhSach.quyTrinh')}</th>
+                  <th className="px-3 py-2.5 text-center whitespace-nowrap w-[12%]">{t('taiLieu.ngay')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y border-border-subtle">
-                {ds.duLieu.map((tep) => (
+                {dsTep.map((tep) => (
                   <tr key={`${tep.loai}-${tep.trinh_ky}-${tep.luot ?? 0}`} className="hover:bg-surface-hover/80 transition-colors">
-                    <td className="px-3 py-3 text-left whitespace-nowrap" title={tep.van_ban.so_hieu}>
+                    <td className="px-3 py-3 text-center whitespace-nowrap" title={tep.van_ban.so_hieu}>
                       {tep.van_ban.so_hieu ? (
                         <button
                           type="button"
                           onClick={() => xemChiTiet(tep)}
-                          className="font-semibold text-main hover:text-primary hover:underline cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded max-w-full truncate inline-block"
+                          className="font-semibold text-main hover:text-primary hover:underline cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded max-w-full truncate inline-block text-center"
                           title={t('chiTiet.xemChiTiet')}
                         >
                           <span className="truncate">{tep.van_ban.so_hieu}</span>
@@ -150,11 +195,11 @@ export default function TaiLieuPage() {
                         {tep.van_ban.trich_yeu || '—'}
                       </div>
                     </td>
-                    <td className="px-3 py-3 text-left">
+                    <td className="px-3 py-3 text-center">
                       <button
                         type="button"
                         onClick={() => xemChiTiet(tep)}
-                        className="group inline-flex items-center gap-1.5 max-w-full text-left text-secondary hover:text-primary transition-colors cursor-pointer rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-primary text-xs"
+                        className="group inline-flex items-center justify-center gap-1.5 max-w-full text-secondary hover:text-primary transition-colors cursor-pointer rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-primary text-xs"
                         title={t('chiTiet.xemChiTiet')}
                       >
                         <i className={`fa-solid ${BIEU_TUONG[tep.loai]} text-xs shrink-0 opacity-70 group-hover:opacity-100 transition-opacity`} aria-hidden="true" />
@@ -162,13 +207,13 @@ export default function TaiLieuPage() {
                       </button>
                     </td>
                     <td className="px-2.5 py-3 text-center whitespace-nowrap"><Badge variant={MAU_LOAI_TEP[tep.loai]} size="sm">{t(`taiLieu.loai.${tep.loai}`)}</Badge></td>
-                    <td className="px-3 py-3 text-left whitespace-nowrap font-medium text-secondary">
+                    <td className="px-3 py-3 text-center whitespace-nowrap font-medium text-secondary">
                       <Link to={`/approvals/${tep.trinh_ky}`} className="hover:text-primary hover:underline">#{tep.trinh_ky}</Link>
                     </td>
-                    <td className="px-3 py-3 text-left text-secondary" title={tep.ten_quy_trinh}>
+                    <td className="px-3 py-3 text-center text-secondary" title={tep.ten_quy_trinh}>
                       <div className="line-clamp-2 break-words">{tep.ten_quy_trinh}</div>
                     </td>
-                    <td className="px-3 py-3 text-left text-muted whitespace-nowrap text-xs">
+                    <td className="px-3 py-3 text-center text-muted whitespace-nowrap text-xs">
                       <span>{dinhDangNgay(tep.thoi_diem, lang)}</span>
                     </td>
                   </tr>
@@ -176,21 +221,20 @@ export default function TaiLieuPage() {
               </tbody>
             </table>
           </div>
+          <PhanTrang trang={trang} soMoiTrang={SO_HO_SO_MOI_TRANG} tong={ds.duLieu?.count ?? 0} onDoi={setTrang}
+            khoaTomTat="phanTrang.tomTatTep" />
+          </>
         )}
       </Card>
-      {tepXem && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-backdrop p-2 sm:p-4 animate-fade-in">
-          <div
-            role="dialog"
-            aria-modal="true"
-            className="signing-zoom flex flex-col w-full max-w-5xl h-[92vh] rounded-2xl border border-border-subtle bg-surface-elevated shadow-2xl animate-slide-in-bottom overflow-hidden"
-          >
+      {tepXem && (
+        <KhungModal nhanId={nhanId} onDong={dongXem} lopNen="p-2 sm:p-4"
+          lopKhung="flex flex-col w-full max-w-5xl h-[92vh] rounded-2xl border border-border-subtle bg-surface-elevated overflow-hidden">
             {/* Header */}
             <div className="flex items-center justify-between border-b border-border-subtle px-5 py-3.5 bg-surface shrink-0">
               <div className="min-w-0 flex-1 pr-4">
                 <div className="flex items-center gap-2">
                   <i className={`fa-solid ${BIEU_TUONG[tepXem.loai]} text-lg shrink-0`} aria-hidden="true" />
-                  <h2 className="text-base sm:text-lg font-bold text-main truncate">{tepXem.ten_tep}</h2>
+                  <h2 id={nhanId} className="text-base sm:text-lg font-bold text-main truncate">{tepXem.ten_tep}</h2>
                   <Badge variant={MAU_LOAI_TEP[tepXem.loai]} size="sm">{t(`taiLieu.loai.${tepXem.loai}`)}</Badge>
                 </div>
                 <div className="text-xs text-secondary truncate mt-0.5">
@@ -224,14 +268,16 @@ export default function TaiLieuPage() {
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-end border-t border-border-subtle px-5 py-2.5 bg-surface text-xs text-muted shrink-0">
+            <div className="flex items-center justify-end gap-2 border-t border-border-subtle px-5 py-2.5 bg-surface text-xs text-muted shrink-0">
+              {taiVe.loi != null && <div className="mr-auto min-w-0"><ThongBao>{loi(taiVe.loi)}</ThongBao></div>}
+              <Button size="sm" variant="secondary" icon="fa-download" isLoading={taiVe.dang} onClick={taiTepXem}>
+                {t('chung.taiVe')}
+              </Button>
               <Button size="sm" variant="ghost" onClick={dongXem}>
                 {t('chung.dong')}
               </Button>
             </div>
-          </div>
-        </div>,
-        document.body,
+        </KhungModal>
       )}
     </div>
   );

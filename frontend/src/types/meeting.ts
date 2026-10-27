@@ -52,6 +52,7 @@ export interface MeetingBooking {
   end_time: string;
   attendees_count: number;
   purpose: string | null;
+  cancel_reason?: string | null;
   trang_thai: BookingStatus;
   created_at: string;
 }

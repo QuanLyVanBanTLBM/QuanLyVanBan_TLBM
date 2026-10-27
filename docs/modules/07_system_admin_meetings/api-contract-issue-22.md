@@ -153,8 +153,8 @@ Phân hệ phòng họp áp dụng nghiêm ngặt hợp đồng RBAC dự án (`
     "cancel_reason": "Thay đổi lịch công tác của ban lãnh đạo"
   }
   ```
-- **Cơ chế**: Chuyển `trang_thai` sang `CANCELLED`, ghi nhận lý do hủy vào trường `purpose`. Khung giờ được giải phóng tức thì cho người dùng khác đặt.
-- **Phản hồi**: `200 OK`. Không cho phép hủy lịch đã kết thúc hoặc lịch đã hủy từ trước.
+- **Cơ chế**: Chuyển `trang_thai` sang `CANCELLED`, ghi nhận lý do hủy vào trường `purpose` kèm ký tự phân tách `\n---\n` (ví dụ `\n---\n<reason>` khi không có mục đích ban đầu, hoặc `<purpose>\n---\n<reason>` khi có mục đích ban đầu). Frontend phân tách chuỗi này để hiển thị chuẩn xác vào khối "Lý do hủy" và không nhầm vào "Mục đích". Khung giờ được giải phóng tức thì cho người dùng khác đặt.
+- **Phản hồi**: `200 OK` (kèm dữ liệu `booking`). Không cho phép hủy lịch đã kết thúc hoặc lịch đã hủy từ trước.
 
 ---
 

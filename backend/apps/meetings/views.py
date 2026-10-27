@@ -506,7 +506,7 @@ class MeetingBookingViewSet(viewsets.ModelViewSet):
         booking.trang_thai = MeetingBooking.Status.CANCELLED
         reason = (request.data.get("cancel_reason") or "").strip()
         if reason:
-            booking.purpose = (booking.purpose + f"\n---\n{reason}").strip() if booking.purpose else reason
+            booking.purpose = f"{booking.purpose}\n---\n{reason}" if booking.purpose else f"\n---\n{reason}"
         booking.save()
 
         serializer = self.get_serializer(booking)

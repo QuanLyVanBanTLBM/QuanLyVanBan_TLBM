@@ -43,17 +43,29 @@ def _co_du_lieu_to_chuc():
     return {"chuc_vu", "don_vi"} <= fields
 
 
-def tim_ung_vien_theo_chuc_vu(chuc_vu_id, pham_vi_chuc_vu, nguoi_tao, don_vi_co_dinh_id=None):
+def can_bo_giu_chuc_vu(chuc_vu_id, don_vi_id=None):
+    """Cán bộ đang làm việc (is_active, trang_thai LAM_VIEC) giữ chức vụ; `don_vi_id` thì chỉ trong đơn vị đó."""
     if not _co_du_lieu_to_chuc():
-        return []
+        return get_user_model().objects.none()
     queryset = get_user_model().objects.filter(is_active=True, chuc_vu_id=chuc_vu_id)
-    if pham_vi_chuc_vu == enums.PhamViChucVu.DON_VI_NGUOI_TAO:
-        queryset = queryset.filter(don_vi_id=getattr(nguoi_tao, "don_vi_id", None))
-    elif pham_vi_chuc_vu == enums.PhamViChucVu.DON_VI_CO_DINH:
-        queryset = queryset.filter(don_vi_id=don_vi_co_dinh_id)
+    if don_vi_id is not None:
+        queryset = queryset.filter(don_vi_id=don_vi_id)
     if hasattr(get_user_model(), "trang_thai"):
         queryset = queryset.filter(trang_thai="LAM_VIEC")
-    return list(queryset.order_by("pk"))
+    return queryset
+
+
+def tim_ung_vien_theo_chuc_vu(chuc_vu_id, pham_vi_chuc_vu, nguoi_tao, don_vi_co_dinh_id=None):
+    don_vi_id = None
+    if pham_vi_chuc_vu == enums.PhamViChucVu.DON_VI_NGUOI_TAO:
+        don_vi_id = getattr(nguoi_tao, "don_vi_id", None)
+        if don_vi_id is None:
+            return []
+    elif pham_vi_chuc_vu == enums.PhamViChucVu.DON_VI_CO_DINH:
+        don_vi_id = don_vi_co_dinh_id
+        if don_vi_id is None:
+            return []
+    return list(can_bo_giu_chuc_vu(chuc_vu_id, don_vi_id).order_by("pk"))
 
 
 # ── Đơn vị và vai trò quản lý quy trình (#80 mục A, plan mục 3.1, 8) ────────

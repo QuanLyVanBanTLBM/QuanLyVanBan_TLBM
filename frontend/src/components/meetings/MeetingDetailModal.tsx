@@ -45,13 +45,30 @@ export const MeetingDetailModal: React.FC<MeetingDetailModalProps> = ({
   const timeRangeStr = `${booking.start_time.slice(0, 5)} - ${booking.end_time.slice(0, 5)}`;
   const dateFormatted = booking.date.split('-').reverse().join('/');
 
-  // Phân tích nội dung mục đích và lý do hủy (nếu có)
-  const purposeParts = (booking.purpose || '').split('\n---\n');
-  const purposeText = purposeParts[0]?.trim();
-  const cancelReasonText = purposeParts[1]?.trim();
-
   const isCompleted = booking.trang_thai === 'COMPLETED';
   const isCancelled = booking.trang_thai === 'CANCELLED';
+
+  // Phân tích nội dung mục đích và lý do hủy (nếu có)
+  let purposeText: string | undefined;
+  let cancelReasonText: string | undefined;
+
+  if (booking.cancel_reason) {
+    cancelReasonText = booking.cancel_reason.trim();
+    purposeText = booking.purpose?.trim() || undefined;
+  } else if (booking.purpose) {
+    if (booking.purpose.includes('\n---\n')) {
+      const purposeParts = booking.purpose.split('\n---\n');
+      purposeText = purposeParts[0]?.trim() || undefined;
+      cancelReasonText = purposeParts[1]?.trim() || undefined;
+    } else if (isCancelled) {
+      // Trường hợp lịch đã hủy và không có dấu phân tách (dữ liệu cũ hoặc API chưa bóc tách)
+      // Theo nghiệp vụ: khi tạo lịch không ghi chú rồi hủy, nội dung này chính là lý do hủy
+      cancelReasonText = booking.purpose.trim() || undefined;
+      purposeText = undefined;
+    } else {
+      purposeText = booking.purpose.trim() || undefined;
+    }
+  }
 
   return (
     <div

@@ -205,20 +205,44 @@ def _thao_tac_da_xu_ly(hanh_dong, khoa_chong_trung, yeu_cau):
     return da_co
 
 
+# ── Văn bản trình ký (#275 mục 3) ───────────────────────────────────────────
+# Hồ sơ gắn một văn bản đi (không bắt buộc) hoặc mang văn bản khác nhập tay (số hiệu tùy chọn, trích yếu bắt buộc).
+# Tệp PDF trình ký luôn tải lên riêng. Quy tắc "một văn bản một hồ sơ đang mở" chỉ áp dụng khi gắn văn bản đi.
+
+
+def _kiem_tra_van_ban_gan(nguoi, document_type, van_ban_id, tru=None):
+    if van_ban_id is None:
+        return
+    kiem_tra_van_ban_trinh_ky(nguoi, document_type, van_ban_id)
+    _kiem_tra_khong_co_ho_so_mo(document_type, van_ban_id, tru=tru)
+
+
+def _kiem_tra_trich_yeu(trich_yeu):
+    if not (trich_yeu or "").strip():
+        raise _loi("thieu_van_ban_trinh_ky", "Chọn văn bản đi hoặc nhập trích yếu văn bản trình ký.",
+                   trich_yeu_van_ban=["Bắt buộc khi không chọn văn bản đi."])
+
+
 # ── Tạo, sửa nháp ───────────────────────────────────────────────────────────
 
 
 @transaction.atomic
-def tao_nhap(nguoi_tao, *, document_type, van_ban_id, quy_trinh, tep, han_chot=None, ghi_chu="",
-             dia_chi_ip=None):
-    kiem_tra_van_ban_trinh_ky(nguoi_tao, document_type, van_ban_id)
-    _kiem_tra_khong_co_ho_so_mo(document_type, van_ban_id)
+def tao_nhap(nguoi_tao, *, quy_trinh, tep, document_type=None, van_ban_id=None, so_hieu_van_ban="",
+             trich_yeu_van_ban="", han_chot=None, ghi_chu="", dia_chi_ip=None):
+    if van_ban_id is not None:
+        document_type = document_type or enums.LoaiVanBan.VAN_BAN_DI
+        so_hieu_van_ban = trich_yeu_van_ban = ""  # văn bản đi là nguồn mô tả
+    else:
+        document_type = None
+        _kiem_tra_trich_yeu(trich_yeu_van_ban)
+    _kiem_tra_van_ban_gan(nguoi_tao, document_type, van_ban_id)
     quy_trinh = SigningProcess.objects.get(pk=quy_trinh.pk)
     _kiem_tra_quy_trinh(quy_trinh, nguoi_tao)
     _kiem_tra_han_chot(han_chot)
     vi_tri, ma_bam = luu_tep_pdf(tep)
     yeu_cau = SigningRequest.objects.create(
-        document_type=document_type, van_ban_id=van_ban_id, quy_trinh=quy_trinh,
+        document_type=document_type, van_ban_id=van_ban_id, so_hieu_van_ban=so_hieu_van_ban.strip(),
+        trich_yeu_van_ban=trich_yeu_van_ban.strip(), quy_trinh=quy_trinh,
         phien_ban_quy_trinh=quy_trinh.phien_ban, han_chot=han_chot, ghi_chu=ghi_chu,
         phien_ban_van_ban="1", vi_tri_luu_tep=vi_tri, ma_bam_tai_lieu=ma_bam, create_by=nguoi_tao,
     )
@@ -230,13 +254,22 @@ def tao_nhap(nguoi_tao, *, document_type, van_ban_id, quy_trinh, tep, han_chot=N
 
 @transaction.atomic
 def cap_nhat_nhap(yeu_cau, nguoi, *, tep=None, dia_chi_ip=None, **thay_doi):
-    """Sửa hồ sơ NHAP (hạn chót, ghi chú, tệp). Thay tệp tăng `phien_ban_van_ban`."""
+    """Sửa hồ sơ NHAP (hạn chót, ghi chú, tệp; số hiệu, trích yếu khi văn bản nhập tay). Thay tệp tăng
+    `phien_ban_van_ban`."""
     yeu_cau = _khoa_yeu_cau(yeu_cau.pk)
     _yeu_cau_nguoi_tao(yeu_cau, nguoi)
     if yeu_cau.trang_thai != enums.TrangThaiYeuCau.NHAP:
         raise ConflictError(code="ho_so_khong_o_trang_thai_nhap", detail="Chỉ sửa được hồ sơ nháp.")
     if "han_chot" in thay_doi:
         _kiem_tra_han_chot(thay_doi["han_chot"])
+    nhap_tay = {k for k in ("so_hieu_van_ban", "trich_yeu_van_ban") if k in thay_doi}
+    if nhap_tay and yeu_cau.van_ban_id is not None:
+        raise _loi("van_ban_da_gan", "Hồ sơ gắn văn bản đi; số hiệu, trích yếu lấy theo văn bản đi.",
+                   **{k: ["Không sửa được khi đã gắn văn bản đi."] for k in nhap_tay})
+    for k in nhap_tay:
+        thay_doi[k] = thay_doi[k].strip()
+    if "trich_yeu_van_ban" in thay_doi:
+        _kiem_tra_trich_yeu(thay_doi["trich_yeu_van_ban"])
     fields = []
     for ten, gia_tri in thay_doi.items():
         setattr(yeu_cau, ten, gia_tri)
@@ -415,8 +448,7 @@ def gui(yeu_cau, nguoi, *, khoa_chong_trung, chon_nguoi_ky=None, vi_tri_ky=None,
     _yeu_cau_nguoi_tao(yeu_cau, nguoi)
     if yeu_cau.trang_thai != enums.TrangThaiYeuCau.NHAP:
         raise ConflictError(code="ho_so_khong_o_trang_thai_nhap", detail="Chỉ gửi được hồ sơ nháp.")
-    kiem_tra_van_ban_trinh_ky(nguoi, yeu_cau.document_type, yeu_cau.van_ban_id)
-    _kiem_tra_khong_co_ho_so_mo(yeu_cau.document_type, yeu_cau.van_ban_id, tru=yeu_cau.pk)
+    _kiem_tra_van_ban_gan(nguoi, yeu_cau.document_type, yeu_cau.van_ban_id, tru=yeu_cau.pk)
     _kiem_tra_quy_trinh(yeu_cau.quy_trinh, nguoi)
     _kiem_tra_han_chot(yeu_cau.han_chot)
     luot, cap_dau = tao_luot_trinh(yeu_cau, nguoi, chon_nguoi_ky=chon_nguoi_ky or {},
@@ -474,7 +506,8 @@ def huy(yeu_cau, nguoi, *, khoa_chong_trung, ly_do="", dia_chi_ip=None):
 @transaction.atomic
 def trinh_lai(yeu_cau, nguoi, *, khoa_chong_trung, han_chot=None, dia_chi_ip=None):
     """
-    Tạo hồ sơ NHAP mới từ hồ sơ bị từ chối (plan mục 3.3): giữ văn bản, tệp của lượt cuối;
+    Tạo hồ sơ NHAP mới từ hồ sơ bị từ chối (plan mục 3.3): giữ văn bản trình ký (văn bản đi hoặc nhập tay), tệp của
+    lượt cuối;
     dùng phiên bản đang hoạt động của cùng mã quy trình; `ho_so_goc` trỏ về hồ sơ cũ.
     """
     da_xu_ly = _thao_tac_da_xu_ly("TRINH_LAI", khoa_chong_trung, yeu_cau)
@@ -487,8 +520,7 @@ def trinh_lai(yeu_cau, nguoi, *, khoa_chong_trung, han_chot=None, dia_chi_ip=Non
     _yeu_cau_nguoi_tao(yeu_cau, nguoi)
     if yeu_cau.trang_thai != enums.TrangThaiYeuCau.TU_CHOI:
         raise ConflictError(code="chi_trinh_lai_ho_so_bi_tu_choi", detail="Chỉ trình lại hồ sơ bị từ chối.")
-    kiem_tra_van_ban_trinh_ky(nguoi, yeu_cau.document_type, yeu_cau.van_ban_id)
-    _kiem_tra_khong_co_ho_so_mo(yeu_cau.document_type, yeu_cau.van_ban_id)
+    _kiem_tra_van_ban_gan(nguoi, yeu_cau.document_type, yeu_cau.van_ban_id)
     quy_trinh = SigningProcess.objects.filter(
         ma_quy_trinh=yeu_cau.quy_trinh.ma_quy_trinh, trang_thai=enums.TrangThaiQuyTrinh.HOAT_DONG,
     ).first()
@@ -499,7 +531,8 @@ def trinh_lai(yeu_cau, nguoi, *, khoa_chong_trung, han_chot=None, dia_chi_ip=Non
     _kiem_tra_han_chot(han_chot)
     luot = luot_hien_hanh(yeu_cau)
     moi = SigningRequest.objects.create(
-        document_type=yeu_cau.document_type, van_ban_id=yeu_cau.van_ban_id, quy_trinh=quy_trinh,
+        document_type=yeu_cau.document_type, van_ban_id=yeu_cau.van_ban_id,
+        so_hieu_van_ban=yeu_cau.so_hieu_van_ban, trich_yeu_van_ban=yeu_cau.trich_yeu_van_ban, quy_trinh=quy_trinh,
         phien_ban_quy_trinh=quy_trinh.phien_ban, han_chot=han_chot,
         ghi_chu=yeu_cau.ghi_chu, phien_ban_van_ban=luot.phien_ban_van_ban, vi_tri_luu_tep=luot.vi_tri_luu_tep,
         ma_bam_tai_lieu=luot.ma_bam_tai_lieu, ho_so_goc=yeu_cau, create_by=nguoi,

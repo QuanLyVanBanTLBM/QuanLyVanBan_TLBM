@@ -82,7 +82,7 @@ class YeuCauSuaTests(KyBase):
         self.assertEqual(r.data["trang_thai"], "HOAN_THANH")
         self.assertEqual(SigningSignature.objects.filter(luot_trinh__so_luot=1).count(), 2)  # bằng chứng lượt cũ
         self.assertEqual(SigningSignature.objects.filter(luot_trinh__so_luot=2, hash_tai_lieu=HASH_SUA).count(), 3)
-        hanh_dong = list(SigningAuditLog.objects.filter(trinh_ky_id=self.pk).values_list("hanh_dong", flat=True))
+        hanh_dong = list(SigningAuditLog.objects.filter(trinh_ky_id=self.pk).order_by("id").values_list("hanh_dong", flat=True))
         i = hanh_dong.index("GIAI_QUYET_YEU_CAU_SUA")
         self.assertEqual((hanh_dong[i - 1], hanh_dong[i + 1]), ("YEU_CAU_SUA", "MO_CAP_KY"))
 

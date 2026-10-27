@@ -170,7 +170,7 @@ def _trang_phe_duyet(noi_dung, ma_bam_bang_chung, phong, phong_dam):
     quy_trinh = ho_so["quy_trinh"]
     thong_tin = [
         ("Hồ sơ trình ký", f"#{ho_so['id']} — lượt {luot['so_luot']}"),
-        ("Văn bản", mo_ta_vb or f"Văn bản #{ho_so['van_ban_id']}"),
+        ("Văn bản trình ký", mo_ta_vb or (f"Văn bản #{ho_so['van_ban_id']}" if ho_so.get("van_ban_id") else "—")),
         ("Quy trình", f"{quy_trinh['ma']} — {quy_trinh['ten']} (phiên bản {quy_trinh['phien_ban']})"),
         ("Người trình", ho_so["nguoi_tao"]["ten"]),
         ("Gửi lúc", _gio_vn(luot["thoi_diem_gui"])),

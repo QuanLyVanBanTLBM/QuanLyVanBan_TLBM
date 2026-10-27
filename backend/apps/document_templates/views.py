@@ -7,9 +7,20 @@ from openpyxl.utils import get_column_letter
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.http import HttpResponse
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import filters, permissions, status, viewsets
+from rest_framework import exceptions, filters, permissions, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
+
+class StandardResourcePagination(PageNumberPagination):
+    """
+    Cấu trúc phân trang chuẩn REST framework: count, next, previous, results.
+    Mặc định 20 bản ghi/trang, hỗ trợ tham số page_size (tối đa 100 bản ghi/trang).
+    """
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
 
 from .selectors import visible_resources
 from .filters import TaiLieuChiTietFilter
@@ -33,7 +44,7 @@ class DanhMucTaiLieuViewSet(viewsets.ModelViewSet):
     queryset = DanhMucTaiLieu.objects.select_related('nguoi_lap').all()
     serializer_class = DanhMucTaiLieuSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
-    pagination_class = None
+    pagination_class = StandardResourcePagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['ten_tai_lieu', 'ky_hieu', 'ghi_chu']
     ordering_fields = ['stt_uu_tien', 'id', 'created_at', 'ten_tai_lieu']
@@ -122,7 +133,7 @@ class LoaiTaiLieuViewSet(viewsets.ModelViewSet):
     queryset = LoaiTaiLieu.objects.select_related('dm_tai_lieu').all()
     serializer_class = LoaiTaiLieuSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
-    pagination_class = None
+    pagination_class = StandardResourcePagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['dm_tai_lieu', 'is_public']
     search_fields = ['ten_loai', 'ghi_chu']
@@ -142,7 +153,7 @@ class TaiLieuChiTietViewSet(viewsets.ModelViewSet):
     """
     serializer_class = TaiLieuChiTietSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
-    pagination_class = None
+    pagination_class = StandardResourcePagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_class = TaiLieuChiTietFilter
     search_fields = ['tieu_de', 'ky_hieu', 'noi_ban_hanh', 'ghi_chu']
@@ -189,10 +200,17 @@ class TaiLieuChiTietViewSet(viewsets.ModelViewSet):
             else:
                 obj.hieu_luc = 'CON_HIEU_LUC'
 
-        if link_thay_the is not None:
-            obj.link_thay_the = link_thay_the
-        if ngay_het_hieu_luc is not None:
-            obj.ngay_het_hieu_luc = ngay_het_hieu_luc
+        if obj.hieu_luc == 'CON_HIEU_LUC':
+            obj.link_thay_the = ''
+            if ngay_het_hieu_luc is not None:
+                obj.ngay_het_hieu_luc = ngay_het_hieu_luc if ngay_het_hieu_luc != '' else None
+            else:
+                obj.ngay_het_hieu_luc = None
+        else:
+            if link_thay_the is not None:
+                obj.link_thay_the = link_thay_the
+            if ngay_het_hieu_luc is not None:
+                obj.ngay_het_hieu_luc = ngay_het_hieu_luc if ngay_het_hieu_luc != '' else None
 
         try:
             obj.full_clean()
@@ -212,10 +230,12 @@ class TaiLieuChiTietViewSet(viewsets.ModelViewSet):
         Xuất danh sách tài liệu chi tiết sang file Excel (.xlsx) theo đúng bộ lọc tìm kiếm hiện tại
         """
         filtered_qs = self.filter_queryset(self.get_queryset())
+        lang = request.query_params.get('lang', 'vi')
+        is_en = (lang == 'en')
 
         wb = openpyxl.Workbook()
         ws = wb.active
-        ws.title = "DanhSachTaiLieu"
+        ws.title = "DocumentList" if is_en else "DanhSachTaiLieu"
 
         # Cấu hình phong cách bảng tính
         title_font = Font(name="Arial", size=14, bold=True, color="1E3A8A")
@@ -235,7 +255,11 @@ class TaiLieuChiTietViewSet(viewsets.ModelViewSet):
         # Tiêu đề bảng
         ws.merge_cells("A1:L1")
         title_cell = ws["A1"]
-        title_cell.value = "DANH SÁCH TÀI LIỆU VÀ BIỂU MẪU CHUNG"
+        title_cell.value = (
+            "COMMON DOCUMENTS AND TEMPLATES DIRECTORY"
+            if is_en
+            else "DANH SÁCH TÀI LIỆU VÀ BIỂU MẪU CHUNG"
+        )
         title_cell.font = title_font
         title_cell.alignment = Alignment(horizontal="center", vertical="center")
         ws.row_dimensions[1].height = 35
@@ -243,26 +267,45 @@ class TaiLieuChiTietViewSet(viewsets.ModelViewSet):
         # Dòng thời gian xuất
         ws.merge_cells("A2:L2")
         sub_cell = ws["A2"]
-        sub_cell.value = f"Ngày xuất báo cáo: {datetime.now().strftime('%d/%m/%Y %H:%M')} | Tổng số tài liệu: {filtered_qs.count()}"
+        if is_en:
+            sub_cell.value = f"Export date: {datetime.now().strftime('%d/%m/%Y %H:%M')} | Total documents: {filtered_qs.count()}"
+        else:
+            sub_cell.value = f"Ngày xuất báo cáo: {datetime.now().strftime('%d/%m/%Y %H:%M')} | Tổng số tài liệu: {filtered_qs.count()}"
         sub_cell.font = Font(name="Arial", size=10, italic=True, color="475569")
         sub_cell.alignment = Alignment(horizontal="center", vertical="center")
         ws.row_dimensions[2].height = 20
 
         # Header
-        headers = [
-            "STT",
-            "Số ký hiệu",
-            "Tiêu đề tài liệu",
-            "Danh mục Cấp 1",
-            "Loại tài liệu Cấp 2",
-            "Nơi ban hành",
-            "Ngày đăng",
-            "Hiệu lực",
-            "Ngày hết hiệu lực",
-            "Văn bản thay thế",
-            "Phạm vi hiển thị",
-            "Người tạo",
-        ]
+        if is_en:
+            headers = [
+                "No.",
+                "Document Code",
+                "Document Title",
+                "Category (Level 1)",
+                "Document Type (Level 2)",
+                "Issuing Authority",
+                "Published Date",
+                "Status",
+                "Expiration Date",
+                "Replacement Document",
+                "Visibility Scope",
+                "Created By",
+            ]
+        else:
+            headers = [
+                "STT",
+                "Số ký hiệu",
+                "Tiêu đề tài liệu",
+                "Danh mục Cấp 1",
+                "Loại tài liệu Cấp 2",
+                "Nơi ban hành",
+                "Ngày đăng",
+                "Hiệu lực",
+                "Ngày hết hiệu lực",
+                "Văn bản thay thế",
+                "Phạm vi hiển thị",
+                "Người tạo",
+            ]
         ws.append([])  # Dòng trống row 3
         ws.append(headers)  # Row 4
         ws.row_dimensions[4].height = 28
@@ -284,7 +327,26 @@ class TaiLieuChiTietViewSet(viewsets.ModelViewSet):
                 if doc.nguoi_tao else ""
             )
 
-            is_expired = doc.hieu_luc in ['HET_HIEU_LUC', 'HET_VA_THAY_THE']
+            is_expired = doc.is_expired
+            effective_status = doc.effective_hieu_luc
+
+            if is_en:
+                hieu_luc_map = {
+                    'CON_HIEU_LUC': 'Active',
+                    'CON_HIEU_LUC_1_PHAN': 'Partially Active',
+                    'HET_HIEU_LUC': 'Expired',
+                    'HET_VA_THAY_THE': 'Expired & Replaced',
+                }
+                hieu_luc_display = hieu_luc_map.get(effective_status, effective_status)
+                hien_thi_map = {
+                    'TAT_CA': 'Public / All',
+                    'PHONG_BAN': 'Internal Department',
+                }
+                hien_thi_display = hien_thi_map.get(doc.hien_thi, doc.get_hien_thi_display())
+            else:
+                hieu_luc_vn_map = dict(TaiLieuChiTiet.HIEU_LUC_CHOICES)
+                hieu_luc_display = hieu_luc_vn_map.get(effective_status, effective_status)
+                hien_thi_display = doc.get_hien_thi_display()
 
             row_data = [
                 idx,
@@ -294,10 +356,10 @@ class TaiLieuChiTietViewSet(viewsets.ModelViewSet):
                 loai_names,
                 doc.noi_ban_hanh or "",
                 ngay_dang_str,
-                doc.get_hieu_luc_display(),
+                hieu_luc_display,
                 ngay_het_str,
                 doc.link_thay_the or "",
-                doc.get_hien_thi_display(),
+                hien_thi_display,
                 nguoi_tao_str,
             ]
             ws.append(row_data)
@@ -340,7 +402,8 @@ class TaiLieuChiTietViewSet(viewsets.ModelViewSet):
             content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
         date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-        response["Content-Disposition"] = f'attachment; filename="Danh_sach_tai_lieu_{date_str}.xlsx"'
+        prefix = "Document_List" if is_en else "Danh_sach_tai_lieu"
+        response["Content-Disposition"] = f'attachment; filename="{prefix}_{date_str}.xlsx"'
         return response
 
 
@@ -348,24 +411,55 @@ class ChiTietTaiLieuAttachmentViewSet(viewsets.ModelViewSet):
     """
     ViewSet cho Tệp đính kèm tài liệu (1-N Hướng A):
     - Quản lý danh sách, upload, xóa mềm tệp đính kèm theo DDL Base
-    - Chuẩn hóa tên cột nguoi_tao_id, created_at (PR #96 / PR #101)
+    - Chống lỗ hổng IDOR rò rỉ tệp nội bộ: lọc tệp theo visible_resources của tài liệu cha
+    - Kiểm soát chặt quyền xóa mềm và upload tệp
     """
-    queryset = ChiTietTaiLieuAttachment.objects.filter(is_deleted=False).select_related('document', 'nguoi_tao')
     serializer_class = ChiTietTaiLieuAttachmentSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    pagination_class = StandardResourcePagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['document']
     search_fields = ['name']
     ordering_fields = ['id', 'created_at', 'name', 'file_size']
     ordering = ['id']
 
+    def get_queryset(self):
+        user = self.request.user
+        # Bảo vệ IDOR: Chỉ cho phép truy vấn tệp thuộc về các tài liệu mà người dùng có quyền xem
+        visible_docs = visible_resources(TaiLieuChiTiet.objects.all(), user)
+        return ChiTietTaiLieuAttachment.objects.filter(
+            is_deleted=False,
+            document__in=visible_docs
+        ).select_related('document', 'nguoi_tao')
+
     def perform_create(self, serializer):
-        kwargs = {}
-        if self.request.user and self.request.user.is_authenticated:
-            kwargs['nguoi_tao'] = self.request.user
-        serializer.save(**kwargs)
+        user = self.request.user
+        if not user or not user.is_authenticated:
+            raise exceptions.PermissionDenied("Yêu cầu đăng nhập để tải lên tệp đính kèm.")
+        doc = serializer.validated_data.get('document')
+        can_add = (
+            user.is_superuser or
+            user.is_staff or
+            (doc and doc.nguoi_tao == user) or
+            (doc and hasattr(user, 'don_vi_id') and user.don_vi_id and doc.don_vi_id == user.don_vi_id)
+        )
+        if not can_add:
+            raise exceptions.PermissionDenied("Không có quyền tải lên tệp đính kèm cho tài liệu này.")
+        serializer.save(nguoi_tao=user)
 
     def perform_destroy(self, instance):
+        user = self.request.user
+        if not user or not user.is_authenticated:
+            raise exceptions.PermissionDenied("Yêu cầu đăng nhập để xóa tệp đính kèm.")
+        can_delete = (
+            user.is_superuser or
+            user.is_staff or
+            instance.nguoi_tao == user or
+            instance.document.nguoi_tao == user or
+            (hasattr(user, 'don_vi_id') and user.don_vi_id and instance.document.don_vi_id == user.don_vi_id)
+        )
+        if not can_delete:
+            raise exceptions.PermissionDenied("Không có quyền xóa tệp đính kèm này.")
         instance.is_deleted = True
         instance.save()
 

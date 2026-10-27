@@ -8,7 +8,7 @@
  *   ra được khóa bọc. Đổi PIN: server xoay vòng k_srv, client mở bằng k_srv cũ và bọc lại bằng k_srv mới.
  * - Server không nhận PIN, không nhận private key hay bản bọc.
  */
-import { argon2id } from 'hash-wasm';
+import { argon2id, sha256 } from 'hash-wasm';
 import type { ThamSoKdf } from './types';
 
 export const KDF_MAC_DINH = { thuat_toan: 'argon2id' as const, m: 64 * 1024, t: 3, p: 1, phien_ban: 19 };
@@ -50,8 +50,11 @@ export function tuHex(hex: string): Bytes {
 }
 
 export async function sha256Hex(data: ArrayBuffer): Promise<string> {
-  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', data));
-  return Array.from(digest, (b) => b.toString(16).padStart(2, '0')).join('');
+  if (typeof crypto !== 'undefined' && crypto?.subtle?.digest) {
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', data));
+    return Array.from(digest, (b) => b.toString(16).padStart(2, '0')).join('');
+  }
+  return sha256(new Uint8Array(data));
 }
 
 // ── Chính sách PIN (8 chữ số) ─────────────────────────────────────────────────
@@ -117,6 +120,9 @@ async function khoaBoc(master_pin: Bytes, kSrvB64: string): Promise<CryptoKey> {
 // ── Khóa Ed25519 ──────────────────────────────────────────────────────────────
 
 export function hoTroEd25519(): Promise<boolean> {
+  if (typeof crypto === 'undefined' || !crypto?.subtle?.generateKey) {
+    return Promise.resolve(false);
+  }
   return crypto.subtle
     .generateKey({ name: 'Ed25519' }, false, ['sign', 'verify'])
     .then(() => true)
@@ -129,6 +135,9 @@ export interface CapKhoaMoi {
 }
 
 export async function sinhCapKhoa(): Promise<CapKhoaMoi> {
+  if (typeof crypto === 'undefined' || !crypto?.subtle?.generateKey) {
+    throw new Error('khong_ho_tro_webcrypto');
+  }
   const cap = (await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify'])) as CryptoKeyPair;
   const raw = await crypto.subtle.exportKey('raw', cap.publicKey);
   const pkcs8 = await crypto.subtle.exportKey('pkcs8', cap.privateKey);

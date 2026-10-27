@@ -124,7 +124,7 @@ describe('OutboundDocumentPage Component (Phân hệ Văn bản Đi)', () => {
         expect(screen.getByText('201/QĐ-TLBM')).toBeInTheDocument();
         expect(screen.getByText('Quyết định ban hành quy chế làm việc nội bộ')).toBeInTheDocument();
         expect(screen.getByText('202/TB-TLBM')).toBeInTheDocument();
-        expect(screen.getByText('Số đi')).toBeInTheDocument();
+        expect(screen.getAllByText(/Số đi/i).length).toBeGreaterThan(0);
       });
     });
 

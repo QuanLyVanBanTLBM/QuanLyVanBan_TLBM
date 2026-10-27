@@ -4,17 +4,17 @@
  * bấm lại hoặc thử lại sau lỗi mạng không tạo thao tác trùng.
  */
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@components/common';
 import { signingApi } from '@lib/signing/api';
-import { LOP_O_NHAP } from '@lib/signing/dinhDang';
+import { GIOI_HAN, LOP_O_NHAP } from '@lib/signing/dinhDang';
 import { coQuyen, useKhoaChongTrung, useToi } from '@lib/signing/hooks';
 import { useSigningT } from '@lib/signing/i18n';
 import { docFileKhoaTuTep, DUOI_FILE_KHOA } from '@lib/signing/fileKhoa';
 import type { BanBocKhoa } from '@lib/signing/khoaKy';
 import { khoaHoatDong, kyBangPin } from '@lib/signing/luongKhoa';
 import type { HoSoChiTiet, LuotTrinh, NguoiDungTim } from '@lib/signing/types';
-import { HopThoai, ThongBao, TruongNhap } from './ChungUI';
+import { HopThoai, OChonTep, ThongBao, TruongNhap } from './ChungUI';
 
 type LoaiHopThoai = 'ky' | 'sua' | 'tu_choi' | 'thu_hoi' | 'huy' | 'trinh_lai' | 'uy_quyen' | null;
 
@@ -99,6 +99,7 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
   };
 
   const ky = () => thucHien(async () => {
+    if (!toi || !luot) throw new Error('khong_co_quyen');
     const khoa_ky = khoaHoatDong(await signingApi.khoa());
     if (!khoa_ky) throw new Error('thieu_ban_boc_thiet_bi');
     const chu_ky_so = await kyBangPin(toi.id, khoa_ky, pin, luot.ma_bam_tai_lieu, fileKhoa ?? undefined);
@@ -121,9 +122,9 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
   return (
     <div className="flex flex-wrap gap-2">
       {hoSo.trang_thai === 'NHAP' && laNguoiTao && (
-        <Link to={`/approvals/tao-moi?ho_so=${hoSo.id}`}>
-          <Button size="sm" icon="fa-paper-plane">{t('tao.buoc2')}</Button>
-        </Link>
+        <Button size="sm" icon="fa-paper-plane" onClick={() => navigate(`/approvals/tao-moi?ho_so=${hoSo.id}`)}>
+          {t('tao.buoc2')}
+        </Button>
       )}
       {dangMoChoToi && luot?.trang_thai === 'CHO_KY' && <>
         {nut('ky', t('hanhDong.kyDuyet'), 'fa-signature', 'primary')}
@@ -136,18 +137,16 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
       {hoSo.trang_thai === 'TU_CHOI' && laNguoiTao && coQuyen(toi, 'send_trinhky')
         && nut('trinh_lai', t('hanhDong.trinhLai'), 'fa-repeat')}
 
-      <HopThoai moTieuDe={t('hanhDong.kyDuyet')} mo={mo === 'ky'} onDong={dong}
+      <HopThoai moTieuDe={t('hanhDong.kyDuyet')} mo={mo === 'ky'} onDong={dong} dangXuLy={dangLam}
         chanDuoi={nutXacNhan(ky, t('hanhDong.kyDuyet'), 'primary', !maBamKhop || pin.length !== 8)}>
         <div className="text-sm text-main">{t('hanhDong.xacNhanTep')} <b>trinh-ky-{hoSo.id}.pdf</b></div>
         {!maBamKhop && <ThongBao>{t('loi.ma_bam_khong_khop')}</ThongBao>}
         <TruongNhap nhan={t('hanhDong.ghiChuKy')}>
-          <input className={LOP_O_NHAP} value={o1} onChange={(e) => setO1(e.target.value)} />
+          <input className={LOP_O_NHAP} maxLength={GIOI_HAN.ghiChu} value={o1} onChange={(e) => setO1(e.target.value)} />
         </TruongNhap>
         <TruongNhap nhan={t('hanhDong.fileKhoa')} ghiChu={t('hanhDong.fileKhoaGhiChu')}>
-          <input className={LOP_O_NHAP} type="file" accept={`${DUOI_FILE_KHOA},application/json`}
-            aria-label={t('hanhDong.fileKhoa')}
-            onChange={(e) => {
-              const tep = e.target.files?.[0];
+          <OChonTep accept={`${DUOI_FILE_KHOA},application/json`} nhan={t('hanhDong.fileKhoa')}
+            onChon={(tep) => {
               setFileKhoa(null);
               setThongBao('');
               if (tep) docFileKhoaTuTep(tep).then(setFileKhoa, (err) => setThongBao(loi(err)));
@@ -156,7 +155,13 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
         {fileKhoa && <ThongBao loai="thong_tin">{t('hanhDong.daChonFile', { ma: fileKhoa.maKhoa })}</ThongBao>}
         <TruongNhap nhan={t('hanhDong.nhapPin')}>
           <input className={LOP_O_NHAP} type="password" inputMode="numeric" autoComplete="off" maxLength={8}
-            value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} />
+            value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && pin.length === 8 && maBamKhop && !dangLam) {
+                e.preventDefault();
+                ky();
+              }
+            }} />
         </TruongNhap>
         {dangLam && <ThongBao loai="thong_tin">{t('hanhDong.dangKy')}</ThongBao>}
         {thongBao && <ThongBao>{thongBao}</ThongBao>}
@@ -167,34 +172,53 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
         )}
       </HopThoai>
 
-      <HopThoai moTieuDe={t('hanhDong.traLaiSua')} mo={mo === 'sua'} onDong={dong}
+      <HopThoai moTieuDe={t('hanhDong.traLaiSua')} mo={mo === 'sua'} onDong={dong} dangXuLy={dangLam}
         chanDuoi={nutXacNhan(() => thucHien(() => signingApi.yeuCauSua(hoSo.id, khoa.lay(), o1, o2)),
           t('hanhDong.traLaiSua'), 'primary', !o1.trim() || !o2.trim())}>
         <TruongNhap nhan={t('hanhDong.tieuDeSua')}>
           <input className={LOP_O_NHAP} maxLength={255} value={o1} onChange={(e) => setO1(e.target.value)} />
         </TruongNhap>
         <TruongNhap nhan={t('hanhDong.lyDoSua')}>
-          <textarea className={LOP_O_NHAP} rows={4} value={o2} onChange={(e) => setO2(e.target.value)} />
+          <textarea className={LOP_O_NHAP} rows={4} maxLength={GIOI_HAN.lyDo} value={o2} onChange={(e) => setO2(e.target.value)} />
         </TruongNhap>
         {thongBao && <ThongBao>{thongBao}</ThongBao>}
       </HopThoai>
 
-      <HopThoai moTieuDe={t('hanhDong.khongDongY')} mo={mo === 'tu_choi'} onDong={dong}
+      <HopThoai moTieuDe={t('hanhDong.khongDongY')} mo={mo === 'tu_choi'} onDong={dong} dangXuLy={dangLam}
         chanDuoi={nutXacNhan(() => thucHien(() => signingApi.tuChoi(hoSo.id, khoa.lay(), o1)),
           t('hanhDong.khongDongY'), 'danger', !o1.trim())}>
+        <div className="rounded-lg border border-warning bg-warning-subtle/30 p-3 text-xs text-warning-text space-y-2">
+          <div className="flex items-start gap-2">
+            <i className="fa-solid fa-triangle-exclamation mt-0.5 shrink-0 text-warning" aria-hidden="true" />
+            <p className="leading-relaxed">{t('hanhDong.canhBaoTuChoi')}</p>
+          </div>
+          <button
+            type="button"
+            className="text-primary hover:underline font-semibold flex items-center gap-1.5 pt-1"
+            onClick={() => {
+              setMo('sua');
+              setO1('');
+              setO2('');
+              setThongBao('');
+            }}
+          >
+            <i className="fa-solid fa-arrow-right-arrow-left text-xs" aria-hidden="true" />
+            <span>{t('hanhDong.chuyenSangTraSua')}</span>
+          </button>
+        </div>
         <TruongNhap nhan={t('hanhDong.lyDoTuChoi')}>
-          <textarea className={LOP_O_NHAP} rows={4} value={o1} onChange={(e) => setO1(e.target.value)} />
+          <textarea className={LOP_O_NHAP} rows={4} maxLength={GIOI_HAN.lyDo} value={o1} onChange={(e) => setO1(e.target.value)} />
         </TruongNhap>
         {thongBao && <ThongBao>{thongBao}</ThongBao>}
       </HopThoai>
 
-      <HopThoai moTieuDe={t('hanhDong.thuHoi')} mo={mo === 'thu_hoi'} onDong={dong}
+      <HopThoai moTieuDe={t('hanhDong.thuHoi')} mo={mo === 'thu_hoi'} onDong={dong} dangXuLy={dangLam}
         chanDuoi={nutXacNhan(() => thucHien(() => signingApi.thuHoi(hoSo.id, khoa.lay())), t('hanhDong.thuHoi'))}>
         <p className="text-sm text-main">{t('hanhDong.xacNhanThuHoi')}</p>
         {thongBao && <ThongBao>{thongBao}</ThongBao>}
       </HopThoai>
 
-      <HopThoai moTieuDe={t('hanhDong.uyQuyen')} mo={mo === 'uy_quyen'} onDong={dong}
+      <HopThoai moTieuDe={t('hanhDong.uyQuyen')} mo={mo === 'uy_quyen'} onDong={dong} dangXuLy={dangLam}
         chanDuoi={nutXacNhan(() => thucHien(() => signingApi.uyQuyen(hoSo.id, khoa.lay(), {
           dong_nguoi_ky: Number(dongUyQuyen), nguoi_nhan: Number(nguoiNhan), ly_do_uy_quyen: o1,
         })), t('hanhDong.uyQuyen'), 'primary', !dongUyQuyen || !nguoiNhan || !o1.trim())}>
@@ -220,21 +244,21 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
           </select>
         </TruongNhap>
         <TruongNhap nhan={t('hanhDong.lyDoUyQuyen')}>
-          <textarea className={LOP_O_NHAP} rows={3} value={o1} onChange={(e) => setO1(e.target.value)} />
+          <textarea className={LOP_O_NHAP} rows={3} maxLength={GIOI_HAN.lyDo} value={o1} onChange={(e) => setO1(e.target.value)} />
         </TruongNhap>
         {thongBao && <ThongBao>{thongBao}</ThongBao>}
       </HopThoai>
 
-      <HopThoai moTieuDe={t('hanhDong.huy')} mo={mo === 'huy'} onDong={dong}
+      <HopThoai moTieuDe={t('hanhDong.huy')} mo={mo === 'huy'} onDong={dong} dangXuLy={dangLam}
         chanDuoi={nutXacNhan(() => thucHien(() => signingApi.huy(hoSo.id, khoa.lay(), o1)), t('hanhDong.huy'),
           'danger', !laNguoiTao && !o1.trim())}>
         <TruongNhap nhan={t('hanhDong.lyDoHuy')} ghiChu={laNguoiTao ? undefined : t('chung.batBuoc')}>
-          <textarea className={LOP_O_NHAP} rows={3} value={o1} onChange={(e) => setO1(e.target.value)} />
+          <textarea className={LOP_O_NHAP} rows={3} maxLength={GIOI_HAN.lyDo} value={o1} onChange={(e) => setO1(e.target.value)} />
         </TruongNhap>
         {thongBao && <ThongBao>{thongBao}</ThongBao>}
       </HopThoai>
 
-      <HopThoai moTieuDe={t('hanhDong.trinhLai')} mo={mo === 'trinh_lai'} onDong={dong}
+      <HopThoai moTieuDe={t('hanhDong.trinhLai')} mo={mo === 'trinh_lai'} onDong={dong} dangXuLy={dangLam}
         chanDuoi={nutXacNhan(async () => {
           const moi = await thucHien(() => signingApi.trinhLai(hoSo.id, khoa.lay()));
           if (moi) navigate(`/approvals/tao-moi?ho_so=${moi.id}`);

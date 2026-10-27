@@ -30,7 +30,7 @@ from ..models import (
     SigningRequestStepSigner,
 )
 from ..tich_hop.to_chuc import ten_hien_thi
-from ..tich_hop.van_ban import mo_ta_van_ban
+from ..tich_hop.van_ban import mo_ta_ho_so
 
 logger = logging.getLogger(__name__)
 
@@ -198,8 +198,10 @@ def dinh_dang_ngay(thoi_diem):
 
 
 def noi_dung(tb):
-    van_ban = mo_ta_van_ban(tb.trinh_ky.document_type, tb.trinh_ky.van_ban_id)
-    ten_van_ban = " — ".join(x for x in (van_ban.get("so_hieu"), van_ban.get("trich_yeu")) if x) or f"#{tb.trinh_ky_id}"
+    van_ban = mo_ta_ho_so(tb.trinh_ky)
+    # Một dòng: xuống dòng trong trích yếu làm email bị từ chối (BadHeaderError) ở tiêu đề
+    ten_van_ban = " ".join(" — ".join(x for x in (van_ban.get("so_hieu"), van_ban.get("trich_yeu")) if x).split()) \
+        or f"#{tb.trinh_ky_id}"
     duong_dan = f"{settings.SIGNING_FRONTEND_URL.rstrip('/')}/approvals/{tb.trinh_ky_id}"
     tieu_de = f"[Trình ký] {TEN_LOAI.get(tb.loai_thong_bao, tb.loai_thong_bao)}: {ten_van_ban}"
     nguoi_thao_tac, ly_do = thao_tac(tb)
@@ -210,7 +212,8 @@ def noi_dung(tb):
         (f"{nhan_ly_do}: {ly_do}\n" if ly_do else "") + \
         (f"Hạn xử lý: {dinh_dang_ngay(han)}.\n" if han else "")
     than = (f"Xin chào {ten_hien_thi(tb.nguoi_nhan)},\n\n"
-            f"{TEN_LOAI.get(tb.loai_thong_bao, tb.loai_thong_bao)} — hồ sơ trình ký #{tb.trinh_ky_id}: {ten_van_ban}.\n"
+            f"{TEN_LOAI.get(tb.loai_thong_bao, tb.loai_thong_bao)} — hồ sơ trình ký #{tb.trinh_ky_id}.\n"
+            f"Văn bản trình ký: {ten_van_ban}.\n"
             f"{chi_tiet}"
             f"Quy trình: {tb.trinh_ky.quy_trinh.ten_quy_trinh}. Người trình: {ten_hien_thi(tb.trinh_ky.create_by)}.\n\n"
             f"Xem hồ sơ: {duong_dan}\n\n"

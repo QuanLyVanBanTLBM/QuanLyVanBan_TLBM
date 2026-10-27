@@ -11,7 +11,7 @@ from . import enums
 from .models import SigningRequest
 from .services.trinh_ky import dang_cho_toi_ky
 from .tich_hop.to_chuc import ten_hien_thi
-from .tich_hop.van_ban import mo_ta_nhieu
+from .tich_hop.van_ban import mo_ta_nhieu_ho_so
 
 GIOI_HAN_GAN_DAY = 5
 NHAN_TRANG_THAI = {
@@ -41,10 +41,10 @@ def tong_quan_dashboard(nguoi, gioi_han=GIOI_HAN_GAN_DAY):
     ho_so = list(SigningRequest.objects.filter(pk__in=ho_so_lien_quan(nguoi).values("pk"))
                  .annotate(ngay_trinh=Coalesce("ngay_gui", "created_at")).select_related("create_by")
                  .order_by("-ngay_trinh", "-pk")[:gioi_han])
-    mo_ta = mo_ta_nhieu(h.van_ban_id for h in ho_so)
+    mo_ta = mo_ta_nhieu_ho_so(ho_so)
     gan_day = []
     for h in ho_so:
-        vb = mo_ta.get(h.van_ban_id, {})
+        vb = mo_ta.get(h.pk, {})
         gan_day.append({
             "id": h.pk,
             "tieu_de": " — ".join(x for x in (vb.get("so_hieu"), vb.get("trich_yeu")) if x) or f"Hồ sơ #{h.pk}",

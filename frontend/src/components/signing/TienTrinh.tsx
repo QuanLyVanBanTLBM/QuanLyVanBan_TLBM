@@ -43,8 +43,8 @@ export default function TienTrinh({ luot, toiId }: { luot: LuotTrinh; toiId?: nu
                         {t('chiTiet.uyQuyenTu', { ten: n.ten_nguoi_uy_quyen })}
                       </div>
                     )}
-                    {n.chu_ky?.ghi_chu_ky && <div className="text-xs text-secondary italic">“{n.chu_ky.ghi_chu_ky}”</div>}
-                    {n.ly_do_tu_choi && <div className="text-xs text-danger">{n.ly_do_tu_choi}</div>}
+                    {n.chu_ky?.ghi_chu_ky && <div className="text-xs text-secondary italic break-words">“{n.chu_ky.ghi_chu_ky}”</div>}
+                    {n.ly_do_tu_choi && <div className="text-xs text-danger break-words">{n.ly_do_tu_choi}</div>}
                   </div>
                   <div className="flex items-center gap-2">
                     {n.chu_ky?.ky_tre_han && <Badge variant="danger" size="sm">{t('chiTiet.treHan')}</Badge>}

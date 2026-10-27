@@ -1,4 +1,18 @@
 -- =====================================================================
+-- THAY ĐỔI VĂN BẢN TRÌNH KÝ KHÔNG BẮT BUỘC GẮN VĂN BẢN ĐI (Nhóm 5; issue #274; đánh dấu [VBTK] tại vị trí)
+-- Căn cứ: yêu cầu nghiệp vụ trình ký (issue #275 mục 3); migration signing 0015_van_ban_trinh_ky_khac.
+--   signing_request.document_type, document_id bỏ NOT NULL; thêm so_hieu_van_ban, trich_yeu_van_ban (nhập tay).
+--   CHECK chk_signing_request_van_ban: hồ sơ gắn văn bản đi (hai cột cùng có giá trị) hoặc không gắn (hai cột
+--   cùng NULL) và có trích yếu. Tệp PDF trình ký vẫn tải lên riêng như trước.
+-- =====================================================================
+-- THAY ĐỔI NHÓM QUYỀN BỔ SUNG (Nhóm 7; issue #228; đánh dấu [NQBS] tại vị trí)
+-- Căn cứ: bảng nhóm quyền mặc định theo 25 chức vụ (nhóm trưởng chốt 21/10/2026, PR #211).
+--   Thêm 2 nhóm chuẩn chỉ chứa quyền cộng thêm, gán cùng nhóm CV:
+--   1) TLBGD (Trợ lý Ban Giám đốc): view_all_congviec, view_read_log_vanbanden, view_read_log_vanbandi, send_trinhky.
+--   2) KT (Kiểm toán): view_signing_audit, view_read_log_vanbanden, view_read_log_vanbandi.
+--   Migration authorization 0008_supplementary_groups_tlbgd_kt bổ sung cho DB dựng bằng migration.
+-- Quy mô sau [NQBS] (cộng sau [CVTK]): 7 nhóm quyền chuẩn; thêm 7 lượt phân quyền (198 -> 205).
+-- =====================================================================
 -- THAY ĐỔI QUYỀN GỬI TRÌNH KÝ CỦA CHUYÊN VIÊN (Nhóm 5; issue #226; đánh dấu [CVTK] tại vị trí)
 -- Căn cứ: signing-backend-plan.md mục 8 (nhân viên đã xác thực được tạo yêu cầu; gửi cần send_trinhky + người tạo).
 --   Nhóm CV có add_trinhky nhưng thiếu send_trinhky nên hồ sơ do Chuyên viên tạo dừng ở NHAP: người tạo
@@ -1145,8 +1159,8 @@ CREATE INDEX idx_signing_process_step_signer_nguoi ON signing_process_step_signe
 -- Issue #47 P2.12: Bổ sung index signing_request (han_chot)
 CREATE TABLE signing_request (
     id BIGSERIAL PRIMARY KEY,
-    document_type document_kind NOT NULL, -- Phân định văn bản đến, đi (Generic Relation); bắt buộc truyền tường minh, không có giá trị mặc định
-    document_id BIGINT NOT NULL,
+    document_type document_kind, -- [VBTK] Văn bản đi gắn với hồ sơ (Generic Relation); NULL khi văn bản trình ký nhập tay
+    document_id BIGINT, -- [VBTK] NULL cùng document_type
     phien_ban_van_ban VARCHAR(50), -- Cho phép NULL ở bản nháp ban đầu
     vi_tri_luu_tep VARCHAR(500), -- Cho phép NULL ở bản nháp ban đầu
     ma_bam_tai_lieu VARCHAR(64), -- Cho phép NULL ở bản nháp ban đầu
@@ -1167,7 +1181,10 @@ CREATE TABLE signing_request (
     nguoi_tao_id BIGINT NOT NULL REFERENCES accounts_employee (id) ON DELETE RESTRICT,
     nguoi_cap_nhat_id BIGINT REFERENCES accounts_employee (id) ON DELETE SET NULL,
     ho_so_goc_id BIGINT REFERENCES signing_request (id) ON DELETE RESTRICT, -- [P7] trình lại sau từ chối trỏ về hồ sơ gốc
-    CONSTRAINT chk_signing_request_ma_bam_sha256 CHECK (ma_bam_tai_lieu IS NULL OR ma_bam_tai_lieu ~ '^[0-9a-f]{64}$')
+    so_hieu_van_ban VARCHAR(100) NOT NULL DEFAULT '', -- [VBTK] số hiệu văn bản trình ký nhập tay (tùy chọn)
+    trich_yeu_van_ban TEXT NOT NULL DEFAULT '', -- [VBTK] trích yếu văn bản trình ký nhập tay
+    CONSTRAINT chk_signing_request_ma_bam_sha256 CHECK (ma_bam_tai_lieu IS NULL OR ma_bam_tai_lieu ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT chk_signing_request_van_ban CHECK ((document_type IS NOT NULL AND document_id IS NOT NULL) OR (document_type IS NULL AND document_id IS NULL AND trich_yeu_van_ban <> ''))
 );
 
 CREATE INDEX idx_signing_request_document ON signing_request (document_type, document_id);
@@ -2005,7 +2022,7 @@ SET
     is_he_thong = TRUE;
 
 -- ---------------------------------------------------------------------
--- 4) Seed 5 Nhóm quyền chuẩn (auth_group)
+-- 4) Seed 7 Nhóm quyền chuẩn (auth_group): 5 nhóm chính và 2 nhóm bổ sung [NQBS]
 -- ---------------------------------------------------------------------
 INSERT INTO
     auth_group (name, ma_nhom_quyen)
@@ -2013,7 +2030,10 @@ VALUES ('Văn thư', 'VT'),
     ('Chuyên viên', 'CV'),
     ('Trưởng phòng', 'TP'),
     ('Ban Giám đốc', 'BGD'),
-    ('Quản trị hệ thống', 'ADMIN') ON CONFLICT (name) DO
+    ('Quản trị hệ thống', 'ADMIN'),
+    -- [NQBS] Nhóm bổ sung, gán cùng nhóm CV
+    ('Trợ lý Ban Giám đốc', 'TLBGD'),
+    ('Kiểm toán', 'KT') ON CONFLICT (name) DO
 UPDATE
 SET
     ma_nhom_quyen = EXCLUDED.ma_nhom_quyen;
@@ -2602,7 +2622,31 @@ WHERE
         'send_wish_sinhnhat',
         'use_aiassistant'
     ) ON CONFLICT (group_id, permission_id) DO NOTHING;
-
+-- [NQBS] Nhóm TLBGD (Trợ lý Ban Giám đốc): chỉ chứa quyền cộng thêm, người dùng giữ nhóm CV
+INSERT INTO
+    auth_group_permissions (group_id, permission_id)
+SELECT g.id, p.id
+FROM auth_group g, auth_permission p
+WHERE
+    g.ma_nhom_quyen = 'TLBGD'
+    AND p.codename IN (
+        'view_all_congviec',
+        'view_read_log_vanbanden',
+        'view_read_log_vanbandi',
+        'send_trinhky'
+    ) ON CONFLICT (group_id, permission_id) DO NOTHING;
+-- [NQBS] Nhóm KT (Kiểm toán): chỉ chứa quyền cộng thêm, người dùng giữ nhóm CV
+INSERT INTO
+    auth_group_permissions (group_id, permission_id)
+SELECT g.id, p.id
+FROM auth_group g, auth_permission p
+WHERE
+    g.ma_nhom_quyen = 'KT'
+    AND p.codename IN (
+        'view_signing_audit',
+        'view_read_log_vanbanden',
+        'view_read_log_vanbandi'
+    ) ON CONFLICT (group_id, permission_id) DO NOTHING;
 COMMIT;
 
 -- =====================================================================

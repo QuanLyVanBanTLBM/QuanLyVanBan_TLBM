@@ -51,6 +51,8 @@ export const SigningContext = createContext<{
   taiLaiToi: () => void;
   /** Trang Thông báo báo đã xem để tab cập nhật số thông báo mới. */
   daXemThongBao?: () => void;
+  /** Sau khi ký, từ chối, hủy… trên hồ sơ: tải lại số "Cần tôi ký duyệt" và số thông báo mới ở thanh tab. */
+  lamMoiDem?: () => void;
 }>({
   toi: null,
   taiLaiToi: () => undefined,

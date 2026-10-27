@@ -19,7 +19,7 @@ from .. import crypto, enums
 from ..models import SigningManifest, SigningRequestStep, SigningRequestStepSigner, SigningSignature
 from ..storage import StorageError, get_storage
 from ..tich_hop.to_chuc import ten_hien_thi
-from ..tich_hop.van_ban import mo_ta_van_ban
+from ..tich_hop.van_ban import mo_ta_ho_so
 from .audit import ghi_nhat_ky
 
 PHIEN_BAN_BANG_CHUNG = 2
@@ -63,7 +63,7 @@ def noi_dung_bang_chung(luot):
         "nhan_dien": NHAN_DIEN,
         "ho_so": {
             "id": yeu_cau.pk, "document_type": yeu_cau.document_type, "van_ban_id": yeu_cau.van_ban_id,
-            "van_ban": mo_ta_van_ban(yeu_cau.document_type, yeu_cau.van_ban_id),
+            "van_ban": mo_ta_ho_so(yeu_cau),
             "quy_trinh": {"id": yeu_cau.quy_trinh_id, "ma": yeu_cau.quy_trinh.ma_quy_trinh,
                           "ten": yeu_cau.quy_trinh.ten_quy_trinh, "phien_ban": yeu_cau.phien_ban_quy_trinh},
             "nguoi_tao": {"id": yeu_cau.create_by_id, "ten": ten_hien_thi(yeu_cau.create_by)},

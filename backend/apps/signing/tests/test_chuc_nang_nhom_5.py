@@ -150,6 +150,17 @@ class BoLocTests(TrinhKyBase):
             r = self.c.get(f"{BASE}/", {"hop": "toi_gui", **tham_so})
             self.assertEqual((r.status_code, r.data["code"]), (400, "tham_so_khong_hop_le"))
 
+    def test_khoang_ngay_sai_thu_tu_tra_400(self):
+        """Từ ngày > Đến ngày: 400 kèm thông báo tiếng Việt (không trả danh sách rỗng); cùng ngày vẫn hợp lệ."""
+        sai = {"tu_ngay": "2026-10-10", "den_ngay": "2026-10-01"}
+        for duong_dan, tham_so in ((f"{BASE}/", {"hop": "toi_gui"}), ("/api/v1/signing/tai-lieu/", {})):
+            r = self.c.get(duong_dan, {**tham_so, **sai})
+            self.assertEqual((r.status_code, r.data["code"]), (400, "tham_so_khong_hop_le"), duong_dan)
+            self.assertEqual(r.data["detail"], "Từ ngày không được lớn hơn Đến ngày.")
+            self.assertIn("tu_ngay", r.data["fields"])
+            r = self.c.get(duong_dan, {**tham_so, "tu_ngay": "2026-10-10", "den_ngay": "2026-10-10"})
+            self.assertEqual(r.status_code, 200, duong_dan)
+
 
 class SuaXoaQuyTrinhTests(TrinhKyBase):
     def setUp(self):
@@ -173,12 +184,29 @@ class SuaXoaQuyTrinhTests(TrinhKyBase):
         self.assertEqual([c["ten_cap_ky"] for c in r.data["cap_ky"]], ["Kiểm tra", "Duyệt"])
         self.assertEqual(r.data["cap_ky"][0]["nguoi_ky"][0]["nguoi_ky"], self.ky2.pk)
 
-    def test_active_process_cannot_be_edited_or_deleted(self):
+    def test_active_process_cannot_be_edited_but_deletes_when_unused(self):
         r = self.cql.put(f"{QT}/{self.process.pk}/", {"ten_quy_trinh": "x", "pham_vi": "CONG_TY", "cap_ky": []},
                          format="json")
         self.assertEqual((r.status_code, r.data["code"]), (409, "quy_trinh_khong_the_sua"))
+        self.assertEqual(self.cql.get(f"{QT}/{self.process.pk}/").data["so_ho_so"], 0)
+        self.assertEqual(self.cql.delete(f"{QT}/{self.process.pk}/").status_code, 204)  # đang hoạt động, chưa dùng
+        self.assertFalse(SigningProcess.objects.filter(pk=self.process.pk).exists())
+
+    def test_process_with_requests_in_any_state_cannot_be_deleted(self):
+        """Quy trình 1 tạo ra hồ sơ A: còn hồ sơ phụ thuộc (kể cả đã hủy) thì không xóa được, báo số hồ sơ."""
+        huy = self.tao_nhap().data["id"]
+        r = self.c.post(f"{BASE}/{huy}/huy/", {}, format="json", HTTP_IDEMPOTENCY_KEY="huy-qt")
+        self.assertEqual(r.status_code, 200, r.data)
+        self.tao_nhap()  # hồ sơ nháp thứ hai
         r = self.cql.delete(f"{QT}/{self.process.pk}/")
-        self.assertEqual((r.status_code, r.data["code"]), (409, "quy_trinh_khong_the_xoa"))
+        self.assertEqual((r.status_code, r.data["code"]), (409, "quy_trinh_da_duoc_dung"))
+        self.assertIn("2 hồ sơ", r.data["detail"])
+        self.assertEqual(r.data["fields"]["so_ho_so"], [2])
+        self.assertEqual(self.cql.get(f"{QT}/{self.process.pk}/").data["so_ho_so"], 2)
+        self.assertTrue(SigningProcess.objects.filter(pk=self.process.pk).exists())
+        # Phiên bản mới cùng mã chưa có hồ sơ nào thì xóa được; hồ sơ chỉ chặn đúng phiên bản nó dùng
+        moi = self.cql.post(f"{QT}/{self.process.pk}/nhan-ban/").data["id"]
+        self.assertEqual(self.cql.delete(f"{QT}/{moi}/").status_code, 204)
 
     def test_delete_draft_and_permissions(self):
         self.assertEqual(self.client_cua(self.la).delete(f"{QT}/{self.nhap}/").status_code, 403)
@@ -203,7 +231,7 @@ class TaiLieuTests(TrinhKyBase):
 
 
 class LocNhanhTests(KyBase):
-    """Thẻ lọc nhanh và số lượng: nháp, đang chờ ký, bị trả lại để sửa, quá hạn, hoàn tất, không đồng ý, đã hủy."""
+    """Bộ lọc trạng thái và số lượng (#275 mục 5): đang chờ ký, quá hạn, đã ký xong, trả lại để sửa."""
 
     def test_quick_filters_and_counts(self):
         from django.utils import timezone
@@ -220,29 +248,60 @@ class LocNhanhTests(KyBase):
             r = self.c.get(f"{BASE}/", {"hop": "toi_gui", "nhanh": nhanh})
             self.assertEqual(r.status_code, 200, r.data)
             return {h["id"] for h in r.data["results"]}
-        self.assertEqual(ids("nhap"), {nhap})
-        self.assertEqual(ids("cho_ky"), {cho, tre})
-        self.assertEqual(ids("tra_lai"), {tra})
+        self.assertEqual(ids("cho_ky"), {cho})  # quá hạn tách riêng khỏi đang chờ ký
         self.assertEqual(ids("qua_han"), {tre})
+        self.assertEqual(ids("tra_lai"), {tra})
+        self.assertEqual(ids("hoan_thanh"), set())
+        r = self.c.get(f"{BASE}/", {"hop": "toi_gui"})
+        self.assertEqual({h["id"] for h in r.data["results"]}, {cho, nhap, tra, tre})  # nháp vẫn hiện ở "Tất cả"
+        # Cấp đang ký quá hạn xử lý (hạn chót hồ sơ chưa qua) cũng là quá hạn
+        from signing.models import SigningRequestStep
+        SigningRequestStep.objects.filter(luot_trinh__trinh_ky_id=cho, trang_thai=enums.TrangThaiCapKy.DANG_KY).update(
+            han_xu_ly=timezone.now() - timedelta(minutes=5))
+        self.assertEqual(ids("cho_ky"), set())
+        self.assertEqual(ids("qua_han"), {cho, tre})
         dem = self.c.get(f"{BASE}/thong-ke/", {"hop": "toi_gui"}).data
-        self.assertEqual((dem["tat_ca"], dem["nhap"], dem["cho_ky"], dem["tra_lai"], dem["qua_han"], dem["hoan_thanh"]),
-                         (4, 1, 2, 1, 1, 0))
-        r = self.c.get(f"{BASE}/", {"hop": "toi_gui", "nhanh": "sai"})
-        self.assertEqual((r.status_code, r.data["code"]), (400, "tham_so_khong_hop_le"))
+        self.assertEqual(dem, {"tat_ca": 4, "cho_ky": 0, "qua_han": 2, "hoan_thanh": 0, "tra_lai": 1})
+        for sai in ("sai", "nhap", "tu_choi", "huy"):
+            r = self.c.get(f"{BASE}/", {"hop": "toi_gui", "nhanh": sai})
+            self.assertEqual((r.status_code, r.data["code"]), (400, "tham_so_khong_hop_le"))
+
+    def test_completed_filter(self):
+        for cap in (self.ky1, self.ky2, self.ky3):
+            self.assertEqual(self.ky(cap).status_code, 200)
+        r = self.c.get(f"{BASE}/", {"hop": "toi_gui", "nhanh": "hoan_thanh"})
+        self.assertEqual([h["id"] for h in r.data["results"]], [self.pk])
 
     def test_document_page_lists_files_of_visible_requests(self):
         da_gui = self.ho_so_da_gui()["id"]
         nhap = self.tao_nhap().data["id"]
         r = self.c.get("/api/v1/signing/tai-lieu/")
         self.assertEqual(r.status_code, 200)
-        theo_ho_so = {(x["trinh_ky"], x["loai"]) for x in r.data}
+        theo_ho_so = {(x["trinh_ky"], x["loai"]) for x in r.data["results"]}
         self.assertIn((da_gui, "LUOT"), theo_ho_so)
         self.assertIn((nhap, "DU_THAO"), theo_ho_so)
-        luot = next(x for x in r.data if x["trinh_ky"] == da_gui)
+        luot = next(x for x in r.data["results"] if x["trinh_ky"] == da_gui)
         self.assertEqual((luot["so_luot"], luot["ten_tep"]), (1, f"trinh-ky-{da_gui}-luot-1.pdf"))
-        self.assertEqual({x["loai"] for x in self.c.get("/api/v1/signing/tai-lieu/", {"loai": "DU_THAO"}).data}, {"DU_THAO"})
-        self.assertEqual(self.c.get("/api/v1/signing/tai-lieu/", {"q": f"#{nhap}"}).data[0]["trinh_ky"], nhap)
-        self.assertEqual(self.client_cua(self.la).get("/api/v1/signing/tai-lieu/").data, [])  # không liên quan: không thấy
+        loai = {x["loai"] for x in self.c.get("/api/v1/signing/tai-lieu/", {"loai": "DU_THAO"}).data["results"]}
+        self.assertEqual(loai, {"DU_THAO"})
+        self.assertEqual(self.c.get("/api/v1/signing/tai-lieu/", {"q": f"#{nhap}"}).data["results"][0]["trinh_ky"], nhap)
+        khac = self.client_cua(self.la).get("/api/v1/signing/tai-lieu/").data
+        self.assertEqual((khac["count"], khac["results"]), (0, []))  # không liên quan: không thấy
+
+    def test_document_page_is_paginated_like_request_list(self):
+        for _ in range(11):
+            self.tao_nhap()
+        tong = self.c.get("/api/v1/signing/tai-lieu/").data["count"]
+        self.assertGreaterEqual(tong, 12)
+        trang_1 = self.c.get("/api/v1/signing/tai-lieu/").data
+        self.assertEqual(len(trang_1["results"]), 10)  # mặc định 10 tệp mỗi trang
+        self.assertIsNotNone(trang_1["next"])
+        trang_2 = self.c.get("/api/v1/signing/tai-lieu/", {"page": 2}).data
+        self.assertEqual(len(trang_2["results"]), tong - 10)
+        cap_1 = {(x["trinh_ky"], x["loai"], x["luot"]) for x in trang_1["results"]}
+        cap_2 = {(x["trinh_ky"], x["loai"], x["luot"]) for x in trang_2["results"]}
+        self.assertFalse(cap_1 & cap_2)
+        self.assertEqual(len(self.c.get("/api/v1/signing/tai-lieu/", {"page_size": 5}).data["results"]), 5)
         r = self.c.get("/api/v1/signing/tai-lieu/", {"loai": "SAI"})
         self.assertEqual((r.status_code, r.data["code"]), (400, "tham_so_khong_hop_le"))
 

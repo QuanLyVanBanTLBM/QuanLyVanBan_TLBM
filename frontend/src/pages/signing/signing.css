@@ -11,3 +11,19 @@
   max-height: 90vh;
   overflow-y: auto;
 }
+
+/* Thanh cuộn điều hướng mượt mà, ẩn scrollbar mặc định tránh vỡ layout trên desktop/Windows */
+.signing-nav-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.signing-nav-scroll::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+

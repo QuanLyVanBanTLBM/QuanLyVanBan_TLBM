@@ -6,6 +6,7 @@ import { formatDateTime, formatDate, formatFileSize } from '@lib/dateUtils';
 import { getAbsoluteFileUrl } from '@lib/fileUtils';
 import apiClient from '@lib/apiClient';
 import { resolveDocumentApiUrl } from '@lib/routes';
+import { useTranslation } from '@i18n/translate';
 
 export interface DocumentDetailModalProps {
   isOpen: boolean;
@@ -20,6 +21,7 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
   documentId,
   loai,
 }) => {
+  const { t } = useTranslation();
   const [document, setDocument] = useState<DocumentDetail | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -100,16 +102,20 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h2 className="text-base md:text-lg font-bold text-main m-0 truncate">
-                  {document?.loai === 'MAT' ? 'Chi Tiết Văn Bản Mật' : document?.loai === 'DI' ? 'Chi Tiết Văn Bản Đi' : 'Chi Tiết Văn Bản Đến'}
+                  {document?.loai === 'MAT'
+                    ? (t('documents_ui.detailModal.titleConfidential') || 'Chi Tiết Văn Bản Mật')
+                    : document?.loai === 'DI'
+                    ? (t('documents_ui.detailModal.titleOutbound') || 'Chi Tiết Văn Bản Đi')
+                    : (t('documents_ui.detailModal.titleInbound') || 'Chi Tiết Văn Bản Đến')}
                 </h2>
                 {document?.loai === 'MAT' && (
                   <span className="px-2 py-0.5 rounded-md text-xs font-bold bg-rose-500/15 text-rose-600 border border-rose-500/25">
-                    MẬT
+                    {t('documents_ui.topCard.confidential') || 'MẬT'}
                   </span>
                 )}
                 {document?.pham_vi === 'HAN_CHE' && document?.loai !== 'MAT' && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-bold bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/25">
-                    <i className="fa-solid fa-shield-halved text-[10px]" /> HẠN CHẾ
+                    <i className="fa-solid fa-shield-halved text-[10px]" /> {t('documents_ui.detailModal.scopeRestricted') || 'HẠN CHẾ'}
                   </span>
                 )}
                 {document?.so_hieu && (
@@ -129,7 +135,7 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
             type="button"
             onClick={onClose}
             className="w-8 h-8 rounded-lg flex items-center justify-center text-secondary hover:text-main hover:bg-surface-elevated transition-colors shrink-0"
-            title="Đóng (ESC)"
+            title={t('documents_ui.detailModal.closeEsc') || 'Đóng (ESC)'}
           >
             <i className="fa-solid fa-xmark text-lg" />
           </button>
@@ -140,7 +146,7 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
           {isLoading && (
             <div className="py-16 text-center text-secondary">
               <i className="fa-solid fa-circle-notch fa-spin text-2xl text-primary mb-2 block" />
-              <span className="text-xs">Đang tải thông tin văn bản...</span>
+              <span className="text-xs">{t('documents_ui.detailModal.loading') || 'Đang tải thông tin văn bản...'}</span>
             </div>
           )}
 
@@ -156,7 +162,7 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                   onClick={() => setReloadKey(k => k + 1)}
                   className="underline font-semibold hover:text-danger-hover"
                 >
-                  Thử lại
+                  {t('documents_ui.detailModal.retry') || 'Thử lại'}
                 </button>
               )}
             </div>
@@ -171,9 +177,9 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                     <i className="fa-solid fa-repeat" />
                   </div>
                   <div className="text-xs">
-                    <div className="font-bold text-primary mb-0.5">VĂN BẢN THAY THẾ</div>
+                    <div className="font-bold text-primary mb-0.5">{t('documents_ui.detailModal.replacementBannerTitle') || 'VĂN BẢN THAY THẾ'}</div>
                     <p className="text-main m-0 leading-relaxed">
-                      Văn bản này được ban hành để thay thế cho:{' '}
+                      {t('documents_ui.detailModal.replacementBannerText') || 'Văn bản này được ban hành để thay thế cho:'}{' '}
                       <strong className="font-mono text-primary">
                         {(document.thay_the_cho && document.thay_the_cho.length > 0)
                           ? document.thay_the_cho.join(', ')
@@ -190,12 +196,12 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                     <i className="fa-solid fa-circle-half-stroke" />
                   </div>
                   <div className="text-xs">
-                    <div className="font-bold text-purple-700 dark:text-purple-300 mb-0.5">VĂN BẢN CÒN HIỆU LỰC MỘT PHẦN</div>
+                    <div className="font-bold text-purple-700 dark:text-purple-300 mb-0.5">{t('documents_ui.detailModal.partialActiveBannerTitle') || 'VĂN BẢN CÒN HIỆU LỰC MỘT PHẦN'}</div>
                     <p className="text-main m-0 leading-relaxed">
-                      Văn bản này đã được sửa đổi / thay thế một phần bởi văn bản:{' '}
+                      {t('documents_ui.detailModal.partialActiveBannerText') || 'Văn bản này đã được sửa đổi / thay thế một phần bởi văn bản:'}{' '}
                       <strong className="font-mono text-purple-700 dark:text-purple-300">
                         {document.bi_thay_boi.join(', ')}
-                      </strong>. Các điều khoản còn lại vẫn có giá trị thi hành.
+                      </strong>. {t('documents_ui.detailModal.partialActiveBannerNote') || 'Các điều khoản còn lại vẫn có giá trị thi hành.'}
                     </p>
                   </div>
                 </div>
@@ -209,12 +215,12 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                   <div className="text-xs">
                     <div className="font-bold text-danger mb-0.5">
                       {(document.bi_thay_boi && document.bi_thay_boi.length > 0) || document.link_thay_the
-                        ? 'VĂN BẢN ĐÃ HẾT HIỆU LỰC (ĐÃ ĐƯỢC THAY THẾ)'
-                        : 'VĂN BẢN ĐÃ HẾT HIỆU LỰC'}
+                        ? (t('documents_ui.detailModal.expiredReplacedBannerTitle') || 'VĂN BẢN ĐÃ HẾT HIỆU LỰC (ĐÃ ĐƯỢC THAY THẾ)')
+                        : (t('documents_ui.detailModal.expiredBannerTitle') || 'VĂN BẢN ĐÃ HẾT HIỆU LỰC')}
                     </div>
                     <p className="text-main m-0 leading-relaxed">
                       {(document.bi_thay_boi && document.bi_thay_boi.length > 0) || document.link_thay_the ? (
-                        <>Văn bản này không còn giá trị thi hành do đã được thay thế bởi văn bản:{' '}
+                        <>{t('documents_ui.detailModal.expiredReplacedText') || 'Văn bản này không còn giá trị thi hành do đã được thay thế bởi văn bản:'}{' '}
                           <strong className="font-mono text-danger">
                             {(document.bi_thay_boi && document.bi_thay_boi.length > 0)
                               ? document.bi_thay_boi.join(', ')
@@ -222,9 +228,9 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                           </strong>.
                         </>
                       ) : document.ngay_het_hieu_luc ? (
-                        <>Văn bản này đã hết hiệu lực thi hành từ ngày <strong className="font-mono text-danger">{formatDate(document.ngay_het_hieu_luc)}</strong>.</>
+                        <>{t('documents_ui.detailModal.expiredDateText', { date: formatDate(document.ngay_het_hieu_luc) }) || `Văn bản này đã hết hiệu lực thi hành từ ngày ${formatDate(document.ngay_het_hieu_luc)}.`}</>
                       ) : (
-                        <>Văn bản này đã hết hiệu lực thi hành.</>
+                        <>{t('documents_ui.detailModal.expiredGeneralText') || 'Văn bản này đã hết hiệu lực thi hành.'}</>
                       )}
                     </p>
                   </div>
@@ -234,7 +240,7 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
               {/* Trích yếu nội dung */}
               <div className="bg-surface-subtle border border-border-subtle rounded-xl p-4">
                 <span className="text-xs font-semibold text-secondary uppercase tracking-wider block mb-1.5">
-                  Trích yếu nội dung
+                  {t('documents_ui.detailModal.summaryLabel') || 'Trích yếu nội dung'}
                 </span>
                 <p className="text-sm md:text-base font-medium text-main leading-relaxed m-0 whitespace-pre-wrap">
                   {document.trich_yeu}
@@ -247,12 +253,12 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                 <div className="space-y-3 bg-surface border border-border-subtle rounded-xl p-4">
                   <h3 className="text-xs font-bold text-main uppercase tracking-wider pb-2 border-b border-border-subtle m-0 flex items-center gap-2">
                     <i className={document.loai === 'MAT' ? 'fa-solid fa-shield-halved text-rose-500' : 'fa-solid fa-hashtag text-primary'} />
-                    {document.loai === 'MAT' ? 'Thông số văn bản mật' : document.loai === 'DI' ? 'Thông số đi' : 'Thông số đến'}
+                    {document.loai === 'MAT' ? (t('documents_ui.detailModal.specsConfidential') || 'Thông số văn bản mật') : document.loai === 'DI' ? (t('documents_ui.detailModal.specsOutbound') || 'Thông số đi') : (t('documents_ui.detailModal.specsInbound') || 'Thông số đến')}
                   </h3>
 
                   {document.loai !== 'MAT' && (
                     <div className="flex justify-between items-center text-xs py-1 border-b border-border-subtle/50">
-                      <span className="text-secondary">{document.loai === 'DI' ? 'Số đi (STT năm):' : 'Số đến (STT năm):'}</span>
+                      <span className="text-secondary">{document.loai === 'DI' ? (t('documents_ui.detailModal.outboundNo') || 'Số đi (STT năm):') : (t('documents_ui.detailModal.inboundNo') || 'Số đến (STT năm):')}</span>
                       <span className="font-bold text-main font-mono">
                         {document.so_thu_tu !== null && document.so_thu_tu !== undefined
                           ? `#${document.so_thu_tu}`
@@ -262,32 +268,32 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                   )}
 
                   <div className="flex justify-between items-center text-xs py-1 border-b border-border-subtle/50">
-                    <span className="text-secondary">Năm sổ sách:</span>
+                    <span className="text-secondary">{t('documents_ui.detailModal.recordYear') || 'Năm sổ sách:'}</span>
                     <span className="font-semibold text-main">{document.nam}</span>
                   </div>
 
                   <div className="flex justify-between items-center text-xs py-1 border-b border-border-subtle/50">
-                    <span className="text-secondary">Phạm vi văn bản:</span>
+                    <span className="text-secondary">{t('documents_ui.detailModal.scope') || 'Phạm vi văn bản:'}</span>
                     <span className="font-semibold text-main">
                       {document.pham_vi === 'HAN_CHE' ? (
                         <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400 font-semibold">
-                          <i className="fa-solid fa-shield-halved text-[11px]" /> Hạn chế
+                          <i className="fa-solid fa-shield-halved text-[11px]" /> {t('documents_ui.detailModal.scopeRestricted') || 'Hạn chế'}
                         </span>
                       ) : (
-                        'Nội bộ'
+                        t('documents_ui.detailModal.scopeInternal') || 'Nội bộ'
                       )}
                     </span>
                   </div>
 
                   <div className="flex justify-between items-center text-xs py-1 border-b border-border-subtle/50">
-                    <span className="text-secondary">{document.loai === 'MAT' ? 'Ngày lưu văn bản:' : document.loai === 'DI' ? 'Ngày ban hành:' : 'Ngày đến:'}</span>
+                    <span className="text-secondary">{document.loai === 'MAT' ? (t('documents_ui.detailModal.savedDate') || 'Ngày lưu văn bản:') : document.loai === 'DI' ? (t('documents_ui.detailModal.issuedDate') || 'Ngày ban hành:') : (t('documents_ui.detailModal.receivedDate') || 'Ngày đến:')}</span>
                     <span className="font-semibold text-main font-mono">
                       {(document.ngay_den || document.ngay_ban_hanh) ? formatDate(document.ngay_den || document.ngay_ban_hanh) : '—'}
                     </span>
                   </div>
 
                   <div className="flex justify-between items-center text-xs py-1">
-                    <span className="text-secondary">Ngày văn bản:</span>
+                    <span className="text-secondary">{t('documents_ui.detailModal.documentDate') || 'Ngày văn bản:'}</span>
                     <span className="font-semibold text-main">
                       {document.ngay_van_ban ? formatDate(document.ngay_van_ban) : '—'}
                     </span>
@@ -297,46 +303,46 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                 {/* Cột phải */}
                 <div className="space-y-3 bg-surface border border-border-subtle rounded-xl p-4">
                   <h3 className="text-xs font-bold text-main uppercase tracking-wider pb-2 border-b border-border-subtle m-0 flex items-center gap-2">
-                    <i className="fa-solid fa-building text-primary" /> Cơ quan ban hành & Hiệu lực
+                    <i className="fa-solid fa-building text-primary" /> {t('documents_ui.detailModal.authorityAndStatus') || 'Cơ quan ban hành & Hiệu lực'}
                   </h3>
 
                   <div className="flex justify-between items-center text-xs py-1 border-b border-border-subtle/50">
-                    <span className="text-secondary">Nơi ban hành:</span>
+                    <span className="text-secondary">{t('documents_ui.detailModal.issuer') || 'Nơi ban hành:'}</span>
                     <span className="font-semibold text-main text-right">
                       {document.noi_ban_hanh || '—'}
                     </span>
                   </div>
 
                   <div className="flex justify-between items-center text-xs py-1 border-b border-border-subtle/50">
-                    <span className="text-secondary">Người ký / Chức vụ:</span>
+                    <span className="text-secondary">{t('documents_ui.detailModal.signerPosition') || 'Người ký / Chức vụ:'}</span>
                     <span className="font-semibold text-main text-right">
                       {document.nguoi_ky ? `${document.nguoi_ky}${document.chuc_vu ? ` (${document.chuc_vu})` : ''}` : '—'}
                     </span>
                   </div>
 
                   <div className="flex justify-between items-center text-xs py-1 border-b border-border-subtle/50">
-                    <span className="text-secondary">Trạng thái hiệu lực:</span>
+                    <span className="text-secondary">{t('documents_ui.detailModal.validityStatus') || 'Trạng thái hiệu lực:'}</span>
                     {document.hieu_luc === 'CON_HIEU_LUC' ? (
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-white dark:bg-surface-elevated text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 shadow-2xs">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        Còn hiệu lực
+                        {t('documents_ui.detailModal.statusActive') || 'Còn hiệu lực'}
                       </span>
                     ) : document.hieu_luc === 'CON_HIEU_LUC_1_PHAN' ? (
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-white dark:bg-surface-elevated text-purple-600 dark:text-purple-400 border border-purple-500/30 shadow-2xs">
                         <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
-                        Còn hiệu lực 1 phần
+                        {t('documents_ui.detailModal.statusPartiallyActive') || 'Còn hiệu lực 1 phần'}
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-white dark:bg-surface-elevated text-rose-600 dark:text-rose-400 border border-rose-500/30 shadow-2xs">
                         <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-                        Hết hiệu lực
+                        {t('documents_ui.detailModal.statusExpired') || 'Hết hiệu lực'}
                       </span>
                     )}
                   </div>
 
                   {document.ngay_het_hieu_luc && (
                     <div className="flex justify-between items-center text-xs py-1">
-                      <span className="text-secondary">Ngày hết hiệu lực:</span>
+                      <span className="text-secondary">{t('documents_ui.detailModal.expirationDate') || 'Ngày hết hiệu lực:'}</span>
                       <span className="font-semibold text-warning-text font-mono">
                         {formatDate(document.ngay_het_hieu_luc)}
                       </span>
@@ -349,7 +355,7 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                     <>
                       {document.thay_the_cho && document.thay_the_cho.length > 0 && (
                         <div className="flex justify-between items-start text-xs py-1">
-                          <span className="text-secondary shrink-0 pt-0.5">Thay thế cho:</span>
+                          <span className="text-secondary shrink-0 pt-0.5">{t('documents_ui.detailModal.replaces') || 'Thay thế cho:'}</span>
                           <div className="flex flex-wrap justify-end gap-1.5 max-w-[320px]">
                             {document.thay_the_cho.map((s: string, idx: number) => (
                               <span key={`ttc-${idx}`} className="font-semibold font-mono text-[0.7rem] px-2 py-0.5 rounded-md bg-primary-subtle text-primary border border-primary/20">
@@ -361,7 +367,7 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                       )}
                       {document.bi_thay_boi && document.bi_thay_boi.length > 0 && (
                         <div className="flex justify-between items-start text-xs py-1">
-                          <span className="text-secondary shrink-0 pt-0.5">Bị thay bởi:</span>
+                          <span className="text-secondary shrink-0 pt-0.5">{t('documents_ui.detailModal.replacedBy') || 'Bị thay bởi:'}</span>
                           <div className="flex flex-wrap justify-end gap-1.5 max-w-[320px]">
                             {document.bi_thay_boi.map((s: string, idx: number) => (
                               <span key={`btb-${idx}`} className="font-semibold font-mono text-[0.7rem] px-2 py-0.5 rounded-md bg-warning/10 text-warning-text border border-warning/30">
@@ -375,7 +381,7 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                   ) : document.link_thay_the ? (
                     <div className="flex justify-between items-start text-xs py-1">
                       <span className="text-secondary shrink-0 pt-0.5">
-                        {document.hieu_luc === 'CON_HIEU_LUC' || document.hieu_luc === 'CON_HIEU_LUC_1_PHAN' ? 'Thay thế cho:' : 'Bị thay bởi:'}
+                        {document.hieu_luc === 'CON_HIEU_LUC' || document.hieu_luc === 'CON_HIEU_LUC_1_PHAN' ? (t('documents_ui.detailModal.replaces') || 'Thay thế cho:') : (t('documents_ui.detailModal.replacedBy') || 'Bị thay bởi:')}
                       </span>
                       <div className="flex flex-wrap justify-end gap-1.5 max-w-[320px]">
                         {document.link_thay_the.split(',').map((s: string, idx: number) => (
@@ -401,7 +407,7 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
               <div className="bg-surface border border-border-subtle rounded-xl p-4 space-y-3">
                 <div className="flex items-center justify-between pb-2 border-b border-border-subtle">
                   <h3 className="text-xs font-bold text-main uppercase tracking-wider m-0 flex items-center gap-2">
-                    <i className="fa-solid fa-paperclip text-primary" /> Tệp đính kèm (
+                    <i className="fa-solid fa-paperclip text-primary" /> {t('documents_ui.detailModal.attachmentsTitle') || 'Tệp đính kèm'} (
                     {document.attachments?.length || 0})
                   </h3>
                 </div>
@@ -441,7 +447,7 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-primary text-white font-medium hover:bg-primary-hover shadow-sm transition-colors"
                               title="Xem trực tiếp nội dung tệp tin trong tab mới của trình duyệt"
                             >
-                              <i className="fa-solid fa-arrow-up-right-from-square text-[0.7rem]" /> Xem
+                              <i className="fa-solid fa-arrow-up-right-from-square text-[0.7rem]" /> {t('documents_ui.detailModal.viewAttachment') || 'Xem'}
                             </a>
                             <a
                               href={absoluteUrl}
@@ -451,7 +457,7 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-surface-elevated border border-border-subtle text-secondary hover:text-main hover:border-primary/40 transition-colors"
                               title="Tải tệp tin về máy"
                             >
-                              <i className="fa-solid fa-download text-[0.7rem]" /> Tải về
+                              <i className="fa-solid fa-download text-[0.7rem]" /> {t('documents_ui.detailModal.downloadAttachment') || 'Tải về'}
                             </a>
                           </div>
                         </div>
@@ -460,7 +466,7 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                   </div>
                 ) : (
                   <p className="text-xs text-muted m-0 italic py-2">
-                    Không có tệp đính kèm nào cho văn bản này.
+                    {t('documents_ui.detailModal.attachmentsEmpty') || 'Không có tệp đính kèm nào cho văn bản này.'}
                   </p>
                 )}
               </div>
@@ -480,7 +486,7 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
         {/* Footer Modal */}
         <div className="px-5 py-3.5 border-t border-border-subtle bg-surface-subtle flex items-center justify-end">
           <Button type="button" variant="secondary" size="sm" onClick={onClose}>
-            Đóng
+            {t('documents_ui.detailModal.close') || 'Đóng'}
           </Button>
         </div>
       </div>

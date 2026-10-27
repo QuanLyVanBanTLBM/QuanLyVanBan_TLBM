@@ -351,6 +351,8 @@ class DocumentAPITests(TestCase):
 
     def test_api_excel_import(self):
         """POST /api/documents/import/ nhận file Excel và import."""
+        self.user.is_staff = True
+        self.user.save()
         template_stream = generate_excel_template("DEN")
         excel_file = SimpleUploadedFile(
             "import_test.xlsx",

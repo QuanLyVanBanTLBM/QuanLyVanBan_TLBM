@@ -319,5 +319,52 @@ describe('DocumentTable Component', () => {
       screen.getByTitle('Văn bản này đã bị thay thế bởi các văn bản: 201/QĐ-BTTTT, 202/QĐ-BTTTT')
     ).toBeInTheDocument();
   });
+
+  it('renders STT row index and sub-label for outbound and inbound registered numbers', () => {
+    const outboundDoc: DocumentItem = {
+      ...mockDocuments[0],
+      id: 99,
+      so_thu_tu: 4,
+      so_hieu: 'QA-OUT-01',
+    };
+
+    const { rerender } = render(
+      <DocumentTable
+        documents={[outboundDoc]}
+        totalCount={1}
+        page={1}
+        pageSize={10}
+        loai="DI"
+        onPageChange={vi.fn()}
+        onViewDetail={vi.fn()}
+        onViewHistory={vi.fn()}
+      />
+    );
+
+    // Tiêu đề cột STT
+    expect(screen.getByText('STT')).toBeInTheDocument();
+    // STT dòng phải là #1 dù so_thu_tu là 4
+    expect(screen.getAllByText('#1').length).toBeGreaterThanOrEqual(1);
+    // Nhãn phụ số đi
+    expect(screen.getAllByText('Số đi: #4').length).toBeGreaterThanOrEqual(1);
+
+    // Rerender với loai="DEN"
+    rerender(
+      <DocumentTable
+        documents={[outboundDoc]}
+        totalCount={1}
+        page={1}
+        pageSize={10}
+        loai="DEN"
+        onPageChange={vi.fn()}
+        onViewDetail={vi.fn()}
+        onViewHistory={vi.fn()}
+      />
+    );
+
+    // Tiêu đề cột STT
+    expect(screen.getByText('STT')).toBeInTheDocument();
+    expect(screen.getAllByText('Số đến: #4').length).toBeGreaterThanOrEqual(1);
+  });
 });
 

@@ -19,7 +19,10 @@ from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APIClient
 
+from django.contrib.auth import get_user_model
 from documents.models import Folder, FolderFile
+
+User = get_user_model()
 
 
 class HierarchicalFolderModelTests(TestCase):
@@ -124,7 +127,18 @@ class HierarchicalFolderAPITests(TestCase):
     """Kiểm thử cấp API REST: Endpoints cho Frontend tương tác."""
 
     def setUp(self):
+        user_kwargs = {"username": "testuser", "password": "password123"}
+        if hasattr(User, "ho_ten"):
+            user_kwargs["ho_ten"] = "Test User"
+        self.user = User.objects.create_user(**user_kwargs)
+
+        admin_kwargs = {"username": "testadmin", "password": "password123", "is_staff": True}
+        if hasattr(User, "ho_ten"):
+            admin_kwargs["ho_ten"] = "Admin User"
+        self.admin_user = User.objects.create_user(**admin_kwargs)
+
         self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
 
     def test_create_and_query_folder_tree_api(self):
         """Kiểm thử API tạo thư mục và lấy cây thư mục."""
@@ -191,3 +205,27 @@ class HierarchicalFolderAPITests(TestCase):
         f3.refresh_from_db()
         self.assertIsNone(f3.parent)
         self.assertEqual(f3.depth, 0)
+
+    def test_anonymous_user_blocked_from_folders_and_files(self):
+        """Khách vãng lai (unauthenticated) không được phép truy cập folders và folder-files."""
+        anon_client = APIClient()
+        res = anon_client.get("/api/folders/")
+        self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        res = anon_client.get("/api/folders/tree/")
+        self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        res = anon_client.get("/api/folder-files/")
+        self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_scan_local_requires_admin_permission(self):
+        """Chỉ admin mới có quyền gọi API scan-local."""
+        # Non-admin user (self.client is authenticated as self.user)
+        res = self.client.post("/api/folders/scan-local/", {"folder_path": "/tmp/dummy"}, format="json")
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+        # Admin user
+        admin_client = APIClient()
+        admin_client.force_authenticate(user=self.admin_user)
+        res = admin_client.post("/api/folders/scan-local/", {"folder_path": "/nonexistent_test_path_12345"}, format="json")
+        self.assertNotEqual(res.status_code, status.HTTP_403_FORBIDDEN)

@@ -9,6 +9,7 @@ from django.core import mail
 from django.core.mail.backends.smtp import EmailBackend as SmtpBackend
 from django.test import override_settings
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from documents.models import VanBanDi
 
 from signing import checks, enums
@@ -83,7 +84,7 @@ class HanXuLyThongBaoTests(KyBase):
         self.assertIn(chuoi, mail.outbox[0].body)
         r = self.client_cua(User.objects.get(pk=self.ky3.pk)).get("/api/v1/signing/thong-bao/")
         tb = next(x for x in r.data if x["loai_thong_bao"] == "CAN_KY")
-        self.assertEqual(tb["han_xu_ly"], han)
+        self.assertEqual(parse_datetime(tb["han_xu_ly"]), han)  # cùng thời điểm, chuỗi giờ +07:00
 
     def test_reminder_and_overdue_show_deadline(self):
         cap = SigningRequestStep.objects.get(luot_trinh__trinh_ky_id=self.pk, thu_tu=1)
@@ -191,3 +192,20 @@ class PhanTrangVaTimKiemTests(TrinhKyBase):
 
     def test_bo_dau(self):
         self.assertEqual(bo_dau("Đề Xuất ỨNG DỤNG Ỷ Ỹ"), "de xuat ung dung y y")
+
+
+class RaSoatGiaoDienTests(TrinhKyBase):
+    """Bổ sung sau rà soát giao diện: hạn cấp hiện hành, thông điệp lỗi, email tin nhắn trao đổi."""
+
+    def test_validation_error_has_detail_and_pagination_404_has_stable_code(self):
+        r = self.c.post(f"{BASE}/", {"document_type": "vanbandi"}, format="multipart")
+        self.assertEqual((r.status_code, r.data["code"]), (400, "du_lieu_khong_hop_le"))
+        self.assertTrue(r.data["detail"])
+        r = self.c.get(f"{BASE}/", {"hop": "tat_ca", "page": 999})
+        self.assertEqual((r.status_code, r.data["code"]), (404, "khong_tim_thay"))
+
+    def test_notifications_use_local_timezone(self):
+        self.ho_so_da_gui()
+        r = self.client_cua(self.ky1).get("/api/v1/signing/thong-bao/")
+        self.assertTrue(r.data)
+        self.assertTrue(all(x["created_at"].endswith("+07:00") for x in r.data))

@@ -6,6 +6,7 @@ import { authService } from '@lib/authService';
 import { DocumentDetail, DocumentItem, DocumentStatus, PaginatedResponse } from '@app-types/document';
 import { Button } from '@components/common';
 import AlertModal from '@components/common/AlertModal';
+import { useTranslation } from '@i18n/translate';
 
 export type InitialDocType =
   | DocumentItem
@@ -327,6 +328,7 @@ function buildInitialForm(initDocInput?: InitialDocType | DocumentFormInput | nu
 }
 
 export default function DocumentFormModal({ open, onClose, initial, onSaved, defaultLoai = 'DEN' }: Props) {
+  const { t } = useTranslation();
   const currentSession = useMemo(() => authService.getSession(), []);
   const isAdmin = currentSession?.role === 'admin' || currentSession?.username === 'admin';
   const initDoc = initial as (Partial<DocumentDetail> & Record<string, unknown>) | null | undefined;
@@ -1059,9 +1061,10 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
       } else {
         payload.append('link_thay_the', '');
       }
-      if (form.ngay_het_hieu_luc) {
-        payload.append('ngay_het_hieu_luc', form.ngay_het_hieu_luc);
-      }
+      payload.append(
+        'ngay_het_hieu_luc',
+        form.hieu_luc === 'CON_HIEU_LUC' ? '' : (form.ngay_het_hieu_luc || '')
+      );
 
       if (Array.isArray(form.nguoi_nhan)) {
         form.nguoi_nhan.forEach(userId => {
@@ -1154,13 +1157,25 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
             <div>
               <h3 className="text-base font-bold text-main m-0">
                 {initial?.id
-                  ? (form.loai === 'MAT' ? 'Cập Nhật Văn Bản Mật' : form.loai === 'DI' ? 'Cập Nhật Văn Bản Đi' : 'Cập Nhật Văn Bản Đến')
-                  : (form.loai === 'MAT' ? 'Thêm Mới Văn Bản Mật' : form.loai === 'DI' ? 'Thêm Mới Văn Bản Đi' : 'Thêm Mới Văn Bản Đến')}
+                  ? (form.loai === 'MAT'
+                      ? (t('documents_ui.formModal.titleEditConfidential') || 'Cập Nhật Văn Bản Mật')
+                      : form.loai === 'DI'
+                      ? (t('documents_ui.formModal.titleEditOutbound') || 'Cập Nhật Văn Bản Đi')
+                      : (t('documents_ui.formModal.titleEditInbound') || 'Cập Nhật Văn Bản Đến'))
+                  : (form.loai === 'MAT'
+                      ? (t('documents_ui.formModal.titleAddConfidential') || 'Thêm Mới Văn Bản Mật')
+                      : form.loai === 'DI'
+                      ? (t('documents_ui.formModal.titleAddOutbound') || 'Thêm Mới Văn Bản Đi')
+                      : (t('documents_ui.formModal.titleAddInbound') || 'Thêm Mới Văn Bản Đến'))}
               </h3>
               <p className="text-xs text-muted m-0">
                 {initial?.id
-                  ? `Chỉnh sửa thông tin hồ sơ văn bản ${form.so_hieu || ''}`
-                  : (form.loai === 'MAT' ? 'Lưu trữ và phân quyền văn bản mật theo quy định bảo mật' : form.loai === 'DI' ? 'Vào sổ công văn đi và quản lý phát hành nội bộ' : 'Tiếp nhận, vào sổ công văn đến và phân phối xử lý nội bộ')}
+                  ? (t('documents_ui.formModal.subtitleEdit', { code: form.so_hieu || '' }) || `Chỉnh sửa thông tin hồ sơ văn bản ${form.so_hieu || ''}`)
+                  : (form.loai === 'MAT'
+                      ? (t('documents_ui.formModal.subtitleAddConfidential') || 'Lưu trữ và phân quyền văn bản mật theo quy định bảo mật')
+                      : form.loai === 'DI'
+                      ? (t('documents_ui.formModal.subtitleAddOutbound') || 'Vào sổ công văn đi và quản lý phát hành nội bộ')
+                      : (t('documents_ui.formModal.subtitleAddInbound') || 'Tiếp nhận, vào sổ công văn đến và phân phối xử lý nội bộ'))}
               </p>
             </div>
           </div>
@@ -1168,7 +1183,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
             type="button"
             onClick={onClose}
             className="w-8 h-8 rounded-lg text-muted hover:text-main hover:bg-hover flex items-center justify-center transition-fast"
-            title="Đóng cửa sổ"
+            title={t('documents_ui.formModal.close') || 'Đóng cửa sổ'}
           >
             <i className="fa-solid fa-xmark text-sm" />
           </button>
@@ -1184,16 +1199,16 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                   <i className="fa-solid fa-inbox" />
                 </span>
                 <h4 className="text-xs font-bold uppercase tracking-wider text-main m-0 truncate">
-                  1. Tiếp nhận & Vào sổ công văn
+                  {t('documents_ui.formModal.section1Title') || '1. Tiếp nhận & Vào sổ công văn'}
                 </h4>
               </div>
-              <span className="text-xs text-muted shrink-0 text-right">Thông tin định danh văn bản</span>
+              <span className="text-xs text-muted shrink-0 text-right">{t('documents_ui.formModal.section1Subtitle') || 'Thông tin định danh văn bản'}</span>
             </div>
 
             <div className="grid grid-cols-12 gap-3.5">
               {/* Năm */}
               <div className={`col-span-12 ${form.loai === 'MAT' ? 'sm:col-span-3' : 'sm:col-span-2'}`}>
-                <label className="block text-xs font-semibold text-secondary mb-1.5">Năm</label>
+                <label className="block text-xs font-semibold text-secondary mb-1.5">{t('documents_ui.formModal.year') || 'Năm'}</label>
                 <input
                   type="number"
                   value={form.nam}
@@ -1206,13 +1221,13 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
               {form.loai !== 'MAT' && (
                 <div className="col-span-12 sm:col-span-3">
                   <label className="block text-xs font-semibold text-secondary mb-1.5">
-                    {form.loai === 'DI' ? 'Số đi' : 'Số đến'} <span className="text-muted font-normal text-xs">(Tự động)</span>
+                    {form.loai === 'DI' ? (t('documents_ui.formModal.outboundNo') || 'Số đi') : (t('documents_ui.formModal.inboundNo') || 'Số đến')} <span className="text-muted font-normal text-xs">{t('documents_ui.formModal.autoGenerated') || '(Tự động)'}</span>
                   </label>
                   <input
                     readOnly
-                    value={form.so_thu_tu ? `#${form.so_thu_tu}` : 'Đang lấy số...'}
+                    value={form.so_thu_tu ? `#${form.so_thu_tu}` : (t('documents_ui.formModal.fetchingNumber') || 'Đang lấy số...')}
                     className="w-full text-sm bg-hover/70 border border-border-subtle rounded-xl px-3 py-2 text-main font-semibold cursor-not-allowed select-none"
-                    title="Số thứ tự được hệ thống tự động sinh tăng dần theo năm (chỉ xem, không thể sửa)"
+                    title={t('documents_ui.formModal.numberTooltip') || 'Số thứ tự được hệ thống tự động sinh tăng dần theo năm (chỉ xem, không thể sửa)'}
                   />
                 </div>
               )}
@@ -1220,7 +1235,11 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
               {/* Ngày đến / Ngày ban hành */}
               <div className={`col-span-12 ${form.loai === 'MAT' ? 'sm:col-span-4' : 'sm:col-span-4'}`}>
                 <label className="block text-xs font-semibold text-secondary mb-1.5">
-                  {form.loai === 'MAT' ? 'Ngày lưu văn bản mật' : form.loai === 'DI' ? 'Ngày ban hành' : 'Ngày đến'} <span className="text-danger">*</span>
+                  {form.loai === 'MAT' 
+                    ? (t('documents_ui.formModal.confidentialDate') || 'Ngày lưu văn bản mật') 
+                    : form.loai === 'DI' 
+                    ? (t('documents_ui.formModal.issueDate') || 'Ngày ban hành') 
+                    : (t('documents_ui.formModal.receivedDate') || 'Ngày đến')} <span className="text-danger">*</span>
                 </label>
                 <input
                   type="date"
@@ -1234,7 +1253,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
               {/* Số, ký hiệu */}
               <div className={`col-span-12 ${form.loai === 'MAT' ? 'sm:col-span-5' : 'sm:col-span-3'}`}>
                 <label className="block text-xs font-semibold text-secondary mb-1.5">
-                  {form.loai === 'MAT' ? 'Số, ký hiệu VB mật' : 'Số, ký hiệu'} <span className="text-danger">*</span>
+                  {form.loai === 'MAT' ? (t('documents_ui.formModal.confidentialCode') || 'Số, ký hiệu VB mật') : (t('documents_ui.formModal.refCode') || 'Số, ký hiệu')} <span className="text-danger">*</span>
                 </label>
                 <input
                   value={form.so_hieu}
@@ -1248,7 +1267,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
               {/* Ngày văn bản */}
               <div className="col-span-12 sm:col-span-4">
                 <label className="block text-xs font-semibold text-secondary mb-1.5">
-                  Ngày ban hành trên VB
+                  {t('documents_ui.formModal.docDateOnPaper') || 'Ngày ban hành trên VB'}
                 </label>
                 <input
                   type="date"
@@ -1261,9 +1280,9 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
               {/* Danh mục hồ sơ */}
               <div className="col-span-12 sm:col-span-4">
                 <label className="block text-xs font-semibold text-secondary mb-1.5 flex items-center justify-between">
-                  <span>Danh mục hồ sơ <span className="text-rose-500 font-bold">*</span></span>
+                  <span>{t('documents_ui.formModal.dossierCatalog') || 'Danh mục hồ sơ'} <span className="text-rose-500 font-bold">*</span></span>
                   {form.loai !== 'DEN' && (
-                    <span className="text-[10px] text-primary font-medium">Nội bộ</span>
+                    <span className="text-[10px] text-primary font-medium">{t('documents_ui.formModal.internalBadge') || 'Nội bộ'}</span>
                   )}
                 </label>
                 {form.loai === 'DEN' ? (
@@ -1278,7 +1297,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                         ten_loai_van_ban: newFolder.trim() ? form.ten_loai_van_ban : '',
                       });
                     }}
-                    placeholder="Nhập danh mục hồ sơ (VD: Hồ sơ công văn đến)..."
+                    placeholder={t('documents_ui.formModal.dossierPlaceholderInbound') || 'Nhập danh mục hồ sơ (VD: Hồ sơ công văn đến)...'}
                     className="w-full text-sm bg-surface border border-border-subtle rounded-xl px-3 py-2 text-main focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-fast"
                     required
                   />
@@ -1296,7 +1315,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                     className="w-full text-sm bg-surface border border-border-subtle rounded-xl px-3 py-2 text-main focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-fast"
                     required
                   >
-                    <option value="">-- Chọn danh mục hồ sơ nội bộ --</option>
+                    <option value="">{t('documents_ui.formModal.dossierSelectPlaceholder') || '-- Chọn danh mục hồ sơ nội bộ --'}</option>
                     {Object.keys(DEFAULT_INTERNAL_FOLDERS).map(f => (
                       <option key={f} value={f}>{f}</option>
                     ))}
@@ -1310,15 +1329,17 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
               {/* Loại văn bản */}
               <div className="col-span-12 sm:col-span-4">
                 <label className="block text-xs font-semibold text-secondary mb-1.5 flex items-center justify-between">
-                  <span>Loại văn bản <span className="text-rose-500 font-bold">*</span></span>
+                  <span>{t('documents_ui.formModal.docType') || 'Loại văn bản'} <span className="text-rose-500 font-bold">*</span></span>
                   {!form.danh_muc_ho_so?.trim() ? (
                     <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium italic flex items-center gap-1">
-                      <i className="fa-solid fa-lock text-[9px]" /> Cần nhập hồ sơ trước
+                      <i className="fa-solid fa-lock text-[9px]" /> {t('documents_ui.formModal.needDossierFirst') || 'Cần nhập hồ sơ trước'}
                     </span>
                   ) : (
                     form.loai !== 'DEN' ? (
-                      <span className="text-[10px] text-primary font-medium">Theo hồ sơ đã chọn</span>
-                    ) : null
+                      <span className="text-[10px] text-primary font-medium">{t('documents_ui.formModal.bySelectedDossier') || 'Theo hồ sơ đã chọn'}</span>
+                    ) : (
+                      <span className="text-[10px] text-muted italic">{t('documents_ui.formModal.freeText') || 'Gõ tay tự do'}</span>
+                    )
                   )}
                 </label>
                 {form.loai === 'DEN' ? (
@@ -1327,7 +1348,9 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                     disabled={!form.danh_muc_ho_so?.trim()}
                     value={form.ten_loai_van_ban}
                     onChange={e => setForm({ ...form, ten_loai_van_ban: e.target.value })}
-                    placeholder={!form.danh_muc_ho_so?.trim() ? "— Vui lòng nhập Danh mục hồ sơ trước —" : "Nhập loại văn bản (VD: Công văn, Quyết định...)"}
+                    placeholder={!form.danh_muc_ho_so?.trim() 
+                      ? (t('documents_ui.formModal.docTypePromptInbound') || '— Vui lòng nhập Danh mục hồ sơ trước —') 
+                      : (t('documents_ui.formModal.docTypePlaceholderInbound') || 'Nhập loại văn bản (VD: Công văn, Quyết định...)')}
                     className="w-full text-sm bg-surface border border-border-subtle rounded-xl px-3 py-2 text-main focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-fast disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-hover/60"
                     required
                   />
@@ -1341,12 +1364,12 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                   >
                     <option value="">
                       {!form.danh_muc_ho_so?.trim()
-                        ? '— Vui lòng chọn danh mục hồ sơ trước —'
-                        : '-- Chọn loại văn bản --'}
+                        ? (t('documents_ui.formModal.docTypePromptSelect') || '— Vui lòng chọn danh mục hồ sơ trước —')
+                        : (t('documents_ui.formModal.docTypeSelectPlaceholder') || '-- Chọn loại văn bản --')}
                     </option>
                     {form.danh_muc_ho_so?.trim() &&
-                      (DEFAULT_INTERNAL_FOLDERS[form.danh_muc_ho_so] || DEFAULT_DOC_TYPES).map(t => (
-                        <option key={t} value={t}>{t}</option>
+                      (DEFAULT_INTERNAL_FOLDERS[form.danh_muc_ho_so] || DEFAULT_DOC_TYPES).map(tOpt => (
+                        <option key={tOpt} value={tOpt}>{tOpt}</option>
                       ))}
                     {form.ten_loai_van_ban &&
                       form.danh_muc_ho_so?.trim() &&
@@ -1360,10 +1383,10 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
               {/* Phạm vi lưu hành (Issue #82) */}
               <div className="col-span-12 sm:col-span-4">
                 <label className="block text-xs font-semibold text-secondary mb-1.5 flex items-center justify-between">
-                  <span>Phạm vi lưu hành</span>
+                  <span>{t('documents_ui.formModal.scope') || 'Phạm vi lưu hành'}</span>
                   {(form.pham_vi === 'HAN_CHE' || form.loai === 'MAT') && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-600 font-bold uppercase">
-                      Hạn chế
+                      {t('documents_ui.formModal.scopeRestricted') || 'Hạn chế'}
                     </span>
                   )}
                 </label>
@@ -1374,7 +1397,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                     className="w-full text-sm bg-surface border border-border-subtle rounded-xl px-3 py-2 text-main focus:outline-none transition-fast opacity-80 cursor-not-allowed"
                     title="Văn bản mật bắt buộc lưu hành ở phạm vi hạn chế"
                   >
-                    <option value="HAN_CHE">Hạn chế (Chỉ người nhận xem)</option>
+                    <option value="HAN_CHE">{t('documents_ui.formModal.scopeConfidentialOnly') || 'Hạn chế (Chỉ người nhận xem)'}</option>
                   </select>
                 ) : (
                   <select
@@ -1392,12 +1415,12 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                     className="w-full text-sm bg-surface border border-border-subtle rounded-xl px-3 py-2 text-main focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-fast disabled:opacity-60 disabled:cursor-not-allowed"
                     title={
                       Boolean(initial?.id) && !isAdmin
-                        ? 'Chỉ Quản trị viên (Admin) mới có quyền thay đổi phạm vi lưu hành của văn bản sau khi thêm.'
+                        ? (t('documents_ui.formModal.scopeAdminOnlyTooltip') || 'Chỉ Quản trị viên (Admin) mới có quyền thay đổi phạm vi lưu hành của văn bản sau khi thêm.')
                         : 'Chọn phạm vi lưu hành'
                     }
                   >
-                    <option value="NOI_BO">Nội bộ (Toàn cơ quan)</option>
-                    <option value="HAN_CHE">Hạn chế (Chỉ người nhận xem)</option>
+                    <option value="NOI_BO">{t('documents_ui.formModal.scopeInternal') || 'Nội bộ (Toàn cơ quan)'}</option>
+                    <option value="HAN_CHE">{t('documents_ui.formModal.scopeRestrictedOption') || 'Hạn chế (Chỉ người nhận xem)'}</option>
                   </select>
                 )}
               </div>
@@ -1412,10 +1435,10 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                   <i className="fa-solid fa-building-columns" />
                 </span>
                 <h4 className="text-xs font-bold uppercase tracking-wider text-main m-0 truncate">
-                  2. Nguồn ban hành & Nội dung văn bản
+                  {t('documents_ui.formModal.section2Title') || '2. Nguồn ban hành & Nội dung văn bản'}
                 </h4>
               </div>
-              <span className="text-xs text-muted shrink-0 text-right">Cơ quan gửi & Trích yếu</span>
+              <span className="text-xs text-muted shrink-0 text-right">{t('documents_ui.formModal.section2Subtitle') || 'Cơ quan gửi & Trích yếu'}</span>
             </div>
 
             <div className="space-y-3.5">
@@ -1423,12 +1446,12 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
               {form.loai === 'DEN' ? (
                 <div>
                   <label className="block text-xs font-semibold text-secondary mb-1.5">
-                    Cơ quan / Đơn vị ban hành <span className="text-danger">*</span>
+                    {t('documents_ui.formModal.issuerInbound') || 'Cơ quan / Đơn vị ban hành'} <span className="text-danger">*</span>
                   </label>
                   <input
                     value={form.noi_ban_hanh}
                     onChange={e => setForm({ ...form, noi_ban_hanh: e.target.value })}
-                    placeholder="Ví dụ: Bộ Giáo dục và Đào tạo, UBND Thành phố Hồ Chí Minh, ..."
+                    placeholder={t('documents_ui.formModal.issuerInboundPlaceholder') || 'Ví dụ: Bộ Giáo dục và Đào tạo, UBND Thành phố Hồ Chí Minh, ...'}
                     className="w-full text-sm bg-surface border border-border-subtle rounded-xl px-3 py-2 text-main placeholder:text-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-fast"
                     required
                   />
@@ -1437,10 +1460,10 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                 <div className="space-y-2">
                   <div className="flex items-center justify-between mb-0.5">
                     <label className="block text-xs font-semibold text-secondary m-0">
-                      Đơn vị ban hành (Phòng / Ban nội bộ) <span className="text-danger">*</span>
+                      {t('documents_ui.formModal.issuerOutbound') || 'Đơn vị ban hành (Phòng / Ban nội bộ)'} <span className="text-danger">*</span>
                     </label>
                     <span className="text-[10px] text-muted hidden sm:inline">
-                      (Có thể chọn nhiều đơn vị)
+                      {t('documents_ui.formModal.multipleUnitsHint') || '(Có thể chọn nhiều đơn vị)'}
                     </span>
                   </div>
 
@@ -1594,13 +1617,13 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
               {/* Trích yếu nội dung */}
               <div>
                 <label className="block text-xs font-semibold text-secondary mb-1.5">
-                  Trích yếu nội dung văn bản <span className="text-danger">*</span>
+                  {t('documents_ui.formModal.summary') || 'Trích yếu nội dung văn bản'} <span className="text-danger">*</span>
                 </label>
                 <textarea
                   rows={3}
                   value={form.trich_yeu}
                   onChange={e => setForm({ ...form, trich_yeu: e.target.value })}
-                  placeholder="Nhập tóm tắt ngắn gọn mục đích và nội dung cốt lõi của văn bản..."
+                  placeholder={t('documents_ui.formModal.summaryPlaceholder') || 'Nhập tóm tắt ngắn gọn mục đích và nội dung cốt lõi của văn bản...'}
                   className="w-full text-sm bg-surface border border-border-subtle rounded-xl p-3 text-main placeholder:text-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-fast resize-y"
                   required
                 />
@@ -1616,22 +1639,22 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                   <i className="fa-solid fa-stamp" />
                 </span>
                 <h4 className="text-xs font-bold uppercase tracking-wider text-main m-0 truncate">
-                  3. Ký duyệt & Hiệu lực văn bản
+                  {t('documents_ui.formModal.section3Title') || '3. Ký duyệt & Hiệu lực văn bản'}
                 </h4>
               </div>
-              <span className="text-xs text-muted shrink-0 text-right">Thông tin người ký & Trạng thái pháp lý</span>
+              <span className="text-xs text-muted shrink-0 text-right">{t('documents_ui.formModal.section3Subtitle') || 'Thông tin người ký & Trạng thái pháp lý'}</span>
             </div>
 
             <div className="grid grid-cols-12 gap-3.5">
               {/* Người ký */}
               <div className="col-span-12 sm:col-span-6">
                 <label className="block text-xs font-semibold text-secondary mb-1.5">
-                  Người ký văn bản
+                  {t('documents_ui.formModal.signer') || 'Người ký văn bản'}
                 </label>
                 <input
                   value={form.nguoi_ky}
                   onChange={e => setForm({ ...form, nguoi_ky: e.target.value })}
-                  placeholder="Họ và tên người ký (VD: Nguyễn Văn A)"
+                  placeholder={t('documents_ui.formModal.signerPlaceholder') || 'Họ và tên người ký (VD: Nguyễn Văn A)'}
                   className="w-full text-sm bg-surface border border-border-subtle rounded-xl px-3 py-2 text-main placeholder:text-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-fast"
                 />
               </div>
@@ -1639,12 +1662,12 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
               {/* Chức vụ */}
               <div className="col-span-12 sm:col-span-6">
                 <label className="block text-xs font-semibold text-secondary mb-1.5">
-                  Chức vụ người ký
+                  {t('documents_ui.formModal.position') || 'Chức vụ người ký'}
                 </label>
                 <input
                   value={form.chuc_vu}
                   onChange={e => setForm({ ...form, chuc_vu: e.target.value })}
-                  placeholder="VD: Thứ trưởng, Giám đốc, Hiệu trưởng..."
+                  placeholder={t('documents_ui.formModal.positionPlaceholder') || 'VD: Thứ trưởng, Giám đốc, Hiệu trưởng...'}
                   className="w-full text-sm bg-surface border border-border-subtle rounded-xl px-3 py-2 text-main placeholder:text-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-fast"
                 />
               </div>
@@ -1653,24 +1676,24 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
               <div className="col-span-12 sm:col-span-6">
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="block text-xs font-semibold text-secondary m-0">
-                    Trạng thái hiệu lực
+                    {t('documents_ui.formModal.validityStatus') || 'Trạng thái hiệu lực'}
                   </label>
                   {form.hieu_luc === 'CON_HIEU_LUC' && (
                     <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      Đang áp dụng
+                      {t('documents_ui.formModal.statusInEffect') || 'Đang áp dụng'}
                     </span>
                   )}
                   {form.hieu_luc === 'CON_HIEU_LUC_1_PHAN' && (
                     <span className="text-xs font-semibold text-purple-600 dark:text-purple-400 flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse" />
-                      Hiệu lực 1 phần
+                      {t('documents_ui.formModal.statusPartiallyInEffect') || 'Hiệu lực 1 phần'}
                     </span>
                   )}
                   {form.hieu_luc === 'HET_HIEU_LUC' && (
                     <span className="text-xs font-semibold text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-                      Hết giá trị
+                      {t('documents_ui.formModal.statusExpired') || 'Hết giá trị'}
                     </span>
                   )}
                 </div>
@@ -1698,9 +1721,13 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                     value={form.hieu_luc === 'HET_VA_THAY_THE' ? 'HET_HIEU_LUC' : form.hieu_luc}
                     onChange={e => {
                       const newHieuLuc = e.target.value as FormState['hieu_luc'];
-                      setForm({ ...form, hieu_luc: newHieuLuc });
+                      setForm(prev => ({
+                        ...prev,
+                        hieu_luc: newHieuLuc,
+                        ngay_het_hieu_luc: newHieuLuc === 'CON_HIEU_LUC' ? '' : prev.ngay_het_hieu_luc,
+                        link_thay_the: (newHieuLuc === 'CON_HIEU_LUC' && !isReplacingOther) ? '' : prev.link_thay_the,
+                      }));
                       if (newHieuLuc === 'CON_HIEU_LUC' && !isReplacingOther) {
-                        setForm(prev => ({ ...prev, link_thay_the: '' }));
                         setShowReplacementDropdown(false);
                       }
                     }}
@@ -1713,13 +1740,13 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                     }`}
                   >
                     <option value="CON_HIEU_LUC" className="bg-surface text-emerald-600 font-semibold">
-                      Còn hiệu lực
+                      {t('documents_ui.formModal.statusActive') || 'Còn hiệu lực'}
                     </option>
                     <option value="CON_HIEU_LUC_1_PHAN" className="bg-surface text-purple-600 font-semibold">
-                      Còn hiệu lực 1 phần
+                      {t('documents_ui.formModal.statusPartiallyActive') || 'Còn hiệu lực 1 phần'}
                     </option>
                     <option value="HET_HIEU_LUC" className="bg-surface text-rose-600 font-semibold">
-                      Hết hiệu lực
+                      {t('documents_ui.formModal.statusInactive') || 'Hết hiệu lực'}
                     </option>
                   </select>
                 </div>
@@ -1728,7 +1755,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
               {/* Ngày hết hiệu lực */}
               <div className="col-span-12 sm:col-span-6">
                 <label className="block text-xs font-semibold text-secondary mb-1.5">
-                  Ngày hết hiệu lực <span className="text-muted font-normal text-xs">(Tùy chọn)</span>
+                  {t('documents_ui.formModal.expirationDate') || 'Ngày hết hiệu lực'} <span className="text-muted font-normal text-xs">{t('documents_ui.formModal.optional') || '(Tùy chọn)'}</span>
                 </label>
                 <input
                   type="date"
@@ -1757,7 +1784,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                     />
                     <span className="text-xs font-semibold text-main">
                       <i className="fa-solid fa-repeat text-primary mr-1" />
-                      Văn bản này thay thế cho văn bản khác trong hệ thống
+                      {t('documents_ui.formModal.replacesOtherCheckbox') || 'Văn bản này thay thế cho văn bản khác trong hệ thống'}
                     </span>
                   </label>
                 </div>
@@ -2059,17 +2086,17 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                   <i className="fa-solid fa-share-nodes" />
                 </span>
                 <h4 className="text-xs font-bold uppercase tracking-wider text-main m-0 truncate">
-                  4. Phân phối xử lý & Tệp đính kèm
+                  {t('documents_ui.formModal.section4Title') || '4. Phân phối xử lý & Tệp đính kèm'}
                 </h4>
               </div>
-              <span className="text-xs text-muted shrink-0 text-right">Điều phối đơn vị & Tải lên tệp</span>
+              <span className="text-xs text-muted shrink-0 text-right">{t('documents_ui.formModal.section4Subtitle') || 'Điều phối đơn vị & Tải lên tệp'}</span>
             </div>
 
             {form.pham_vi === 'HAN_CHE' && (
               <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center gap-2.5 text-xs text-amber-600 dark:text-amber-400">
                 <i className="fa-solid fa-shield-halved text-sm shrink-0" />
                 <span>
-                  <strong>Văn bản hạn chế (Mật nội bộ):</strong> Bắt buộc chọn ít nhất một cán bộ nhận / xử lý. Hệ thống tự động vô hiệu hóa tính năng gửi email toàn trường và chỉ người nhận cùng người tạo mới có quyền xem.
+                  <strong>{t('documents_ui.formModal.restrictedDocLabel') || 'Văn bản hạn chế (Mật nội bộ)'}:</strong> {t('documents_ui.formModal.restrictedNotice') || 'Bắt buộc chọn ít nhất một cán bộ nhận / xử lý. Hệ thống tự động vô hiệu hóa tính năng gửi email toàn trường và chỉ người nhận cùng người tạo mới có quyền xem.'}
                 </span>
               </div>
             )}
@@ -2078,7 +2105,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
             <div className="grid grid-cols-12 gap-3.5">
               <div className="col-span-12 sm:col-span-6">
                 <label className="block text-xs font-semibold text-secondary mb-1.5">
-                  Đơn vị nhận / chủ trì xử lý
+                  {t('documents_ui.formModal.receivingUnit') || 'Đơn vị nhận / chủ trì xử lý'}
                 </label>
                 <div className="relative" ref={recipientUnitDropdownRef}>
                   <button
@@ -2087,7 +2114,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                     className="w-full text-sm bg-surface border border-border-subtle rounded-xl px-3 py-2 text-main flex items-center justify-between text-left focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-fast cursor-pointer"
                   >
                     <span className={`truncate ${selectedUnit ? 'font-medium text-main' : 'text-muted'}`}>
-                      {selectedUnit || '-- Chọn đơn vị nhận --'}
+                      {selectedUnit || (t('documents_ui.formModal.selectReceivingUnit') || '-- Chọn đơn vị nhận --')}
                     </span>
                     <div className="flex items-center gap-1.5 ml-2 shrink-0">
                       {selectedUnit && (
@@ -2123,7 +2150,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                             type="text"
                             value={recipientUnitSearch}
                             onChange={e => setRecipientUnitSearch(e.target.value)}
-                            placeholder="Gõ để tìm nhanh đơn vị..."
+                            placeholder={t('documents_ui.formModal.searchUnitPlaceholder') || 'Gõ để tìm nhanh đơn vị...'}
                             autoFocus
                             className="w-full text-xs bg-surface border border-border-subtle rounded-lg pl-7 pr-7 py-1.5 text-main placeholder:text-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-fast"
                           />
@@ -2151,7 +2178,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                             !selectedUnit ? 'bg-primary/10 text-primary font-semibold' : 'text-muted hover:bg-hover hover:text-main'
                           }`}
                         >
-                          <span>-- Chọn đơn vị nhận --</span>
+                          <span>{t('documents_ui.formModal.selectReceivingUnit') || '-- Chọn đơn vị nhận --'}</span>
                           {!selectedUnit && <i className="fa-solid fa-check text-xs text-primary" />}
                         </button>
 
@@ -2427,9 +2454,9 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                     className="mt-0.5 rounded border-border-subtle text-primary focus:ring-primary"
                   />
                   <div>
-                    <span className="text-xs font-bold text-main block">Hiển thị trên hệ thống</span>
+                    <span className="text-xs font-bold text-main block">{t('documents_ui.formModal.displayOnSystem') || 'Hiển thị trên hệ thống'}</span>
                     <span className="text-xs text-muted block leading-snug">
-                      Cho phép cán bộ nhân viên tra cứu và xem văn bản này
+                      {t('documents_ui.formModal.displayOnSystemDesc') || 'Cho phép cán bộ nhân viên tra cứu và xem văn bản này'}
                     </span>
                   </div>
                 </label>
@@ -2444,9 +2471,9 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                       className="mt-0.5 rounded border-border-subtle text-primary focus:ring-primary"
                     />
                     <div>
-                      <span className="text-xs font-bold text-main block">Gửi email toàn trường</span>
+                      <span className="text-xs font-bold text-main block">{t('documents_ui.formModal.sendEmailToAll') || 'Gửi email toàn trường'}</span>
                       <span className="text-xs text-muted block leading-snug">
-                        Tự động gửi thông báo văn bản mới tới hòm thư CBNV
+                        {t('documents_ui.formModal.sendEmailToAllDesc') || 'Tự động gửi thông báo văn bản mới tới hòm thư CBNV'}
                       </span>
                     </div>
                   </label>
@@ -2455,10 +2482,12 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                     <span className="text-base leading-none">🔒</span>
                     <div>
                       <span className="text-xs font-bold block">
-                        {form.pham_vi === 'HAN_CHE' ? 'Văn bản Hạn chế (Mật nội bộ)' : 'Văn bản Mật lưu hành nội bộ'}
+                        {form.pham_vi === 'HAN_CHE' 
+                          ? (t('documents_ui.formModal.restrictedDocLabel') || 'Văn bản Hạn chế (Mật nội bộ)') 
+                          : (t('documents_ui.formModal.confidentialDocLabel') || 'Văn bản Mật lưu hành nội bộ')}
                       </span>
                       <span className="text-xs text-muted block leading-snug">
-                        Không gửi email diện rộng toàn trường. Chỉ cán bộ nhận được chỉ định mới có quyền tiếp cận.
+                        {t('documents_ui.formModal.restrictedEmailNotice') || 'Không gửi email diện rộng toàn trường. Chỉ cán bộ nhận được chỉ định mới có quyền tiếp cận.'}
                       </span>
                     </div>
                   </div>
@@ -2472,7 +2501,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
         <div className="flex items-center justify-between px-6 py-3.5 border-t border-border-subtle bg-surface shrink-0">
           <div className="text-xs text-muted flex items-center gap-1.5">
             <span className="text-danger font-bold">*</span>
-            <span>Các trường có dấu sao đỏ là bắt buộc nhập</span>
+            <span>{t('documents_ui.formModal.requiredFieldNotice') || 'Các trường có dấu sao đỏ là bắt buộc nhập'}</span>
           </div>
           <div className="flex items-center gap-2.5">
             <Button
@@ -2482,7 +2511,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
               onClick={onClose}
               disabled={loading}
             >
-              Hủy bỏ
+              {t('documents_ui.formModal.cancel') || 'Hủy bỏ'}
             </Button>
             <Button
               type="submit"
@@ -2491,7 +2520,11 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
               icon={loading ? 'fa-spinner fa-spin' : 'fa-floppy-disk'}
               disabled={loading}
             >
-              {loading ? 'Đang lưu...' : initial?.id ? 'Cập nhật' : 'Lưu văn bản'}
+              {loading 
+                ? (t('documents_ui.formModal.saving') || 'Đang lưu...') 
+                : initial?.id 
+                ? (t('documents_ui.formModal.update') || 'Cập nhật') 
+                : (t('documents_ui.formModal.save') || 'Lưu văn bản')}
             </Button>
           </div>
         </div>

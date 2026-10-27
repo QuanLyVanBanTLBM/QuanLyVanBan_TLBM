@@ -1,10 +1,10 @@
-"""Xuất Excel danh bạ Phòng ban theo mẫu danh bạ: Khối/Khu vực -> Đơn vị -> Người đứng đầu.
+"""Xuất Excel danh bạ Phòng ban theo mẫu danh bạ: Khối/Khu vực -> Đơn vị -> Danh sách CBNV.
 
-Quy tắc (chốt 15-18/10/2026):
+Quy tắc (chốt 15-18/10/2026, điều chỉnh 24/10/2026):
 - Khối theo thu_tu_hien_thi, đơn vị theo stt_uu_tien; STT người đếm lại từ 1 ở mỗi đơn vị.
-- Dưới mỗi đơn vị chỉ có người đứng đầu: CBNV đang làm việc có chức vụ STT nhỏ nhất (display_order),
-  bằng nhau thì lấy id nhỏ nhất. Đơn vị không có ai chỉ có dòng đơn vị.
-- Tài khoản quản trị hệ thống (is_superuser) không phải CBNV của đơn vị nên không đứng đầu đơn vị nào.
+- Dưới mỗi đơn vị liệt kê mọi CBNV đang làm việc của đơn vị, chức vụ lớn trước (display_order nhỏ trước),
+  bằng nhau thì id nhỏ trước. Đơn vị không có ai chỉ có dòng đơn vị.
+- Tài khoản quản trị hệ thống (is_superuser) không phải CBNV của đơn vị nên không được liệt kê.
 - CBNV Nội bộ (is_public = False) chỉ xuất khi người xuất có view_full_cbnv hoặc là superuser.
 - Ô văn bản bắt đầu bằng "=" luôn ghi dạng chuỗi để Excel không hiểu là công thức.
 """
@@ -46,8 +46,8 @@ def can_export_internal_people(user) -> bool:
     return bool(user.is_superuser or user.has_perm("view_full_cbnv"))
 
 
-def find_unit_heads(unit_ids, include_internal_people):
-    """Trả về {don_vi_id: Employee} người đứng đầu từng đơn vị, một truy vấn cho mọi đơn vị."""
+def find_unit_members(unit_ids, include_internal_people):
+    """Trả về {don_vi_id: [Employee, ...]} CBNV từng đơn vị theo thứ tự chức vụ, một truy vấn cho mọi đơn vị."""
     employees = (
         Employee.objects.filter(
             don_vi_id__in=unit_ids,
@@ -59,10 +59,10 @@ def find_unit_heads(unit_ids, include_internal_people):
     )
     if not include_internal_people:
         employees = employees.filter(is_public=True)
-    heads = {}
+    members = {}
     for employee in employees:
-        heads.setdefault(employee.don_vi_id, employee)
-    return heads
+        members.setdefault(employee.don_vi_id, []).append(employee)
+    return members
 
 
 def unit_label(unit, i18n):
@@ -84,7 +84,7 @@ def build_directory_workbook(units, user, i18n):
             "khoi__thu_tu_hien_thi", "khoi__ten", "khoi_id", "stt_uu_tien", "ten", "id"
         )
     )
-    heads = find_unit_heads([unit.id for unit in units], can_export_internal_people(user))
+    members = find_unit_members([unit.id for unit in units], can_export_internal_people(user))
     generated_at = timezone.localtime()
 
     wb = openpyxl.Workbook()
@@ -139,24 +139,22 @@ def build_directory_workbook(units, user, i18n):
         merged_row(row, unit_label(unit, i18n), Font(name=HEADING_FONT, size=11, bold=True), left, UNIT_FILL,
                    height=20)
         row += 1
-        head = heads.get(unit.id)
-        if head is None:
-            continue
-        values = [
-            1,
-            head.ho_ten,
-            head.chuc_vu.name if head.chuc_vu else "",
-            head.chuc_danh or "",
-            head.sdt or "",
-            head.email or "",
-        ]
-        for col, value in enumerate(values, start=1):
-            cell = ws.cell(row=row, column=col)
-            _set_text(cell, value)
-            cell.font = Font(name=BODY_FONT, size=11)
-            cell.border = border
-            cell.alignment = center if col in (1, 5) else left
-        row += 1
+        for number, member in enumerate(members.get(unit.id, []), start=1):
+            values = [
+                number,
+                member.ho_ten,
+                member.chuc_vu.name if member.chuc_vu else "",
+                member.chuc_danh or "",
+                member.sdt or "",
+                member.email or "",
+            ]
+            for col, value in enumerate(values, start=1):
+                cell = ws.cell(row=row, column=col)
+                _set_text(cell, value)
+                cell.font = Font(name=BODY_FONT, size=11)
+                cell.border = border
+                cell.alignment = center if col in (1, 5) else left
+            row += 1
 
     for col, width in enumerate(COLUMN_WIDTHS, start=1):
         ws.column_dimensions[get_column_letter(col)].width = width

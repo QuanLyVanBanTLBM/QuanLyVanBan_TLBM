@@ -163,7 +163,7 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[10000] flex items-center justify-center p-2 sm:p-4 bg-black/70 backdrop-blur-xs animate-fade-in"
+      className="fixed inset-0 z-[10005] flex items-center justify-center p-2 sm:p-4 bg-black/70 backdrop-blur-xs animate-fade-in"
       role="dialog"
       aria-modal="true"
       onClick={onClose}
@@ -210,7 +210,7 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
               </a>
             )}
 
-            {onDownload && (
+            {onDownload ? (
               <button
                 type="button"
                 onClick={onDownload}
@@ -220,7 +220,17 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
                 <i className="fa-solid fa-download text-[11px]" />
                 <span className="hidden sm:inline">Tải về</span>
               </button>
-            )}
+            ) : fileUrl ? (
+              <a
+                href={fileUrl}
+                download={file.name}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary text-white hover:bg-primary-hover shadow-2xs transition-colors cursor-pointer"
+                title="Tải tệp này về máy"
+              >
+                <i className="fa-solid fa-download text-[11px]" />
+                <span className="hidden sm:inline">Tải về</span>
+              </a>
+            ) : null}
 
             <button
               type="button"
@@ -367,7 +377,7 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
                         <span>Mở tệp trực tiếp</span>
                       </a>
                     )}
-                    {onDownload && (
+                    {onDownload ? (
                       <button
                         type="button"
                         onClick={onDownload}
@@ -376,7 +386,16 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
                         <i className="fa-solid fa-download text-xs" />
                         <span>Tải về máy</span>
                       </button>
-                    )}
+                    ) : fileUrl ? (
+                      <a
+                        href={fileUrl}
+                        download={file.name}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition-colors cursor-pointer"
+                      >
+                        <i className="fa-solid fa-download text-xs" />
+                        <span>Tải về máy</span>
+                      </a>
+                    ) : null}
                   </div>
                 </div>
               )}
@@ -424,7 +443,7 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
                     <span>Mở tệp trực tiếp</span>
                   </a>
                 )}
-                {onDownload && (
+                {onDownload ? (
                   <button
                     type="button"
                     onClick={onDownload}
@@ -433,7 +452,16 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
                     <i className="fa-solid fa-download text-xs" />
                     <span>Tải về máy</span>
                   </button>
-                )}
+                ) : fileUrl ? (
+                  <a
+                    href={fileUrl}
+                    download={file.name}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-primary hover:bg-primary-hover text-white shadow-2xs transition-colors cursor-pointer"
+                  >
+                    <i className="fa-solid fa-download text-xs" />
+                    <span>Tải về máy</span>
+                  </a>
+                ) : null}
               </div>
             </div>
           )}

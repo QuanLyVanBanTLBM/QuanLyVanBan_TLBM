@@ -13,6 +13,9 @@ Dùng model `documents.VanBanDi` và hàm dùng chung của Nhóm 2 (`documents.
 
 `mo_ta_van_ban(document_type, van_ban_id)`: số hiệu, trích yếu để ghi vào bằng chứng và trang phê duyệt
 của tệp hoàn tất (Phase 10); không kiểm quyền, đọc lỗi thì trả rỗng để không chặn việc hoàn tất duyệt.
+
+Văn bản trình ký của hồ sơ (#275 mục 3): văn bản đi đã gắn (không bắt buộc) hoặc văn bản khác nhập tay (số hiệu,
+trích yếu lưu trên hồ sơ). `mo_ta_ho_so`, `mo_ta_nhieu_ho_so` trả mô tả theo đúng nguồn của từng hồ sơ.
 """
 
 import logging
@@ -49,7 +52,7 @@ def kiem_tra_van_ban_trinh_ky(nguoi_dung, document_type, van_ban_id):
         raise SigningError(code="van_ban_han_che_khong_trinh_ky",
                            detail="Văn bản hạn chế không đi qua trình ký.",
                            fields={"van_ban_id": ["Văn bản có phạm vi HAN_CHE."]})
-    if not _xem_duoc(nguoi_dung, van_ban):
+    if van_ban.nguoi_tao_id != nguoi_dung.pk and not _xem_duoc(nguoi_dung, van_ban):
         # Không tiết lộ sự tồn tại của văn bản người dùng không được xem
         raise SigningError(code="khong_tim_thay_van_ban", detail="Không tìm thấy văn bản.",
                            status_code=status.HTTP_404_NOT_FOUND, fields={"van_ban_id": ["Không tồn tại."]})
@@ -69,6 +72,20 @@ def mo_ta_van_ban(document_type, van_ban_id):
     if van_ban is None:
         return {}
     return {"so_hieu": van_ban.so_hieu or "", "trich_yeu": van_ban.trich_yeu or ""}
+
+
+def mo_ta_ho_so(yeu_cau):
+    """{"so_hieu", "trich_yeu"} của văn bản trình ký: văn bản đi đã gắn hoặc nội dung nhập tay trên hồ sơ."""
+    if yeu_cau.van_ban_id is None:
+        return {"so_hieu": yeu_cau.so_hieu_van_ban, "trich_yeu": yeu_cau.trich_yeu_van_ban}
+    return mo_ta_van_ban(yeu_cau.document_type, yeu_cau.van_ban_id)
+
+
+def mo_ta_nhieu_ho_so(ho_so):
+    """{id hồ sơ: mô tả văn bản trình ký} của nhiều hồ sơ; văn bản đi đọc trong một truy vấn."""
+    van_ban_di = mo_ta_nhieu(h.van_ban_id for h in ho_so if h.van_ban_id is not None)
+    return {h.pk: van_ban_di.get(h.van_ban_id, {}) if h.van_ban_id is not None
+            else {"so_hieu": h.so_hieu_van_ban, "trich_yeu": h.trich_yeu_van_ban} for h in ho_so}
 
 
 def id_van_ban_khop(tu_khoa):

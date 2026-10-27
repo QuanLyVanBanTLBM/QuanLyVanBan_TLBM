@@ -1,6 +1,8 @@
+import re
+
 from django.http import Http404
 from rest_framework import status
-from rest_framework.exceptions import APIException
+from rest_framework.exceptions import APIException, NotFound
 from rest_framework.views import APIView
 from rest_framework.views import exception_handler as drf_exception_handler
 
@@ -36,6 +38,46 @@ CHI_TIET_CHUAN = {
 }
 
 
+# Thông báo mặc định của DRF chưa có bản dịch tiếng Việt: (mẫu tiếng Anh, thay bằng). `{1}` lấy nhóm bắt đầu của mẫu.
+THONG_BAO_VALIDATION = (
+    (re.compile(r"Ensure this field has no more than (\d+) characters\."), "Tối đa {1} ký tự."),
+    (re.compile(r"Ensure this field has at least (\d+) characters\."), "Tối thiểu {1} ký tự."),
+    (re.compile(r"Ensure this value is less than or equal to (\S+?)\."), "Tối đa {1}."),
+    (re.compile(r"Ensure this value is greater than or equal to (\S+?)\."), "Tối thiểu {1}."),
+    (re.compile(r"Datetime has wrong format.*"), "Ngày giờ không đúng định dạng."),
+    (re.compile(r"Date has wrong format.*"), "Ngày không đúng định dạng."),
+    (re.compile(r"Invalid pk .* object does not exist\."), "Không tồn tại."),
+    (re.compile(r"Incorrect type\..*"), "Giá trị không hợp lệ."),
+    (re.compile(r".* is not a valid choice\."), "Giá trị không hợp lệ."),
+    (re.compile(r"A valid integer is required\."), "Phải là số nguyên."),
+    (re.compile(r"A valid number is required\."), "Phải là số."),
+    (re.compile(r"Not a valid string\."), "Phải là chuỗi ký tự."),
+    (re.compile(r"Null characters are not allowed\."), "Không được chứa ký tự NUL."),
+    (re.compile(r"Value must be valid JSON\."), "Phải là JSON hợp lệ."),
+    (re.compile(r"Invalid data\. Expected a dictionary.*"), "Dữ liệu phải là một đối tượng."),
+    (re.compile(r"Expected a list of items.*"), "Phải là một danh sách."),
+    (re.compile(r"This field is required\."), "Bắt buộc."),
+    (re.compile(r"This field may not be (null|blank)\."), "Không được để trống."),
+    (re.compile(r"Enter a valid .*"), "Giá trị không hợp lệ."),
+    (re.compile(r"No file was submitted\."), "Chưa chọn tệp."),
+    (re.compile(r"The submitted file is empty\."), "Tệp rỗng."),
+)
+
+
+def viet_hoa_thong_bao(gia_tri):
+    """Đổi các thông báo validation tiếng Anh của DRF sang tiếng Việt trong cấu trúc lỗi lồng nhau."""
+    if isinstance(gia_tri, dict):
+        return {khoa: viet_hoa_thong_bao(v) for khoa, v in gia_tri.items()}
+    if isinstance(gia_tri, (list, tuple)):
+        return [viet_hoa_thong_bao(v) for v in gia_tri]
+    if isinstance(gia_tri, str):
+        for mau, thay in THONG_BAO_VALIDATION:
+            khop = mau.fullmatch(str(gia_tri))
+            if khop:
+                return thay.format(None, *khop.groups())
+    return gia_tri
+
+
 def exception_handler(exc, context):
     """Lỗi trả dạng {"code", "detail", "fields"}; lỗi validation DRF giữ chi tiết theo field."""
     response = drf_exception_handler(exc, context)
@@ -48,10 +90,10 @@ def exception_handler(exc, context):
             "fields": exc.fields,
         }
     elif response.status_code == status.HTTP_400_BAD_REQUEST and isinstance(response.data, dict):
-        response.data = {"code": "du_lieu_khong_hop_le", "detail": "", "fields": response.data}
+        response.data = {"code": "du_lieu_khong_hop_le", "detail": "Dữ liệu không hợp lệ.", "fields": viet_hoa_thong_bao(response.data)}
     elif isinstance(response.data, dict) and "detail" in response.data:
         response.data = {
-            "code": "khong_tim_thay" if isinstance(exc, Http404) else getattr(exc, "default_code", "loi"),
+            "code": "khong_tim_thay" if isinstance(exc, (Http404, NotFound)) else getattr(exc, "default_code", "loi"),
             "detail": CHI_TIET_CHUAN.get(response.status_code, str(response.data["detail"])),
             "fields": {},
         }

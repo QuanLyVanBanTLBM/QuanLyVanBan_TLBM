@@ -16,6 +16,7 @@ import { Toast, ToastNotification } from '@components/resources/Toast';
 import { useTranslation } from '@i18n/translate';
 import { apiClient } from '@lib/apiClient';
 import { authService } from '@lib/authService';
+import { computeEffectiveStatus } from '@lib/resourceValidity';
 
 const STORAGE_KEY = 'tlbm_resources_filter_state';
 const STORAGE_DOCS = 'tlbm_documents_v2';
@@ -40,15 +41,37 @@ const notifyMutation = () => {
   }
 };
 
+export type SearchScopeType = 'all' | 'title' | 'code' | 'authority' | 'author' | 'attachment';
+
 interface PersistedResourceState {
   category?: string;
   type?: string;
   year?: string;
   status?: string;
   q?: string;
+  searchField?: SearchScopeType;
   page?: number;
   pageSize?: number;
 }
+
+const normalizeSearchText = (str?: string | null): string => {
+  return (str || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'd')
+    .trim();
+};
+
+const SEARCH_FIELD_OPTIONS: { value: SearchScopeType; labelKey: string; icon: string; placeholderKey: string }[] = [
+  { value: 'all', labelKey: 'searchScopeAll', icon: 'fa-solid fa-layer-group', placeholderKey: 'searchPlaceholderAll' },
+  { value: 'title', labelKey: 'searchScopeTitle', icon: 'fa-solid fa-heading', placeholderKey: 'searchPlaceholderTitle' },
+  { value: 'code', labelKey: 'searchScopeCode', icon: 'fa-solid fa-hashtag', placeholderKey: 'searchPlaceholderCode' },
+  { value: 'authority', labelKey: 'searchScopeAuthority', icon: 'fa-solid fa-building-columns', placeholderKey: 'searchPlaceholderAuthority' },
+  { value: 'author', labelKey: 'searchScopeAuthor', icon: 'fa-solid fa-user-pen', placeholderKey: 'searchPlaceholderAuthor' },
+  { value: 'attachment', labelKey: 'searchScopeAttachment', icon: 'fa-solid fa-paperclip', placeholderKey: 'searchPlaceholderAttachment' },
+];
 
 const getInitialFilterState = (searchParams: URLSearchParams): PersistedResourceState => {
   // Kiểm tra xem lần tải trang này có phải là Reload (F5 / Refresh) của trình duyệt hay không
@@ -73,6 +96,7 @@ const getInitialFilterState = (searchParams: URLSearchParams): PersistedResource
       year: searchParams.get('year') || undefined,
       status: searchParams.get('status') || undefined,
       q: searchParams.get('q') || undefined,
+      searchField: (searchParams.get('search_field') as SearchScopeType) || undefined,
       page: searchParams.get('page') ? Number(searchParams.get('page')) : undefined,
       pageSize: searchParams.get('pageSize') ? Number(searchParams.get('pageSize')) : undefined,
     };
@@ -314,15 +338,15 @@ export default function ResourceManagementPage() {
         const seq = ++fetchSeqRef.current;
 
         const [catsRes, typesRes, docsRes] = await Promise.all([
-          apiClient<unknown>('/api/resources/categories/').catch((err) => {
+          apiClient<unknown>('/api/resources/categories/?page_size=100').catch((err) => {
             console.warn('Lỗi tải categories:', err);
             return null;
           }),
-          apiClient<unknown>('/api/resources/types/').catch((err) => {
+          apiClient<unknown>('/api/resources/types/?page_size=100').catch((err) => {
             console.warn('Lỗi tải types:', err);
             return null;
           }),
-          apiClient<unknown>('/api/resources/documents/').catch((err) => {
+          apiClient<unknown>('/api/resources/documents/?page_size=100').catch((err) => {
             console.warn('Lỗi tải documents:', err);
             return null;
           }),
@@ -512,9 +536,14 @@ export default function ResourceManagementPage() {
     initialFilterState.pageSize && initialFilterState.pageSize > 0 ? initialFilterState.pageSize : 5
   );
 
-  // Bộ lọc: Search debounced 300ms
+  // Bộ lọc: Search debounced 300ms & Scope
   const [searchInput, setSearchInput] = useState(initialFilterState.q || '');
   const [searchTerm, setSearchTerm] = useState(initialFilterState.q || '');
+  const [searchField, setSearchField] = useState<SearchScopeType>(
+    initialFilterState.searchField || 'all'
+  );
+  const [isSearchFieldDropdownOpen, setIsSearchFieldDropdownOpen] = useState(false);
+  const searchFieldDropdownRef = useRef<HTMLDivElement>(null);
   const isFirstMount = useRef(true);
 
   useEffect(() => {
@@ -561,6 +590,7 @@ export default function ResourceManagementPage() {
       year: selectedYear,
       status: statusFilter,
       q: searchTerm || undefined,
+      searchField: searchField !== 'all' ? searchField : undefined,
       page: currentPage > 1 ? currentPage : undefined,
       pageSize: pageSize !== 5 ? pageSize : undefined,
     };
@@ -577,6 +607,7 @@ export default function ResourceManagementPage() {
     if (selectedYear !== 'all') newParams.set('year', selectedYear);
     if (statusFilter !== 'all') newParams.set('status', statusFilter);
     if (searchTerm.trim()) newParams.set('q', searchTerm.trim());
+    if (searchField !== 'all') newParams.set('search_field', searchField);
     if (currentPage > 1) newParams.set('page', String(currentPage));
     if (pageSize !== 5) newParams.set('pageSize', String(pageSize));
 
@@ -587,6 +618,7 @@ export default function ResourceManagementPage() {
     selectedYear,
     statusFilter,
     searchTerm,
+    searchField,
     currentPage,
     pageSize,
     setSearchParams,
@@ -820,6 +852,12 @@ export default function ResourceManagementPage() {
       ) {
         setIsStatusDropdownOpen(false);
       }
+      if (
+        searchFieldDropdownRef.current &&
+        !searchFieldDropdownRef.current.contains(target)
+      ) {
+        setIsSearchFieldDropdownOpen(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
@@ -831,6 +869,7 @@ export default function ResourceManagementPage() {
   const handleClearFilters = () => {
     setSearchInput('');
     setSearchTerm('');
+    setSearchField('all');
     setSelectedType('all');
     setSelectedYear('all');
     setStatusFilter('all');
@@ -839,27 +878,59 @@ export default function ResourceManagementPage() {
     setIsTypeDropdownOpen(false);
     setIsYearDropdownOpen(false);
     setIsStatusDropdownOpen(false);
+    setIsSearchFieldDropdownOpen(false);
   };
 
   const hasActiveFilters = Boolean(
     searchTerm.trim() ||
+    searchField !== 'all' ||
     selectedType !== 'all' ||
     selectedYear !== 'all' ||
     statusFilter !== 'all'
   );
 
   // ============================================================================
-  // LỌC DỮ LIỆU BẢNG TỔNG HỢP THEO TẤT CẢ TIÊU CHÍ
+  // LỌC DỮ LIỆU BẢNG TỔNG HỢP THEO TẤT CẢ TIÊU CHÍ (TÌM KIẾM CỤ THỂ & THÔNG MINH)
   // ============================================================================
   const filteredDocuments = useMemo(() => {
     return documents.filter((doc) => {
-      // 1. Tìm kiếm từ khóa (Tiêu đề, Ký hiệu, Nơi ban hành)
+      // 1. Tìm kiếm từ khóa theo tiêu chí cụ thể
       if (searchTerm.trim()) {
-        const term = searchTerm.toLowerCase();
-        const matchTitle = doc.tieu_de.toLowerCase().includes(term);
-        const matchSymbol = (doc.ky_hieu || '').toLowerCase().includes(term);
-        const matchPublisher = (doc.noi_ban_hanh || '').toLowerCase().includes(term);
-        if (!matchTitle && !matchSymbol && !matchPublisher) return false;
+        const rawTerm = searchTerm.toLowerCase().trim();
+        const normTerm = normalizeSearchText(searchTerm);
+
+        const checkMatch = (val?: string | null) => {
+          if (!val) return false;
+          const lower = val.toLowerCase();
+          if (lower.includes(rawTerm)) return true;
+          return normalizeSearchText(val).includes(normTerm);
+        };
+
+        if (searchField === 'title') {
+          if (!checkMatch(doc.tieu_de)) return false;
+        } else if (searchField === 'code') {
+          if (!checkMatch(doc.ky_hieu)) return false;
+        } else if (searchField === 'authority') {
+          if (!checkMatch(doc.noi_ban_hanh)) return false;
+        } else if (searchField === 'author') {
+          if (!checkMatch(doc.nguoi_tao_name)) return false;
+        } else if (searchField === 'attachment') {
+          const matchSingle = checkMatch(doc.file_dinh_kem);
+          const matchMultiple = (doc.attachments || []).some((att) => checkMatch(att.name));
+          if (!matchSingle && !matchMultiple) return false;
+        } else {
+          // 'all': Tìm trên mọi trường
+          const matchTitle = checkMatch(doc.tieu_de);
+          const matchCode = checkMatch(doc.ky_hieu);
+          const matchAuthority = checkMatch(doc.noi_ban_hanh);
+          const matchAuthor = checkMatch(doc.nguoi_tao_name);
+          const matchNote = checkMatch(doc.ghi_chu);
+          const matchSingle = checkMatch(doc.file_dinh_kem);
+          const matchMultiple = (doc.attachments || []).some((att) => checkMatch(att.name));
+          if (!matchTitle && !matchCode && !matchAuthority && !matchAuthor && !matchNote && !matchSingle && !matchMultiple) {
+            return false;
+          }
+        }
       }
 
       // 2. Lọc Danh mục Cấp 1
@@ -880,14 +951,15 @@ export default function ResourceManagementPage() {
         if (docYear !== selectedYear) return false;
       }
 
-      // 5. Lọc Trạng thái hiệu lực
+      // 5. Lọc Trạng thái hiệu lực theo Hiệu lực thực tế (Dynamic Validity)
       if (statusFilter !== 'all') {
-        if (doc.hieu_luc !== statusFilter) return false;
+        const effectiveStatus = computeEffectiveStatus(doc.hieu_luc, doc.ngay_het_hieu_luc, doc.link_thay_the).status;
+        if (effectiveStatus !== statusFilter) return false;
       }
 
       return true;
     });
-  }, [documents, searchTerm, selectedCategory, selectedType, selectedYear, statusFilter]);
+  }, [documents, searchTerm, searchField, selectedCategory, selectedType, selectedYear, statusFilter]);
 
   // Phân trang danh sách
   const totalCount = filteredDocuments.length;
@@ -1004,6 +1076,7 @@ export default function ResourceManagementPage() {
         setDocuments((prev) =>
           prev.map((d) => (d.id === formInitialData.id ? savedDoc : d))
         );
+        setDetailItem((prev) => (prev && prev.id === savedDoc.id ? savedDoc : prev));
         setIsFormOpen(false);
         showToast(`Đã cập nhật thành công tài liệu: "${savedDoc.tieu_de}"`, 'success', 'Cập nhật tài liệu');
       } else {
@@ -1237,6 +1310,7 @@ export default function ResourceManagementPage() {
       if (selectedType !== 'all') params.append('loai_tai_lieu', selectedType);
       if (selectedYear !== 'all') params.append('nam', selectedYear);
       if (statusFilter !== 'all') params.append('hieu_luc', statusFilter);
+      if (currentLang === 'en') params.append('lang', 'en');
 
       const baseUrl = import.meta.env.VITE_API_URL || '';
       const endpoint = `/api/resources/documents/export-excel/?${params.toString()}`;
@@ -1255,11 +1329,19 @@ export default function ResourceManagementPage() {
         const downloadUrl = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = downloadUrl;
-        a.download = `Danh_sach_tai_lieu_${new Date().toISOString().split('T')[0]}.xlsx`;
+        const filePrefix = currentLang === 'en' ? 'Document_List' : 'Danh_sach_tai_lieu';
+        a.download = `${filePrefix}_${new Date().toISOString().split('T')[0]}.xlsx`;
         document.body.appendChild(a);
         a.click();
         a.remove();
         window.URL.revokeObjectURL(downloadUrl);
+        showToast(
+          currentLang === 'en'
+            ? 'Document list exported successfully to Excel file!'
+            : 'Đã xuất thành công danh sách tài liệu sang tệp Excel!',
+          'success',
+          currentLang === 'en' ? 'Export Excel' : 'Xuất dữ liệu Excel'
+        );
       } else {
         throw new Error(`Máy chủ phản hồi mã lỗi ${response.status}`);
       }
@@ -1270,17 +1352,9 @@ export default function ResourceManagementPage() {
       );
 
       // Fallback: Xuất dữ liệu bảng hiện tại sang file CSV/Excel UTF-8 có BOM để mở tiếng Việt không lỗi
-      const headers = [
-        'STT',
-        'Ký hiệu',
-        'Tiêu đề',
-        'Danh mục',
-        'Loại tài liệu',
-        'Nơi ban hành',
-        'Ngày đăng',
-        'Hiệu lực',
-        'Phạm vi',
-      ];
+      const headers = currentLang === 'en'
+        ? ['No.', 'Code', 'Title', 'Category', 'Document Type', 'Issuing Authority', 'Published Date', 'Status', 'Scope']
+        : ['STT', 'Ký hiệu', 'Tiêu đề', 'Danh mục', 'Loại tài liệu', 'Nơi ban hành', 'Ngày đăng', 'Hiệu lực', 'Phạm vi'];
       const rows = filteredDocuments.map((doc, idx) => [
         idx + 1,
         `"${doc.ky_hieu || ''}"`,
@@ -1290,13 +1364,15 @@ export default function ResourceManagementPage() {
         `"${doc.noi_ban_hanh || ''}"`,
         doc.ngay_dang,
         doc.hieu_luc === 'CON_HIEU_LUC'
-          ? 'Còn hiệu lực'
+          ? (currentLang === 'en' ? 'Active' : 'Còn hiệu lực')
           : doc.hieu_luc === 'CON_HIEU_LUC_1_PHAN'
-            ? 'Còn hiệu lực một phần'
+            ? (currentLang === 'en' ? 'Partially Active' : 'Còn hiệu lực một phần')
             : doc.hieu_luc === 'HET_HIEU_LUC'
-              ? 'Hết hiệu lực'
-              : 'Hết và thay thế',
-        doc.hien_thi === 'TAT_CA' ? 'Tất cả' : 'Nội bộ phòng ban',
+              ? (currentLang === 'en' ? 'Expired' : 'Hết hiệu lực')
+              : (currentLang === 'en' ? 'Expired & Replaced' : 'Hết và thay thế'),
+        doc.hien_thi === 'TAT_CA'
+          ? (currentLang === 'en' ? 'Public / All' : 'Tất cả')
+          : (currentLang === 'en' ? 'Internal department' : 'Nội bộ phòng ban'),
       ]);
 
       const csvContent =
@@ -1305,12 +1381,19 @@ export default function ResourceManagementPage() {
       const downloadUrl = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = downloadUrl;
-      a.download = `Danh_sach_tai_lieu_${new Date().toISOString().split('T')[0]}.csv`;
+      const filePrefix = currentLang === 'en' ? 'Document_List' : 'Danh_sach_tai_lieu';
+      a.download = `${filePrefix}_${new Date().toISOString().split('T')[0]}.csv`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       window.URL.revokeObjectURL(downloadUrl);
-      showToast('Đã xuất thành công file danh sách tài liệu!', 'success', 'Xuất dữ liệu Excel');
+      showToast(
+        currentLang === 'en'
+          ? 'Document list exported successfully!'
+          : 'Đã xuất thành công file danh sách tài liệu!',
+        'success',
+        currentLang === 'en' ? 'Export Excel' : 'Xuất dữ liệu Excel'
+      );
     } finally {
       setIsExporting(false);
     }
@@ -1348,14 +1431,14 @@ export default function ResourceManagementPage() {
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 shrink-0 w-full sm:w-auto">
           {/* Nút Cây thư mục nhiều cấp (Hierarchical Folders) */}
           <Button
             variant="secondary"
             size="md"
             icon="fa-sitemap"
             onClick={() => setIsFolderManagerOpen(true)}
-            className="h-10 px-4 rounded-xl text-xs sm:text-sm font-bold border-primary/30 text-primary bg-primary/5 hover:bg-primary/10 shadow-2xs hover:border-primary transition-all"
+            className="h-10 px-4 rounded-xl text-xs sm:text-sm font-bold border-primary/30 text-primary bg-primary/5 hover:bg-primary/10 shadow-2xs hover:border-primary transition-all w-full sm:w-auto justify-center"
             title={t('folders.entry.openHint')}
           >
             {t('folders.entry.open')}
@@ -1396,7 +1479,7 @@ export default function ResourceManagementPage() {
         {(() => {
           const hasBottomRow = Boolean(selectedCategory !== 'all' && availableTypesForFilter.length > 0);
           const selectedCatObj = categories.find((c) => String(c.id) === selectedCategory);
-          const selectedCatTitle = selectedCatObj ? selectedCatObj.ten_tai_lieu : 'Danh mục';
+          const selectedCatTitle = selectedCatObj ? selectedCatObj.ten_tai_lieu : t('resourceManagement.categoriesBtn');
 
           return (
             <div className={`relative z-20 flex items-stretch h-10 sm:h-11 ${hasBottomRow ? 'border-b border-border-subtle' : ''}`}>
@@ -1473,7 +1556,7 @@ export default function ResourceManagementPage() {
                 })}
                 {orderedVisibleCategories.length === 0 && (
                   <div className="flex items-center px-4 text-xs text-muted italic">
-                    Chưa có danh mục nào được tick hiển thị. Bấm "Danh mục" ở góc phải để chọn.
+                    {t('resourceManagement.noCategoriesVisibleHint')}
                   </div>
                 )}
               </div>
@@ -1498,13 +1581,13 @@ export default function ResourceManagementPage() {
                       ? 'border-b-2 border-primary text-primary bg-primary/5 font-bold sm:border-transparent sm:text-secondary sm:bg-transparent'
                       : 'text-secondary hover:text-primary hover:bg-surface-elevated/70'
                   }`}
-                  title="Mở danh sách tất cả Danh mục"
-                  aria-label="Danh sách tất cả Danh mục"
+                  title={t('resourceManagement.openAllCategoriesTooltip')}
+                  aria-label={t('resourceManagement.openAllCategoriesTooltip')}
                 >
                   <i className="fa-solid fa-folder-tree text-xs text-primary shrink-0" />
                   <span className="truncate max-w-[110px] sm:max-w-none">
                     <span className="sm:hidden">{selectedCatTitle}</span>
-                    <span className="hidden sm:inline">Danh mục</span>
+                    <span className="hidden sm:inline">{t('resourceManagement.categoriesBtn')}</span>
                   </span>
                   <i
                     className={`fa-solid fa-chevron-down text-[10px] sm:text-[11px] transition-transform duration-200 shrink-0 ${
@@ -1514,15 +1597,15 @@ export default function ResourceManagementPage() {
                 </button>
 
                 {isCategoryDropdownOpen && (
-                  <div className="absolute right-0 top-full mt-1.5 w-[calc(100vw-32px)] max-w-sm sm:w-96 bg-surface rounded-xl border border-border-subtle shadow-2xl z-50 p-2.5 animate-in fade-in zoom-in-95 duration-100">
+                  <div className="absolute right-0 top-full mt-1.5 w-[calc(100vw-24px)] max-w-[360px] sm:w-96 bg-surface rounded-xl border border-border-subtle shadow-2xl z-50 p-2.5 animate-in fade-in zoom-in-95 duration-100 overflow-hidden">
                     <div className="px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-muted flex items-center justify-between">
-                      <span>Danh mục tài liệu</span>
-                      <span className="text-[10px] text-primary lowercase font-medium">Cấp 1</span>
+                      <span>{t('resourceManagement.dropdownCategoriesTitle')}</span>
+                      <span className="text-[10px] text-primary lowercase font-medium">{t('resourceManagement.level1')}</span>
                     </div>
 
                     {/* Dòng hướng dẫn tick chọn: chỉ hiện trên sm:flex, ẩn trên mobile (hidden sm:flex) */}
                     <div className="hidden sm:flex px-2 pb-1.5 text-[11px] text-secondary items-center justify-between border-b border-border-subtle mb-1.5">
-                      <span className="text-[10px] text-muted">Tick chọn để hiện ra thanh chính:</span>
+                      <span className="text-[10px] text-muted">{t('resourceManagement.tickToDisplayOnMainBar')}</span>
                       <button
                         type="button"
                         onClick={(e) => {
@@ -1531,7 +1614,7 @@ export default function ResourceManagementPage() {
                         }}
                         className="text-[10px] text-primary hover:underline font-semibold cursor-pointer"
                       >
-                        {visibleCategoryIds.length === categories.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+                        {visibleCategoryIds.length === categories.length ? t('resourceManagement.deselectAll') : t('resourceManagement.selectAll')}
                       </button>
                     </div>
 
@@ -1585,7 +1668,7 @@ export default function ResourceManagementPage() {
                             {/* Checkbox: Chỉ hiện trên sm:flex, ẨN trên mobile (hidden sm:flex) */}
                             <label
                               className="hidden sm:flex items-center gap-1.5 cursor-pointer shrink-0 select-none"
-                              title={isVisibleOnBar ? `Đang hiển thị ở vị trí #${tickIndex + 1} trên thanh chính` : 'Tick chọn để hiển thị trên thanh chính'}
+                              title={isVisibleOnBar ? t('resourceManagement.displayedAtPosOnBar', { pos: tickIndex + 1 }) : t('resourceManagement.tickToDisplayTooltip')}
                               onClick={(e) => e.stopPropagation()}
                             >
                               <input
@@ -1637,11 +1720,11 @@ export default function ResourceManagementPage() {
                         setIsCategoryDropdownOpen(false);
                       }}
                       className="w-full px-2.5 py-2 rounded-lg text-left text-xs font-semibold text-primary hover:bg-primary/5 flex items-center justify-between transition-colors cursor-pointer border border-primary/20 hover:border-primary/40 bg-primary/2"
-                      title="Mở bảng cấu hình Quản lý Danh mục & Loại tài liệu"
+                      title={t('resourceManagement.openCategoryManagementTooltip')}
                     >
                       <span className="flex items-center gap-2 truncate">
                         <i className="fa-solid fa-folder-tree text-xs text-primary" />
-                        <span className="truncate">Cài đặt &amp; Quản lý danh mục</span>
+                        <span className="truncate">{t('resourceManagement.manageCategoriesSettings')}</span>
                       </span>
                       <i className="fa-solid fa-arrow-up-right-from-square text-[10px] text-primary/70 shrink-0" />
                     </button>
@@ -1655,7 +1738,7 @@ export default function ResourceManagementPage() {
         {/* Hàng Cấp 2 — Sub-chips & Dropdown Loại tài liệu */}
         {selectedCategory !== 'all' && availableTypesForFilter.length > 0 && (() => {
           const selectedTypeObj = availableTypesForFilter.find((t) => String(t.id) === selectedType);
-          const selectedTypeTitle = selectedTypeObj ? selectedTypeObj.ten_loai : 'Loại tài liệu';
+          const selectedTypeTitle = selectedTypeObj ? selectedTypeObj.ten_loai : t('resourceManagement.dropdownTypesTitle');
           const categoryDocCount = documents.filter((d) => d.dm_tai_lieu === Number(selectedCategory)).length;
 
           return (
@@ -1676,10 +1759,10 @@ export default function ResourceManagementPage() {
                       ? 'border-b-2 border-primary text-primary bg-primary/5 font-bold'
                       : 'border-b-2 border-transparent text-secondary hover:text-main hover:bg-surface-elevated/60'
                   }`}
-                  title="Tất cả loại tài liệu"
+                  title={t('resourceManagement.allTypesOption')}
                 >
                   <i className={`fa-solid fa-tags text-xs ${selectedType === 'all' ? 'text-primary' : 'text-muted'}`} />
-                  <span>Loại</span>
+                  <span>{t('resourceManagement.typeShort')}</span>
                   <span className={`min-w-[18px] h-[18px] px-1 inline-flex items-center justify-center text-[10px] rounded-full font-bold leading-none shrink-0 ${
                     selectedType === 'all'
                       ? 'bg-primary text-white'
@@ -1748,7 +1831,7 @@ export default function ResourceManagementPage() {
                 })}
                 {orderedVisibleTypes.length === 0 && (
                   <div className="flex items-center px-2 text-xs text-muted italic">
-                    Chưa có loại tài liệu nào được tick hiển thị. Bấm "Loại tài liệu" ở góc phải để chọn.
+                    {t('resourceManagement.noTypesVisibleHint')}
                   </div>
                 )}
               </div>
@@ -1769,23 +1852,23 @@ export default function ResourceManagementPage() {
                       ? 'border-b-2 border-primary text-primary bg-primary/5 font-bold sm:border-transparent sm:text-secondary sm:bg-transparent'
                       : 'text-secondary hover:text-primary hover:bg-surface-elevated/70'
                   }`}
-                  title="Mở danh sách tất cả Loại tài liệu"
+                  title={t('resourceManagement.openAllTypesTooltip')}
                   aria-haspopup="listbox"
                   aria-expanded={isTypeDropdownOpen}
                 >
                   <i className="fa-solid fa-tags text-xs text-primary shrink-0" />
                   <span className="truncate max-w-[110px] sm:max-w-none">
                     <span className="sm:hidden">{selectedTypeTitle}</span>
-                    <span className="hidden sm:inline">Loại tài liệu</span>
+                    <span className="hidden sm:inline">{t('resourceManagement.dropdownTypesTitle')}</span>
                   </span>
                   <i className={`fa-solid fa-chevron-down text-[10px] sm:text-[11px] transition-transform duration-200 shrink-0 ${isTypeDropdownOpen ? 'rotate-180 text-primary' : ''}`} />
                 </button>
 
                 {isTypeDropdownOpen && (
-                  <div className="absolute right-0 top-full mt-1.5 w-[calc(100vw-32px)] max-w-sm sm:w-96 bg-surface rounded-xl border border-border-subtle shadow-2xl z-50 p-2.5 animate-in fade-in zoom-in-95 duration-100">
+                  <div className="absolute right-0 top-full mt-1.5 w-[calc(100vw-24px)] max-w-[360px] sm:w-96 bg-surface rounded-xl border border-border-subtle shadow-2xl z-50 p-2.5 animate-in fade-in zoom-in-95 duration-100 overflow-hidden">
                     <div className="px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-muted flex items-center justify-between">
-                      <span>Loại tài liệu</span>
-                      <span className="text-[10px] text-primary lowercase font-medium">Cấp 2</span>
+                      <span>{t('resourceManagement.dropdownTypesTitle')}</span>
+                      <span className="text-[10px] text-primary lowercase font-medium">{t('resourceManagement.level2')}</span>
                     </div>
 
                     {/* Dòng hướng dẫn tick chọn: chỉ hiện trên sm:flex, ẩn trên mobile (hidden sm:flex) */}
@@ -1797,7 +1880,7 @@ export default function ResourceManagementPage() {
 
                       return (
                         <div className="hidden sm:flex px-2 pb-1.5 text-[11px] text-secondary items-center justify-between border-b border-border-subtle mb-1.5">
-                          <span className="text-[10px] text-muted">Tick chọn để hiện ra thanh:</span>
+                          <span className="text-[10px] text-muted">{t('resourceManagement.tickToDisplayOnBar')}</span>
                           <button
                             type="button"
                             onClick={(e) => {
@@ -1806,7 +1889,7 @@ export default function ResourceManagementPage() {
                             }}
                             className="text-[10px] text-primary hover:underline font-semibold cursor-pointer"
                           >
-                            {allCurrentSelected ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+                            {allCurrentSelected ? t('resourceManagement.deselectAll') : t('resourceManagement.selectAll')}
                           </button>
                         </div>
                       );
@@ -1827,7 +1910,7 @@ export default function ResourceManagementPage() {
                     >
                       <span className="flex items-center gap-2 truncate">
                         <i className="fa-solid fa-layer-group text-xs" />
-                        <span className="truncate">Tất cả loại tài liệu</span>
+                        <span className="truncate">{t('resourceManagement.allTypesOption')}</span>
                       </span>
                       <span className={`min-w-[20px] h-5 px-1.5 inline-flex items-center justify-center text-[11px] rounded-full font-bold leading-none shrink-0 ${
                         selectedType === 'all' ? 'bg-white/20 text-white' : 'bg-surface-elevated text-secondary border border-border-subtle'
@@ -1865,7 +1948,7 @@ export default function ResourceManagementPage() {
                             {/* Checkbox: Chỉ hiện trên sm:flex, ẨN trên mobile (hidden sm:flex) */}
                             <label
                               className="hidden sm:flex items-center gap-1.5 cursor-pointer shrink-0 select-none"
-                              title={isVisibleOnBar ? `Đang hiển thị ở vị trí #${tickIndex + 1} trên thanh` : 'Tick chọn để hiển thị trên thanh'}
+                              title={isVisibleOnBar ? t('resourceManagement.displayedAtPosOnSubBar', { pos: tickIndex + 1 }) : t('resourceManagement.tickToDisplayOnBarTooltip')}
                               onClick={(e) => e.stopPropagation()}
                             >
                               <input
@@ -1918,11 +2001,11 @@ export default function ResourceManagementPage() {
                         setIsTypeDropdownOpen(false);
                       }}
                       className="w-full px-2.5 py-2 rounded-lg text-left text-xs font-semibold text-primary hover:bg-primary/5 flex items-center justify-between transition-colors cursor-pointer border border-primary/20 hover:border-primary/40 bg-primary/2"
-                      title="Mở bảng cấu hình Quản lý Danh mục & Loại tài liệu"
+                      title={t('resourceManagement.openCategoryManagementTooltip')}
                     >
                       <span className="flex items-center gap-2 truncate">
                         <i className="fa-solid fa-folder-tree text-xs text-primary" />
-                        <span className="truncate">Cài đặt &amp; Quản lý danh mục</span>
+                        <span className="truncate">{t('resourceManagement.manageCategoriesSettings')}</span>
                       </span>
                       <i className="fa-solid fa-arrow-up-right-from-square text-[10px] text-primary/70 shrink-0" />
                     </button>
@@ -1938,8 +2021,15 @@ export default function ResourceManagementPage() {
           <div className="px-4 py-2.5 flex items-center gap-2 bg-primary/3 rounded-b-xl border-t border-border-subtle">
             <i className="fa-solid fa-circle-info text-primary text-[11px] shrink-0" />
             <span className="text-[11px] text-secondary">
-              Đang xem toàn bộ <strong className="text-main font-bold">{documents.length} tài liệu</strong> trong kho.
-              Chọn một <strong className="text-primary">Thư mục</strong> ở trên để lọc theo phòng ban và xem các <strong className="text-primary">Loại tài liệu</strong> con.
+              {t('resourceManagement.bannerViewingPart1')}{' '}
+              <strong className="text-main font-bold">
+                {documents.length} {t('resourceManagement.bannerDocsUnit')}
+              </strong>{' '}
+              {t('resourceManagement.bannerViewingPart2')}{' '}
+              <strong className="text-primary">{t('resourceManagement.fieldFolder')}</strong>{' '}
+              {t('resourceManagement.bannerViewingPart3')}{' '}
+              <strong className="text-primary">{t('resourceManagement.dropdownTypesTitle')}</strong>
+              {t('resourceManagement.bannerViewingPart4') ? ` ${t('resourceManagement.bannerViewingPart4')}` : '.'}
             </span>
           </div>
         )}
@@ -1949,32 +2039,98 @@ export default function ResourceManagementPage() {
       {/* 2. THANH BỘ LỌC TÌM KIẾM (MỤC 3) */}
       <div className="bg-surface p-3 sm:p-3.5 rounded-xl border border-border-subtle shadow-xs space-y-3">
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-12 gap-2.5 items-center">
-          {/* Ô Tìm kiếm rộng rãi: chiếm 12 cols trên mobile, 6 cols trên tablet, 8 cols trên màn lớn */}
-          <div className="sm:col-span-2 md:col-span-6 lg:col-span-7 xl:col-span-8 relative">
-            <i className="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-muted text-xs pointer-events-none" />
-            <input
-              type="text"
-              placeholder={t('resourceManagement.searchPlaceholder')}
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              className="w-full h-10 pl-9 pr-8 text-[13px] rounded-lg bg-surface-elevated text-main border border-border-subtle focus:outline-hidden focus:border-primary placeholder:text-muted transition-colors"
-              aria-label="Tìm theo tiêu đề, ký hiệu, nơi ban hành"
-            />
-            {searchInput && (
+          {/* Ô Tìm kiếm cụ thể & dễ hiểu: Dropdown tiêu chí + Ô nhập từ khóa */}
+          <div className="sm:col-span-2 md:col-span-6 lg:col-span-7 xl:col-span-8 flex items-stretch">
+            {/* Dropdown chọn tiêu chí tìm kiếm cụ thể (Tất cả, Tiêu đề, Ký hiệu, Nơi ban hành, Người tạo, Tệp đính kèm) */}
+            <div className="relative shrink-0" ref={searchFieldDropdownRef}>
               <button
                 type="button"
                 onClick={() => {
-                  setSearchInput('');
-                  setSearchTerm('');
-                  setCurrentPage(1);
+                  setIsSearchFieldDropdownOpen((prev) => !prev);
+                  setIsYearDropdownOpen(false);
+                  setIsStatusDropdownOpen(false);
+                  setIsCategoryDropdownOpen(false);
+                  setIsTypeDropdownOpen(false);
                 }}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-main text-xs p-1 cursor-pointer"
-                title="Xóa từ khóa"
-                aria-label="Xóa từ khóa tìm kiếm"
+                className={`h-10 px-2.5 sm:px-3 text-xs sm:text-[13px] font-semibold bg-surface-elevated hover:bg-surface border border-r-0 rounded-l-lg text-secondary hover:text-primary flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
+                  isSearchFieldDropdownOpen
+                    ? 'border-primary ring-1 ring-primary/20 text-primary'
+                    : 'border-border-subtle'
+                }`}
+                title={t('resourceManagement.selectSearchScope')}
+                aria-label={t('resourceManagement.selectSearchScope')}
+                aria-haspopup="listbox"
+                aria-expanded={isSearchFieldDropdownOpen}
               >
-                <i className="fa-solid fa-xmark" />
+                <i className={`${SEARCH_FIELD_OPTIONS.find((o) => o.value === searchField)?.icon || 'fa-solid fa-layer-group'} text-xs text-primary`} />
+                <span className="hidden sm:inline font-medium text-main text-xs">
+                  {t(`resourceManagement.${SEARCH_FIELD_OPTIONS.find((o) => o.value === searchField)?.labelKey || 'searchScopeAll'}`)}
+                </span>
+                <i className={`fa-solid fa-chevron-down text-[10px] text-muted transition-transform duration-200 ${isSearchFieldDropdownOpen ? 'rotate-180 text-primary' : ''}`} />
               </button>
-            )}
+
+              {isSearchFieldDropdownOpen && (
+                <div className="absolute left-0 top-full mt-1.5 w-56 bg-surface rounded-xl border border-border-subtle shadow-xl p-1 z-50 animate-in fade-in zoom-in-95 duration-100 overflow-hidden">
+                  <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-muted">
+                    {t('resourceManagement.searchFieldLabel')}
+                  </div>
+                  {SEARCH_FIELD_OPTIONS.map((opt) => {
+                    const isSelected = searchField === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => {
+                          setSearchField(opt.value);
+                          setIsSearchFieldDropdownOpen(false);
+                          setCurrentPage(1);
+                        }}
+                        className={`w-full px-2.5 py-2 rounded-lg text-left text-xs font-medium flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+                          isSelected
+                            ? 'bg-primary/10 text-primary font-bold'
+                            : 'text-main hover:bg-surface-elevated'
+                        }`}
+                      >
+                        <span className="flex items-center gap-2 truncate">
+                          <i className={`${opt.icon} text-xs ${isSelected ? 'text-primary' : 'text-muted'}`} />
+                          <span className="truncate">{t(`resourceManagement.${opt.labelKey}`)}</span>
+                        </span>
+                        {isSelected && (
+                          <i className="fa-solid fa-check text-primary text-xs shrink-0" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Ô nhập từ khóa tìm kiếm theo ngữ cảnh */}
+            <div className="relative flex-1 min-w-0">
+              <input
+                type="text"
+                placeholder={t(`resourceManagement.${SEARCH_FIELD_OPTIONS.find((o) => o.value === searchField)?.placeholderKey || 'searchPlaceholderAll'}`)}
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                className="w-full h-10 pl-3.5 pr-8 text-[13px] rounded-r-lg bg-surface-elevated text-main border border-border-subtle focus:outline-hidden focus:border-primary placeholder:text-muted transition-colors"
+                aria-label={t(`resourceManagement.${SEARCH_FIELD_OPTIONS.find((o) => o.value === searchField)?.placeholderKey || 'searchPlaceholderAll'}`)}
+              />
+              {searchInput && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchInput('');
+                    setSearchTerm('');
+                    setCurrentPage(1);
+                  }}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-main text-xs p-1 cursor-pointer"
+                  title={t('resourceManagement.clearSearch')}
+                  aria-label={t('resourceManagement.clearSearch')}
+                >
+                  <i className="fa-solid fa-xmark" />
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Custom Dropdown Năm ban hành - chiếm 1 col trên sm, 3 cols trên tablet (đủ chỗ không bị cắt chữ 'Tất cả năm'), 2 cols trên xl */}
@@ -1990,7 +2146,7 @@ export default function ResourceManagementPage() {
               className={`w-full h-10 px-3 text-[13px] rounded-lg bg-surface-elevated text-main border transition-colors flex items-center justify-between gap-2 cursor-pointer font-medium ${
                 isYearDropdownOpen ? 'border-primary ring-1 ring-primary/20' : 'border-border-subtle hover:border-primary/50'
               }`}
-              aria-label="Lọc theo năm ban hành"
+              aria-label={t('resourceManagement.filterByYearAria')}
               aria-haspopup="listbox"
               aria-expanded={isYearDropdownOpen}
             >
@@ -2006,7 +2162,7 @@ export default function ResourceManagementPage() {
             </button>
 
             {isYearDropdownOpen && (
-              <div className="absolute right-0 top-full mt-1.5 w-full min-w-[170px] bg-surface rounded-xl border border-border-subtle shadow-xl p-1.5 z-50 animate-in fade-in zoom-in-95 duration-100">
+              <div className="absolute left-0 right-0 sm:left-auto sm:right-0 top-full mt-1.5 w-full sm:w-56 max-w-full bg-surface rounded-xl border border-border-subtle shadow-xl p-1.5 z-50 animate-in fade-in zoom-in-95 duration-100 overflow-hidden">
                 <button
                   type="button"
                   onClick={() => {
@@ -2074,7 +2230,7 @@ export default function ResourceManagementPage() {
               className={`w-full h-10 px-3 text-[13px] rounded-lg bg-surface-elevated text-main border transition-colors flex items-center justify-between gap-2 cursor-pointer font-medium ${
                 isStatusDropdownOpen ? 'border-primary ring-1 ring-primary/20' : 'border-border-subtle hover:border-primary/50'
               }`}
-              aria-label="Lọc theo tình trạng hiệu lực"
+              aria-label={t('resourceManagement.filterByStatusAria')}
               aria-haspopup="listbox"
               aria-expanded={isStatusDropdownOpen}
             >
@@ -2110,7 +2266,7 @@ export default function ResourceManagementPage() {
             </button>
 
             {isStatusDropdownOpen && (
-              <div className="absolute right-0 top-full mt-1.5 w-full min-w-[220px] bg-surface rounded-xl border border-border-subtle shadow-xl p-1.5 z-50 animate-in fade-in zoom-in-95 duration-100">
+              <div className="absolute left-0 right-0 sm:left-auto sm:right-0 top-full mt-1.5 w-full sm:w-60 max-w-full bg-surface rounded-xl border border-border-subtle shadow-xl p-1.5 z-50 animate-in fade-in zoom-in-95 duration-100 overflow-hidden">
                 {[
                   {
                     value: 'all',
@@ -2183,7 +2339,14 @@ export default function ResourceManagementPage() {
               <span className="text-muted font-medium mr-0.5">{t('resourceManagement.filteringBadge')}</span>
               {searchTerm && (
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-surface-elevated border border-border-subtle text-main font-medium">
-                  <span>Tìm: "{searchTerm}"</span>
+                  <span>
+                    {searchField === 'all'
+                      ? t('resourceManagement.filterBadgeSearch', { query: searchTerm })
+                      : t('resourceManagement.filterBadgeSearchWithScope', {
+                          scope: t(`resourceManagement.${SEARCH_FIELD_OPTIONS.find((o) => o.value === searchField)?.labelKey || 'searchScopeAll'}`),
+                          query: searchTerm,
+                        })}
+                  </span>
                   <button
                     type="button"
                     onClick={() => {
@@ -2191,7 +2354,21 @@ export default function ResourceManagementPage() {
                       setSearchTerm('');
                     }}
                     className="text-muted hover:text-danger cursor-pointer"
-                    aria-label="Xóa bộ lọc tìm kiếm"
+                    aria-label={t('resourceManagement.clearSearchFilterAria')}
+                  >
+                    <i className="fa-solid fa-xmark text-[11px]" />
+                  </button>
+                </span>
+              )}
+              {searchField !== 'all' && !searchTerm && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-surface-elevated border border-border-subtle text-main font-medium">
+                  <span>
+                    {t('resourceManagement.searchFieldLabel')}: {t(`resourceManagement.${SEARCH_FIELD_OPTIONS.find((o) => o.value === searchField)?.labelKey || 'searchScopeAll'}`)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setSearchField('all')}
+                    className="text-muted hover:text-danger cursor-pointer"
                   >
                     <i className="fa-solid fa-xmark text-[11px]" />
                   </button>
@@ -2199,12 +2376,12 @@ export default function ResourceManagementPage() {
               )}
               {selectedType !== 'all' && (
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-surface-elevated border border-border-subtle text-main font-medium">
-                  <span>Loại: {types.find((t) => t.id === Number(selectedType))?.ten_loai}</span>
+                  <span>{t('resourceManagement.filterBadgeType', { type: types.find((t) => t.id === Number(selectedType))?.ten_loai || '' })}</span>
                   <button
                     type="button"
                     onClick={() => setSelectedType('all')}
                     className="text-muted hover:text-danger cursor-pointer"
-                    aria-label="Xóa bộ lọc loại tài liệu"
+                    aria-label={t('resourceManagement.clearTypeFilterAria')}
                   >
                     <i className="fa-solid fa-xmark text-[11px]" />
                   </button>
@@ -2212,12 +2389,12 @@ export default function ResourceManagementPage() {
               )}
               {selectedYear !== 'all' && (
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-surface-elevated border border-border-subtle text-main font-medium">
-                  <span>Năm: {selectedYear}</span>
+                  <span>{t('resourceManagement.filterBadgeYear', { year: selectedYear })}</span>
                   <button
                     type="button"
                     onClick={() => setSelectedYear('all')}
                     className="text-muted hover:text-danger cursor-pointer"
-                    aria-label="Xóa bộ lọc năm"
+                    aria-label={t('resourceManagement.clearYearFilterAria')}
                   >
                     <i className="fa-solid fa-xmark text-[11px]" />
                   </button>
@@ -2226,21 +2403,22 @@ export default function ResourceManagementPage() {
               {statusFilter !== 'all' && (
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-surface-elevated border border-border-subtle text-main font-medium">
                   <span>
-                    Hiệu lực: {
-                      statusFilter === 'CON_HIEU_LUC'
-                        ? t('resourceManagement.statusActive')
-                        : statusFilter === 'CON_HIEU_LUC_1_PHAN'
-                          ? t('resourceManagement.statusPartial')
-                          : statusFilter === 'HET_HIEU_LUC'
-                            ? t('resourceManagement.statusExpired')
-                            : t('resourceManagement.statusReplaced')
-                    }
+                    {t('resourceManagement.filterBadgeStatus', {
+                      status:
+                        statusFilter === 'CON_HIEU_LUC'
+                          ? t('resourceManagement.statusActive')
+                          : statusFilter === 'CON_HIEU_LUC_1_PHAN'
+                            ? t('resourceManagement.statusPartial')
+                            : statusFilter === 'HET_HIEU_LUC'
+                              ? t('resourceManagement.statusExpired')
+                              : t('resourceManagement.statusReplaced'),
+                    })}
                   </span>
                   <button
                     type="button"
                     onClick={() => setStatusFilter('all')}
                     className="text-muted hover:text-danger cursor-pointer"
-                    aria-label="Xóa bộ lọc hiệu lực"
+                    aria-label={t('resourceManagement.clearStatusFilterAria')}
                   >
                     <i className="fa-solid fa-xmark text-[11px]" />
                   </button>
@@ -2248,14 +2426,19 @@ export default function ResourceManagementPage() {
               )}
             </div>
 
-            <button
-              type="button"
-              onClick={handleClearFilters}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs text-danger hover:bg-danger-subtle rounded-md transition-colors font-semibold cursor-pointer shrink-0"
-            >
-              <i className="fa-solid fa-rotate-left text-[11px]" />
-              <span>{t('resourceManagement.clearFilter')}</span>
-            </button>
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-semibold text-primary bg-primary/10 px-2.5 py-1 rounded-md border border-primary/20">
+                {t('resourceManagement.foundDocsCount', { count: filteredDocuments.length })}
+              </span>
+              <button
+                type="button"
+                onClick={handleClearFilters}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs text-danger hover:bg-danger-subtle rounded-md transition-colors font-semibold cursor-pointer shrink-0"
+              >
+                <i className="fa-solid fa-rotate-left text-[11px]" />
+                <span>{t('resourceManagement.clearFilter')}</span>
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -2264,10 +2447,14 @@ export default function ResourceManagementPage() {
       <div className="flex items-center justify-between gap-2 text-xs text-secondary px-1">
         <div>
           {totalCount === 0 ? (
-            <span>Hiển thị <strong className="text-main font-bold">0 / 0</strong> tài liệu</span>
+            <span>{t('resourceManagement.displayRange', { start: 0, end: 0, total: 0 })}</span>
           ) : (
             <span>
-              Hiển thị <strong className="text-main font-bold">{(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, totalCount)}</strong> / <strong className="text-main font-bold">{totalCount}</strong> tài liệu
+              {t('resourceManagement.displayRange', {
+                start: (currentPage - 1) * pageSize + 1,
+                end: Math.min(currentPage * pageSize, totalCount),
+                total: totalCount,
+              })}
             </span>
           )}
         </div>

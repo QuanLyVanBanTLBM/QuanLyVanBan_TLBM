@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ResourceItem, HieuLucType } from '@app-types/resource';
 import { Badge } from '@components/common/Badge';
 import { useTranslation } from '@i18n/translate';
+import { computeEffectiveStatus } from '@lib/resourceValidity';
 
 export interface ResourceTableProps {
   items: ResourceItem[];
@@ -93,7 +94,7 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
     const top = spaceBelow < 120 ? Math.max(10, rect.top - 116) : rect.bottom + 4;
     setMenuPos({
       top,
-      right: Math.max(10, window.innerWidth - rect.right),
+      right: Math.max(10, Math.min(window.innerWidth - 186, window.innerWidth - rect.right)),
     });
     setActiveMenuId(itemId);
   };
@@ -101,6 +102,11 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
   // Format ngày dd/mm/yyyy
   const formatDate = (dateStr?: string) => {
     if (!dateStr) return '-';
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateStr);
+    if (match) {
+      const [, y, m, d] = match;
+      return `${d}/${m}/${y}`;
+    }
     try {
       const date = new Date(dateStr);
       if (isNaN(date.getTime())) return dateStr;
@@ -252,8 +258,41 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
   };
 
 
-  const renderStatusBadge = (hieuLuc: HieuLucType) => {
-    switch (hieuLuc) {
+  const renderStatusBadge = (itemOrStatus: ResourceItem | HieuLucType) => {
+    let effectiveStatus: HieuLucType;
+    let isScheduled = false;
+    let expDate: string | null = null;
+
+    if (typeof itemOrStatus === 'string') {
+      effectiveStatus = itemOrStatus;
+    } else {
+      const validity = computeEffectiveStatus(
+        itemOrStatus.hieu_luc,
+        itemOrStatus.ngay_het_hieu_luc,
+        itemOrStatus.link_thay_the
+      );
+      effectiveStatus = validity.status;
+      isScheduled = validity.isScheduled;
+      expDate = validity.expirationDate || null;
+    }
+
+    if (isScheduled && expDate) {
+      return (
+        <div className="inline-flex flex-col items-center gap-0.5">
+          <Badge variant="success" size="sm" withDot>
+            {t('resourceManagement.statusActive')}
+          </Badge>
+          <span
+            className="text-[10px] text-muted font-medium"
+            title={t('resourceManagement.scheduledExpiryNotice', { date: formatDate(expDate) })}
+          >
+            {t('resourceManagement.expiresOnDate', { date: formatDate(expDate) })}
+          </span>
+        </div>
+      );
+    }
+
+    switch (effectiveStatus) {
       case 'CON_HIEU_LUC':
         return (
           <Badge variant="success" size="sm" withDot>
@@ -281,7 +320,7 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
       default:
         return (
           <Badge variant="secondary" size="sm">
-            {hieuLuc}
+            {effectiveStatus}
           </Badge>
         );
     }
@@ -485,9 +524,13 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
             ) : (
               // Danh sách dòng tài liệu
               items.map((item) => {
-                // RÀNG BUỘC ĐẶC BIỆT: HẾT HIỆU LỰC / HẾT VÀ THAY THẾ LÀM MỜ TOÀN BỘ DÒNG
-                const isExpired =
-                  item.hieu_luc === 'HET_HIEU_LUC' || item.hieu_luc === 'HET_VA_THAY_THE';
+                // TÍNH TOÁN HIỆU LỰC THỰC TẾ THEO THỜI GIAN
+                const validity = computeEffectiveStatus(
+                  item.hieu_luc,
+                  item.ngay_het_hieu_luc,
+                  item.link_thay_the
+                );
+                const isExpired = validity.isExpired;
 
                 const rowClass = isExpired
                   ? 'bg-slate-100/70 dark:bg-slate-800/60 text-slate-500 hover:bg-slate-200/50 dark:hover:bg-slate-800/80'
@@ -533,7 +576,7 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
                       </div>
 
                       {/* Dòng Link thay thế dưới tiêu đề nếu Hết và thay thế */}
-                      {item.hieu_luc === 'HET_VA_THAY_THE' && item.link_thay_the && (
+                      {(item.hieu_luc === 'HET_VA_THAY_THE' || validity.status === 'HET_VA_THAY_THE') && item.link_thay_the && (
                         <div className="mt-1 opacity-100">
                           <a
                             href={item.link_thay_the}
@@ -541,9 +584,9 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
                             rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
                             className="inline-flex items-center gap-1 text-xs text-primary hover:underline font-medium hover:text-primary-hover"
-                            title="Mở văn bản thay thế mới"
+                            title={t('resourceManagement.viewReplacement')}
                           >
-                            <span>&rarr; Xem văn bản thay thế</span>
+                            <span>{t('resourceManagement.viewReplacement')}</span>
                             <i className="fa-solid fa-arrow-up-right-from-square text-[9px]" />
                           </a>
                         </div>
@@ -562,7 +605,7 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
 
                     {/* Cột 5: Hiệu lực (Ẩn trên mobile, hiện từ sm: tablet/desktop) */}
                     <td className="hidden sm:table-cell px-2 sm:px-3.5 py-3 sm:py-3.5 text-center align-middle whitespace-nowrap opacity-100">
-                      {renderStatusBadge(item.hieu_luc)}
+                      {renderStatusBadge(item)}
                     </td>
 
                     {/* Cột 6: Tệp đính kèm (Ẩn trên mobile, hiện từ sm: tablet/desktop) */}
@@ -612,10 +655,10 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
                               onViewDetail(item);
                             }}
                             className="w-full px-3 py-2 text-xs text-left text-main hover:bg-surface-elevated flex items-center gap-2 transition-colors cursor-pointer"
-                            aria-label="Xem chi tiết tài liệu"
+                            aria-label={t('resourceManagement.viewDetailDoc')}
                           >
                             <i className="fa-solid fa-eye text-muted text-xs" />
-                            <span>Xem chi tiết</span>
+                            <span>{t('resourceManagement.viewDetail')}</span>
                           </button>
 
                           {/* Mục 2: Truy cập Thư mục + Loại */}
@@ -629,10 +672,10 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
                                 onDrillDown(item.dm_tai_lieu, firstType);
                               }}
                               className="w-full px-3 py-2 text-xs text-left text-main hover:bg-surface-elevated flex items-center gap-2 transition-colors cursor-pointer"
-                              aria-label="Truy cập thư mục của tài liệu"
+                              aria-label={t('resourceManagement.goToFolder')}
                             >
                               <i className="fa-solid fa-folder-open text-primary text-xs" />
-                              <span className="text-primary font-medium">Vào Thư mục</span>
+                              <span className="text-primary font-medium">{t('resourceManagement.goToFolder')}</span>
                             </button>
                           )}
 
@@ -651,7 +694,7 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
                                 onEdit(item);
                               }}
                               className="w-full px-3 py-2 text-xs text-left text-main hover:bg-surface-elevated flex items-center gap-2 transition-colors cursor-pointer"
-                              aria-label="Chỉnh sửa tài liệu"
+                              aria-label={t('resourceManagement.edit')}
                             >
                               <i className="fa-solid fa-pen-to-square text-muted text-xs" />
                               <span>{t('resourceManagement.edit')}</span>
@@ -668,7 +711,7 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
                                 onDelete(item);
                               }}
                               className="w-full px-3 py-2 text-xs text-left text-danger hover:bg-danger-subtle flex items-center gap-2 transition-colors cursor-pointer font-medium"
-                              aria-label="Xóa tài liệu"
+                              aria-label={t('resourceManagement.delete')}
                             >
                               <i className="fa-solid fa-trash-can text-danger text-xs" />
                               <span>{t('resourceManagement.delete')}</span>
@@ -705,17 +748,17 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
       >
         {/* Bên trái chân bảng: Dropdown chọn số dòng & Thông tin tổng số */}
         <div className="flex items-center gap-2 sm:gap-2.5 shrink-0 select-none">
-          <span className="font-medium">Hiển thị</span>
+          <span className="font-medium">{t('resourceManagement.display')}</span>
           <select
             value={pageSize}
             onChange={(e) => onPageSizeChange?.(Number(e.target.value))}
             className="px-2 py-1 bg-surface-elevated border border-border-subtle rounded-md text-main text-xs focus:outline-hidden focus:border-primary cursor-pointer font-medium"
-            aria-label="Chọn số dòng hiển thị trên mỗi trang"
+            aria-label={t('resourceManagement.selectRowsPerPageAria')}
           >
-            <option value={5}>5 dòng</option>
-            <option value={10}>10 dòng</option>
-            <option value={20}>20 dòng</option>
-            <option value={50}>50 dòng</option>
+            <option value={5}>5 {t('resourceManagement.rows')}</option>
+            <option value={10}>10 {t('resourceManagement.rows')}</option>
+            <option value={20}>20 {t('resourceManagement.rows')}</option>
+            <option value={50}>50 {t('resourceManagement.rows')}</option>
           </select>
           <span className="font-medium">/ {t('resourceManagement.rowsPerPage')}</span>
         </div>
@@ -730,8 +773,8 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
                 disabled={currentPage <= 1 || isLoading}
                 onClick={() => handlePageChange(1)}
                 className="min-w-[28px] sm:min-w-[32px] h-7 sm:h-8 px-1.5 sm:px-2 text-xs font-medium rounded-lg border border-border-subtle bg-surface hover:bg-surface-elevated text-secondary hover:text-main disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center justify-center"
-                title="Về trang đầu (Trang 1)"
-                aria-label="Về trang đầu"
+                title={t('resourceManagement.firstPageTitle')}
+                aria-label={t('resourceManagement.firstPage')}
               >
                 <i className="fa-solid fa-angles-left text-[10px] sm:text-[11px]" />
               </button>
@@ -742,8 +785,8 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
                 disabled={currentPage <= 1 || isLoading}
                 onClick={() => handlePageChange(currentPage - 1)}
                 className="min-w-[28px] sm:min-w-[32px] h-7 sm:h-8 px-1.5 sm:px-2 text-xs font-medium rounded-lg border border-border-subtle bg-surface hover:bg-surface-elevated text-secondary hover:text-main disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center justify-center"
-                title="Trang trước"
-                aria-label="Trang trước"
+                title={t('resourceManagement.prevPage')}
+                aria-label={t('resourceManagement.prevPage')}
               >
                 <i className="fa-solid fa-chevron-left text-[10px] sm:text-[11px]" />
               </button>
@@ -760,10 +803,10 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
                       className="group min-w-[28px] sm:min-w-[32px] h-7 sm:h-8 px-1 text-xs font-medium rounded-lg border border-transparent hover:border-border-subtle hover:bg-surface-elevated text-muted hover:text-primary transition-all cursor-pointer flex items-center justify-center"
                       title={
                         item.direction === 'prev'
-                          ? `Lùi 2 trang (Về trang ${item.targetPage})`
-                          : `Tiến 2 trang (Đến trang ${item.targetPage})`
+                          ? t('resourceManagement.jumpBackPages', { page: item.targetPage })
+                          : t('resourceManagement.jumpForwardPages', { page: item.targetPage })
                       }
-                      aria-label={item.direction === 'prev' ? 'Lùi 2 trang' : 'Tiến 2 trang'}
+                      aria-label={item.direction === 'prev' ? t('resourceManagement.jumpBackAria') : t('resourceManagement.jumpForwardAria')}
                     >
                       <span className="group-hover:hidden tracking-widest text-[10px] sm:text-[11px] font-bold">•••</span>
                       <i
@@ -787,7 +830,7 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
                         ? 'bg-primary text-white shadow-xs font-bold border border-primary'
                         : 'border border-border-subtle bg-surface hover:bg-surface-elevated text-secondary hover:text-main'
                     }`}
-                    aria-label={`Trang ${item.num}`}
+                    aria-label={`${t('resourceManagement.page')} ${item.num}`}
                     aria-current={isActive ? 'page' : undefined}
                   >
                     {item.num}
@@ -801,8 +844,8 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
                 disabled={currentPage >= totalPages || isLoading}
                 onClick={() => handlePageChange(currentPage + 1)}
                 className="min-w-[28px] sm:min-w-[32px] h-7 sm:h-8 px-1.5 sm:px-2 text-xs font-medium rounded-lg border border-border-subtle bg-surface hover:bg-surface-elevated text-secondary hover:text-main disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center justify-center"
-                title="Trang sau"
-                aria-label="Trang sau"
+                title={t('resourceManagement.nextPage')}
+                aria-label={t('resourceManagement.nextPage')}
               >
                 <i className="fa-solid fa-chevron-right text-[10px] sm:text-[11px]" />
               </button>
@@ -813,8 +856,8 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
                 disabled={currentPage >= totalPages || isLoading}
                 onClick={() => handlePageChange(totalPages)}
                 className="min-w-[28px] sm:min-w-[32px] h-7 sm:h-8 px-1.5 sm:px-2 text-xs font-medium rounded-lg border border-border-subtle bg-surface hover:bg-surface-elevated text-secondary hover:text-main disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center justify-center"
-                title={`Đến trang cuối (Trang ${totalPages})`}
-                aria-label="Đến trang cuối"
+                title={t('resourceManagement.lastPageTitle', { total: totalPages })}
+                aria-label={t('resourceManagement.lastPage')}
               >
                 <i className="fa-solid fa-angles-right text-[10px] sm:text-[11px]" />
               </button>
@@ -826,7 +869,7 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
                 onSubmit={handleJumpPage}
                 className="flex items-center gap-1 sm:gap-1.5 pl-1.5 sm:pl-2 border-l border-border-subtle text-secondary"
               >
-                <span className="text-[10px] sm:text-[11px] whitespace-nowrap">Đến trang</span>
+                <span className="text-[10px] sm:text-[11px] whitespace-nowrap">{t('resourceManagement.jumpTo')}</span>
                 <input
                   type="text"
                   inputMode="numeric"
@@ -841,9 +884,9 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
                     }
                   }}
                   placeholder={String(currentPage)}
-                  title="Nhập số trang và nhấn Enter"
+                  title={t('resourceManagement.jumpPageTooltip')}
                   className="w-10 sm:w-12 h-7 sm:h-8 px-1 text-center bg-surface-elevated border border-border-subtle rounded-lg text-main text-xs focus:outline-hidden focus:border-primary font-medium [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                  aria-label="Nhập số trang muốn chuyển tới"
+                  aria-label={t('resourceManagement.jumpPageAria')}
                 />
               </form>
             )}

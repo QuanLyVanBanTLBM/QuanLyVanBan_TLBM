@@ -1,4 +1,4 @@
-"""Xuất Excel danh bạ Phòng ban theo mẫu danh bạ: khối -> đơn vị -> người đứng đầu."""
+"""Xuất Excel danh bạ Phòng ban theo mẫu danh bạ: khối -> đơn vị -> mọi CBNV của đơn vị."""
 import io
 
 import openpyxl
@@ -108,29 +108,47 @@ class DirectoryExportTest(TestCase):
         label = next(x for x in first_cells(self.export()) if str(x).startswith("ĐƠN VỊ A1"))
         self.assertEqual(label, "ĐƠN VỊ A1  |  Địa chỉ: 1 Phố A  |  ĐT: 0281234567  |  Email: a1@example.com")
 
-    def test_head_is_lowest_position_order_then_lowest_id(self):
-        self.person("nv", self.unit_a1, self.low)
+    def members_of(self, rows, unit_name):
+        """Các dòng người ngay dưới dòng đơn vị, đến trước dòng khối hoặc đơn vị kế tiếp."""
+        start = self.unit_row_index(rows, unit_name) + 1
+        members = []
+        for row in rows[start:]:
+            if not isinstance(row[0], int):
+                break
+            members.append(row)
+        return members
+
+    def test_lists_every_member_by_position_order_then_lowest_id(self):
+        low = self.person("nv", self.unit_a1, self.low, ho_ten="Nhân viên")
         first = self.person("tp_one", self.unit_a1, self.mid, ho_ten="Trưởng phòng Một")
-        self.person("tp_two", self.unit_a1, self.mid, ho_ten="Trưởng phòng Hai")
-        rows = body_rows(self.export())
-        idx = self.unit_row_index(rows, "Đơn vị A1")
-        self.assertEqual(rows[idx + 1], (1, first.ho_ten, "Trưởng phòng thử", first.chuc_danh, first.sdt, first.email))
-        self.assertTrue(str(rows[idx + 2][0]).startswith("ĐƠN VỊ A2"))
+        second = self.person("tp_two", self.unit_a1, self.mid, ho_ten="Trưởng phòng Hai")
+        boss = self.person("gd", self.unit_a1, self.boss, ho_ten="Giám đốc")
+        members = self.members_of(body_rows(self.export()), "Đơn vị A1")
+        self.assertEqual([m[1] for m in members], [boss.ho_ten, first.ho_ten, second.ho_ten, low.ho_ten])
+        self.assertEqual(members[1], (2, first.ho_ten, "Trưởng phòng thử", first.chuc_danh, first.sdt, first.email))
 
     def test_higher_position_beats_lower_id(self):
         self.person("tp_early", self.unit_a1, self.mid, ho_ten="Trưởng phòng")
         self.person("gd_late", self.unit_a1, self.boss, ho_ten="Giám đốc")
+        members = self.members_of(body_rows(self.export()), "Đơn vị A1")
+        self.assertEqual([m[1] for m in members], ["Giám đốc", "Trưởng phòng"])
+
+    def test_each_person_is_listed_only_under_their_own_unit(self):
+        self.person("a1", self.unit_a1, self.boss, ho_ten="Người A1")
+        self.person("b1", self.unit_b1, self.boss, ho_ten="Người B1")
         rows = body_rows(self.export())
-        self.assertEqual(rows[self.unit_row_index(rows, "Đơn vị A1") + 1][1:3], ("Giám đốc", "Giám đốc thử"))
+        self.assertEqual([m[1] for m in self.members_of(rows, "Đơn vị A1")], ["Người A1"])
+        self.assertEqual([m[1] for m in self.members_of(rows, "Đơn vị B1")], ["Người B1", "exporter"])
+        self.assertEqual(sum(1 for row in rows if row[1] == "Người A1"), 1)
 
     def test_serial_number_restarts_and_empty_unit_has_only_its_row(self):
         self.person("a1", self.unit_a1, self.boss)
+        self.person("a1b", self.unit_a1, self.mid)
         self.person("b1", self.unit_b1, self.boss)
         rows = body_rows(self.export())
-        self.assertEqual([row[0] for row in rows if isinstance(row[0], int)], [1, 1])
-        self.assertEqual(rows[self.unit_row_index(rows, "Đơn vị B1") + 1][1], "b1")
-        idx = self.unit_row_index(rows, "Đơn vị A2")
-        self.assertEqual(rows[idx + 1][0], "KHỐI B")
+        self.assertEqual([row[0] for row in rows if isinstance(row[0], int)], [1, 2, 1, 2])
+        self.assertEqual(self.members_of(rows, "Đơn vị A2"), [])
+        self.assertEqual(rows[self.unit_row_index(rows, "Đơn vị A2") + 1][0], "KHỐI B")
 
     def test_resigned_staff_are_never_exported(self):
         self.person("gone", self.unit_a1, self.boss, trang_thai=Employee.Status.NGHI_VIEC, ho_ten="Đã nghỉ")
@@ -139,14 +157,14 @@ class DirectoryExportTest(TestCase):
         self.assertIn("Còn làm", names)
         self.assertNotIn("Đã nghỉ", names)
 
-    def test_system_admin_account_is_not_unit_head(self):
+    def test_system_admin_account_is_not_listed(self):
         User.objects.create_superuser(
             username="sysadmin", password="x", email="sysadmin@example.com", ho_ten="Quản trị hệ thống",
             don_vi=self.unit_a1, chuc_vu=self.boss,
         )
         self.person("head", self.unit_a1, self.mid, ho_ten="Trưởng đơn vị")
         rows = body_rows(self.export())
-        self.assertEqual(rows[self.unit_row_index(rows, "Đơn vị A1") + 1][1], "Trưởng đơn vị")
+        self.assertEqual([m[1] for m in self.members_of(rows, "Đơn vị A1")], ["Trưởng đơn vị"])
         self.assertNotIn("Quản trị hệ thống", [row[1] for row in rows])
 
     def test_internal_people_only_for_full_view_permission_or_superuser(self):
@@ -185,6 +203,7 @@ class DirectoryExportTest(TestCase):
         for index in range(30):
             unit = DonVi.objects.create(khoi=self.block_a, stt_uu_tien=self.priority + 100 + index, ten=f"Đơn vị mới {index}")
             self.person(f"head{index}", unit, self.mid)
+            self.person(f"staff{index}", unit, self.low)
         with CaptureQueriesContext(connection) as many:
             client.get(URL)
         self.assertEqual(len(many), len(few))

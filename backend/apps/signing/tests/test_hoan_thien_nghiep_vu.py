@@ -220,7 +220,10 @@ class RaSoatStagingTests(KyBase):
         self.assertEqual((d["trang_thai_luot"], d["qua_han"]), ("CHO_KY", False))
         SigningRequestStep.objects.filter(luot_trinh__trinh_ky=self.pk, trang_thai=enums.TrangThaiCapKy.DANG_KY) \
             .update(han_xu_ly=timezone.now() - timedelta(hours=1))
-        self.assertTrue(self.client_cua(self.tao).get(f"{BASE}/?hop=toi_gui").data["results"][0]["qua_han"])
+        d_tre = self.client_cua(self.tao).get(f"{BASE}/?hop=toi_gui").data["results"][0]
+        self.assertTrue(d_tre["qua_han"])
+        self.assertTrue(d_tre["qua_han_cap"])
+        self.assertIsNotNone(d_tre["han_xu_ly_cap"])
         self.hanh_dong(self.ky1, "yeu-cau-sua", tieu_de="Sai số", ly_do="Mục 2")
         d = self.client_cua(self.tao).get(f"{BASE}/?hop=toi_gui").data["results"][0]
         self.assertEqual((d["trang_thai"], d["trang_thai_luot"]), ("CHO_KY", "YEU_CAU_SUA"))

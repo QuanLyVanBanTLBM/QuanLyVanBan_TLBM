@@ -1,16 +1,19 @@
 /**
  * Cấu hình quy trình ký (#80 mục A, E): quy trình CONG_TY do quản trị, PHONG_BAN do lãnh đạo đơn vị áp dụng.
- * Người ký cấu hình theo tài khoản. Đơn vị áp dụng chọn từ Đơn vị của Nhóm 7 (quản trị: mọi đơn vị, lãnh đạo đơn vị:
- * đơn vị mình). Xem chi tiết mọi quy trình; sửa, xóa quy trình nháp (đã kích hoạt thì nhân bản thành phiên bản mới).
+ * Người ký cấu hình theo tài khoản (danh bạ cán bộ của phân hệ CBNV) hoặc theo chức vụ (Danh mục chức vụ của CBNV,
+ * #275 mục 2, 7). Đơn vị áp dụng chọn từ Đơn vị của Nhóm 7 (quản trị: mọi đơn vị, lãnh đạo đơn vị: đơn vị mình).
+ * Sửa quy trình nháp (đã kích hoạt thì nhân bản thành phiên bản mới). Xóa được phiên bản chưa có hồ sơ trình ký nào
+ * dùng (#275 mục 1); còn hồ sơ thì nút Xóa bị vô hiệu kèm lý do. Người ký theo chức vụ hiện tên cán bộ đang giữ chức vụ
+ * trong phạm vi đã chọn, không có ai thì cảnh báo (#275 mục 8).
  */
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Badge, Button, Card } from '@components/common';
 import { DangTai, HopThoai, LoiTai, Rong, ThongBao, TrangThaiBadge, TruongNhap } from '@components/signing/ChungUI';
-import { signingApi } from '@lib/signing/api';
-import { boDau, LOP_O_NHAP } from '@lib/signing/dinhDang';
+import { docLoi, signingApi } from '@lib/signing/api';
+import { boDau, GIOI_HAN, LOP_O_NHAP, MA_QUY_TRINH_HOP_LE, tenNguoiKyCauHinh } from '@lib/signing/dinhDang';
 import { coQuyen, useTai, useToi } from '@lib/signing/hooks';
-import { useSigningT } from '@lib/signing/i18n';
-import type { NguoiDungTim, PhamViQuyTrinh, QuyTrinh, VaiTroKy } from '@lib/signing/types';
+import { type HamDich, useSigningT } from '@lib/signing/i18n';
+import type { CanBo, PhamViQuyTrinh, QuyTrinh, VaiTroKy } from '@lib/signing/types';
 
 /** Người ký trong form: theo tài khoản (`nguoi_ky`) hoặc theo chức vụ (giữ nguyên khi sửa quy trình nháp). */
 interface NguoiKyNhap {
@@ -20,46 +23,262 @@ interface NguoiKyNhap {
 interface CapNhap { ten_cap_ky: string; so_gio_xu_ly: string; don_vi_id: number | null; nguoi_ky: NguoiKyNhap[] }
 
 const CAP_TRONG: CapNhap = { ten_cap_ky: '', so_gio_xu_ly: '', don_vi_id: null, nguoi_ky: [] };
+/** Phạm vi tìm người giữ chức vụ chọn được trên form (DON_VI_CO_DINH cần cấp có đơn vị, giữ nguyên khi sửa). */
+const PHAM_VI_CHUC_VU = ['DON_VI_NGUOI_TAO', 'TOAN_CO_QUAN'] as const;
+const TOI_DA_GOI_Y = 20;
 
-function capTuQuyTrinh(q: QuyTrinh, theoChucVu: string): CapNhap[] {
+function capTuQuyTrinh(q: QuyTrinh, t: HamDich): CapNhap[] {
   return q.cap_ky.map((c) => ({
     ten_cap_ky: c.ten_cap_ky, so_gio_xu_ly: c.so_gio_xu_ly ? String(c.so_gio_xu_ly) : '', don_vi_id: c.don_vi_id,
     nguoi_ky: c.nguoi_ky.map((n) => ({
-      khoa: `c${n.id}`, ten: n.ten_nguoi_ky || theoChucVu, nguoi_ky: n.nguoi_ky, chuc_vu_id: n.chuc_vu_id,
+      khoa: `c${n.id}`, ten: tenNguoiKyCauHinh(n, t), nguoi_ky: n.nguoi_ky, chuc_vu_id: n.chuc_vu_id,
+      chuc_danh: n.pham_vi_chuc_vu ? t(`phamViChucVu.${n.pham_vi_chuc_vu}`) : undefined,
       pham_vi_chuc_vu: n.pham_vi_chuc_vu, vai_tro_ky: n.vai_tro_ky, chan_ky_chinh: n.chan_ky_chinh,
     })),
   }));
 }
 
-/** Chức danh đầy đủ của tài khoản: chức vụ · đơn vị (Nhóm 7). */
-function chucDanh(u: NguoiDungTim, khongCo: string): string {
-  return [u.chuc_vu, u.don_vi].filter(Boolean).join(' · ') || khongCo;
+/** Chức danh đầy đủ của cán bộ: chức vụ · đơn vị (danh bạ CBNV). */
+function chucDanh(u: CanBo, khongCo: string): string {
+  return [u.chuc_vu_ten, u.don_vi_ten].filter(Boolean).join(' · ') || khongCo;
 }
 
-function ChonNguoiDung({ onChon }: { onChon: (u: NguoiDungTim) => void }) {
-  const { t } = useSigningT();
+interface ChonNguoiDungProps {
+  onChon: (u: CanBo) => void;
+  chucVuLocId?: number | null;
+  chucVuLocTen?: string | null;
+}
+
+/** Chọn cán bộ từ danh bạ của phân hệ CBNV (tải trước khi mở form, lọc không dấu trên trình duyệt). */
+function ChonNguoiDung({ onChon, chucVuLocId, chucVuLocTen }: ChonNguoiDungProps) {
+  const { t, loi } = useSigningT();
   const [q, setQ] = useState('');
   const [mo, setMo] = useState(false);
-  const ds = useTai(() => (mo ? signingApi.timNguoiDung(q.trim()) : Promise.resolve([])), [q, mo]);
+  const hopRef = useRef<HTMLDivElement>(null);
+  const ds = useTai(() => signingApi.danhBaCanBo(), []);
+
+  useEffect(() => {
+    const onBamNgoai = (e: MouseEvent) => {
+      if (hopRef.current && !hopRef.current.contains(e.target as Node)) {
+        setMo(false);
+      }
+    };
+    document.addEventListener('mousedown', onBamNgoai);
+    return () => document.removeEventListener('mousedown', onBamNgoai);
+  }, []);
+
+  const tuKhoa = boDau(q.trim());
+  const goiY = useMemo(() => (ds.duLieu ?? []).filter((u) => {
+    if (chucVuLocId != null) {
+      const khopId = u.chuc_vu_id === chucVuLocId;
+      const khopTen = chucVuLocTen ? boDau(u.chuc_vu_ten) === boDau(chucVuLocTen) : false;
+      if (!khopId && !khopTen) return false;
+    }
+    return !tuKhoa || boDau([u.ho_ten, u.username, u.chuc_vu_ten, u.don_vi_ten].join(' ')).includes(tuKhoa);
+  }).slice(0, TOI_DA_GOI_Y),
+  [ds.duLieu, tuKhoa, chucVuLocId, chucVuLocTen]);
+
+  const placeholder = chucVuLocTen
+    ? t('quyTrinh.timCanBoTheoChucVu', { chucVu: chucVuLocTen })
+    : t('quyTrinh.timNguoiDung');
+
   return (
-    <div className="space-y-1">
-      <input className={LOP_O_NHAP} placeholder={t('quyTrinh.timNguoiDung')} value={q}
-        onFocus={() => setMo(true)} onBlur={() => setMo(false)} onChange={(e) => setQ(e.target.value)} />
-      {mo && !!ds.duLieu?.length && (
+    <div ref={hopRef} className="relative space-y-1">
+      <div className="relative flex items-center">
+        <input
+          className={`${LOP_O_NHAP} pr-8`}
+          placeholder={placeholder}
+          aria-label={t('quyTrinh.themNguoiKy')}
+          value={q}
+          onFocus={() => setMo(true)}
+          onChange={(e) => {
+            setQ(e.target.value);
+            setMo(true);
+          }}
+        />
+        <button
+          type="button"
+          className="absolute right-2.5 text-muted hover:text-main"
+          aria-label={mo ? t('chung.dong') : t('quyTrinh.themNguoiKy')}
+          tabIndex={-1}
+          onClick={() => setMo((m) => !m)}
+        >
+          <i className={`fa-solid ${mo ? 'fa-chevron-up' : 'fa-chevron-down'} text-xs`} aria-hidden="true" />
+        </button>
+      </div>
+      {ds.loi && <p className="text-xs text-danger">{loi(ds.loi)}</p>}
+      {mo && ds.dangTai && !ds.duLieu && (
+        <div className="rounded-lg border border-border-subtle bg-surface p-2.5 text-xs text-muted shadow-sm flex items-center gap-2">
+          <i className="fa-solid fa-spinner fa-spin text-primary" aria-hidden="true" />
+          <span>{t('chung.dangTai')}</span>
+        </div>
+      )}
+      {mo && !!goiY.length && (
         <ul className="max-h-60 overflow-y-auto rounded-lg border border-border-subtle bg-surface shadow-sm" role="listbox">
-          {ds.duLieu.map((u) => (
+          {goiY.map((u) => (
             <li key={u.id}>
-              <button type="button" className="block w-full px-3 py-2 text-left hover:bg-surface-hover"
-                onMouseDown={(e) => e.preventDefault()} onClick={() => { onChon(u); setQ(''); }}>
-                <span className="block text-sm font-semibold text-main">{u.ten}</span>
+              <button
+                type="button"
+                className="block w-full px-3 py-2 text-left hover:bg-surface-hover"
+                onClick={() => {
+                  onChon(u);
+                  setQ('');
+                  setMo(false);
+                }}
+              >
+                <span className="block text-sm font-semibold text-main">{u.ho_ten}</span>
                 <span className="block text-xs text-secondary">{chucDanh(u, t('quyTrinh.chuaCoChucVu'))}</span>
-                <span className="block text-xs text-muted">{u.ten_dang_nhap}</span>
+                <span className="block text-xs text-muted">{u.username}</span>
               </button>
             </li>
           ))}
         </ul>
       )}
-      {mo && !ds.dangTai && ds.duLieu?.length === 0 && <p className="text-xs text-muted">{t('quyTrinh.khongThayNguoiDung')}</p>}
+      {mo && !ds.dangTai && !!ds.duLieu && goiY.length === 0 && (
+        <p className="rounded-lg border border-border-subtle bg-surface p-2.5 text-xs text-muted shadow-sm">
+          {chucVuLocTen
+            ? t('quyTrinh.khongThayCanBoChucVu', { chucVu: chucVuLocTen })
+            : t('quyTrinh.khongThayNguoiDung')}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Đơn vị dùng để tìm cán bộ khớp người ký theo chức vụ: đơn vị cố định của cấp; "đơn vị người trình" của quy trình
+ * phòng ban là đơn vị áp dụng; còn lại (toàn cơ quan, hoặc quy trình công ty theo đơn vị người trình) là mọi đơn vị.
+ */
+function donViTimCanBo(pham_vi_chuc_vu: string | null, don_vi_cap: number | null, pham_vi: PhamViQuyTrinh,
+  don_vi_ap_dung: number | null): number | null {
+  if (pham_vi_chuc_vu === 'DON_VI_CO_DINH') return don_vi_cap;
+  if (pham_vi_chuc_vu === 'DON_VI_NGUOI_TAO' && pham_vi === 'PHONG_BAN') return don_vi_ap_dung;
+  return null;
+}
+
+/** Tên cán bộ đang giữ chức vụ (dữ liệu phân hệ CBNV); không có ai thì cảnh báo cấp ký sẽ không có người ký. */
+function CanBoChucVu({ chucVuId, donViId, theoNguoiTrinh }: {
+  chucVuId: number; donViId: number | null; theoNguoiTrinh: boolean;
+}) {
+  const { t, loi } = useSigningT();
+  const ds = useTai(() => signingApi.canBoTheoChucVu(chucVuId, donViId), [chucVuId, donViId]);
+  if (ds.dangTai && !ds.duLieu) return <p className="text-xs text-muted">{t('chung.dangTai')}</p>;
+  if (ds.loi) return <p className="text-xs text-danger">{loi(ds.loi)}</p>;
+  if (!ds.duLieu) return null;
+  if (ds.duLieu.count === 0) {
+    return <p className="text-xs font-semibold text-warning-text" role="alert">{t('quyTrinh.khongCoUngVien')}</p>;
+  }
+  const con = ds.duLieu.count - ds.duLieu.results.length;
+  return (
+    <div className="space-y-0.5 text-xs" aria-label={t('quyTrinh.ungVien')}>
+      <span className="font-semibold text-secondary">{t('quyTrinh.ungVien')} ({ds.duLieu.count}):</span>
+      <ul className="flex flex-wrap gap-x-3 gap-y-0.5 text-main">
+        {ds.duLieu.results.map((u) => (
+          <li key={u.id}>{u.ten}{u.don_vi && <span className="text-muted"> · {u.don_vi}</span>}</li>
+        ))}
+        {con > 0 && <li className="text-muted">{t('quyTrinh.conNguoiKhac', { so: con })}</li>}
+      </ul>
+      {theoNguoiTrinh && <p className="text-muted">{t('quyTrinh.theoDonViNguoiTrinh')}</p>}
+    </div>
+  );
+}
+
+/** Khối thêm người ký cho từng cấp: chọn chức vụ (để lọc cán bộ hoặc gán quy tắc động) và chọn đích danh từ CBNV. */
+function ThemNguoiKyCap({
+  onChonCanBo,
+  onChonChucVu,
+  donViTim,
+}: {
+  onChonCanBo: (u: CanBo) => void;
+  onChonChucVu: (cv: { id: number; ten: string }, pham_vi: string) => void;
+  donViTim: (pham_vi_chuc_vu: string) => number | null;
+}) {
+  const { t, loi } = useSigningT();
+  const ds = useTai(() => signingApi.chucVu(), []);
+  const [chucVu, setChucVu] = useState('');
+  const [phamVi, setPhamVi] = useState<string>(PHAM_VI_CHUC_VU[0]);
+
+  const chon = ds.duLieu?.find((c) => String(c.id) === chucVu);
+
+  return (
+    <div className="space-y-2 pt-2 border-t border-border-subtle">
+      {/* 1. Chọn chức vụ: dùng để lọc danh bạ cán bộ hoặc bấm "Thêm theo chức vụ" để gán quy tắc động */}
+      <div className="space-y-1">
+        <div className="flex items-center justify-between text-xs font-semibold text-secondary">
+          <span>{t('quyTrinh.chonTheoChucVu')}</span>
+          {chon && (
+            <button
+              type="button"
+              className="text-xs text-primary hover:underline"
+              onClick={() => setChucVu('')}
+            >
+              {t('quyTrinh.xoaLocChucVu')}
+            </button>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            className={`${LOP_O_NHAP} w-auto min-w-48 flex-1`}
+            aria-label={t('quyTrinh.themTheoChucVu')}
+            value={chucVu}
+            onChange={(e) => setChucVu(e.target.value)}
+          >
+            <option value="">{t('quyTrinh.tatCaChucVu')}</option>
+            {ds.duLieu?.map((c) => (
+              <option key={c.id} value={String(c.id)}>{c.name}</option>
+            ))}
+          </select>
+          <select
+            className={`${LOP_O_NHAP} w-auto`}
+            aria-label={t('quyTrinh.phamViChucVu')}
+            value={phamVi}
+            onChange={(e) => setPhamVi(e.target.value)}
+          >
+            {PHAM_VI_CHUC_VU.map((p) => (
+              <option key={p} value={p}>{t(`phamViChucVu.${p}`)}</option>
+            ))}
+          </select>
+          <Button
+            size="sm"
+            variant="secondary"
+            icon="fa-user-tie"
+            disabled={!chon}
+            title={t('quyTrinh.themTheoChucVu')}
+            onClick={() => {
+              if (chon) {
+                onChonChucVu({ id: chon.id, ten: chon.name }, phamVi);
+                setChucVu('');
+              }
+            }}
+          >
+            {t('quyTrinh.themTheoChucVu')}
+          </Button>
+        </div>
+        {ds.loi && <p className="basis-full text-xs text-danger">{loi(ds.loi)}</p>}
+        {chon && (
+          <div className="basis-full">
+            <CanBoChucVu
+              chucVuId={chon.id}
+              donViId={donViTim(phamVi)}
+              theoNguoiTrinh={phamVi === 'DON_VI_NGUOI_TAO' && donViTim(phamVi) == null}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* 2. Chọn cán bộ đích danh từ danh bạ CBNV (tự động lọc theo chức vụ nếu đã chọn ở trên) */}
+      <div className="space-y-1">
+        <span className="text-xs font-semibold text-secondary">
+          {chon
+            ? t('quyTrinh.chonCanBoTheoChucVu', { chucVu: chon.name })
+            : t('quyTrinh.chonCanBoDichDanh')}
+        </span>
+        <ChonNguoiDung
+          chucVuLocId={chon?.id ?? null}
+          chucVuLocTen={chon?.name ?? null}
+          onChon={onChonCanBo}
+        />
+      </div>
     </div>
   );
 }
@@ -73,13 +292,16 @@ function FormTao({ mo, onDong, onXong, banDau }: { mo: boolean; onDong: () => vo
   const donViBanDau = banDau ? banDau.don_vi_ap_dung_id : toi?.don_vi_id;
   const [donVi, setDonVi] = useState(donViBanDau ? String(donViBanDau) : '');
   const dsDonVi = useTai(() => signingApi.donVi(), []);
-  const [cap, setCap] = useState<CapNhap[]>(banDau ? capTuQuyTrinh(banDau, t('tao.theoChucVu')) : [CAP_TRONG]);
+  const [cap, setCap] = useState<CapNhap[]>(banDau ? capTuQuyTrinh(banDau, t) : [CAP_TRONG]);
   const [dangLuu, setDangLuu] = useState(false);
   const [thongBao, setThongBao] = useState('');
 
+  const donViApDung = phamVi === 'PHONG_BAN' && donVi ? Number(donVi) : null;
   const sua = (i: number, gia_tri: Partial<CapNhap>) => setCap((c) => c.map((x, j) => (j === i ? { ...x, ...gia_tri } : x)));
-  const hopLe = ma.trim() && ten.trim() && (phamVi === 'CONG_TY' || donVi)
-    && cap.every((c) => c.ten_cap_ky.trim() && c.nguoi_ky.length);
+  const loiMa = !banDau && ma.trim() && !MA_QUY_TRINH_HOP_LE.test(ma.trim()) ? t('quyTrinh.loiMa') : '';
+  const soGioQuaLon = (c: CapNhap) => Number(c.so_gio_xu_ly) > GIOI_HAN.soGio;
+  const hopLe = ma.trim() && !loiMa && ten.trim() && (phamVi === 'CONG_TY' || donVi)
+    && cap.every((c) => c.ten_cap_ky.trim() && c.nguoi_ky.length && !soGioQuaLon(c));
 
   const luu = async () => {
     setDangLuu(true);
@@ -107,14 +329,19 @@ function FormTao({ mo, onDong, onXong, banDau }: { mo: boolean; onDong: () => vo
   };
 
   return (
-    <HopThoai moTieuDe={banDau ? t('quyTrinh.sua') : t('quyTrinh.tao')} mo={mo} onDong={onDong}
+    <HopThoai moTieuDe={banDau ? t('quyTrinh.sua') : t('quyTrinh.tao')} mo={mo} onDong={onDong} dangXuLy={dangLuu}
       chanDuoi={<>
         <Button variant="secondary" onClick={onDong}>{t('chung.huyBo')}</Button>
         <Button icon="fa-floppy-disk" isLoading={dangLuu} disabled={!hopLe} onClick={luu}>{t('chung.luu')}</Button>
       </>}>
       <div className="grid gap-3 sm:grid-cols-2">
-        <TruongNhap nhan={t('quyTrinh.ma')}><input className={LOP_O_NHAP} maxLength={50} value={ma} disabled={!!banDau} onChange={(e) => setMa(e.target.value)} /></TruongNhap>
-        <TruongNhap nhan={t('quyTrinh.ten')}><input className={LOP_O_NHAP} value={ten} onChange={(e) => setTen(e.target.value)} /></TruongNhap>
+        <TruongNhap nhan={t('quyTrinh.ma')} loi={loiMa}>
+          <input className={LOP_O_NHAP} maxLength={GIOI_HAN.maQuyTrinh} value={ma} disabled={!!banDau}
+            aria-invalid={loiMa ? true : undefined} onChange={(e) => setMa(e.target.value)} />
+        </TruongNhap>
+        <TruongNhap nhan={t('quyTrinh.ten')}>
+          <input className={LOP_O_NHAP} maxLength={GIOI_HAN.tenQuyTrinh} value={ten} onChange={(e) => setTen(e.target.value)} />
+        </TruongNhap>
         <TruongNhap nhan={t('quyTrinh.phamVi')} className={phamVi === 'CONG_TY' ? 'sm:col-span-2' : ''}>
           <select className={LOP_O_NHAP} value={phamVi} onChange={(e) => setPhamVi(e.target.value as PhamViQuyTrinh)}>
             <option value="CONG_TY">{t('phamVi.CONG_TY')}</option>
@@ -130,25 +357,35 @@ function FormTao({ mo, onDong, onXong, banDau }: { mo: boolean; onDong: () => vo
           </TruongNhap>
         )}
       </div>
-      <div className="space-y-2 max-h-80 overflow-y-auto">
+      <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
         <div className="text-sm font-bold text-main">{t('quyTrinh.capKy')}</div>
         {cap.map((c, i) => (
           <div key={i} className="space-y-2 rounded-lg border border-border-subtle p-2">
             <div className="flex gap-2">
               <span className="pt-2 text-sm font-bold text-main">{i + 1}.</span>
               <input className={LOP_O_NHAP} placeholder={t('quyTrinh.tenCap')} aria-label={`${t('quyTrinh.tenCap')} ${i + 1}`}
-                value={c.ten_cap_ky} onChange={(e) => sua(i, { ten_cap_ky: e.target.value })} />
-              <input className={`${LOP_O_NHAP} w-32`} inputMode="numeric" placeholder={t('quyTrinh.soGio')}
+                maxLength={GIOI_HAN.tenQuyTrinh} value={c.ten_cap_ky} onChange={(e) => sua(i, { ten_cap_ky: e.target.value })} />
+              <input className={`${LOP_O_NHAP} w-32`} inputMode="numeric" placeholder={t('quyTrinh.soGio')} maxLength={4}
                 aria-label={`${t('quyTrinh.soGio')} ${i + 1}`} value={c.so_gio_xu_ly}
+                aria-invalid={soGioQuaLon(c) ? true : undefined}
                 onChange={(e) => sua(i, { so_gio_xu_ly: e.target.value.replace(/\D/g, '') })} />
+              {cap.length > 1 && (
+                <button type="button" className="px-1 text-danger" aria-label={`${t('quyTrinh.xoaCap')} ${i + 1}`}
+                  title={t('quyTrinh.xoaCap')} onClick={() => setCap((x) => x.filter((_, j) => j !== i))}>
+                  <i className="fa-solid fa-trash" aria-hidden="true" />
+                </button>
+              )}
             </div>
+            {soGioQuaLon(c) && (
+              <p role="alert" className="text-xs font-semibold text-danger">{t('quyTrinh.loiSoGio', { so: GIOI_HAN.soGio })}</p>
+            )}
             {c.nguoi_ky.map((n, j) => (
               <div key={n.khoa} className="flex flex-wrap items-center gap-2 text-sm">
                 <span className="text-main">
                   <span className="font-semibold">{n.ten}</span>
                   {n.chuc_danh && <span className="ml-1 text-xs text-secondary">({n.chuc_danh})</span>}
                 </span>
-                <select className={`${LOP_O_NHAP} w-auto`} value={n.vai_tro_ky}
+                <select className={`${LOP_O_NHAP} w-auto`} value={n.vai_tro_ky} aria-label={`${t('quyTrinh.vaiTroKy')}: ${n.ten}`}
                   onChange={(e) => sua(i, { nguoi_ky: c.nguoi_ky.map((x, k) => (k === j ? { ...x, vai_tro_ky: e.target.value as VaiTroKy } : x)) })}>
                   <option value="KY_CHINH">{t('vaiTro.KY_CHINH')}</option>
                   <option value="KY_NHAY">{t('vaiTro.KY_NHAY')}</option>
@@ -164,13 +401,28 @@ function FormTao({ mo, onDong, onXong, banDau }: { mo: boolean; onDong: () => vo
                   onClick={() => sua(i, { nguoi_ky: c.nguoi_ky.filter((_, k) => k !== j) })}>
                   <i className="fa-solid fa-trash" aria-hidden="true" />
                 </button>
+                {n.chuc_vu_id != null && (
+                  <div className="basis-full pl-1">
+                    <CanBoChucVu chucVuId={n.chuc_vu_id}
+                      donViId={donViTimCanBo(n.pham_vi_chuc_vu, c.don_vi_id, phamVi, donViApDung)}
+                      theoNguoiTrinh={n.pham_vi_chuc_vu === 'DON_VI_NGUOI_TAO' && phamVi !== 'PHONG_BAN'} />
+                  </div>
+                )}
               </div>
             ))}
-            <ChonNguoiDung onChon={(u: NguoiDungTim) => !c.nguoi_ky.some((n) => n.nguoi_ky === u.id)
-              && sua(i, { nguoi_ky: [...c.nguoi_ky, {
-                khoa: `u${u.id}`, ten: u.ten, chuc_danh: chucDanh(u, ''), nguoi_ky: u.id, chuc_vu_id: null, pham_vi_chuc_vu: null,
-                vai_tro_ky: 'KY_CHINH', chan_ky_chinh: true,
-              }] })} />
+            <ThemNguoiKyCap
+              donViTim={(pham_vi) => donViTimCanBo(pham_vi, c.don_vi_id, phamVi, donViApDung)}
+              onChonCanBo={(u: CanBo) => !c.nguoi_ky.some((n) => n.nguoi_ky === u.id)
+                && sua(i, { nguoi_ky: [...c.nguoi_ky, {
+                  khoa: `u${u.id}`, ten: u.ho_ten, chuc_danh: chucDanh(u, ''), nguoi_ky: u.id, chuc_vu_id: null, pham_vi_chuc_vu: null,
+                  vai_tro_ky: 'KY_CHINH', chan_ky_chinh: true,
+                }] })}
+              onChonChucVu={(cv, pham_vi) => !c.nguoi_ky.some((n) => n.chuc_vu_id === cv.id && n.pham_vi_chuc_vu === pham_vi)
+                && sua(i, { nguoi_ky: [...c.nguoi_ky, {
+                  khoa: `p${cv.id}-${pham_vi}`, ten: t('quyTrinh.theoChucVu', { ten: cv.ten }), chuc_danh: t(`phamViChucVu.${pham_vi}`),
+                  nguoi_ky: null, chuc_vu_id: cv.id, pham_vi_chuc_vu: pham_vi, vai_tro_ky: 'KY_CHINH', chan_ky_chinh: true,
+                }] })}
+            />
           </div>
         ))}
         <Button size="sm" variant="ghost" icon="fa-plus"
@@ -181,13 +433,37 @@ function FormTao({ mo, onDong, onXong, banDau }: { mo: boolean; onDong: () => vo
   );
 }
 
-function ChiTietQuyTrinh({ id, onDong }: { id: number; onDong: () => void }) {
+function ChiTietQuyTrinh({
+  id,
+  quanLy = false,
+  onDong,
+  onSua,
+  onNhanBan,
+}: {
+  id: number;
+  quanLy?: boolean;
+  onDong: () => void;
+  onSua?: (q: QuyTrinh) => void;
+  onNhanBan?: (q: QuyTrinh) => void;
+}) {
   const { t, loi } = useSigningT();
   const ct = useTai(() => signingApi.chiTietQuyTrinh(id), [id]);
   const q = ct.duLieu;
   return (
     <HopThoai moTieuDe={t('quyTrinh.chiTiet')} mo onDong={onDong}
-      chanDuoi={<Button variant="secondary" onClick={onDong}>{t('chung.dong')}</Button>}>
+      chanDuoi={
+        <div className="flex w-full items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            {quanLy && q?.trang_thai === 'NHAP' && onSua && (
+              <Button size="sm" icon="fa-pen" onClick={() => onSua(q)}>{t('quyTrinh.sua')}</Button>
+            )}
+            {quanLy && q && (q.trang_thai === 'HOAT_DONG' || q.trang_thai === 'NGUNG') && onNhanBan && (
+              <Button size="sm" variant="secondary" icon="fa-copy" onClick={() => onNhanBan(q)}>{t('quyTrinh.nhanBan')}</Button>
+            )}
+          </div>
+          <Button variant="secondary" onClick={onDong}>{t('chung.dong')}</Button>
+        </div>
+      }>
       {ct.dangTai && <DangTai />}
       {ct.loi && <LoiTai thongBao={loi(ct.loi)} onThuLai={ct.tai} />}
       {q && (
@@ -204,27 +480,34 @@ function ChiTietQuyTrinh({ id, onDong }: { id: number; onDong: () => void }) {
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-border-subtle bg-surface-subtle text-xs font-bold uppercase tracking-wider text-muted">
-                <th className="px-3 py-2">#</th><th className="px-3 py-2">{t('quyTrinh.capKy')}</th>
-                <th className="px-3 py-2">{t('quyTrinh.nguoiKy')}</th><th className="px-3 py-2">{t('quyTrinh.soGioNhan')}</th>
+                <th className="px-3 py-2 text-center">#</th>
+                <th className="px-3 py-2 text-center">{t('quyTrinh.capKy')}</th>
+                <th className="px-3 py-2 text-center">{t('quyTrinh.nguoiKy')}</th>
+                <th className="px-3 py-2 text-center">{t('quyTrinh.soGioNhan')}</th>
               </tr>
             </thead>
             <tbody>
               {q.cap_ky.map((c) => (
                 <tr key={c.id} className="border-b border-border-subtle hover:bg-surface-hover align-top">
-                  <td className="px-3 py-2.5 font-bold text-main">{c.thu_tu}</td>
+                  <td className="px-3 py-2.5 font-bold text-main text-center">{c.thu_tu}</td>
                   <td className="px-3 py-2.5 text-main font-medium">{c.ten_cap_ky}</td>
                   <td className="px-3 py-2.5">
                     <ul className="space-y-0.5">
                       {c.nguoi_ky.map((n) => (
                         <li key={n.id} className="text-main">
-                          {n.ten_nguoi_ky || t('tao.theoChucVu')}
+                          {tenNguoiKyCauHinh(n, t)}
                           <span className="ml-1 text-secondary">({t(`vaiTro.${n.vai_tro_ky}`)}
                             {n.vai_tro_ky === 'KY_NHAY' && n.chan_ky_chinh ? ` · ${t('quyTrinh.chanKyChinh')}` : ''})</span>
+                          {n.chuc_vu_id != null && (
+                            <CanBoChucVu chucVuId={n.chuc_vu_id}
+                              donViId={donViTimCanBo(n.pham_vi_chuc_vu, c.don_vi_id, q.pham_vi, q.don_vi_ap_dung_id)}
+                              theoNguoiTrinh={n.pham_vi_chuc_vu === 'DON_VI_NGUOI_TAO' && q.pham_vi !== 'PHONG_BAN'} />
+                          )}
                         </li>
                       ))}
                     </ul>
                   </td>
-                  <td className="px-3 py-2.5 text-secondary">{c.so_gio_xu_ly ?? '—'}</td>
+                  <td className="px-3 py-2.5 text-secondary text-center">{c.so_gio_xu_ly ?? '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -240,37 +523,56 @@ export default function QuyTrinhPage() {
   const { toi } = useToi();
   const ds = useTai(() => signingApi.quyTrinh());
   const [tim, setTim] = useState('');
-  const [locTrangThai, setLocTrangThai] = useState('');
+  // Mặc định ẩn phiên bản đã ngừng để không xen giữa bản đang dùng cùng tên
+  const [locTrangThai, setLocTrangThai] = useState('CON_DUNG');
   const [locPhamVi, setLocPhamVi] = useState('');
   const tuKhoa = boDau(tim.trim());
-  const hienThi = (ds.duLieu ?? []).filter((q) => (!locTrangThai || q.trang_thai === locTrangThai)
+  const hienThi = (ds.duLieu ?? []).filter((q) => (!locTrangThai || q.trang_thai === locTrangThai
+      || (locTrangThai === 'CON_DUNG' && q.trang_thai !== 'NGUNG'))
     && (!locPhamVi || q.pham_vi === locPhamVi)
     && (!tuKhoa || [q.ma_quy_trinh, q.ten_quy_trinh, q.ten_don_vi_ap_dung ?? ''].some((x) => boDau(x).includes(tuKhoa))));
   const [taoMo, setTaoMo] = useState(false);
   const [dangSua, setDangSua] = useState<QuyTrinh | null>(null);
   const [xemId, setXemId] = useState<number | null>(null);
   const [canXoa, setCanXoa] = useState<QuyTrinh | null>(null);
+  const [canNgung, setCanNgung] = useState<QuyTrinh | null>(null);
+  const [dangThaoTac, setDangThaoTac] = useState(false);
   const [thongBao, setThongBao] = useState('');
   const quanLy = coQuyen(toi, 'manage_signing_process');
 
+  // Mỗi lần bấm là một thao tác: nhấn đúp "Tạo phiên bản mới" không được sinh hai phiên bản
   const thaoTac = async (q: QuyTrinh, loai: 'kich-hoat' | 'ngung' | 'nhan-ban') => {
+    if (dangThaoTac) return;
+    setDangThaoTac(true);
     setThongBao('');
     try {
-      await signingApi.thaoTacQuyTrinh(q.id, loai);
+      const banMoi = await signingApi.thaoTacQuyTrinh(q.id, loai);
+      if (loai === 'nhan-ban' && banMoi) {
+        setDangSua(banMoi);
+      }
       ds.tai();
     } catch (err) {
       setThongBao(loi(err));
+    } finally {
+      setDangThaoTac(false);
     }
   };
 
   const xoa = async (q: QuyTrinh) => {
     setCanXoa(null);
+    if (dangThaoTac) return;
+    setDangThaoTac(true);
     setThongBao('');
     try {
       await signingApi.xoaQuyTrinh(q.id);
       ds.tai();
     } catch (err) {
-      setThongBao(loi(err));
+      const l = docLoi(err);
+      const so = (l.fields?.so_ho_so as number[] | undefined)?.[0];
+      setThongBao(l.code === 'quy_trinh_da_duoc_dung' && so ? t('quyTrinh.xoaKhongDuoc', { so }) : loi(err));
+      ds.tai();
+    } finally {
+      setDangThaoTac(false);
     }
   };
 
@@ -285,6 +587,7 @@ export default function QuyTrinhPage() {
           <label className="flex flex-col gap-1.5 text-xs font-semibold text-secondary">
             <span><i className="fa-solid fa-filter text-primary text-xs mr-1" aria-hidden="true" />{t('danhSach.trangThai')}</span>
             <select className={`${LOP_O_NHAP} w-auto`} value={locTrangThai} onChange={(e) => setLocTrangThai(e.target.value)}>
+              <option value="CON_DUNG">{t('quyTrinh.conDung')}</option>
               <option value="">{t('danhSach.tatCa')}</option>
               {['NHAP', 'HOAT_DONG', 'NGUNG'].map((s) => <option key={s} value={s}>{t(`trangThai.${s}`)}</option>)}
             </select>
@@ -307,43 +610,49 @@ export default function QuyTrinhPage() {
       {ds.duLieu && hienThi.length === 0 && (
         <Rong icon="fa-diagram-project">{t(ds.duLieu.length ? 'quyTrinh.khongKhopLoc' : 'quyTrinh.rong')}</Rong>
       )}
-      <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+      <div className="grid gap-4 grid-cols-[repeat(auto-fill,minmax(min(100%,22rem),1fr))]">
         {hienThi.map((q) => (
-          <Card key={q.id} className="p-4 sm:p-5 space-y-3">
+          <Card key={q.id} className="flex flex-col gap-3 p-4 sm:p-5">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xl font-bold text-main">{q.ten_quy_trinh}</span>
+              <span className="min-w-0 break-words text-lg font-bold text-main">{q.ten_quy_trinh}</span>
               <div className="flex items-center gap-1.5">
                 <TrangThaiBadge trangThai={q.trang_thai} />
                 <Badge variant="info" size="sm">{t(`phamVi.${q.pham_vi}`)}{q.don_vi_ap_dung_id ? ` · ${q.ten_don_vi_ap_dung ?? `#${q.don_vi_ap_dung_id}`}` : ''}</Badge>
               </div>
             </div>
-            <div className="text-xs text-muted font-mono">{q.ma_quy_trinh} · {t('quyTrinh.phienBan', { so: q.phien_ban })}</div>
+            <div className="text-xs text-muted font-mono break-all">{q.ma_quy_trinh} · {t('quyTrinh.phienBan', { so: q.phien_ban })}</div>
             <ol className="space-y-1 text-sm">
               {q.cap_ky.map((c) => (
-                <li key={c.id} className="text-main">
+                <li key={c.id} className="break-words text-main">
                   {c.cap_ky}. {c.ten_cap_ky}:{' '}
                   <span className="text-secondary">
-                    {c.nguoi_ky.map((n) => `${n.ten_nguoi_ky || t('tao.theoChucVu')} (${t(`vaiTro.${n.vai_tro_ky}`)})`).join(', ')}
+                    {c.nguoi_ky.map((n) => `${tenNguoiKyCauHinh(n, t)} (${t(`vaiTro.${n.vai_tro_ky}`)})`).join(', ')}
                   </span>
                 </li>
               ))}
             </ol>
-            <div className="flex flex-wrap gap-2">
+            {/* mt-auto: hàng nút nằm cùng đáy giữa các thẻ cao khác nhau */}
+            <div className="mt-auto flex flex-wrap gap-2 pt-1">
               <Button size="sm" variant="ghost" icon="fa-eye" onClick={() => setXemId(q.id)}>{t('quyTrinh.xemChiTiet')}</Button>
               {quanLy && q.trang_thai === 'NHAP' && (
                 <>
-                  <Button size="sm" icon="fa-play" onClick={() => thaoTac(q, 'kich-hoat')}>{t('quyTrinh.kichHoat')}</Button>
+                  <Button size="sm" icon="fa-play" disabled={dangThaoTac} onClick={() => thaoTac(q, 'kich-hoat')}>{t('quyTrinh.kichHoat')}</Button>
                   <Button size="sm" variant="secondary" icon="fa-pen" onClick={() => setDangSua(q)}>{t('quyTrinh.sua')}</Button>
-                  <Button size="sm" variant="ghost" icon="fa-trash" onClick={() => setCanXoa(q)}>{t('quyTrinh.xoa')}</Button>
                 </>
               )}
               {quanLy && (
                 <>
-                {q.trang_thai === 'HOAT_DONG' && <Button size="sm" variant="secondary" icon="fa-stop" onClick={() => thaoTac(q, 'ngung')}>{t('quyTrinh.ngung')}</Button>}
-                <Button size="sm" variant="ghost" icon="fa-copy" onClick={() => thaoTac(q, 'nhan-ban')}>{t('quyTrinh.nhanBan')}</Button>
+                {q.trang_thai === 'HOAT_DONG' && <Button size="sm" variant="secondary" icon="fa-stop" disabled={dangThaoTac} onClick={() => setCanNgung(q)}>{t('quyTrinh.ngung')}</Button>}
+                <Button size="sm" variant="ghost" icon="fa-copy" disabled={dangThaoTac} onClick={() => thaoTac(q, 'nhan-ban')}>{t('quyTrinh.nhanBan')}</Button>
+                <Button size="sm" variant="ghost" icon="fa-trash" disabled={q.so_ho_so > 0}
+                  title={q.so_ho_so > 0 ? t('quyTrinh.xoaKhongDuoc', { so: q.so_ho_so }) : undefined}
+                  onClick={() => setCanXoa(q)}>{t('quyTrinh.xoa')}</Button>
                 </>
               )}
             </div>
+            {quanLy && q.so_ho_so > 0 && (
+              <p className="text-xs text-muted"><i className="fa-solid fa-lock mr-1" aria-hidden="true" />{t('quyTrinh.xoaKhongDuoc', { so: q.so_ho_so })}</p>
+            )}
           </Card>
         ))}
       </div>
@@ -351,14 +660,37 @@ export default function QuyTrinhPage() {
       {dangSua && (
         <FormTao key={dangSua.id} mo banDau={dangSua} onDong={() => setDangSua(null)} onXong={() => { setDangSua(null); ds.tai(); }} />
       )}
-      {xemId !== null && <ChiTietQuyTrinh id={xemId} onDong={() => setXemId(null)} />}
+      {xemId !== null && (
+        <ChiTietQuyTrinh
+          id={xemId}
+          quanLy={quanLy}
+          onDong={() => setXemId(null)}
+          onSua={(q) => {
+            setXemId(null);
+            setDangSua(q);
+          }}
+          onNhanBan={(q) => {
+            setXemId(null);
+            thaoTac(q, 'nhan-ban');
+          }}
+        />
+      )}
+      {canNgung && (
+        <HopThoai moTieuDe={t('quyTrinh.ngung')} mo onDong={() => setCanNgung(null)}
+          chanDuoi={<>
+            <Button variant="secondary" onClick={() => setCanNgung(null)}>{t('chung.huyBo')}</Button>
+            <Button icon="fa-stop" onClick={() => { const q = canNgung; setCanNgung(null); thaoTac(q, 'ngung'); }}>{t('chung.xacNhan')}</Button>
+          </>}>
+          <p className="text-sm text-main">{t('quyTrinh.xacNhanNgung', { ten: canNgung.ten_quy_trinh, phienBan: canNgung.phien_ban })}</p>
+        </HopThoai>
+      )}
       {canXoa && (
         <HopThoai moTieuDe={t('quyTrinh.xoa')} mo onDong={() => setCanXoa(null)}
           chanDuoi={<>
             <Button variant="secondary" onClick={() => setCanXoa(null)}>{t('chung.huyBo')}</Button>
             <Button icon="fa-trash" onClick={() => xoa(canXoa)}>{t('chung.xacNhan')}</Button>
           </>}>
-          <p className="text-sm text-main">{t('quyTrinh.xacNhanXoa', { ten: canXoa.ten_quy_trinh })}</p>
+          <p className="text-sm text-main">{t('quyTrinh.xacNhanXoa', { ten: canXoa.ten_quy_trinh, phienBan: canXoa.phien_ban })}</p>
         </HopThoai>
       )}
     </div>

@@ -5,10 +5,11 @@
  */
 import { useEffect, useState } from 'react';
 import { Button, Card } from '@components/common';
-import { DangTai, LoiTai, ThongBao, TrangThaiBadge, TruongNhap } from '@components/signing/ChungUI';
+import type { KhoaKy } from '@lib/signing/types';
+import { DangTai, HopThoai, LoiTai, OChonTep, ThongBao, TrangThaiBadge, TruongNhap } from '@components/signing/ChungUI';
 import { signingApi } from '@lib/signing/api';
-import { LOP_O_NHAP } from '@lib/signing/dinhDang';
-import { useTai, useToi } from '@lib/signing/hooks';
+import { GIOI_HAN, LOP_O_NHAP } from '@lib/signing/dinhDang';
+import { coQuyen, useTai, useToi } from '@lib/signing/hooks';
 import { useSigningT } from '@lib/signing/i18n';
 import { docFileKhoaTuTep, DUOI_FILE_KHOA, taiXuongFileKhoa } from '@lib/signing/fileKhoa';
 import { hoTroEd25519, kiemTraPin, layBanBoc } from '@lib/signing/khoaKy';
@@ -33,6 +34,7 @@ export default function KhoaPage() {
   const [pin2, setPin2] = useState('');
   const [pinCu, setPinCu] = useState('');
   const [lyDo, setLyDo] = useState('');
+  const [canThuHoi, setCanThuHoi] = useState<KhoaKy | null>(null);
   const [dangLam, setDangLam] = useState(false);
   const [thongBao, setThongBao] = useState<{ loai: 'loi' | 'thanh_cong'; noi_dung: string } | null>(null);
   const [lanTaiBanBoc, setLanTaiBanBoc] = useState(0);
@@ -75,6 +77,8 @@ export default function KhoaPage() {
   if (ds.dangTai && !ds.duLieu) return <DangTai />;
   if (ds.loi) return <LoiTai thongBao={loi(ds.loi)} onThuLai={ds.tai} />;
   if (hoTro === false) return <ThongBao>{t('khoa.khongHoTro')}</ThongBao>;
+  // Vào thẳng đường dẫn khi chưa có quyền ký: không cho nhập PIN rồi mới báo 403
+  if (!coQuyen(toi, 'sign_trinhky')) return <ThongBao loai="thong_tin">{t('khoa.khongCoQuyen')}</ThongBao>;
 
   const sanSang = hoatDong && coBanBoc;
   const taiFile = () => lam(async () => {
@@ -87,7 +91,7 @@ export default function KhoaPage() {
   }, t('khoa.daNhapFile'));
   return (
     <div className="grid gap-4 lg:grid-cols-2">
-      <Card className="p-4 space-y-3">
+      <Card className="min-w-0 p-4 space-y-3">
         <p className="text-sm text-secondary">{t('khoa.gioiThieu')}</p>
         {sanSang ? <ThongBao loai="thanh_cong">{t('khoa.sanSang')}</ThongBao>
           : hoatDong ? <ThongBao loai="canh_bao">{t('khoa.khacThietBi')}</ThongBao>
@@ -105,8 +109,7 @@ export default function KhoaPage() {
               }, t('khoa.daTaoVaTaiFile'))}>{t('khoa.taoKhoa')}</Button>
             {hoatDong && (
               <TruongNhap nhan={t('khoa.nhapFile')} ghiChu={t('khoa.nhapFileGhiChu')}>
-                <input className={LOP_O_NHAP} type="file" accept={`${DUOI_FILE_KHOA},application/json`}
-                  aria-label={t('khoa.nhapFile')} onChange={(e) => nhapFile(e.target.files?.[0])} />
+                <OChonTep accept={`${DUOI_FILE_KHOA},application/json`} nhan={t('khoa.nhapFile')} onChon={nhapFile} />
               </TruongNhap>
             )}
           </div>
@@ -134,11 +137,11 @@ export default function KhoaPage() {
         )}
         {thongBao && <ThongBao loai={thongBao.loai}>{thongBao.noi_dung}</ThongBao>}
       </Card>
-      <Card className="p-4 space-y-3">
+      <Card className="min-w-0 p-4 space-y-3">
         {(ds.duLieu || []).map((k) => (
           <div key={k.id} className="space-y-1 rounded-lg border border-border-subtle p-3 text-sm">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-base font-bold text-main truncate" title={k.ma_khoa}>{k.ma_khoa || `#${k.id}`}</span>
+              <span className="min-w-0 text-base font-bold text-main truncate" title={k.ma_khoa}>{k.ma_khoa || `#${k.id}`}</span>
               <TrangThaiBadge trangThai={k.trang_thai} />
             </div>
             <div className="text-xs text-secondary">
@@ -146,14 +149,29 @@ export default function KhoaPage() {
             </div>
             {k.trang_thai === 'HOAT_DONG' && (
               <div className="flex gap-2 pt-1">
-                <input className={LOP_O_NHAP} placeholder={t('khoa.lyDoThuHoi')} value={lyDo} onChange={(e) => setLyDo(e.target.value)} />
+                <input className={LOP_O_NHAP} placeholder={t('khoa.lyDoThuHoi')} aria-label={t('khoa.lyDoThuHoi')}
+                  maxLength={GIOI_HAN.lyDo} value={lyDo} onChange={(e) => setLyDo(e.target.value)} />
                 <Button size="sm" variant="danger" icon="fa-ban" disabled={!lyDo.trim()} isLoading={dangLam}
-                  onClick={() => lam(() => signingApi.thuHoiKhoa(k.id, lyDo))}>{t('khoa.thuHoi')}</Button>
+                  onClick={() => setCanThuHoi(k)}>{t('khoa.thuHoi')}</Button>
               </div>
             )}
           </div>
         ))}
       </Card>
+      {canThuHoi && (
+        <HopThoai moTieuDe={t('khoa.thuHoi')} mo onDong={() => setCanThuHoi(null)} dangXuLy={dangLam}
+          chanDuoi={<>
+            <Button variant="secondary" onClick={() => setCanThuHoi(null)}>{t('chung.huyBo')}</Button>
+            <Button variant="danger" icon="fa-ban" isLoading={dangLam}
+              onClick={async () => {
+                await lam(() => signingApi.thuHoiKhoa(canThuHoi.id, lyDo.trim()));
+                setCanThuHoi(null);
+              }}>{t('khoa.thuHoi')}</Button>
+          </>}>
+          <p className="text-sm text-main">{t('khoa.xacNhanThuHoi', { ma: canThuHoi.ma_khoa || `#${canThuHoi.id}` })}</p>
+          <p className="text-sm text-secondary">{t('khoa.lyDoThuHoi')}: {lyDo.trim()}</p>
+        </HopThoai>
+      )}
     </div>
   );
 }

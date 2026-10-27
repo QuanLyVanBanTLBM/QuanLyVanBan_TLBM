@@ -126,7 +126,7 @@ class LuongKyTests(KyBase):
         chu_ky = SigningSignature.objects.filter(luot_trinh__trinh_ky_id=self.pk)
         self.assertEqual(chu_ky.count(), 3)
         self.assertTrue(all(c.trang_thai_xac_minh == "HOP_LE" and c.hash_tai_lieu == HASH for c in chu_ky))
-        hanh_dong = list(SigningAuditLog.objects.filter(trinh_ky_id=self.pk).values_list("hanh_dong", flat=True))
+        hanh_dong = list(SigningAuditLog.objects.filter(trinh_ky_id=self.pk).order_by("id").values_list("hanh_dong", flat=True))
         self.assertEqual(hanh_dong.count("KY"), 3)
         self.assertEqual(hanh_dong[-2:], ["HOAN_THANH_TRINH_KY", "CHOT_BANG_CHUNG"])  # tệp PDF sinh sau commit
 

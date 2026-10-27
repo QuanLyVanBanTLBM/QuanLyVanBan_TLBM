@@ -98,6 +98,10 @@ class TaiLieuChiTietSerializer(serializers.ModelSerializer):
     nguoi_tao_name = serializers.SerializerMethodField()
     attachments = ChiTietTaiLieuAttachmentSerializer(many=True, read_only=True)
     file_dinh_kem = serializers.FileField(required=False, allow_null=True)
+    ngay_het_hieu_luc = serializers.DateField(required=False, allow_null=True)
+    link_thay_the = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    is_expired = serializers.BooleanField(read_only=True)
+    effective_hieu_luc = serializers.CharField(read_only=True)
 
     class Meta:
         model = TaiLieuChiTiet
@@ -112,6 +116,8 @@ class TaiLieuChiTietSerializer(serializers.ModelSerializer):
             'ngay_dang',
             'noi_ban_hanh',
             'hieu_luc',
+            'effective_hieu_luc',
+            'is_expired',
             'ngay_het_hieu_luc',
             'link_thay_the',
             'ghi_chu',
@@ -124,7 +130,18 @@ class TaiLieuChiTietSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at',
         ]
-        read_only_fields = ['id', 'nguoi_tao', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'nguoi_tao', 'created_at', 'updated_at', 'is_expired', 'effective_hieu_luc']
+
+    def to_internal_value(self, data):
+        if hasattr(data, '_mutable') and not data._mutable:
+            data = data.copy()
+        elif isinstance(data, dict):
+            data = data.copy()
+        if data.get('ngay_het_hieu_luc') == '':
+            data['ngay_het_hieu_luc'] = None
+        if data.get('link_thay_the') is None:
+            data['link_thay_the'] = ''
+        return super().to_internal_value(data)
 
     def get_loai_tai_lieu_names(self, obj):
         return [loai.ten_loai for loai in obj.loai_tai_lieu.all()]
@@ -140,12 +157,25 @@ class TaiLieuChiTietSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
+        ngay_dang = attrs.get('ngay_dang') or (self.instance.ngay_dang if self.instance else None)
+        ngay_het_hieu_luc = attrs.get('ngay_het_hieu_luc') if 'ngay_het_hieu_luc' in attrs else (self.instance.ngay_het_hieu_luc if self.instance else None)
+        if ngay_het_hieu_luc and ngay_dang and ngay_het_hieu_luc < ngay_dang:
+            raise serializers.ValidationError({
+                'ngay_het_hieu_luc': 'Ngày hết hiệu lực không thể trước ngày đăng / ngày ban hành.'
+            })
+
         hieu_luc = attrs.get('hieu_luc') or (self.instance.hieu_luc if self.instance else 'CON_HIEU_LUC')
         link_thay_the = attrs.get('link_thay_the') if 'link_thay_the' in attrs else (self.instance.link_thay_the if self.instance else '')
         if hieu_luc == 'HET_VA_THAY_THE' and not (link_thay_the and link_thay_the.strip()):
             raise serializers.ValidationError({
                 'link_thay_the': 'Vui lòng cung cấp link văn bản thay thế khi chọn trạng thái Hết hiệu lực và thay thế.'
             })
+        if hieu_luc == 'CON_HIEU_LUC':
+            attrs['link_thay_the'] = ''
+            if 'ngay_het_hieu_luc' not in attrs:
+                attrs['ngay_het_hieu_luc'] = None
+        elif hieu_luc in ('CON_HIEU_LUC_1_PHAN', 'HET_HIEU_LUC'):
+            attrs['link_thay_the'] = ''
         return attrs
 
     def to_representation(self, instance):
@@ -160,6 +190,9 @@ class TaiLieuChiTietSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         loai_tai_lieu = validated_data.pop('loai_tai_lieu', [])
         file_dinh_kem = validated_data.pop('file_dinh_kem', None)
+        if not validated_data.get('ngay_dang'):
+            from django.utils import timezone
+            validated_data['ngay_dang'] = timezone.localdate()
         instance = TaiLieuChiTiet.objects.create(**validated_data)
         if loai_tai_lieu:
             instance.loai_tai_lieu.set(loai_tai_lieu)
@@ -189,6 +222,15 @@ class TaiLieuChiTietSerializer(serializers.ModelSerializer):
         loai_tai_lieu = validated_data.pop('loai_tai_lieu', None)
         file_dinh_kem = validated_data.pop('file_dinh_kem', None)
         validated_data.pop('nguoi_tao', None)
+        validated_data.pop('ngay_dang', None)  # Ngày đăng cố định theo ngày tạo, không cho phép chỉnh sửa
+
+        hieu_luc = validated_data.get('hieu_luc', instance.hieu_luc)
+        if hieu_luc == 'CON_HIEU_LUC':
+            validated_data['ngay_het_hieu_luc'] = None
+            validated_data['link_thay_the'] = ''
+        elif hieu_luc in ('CON_HIEU_LUC_1_PHAN', 'HET_HIEU_LUC'):
+            validated_data['link_thay_the'] = ''
+
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()

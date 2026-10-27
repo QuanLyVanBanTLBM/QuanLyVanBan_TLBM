@@ -813,6 +813,54 @@ class MeetingBookingAPITestCase(APITestCase):
         self.assertNotIn("[Lý do hủy]:", self.booking1.purpose)
         self.assertIn("Thay đổi kế hoạch nội bộ", self.booking1.purpose)
 
+    def test_cancel_booking_without_purpose_formats_separator(self):
+        """QA #4: Hủy lịch không có ghi chú ban đầu phải luôn lưu dạng \n---\n<reason> để frontend phân tách."""
+        self.client.force_authenticate(user=self.user1)
+        booking = MeetingBooking.objects.create(
+            room=self.room1,
+            organizer=self.user1,
+            title="Lịch không có ghi chú ban đầu",
+            date=self.booking_date,
+            start_time=time(11, 0),
+            end_time=time(12, 0),
+            attendees_count=5,
+            purpose="",
+            trang_thai=MeetingBooking.Status.CONFIRMED,
+        )
+        res = self.client.post(
+            f"/api/meeting-bookings/{booking.id}/cancel/",
+            {"cancel_reason": "Giải phóng phòng để bảo trì"},
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        booking.refresh_from_db()
+        self.assertEqual(booking.trang_thai, MeetingBooking.Status.CANCELLED)
+        self.assertEqual(booking.purpose, "\n---\nGiải phóng phòng để bảo trì")
+        self.assertEqual(res.data["booking"]["purpose"], "\n---\nGiải phóng phòng để bảo trì")
+
+    def test_cancel_booking_with_initial_purpose_preserves_both(self):
+        """QA #4: Hủy lịch có ghi chú ban đầu phải giữ nguyên cả purpose và lý do hủy có phân tách."""
+        self.client.force_authenticate(user=self.user1)
+        booking = MeetingBooking.objects.create(
+            room=self.room1,
+            organizer=self.user1,
+            title="Lịch có ghi chú ban đầu",
+            date=self.booking_date,
+            start_time=time(13, 0),
+            end_time=time(14, 0),
+            attendees_count=5,
+            purpose="Chuẩn bị tài liệu hội thảo",
+            trang_thai=MeetingBooking.Status.CONFIRMED,
+        )
+        res = self.client.post(
+            f"/api/meeting-bookings/{booking.id}/cancel/",
+            {"cancel_reason": "Dời sang tuần sau"},
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        booking.refresh_from_db()
+        self.assertEqual(booking.trang_thai, MeetingBooking.Status.CANCELLED)
+        self.assertEqual(booking.purpose, "Chuẩn bị tài liệu hội thảo\n---\nDời sang tuần sau")
+        self.assertEqual(res.data["booking"]["purpose"], "Chuẩn bị tài liệu hội thảo\n---\nDời sang tuần sau")
+
     def test_room_name_too_long_error_key(self):
         """Tạo phòng họp có tên > 100 ký tự trả về 400 và key roomNameTooLong."""
         self.client.force_authenticate(user=self.admin_user)

@@ -317,6 +317,18 @@
   box-shadow: var(--shadow-clay-inset), 0 0 0 3px var(--color-primary-subtle) !important;
 }
 
+/* Chuẩn hóa giao diện Option của Select trên mọi thiết bị di động & theme */
+select option {
+  background-color: var(--bg-surface, #ffffff);
+  color: var(--text-main, #1e293b);
+  padding: 8px 12px;
+}
+
+[data-theme='dark'] select option {
+  background-color: var(--bg-surface, #1e293b);
+  color: var(--text-main, #f8fafc);
+}
+
 /* Bảng dữ liệu Claymorphism */
 [data-ui-style='modern'] th {
   background: var(--bg-surface-hover) !important;

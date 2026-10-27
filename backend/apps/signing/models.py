@@ -155,8 +155,12 @@ class SigningProcessStepSigner(models.Model):
 
 
 class SigningRequest(models.Model):
-    document_type = models.CharField(max_length=20, choices=enums.LoaiVanBan.choices)
-    van_ban_id = models.BigIntegerField(db_column="document_id")
+    # Văn bản trình ký: gắn văn bản đi (document_type, van_ban_id) hoặc văn bản khác nhập tay (số hiệu, trích yếu);
+    # tệp PDF trình ký luôn tải lên riêng (#274).
+    document_type = models.CharField(max_length=20, choices=enums.LoaiVanBan.choices, null=True, blank=True)
+    van_ban_id = models.BigIntegerField(db_column="document_id", null=True, blank=True)
+    so_hieu_van_ban = models.CharField(max_length=100, blank=True, db_default="", default="")
+    trich_yeu_van_ban = models.TextField(blank=True, db_default="", default="")
     # Bản sao từ lượt trình hiện hành; nguồn sự thật là SigningAttempt.
     phien_ban_van_ban = models.CharField(max_length=50, null=True, blank=True)
     vi_tri_luu_tep = models.CharField(max_length=500, null=True, blank=True)
@@ -193,6 +197,11 @@ class SigningRequest(models.Model):
         constraints = [
             models.CheckConstraint(
                 condition=sha256_or_null("ma_bam_tai_lieu"), name="chk_signing_request_ma_bam_sha256"
+            ),
+            models.CheckConstraint(
+                condition=(Q(document_type__isnull=False) & Q(van_ban_id__isnull=False))
+                | (Q(document_type__isnull=True) & Q(van_ban_id__isnull=True) & ~Q(trich_yeu_van_ban="")),
+                name="chk_signing_request_van_ban",
             ),
         ]
 

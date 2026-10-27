@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import React from 'react';
 import DocumentDetailModal from './DocumentDetailModal';
 import DocumentViewersModal from './DocumentViewersModal';
 import DocumentFormModal, { InitialDocType } from './DocumentFormModal';
 import apiClient from '@lib/apiClient';
+import { setLanguage } from '@i18n/translate';
 
 vi.mock('@lib/apiClient', () => ({
   default: {
@@ -551,6 +552,29 @@ describe('DocumentFormModal', () => {
       expect(screen.getByTitle('Bỏ chọn 1')).toBeInTheDocument();
       expect(screen.getAllByText(/Sở GD&ĐT/).length).toBeGreaterThan(0);
     });
+  });
+
+  it('hỗ trợ hiển thị đa ngôn ngữ tiếng Anh khi chuyển đổi ngôn ngữ', async () => {
+    act(() => {
+      setLanguage('en');
+    });
+    try {
+      render(<DocumentFormModal open={true} onClose={vi.fn()} />);
+      expect(screen.getByText('Add New Incoming Document')).toBeInTheDocument();
+      expect(screen.getByText('1. Receipt & Logging')).toBeInTheDocument();
+      expect(screen.getByText('2. Issuing Source & Content')).toBeInTheDocument();
+      expect(screen.getByText('3. Approval & Legal Validity')).toBeInTheDocument();
+      expect(screen.getByText('4. Distribution & Attachments')).toBeInTheDocument();
+      expect(screen.getByText('Save Document')).toBeInTheDocument();
+      expect(screen.getByText('Cancel')).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByText('-- Select receiving unit --')).toBeInTheDocument();
+      });
+    } finally {
+      act(() => {
+        setLanguage('vi');
+      });
+    }
   });
 });
 

@@ -262,7 +262,7 @@ export const Select: React.FC<SelectProps> = ({
       {/* Menu Xổ Xuống (Dropdown Popover) */}
       {isOpen && (
         <div
-          className="dropdown-animate absolute left-0 top-full mt-1.5 w-full min-w-[220px] rounded-xl bg-surface-elevated border border-border-subtle shadow-2xl p-1.5 z-[10002] flex flex-col"
+          className="dropdown-animate absolute left-0 right-0 top-full mt-1.5 w-full max-w-full sm:min-w-[220px] rounded-xl bg-surface-elevated border border-border-subtle shadow-2xl p-1.5 z-[10002] flex flex-col box-border"
           role="listbox"
         >
           {/* Ô Tìm Kiếm Nhanh */}

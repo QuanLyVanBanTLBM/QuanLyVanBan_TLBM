@@ -148,7 +148,7 @@ export default function XemPdf({ duLieu, khung = [], khungDangDat, onDat, onKeo,
   }, []);
 
   return (
-    <div ref={khungChua} className="space-y-4">
+    <div ref={khungChua} className="mx-auto w-full max-w-3xl space-y-4">
       {loi && <ThongBao>{t('loi.khong_hien_thi_duoc_pdf')}</ThongBao>}
       {!pdf && !loi && <DangTai />}
       {pdf && Array.from({ length: pdf.numPages }, (_, i) => i + 1).map((so) => (

@@ -192,6 +192,25 @@ class TaiLieuChiTiet(models.Model):
         att = self.attachments.filter(is_deleted=False).last()
         return att.path if att else ""
 
+    @property
+    def is_expired(self):
+        from django.utils import timezone
+        today = timezone.localdate()
+        if self.ngay_het_hieu_luc:
+            return self.ngay_het_hieu_luc <= today
+        return self.hieu_luc in ['HET_HIEU_LUC', 'HET_VA_THAY_THE']
+
+    @property
+    def effective_hieu_luc(self):
+        from django.utils import timezone
+        today = timezone.localdate()
+        if self.ngay_het_hieu_luc:
+            if self.ngay_het_hieu_luc > today:
+                return 'CON_HIEU_LUC_1_PHAN' if self.hieu_luc == 'CON_HIEU_LUC_1_PHAN' else 'CON_HIEU_LUC'
+            else:
+                return 'HET_VA_THAY_THE' if (self.hieu_luc == 'HET_VA_THAY_THE' or self.link_thay_the) else 'HET_HIEU_LUC'
+        return self.hieu_luc
+
     def __str__(self):
         return f"{self.tieu_de} ({self.get_hieu_luc_display()})"
 
