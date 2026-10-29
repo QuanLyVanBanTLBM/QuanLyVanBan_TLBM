@@ -46,16 +46,10 @@ function chucDanh(u: CanBo, khongCo: string): string {
 
 interface ChonNguoiDungProps {
   onChon: (u: CanBo) => void;
-  chucVuLocId?: number | null;
-  chucVuLocTen?: string | null;
 }
 
-/** Chọn cán bộ từ danh bạ CBNV (hỗ trợ tìm kiếm theo họ tên, username, chức vụ, đơn vị không dấu). */
-function ChonNguoiDung({
-  onChon,
-  chucVuLocId,
-  chucVuLocTen,
-}: ChonNguoiDungProps) {
+/** Chọn cán bộ từ danh bạ CBNV (hỗ trợ tìm kiếm theo họ tên, username, chức vụ, đơn vị không dấu; hiển thị đầy đủ 83+ cán bộ). */
+function ChonNguoiDung({ onChon }: ChonNguoiDungProps) {
   const { t, loi } = useSigningT();
   const [q, setQ] = useState('');
   const [mo, setMo] = useState(false);
@@ -83,7 +77,7 @@ function ChonNguoiDung({
 
   const tuKhoa = boDau(q.trim());
 
-  // Danh sách cán bộ gợi ý
+  // Danh sách cán bộ gợi ý: luôn hiển thị đầy đủ toàn bộ cán bộ nhân viên trong hệ thống
   const goiYCanBo = useMemo(() => {
     if (!danhSach.length) return [];
     if (tuKhoa) {
@@ -91,19 +85,10 @@ function ChonNguoiDung({
         .filter((u) => boDau([u.ho_ten, u.username, u.chuc_vu_ten, u.don_vi_ten].join(' ')).includes(tuKhoa))
         .slice(0, TOI_DA_GOI_Y);
     }
-    if (chucVuLocId != null) {
-      return danhSach.filter((u) => {
-        const khopId = u.chuc_vu_id === chucVuLocId;
-        const khopTen = chucVuLocTen ? boDau(u.chuc_vu_ten) === boDau(chucVuLocTen) : false;
-        return khopId || khopTen;
-      }).slice(0, TOI_DA_GOI_Y);
-    }
     return danhSach.slice(0, TOI_DA_GOI_Y);
-  }, [danhSach, tuKhoa, chucVuLocId, chucVuLocTen]);
+  }, [danhSach, tuKhoa]);
 
-  const placeholder = chucVuLocTen
-    ? t('quyTrinh.timCanBoTheoChucVu', { chucVu: chucVuLocTen })
-    : t('quyTrinh.timNguoiDung');
+  const placeholder = t('quyTrinh.timNguoiDung');
 
   return (
     <div ref={hopRef} className="relative space-y-1">
@@ -138,10 +123,6 @@ function ChonNguoiDung({
       )}
       {mo && goiYCanBo.length > 0 && (
         <div className="max-h-72 overflow-y-auto rounded-lg border border-border-subtle bg-surface shadow-md z-50 relative">
-          <div className="px-3 py-1.5 text-2xs font-semibold text-secondary uppercase bg-surface-subtle flex items-center gap-1.5 border-b border-border-subtle select-none">
-            <i className="fa-solid fa-users text-2xs text-secondary" aria-hidden="true" />
-            <span>{t('quyTrinh.nhomTheoCanBo')} ({goiYCanBo.length})</span>
-          </div>
           <ul className="divide-y divide-border-subtle" role="listbox">
             {goiYCanBo.map((u) => (
               <li key={`cb-${u.id}`}>
@@ -174,9 +155,7 @@ function ChonNguoiDung({
       )}
       {mo && !ds.dangTai && !!ds.duLieu && goiYCanBo.length === 0 && (
         <p className="rounded-lg border border-border-subtle bg-surface p-2.5 text-xs text-muted shadow-sm">
-          {chucVuLocTen
-            ? t('quyTrinh.khongThayCanBoChucVu', { chucVu: chucVuLocTen })
-            : t('quyTrinh.khongThayNguoiDung')}
+          {t('quyTrinh.khongThayNguoiDung')}
         </p>
       )}
     </div>
@@ -313,18 +292,12 @@ function ThemNguoiKyCap({
         )}
       </div>
 
-      {/* 2. Chọn cán bộ đích danh từ danh bạ CBNV (tự động lọc theo chức vụ nếu đã chọn ở trên) */}
+      {/* 2. Chọn cán bộ đích danh từ danh bạ CBNV (luôn hiển thị đầy đủ toàn bộ cán bộ nhân viên) */}
       <div className="space-y-1">
         <span className="text-xs font-semibold text-secondary">
-          {chon
-            ? t('quyTrinh.chonCanBoTheoChucVu', { chucVu: chon.name })
-            : t('quyTrinh.chonCanBoDichDanh')}
+          {t('quyTrinh.chonCanBoDichDanh')}
         </span>
-        <ChonNguoiDung
-          chucVuLocId={chon?.id ?? null}
-          chucVuLocTen={chon?.name ?? null}
-          onChon={onChonCanBo}
-        />
+        <ChonNguoiDung onChon={onChonCanBo} />
       </div>
     </div>
   );
