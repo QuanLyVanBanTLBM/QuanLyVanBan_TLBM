@@ -142,7 +142,6 @@ export default function XemPdf({ duLieu, khung = [], khungDangDat, onDat, onKeo,
 
   useEffect(() => {
     let huy = false;
-    setMo(null);
     moPdf(duLieu)
       .then((tai_lieu) => {
         if (huy) return;
@@ -172,7 +171,7 @@ export default function XemPdf({ duLieu, khung = [], khungDangDat, onDat, onKeo,
     <div ref={khungChua} className="mx-auto w-full max-w-3xl space-y-4">
       {loi && <div className="space-y-2">
         <ThongBao>{t(loi)}</ThongBao>
-        <Button size="sm" variant="secondary" icon="fa-rotate-right" onClick={() => setLanThu((n) => n + 1)}>
+        <Button size="sm" variant="secondary" icon="fa-rotate-right" onClick={() => { setMo(null); setLanThu((n) => n + 1); }}>
           {t('chung.thuLai')}
         </Button>
       </div>}
