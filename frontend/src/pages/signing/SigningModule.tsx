@@ -3,7 +3,7 @@
  * Tab chỉ là bộ lọc hiển thị; quyền đọc/ghi do server kiểm ở từng API.
  */
 import { Component, type ErrorInfo, lazy, type ReactNode, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@components/common';
 import { DangTai, KhongTimThay, LoiTai } from '@components/signing/ChungUI';
 import { signingApi } from '@lib/signing/api';
@@ -17,7 +17,6 @@ const ChiTietPage = lazy(() => import('./ChiTietPage'));
 const QuyTrinhPage = lazy(() => import('./QuyTrinhPage'));
 const KhoaPage = lazy(() => import('./KhoaPage'));
 const ThongBaoPage = lazy(() => import('./ThongBaoPage'));
-const TaiLieuPage = lazy(() => import('./TaiLieuPage'));
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -89,7 +88,6 @@ export default function SigningModule() {
     { den: '/approvals/tat-ca', nhan: t('nav.tatCa'), icon: 'fa-folder-open' },
   ];
   const tabPhu = [
-    { den: '/approvals/tai-lieu', nhan: t('nav.taiLieu'), icon: 'fa-folder-tree' },
     { den: '/approvals/thong-bao', nhan: t('nav.thongBao'), icon: 'fa-bell', so: soMoi },
     ...(coQuyen(toi.duLieu, 'manage_signing_process') || coQuyen(toi.duLieu, 'view_trinhky')
       ? [{ den: '/approvals/quy-trinh', nhan: t('nav.quyTrinh'), icon: 'fa-diagram-project' }] : []),
@@ -200,7 +198,7 @@ export default function SigningModule() {
                 <Route path="quy-trinh" element={<QuyTrinhPage />} />
                 <Route path="khoa" element={<KhoaPage />} />
                 <Route path="thong-bao" element={<ThongBaoPage />} />
-                <Route path="tai-lieu" element={<TaiLieuPage />} />
+                <Route path="tai-lieu" element={<Navigate to="/approvals/tat-ca?che_do=tep" replace />} />
                 <Route path=":id" element={<ChiTietPage />} />
                 <Route path="*" element={<KhongTimThay thongBao={t('chung.trangKhongTonTai')} />} />
               </Routes>

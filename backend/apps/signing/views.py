@@ -789,7 +789,10 @@ class ChucVuView(SigningAPIView):
         yeu_cau_quyen(request.user, QUAN_LY_QUY_TRINH)
         from accounts.models import Position
         positions = Position.objects.filter(is_public=True).order_by("display_order", "name", "id")
-        return Response([{"id": p.pk, "ten": p.name, "stt": p.display_order} for p in positions])
+        return Response([
+            {"id": p.pk, "ten": p.name, "name": p.name, "stt": p.display_order, "display_order": p.display_order}
+            for p in positions
+        ])
 
 
 class CauHinhUyQuyenView(SigningAPIView):
@@ -836,7 +839,7 @@ class NguoiDungView(SigningAPIView):
     hiển thị; danh bạ đầy đủ do Nhóm 7 cung cấp.
     """
 
-    TOI_DA = 20
+    TOI_DA = 500
 
     def get(self, request):
         uy_quyen = request.query_params.get("muc_dich") == "uy_quyen"

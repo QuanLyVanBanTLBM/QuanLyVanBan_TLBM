@@ -77,6 +77,8 @@
     "PHONG_BAN": "Department"
   },
   "danhSach": {
+    "cheDoHoSo": "Signing dossiers",
+    "cheDoTep": "Document files",
     "rongCanToiKy": "Nothing is waiting for your signature.",
     "rongToiGui": "You have not submitted any request yet.",
     "rongTatCa": "There are no documents you can view.",
@@ -167,7 +169,7 @@
     "chonTepDinhKem": "— Select a PDF —",
     "khongCoTepPdf": "This outgoing document has no PDF attachment.",
     "goiYTepDinhKem": "The file is copied to Signing storage to preserve the submitted version. A separate PDF cannot be uploaded for this record.",
-    "soHieu": "Reference number (optional)",
+    "soHieu": "Reference number",
     "trichYeu": "Summary",
     "daChonVanBan": "Selected",
     "boChon": "Clear",
@@ -177,6 +179,7 @@
     "khongCoQuyen": "Your account has no permission to create signing requests."
   },
   "chiTiet": {
+    "thongTinHoSo": "Dossier details",
     "tienTrinh": "Signing progress",
     "luot": "Round {so}",
     "han": "Due",
@@ -349,7 +352,10 @@
     "xacNhanNgung": "Deactivate process “{ten}” (version {phienBan})? New requests can no longer choose this process.",
     "loiMa": "The lookup code may only contain unaccented letters, digits, hyphens, underscores and dots.",
     "loiSoGio": "Processing time is at most {so} hours (one year).",
-    "vaiTroKy": "Signing role"
+    "vaiTroKy": "Signing role",
+    "nhomTheoChucVu": "By position",
+    "nhomTheoCanBo": "Specific staff",
+    "giaiThichChucVuForm": "Assign signer by position"
   },
   "khoa": {
     "gioiThieu": "Your signing key is created in this browser and protected by an 8-digit PIN. The encrypted key file is downloaded to your device; to sign, upload the file and enter your PIN. The server never receives your PIN or key file.",

@@ -26,7 +26,7 @@ interface CapNhap { ten_cap_ky: string; so_gio_xu_ly: string; don_vi_id: number 
 const CAP_TRONG: CapNhap = { ten_cap_ky: '', so_gio_xu_ly: '', don_vi_id: null, nguoi_ky: [] };
 /** Phạm vi tìm người giữ chức vụ chọn được trên form (DON_VI_CO_DINH cần cấp có đơn vị, giữ nguyên khi sửa). */
 const PHAM_VI_CHUC_VU = ['DON_VI_NGUOI_TAO', 'TOAN_CO_QUAN'] as const;
-const TOI_DA_GOI_Y = 20;
+const TOI_DA_GOI_Y = 100;
 
 function capTuQuyTrinh(q: QuyTrinh, t: HamDich): CapNhap[] {
   return q.cap_ky.map((c) => ({
@@ -46,12 +46,22 @@ function chucDanh(u: CanBo, khongCo: string): string {
 
 interface ChonNguoiDungProps {
   onChon: (u: CanBo) => void;
+  onChonChucVu?: (cv: { id: number; ten: string }, phamVi: string) => void;
   chucVuLocId?: number | null;
   chucVuLocTen?: string | null;
+  danhSachChucVu?: ChucVu[];
+  phamVi?: string;
 }
 
-/** Chọn cán bộ từ danh bạ của phân hệ CBNV (tải trước khi mở form, lọc không dấu trên trình duyệt). */
-function ChonNguoiDung({ onChon, chucVuLocId, chucVuLocTen }: ChonNguoiDungProps) {
+/** Chọn cán bộ hoặc chức danh (hiển thị đầy đủ chức danh và cán bộ, hỗ trợ tìm kiếm không dấu). */
+function ChonNguoiDung({
+  onChon,
+  onChonChucVu,
+  chucVuLocId,
+  chucVuLocTen,
+  danhSachChucVu = [],
+  phamVi = 'TOAN_CO_QUAN',
+}: ChonNguoiDungProps) {
   const { t, loi } = useSigningT();
   const [q, setQ] = useState('');
   const [mo, setMo] = useState(false);
@@ -68,16 +78,50 @@ function ChonNguoiDung({ onChon, chucVuLocId, chucVuLocTen }: ChonNguoiDungProps
     return () => document.removeEventListener('mousedown', onBamNgoai);
   }, []);
 
-  const tuKhoa = boDau(q.trim());
-  const goiY = useMemo(() => (ds.duLieu ?? []).filter((u) => {
-    if (chucVuLocId != null) {
-      const khopId = u.chuc_vu_id === chucVuLocId;
-      const khopTen = chucVuLocTen ? boDau(u.chuc_vu_ten) === boDau(chucVuLocTen) : false;
-      if (!khopId && !khopTen) return false;
+  const danhSach = useMemo(() => {
+    if (!ds.duLieu) return [];
+    if (Array.isArray(ds.duLieu)) return ds.duLieu;
+    if (Array.isArray((ds.duLieu as { results?: CanBo[] }).results)) {
+      return (ds.duLieu as { results: CanBo[] }).results;
     }
-    return !tuKhoa || boDau([u.ho_ten, u.username, u.chuc_vu_ten, u.don_vi_ten].join(' ')).includes(tuKhoa);
-  }).slice(0, TOI_DA_GOI_Y),
-  [ds.duLieu, tuKhoa, chucVuLocId, chucVuLocTen]);
+    return [];
+  }, [ds.duLieu]);
+
+  const tuKhoa = boDau(q.trim());
+
+  // Danh sách chức danh gợi ý
+  const goiYChucVu = useMemo(() => {
+    if (!onChonChucVu || !danhSachChucVu.length) return [];
+    if (chucVuLocId != null) {
+      return danhSachChucVu.filter((c) => {
+        const khopId = c.id === chucVuLocId;
+        const khopTen = chucVuLocTen ? boDau(c.name) === boDau(chucVuLocTen) : false;
+        return khopId || khopTen;
+      });
+    }
+    if (tuKhoa) {
+      return danhSachChucVu.filter((c) => boDau(c.name).includes(tuKhoa)).slice(0, TOI_DA_GOI_Y);
+    }
+    return danhSachChucVu.slice(0, TOI_DA_GOI_Y);
+  }, [onChonChucVu, danhSachChucVu, chucVuLocId, chucVuLocTen, tuKhoa]);
+
+  // Danh sách cán bộ gợi ý
+  const goiYCanBo = useMemo(() => {
+    if (!danhSach.length) return [];
+    if (tuKhoa) {
+      return danhSach
+        .filter((u) => boDau([u.ho_ten, u.username, u.chuc_vu_ten, u.don_vi_ten].join(' ')).includes(tuKhoa))
+        .slice(0, TOI_DA_GOI_Y);
+    }
+    if (chucVuLocId != null) {
+      return danhSach.filter((u) => {
+        const khopId = u.chuc_vu_id === chucVuLocId;
+        const khopTen = chucVuLocTen ? boDau(u.chuc_vu_ten) === boDau(chucVuLocTen) : false;
+        return khopId || khopTen;
+      }).slice(0, TOI_DA_GOI_Y);
+    }
+    return danhSach.slice(0, TOI_DA_GOI_Y);
+  }, [danhSach, tuKhoa, chucVuLocId, chucVuLocTen]);
 
   const placeholder = chucVuLocTen
     ? t('quyTrinh.timCanBoTheoChucVu', { chucVu: chucVuLocTen })
@@ -114,28 +158,84 @@ function ChonNguoiDung({ onChon, chucVuLocId, chucVuLocTen }: ChonNguoiDungProps
           <span>{t('chung.dangTai')}</span>
         </div>
       )}
-      {mo && !!goiY.length && (
-        <ul className="max-h-60 overflow-y-auto rounded-lg border border-border-subtle bg-surface shadow-sm" role="listbox">
-          {goiY.map((u) => (
-            <li key={u.id}>
-              <button
-                type="button"
-                className="block w-full px-3 py-2 text-left hover:bg-surface-hover"
-                onClick={() => {
-                  onChon(u);
-                  setQ('');
-                  setMo(false);
-                }}
-              >
-                <span className="block text-sm font-semibold text-main">{u.ho_ten}</span>
-                <span className="block text-xs text-secondary">{chucDanh(u, t('quyTrinh.chuaCoChucVu'))}</span>
-                <span className="block text-xs text-muted">{u.username}</span>
-              </button>
+      {mo && (goiYChucVu.length > 0 || goiYCanBo.length > 0) && (
+        <ul className="max-h-72 overflow-y-auto rounded-lg border border-border-subtle bg-surface shadow-md divide-y divide-border-subtle z-50 relative" role="listbox">
+          {goiYChucVu.length > 0 && (
+            <li>
+              <div className="px-3 py-1.5 text-2xs font-semibold text-secondary uppercase bg-surface-subtle sticky top-0 flex items-center gap-1.5 border-b border-border-subtle">
+                <i className="fa-solid fa-user-tie text-2xs text-primary" aria-hidden="true" />
+                <span>{t('quyTrinh.nhomTheoChucVu')} ({goiYChucVu.length})</span>
+              </div>
+              <ul className="divide-y divide-border-subtle/50">
+                {goiYChucVu.map((cv) => (
+                  <li key={`cv-${cv.id}`}>
+                    <button
+                      type="button"
+                      className="w-full px-3 py-2 text-left hover:bg-surface-hover flex items-center justify-between group transition-colors"
+                      onClick={() => {
+                        onChonChucVu?.({ id: cv.id, ten: cv.name }, phamVi);
+                        setQ('');
+                        setMo(false);
+                      }}
+                    >
+                      <div className="min-w-0 pr-2">
+                        <span className="block text-sm font-semibold text-main group-hover:text-primary truncate flex items-center gap-1.5">
+                          <i className="fa-solid fa-user-tie text-xs text-primary shrink-0" aria-hidden="true" />
+                          <span>{t('quyTrinh.theoChucVu', { ten: cv.name })}</span>
+                        </span>
+                        <span className="block text-2xs text-muted truncate mt-0.5">
+                          {t('quyTrinh.giaiThichChucVuForm')} · {t(`phamViChucVu.${phamVi}`)}
+                        </span>
+                      </div>
+                      <span className="text-xs text-primary font-medium shrink-0 flex items-center gap-1 opacity-80 group-hover:opacity-100">
+                        <i className="fa-solid fa-plus text-2xs" aria-hidden="true" />
+                        <span>{t('chung.chon')}</span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
             </li>
-          ))}
+          )}
+          {goiYCanBo.length > 0 && (
+            <li>
+              <div className="px-3 py-1.5 text-2xs font-semibold text-secondary uppercase bg-surface-subtle sticky top-0 flex items-center gap-1.5 border-b border-border-subtle">
+                <i className="fa-solid fa-user text-2xs text-secondary" aria-hidden="true" />
+                <span>{t('quyTrinh.nhomTheoCanBo')} ({goiYCanBo.length})</span>
+              </div>
+              <ul className="divide-y divide-border-subtle/50">
+                {goiYCanBo.map((u) => (
+                  <li key={`cb-${u.id}`}>
+                    <button
+                      type="button"
+                      className="w-full px-3 py-2 text-left hover:bg-surface-hover flex items-center justify-between group transition-colors"
+                      onClick={() => {
+                        onChon(u);
+                        setQ('');
+                        setMo(false);
+                      }}
+                    >
+                      <div className="min-w-0 pr-2">
+                        <span className="block text-sm font-semibold text-main group-hover:text-primary truncate flex items-center gap-1.5">
+                          <i className="fa-solid fa-user text-xs text-secondary shrink-0" aria-hidden="true" />
+                          <span>{u.ho_ten}</span>
+                        </span>
+                        <span className="block text-xs text-secondary truncate">{chucDanh(u, t('quyTrinh.chuaCoChucVu'))}</span>
+                        <span className="block text-2xs text-muted truncate">@{u.username}</span>
+                      </div>
+                      <span className="text-xs text-primary font-medium shrink-0 flex items-center gap-1 opacity-80 group-hover:opacity-100">
+                        <i className="fa-solid fa-plus text-2xs" aria-hidden="true" />
+                        <span>{t('chung.chon')}</span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </li>
+          )}
         </ul>
       )}
-      {mo && !ds.dangTai && !!ds.duLieu && goiY.length === 0 && (
+      {mo && !ds.dangTai && !!ds.duLieu && goiYChucVu.length === 0 && goiYCanBo.length === 0 && (
         <p className="rounded-lg border border-border-subtle bg-surface p-2.5 text-xs text-muted shadow-sm">
           {chucVuLocTen
             ? t('quyTrinh.khongThayCanBoChucVu', { chucVu: chucVuLocTen })
@@ -287,6 +387,9 @@ function ThemNguoiKyCap({
           chucVuLocId={chon?.id ?? null}
           chucVuLocTen={chon?.name ?? null}
           onChon={onChonCanBo}
+          onChonChucVu={onChonChucVu}
+          danhSachChucVu={ds.duLieu ?? []}
+          phamVi={phamVi}
         />
       </div>
     </div>

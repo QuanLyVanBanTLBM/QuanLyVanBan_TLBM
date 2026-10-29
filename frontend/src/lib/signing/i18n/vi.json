@@ -77,6 +77,8 @@
     "PHONG_BAN": "Phòng ban"
   },
   "danhSach": {
+    "cheDoHoSo": "Hồ sơ trình ký",
+    "cheDoTep": "Tệp tài liệu",
     "rongCanToiKy": "Không có hồ sơ nào đang chờ bạn ký duyệt.",
     "rongToiGui": "Bạn chưa gửi trình hồ sơ nào.",
     "rongTatCa": "Chưa có văn bản nào bạn được xem.",
@@ -167,7 +169,7 @@
     "chonTepDinhKem": "— Chọn tệp PDF —",
     "khongCoTepPdf": "Văn bản đi này chưa có tệp PDF đính kèm.",
     "goiYTepDinhKem": "Tệp được sao chép vào kho Trình ký để giữ nguyên bản đã gửi; không thể tải thêm PDF khác cho văn bản này.",
-    "soHieu": "Số hiệu tham chiếu (tùy chọn)",
+    "soHieu": "Số hiệu tham chiếu",
     "trichYeu": "Trích yếu",
     "daChonVanBan": "Đã chọn",
     "boChon": "Bỏ chọn",
@@ -177,6 +179,7 @@
     "khongCoQuyen": "Tài khoản của bạn chưa được cấp quyền tạo hồ sơ trình ký."
   },
   "chiTiet": {
+    "thongTinHoSo": "Thông tin hồ sơ",
     "tienTrinh": "Tiến trình ký duyệt",
     "luot": "Lượt {so}",
     "han": "Hạn xử lý",
@@ -349,7 +352,10 @@
     "xacNhanNgung": "Ngừng quy trình “{ten}” (phiên bản {phienBan})? Hồ sơ mới không chọn được quy trình này nữa.",
     "loiMa": "Mã tra cứu chỉ gồm chữ không dấu, số, dấu gạch ngang, gạch dưới và dấu chấm.",
     "loiSoGio": "Số giờ xử lý tối đa {so} (một năm).",
-    "vaiTroKy": "Vai trò ký"
+    "vaiTroKy": "Vai trò ký",
+    "nhomTheoChucVu": "Theo chức danh",
+    "nhomTheoCanBo": "Cán bộ cụ thể",
+    "giaiThichChucVuForm": "Phân công người ký theo chức danh"
   },
   "khoa": {
     "gioiThieu": "Khóa ký được tạo trên trình duyệt và bảo vệ bằng PIN 8 chữ số. Tệp khóa đã mã hóa được tải về thiết bị; khi ký, tải lại tệp và nhập PIN. Máy chủ không nhận PIN hoặc tệp khóa.",

@@ -133,9 +133,65 @@ export const signingApi = {
     apiClient.post<QuyTrinh>(`${SIGNING_BASE}/quy-trinh/${id}/${thao_tac}/`, {}),
   // Dữ liệu cán bộ, chức vụ lấy từ API của phân hệ CBNV (Nhóm 7), không giữ danh sách riêng trong Trình ký
   /** Danh bạ cán bộ đang hoạt động (họ tên, chức vụ, đơn vị) để chọn người ký khi cấu hình quy trình. */
-  danhBaCanBo: () => apiClient.get<CanBo[]>('/api/accounts/staffs/'),
+  danhBaCanBo: () =>
+    apiClient
+      .get<CanBo[] | { results?: CanBo[] }>('/api/accounts/employees/?all=true')
+      .then((res) => {
+        const list = Array.isArray(res) ? res : (res && Array.isArray((res as { results?: CanBo[] }).results) ? (res as { results: CanBo[] }).results : []);
+        if (list.length > 0) return list;
+        return apiClient.get<CanBo[] | { results?: CanBo[] }>('/api/accounts/staffs/').then((s) =>
+          Array.isArray(s) ? s : (s && Array.isArray((s as { results?: CanBo[] }).results) ? (s as { results: CanBo[] }).results : [])
+        );
+      })
+      .catch(() =>
+        apiClient
+          .get<CanBo[] | { results?: CanBo[] }>('/api/accounts/staffs/')
+          .then((res) => {
+            if (Array.isArray(res)) return res;
+            if (res && Array.isArray((res as { results?: CanBo[] }).results)) {
+              return (res as { results: CanBo[] }).results;
+            }
+            return [];
+          })
+      )
+      .catch(() =>
+        apiClient
+          .get<
+            Array<{
+              id: number;
+              ten?: string;
+              ho_ten?: string;
+              ten_dang_nhap?: string;
+              username?: string;
+              chuc_vu?: string;
+              chuc_vu_ten?: string;
+              chuc_vu_id?: number | null;
+              don_vi?: string;
+              don_vi_ten?: string;
+              don_vi_id?: number | null;
+            }>
+          >(`${SIGNING_BASE}/nguoi-dung/`)
+          .then((ds) =>
+            (Array.isArray(ds) ? ds : []).map((u) => ({
+              id: u.id,
+              username: u.username || u.ten_dang_nhap || '',
+              ho_ten: u.ho_ten || u.ten || '',
+              don_vi_id: u.don_vi_id ?? null,
+              don_vi_ten: u.don_vi_ten || u.don_vi || '',
+              chuc_vu_id: u.chuc_vu_id ?? null,
+              chuc_vu_ten: u.chuc_vu_ten || u.chuc_vu || '',
+            }))
+          )
+      ),
   /** Danh mục chức vụ (thứ tự hiển thị của CBNV) để chọn người ký theo chức vụ. */
-  chucVu: () => apiClient.get<ChucVu[]>('/api/positions/?all=true'),
+  chucVu: () =>
+    apiClient.get<ChucVu[]>('/api/positions/?all=true').catch(() =>
+      apiClient.get<Array<{ id: number; name?: string; ten?: string; display_order?: number; stt?: number }>>(
+        `${SIGNING_BASE}/chuc-vu/`
+      ).then((ds) =>
+        ds.map((c) => ({ id: c.id, name: c.name || c.ten || '', display_order: c.display_order || c.stt || 0 }))
+      )
+    ),
   /** Cán bộ đang làm việc giữ chức vụ (trong đơn vị nếu có): tên người khớp người ký cấu hình theo chức vụ. */
   canBoTheoChucVu: (chuc_vu: number, don_vi?: number | null) => {
     const tham_so = new URLSearchParams({ chuc_vu: String(chuc_vu) });

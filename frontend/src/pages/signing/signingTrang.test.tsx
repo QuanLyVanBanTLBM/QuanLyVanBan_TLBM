@@ -117,7 +117,7 @@ describe('TaoHoSoPage văn bản trình ký', () => {
     });
     const luu = screen.getByRole('button', { name: /Lưu nháp và xem trước/ });
     expect(luu).toBeDisabled();  // chưa có trích yếu
-    fireEvent.change(screen.getByLabelText('Số hiệu tham chiếu (tùy chọn)'), { target: { value: '05/TTr' } });
+    fireEvent.change(screen.getByLabelText('Số hiệu tham chiếu'), { target: { value: '05/TTr' } });
     fireEvent.change(screen.getByLabelText('Trích yếu'), { target: { value: 'Tờ trình đào tạo' } });
     await waitFor(() => expect(luu).toBeEnabled());
     fireEvent.click(luu);

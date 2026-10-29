@@ -24,9 +24,9 @@ import { soKhung, viTriCuaNguoiKy } from '@lib/signing/viTri';
 
 function DongThongTin({ nhan, children }: { nhan: string; children: ReactNode }) {
   return (
-    <div className="flex justify-between gap-3 text-sm">
-      <span className="text-secondary shrink-0">{nhan}</span>
-      <span className="text-main text-right min-w-0 break-words">{children}</span>
+    <div className="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-3 text-sm py-1.5 border-b border-border-subtle/50 last:border-0">
+      <span className="text-secondary font-medium shrink-0">{nhan}</span>
+      <span className="text-main font-semibold sm:text-right min-w-0 break-words">{children}</span>
     </div>
   );
 }
@@ -201,6 +201,7 @@ function ChiTietHoSo({ id }: { id: number }) {
       {/* lg:pb-20: nút trợ lý AI nổi ở góc dưới không che khối cuối của cột khi cuộn hết */}
       <div className="space-y-4 lg:sticky lg:top-0 lg:self-start lg:max-h-[calc(100vh-8rem)] lg:overflow-y-auto lg:pb-20">
         <Card className="p-4 space-y-2">
+          <h3 className="text-base font-bold text-main pb-2 border-b border-border-subtle">{t('chiTiet.thongTinHoSo')}</h3>
           <DongThongTin nhan={hoSo.van_ban_id == null ? t('chiTiet.taiLieu') : t('danhSach.vanBan')}>
             {moTaVanBan(hoSo.van_ban, t)}
           </DongThongTin>

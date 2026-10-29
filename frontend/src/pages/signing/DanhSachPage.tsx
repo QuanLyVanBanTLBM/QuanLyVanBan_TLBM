@@ -6,7 +6,8 @@
  * Danh sách phân trang phía server (10 hồ sơ mỗi trang); đổi bộ lọc thì về trang 1 (mỗi hộp là một route riêng).
  */
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
+import TaiLieuPage from './TaiLieuPage';
 import { Button, Card } from '@components/common';
 import { DangTai, LoiTai, Rong, TrangThaiHoSo } from '@components/signing/ChungUI';
 import LocKhoangNgay from '@components/signing/LocKhoangNgay';
@@ -123,6 +124,19 @@ function BoLoc({ thongKe, loc, capNhat, xoaHet }: {
 
 export default function DanhSachPage({ hop }: { hop: Hop }) {
   const { t, loi, lang } = useSigningT();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const cheDo = hop === 'tat_ca' && searchParams.get('che_do') === 'tep' ? 'tep' : 'ho_so';
+
+  const doiCheDo = (mode: 'ho_so' | 'tep') => {
+    const params = new URLSearchParams(searchParams);
+    if (mode === 'tep') {
+      params.set('che_do', 'tep');
+    } else {
+      params.delete('che_do');
+    }
+    setSearchParams(params);
+  };
+
   const [loc, setLoc] = useState<BoLocHoSo>({});
   const [trang, setTrang] = useState(1);
   // Số trên các thẻ theo cùng từ khóa, quy trình, khoảng ngày với danh sách (không theo thẻ đang chọn)
@@ -148,16 +162,51 @@ export default function DanhSachPage({ hop }: { hop: Hop }) {
 
   return (
     <div className="space-y-4">
-      {!hopRong && (
-        <Card className="p-4">
-          <BoLoc thongKe={dem.duLieu} loc={loc} capNhat={capNhat} xoaHet={xoaHet} />
-        </Card>
+      {hop === 'tat_ca' && (
+        <div className="flex items-center gap-2 border-b border-border-subtle pb-3">
+          <div className="inline-flex rounded-lg bg-surface-subtle p-1 border border-border-subtle">
+            <button
+              type="button"
+              onClick={() => doiCheDo('ho_so')}
+              className={`flex items-center gap-2 rounded-md px-3.5 py-1.5 text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
+                cheDo === 'ho_so'
+                  ? 'bg-primary text-white shadow-xs'
+                  : 'text-secondary hover:text-main hover:bg-surface'
+              }`}
+            >
+              <i className="fa-solid fa-folder-open text-xs" aria-hidden="true" />
+              <span>{t('danhSach.cheDoHoSo')}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => doiCheDo('tep')}
+              className={`flex items-center gap-2 rounded-md px-3.5 py-1.5 text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
+                cheDo === 'tep'
+                  ? 'bg-primary text-white shadow-xs'
+                  : 'text-secondary hover:text-main hover:bg-surface'
+              }`}
+            >
+              <i className="fa-solid fa-folder-tree text-xs" aria-hidden="true" />
+              <span>{t('danhSach.cheDoTep')}</span>
+            </button>
+          </div>
+        </div>
       )}
-      <Card className="p-4 space-y-3">
-        {ds.dangTai && <DangTai />}
-        {ds.loi && <LoiTai thongBao={loi(ds.loi)} onThuLai={ds.tai} />}
-        {!ds.dangTai && !ds.loi && hoSo?.length === 0 && <Rong>{t(coLoc ? 'danhSach.khongKhopLoc' : rong)}</Rong>}
-        {!ds.dangTai && !ds.loi && !!hoSo?.length && (
+
+      {cheDo === 'tep' ? (
+        <TaiLieuPage />
+      ) : (
+        <>
+          {!hopRong && (
+            <Card className="p-4">
+              <BoLoc thongKe={dem.duLieu} loc={loc} capNhat={capNhat} xoaHet={xoaHet} />
+            </Card>
+          )}
+          <Card className="p-4 space-y-3">
+            {ds.dangTai && <DangTai />}
+            {ds.loi && <LoiTai thongBao={loi(ds.loi)} onThuLai={ds.tai} />}
+            {!ds.dangTai && !ds.loi && hoSo?.length === 0 && <Rong>{t(coLoc ? 'danhSach.khongKhopLoc' : rong)}</Rong>}
+            {!ds.dangTai && !ds.loi && !!hoSo?.length && (
           <>
           {/* Dưới 1024px (điện thoại, máy tính bảng): thẻ thay cho bảng để luôn thấy trạng thái, người đang chờ, hạn chót */}
           <ul className="space-y-2 lg:hidden" aria-label={t('danhSach.vanBan')}>
@@ -256,6 +305,8 @@ export default function DanhSachPage({ hop }: { hop: Hop }) {
           </>
         )}
       </Card>
+        </>
+      )}
     </div>
   );
 }

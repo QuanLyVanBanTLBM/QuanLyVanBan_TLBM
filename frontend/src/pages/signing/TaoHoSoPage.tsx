@@ -148,7 +148,7 @@ function Buoc1({ onXong }: { onXong: (ho_so: HoSoChiTiet, tep: ArrayBuffer | nul
               {chon && <p className="text-xs text-muted">{t('tao.goiYTepDinhKem')}</p>}
             </>
           ) : (
-            <div className="grid gap-4 md:grid-cols-[minmax(0,12rem)_minmax(0,1fr)]">
+            <div className="grid gap-4 md:grid-cols-[minmax(0,14rem)_minmax(0,1fr)] items-start">
               <p className="text-xs text-muted md:col-span-2">{t('tao.goiYNhapKhac')}</p>
               <TruongNhap nhan={t('tao.soHieu')}>
                 <input className={LOP_O_NHAP} maxLength={100} value={soHieu} onChange={(e) => setSoHieu(e.target.value)} />

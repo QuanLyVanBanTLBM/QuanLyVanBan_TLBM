@@ -122,7 +122,7 @@ describe('SigningModule', () => {
     await waitFor(() => expect(tabKy).toHaveTextContent('2'));
     expect(api.thongKe).toHaveBeenCalledWith('can_toi_ky');
     const nav = within(screen.getByRole('navigation'));
-    for (const ten of [/Hồ sơ tôi trình/, /Hồ sơ được xem/, /Tệp hồ sơ/, /Thông báo/, /Khóa ký & PIN/]) {
+    for (const ten of [/Hồ sơ tôi trình/, /Hồ sơ được xem/, /Thông báo/, /Khóa ký & PIN/]) {
       expect(nav.getByRole('link', { name: ten })).toBeInTheDocument();
     }
     expect(nav.queryByRole('link', { name: /^Quy trình/ })).toBeInTheDocument();
@@ -762,6 +762,35 @@ describe('QuyTrinhPage chọn người ký từ phân hệ CBNV', () => {
     // Bấm "Bỏ lọc chức danh" thì danh bạ trở lại bình thường
     fireEvent.click(screen.getByRole('button', { name: 'Bỏ lọc chức danh' }));
     expect(screen.getByRole('button', { name: /Phạm Thu Hà/ })).toBeInTheDocument();
+  });
+
+  it('hiển thị đầy đủ chức danh và cán bộ khi chọn tất cả chức danh; cho phép chọn chức danh trực tiếp từ danh sách gợi ý', async () => {
+    api.quyTrinh.mockResolvedValue([]);
+    api.donVi.mockResolvedValue([]);
+    api.danhBaCanBo.mockResolvedValue([
+      { id: 101, username: 'admin', ho_ten: 'Quản trị hệ thống', don_vi_id: 1, don_vi_ten: 'Ban CNTT', chuc_vu_id: 1, chuc_vu_ten: 'Quản trị viên' },
+      { id: 102, username: 'tan', ho_ten: 'tothanhtan', don_vi_id: 2, don_vi_ten: 'Hội đồng quản trị', chuc_vu_id: 1, chuc_vu_ten: 'Quản trị viên' },
+    ]);
+    api.chucVu.mockResolvedValue([
+      { id: 1, name: 'Quản trị viên', display_order: 1 },
+      { id: 5, name: 'Tổng Giám đốc', display_order: 5 },
+      { id: 19, name: 'Trưởng phòng', display_order: 19 },
+    ]);
+    boc(<QuyTrinhPage />, QUAN_TRI);
+    fireEvent.click(await screen.findByRole('button', { name: /Tạo quy trình/ }));
+
+    const oNhap = screen.getByRole('textbox', { name: 'Thêm người ký' });
+    fireEvent.focus(oNhap);
+
+    // Hiển thị cả 2 nhóm: Theo chức danh và Cán bộ cụ thể
+    expect(await screen.findByText(/Theo chức danh \(3\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Cán bộ cụ thể \(2\)/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Chức danh: Tổng Giám đốc/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /tothanhtan/ })).toBeInTheDocument();
+
+    // Bấm chọn chức danh "Tổng Giám đốc" trực tiếp từ danh sách gợi ý
+    fireEvent.click(screen.getByRole('button', { name: /Chức danh: Tổng Giám đốc/ }));
+    expect(await screen.findByText('Chức danh: Tổng Giám đốc')).toBeInTheDocument();
   });
 });
 
