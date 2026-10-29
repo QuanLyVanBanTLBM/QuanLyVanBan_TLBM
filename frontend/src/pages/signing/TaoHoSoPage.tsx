@@ -5,7 +5,7 @@
  * Mở lại nháp: /approvals/tao-moi?ho_so=<id>.
  */
 import { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button, Card } from '@components/common';
 import { DangTai, HopThoai, LoiTai, OChonTep, ThongBao, TruongNhap } from '@components/signing/ChungUI';
 import XemPdf, { type KhungHienThi } from '@components/signing/XemPdf';
@@ -169,7 +169,14 @@ function Buoc1({ onXong }: { onXong: (ho_so: HoSoChiTiet, tep: ArrayBuffer | nul
               ))}
             </select>
           </TruongNhap>
-          {quyTrinh.duLieu && dungDuoc.length === 0 && <ThongBao loai="canh_bao">{t('tao.khongCoQuyTrinh')}</ThongBao>}
+          {quyTrinh.duLieu && dungDuoc.length === 0 && (
+            <ThongBao loai="canh_bao">
+              {t('tao.khongCoQuyTrinh')}{' '}
+              <Link to="/approvals/quy-trinh" className="inline-flex items-center gap-1 font-normal text-primary underline underline-offset-2 hover:text-primary-hover">
+                {t('tao.diDenQuyTrinh')}
+              </Link>
+            </ThongBao>
+          )}
           <div className="grid gap-4 sm:grid-cols-2">
             <TruongNhap nhan={t('tao.hanChot')} loi={loiHanChot}>
               <input type="datetime-local" className={LOP_O_NHAP} value={hanChot} aria-invalid={loiHanChot ? true : undefined}
