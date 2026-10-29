@@ -41,7 +41,7 @@ function layTep(tep: TepTaiLieu): Promise<Blob> {
 function nhanTep(tep: TepTaiLieu, t: HamDich): string {
   if (tep.loai === 'LUOT') {
     return tep.so_luot != null
-      ? t('taiLieu.tenTep.luot', { so: tep.so_luot })
+      ? t('taiLieu.tenTep.LUOT', { so: tep.so_luot })
       : t('taiLieu.tenTep.luotKhongRo');
   }
   return t(`taiLieu.tenTep.${tep.loai}`);

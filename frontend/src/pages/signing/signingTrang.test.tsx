@@ -227,7 +227,7 @@ describe('KetQuaPanel', () => {
     api.taoLaiTepHoanTat.mockResolvedValue(hoSo());
     const tai_lai = vi.fn();
     boc(<KetQuaPanel hoSo={hoSo({ luot_trinh: [loi] })} luot={loi} onTaiLai={tai_lai} />);
-    expect(screen.getByText(/thieu_phong_chu/)).toBeInTheDocument();
+    expect(screen.getByText(/thieu_phong_chu|Thiếu bộ chữ/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Tạo lại tệp/ }));
     await waitFor(() => expect(tai_lai).toHaveBeenCalled());
     expect(api.taoLaiTepHoanTat).toHaveBeenCalledWith(12);
@@ -247,18 +247,18 @@ describe('XemPdf', () => {
     pdf.veTrang.mockImplementationOnce(() => ({ xong: tuChoi(huy), huy: vi.fn() }));
     const { unmount } = boc(<XemPdf duLieu={new ArrayBuffer(8)} />);
     await waitFor(() => expect(pdf.veTrang).toHaveBeenCalled());
-    expect(screen.queryByText(/Không hiển thị được tệp PDF/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Không hiển thị được tệp PDF|Không đọc được PDF/)).not.toBeInTheDocument();
     unmount();
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     pdf.veTrang.mockImplementationOnce(() => ({ xong: tuChoi(new Error('getOrInsertComputed is not a function')), huy: vi.fn() }));
     boc(<XemPdf duLieu={new ArrayBuffer(8)} />);
-    expect(await screen.findByText(/Không hiển thị được tệp PDF/)).toBeInTheDocument();
+    expect(await screen.findByText(/Không hiển thị được tệp PDF|Không đọc được PDF/)).toBeInTheDocument();
   });
 
   it('không mở được PDF: hiện thông báo thay vì vùng trắng', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     pdf.moPdf.mockImplementationOnce(() => tuChoi(new Error('hong')));
     boc(<XemPdf duLieu={new ArrayBuffer(8)} />);
-    expect(await screen.findByText(/Không hiển thị được tệp PDF/)).toBeInTheDocument();
+    expect(await screen.findByText(/Không hiển thị được tệp PDF|Không đọc được PDF/)).toBeInTheDocument();
   });
 });

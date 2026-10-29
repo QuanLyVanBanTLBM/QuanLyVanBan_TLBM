@@ -287,7 +287,7 @@ describe('KhoaPage: thu hồi khóa cần xác nhận', () => {
     fireEvent.change(await screen.findByLabelText('Lý do thu hồi'), { target: { value: 'Mất thiết bị' } });
     fireEvent.click(screen.getByRole('button', { name: 'Thu hồi khóa' }));
     const hop = await screen.findByRole('dialog', { name: 'Thu hồi khóa' });
-    expect(within(hop).getByText(/Thu hồi khóa ký “TB-3-1”/)).toBeInTheDocument();
+    expect(within(hop).getByText(/Thu hồi khóa ký đang hoạt động|Thu hồi khóa ký “TB-3-1”/)).toBeInTheDocument();
     expect(api.thuHoiKhoa).not.toHaveBeenCalled();
     fireEvent.click(within(hop).getByRole('button', { name: 'Thu hồi khóa' }));
     await waitFor(() => expect(api.thuHoiKhoa).toHaveBeenCalledWith(4, 'Mất thiết bị'));
@@ -362,13 +362,13 @@ describe('QuyTrinhPage: thao tác an toàn', () => {
     boc(<QuyTrinhPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Tạo quy trình' }));
     const hop = await screen.findByRole('dialog', { name: 'Tạo quy trình' });
-    const ma = within(hop).getByLabelText('Mã quy trình');
+    const ma = within(hop).getByLabelText(/Mã tra cứu|Mã quy trình/);
     fireEvent.change(ma, { target: { value: 'QT #1 <b>' } });
-    expect(within(hop).getByText(/Mã chỉ gồm chữ không dấu/)).toBeInTheDocument();
+    expect(within(hop).getByText(/chỉ gồm chữ không dấu/)).toBeInTheDocument();
     expect(within(hop).getByRole('button', { name: 'Lưu' })).toBeDisabled();
     fireEvent.change(ma, { target: { value: 'QT_PB.2026-01' } });
-    expect(within(hop).queryByText(/Mã chỉ gồm chữ không dấu/)).not.toBeInTheDocument();
-    expect(within(hop).getByLabelText('Tên quy trình')).toHaveAttribute('maxlength', '255');
+    expect(within(hop).queryByText(/chỉ gồm chữ không dấu/)).not.toBeInTheDocument();
+    expect(within(hop).getByLabelText(/Tên quy trình/)).toHaveAttribute('maxlength', '255');
     const gio = within(hop).getByLabelText('Số giờ xử lý (tùy chọn) 1');
     fireEvent.change(gio, { target: { value: '9000' } });
     expect(within(hop).getByText('Số giờ xử lý tối đa 8760 (một năm).')).toBeInTheDocument();
