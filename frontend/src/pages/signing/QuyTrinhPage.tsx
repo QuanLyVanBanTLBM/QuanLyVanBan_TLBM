@@ -312,8 +312,17 @@ function FormTao({ mo, onDong, onXong, banDau }: { mo: boolean; onDong: () => vo
   const loiMa = !banDau && ma.trim() && !MA_QUY_TRINH_HOP_LE.test(ma.trim()) ? t('quyTrinh.loiMa') : '';
   const soGioQuaLon = (c: CapNhap) => Number(c.so_gio_xu_ly) > GIOI_HAN.soGio;
   const coKyNhayCu = cap.some((c) => c.nguoi_ky.some((n) => n.vai_tro_ky === 'KY_NHAY'));
-  const hopLe = ma.trim() && !loiMa && ten.trim() && (phamVi === 'CONG_TY' || donVi)
-    && !coKyNhayCu && cap.every((c) => c.ten_cap_ky.trim() && c.nguoi_ky.length && !soGioQuaLon(c));
+  const lyDoChuaLuu = [
+    !banDau && !ma.trim() ? t('quyTrinh.thieuMa') : '',
+    loiMa ? t('quyTrinh.maKhongHopLe') : '',
+    !ten.trim() ? t('quyTrinh.thieuTen') : '',
+    phamVi === 'PHONG_BAN' && !donVi ? t('quyTrinh.thieuDonVi') : '',
+    cap.some((c) => !c.ten_cap_ky.trim()) ? t('quyTrinh.thieuTenCap') : '',
+    cap.some((c) => !c.nguoi_ky.length) ? t('quyTrinh.thieuNguoiKy') : '',
+    cap.some(soGioQuaLon) ? t('quyTrinh.soGioKhongHopLe') : '',
+    coKyNhayCu ? t('quyTrinh.kyNhayCu') : '',
+  ].filter(Boolean);
+  const hopLe = lyDoChuaLuu.length === 0;
 
   const luu = async () => {
     setDangLuu(true);
@@ -346,22 +355,23 @@ function FormTao({ mo, onDong, onXong, banDau }: { mo: boolean; onDong: () => vo
         <Button variant="secondary" onClick={onDong}>{t('chung.huyBo')}</Button>
         <Button icon="fa-floppy-disk" isLoading={dangLuu} disabled={!hopLe} onClick={luu}>{t('chung.luu')}</Button>
       </>}>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <TruongNhap nhan={t('quyTrinh.ma')} loi={loiMa}>
+      <p className="m-0 text-xs text-secondary">{t('quyTrinh.dauSaoBatBuoc')}</p>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <TruongNhap nhan={t('quyTrinh.ma')} batBuoc={!banDau} loi={loiMa}>
           <input className={LOP_O_NHAP} maxLength={GIOI_HAN.maQuyTrinh} value={ma} disabled={!!banDau}
             aria-invalid={loiMa ? true : undefined} onChange={(e) => setMa(e.target.value)} />
         </TruongNhap>
-        <TruongNhap nhan={t('quyTrinh.ten')}>
+        <TruongNhap nhan={t('quyTrinh.ten')} batBuoc>
           <input className={LOP_O_NHAP} maxLength={GIOI_HAN.tenQuyTrinh} value={ten} onChange={(e) => setTen(e.target.value)} />
         </TruongNhap>
-        <TruongNhap nhan={t('quyTrinh.phamVi')} className={phamVi === 'CONG_TY' ? 'sm:col-span-2' : ''}>
+        <TruongNhap nhan={t('quyTrinh.phamVi')} batBuoc className={phamVi === 'CONG_TY' ? 'sm:col-span-2' : ''}>
           <select className={LOP_O_NHAP} value={phamVi} onChange={(e) => setPhamVi(e.target.value as PhamViQuyTrinh)}>
             <option value="CONG_TY">{t('phamVi.CONG_TY')}</option>
             <option value="PHONG_BAN">{t('phamVi.PHONG_BAN')}</option>
           </select>
         </TruongNhap>
         {phamVi === 'PHONG_BAN' && (
-          <TruongNhap nhan={t('quyTrinh.donVi')}>
+          <TruongNhap nhan={t('quyTrinh.donVi')} batBuoc>
             <select className={LOP_O_NHAP} value={donVi} onChange={(e) => setDonVi(e.target.value)}>
               <option value="">{t('quyTrinh.chonDonVi')}</option>
               {dsDonVi.duLieu?.map((d) => <option key={d.id} value={String(d.id)}>{d.ten}</option>)}
@@ -369,9 +379,10 @@ function FormTao({ mo, onDong, onXong, banDau }: { mo: boolean; onDong: () => vo
           </TruongNhap>
         )}
       </div>
-      {coKyNhayCu && <ThongBao loai="canh_bao">{t('quyTrinh.kyNhayCu')}</ThongBao>}
-      <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
-        <div className="text-sm font-bold text-main">{t('quyTrinh.capKy')}</div>
+      <div className="space-y-3 max-h-[52vh] overflow-y-auto pr-1">
+        <div className="flex items-center gap-2 text-sm font-bold text-main">
+          {t('quyTrinh.capKy')} <span className="text-danger" aria-label={t('chung.batBuoc')}>*</span>
+        </div>
         {dsChucVu.loi && <p className="text-xs text-danger">{loi(dsChucVu.loi)}</p>}
         {dsChucVu.duLieu && dsChucVu.duLieu.length === 0 && (
           <p className="text-xs text-muted">{t('quyTrinh.khongCoChucVu')}</p>
@@ -382,7 +393,7 @@ function FormTao({ mo, onDong, onXong, banDau }: { mo: boolean; onDong: () => vo
               <span className="pt-2 text-sm font-bold text-main shrink-0">{i + 1}.</span>
               <select
                 className={LOP_O_NHAP}
-                aria-label={`${t('quyTrinh.tenCap')} ${i + 1}`}
+                aria-label={`${t('quyTrinh.tenCap')} ${i + 1} (${t('chung.batBuoc')})`}
                 value={c.ten_cap_ky}
                 disabled={dsChucVu.dangTai && !dsChucVu.duLieu}
                 onChange={(e) => sua(i, { ten_cap_ky: e.target.value })}
@@ -453,6 +464,10 @@ function FormTao({ mo, onDong, onXong, banDau }: { mo: boolean; onDong: () => vo
           onClick={() => setCap((c) => [...c, CAP_TRONG])}>{t('quyTrinh.themCap')}</Button>
       </div>
       {thongBao && <ThongBao>{thongBao}</ThongBao>}
+      {!hopLe && <ThongBao loai="canh_bao">
+        <span>{t('quyTrinh.luuBiKhoa')}</span>
+        <ul className="mt-1 list-disc pl-5">{lyDoChuaLuu.map((lyDo) => <li key={lyDo}>{lyDo}</li>)}</ul>
+      </ThongBao>}
     </HopThoai>
   );
 }

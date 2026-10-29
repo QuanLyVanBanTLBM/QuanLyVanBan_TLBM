@@ -199,7 +199,8 @@ export function KhungModal({ nhanId, onDong, khoaDong = false, lopNen = 'p-4', l
         if (nhanNen.current && e.target === e.currentTarget && !dongRef.current.khoaDong) dongRef.current.onDong();
       }}>
       <div ref={khung} role="dialog" aria-modal="true" aria-labelledby={nhanId} tabIndex={-1}
-        className={`signing-zoom shadow-xl animate-slide-in-bottom outline-none ${lopKhung}`}>
+        className={`signing-zoom shadow-xl animate-slide-in-bottom outline-none ${lopKhung}`}
+        style={{ width: '84vw', maxWidth: 'none', maxHeight: '84vh', overflowY: 'auto' }}>
         {children}
       </div>
     </div>,
@@ -233,11 +234,15 @@ export function HopThoai({ moTieuDe, mo, onDong, children, chanDuoi, dangXuLy = 
 }
 
 /** Nhãn + ô nhập; `loi` hiện dưới ô (đọc to bằng role=alert), thay cho ghi chú. */
-export function TruongNhap({ nhan, children, ghiChu, loi, className = '' }: {
-  nhan: string; children: React.ReactNode; ghiChu?: string; loi?: string; className?: string }) {
+export function TruongNhap({ nhan, children, ghiChu, loi, batBuoc = false, className = '' }: {
+  nhan: string; children: React.ReactNode; ghiChu?: string; loi?: string; batBuoc?: boolean; className?: string }) {
+  const { t } = useSigningT();
   return (
     <label className={`block space-y-1.5 ${className}`}>
-      <span className="block text-sm font-medium text-main">{nhan}</span>
+      <span className="flex items-center gap-1.5 text-sm font-medium text-main">
+        {nhan}
+        {batBuoc && <span className="text-danger" aria-label={t('chung.batBuoc')}>*</span>}
+      </span>
       {children}
       {loi
         ? <span role="alert" className="flex items-start gap-1.5 text-xs font-semibold text-danger">
