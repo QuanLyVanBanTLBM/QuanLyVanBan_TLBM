@@ -764,7 +764,7 @@ describe('QuyTrinhPage chọn người ký từ phân hệ CBNV', () => {
     expect(screen.getByRole('button', { name: /Phạm Thu Hà/ })).toBeInTheDocument();
   });
 
-  it('hiển thị đầy đủ chức danh và cán bộ khi chọn tất cả chức danh; cho phép chọn chức danh trực tiếp từ danh sách gợi ý', async () => {
+  it('hiển thị danh sách Cán bộ nhân viên trong ô tìm kiếm người ký (#330)', async () => {
     api.quyTrinh.mockResolvedValue([]);
     api.donVi.mockResolvedValue([]);
     api.danhBaCanBo.mockResolvedValue([
@@ -782,15 +782,14 @@ describe('QuyTrinhPage chọn người ký từ phân hệ CBNV', () => {
     const oNhap = screen.getByRole('textbox', { name: 'Thêm người ký' });
     fireEvent.focus(oNhap);
 
-    // Hiển thị cả 2 nhóm: Theo chức danh và Cán bộ cụ thể
-    expect(await screen.findByText(/Theo chức danh \(3\)/)).toBeInTheDocument();
-    expect(screen.getByText(/Cán bộ cụ thể \(2\)/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Chức danh: Tổng Giám đốc/ })).toBeInTheDocument();
+    // Hiển thị nhóm Cán bộ nhân viên, không lẫn nhóm chức danh
+    expect(await screen.findByText(/Cán bộ nhân viên \(2\)/)).toBeInTheDocument();
+    expect(screen.queryByText(/Theo chức danh/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /tothanhtan/ })).toBeInTheDocument();
 
-    // Bấm chọn chức danh "Tổng Giám đốc" trực tiếp từ danh sách gợi ý
-    fireEvent.click(screen.getByRole('button', { name: /Chức danh: Tổng Giám đốc/ }));
-    expect(await screen.findByText('Chức danh: Tổng Giám đốc')).toBeInTheDocument();
+    // Bấm chọn cán bộ tothanhtan
+    fireEvent.click(screen.getByRole('button', { name: /tothanhtan/ }));
+    expect(await screen.findByText('tothanhtan')).toBeInTheDocument();
   });
 });
 
