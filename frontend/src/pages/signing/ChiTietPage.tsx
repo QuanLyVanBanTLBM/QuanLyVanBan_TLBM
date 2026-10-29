@@ -15,11 +15,11 @@ import TienTrinh from '@components/signing/TienTrinh';
 import TraoDoiPanel from '@components/signing/TraoDoiPanel';
 import XemPdf, { type KhungHienThi } from '@components/signing/XemPdf';
 import { docLoi, signingApi } from '@lib/signing/api';
-import { dinhDangNgay, moTaVanBan } from '@lib/signing/dinhDang';
+import { dinhDangNgay, loiTepHoanTatHienThi, moTaVanBan } from '@lib/signing/dinhDang';
 import { useTai, useToi } from '@lib/signing/hooks';
-import { useSigningT } from '@lib/signing/i18n';
+import { useSigningT, type HamDich } from '@lib/signing/i18n';
 import { sha256Hex } from '@lib/signing/khoaKy';
-import type { HoSoChiTiet } from '@lib/signing/types';
+import type { HoSoChiTiet, NhatKy } from '@lib/signing/types';
 import { soKhung, viTriCuaNguoiKy } from '@lib/signing/viTri';
 
 function DongThongTin({ nhan, children }: { nhan: string; children: ReactNode }) {
@@ -29,6 +29,22 @@ function DongThongTin({ nhan, children }: { nhan: string; children: ReactNode })
       <span className="text-main text-right min-w-0 break-words">{children}</span>
     </div>
   );
+}
+
+function chiTietNhatKy(e: NhatKy, t: HamDich): string {
+  if (!e.chi_tiet || e.hanh_dong === 'THEM_CAP_KY' || e.hanh_dong === 'MO_CAP_KY') return '';
+  if (e.hanh_dong === 'LOI_TAO_TEP_HOAN_TAT') return loiTepHoanTatHienThi(e.chi_tiet, t);
+  if (e.hanh_dong === 'LIEN_KET_VAN_BAN_DI') {
+    const soHieu = e.chi_tiet.match(/^#\d+\s*·\s*(.+)$/)?.[1];
+    return soHieu ? t('chiTiet.soHieuVanBanLienKet', { soHieu }) : '';
+  }
+  if (e.hanh_dong === 'NGUNG_QUY_TRINH') {
+    const phienBan = e.chi_tiet.match(/^Thay bằng phiên bản (\d+)$/)?.[1];
+    return phienBan ? t('chiTiet.quyTrinhThayThe', { so: Number(phienBan) }) : '';
+  }
+  return ['KY', 'TU_CHOI', 'YEU_CAU_SUA', 'HUY_TRINH_KY', 'UY_QUYEN_KY'].includes(e.hanh_dong)
+    ? e.chi_tiet
+    : '';
 }
 
 /** Mã hồ sơ trên đường dẫn phải là số nguyên dương; sai dạng thì báo không tìm thấy, không gọi API. */
@@ -158,14 +174,13 @@ function ChiTietHoSo({ id }: { id: number }) {
       <div className="space-y-4 min-w-0">
         <Card className="p-4 space-y-3">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-xl font-bold text-main">#{hoSo.id}</h2>
+            <h2 className="text-xl font-bold text-main">{t('danhSach.maHoSo')} #{hoSo.id}</h2>
             {hoSo.van_ban_id == null && <>
               <span className="rounded-full bg-info-subtle px-2 py-1 text-xs text-info">{t('chiTiet.taiLieuDocLap')}</span>
-              <span className="text-xs text-muted">{t('chiTiet.maHoSoTuCap')}</span>
             </>}
             <TrangThaiHoSo hoSo={hoSo} />
           </div>
-          <div className="text-base font-semibold text-main break-words">{moTaVanBan(hoSo.van_ban, hoSo.van_ban_id)}</div>
+          <div className="text-base font-semibold text-main break-words">{moTaVanBan(hoSo.van_ban, t)}</div>
           {hoSo.trang_thai === 'NHAP' && toi?.id === hoSo.create_by && (
             <Button size="sm" variant="secondary" icon="fa-pen" onClick={() => setDangSua(true)}>{t('chiTiet.suaHoSo')}</Button>
           )}
@@ -187,9 +202,9 @@ function ChiTietHoSo({ id }: { id: number }) {
       <div className="space-y-4 lg:sticky lg:top-0 lg:self-start lg:max-h-[calc(100vh-8rem)] lg:overflow-y-auto lg:pb-20">
         <Card className="p-4 space-y-2">
           <DongThongTin nhan={hoSo.van_ban_id == null ? t('chiTiet.taiLieu') : t('danhSach.vanBan')}>
-            {moTaVanBan(hoSo.van_ban, hoSo.van_ban_id)}
+            {moTaVanBan(hoSo.van_ban, t)}
           </DongThongTin>
-          <DongThongTin nhan={t('danhSach.quyTrinh')}>{hoSo.ten_quy_trinh} ({hoSo.ma_quy_trinh})</DongThongTin>
+          <DongThongTin nhan={t('danhSach.quyTrinh')}>{hoSo.ten_quy_trinh}</DongThongTin>
           <DongThongTin nhan={t('danhSach.nguoiTao')}>{hoSo.ten_nguoi_tao}</DongThongTin>
           <DongThongTin nhan={t('danhSach.ngayGui')}>{dinhDangNgay(hoSo.ngay_gui, lang)}</DongThongTin>
           <DongThongTin nhan={t('danhSach.hanChot')}>{dinhDangNgay(hoSo.han_chot, lang)}</DongThongTin>
@@ -220,7 +235,7 @@ function ChiTietHoSo({ id }: { id: number }) {
                   onChange={(e) => setVanBanDinhLienKet(e.target.value)}>
                   <option value="">{t('chiTiet.chonVanBanDi')}</option>
                   {(vanBanDi.duLieu || []).map((vb) => (
-                    <option key={vb.id} value={vb.id}>{moTaVanBan(vb, vb.id)}</option>
+                    <option key={vb.id} value={vb.id}>{moTaVanBan(vb, t)}</option>
                   ))}
                 </select>
               )}
@@ -269,15 +284,19 @@ function ChiTietHoSo({ id }: { id: number }) {
         <Card className="p-4 space-y-2">
           <h3 className="text-xl font-bold text-main">{t('chiTiet.lichSu')}</h3>
           <ol className="space-y-1.5 text-sm">
-            {hoSo.lich_su.map((e) => (
-              <li key={e.id} className="flex justify-between gap-2">
-                <span className="text-main min-w-0 break-words">
-                  {t(`nhatKy.${e.hanh_dong}`)}{e.chi_tiet && e.hanh_dong !== 'MO_CAP_KY' ? ` · ${e.chi_tiet}` : ''}
-                  {e.ten_nguoi_thuc_hien && <span className="block text-xs text-secondary">{e.ten_nguoi_thuc_hien}</span>}
-                </span>
-                <span className="text-muted shrink-0">{dinhDangNgay(e.created_at, lang)}</span>
-              </li>
-            ))}
+            {hoSo.lich_su.map((e) => {
+              const chiTiet = chiTietNhatKy(e, t);
+              const hanhDong = t(`nhatKy.${e.hanh_dong}`);
+              return (
+                <li key={e.id} className="flex justify-between gap-2">
+                  <span className="text-main min-w-0 break-words">
+                    {hanhDong === '—' ? t('nhatKy.KHAC') : hanhDong}{chiTiet && ` · ${chiTiet}`}
+                    {e.ten_nguoi_thuc_hien && <span className="block text-xs text-secondary">{e.ten_nguoi_thuc_hien}</span>}
+                  </span>
+                  <span className="text-muted shrink-0">{dinhDangNgay(e.created_at, lang)}</span>
+                </li>
+              );
+            })}
           </ol>
         </Card>
       </div>
@@ -293,7 +312,7 @@ function ChiTietHoSo({ id }: { id: number }) {
           </Button>
         </>}>
         <p className="text-sm text-main">{t('chiTiet.xacNhanLienKetVanBan', {
-          vanBan: vanBanChon ? moTaVanBan(vanBanChon, vanBanChon.id) : '',
+          vanBan: vanBanChon ? moTaVanBan(vanBanChon, t) : '',
         })}</p>
       </HopThoai>
     </div>

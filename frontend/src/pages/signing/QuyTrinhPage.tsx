@@ -357,10 +357,12 @@ function FormTao({ mo, onDong, onXong, banDau }: { mo: boolean; onDong: () => vo
       </>}>
       <p className="m-0 text-xs text-secondary">{t('quyTrinh.dauSaoBatBuoc')}</p>
       <div className="grid gap-4 sm:grid-cols-2">
-        <TruongNhap nhan={t('quyTrinh.ma')} batBuoc={!banDau} loi={loiMa}>
-          <input className={LOP_O_NHAP} maxLength={GIOI_HAN.maQuyTrinh} value={ma} disabled={!!banDau}
-            aria-invalid={loiMa ? true : undefined} onChange={(e) => setMa(e.target.value)} />
-        </TruongNhap>
+        {!banDau && (
+          <TruongNhap nhan={t('quyTrinh.ma')} batBuoc loi={loiMa} ghiChu={t('quyTrinh.maGhiChu')}>
+            <input className={LOP_O_NHAP} maxLength={GIOI_HAN.maQuyTrinh} value={ma}
+              aria-invalid={loiMa ? true : undefined} onChange={(e) => setMa(e.target.value)} />
+          </TruongNhap>
+        )}
         <TruongNhap nhan={t('quyTrinh.ten')} batBuoc>
           <input className={LOP_O_NHAP} maxLength={GIOI_HAN.tenQuyTrinh} value={ten} onChange={(e) => setTen(e.target.value)} />
         </TruongNhap>
@@ -508,18 +510,17 @@ function ChiTietQuyTrinh({
       {q && (
         <div className="space-y-3 text-sm">
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-            <dt className="text-secondary">{t('quyTrinh.ma')}</dt><dd className="font-semibold text-main">{q.ma_quy_trinh}</dd>
             <dt className="text-secondary">{t('quyTrinh.ten')}</dt><dd className="text-main">{q.ten_quy_trinh}</dd>
             <dt className="text-secondary">{t('quyTrinh.phienBanNhan')}</dt><dd className="text-main">{q.phien_ban}</dd>
             <dt className="text-secondary">{t('danhSach.trangThai')}</dt><dd><TrangThaiBadge trangThai={q.trang_thai} /></dd>
             <dt className="text-secondary">{t('quyTrinh.phamVi')}</dt>
-            <dd className="text-main">{t(`phamVi.${q.pham_vi}`)}{q.ten_don_vi_ap_dung ? ` · ${q.ten_don_vi_ap_dung}` : ''}</dd>
+            <dd className="text-main">{t(`phamVi.${q.pham_vi}`)}{q.pham_vi === 'PHONG_BAN' ? ` · ${q.ten_don_vi_ap_dung || t('quyTrinh.donViChuaXacDinh')}` : ''}</dd>
             {q.mo_ta && <><dt className="text-secondary">{t('quyTrinh.moTa')}</dt><dd className="text-main">{q.mo_ta}</dd></>}
           </dl>
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-border-subtle bg-surface-subtle text-xs font-bold uppercase tracking-wider text-muted">
-                <th className="px-3 py-2 text-center">#</th>
+                <th className="px-3 py-2 text-center">{t('quyTrinh.thuTu')}</th>
                 <th className="px-3 py-2 text-center">{t('quyTrinh.capKy')}</th>
                 <th className="px-3 py-2 text-center">{t('quyTrinh.nguoiKy')}</th>
                 <th className="px-3 py-2 text-center">{t('quyTrinh.soGioNhan')}</th>
@@ -658,10 +659,10 @@ export default function QuyTrinhPage() {
               <span className="min-w-0 break-words text-lg font-bold text-main">{q.ten_quy_trinh}</span>
               <div className="flex items-center gap-1.5">
                 <TrangThaiBadge trangThai={q.trang_thai} />
-                <Badge variant="info" size="sm">{t(`phamVi.${q.pham_vi}`)}{q.don_vi_ap_dung_id ? ` · ${q.ten_don_vi_ap_dung ?? `#${q.don_vi_ap_dung_id}`}` : ''}</Badge>
+                <Badge variant="info" size="sm">{t(`phamVi.${q.pham_vi}`)}{q.pham_vi === 'PHONG_BAN' ? ` · ${q.ten_don_vi_ap_dung || t('quyTrinh.donViChuaXacDinh')}` : ''}</Badge>
               </div>
             </div>
-            <div className="text-xs text-muted font-mono break-all">{q.ma_quy_trinh} · {t('quyTrinh.phienBan', { so: q.phien_ban })}</div>
+            <div className="text-xs text-muted">{t('quyTrinh.phienBan', { so: q.phien_ban })}</div>
             <ol className="space-y-1 text-sm">
               {q.cap_ky.map((c) => (
                 <li key={c.id} className="break-words text-main">

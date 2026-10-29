@@ -733,16 +733,13 @@ export default function ModernDashboardView({
         </div>
       </div>
 
-      {/* 5. Khối Danh Sách Phiếu Trình Ký Gần Nhất Của Cán Bộ (Nhóm 5) */}
+      {/* Danh sách phiếu trình ký gần nhất */}
       <div className="bg-surface border border-border-subtle rounded-2xl p-3 sm:p-4 md:p-5 shadow-sm flex flex-col">
         <div className="flex justify-between items-center mb-3">
           <div className="font-bold text-sm sm:text-base text-main flex items-center gap-2 sm:gap-2.5">
             <i className="fa-solid fa-file-signature text-warning text-sm sm:text-base md:text-lg shrink-0" />
-            <span>{t('dashboardDetails.recentSigningTitle') || 'Danh Sách Phiếu Trình Ký Cần Xử Lý (Nhóm 5)'}</span>
+            <span>{t('dashboardDetails.recentSigningTitle')}</span>
           </div>
-          <span className="text-[11px] font-semibold text-secondary px-2.5 py-0.5 rounded-full bg-surface-elevated border border-border-subtle">
-            {t('dashboardDetails.signingGroupTag') || 'Nhóm 5 · Trình ký số'}
-          </span>
         </div>
 
         <div className="flex-1 min-h-[160px] flex flex-col justify-start">

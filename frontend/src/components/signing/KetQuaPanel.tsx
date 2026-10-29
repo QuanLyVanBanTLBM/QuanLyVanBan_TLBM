@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Card } from '@components/common';
 import { signingApi } from '@lib/signing/api';
-import { taiXuong } from '@lib/signing/dinhDang';
+import { loiTepHoanTatHienThi, taiXuong, tenTepTaiVe } from '@lib/signing/dinhDang';
 import { coQuyen, useToi } from '@lib/signing/hooks';
 import { useSigningT } from '@lib/signing/i18n';
 import type { BangChung, HoSoChiTiet, LuotTrinh } from '@lib/signing/types';
@@ -22,6 +22,9 @@ export default function KetQuaPanel({ hoSo, luot, onTaiLai }: {
   const [thongBao, setThongBao] = useState('');
   const [bangChung, setBangChung] = useState<BangChung | null>(null);
   const trangThai = luot.trang_thai_tep_hoan_tat;
+  const lyDoLoiTep = luot.loi_tep_hoan_tat
+    ? loiTepHoanTatHienThi(luot.loi_tep_hoan_tat, t)
+    : t('chiTiet.loiTaoTepKhongRo');
 
   useEffect(() => {
     if (trangThai !== 'DANG_XU_LY') return undefined;
@@ -52,7 +55,10 @@ export default function KetQuaPanel({ hoSo, luot, onTaiLai }: {
       {trangThai === 'DANG_XU_LY' && <ThongBao loai="thong_tin">{t('chiTiet.dangTaoTep')}</ThongBao>}
       {trangThai === 'LOI' && (
         <>
-          <ThongBao loai="canh_bao">{t('chiTiet.loiTaoTep', { ma: luot.loi_tep_hoan_tat })}</ThongBao>
+          <ThongBao loai="canh_bao">
+            {t('chiTiet.loiTaoTep')}
+            <span className="mt-1 block">{lyDoLoiTep}</span>
+          </ThongBao>
           {thuLaiDuoc && (
             <Button size="sm" variant="secondary" icon="fa-rotate-right" isLoading={dangLam}
               onClick={() => lam(async () => onTaiLai(await signingApi.taoLaiTepHoanTat(hoSo.id)))}>
@@ -67,7 +73,7 @@ export default function KetQuaPanel({ hoSo, luot, onTaiLai }: {
           <div className="flex flex-wrap gap-2">
             <Button size="sm" icon="fa-download" isLoading={dangLam}
               onClick={() => lam(async () => taiXuong(await signingApi.tepHoanTat(hoSo.id),
-                `trinh-ky-${hoSo.id}-ban-duyet-noi-bo.pdf`))}>{t('chiTiet.taiTepHoanTat')}</Button>
+                tenTepTaiVe(hoSo.id, 'HOAN_TAT')))}>{t('chiTiet.taiTepHoanTat')}</Button>
             <Button size="sm" variant="secondary" icon="fa-shield-halved"
               onClick={() => lam(async () => setBangChung(await signingApi.bangChung(hoSo.id)))}>
               {t('chiTiet.xacMinh')}

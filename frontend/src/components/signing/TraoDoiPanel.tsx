@@ -66,7 +66,7 @@ export default function TraoDoiPanel({ hoSo, onXong }: { hoSo: HoSoChiTiet; onXo
           <li key={m.id} className={`rounded-lg px-3 py-2 text-sm ${
             m.nguoi_viet === toi?.id ? 'ml-8 bg-primary-subtle' : 'mr-8 bg-surface-elevated'}`}>
             <div className="text-xs font-bold text-secondary">
-              {m.nguoi_viet === toi?.id ? t('traoDoi.ban') : (m.ten_nguoi_viet || `#${m.nguoi_viet}`)}
+              {m.nguoi_viet === toi?.id ? t('traoDoi.ban') : (m.ten_nguoi_viet || t('traoDoi.nguoiChuaXacDinh'))}
             </div>
             <div className="whitespace-pre-wrap break-words text-main">{m.noi_dung}</div>
             <div className="text-xs text-muted">{dinhDangNgay(m.created_at, lang)}</div>

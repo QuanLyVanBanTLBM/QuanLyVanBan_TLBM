@@ -141,11 +141,8 @@ export default function KhoaPage() {
         {(ds.duLieu || []).map((k) => (
           <div key={k.id} className="space-y-1 rounded-lg border border-border-subtle p-3 text-sm">
             <div className="flex items-center justify-between gap-2">
-              <span className="min-w-0 text-base font-bold text-main truncate" title={k.ma_khoa}>{k.ma_khoa || `#${k.id}`}</span>
+              <span className="min-w-0 text-base font-bold text-main truncate">{t('khoa.khoaKy')}</span>
               <TrangThaiBadge trangThai={k.trang_thai} />
-            </div>
-            <div className="text-xs text-secondary">
-              {t('khoa.dauVanTay')}: <code title={k.dau_van_tay}>{k.dau_van_tay.length > 10 ? `${k.dau_van_tay.slice(0, 8)}****` : k.dau_van_tay}</code>
             </div>
             {k.trang_thai === 'HOAT_DONG' && (
               <div className="flex gap-2 pt-1">
@@ -168,7 +165,7 @@ export default function KhoaPage() {
                 setCanThuHoi(null);
               }}>{t('khoa.thuHoi')}</Button>
           </>}>
-          <p className="text-sm text-main">{t('khoa.xacNhanThuHoi', { ma: canThuHoi.ma_khoa || `#${canThuHoi.id}` })}</p>
+          <p className="text-sm text-main">{t('khoa.xacNhanThuHoi')}</p>
           <p className="text-sm text-secondary">{t('khoa.lyDoThuHoi')}: {lyDo.trim()}</p>
         </HopThoai>
       )}

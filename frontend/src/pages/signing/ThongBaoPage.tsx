@@ -47,7 +47,7 @@ export default function ThongBaoPage() {
               <i className={`fa-solid ${BIEU_TUONG[tb.loai_thong_bao] ?? 'fa-bell text-secondary'} mt-1`} aria-hidden="true" />
               <div className="min-w-0 flex-1 space-y-0.5">
                 <div className="font-semibold text-main">{t(`thongBao.loai.${tb.loai_thong_bao}`)}</div>
-                <div className="truncate text-sm text-main" title={tb.van_ban}>#{tb.trinh_ky} · {tb.van_ban}</div>
+                <div className="truncate text-sm text-main" title={tb.van_ban}>{t('danhSach.maHoSo')} #{tb.trinh_ky} · {tb.van_ban}</div>
                 {(tb.nguoi_thao_tac || tb.ly_do) && (
                   <div className="text-xs text-secondary break-words">
                     {tb.nguoi_thao_tac && <span>{t('thongBao.nguoiThaoTac')}: {tb.nguoi_thao_tac}</span>}

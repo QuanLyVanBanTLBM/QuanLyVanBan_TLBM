@@ -95,6 +95,15 @@ export default function SigningModule() {
       ? [{ den: '/approvals/quy-trinh', nhan: t('nav.quyTrinh'), icon: 'fa-diagram-project' }] : []),
     ...(coQuyen(toi.duLieu, 'sign_trinhky') ? [{ den: '/approvals/khoa', nhan: t('nav.khoaCuaToi'), icon: 'fa-key' }] : []),
   ];
+  const tieuDeRoute = pathname === '/approvals' || pathname === '/approvals/' ? t('nav.canToiKy')
+    : pathname === '/approvals/toi-gui' ? t('nav.toiGui')
+      : pathname === '/approvals/tat-ca' ? t('nav.tatCa')
+        : pathname === '/approvals/tao-moi' ? t('nav.taoMoi')
+          : pathname === '/approvals/quy-trinh' ? t('nav.quyTrinh')
+            : pathname === '/approvals/khoa' ? t('nav.khoaCuaToi')
+              : pathname === '/approvals/thong-bao' ? t('nav.thongBao')
+                : pathname === '/approvals/tai-lieu' ? t('nav.taiLieu')
+                  : /^\/approvals\/\d+$/.test(pathname) ? t('chiTiet.tienTrinh') : t('chung.trangKhongTonTai');
 
   return (
     <SigningContext.Provider value={ngu_canh}>
@@ -130,7 +139,7 @@ export default function SigningModule() {
                 to={m.den}
                 end={m.end}
                 className={({ isActive }) =>
-                  `-mb-px flex items-center gap-1.5 sm:gap-2 border-b-2 px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold transition-colors duration-fast whitespace-nowrap shrink-0 ${
+                  `-mb-px flex items-center gap-2 border-b-2 px-3 sm:px-4 py-2 text-sm font-semibold transition-colors duration-fast whitespace-nowrap shrink-0 ${
                     isActive
                       ? 'border-primary text-primary'
                       : 'border-transparent text-secondary hover:text-main hover:border-border'
@@ -154,7 +163,7 @@ export default function SigningModule() {
                 key={m.den}
                 to={m.den}
                 className={({ isActive }) =>
-                  `-mb-px flex items-center gap-1 sm:gap-1.5 border-b-2 px-2.5 sm:px-3 py-2 text-xs sm:text-sm font-medium transition-colors duration-fast whitespace-nowrap shrink-0 ${
+                  `-mb-px flex items-center gap-2 border-b-2 px-3 sm:px-4 py-2 text-sm font-semibold transition-colors duration-fast whitespace-nowrap shrink-0 ${
                     isActive
                       ? 'border-primary text-primary'
                       : 'border-transparent text-secondary hover:text-main hover:border-border'
@@ -175,6 +184,9 @@ export default function SigningModule() {
             ))}
           </div>
         </nav>
+        <h2 className="m-0 border-b border-border-subtle pb-3 text-lg font-bold text-main" aria-live="polite">
+          {tieuDeRoute}
+        </h2>
         {toi.dangTai && !toi.duLieu && <DangTai />}
         {toi.loi && <LoiTai thongBao={loi(toi.loi)} onThuLai={toi.tai} />}
         {toi.duLieu && (

@@ -40,7 +40,7 @@ function thongDiepDauTien(fields: unknown): [string, string] | null {
 export type HamDich = (khoa: string, thay?: Record<string, string | number>) => string;
 
 export function dich(lang: 'vi' | 'en', khoa: string, thay?: Record<string, string | number>): string {
-  let kq = tra(TU_DIEN[lang], khoa) ?? tra(TU_DIEN.vi, khoa) ?? khoa;
+  let kq = tra(TU_DIEN[lang], khoa) ?? tra(TU_DIEN.vi, khoa) ?? '—';
   Object.entries(thay || {}).forEach(([k, v]) => {
     kq = kq.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v));
   });

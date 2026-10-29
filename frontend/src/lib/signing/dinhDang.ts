@@ -1,6 +1,6 @@
 /** Tiện ích hiển thị dùng chung của phân hệ Trình ký. */
 import type { HamDich } from './i18n';
-import type { NguoiKyCauHinh } from './types';
+import type { LoaiTepTaiLieu, NguoiKyCauHinh } from './types';
 
 export const LOP_O_NHAP =
   'w-full rounded-xl border border-border-subtle bg-surface px-3.5 py-2 text-sm text-main placeholder:text-muted ' +
@@ -18,11 +18,33 @@ export function dinhDangNgay(iso: string | null | undefined, lang: 'vi' | 'en'):
   });
 }
 
-/** Số hiệu — trích yếu của văn bản trình ký (văn bản đi hoặc nhập tay); thiếu cả hai thì mã văn bản đi hoặc "—". */
-export function moTaVanBan(vb: { so_hieu?: string; trich_yeu?: string } | undefined, van_ban_id: number | null): string {
+/** Số hiệu — trích yếu; khi hồ sơ thiếu cả hai thì nêu rõ là văn bản chưa được định danh. */
+export function moTaVanBan(
+  vb: { so_hieu?: string; trich_yeu?: string } | undefined,
+  t: HamDich,
+): string {
   const phan = [vb?.so_hieu, vb?.trich_yeu].filter(Boolean);
   if (phan.length) return phan.join(' — ');
-  return van_ban_id != null ? `#${van_ban_id}` : '—';
+  return t('danhSach.vanBanChuaDinhDanh');
+}
+
+/** Dịch mã lỗi của tiến trình tạo PDF hoàn tất; mã không nhận diện thì không lộ giá trị nội bộ. */
+export function loiTepHoanTatHienThi(ma: string, t: HamDich): string {
+  const khoa = `chiTiet.loiTaoTepMa.${ma}`;
+  const thongDiep = t(khoa);
+  return thongDiep === khoa || thongDiep === '—' ? t('chiTiet.loiTaoTepKhongRo') : thongDiep;
+}
+
+/** Tên tệp tải về có nhãn hồ sơ và nội dung dễ nhận biết. */
+export function tenTepTaiVe(hoSoId: number, loai: LoaiTepTaiLieu, soLuot?: number | null): string {
+  const hoSo = `ho-so-${hoSoId}`;
+  if (loai === 'DU_THAO') return `${hoSo}-ban-du-thao.pdf`;
+  if (loai === 'HOAN_TAT') return `${hoSo}-ban-hoan-tat.pdf`;
+  return soLuot == null ? `${hoSo}-ban-trinh-ky.pdf` : `${hoSo}-luot-${soLuot}.pdf`;
+}
+
+export function tenBangChungTaiVe(hoSoId: number): string {
+  return `ho-so-${hoSoId}-bang-chung.json`;
 }
 
 /** Giới hạn độ dài nhập tay, khớp serializer backend (`serializers.py`). */

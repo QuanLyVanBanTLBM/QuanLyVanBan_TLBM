@@ -6,7 +6,7 @@ import { useState } from 'react';
 import { Button, Card } from '@components/common';
 import { ThongBao } from '@components/signing/ChungUI';
 import { signingApi } from '@lib/signing/api';
-import { dinhDangNgay } from '@lib/signing/dinhDang';
+import { dinhDangNgay, tenBangChungTaiVe, tenTepTaiVe } from '@lib/signing/dinhDang';
 import { useSigningT } from '@lib/signing/i18n';
 import type { HoSoChiTiet } from '@lib/signing/types';
 
@@ -33,7 +33,7 @@ export default function TaiLieuPanel({ hoSo }: { hoSo: HoSoChiTiet }) {
   };
   const taiBangChung = () => tai(async () => new Blob(
     [JSON.stringify(await signingApi.bangChung(hoSo.id), null, 2)], { type: 'application/json' },
-  ), `trinh-ky-${hoSo.id}-bang-chung.json`);
+  ), tenBangChungTaiVe(hoSo.id));
 
   const dong = (khoa: string, nhan: string, phu: string, onTai: () => void) => (
     <li key={khoa} className="flex flex-wrap items-center justify-between gap-2 py-2">
@@ -51,14 +51,14 @@ export default function TaiLieuPanel({ hoSo }: { hoSo: HoSoChiTiet }) {
       <ul className="divide-y divide-border-subtle">
         {hoSo.luot_trinh.length === 0 && dong('nhap', t('chiTiet.banDuThao'),
           '',
-          () => tai(() => signingApi.tepGoc(hoSo.id), `trinh-ky-${hoSo.id}-du-thao.pdf`))}
+          () => tai(() => signingApi.tepGoc(hoSo.id), tenTepTaiVe(hoSo.id, 'DU_THAO')))}
         {hoSo.luot_trinh.map((l) => dong(`luot-${l.id}`,
           hoSo.luot_trinh.length > 1 ? `${t('chiTiet.banLuot')} (${t('chiTiet.luot', { so: l.so_luot })})` : t('chiTiet.banLuot'),
           dinhDangNgay(l.thoi_diem_gui, lang),
-          () => tai(() => signingApi.tepCuaLuot(hoSo.id, l.id), `trinh-ky-${hoSo.id}-luot-${l.so_luot}.pdf`)))}
+          () => tai(() => signingApi.tepCuaLuot(hoSo.id, l.id), tenTepTaiVe(hoSo.id, 'LUOT', l.so_luot))))}
         {hoSo.trang_thai === 'HOAN_THANH' && hoSo.luot_trinh[0]?.trang_thai_tep_hoan_tat === 'THANH_CONG' && dong('hoan-tat',
           t('chiTiet.tepHoanTat'), '',
-          () => tai(() => signingApi.tepHoanTat(hoSo.id), `trinh-ky-${hoSo.id}-ban-duyet-noi-bo.pdf`))}
+          () => tai(() => signingApi.tepHoanTat(hoSo.id), tenTepTaiVe(hoSo.id, 'HOAN_TAT')))}
       </ul>
       {hoSo.trang_thai === 'HOAN_THANH' && (
         <Button size="sm" variant="secondary" icon="fa-file-code" onClick={taiBangChung}>{t('chiTiet.bangChungJson')}</Button>

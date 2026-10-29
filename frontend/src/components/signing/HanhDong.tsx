@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@components/common';
 import { signingApi } from '@lib/signing/api';
-import { GIOI_HAN, LOP_O_NHAP } from '@lib/signing/dinhDang';
+import { GIOI_HAN, LOP_O_NHAP, moTaVanBan } from '@lib/signing/dinhDang';
 import { coQuyen, useKhoaChongTrung, useToi } from '@lib/signing/hooks';
 import { useSigningT } from '@lib/signing/i18n';
 import { docFileKhoaTuTep, DUOI_FILE_KHOA } from '@lib/signing/fileKhoa';
@@ -44,6 +44,7 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
   const [dangTimNhan, setDangTimNhan] = useState(false);
   const [loiTimNhan, setLoiTimNhan] = useState<unknown>(null);
   const [nguoiNhan, setNguoiNhan] = useState('');
+  const tenVanBan = moTaVanBan(hoSo.van_ban, t);
 
   const laNguoiTao = toi?.id === hoSo.create_by;
   const dangMoChoToi = hoSo.dang_cho.some((d) => d.nguoi_ky === toi?.id);
@@ -147,7 +148,7 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
 
       <HopThoai moTieuDe={t('hanhDong.kyDuyet')} mo={mo === 'ky'} onDong={dong} dangXuLy={dangLam}
         chanDuoi={nutXacNhan(ky, t('hanhDong.kyDuyet'), 'primary', !maBamKhop || pin.length !== 8)}>
-        <div className="text-sm text-main">{t('hanhDong.xacNhanTep')} <b>trinh-ky-{hoSo.id}.pdf</b></div>
+        <div className="text-sm text-main">{t('hanhDong.xacNhanTep')} <b>{tenVanBan}</b></div>
         {!maBamKhop && <ThongBao>{t('loi.ma_bam_khong_khop')}</ThongBao>}
         <TruongNhap nhan={t('hanhDong.ghiChuKy')}>
           <input className={LOP_O_NHAP} maxLength={GIOI_HAN.ghiChu} value={o1} onChange={(e) => setO1(e.target.value)} />
@@ -160,7 +161,7 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
               if (tep) docFileKhoaTuTep(tep).then(setFileKhoa, (err) => setThongBao(loi(err)));
             }} />
         </TruongNhap>
-        {fileKhoa && <ThongBao loai="thong_tin">{t('hanhDong.daChonFile', { ma: fileKhoa.maKhoa })}</ThongBao>}
+        {fileKhoa && <ThongBao loai="thong_tin">{t('hanhDong.daChonFile')}</ThongBao>}
         <TruongNhap nhan={t('hanhDong.nhapPin')}>
           <input className={LOP_O_NHAP} type="password" inputMode="numeric" autoComplete="off" maxLength={8}
             value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}

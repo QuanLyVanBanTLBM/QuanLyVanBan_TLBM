@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from 'react';
 import { laLoiHuyVe, moPdf, veTrang, type TaiLieuPdf } from '@lib/signing/pdf';
 import { useSigningT } from '@lib/signing/i18n';
 import { kep } from '@lib/signing/viTri';
+import { Button } from '@components/common';
 import { DangTai, ThongBao } from './ChungUI';
 
 export interface KhungHienThi {
@@ -31,6 +32,15 @@ interface Props {
   onDat?: (id: string, trang: number, x: number, y: number) => void;
   onKeo?: (id: string, x: number, y: number) => void;
   onSoTrang?: (so: number) => void;
+}
+
+function khoaLoiPdf(err: unknown): string {
+  const name = (err as { name?: string } | null)?.name;
+  if (name === 'PasswordException') return 'loi.pdfCanMatKhau';
+  if (name === 'InvalidPDFException') return 'loi.pdfKhongHopLe';
+  if (name === 'MissingPDFException') return 'loi.pdfKhongTimThay';
+  if (name === 'UnexpectedResponseException') return 'loi.pdfPhanHoiKhongHopLe';
+  return 'loi.khong_hien_thi_duoc_pdf';
 }
 
 function KhungKy({ k, onKeo }: { k: KhungHienThi; onKeo?: Props['onKeo'] }) {
@@ -77,21 +87,23 @@ function TrangPdf({ pdf, so, rong, khung, khungDangDat, onDat, onKeo }: {
 } & Pick<Props, 'khungDangDat' | 'onDat' | 'onKeo'>) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const { t } = useSigningT();
-  const [loiVe, setLoiVe] = useState(false);
+  const [loiVe, setLoiVe] = useState<string | null>(null);
+  const [lanVe, setLanVe] = useState(0);
   useEffect(() => {
     if (!canvas.current || rong <= 0) return undefined;
+    setLoiVe(null);
     let huy = false;
     const ve = veTrang(pdf, so, canvas.current, rong);
-    ve.xong.then(() => !huy && setLoiVe(false), (err) => {
+    ve.xong.then(() => !huy && setLoiVe(null), (err) => {
       if (huy || laLoiHuyVe(err)) return;  // lần vẽ bị thay bằng lần mới (đổi kích thước), không phải lỗi
       console.error('Không vẽ được trang PDF', so, err);
-      setLoiVe(true);
+      setLoiVe(khoaLoiPdf(err));
     });
     return () => {
       huy = true;
       ve.huy();
     };
-  }, [pdf, so, rong]);
+  }, [pdf, so, rong, lanVe]);
   return (
     <figure className="space-y-1">
       <div
@@ -106,7 +118,12 @@ function TrangPdf({ pdf, so, rong, khung, khungDangDat, onDat, onKeo }: {
         <canvas ref={canvas} className="block w-full h-auto" aria-label={t('tao.trang', { so })} />
         {khung.map((k) => <KhungKy key={k.id} k={k} onKeo={onKeo} />)}
       </div>
-      {loiVe && <ThongBao>{t('loi.khong_hien_thi_duoc_pdf')}</ThongBao>}
+      {loiVe && <div className="space-y-2">
+        <ThongBao>{t(loiVe)}</ThongBao>
+        <Button size="sm" variant="secondary" icon="fa-rotate-right" onClick={() => setLanVe((n) => n + 1)}>
+          {t('chung.thuLai')}
+        </Button>
+      </div>}
       <figcaption className="text-center text-xs text-muted">{t('tao.trang', { so })}</figcaption>
     </figure>
   );
@@ -114,30 +131,34 @@ function TrangPdf({ pdf, so, rong, khung, khungDangDat, onDat, onKeo }: {
 
 export default function XemPdf({ duLieu, khung = [], khungDangDat, onDat, onKeo, onSoTrang }: Props) {
   const khungChua = useRef<HTMLDivElement>(null);
-  // Kết quả mở PDF gắn với dữ liệu nguồn: đổi tệp thì kết quả cũ tự không còn dùng (không reset trong effect)
-  const [mo, setMo] = useState<{ nguon: ArrayBuffer; pdf: TaiLieuPdf | null; loi: boolean } | null>(null);
+  // Kết quả mở PDF gắn với dữ liệu nguồn; đổi tệp hoặc yêu cầu tải lại sẽ bỏ kết quả cũ.
+  const [mo, setMo] = useState<{ nguon: ArrayBuffer; pdf: TaiLieuPdf | null; loi: string | null } | null>(null);
   const [rong, setRong] = useState(0);
+  const [trang, setTrang] = useState(1);
+  const [lanThu, setLanThu] = useState(0);
   const { t } = useSigningT();
   const pdf = mo?.nguon === duLieu ? mo.pdf : null;
-  const loi = mo?.nguon === duLieu && mo.loi;
+  const loi = mo?.nguon === duLieu ? mo.loi : null;
 
   useEffect(() => {
     let huy = false;
+    setMo(null);
     moPdf(duLieu)
       .then((tai_lieu) => {
         if (huy) return;
-        setMo({ nguon: duLieu, pdf: tai_lieu, loi: false });
+        setMo({ nguon: duLieu, pdf: tai_lieu, loi: null });
+        setTrang(1);
         onSoTrang?.(tai_lieu.numPages);
       })
       .catch((err) => {
         console.error('Không mở được PDF', err);
-        if (!huy) setMo({ nguon: duLieu, pdf: null, loi: true });
+        if (!huy) setMo({ nguon: duLieu, pdf: null, loi: khoaLoiPdf(err) });
       });
     return () => {
       huy = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [duLieu]);
+  }, [duLieu, lanThu]);
 
   useEffect(() => {
     const el = khungChua.current;
@@ -149,12 +170,30 @@ export default function XemPdf({ duLieu, khung = [], khungDangDat, onDat, onKeo,
 
   return (
     <div ref={khungChua} className="mx-auto w-full max-w-3xl space-y-4">
-      {loi && <ThongBao>{t('loi.khong_hien_thi_duoc_pdf')}</ThongBao>}
+      {loi && <div className="space-y-2">
+        <ThongBao>{t(loi)}</ThongBao>
+        <Button size="sm" variant="secondary" icon="fa-rotate-right" onClick={() => setLanThu((n) => n + 1)}>
+          {t('chung.thuLai')}
+        </Button>
+      </div>}
       {!pdf && !loi && <DangTai />}
-      {pdf && Array.from({ length: pdf.numPages }, (_, i) => i + 1).map((so) => (
-        <TrangPdf key={so} pdf={pdf} so={so} rong={rong} khung={khung.filter((k) => k.trang === so)}
+      {pdf && <>
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-border-subtle bg-surface px-3 py-2">
+          <Button size="sm" variant="secondary" icon="fa-chevron-left" disabled={trang <= 1}
+            aria-label={t('phanTrang.truoc')} onClick={() => setTrang((n) => Math.max(1, n - 1))}>
+            {t('phanTrang.truoc')}
+          </Button>
+          <span className="text-sm font-semibold text-secondary" aria-live="polite">
+            {t('phanTrang.trang', { trang, tong: pdf.numPages })}
+          </span>
+          <Button size="sm" variant="secondary" icon="fa-chevron-right" disabled={trang >= pdf.numPages}
+            aria-label={t('phanTrang.sau')} onClick={() => setTrang((n) => Math.min(pdf.numPages, n + 1))}>
+            {t('phanTrang.sau')}
+          </Button>
+        </div>
+        <TrangPdf key={trang} pdf={pdf} so={trang} rong={rong} khung={khung.filter((k) => k.trang === trang)}
           khungDangDat={khungDangDat} onDat={onDat} onKeo={onKeo} />
-      ))}
+      </>}
     </div>
   );
 }

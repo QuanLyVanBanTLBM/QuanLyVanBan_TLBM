@@ -163,12 +163,12 @@ export default function DanhSachPage({ hop }: { hop: Hop }) {
           <ul className="space-y-2 lg:hidden" aria-label={t('danhSach.vanBan')}>
             {hoSo.map((h) => (
               <li key={h.id} className="rounded-lg border border-border-subtle p-3">
-                <Link to={`/approvals/${h.id}`} title={moTaVanBan(h.van_ban, h.van_ban_id)}
+                <Link to={`/approvals/${h.id}`} title={moTaVanBan(h.van_ban, t)}
                   className="block font-semibold text-main hover:text-primary break-words line-clamp-3">
-                  {moTaVanBan(h.van_ban, h.van_ban_id)}
+                  {moTaVanBan(h.van_ban, t)}
                   {h.van_ban_id == null && <span className="ml-2 rounded-full bg-info-subtle px-2 py-0.5 text-xs text-info">{t('danhSach.taiLieuDocLap')}</span>}
                 </Link>
-                <div className="text-xs text-muted break-words">#{h.id} · {h.ten_quy_trinh}</div>
+                <div className="text-xs text-muted break-words">{t('danhSach.maHoSo')} #{h.id} · {h.ten_quy_trinh}</div>
                 <div className="flex flex-wrap items-center gap-2"><TrangThaiHoSo hoSo={h} /></div>
                 <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1.5 text-xs text-secondary pt-1 border-t border-border-subtle">
                   <dt>{t('danhSach.dangCho')}</dt>
@@ -209,12 +209,12 @@ export default function DanhSachPage({ hop }: { hop: Hop }) {
                 {hoSo.map((h) => (
                   <tr key={h.id} className="hover:bg-surface-hover transition-colors">
                     <td className="px-3.5 py-2 truncate">
-                      <Link to={`/approvals/${h.id}`} className="font-semibold text-main hover:text-primary transition-colors flex items-center gap-1.5 text-base truncate" title={moTaVanBan(h.van_ban, h.van_ban_id)}>
+                      <Link to={`/approvals/${h.id}`} className="font-semibold text-main hover:text-primary transition-colors flex items-center gap-1.5 text-base truncate" title={moTaVanBan(h.van_ban, t)}>
                         <i className="fa-solid fa-file-contract text-primary/70 text-sm shrink-0" aria-hidden="true" />
-                        <span className="truncate">{moTaVanBan(h.van_ban, h.van_ban_id)}</span>
+                        <span className="truncate">{moTaVanBan(h.van_ban, t)}</span>
                         {h.van_ban_id == null && <span className="shrink-0 rounded-full bg-info-subtle px-2 py-0.5 text-xs text-info">{t('danhSach.taiLieuDocLap')}</span>}
                       </Link>
-                      <div className="mt-0.5 truncate text-xs text-muted" title={h.ten_quy_trinh}>#{h.id} · {h.ten_quy_trinh}</div>
+                      <div className="mt-0.5 truncate text-xs text-muted" title={h.ten_quy_trinh}>{t('danhSach.maHoSo')} #{h.id} · {h.ten_quy_trinh}</div>
                     </td>
                     <td className="px-2 py-2 text-center"><TrangThaiHoSo hoSo={h} /></td>
                     <td className="px-2 py-2 text-center whitespace-nowrap truncate">
