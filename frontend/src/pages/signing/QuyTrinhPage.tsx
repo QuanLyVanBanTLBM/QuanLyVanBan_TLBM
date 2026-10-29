@@ -46,21 +46,15 @@ function chucDanh(u: CanBo, khongCo: string): string {
 
 interface ChonNguoiDungProps {
   onChon: (u: CanBo) => void;
-  onChonChucVu?: (cv: { id: number; ten: string }, phamVi: string) => void;
   chucVuLocId?: number | null;
   chucVuLocTen?: string | null;
-  danhSachChucVu?: ChucVu[];
-  phamVi?: string;
 }
 
-/** Chọn cán bộ hoặc chức danh (hiển thị đầy đủ chức danh và cán bộ, hỗ trợ tìm kiếm không dấu). */
+/** Chọn cán bộ từ danh bạ CBNV (hỗ trợ tìm kiếm theo họ tên, username, chức vụ, đơn vị không dấu). */
 function ChonNguoiDung({
   onChon,
-  onChonChucVu,
   chucVuLocId,
   chucVuLocTen,
-  danhSachChucVu = [],
-  phamVi = 'TOAN_CO_QUAN',
 }: ChonNguoiDungProps) {
   const { t, loi } = useSigningT();
   const [q, setQ] = useState('');
@@ -88,22 +82,6 @@ function ChonNguoiDung({
   }, [ds.duLieu]);
 
   const tuKhoa = boDau(q.trim());
-
-  // Danh sách chức danh gợi ý
-  const goiYChucVu = useMemo(() => {
-    if (!onChonChucVu || !danhSachChucVu.length) return [];
-    if (chucVuLocId != null) {
-      return danhSachChucVu.filter((c) => {
-        const khopId = c.id === chucVuLocId;
-        const khopTen = chucVuLocTen ? boDau(c.name) === boDau(chucVuLocTen) : false;
-        return khopId || khopTen;
-      });
-    }
-    if (tuKhoa) {
-      return danhSachChucVu.filter((c) => boDau(c.name).includes(tuKhoa)).slice(0, TOI_DA_GOI_Y);
-    }
-    return danhSachChucVu.slice(0, TOI_DA_GOI_Y);
-  }, [onChonChucVu, danhSachChucVu, chucVuLocId, chucVuLocTen, tuKhoa]);
 
   // Danh sách cán bộ gợi ý
   const goiYCanBo = useMemo(() => {
@@ -158,84 +136,43 @@ function ChonNguoiDung({
           <span>{t('chung.dangTai')}</span>
         </div>
       )}
-      {mo && (goiYChucVu.length > 0 || goiYCanBo.length > 0) && (
-        <ul className="max-h-72 overflow-y-auto rounded-lg border border-border-subtle bg-surface shadow-md divide-y divide-border-subtle z-50 relative" role="listbox">
-          {goiYChucVu.length > 0 && (
-            <li>
-              <div className="px-3 py-1.5 text-2xs font-semibold text-secondary uppercase bg-surface-subtle sticky top-0 flex items-center gap-1.5 border-b border-border-subtle">
-                <i className="fa-solid fa-user-tie text-2xs text-primary" aria-hidden="true" />
-                <span>{t('quyTrinh.nhomTheoChucVu')} ({goiYChucVu.length})</span>
-              </div>
-              <ul className="divide-y divide-border-subtle/50">
-                {goiYChucVu.map((cv) => (
-                  <li key={`cv-${cv.id}`}>
-                    <button
-                      type="button"
-                      className="w-full px-3 py-2 text-left hover:bg-surface-hover flex items-center justify-between group transition-colors"
-                      onClick={() => {
-                        onChonChucVu?.({ id: cv.id, ten: cv.name }, phamVi);
-                        setQ('');
-                        setMo(false);
-                      }}
-                    >
-                      <div className="min-w-0 pr-2">
-                        <span className="block text-sm font-semibold text-main group-hover:text-primary truncate flex items-center gap-1.5">
-                          <i className="fa-solid fa-user-tie text-xs text-primary shrink-0" aria-hidden="true" />
-                          <span>{t('quyTrinh.theoChucVu', { ten: cv.name })}</span>
-                        </span>
-                        <span className="block text-2xs text-muted truncate mt-0.5">
-                          {t('quyTrinh.giaiThichChucVuForm')} · {t(`phamViChucVu.${phamVi}`)}
-                        </span>
-                      </div>
-                      <span className="text-xs text-primary font-medium shrink-0 flex items-center gap-1 opacity-80 group-hover:opacity-100">
-                        <i className="fa-solid fa-plus text-2xs" aria-hidden="true" />
-                        <span>{t('chung.chon')}</span>
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </li>
-          )}
-          {goiYCanBo.length > 0 && (
-            <li>
-              <div className="px-3 py-1.5 text-2xs font-semibold text-secondary uppercase bg-surface-subtle sticky top-0 flex items-center gap-1.5 border-b border-border-subtle">
-                <i className="fa-solid fa-user text-2xs text-secondary" aria-hidden="true" />
-                <span>{t('quyTrinh.nhomTheoCanBo')} ({goiYCanBo.length})</span>
-              </div>
-              <ul className="divide-y divide-border-subtle/50">
-                {goiYCanBo.map((u) => (
-                  <li key={`cb-${u.id}`}>
-                    <button
-                      type="button"
-                      className="w-full px-3 py-2 text-left hover:bg-surface-hover flex items-center justify-between group transition-colors"
-                      onClick={() => {
-                        onChon(u);
-                        setQ('');
-                        setMo(false);
-                      }}
-                    >
-                      <div className="min-w-0 pr-2">
-                        <span className="block text-sm font-semibold text-main group-hover:text-primary truncate flex items-center gap-1.5">
-                          <i className="fa-solid fa-user text-xs text-secondary shrink-0" aria-hidden="true" />
-                          <span>{u.ho_ten}</span>
-                        </span>
-                        <span className="block text-xs text-secondary truncate">{chucDanh(u, t('quyTrinh.chuaCoChucVu'))}</span>
-                        <span className="block text-2xs text-muted truncate">@{u.username}</span>
-                      </div>
-                      <span className="text-xs text-primary font-medium shrink-0 flex items-center gap-1 opacity-80 group-hover:opacity-100">
-                        <i className="fa-solid fa-plus text-2xs" aria-hidden="true" />
-                        <span>{t('chung.chon')}</span>
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </li>
-          )}
-        </ul>
+      {mo && goiYCanBo.length > 0 && (
+        <div className="max-h-72 overflow-y-auto rounded-lg border border-border-subtle bg-surface shadow-md z-50 relative">
+          <div className="px-3 py-1.5 text-2xs font-semibold text-secondary uppercase bg-surface-subtle flex items-center gap-1.5 border-b border-border-subtle select-none">
+            <i className="fa-solid fa-users text-2xs text-secondary" aria-hidden="true" />
+            <span>{t('quyTrinh.nhomTheoCanBo')} ({goiYCanBo.length})</span>
+          </div>
+          <ul className="divide-y divide-border-subtle" role="listbox">
+            {goiYCanBo.map((u) => (
+              <li key={`cb-${u.id}`}>
+                <button
+                  type="button"
+                  className="w-full px-3 py-2 text-left hover:bg-surface-hover flex items-center justify-between group transition-colors"
+                  onClick={() => {
+                    onChon(u);
+                    setQ('');
+                    setMo(false);
+                  }}
+                >
+                  <div className="min-w-0 pr-2">
+                    <span className="block text-sm font-semibold text-main group-hover:text-primary truncate flex items-center gap-1.5">
+                      <i className="fa-solid fa-user text-xs text-secondary shrink-0" aria-hidden="true" />
+                      <span>{u.ho_ten}</span>
+                    </span>
+                    <span className="block text-xs text-secondary truncate">{chucDanh(u, t('quyTrinh.chuaCoChucVu'))}</span>
+                    <span className="block text-2xs text-muted truncate">@{u.username}</span>
+                  </div>
+                  <span className="text-xs text-primary font-medium shrink-0 flex items-center gap-1 opacity-80 group-hover:opacity-100">
+                    <i className="fa-solid fa-plus text-2xs" aria-hidden="true" />
+                    <span>{t('chung.chon')}</span>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
-      {mo && !ds.dangTai && !!ds.duLieu && goiYChucVu.length === 0 && goiYCanBo.length === 0 && (
+      {mo && !ds.dangTai && !!ds.duLieu && goiYCanBo.length === 0 && (
         <p className="rounded-lg border border-border-subtle bg-surface p-2.5 text-xs text-muted shadow-sm">
           {chucVuLocTen
             ? t('quyTrinh.khongThayCanBoChucVu', { chucVu: chucVuLocTen })
@@ -387,9 +324,6 @@ function ThemNguoiKyCap({
           chucVuLocId={chon?.id ?? null}
           chucVuLocTen={chon?.name ?? null}
           onChon={onChonCanBo}
-          onChonChucVu={onChonChucVu}
-          danhSachChucVu={ds.duLieu ?? []}
-          phamVi={phamVi}
         />
       </div>
     </div>
