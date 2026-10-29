@@ -26,7 +26,7 @@ interface CapNhap { ten_cap_ky: string; so_gio_xu_ly: string; don_vi_id: number 
 const CAP_TRONG: CapNhap = { ten_cap_ky: '', so_gio_xu_ly: '', don_vi_id: null, nguoi_ky: [] };
 /** Phạm vi tìm người giữ chức vụ chọn được trên form (DON_VI_CO_DINH cần cấp có đơn vị, giữ nguyên khi sửa). */
 const PHAM_VI_CHUC_VU = ['DON_VI_NGUOI_TAO', 'TOAN_CO_QUAN'] as const;
-const TOI_DA_GOI_Y = 100;
+const TOI_DA_GOI_Y = 500;
 
 function capTuQuyTrinh(q: QuyTrinh, t: HamDich): CapNhap[] {
   return q.cap_ky.map((c) => ({
