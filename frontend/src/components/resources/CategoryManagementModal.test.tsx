@@ -285,4 +285,161 @@ describe('CategoryManagementModal Component (Issue #233)', () => {
     expect(screen.getByText('Loại tài liệu 1')).toBeInTheDocument();
     expect(screen.queryByText('Loại tài liệu 6')).not.toBeInTheDocument();
   });
+
+  it('allows selecting a parent folder via the custom dropdown portal when creating a document type', async () => {
+    onSaveType.mockResolvedValueOnce(undefined);
+
+    const multiCategories: ResourceCategory[] = [
+      { id: 1, stt_uu_tien: 1, ten_tai_lieu: 'Thư mục A' },
+      { id: 2, stt_uu_tien: 2, ten_tai_lieu: 'Thư mục B' },
+    ];
+
+    render(
+      <CategoryManagementModal
+        isOpen={true}
+        onClose={onClose}
+        categories={multiCategories}
+        types={mockTypes}
+        onSaveCategory={onSaveCategory}
+        onDeleteCategory={onDeleteCategory}
+        onSaveType={onSaveType}
+        onDeleteType={onDeleteType}
+      />
+    );
+
+    // Chuyển sang tab Loại tài liệu
+    const typeTabBtn = screen.getByRole('button', { name: /Loại tài liệu/i });
+    fireEvent.click(typeTabBtn);
+
+    // Mở modal thêm mới loại tài liệu
+    const addTypeBtn = screen.getByTitle('Thêm mới Loại tài liệu');
+    fireEvent.click(addTypeBtn);
+
+    // Click nút dropdown "Thư mục cha"
+    const catDropdownBtn = screen.getByRole('button', { name: /Thư mục A/i });
+    fireEvent.click(catDropdownBtn);
+
+    // Tìm kiếm thư mục trong dropdown popup portal
+    const searchInput = screen.getByPlaceholderText('Tìm kiếm thư mục...');
+    expect(searchInput).toBeInTheDocument();
+    fireEvent.change(searchInput, { target: { value: 'Thư mục B' } });
+
+    // Chọn "Thư mục B"
+    const optionB = screen.getByRole('button', { name: /Thư mục B/i });
+    fireEvent.click(optionB);
+
+    // Nhập tên loại tài liệu
+    const typeNameInput = screen.getByPlaceholderText(/VD: Biểu mẫu bảo hiểm, Tờ trình.../i);
+    fireEvent.change(typeNameInput, { target: { value: 'Loại trong Thư mục B' } });
+
+    // Lưu loại tài liệu
+    const saveBtn = screen.getByRole('button', { name: /Lưu loại tài liệu/i });
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => {
+      expect(onSaveType).toHaveBeenCalledTimes(1);
+    });
+
+    expect(onSaveType).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ten_loai: 'Loại trong Thư mục B',
+        dm_tai_lieu: 2,
+      }),
+      false
+    );
+  });
+
+  it('filters document types via the filter parent folder dropdown portal', () => {
+    const multiCategories: ResourceCategory[] = [
+      { id: 1, stt_uu_tien: 1, ten_tai_lieu: 'Thư mục A' },
+      { id: 2, stt_uu_tien: 2, ten_tai_lieu: 'Thư mục B' },
+    ];
+
+    const typesWithDifferentParents: ResourceType[] = [
+      { id: 101, dm_tai_lieu: 1, ten_loai: 'Hợp đồng A', is_public: true },
+      { id: 102, dm_tai_lieu: 2, ten_loai: 'Báo cáo B', is_public: true },
+    ];
+
+    render(
+      <CategoryManagementModal
+        isOpen={true}
+        onClose={onClose}
+        categories={multiCategories}
+        types={typesWithDifferentParents}
+        onSaveCategory={onSaveCategory}
+        onDeleteCategory={onDeleteCategory}
+        onSaveType={onSaveType}
+        onDeleteType={onDeleteType}
+      />
+    );
+
+    // Chuyển sang tab Loại tài liệu
+    const typeTabBtn = screen.getByRole('button', { name: /Loại tài liệu/i });
+    fireEvent.click(typeTabBtn);
+
+    // Ban đầu thấy cả 2 loại
+    expect(screen.getByText('Hợp đồng A')).toBeInTheDocument();
+    expect(screen.getByText('Báo cáo B')).toBeInTheDocument();
+
+    // Mở dropdown lọc thư mục cha
+    const filterBtn = screen.getAllByLabelText('Lọc theo thư mục cha')[0];
+    fireEvent.click(filterBtn);
+
+    // Chọn "Thư mục B" từ dropdown portal
+    const optionB = screen.getAllByRole('button', { name: /Thư mục B/i })[0];
+    fireEvent.click(optionB);
+
+    // Chỉ thấy "Báo cáo B", "Hợp đồng A" bị lọc ẩn đi
+    expect(screen.getByText('Báo cáo B')).toBeInTheDocument();
+    expect(screen.queryByText('Hợp đồng A')).not.toBeInTheDocument();
+  });
+
+  it('supports scrolling and selecting when there are more than 5 categories in add type modal', () => {
+    const eightCategories: ResourceCategory[] = Array.from({ length: 8 }, (_, i) => ({
+      id: i + 1,
+      stt_uu_tien: i + 1,
+      ten_tai_lieu: `Thư mục ${i + 1}`,
+    }));
+
+    render(
+      <CategoryManagementModal
+        isOpen={true}
+        onClose={onClose}
+        categories={eightCategories}
+        types={[]}
+        onSaveCategory={onSaveCategory}
+        onDeleteCategory={onDeleteCategory}
+        onSaveType={onSaveType}
+        onDeleteType={onDeleteType}
+      />
+    );
+
+    // Mở modal Thêm mới
+    const addBtn = screen.getByRole('button', { name: /Thêm mới/i });
+    fireEvent.click(addBtn);
+
+    // Chuyển sang tab Loại tài liệu
+    const typeTabBtn = screen.getByRole('button', { name: /Loại tài liệu \(Cấp 2\)/i });
+    fireEvent.click(typeTabBtn);
+
+    // Mở dropdown chọn Thư mục cha
+    const catDropdownBtn = document.querySelector('button[aria-haspopup="listbox"]') as HTMLElement;
+    expect(catDropdownBtn).toBeInTheDocument();
+    fireEvent.click(catDropdownBtn);
+
+    // Dropdown list container phải có max-h-[185px] và overflow-y-auto
+    const dropdownList = document.querySelector('[role="listbox"] .overflow-y-auto');
+    expect(dropdownList).toBeInTheDocument();
+    expect(dropdownList?.className).toContain('max-h-[185px]');
+    expect(dropdownList?.className).toContain('overflow-y-auto');
+
+    // Chọn Thư mục 8 (mục thứ 8, vượt quá 5 mục đầu)
+    const option8 = screen.getByRole('button', { name: /Thư mục 8/i });
+    expect(option8).toBeInTheDocument();
+    fireEvent.click(option8);
+
+    // Nút dropdown hiển thị Thư mục 8 đã chọn
+    expect(screen.getByRole('button', { name: /Thư mục 8/i })).toBeInTheDocument();
+  });
 });
+

@@ -87,7 +87,7 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
 
   const isBrowserPreviewable = (fileName: string) => {
     const ext = fileName.split('.').pop()?.toLowerCase() || '';
-    return ['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'txt'].includes(ext);
+    return ['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'txt'].includes(ext);
   };
 
   const handlePreviewAttachment = async (fileUrl: string | null | undefined, fileName: string, fileId: number) => {
@@ -137,6 +137,7 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
 
   const handleDownloadAttachment = async (fileUrl: string | null | undefined, fileName: string, fileId: number) => {
     if (!fileUrl) return;
+
     try {
       setLoadingFileId(fileId);
       setLoadingAction('download');

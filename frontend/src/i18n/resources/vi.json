@@ -337,6 +337,9 @@
     "filterByYearAria": "Lọc theo năm ban hành",
     "filterByStatusAria": "Lọc theo tình trạng hiệu lực",
     "exportExcelSuccess": "Đã xuất thành công danh sách tài liệu sang tệp Excel!",
-    "exportFileName": "Danh_sach_tai_lieu"
+    "exportFileName": "Danh_sach_tai_lieu",
+    "searchCategoryPlaceholder": "Tìm kiếm thư mục...",
+    "noMatchingFolders": "Không tìm thấy thư mục phù hợp",
+    "downloadAttachment": "Tải tệp đính kèm về máy"
   }
 }

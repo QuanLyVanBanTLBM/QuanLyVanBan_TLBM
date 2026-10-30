@@ -13,6 +13,7 @@ import { useTranslation } from '@i18n/translate';
 import { authService } from '@lib/authService';
 import { formatDate } from '@lib/dateUtils';
 import { ConfirmationModal } from './ConfirmationModal';
+import { apiClientBlob, downloadBlob } from '@lib/apiClient';
 import { FilePreviewModal } from './FilePreviewModal';
 
 export interface ResourceFormData {
@@ -150,7 +151,51 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
 
   // Custom Dropdown State cho Thư mục
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
+  const [categorySearch, setCategorySearch] = useState('');
   const categoryDropdownRef = useRef<HTMLDivElement>(null);
+  const categoryButtonRef = useRef<HTMLButtonElement>(null);
+  const categoryMenuRef = useRef<HTMLDivElement>(null);
+  const [categoryMenuPos, setCategoryMenuPos] = useState<{
+    top?: number;
+    bottom?: number;
+    left: number;
+    width: number;
+    maxHeight: number;
+  } | null>(null);
+
+  // Cập nhật vị trí fixed cho Dropdown Thư mục trong ResourceFormModal
+  const updateCategoryMenuPos = useCallback(() => {
+    if (!categoryButtonRef.current) return;
+    const rect = categoryButtonRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    const desiredHeight = 248; // Đủ cho ô tìm kiếm (~45px) + tối đa 5 mục thư mục (~180px) + padding (~15px)
+    const minHeight = 120;
+
+    let top: number | undefined;
+    let bottom: number | undefined;
+    let maxHeight: number;
+
+    if (spaceBelow >= 230 || spaceBelow >= spaceAbove) {
+      top = rect.bottom + 6;
+      maxHeight = Math.min(desiredHeight, Math.max(minHeight, spaceBelow - 16));
+    } else {
+      bottom = window.innerHeight - rect.top + 6;
+      maxHeight = Math.min(desiredHeight, Math.max(minHeight, spaceAbove - 16));
+    }
+
+    const buttonWidth = rect.width > 0 ? rect.width : (categoryButtonRef.current.offsetWidth || 320);
+    const width = Math.min(buttonWidth, window.innerWidth - 16);
+    const left = rect.left > 0 ? Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)) : 10;
+
+    setCategoryMenuPos({
+      top,
+      bottom,
+      left,
+      width,
+      maxHeight,
+    });
+  }, []);
 
   // Form State
   const [formData, setFormData] = useState<ResourceFormData>(() => {
@@ -293,6 +338,7 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
   // Đóng an toàn có xác nhận nếu đã chỉnh sửa dữ liệu
   const handleSafeClose = useCallback(() => {
     setIsCategoryDropdownOpen(false);
+    setCategorySearch('');
     if (isDirty) {
       setIsConfirmDiscardOpen(true);
       return;
@@ -300,21 +346,56 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
     onClose();
   }, [isDirty, onClose]);
 
-  // Đóng dropdown khi click ra ngoài hoặc khi ấn ESC
+  // Đóng dropdown khi click ra ngoài, cuộn hoặc resize
   useEffect(() => {
+    if (!isCategoryDropdownOpen) return;
+    updateCategoryMenuPos();
+
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node;
-      if (categoryDropdownRef.current && !categoryDropdownRef.current.contains(target)) {
+      if (
+        categoryDropdownRef.current &&
+        !categoryDropdownRef.current.contains(target) &&
+        !categoryButtonRef.current?.contains(target) &&
+        !categoryMenuRef.current?.contains(target)
+      ) {
         setIsCategoryDropdownOpen(false);
+        setCategoryMenuPos(null);
+        setCategorySearch('');
       }
     };
-    if (isCategoryDropdownOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
+
+    const handleScrollOrResize = (e?: Event) => {
+      // Nếu sự kiện cuộn xảy ra bên trong chính menu dropdown thì bỏ qua, cho phép người dùng lăn chuột mượt mà
+      if (e?.target && categoryMenuRef.current?.contains(e.target as Node)) {
+        return;
+      }
+      if (!categoryButtonRef.current) {
+        setIsCategoryDropdownOpen(false);
+        setCategoryMenuPos(null);
+        setCategorySearch('');
+        return;
+      }
+      const rect = categoryButtonRef.current.getBoundingClientRect();
+      if (rect.bottom < 0 || rect.top > window.innerHeight) {
+        setIsCategoryDropdownOpen(false);
+        setCategoryMenuPos(null);
+        setCategorySearch('');
+        return;
+      }
+      updateCategoryMenuPos();
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    window.addEventListener('resize', handleScrollOrResize);
+    window.addEventListener('scroll', handleScrollOrResize, true);
+
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('resize', handleScrollOrResize);
+      window.removeEventListener('scroll', handleScrollOrResize, true);
     };
-  }, [isCategoryDropdownOpen]);
+  }, [isCategoryDropdownOpen, updateCategoryMenuPos]);
 
   // Lắng nghe phím ESC
   useEffect(() => {
@@ -322,6 +403,8 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
       if (e.key === 'Escape' && isOpen) {
         if (isCategoryDropdownOpen) {
           setIsCategoryDropdownOpen(false);
+          setCategoryMenuPos(null);
+          setCategorySearch('');
           return;
         }
         if (isConfirmDiscardOpen) return;
@@ -331,6 +414,16 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, isCategoryDropdownOpen, isConfirmDiscardOpen, handleSafeClose]);
+
+  // Danh sách Thư mục lọc theo từ khóa tìm kiếm trong dropdown
+  const filteredCategories = useMemo(() => {
+    if (!categorySearch.trim()) return categories;
+    const q = categorySearch.trim().toLowerCase();
+    return categories.filter((c) =>
+      c.ten_tai_lieu.toLowerCase().includes(q) ||
+      (c.ky_hieu && c.ky_hieu.toLowerCase().includes(q))
+    );
+  }, [categories, categorySearch]);
 
   // Đối tượng Thư mục đang được chọn
   const selectedCategoryObj = useMemo(() => {
@@ -351,6 +444,7 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
   const handleCategoryChange = (catId: number | '') => {
     setIsDirty(true);
     setIsCategoryDropdownOpen(false);
+    setCategorySearch('');
     setFormData((prev) => ({
       ...prev,
       dm_tai_lieu: catId,
@@ -458,29 +552,87 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
   };
 
   // Xem trước tệp hiện có
-  const handlePreviewExistingFile = (file: { id?: number; name: string; size?: number; path?: string }) => {
+  const isDirectPreviewable = (fileName?: string) => {
+    if (!fileName) return false;
+    const ext = fileName.split('.').pop()?.toLowerCase() || '';
+    return ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'svg', 'bmp'].includes(ext);
+  };
+
+  // Xem trước tệp hiện có: PDF/Ảnh -> mở tab mới; ZIP/DOCX/EXCEL -> tải về máy
+  const handlePreviewExistingFile = async (file: { id?: number; name: string; size?: number; path?: string }) => {
+    const isPreviewable = isDirectPreviewable(file.name);
     const targetUrl = file.id
       ? `/api/resources/attachments/${file.id}/view/`
       : (file.path || '');
-    setPreviewAttachment({
-      id: file.id,
-      name: file.name,
-      path: targetUrl,
-      file_size: file.size,
-    });
+
+    if (!targetUrl) return;
+
+    if (!isPreviewable) {
+      const downloadUrl = file.id
+        ? `/api/resources/attachments/${file.id}/download/`
+        : targetUrl;
+      try {
+        await downloadBlob(downloadUrl, file.name);
+      } catch (err) {
+        console.warn('Lỗi downloadBlob:', err);
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = file.name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
+      return;
+    }
+
+    try {
+      const rawBlob = await apiClientBlob(targetUrl);
+      const lower = file.name.toLowerCase();
+      let mimeType = rawBlob.type;
+      if (lower.endsWith('.pdf')) {
+        mimeType = 'application/pdf';
+      } else if (lower.endsWith('.png')) {
+        mimeType = 'image/png';
+      } else if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
+        mimeType = 'image/jpeg';
+      } else if (lower.endsWith('.webp')) {
+        mimeType = 'image/webp';
+      } else if (lower.endsWith('.gif')) {
+        mimeType = 'image/gif';
+      } else if (lower.endsWith('.svg')) {
+        mimeType = 'image/svg+xml';
+      } else if (lower.endsWith('.bmp')) {
+        mimeType = 'image/bmp';
+      }
+      const viewBlob = mimeType ? new Blob([rawBlob], { type: mimeType }) : rawBlob;
+      const blobUrl = window.URL.createObjectURL(viewBlob);
+      window.open(blobUrl, '_blank');
+    } catch (err) {
+      console.error('Lỗi khi mở xem trước tệp:', err);
+      window.open(targetUrl, '_blank');
+    }
   };
 
-  // Xem trước tệp mới tải lên
+  // Xem trước tệp mới tải lên: PDF/Ảnh -> mở tab mới; ZIP/DOCX/EXCEL -> tải về máy
   const handlePreviewSelectedFile = (file: File) => {
+    const isPreviewable = isDirectPreviewable(file.name);
     const objectUrl = URL.createObjectURL(file);
-    setPreviewAttachment({
-      id: undefined,
-      name: file.name,
-      path: objectUrl,
-      file_size: file.size,
-      mime_type: file.type,
-    });
+
+    if (!isPreviewable) {
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = file.name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      return;
+    }
+
+    window.open(objectUrl, '_blank');
   };
+
+
 
   // Validate form trước khi submit
   const validateForm = () => {
@@ -569,8 +721,10 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
     // Gửi toàn bộ các tệp mới đính kèm
     selectedFiles.forEach((file) => {
       data.append('files', file);
-      data.append('file_dinh_kem', file);
     });
+    if (selectedFiles.length > 0) {
+      data.append('file_dinh_kem', selectedFiles[0]);
+    }
 
     // Gửi danh sách ID tệp bị xóa (nếu có)
     deletedAttachmentIds.forEach((id) => {
@@ -645,10 +799,18 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
 
               {/* Nút bấm Custom Dropdown */}
               <button
+                ref={categoryButtonRef}
                 type="button"
                 onClick={() => {
                   if (categories.length > 0) {
-                    setIsCategoryDropdownOpen((prev) => !prev);
+                    if (isCategoryDropdownOpen) {
+                      setIsCategoryDropdownOpen(false);
+                      setCategoryMenuPos(null);
+                      setCategorySearch('');
+                    } else {
+                      updateCategoryMenuPos();
+                      setIsCategoryDropdownOpen(true);
+                    }
                   }
                 }}
                 disabled={categories.length === 0}
@@ -696,59 +858,6 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
                   </option>
                 ))}
               </select>
-
-              {/* Popup danh sách Thư mục không bao giờ lòi ra ngoài container */}
-              {isCategoryDropdownOpen && (
-                <div
-                  role="listbox"
-                  className="absolute left-0 right-0 top-full mt-1.5 w-full max-w-full bg-surface-elevated rounded-xl border border-border-subtle shadow-2xl p-1.5 z-50 max-h-56 overflow-y-auto space-y-0.5 animate-in fade-in zoom-in-95 duration-100"
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleCategoryChange('');
-                    }}
-                    className={`w-full px-2.5 py-2 rounded-lg text-left text-xs font-medium flex items-center justify-between gap-2 transition-colors cursor-pointer ${
-                      !formData.dm_tai_lieu
-                        ? 'bg-primary/10 text-primary font-bold'
-                        : 'text-muted hover:bg-surface'
-                    }`}
-                  >
-                    <span className="truncate">{t('resourceManagement.selectFolderOption')}</span>
-                    {!formData.dm_tai_lieu && (
-                      <i className="fa-solid fa-check text-primary text-xs shrink-0" />
-                    )}
-                  </button>
-
-                  <div className="my-1 border-t border-border-subtle" />
-
-                  {categories.map((cat) => {
-                    const isSelected = formData.dm_tai_lieu === cat.id;
-                    return (
-                      <button
-                        key={cat.id}
-                        type="button"
-                        onClick={() => {
-                          handleCategoryChange(cat.id);
-                        }}
-                        className={`w-full px-2.5 py-2 rounded-lg text-left text-xs font-medium flex items-center justify-between gap-2 transition-colors cursor-pointer ${
-                          isSelected
-                            ? 'bg-primary/10 text-primary font-bold'
-                            : 'text-main hover:bg-surface'
-                        }`}
-                      >
-                        <span className="truncate flex items-center gap-2">
-                          <i className="fa-solid fa-folder text-primary/70 text-xs shrink-0" />
-                          <span className="truncate">{cat.ten_tai_lieu}</span>
-                        </span>
-                        {isSelected && (
-                          <i className="fa-solid fa-check text-primary text-xs shrink-0" />
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
 
               {categories.length === 0 && (
                 <div className="mt-2 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-200 text-xs flex items-center gap-2">
@@ -1299,6 +1408,17 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
                           >
                             <i className="fa-solid fa-eye text-xs" />
                           </button>
+                          {file.id && (
+                            <a
+                              href={`/api/resources/attachments/${file.id}/download/`}
+                              download={file.name}
+                              className="p-1 text-muted hover:text-primary rounded transition-colors cursor-pointer inline-flex items-center justify-center"
+                              title={t('resourceManagement.downloadAttachment')}
+                              aria-label={t('resourceManagement.downloadAttachment')}
+                            >
+                              <i className="fa-solid fa-download text-xs" />
+                            </a>
+                          )}
                           <button
                             type="button"
                             onClick={() => handleRemoveExistingFile(idx)}
@@ -1355,6 +1475,22 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
                             aria-label={t('resourceManagement.previewAttachment')}
                           >
                             <i className="fa-solid fa-eye text-xs" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const url = URL.createObjectURL(file);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = file.name;
+                              a.click();
+                              URL.revokeObjectURL(url);
+                            }}
+                            className="p-1 text-muted hover:text-primary rounded transition-colors cursor-pointer"
+                            title={t('resourceManagement.downloadAttachment')}
+                            aria-label={t('resourceManagement.downloadAttachment')}
+                          >
+                            <i className="fa-solid fa-download text-xs" />
                           </button>
                           <button
                             type="button"
@@ -1459,6 +1595,118 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
           />
         )}
       </div>
+      {/* Dropdown popup Thư mục rendered via Portal chống đè / cắt */}
+      {isCategoryDropdownOpen && categoryMenuPos && createPortal(
+        <div
+          ref={categoryMenuRef}
+          role="listbox"
+          data-dropdown-container="true"
+          onMouseDown={(e) => e.stopPropagation()}
+          style={{
+            position: 'fixed',
+            top: categoryMenuPos.top !== undefined ? `${categoryMenuPos.top}px` : undefined,
+            bottom: categoryMenuPos.bottom !== undefined ? `${categoryMenuPos.bottom}px` : undefined,
+            left: `${categoryMenuPos.left}px`,
+            width: `${categoryMenuPos.width}px`,
+            maxHeight: `${categoryMenuPos.maxHeight}px`,
+            zIndex: 10005,
+          }}
+          className="bg-surface-elevated rounded-xl border border-border-subtle shadow-2xl p-1.5 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100"
+        >
+          {/* Ô tìm kiếm nhanh thư mục */}
+          <div className="p-1 pb-1.5 border-b border-border-subtle shrink-0">
+            <div className="relative">
+              <i className="fa-solid fa-magnifying-glass absolute left-2.5 top-1/2 -translate-y-1/2 text-muted text-[11px]" />
+              <input
+                type="text"
+                value={categorySearch}
+                onChange={(e) => setCategorySearch(e.target.value)}
+                placeholder={t('resourceManagement.searchCategoryPlaceholder')}
+                className="w-full pl-7 pr-7 py-1 text-xs bg-surface border border-border-subtle rounded-lg text-main placeholder:text-muted focus:outline-hidden focus:border-primary"
+                onClick={(e) => e.stopPropagation()}
+                autoFocus
+              />
+              {categorySearch && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setCategorySearch('');
+                  }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-main text-[11px] p-0.5 cursor-pointer"
+                >
+                  <i className="fa-solid fa-xmark" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Danh sách các thư mục có scroll: hiển thị 5 mục, nếu nhiều hơn thì cuộn chuột lên xuống */}
+          <div
+            className="flex-1 overflow-y-auto max-h-[185px] pt-1 space-y-0.5 overscroll-contain pr-1 custom-scrollbar"
+            role="listbox"
+            onWheel={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                handleCategoryChange('');
+                setIsCategoryDropdownOpen(false);
+                setCategoryMenuPos(null);
+                setCategorySearch('');
+              }}
+              className={`w-full px-2.5 py-2 rounded-lg text-left text-xs font-medium flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+                !formData.dm_tai_lieu
+                  ? 'bg-primary/10 text-primary font-bold'
+                  : 'text-muted hover:bg-surface'
+              }`}
+            >
+              <span className="truncate">{t('resourceManagement.selectFolderOption')}</span>
+              {!formData.dm_tai_lieu && (
+                <i className="fa-solid fa-check text-primary text-xs shrink-0" />
+              )}
+            </button>
+
+            <div className="my-1 border-t border-border-subtle" />
+
+            {filteredCategories.length === 0 ? (
+              <div className="p-3 text-center text-xs text-muted">
+                {t('resourceManagement.noMatchingFolders')}
+              </div>
+            ) : (
+              filteredCategories.map((cat) => {
+                const isSelected = formData.dm_tai_lieu === cat.id;
+                return (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => {
+                      handleCategoryChange(cat.id);
+                      setIsCategoryDropdownOpen(false);
+                      setCategoryMenuPos(null);
+                      setCategorySearch('');
+                    }}
+                    className={`w-full px-2.5 py-2 rounded-lg text-left text-xs font-medium flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+                      isSelected
+                        ? 'bg-primary/10 text-primary font-bold'
+                        : 'text-main hover:bg-surface'
+                    }`}
+                  >
+                    <span className="truncate flex items-center gap-2">
+                      <i className="fa-solid fa-folder text-primary/70 text-xs shrink-0" />
+                      <span className="truncate">{cat.ten_tai_lieu}</span>
+                    </span>
+                    {isSelected && (
+                      <i className="fa-solid fa-check text-primary text-xs shrink-0" />
+                    )}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
     </div>,
     document.body
   );
