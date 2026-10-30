@@ -381,4 +381,42 @@ describe('ResourceTable Component', () => {
     expect(screen.getByText('Còn hiệu lực')).toBeInTheDocument();
     expect(screen.getByText(/31\/12\/2099/)).toBeInTheDocument();
   });
+  it('renders first attachment badge and ... badge when multiple file types are attached', () => {
+    const multiItem: ResourceItem = {
+      id: 101,
+      dm_tai_lieu: 1,
+      loai_tai_lieu: [1],
+      tieu_de: 'Tài liệu nhiều loại tệp',
+      ngay_dang: '2026-10-30',
+      hieu_luc: 'CON_HIEU_LUC',
+      hien_thi: 'TAT_CA',
+      file_dinh_kem: '/media/bao_cao.pdf',
+      attachments: [
+        { id: 1, name: 'bao_cao.pdf', path: '/media/bao_cao.pdf', mime_type: 'application/pdf', file_size: 1000 },
+        { id: 2, name: 'hinh_anh.jpg', path: '/media/hinh_anh.jpg', mime_type: 'image/jpeg', file_size: 2000 },
+        { id: 3, name: 'bang_tinh.xlsx', path: '/media/bang_tinh.xlsx', mime_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', file_size: 3000 },
+        { id: 4, name: 'huong_dan.docx', path: '/media/huong_dan.docx', mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', file_size: 4000 },
+      ],
+    };
+
+    render(
+      <ResourceTable
+        items={[multiItem]}
+        currentPage={1}
+        totalPages={1}
+        pageSize={10}
+        totalCount={1}
+        onPageChange={vi.fn()}
+        onViewDetail={vi.fn()}
+      />
+    );
+
+    // Hiển thị loại đầu tiên: PDF
+    expect(screen.getByText('PDF')).toBeInTheDocument();
+    // Hiển thị badge '...' cho các loại còn lại
+    expect(screen.getByText('...')).toBeInTheDocument();
+    // Không hiển thị trực tiếp tất cả badge khác trên hàng để tránh làm vỡ layout/kéo giãn dòng
+    expect(screen.queryByText('XLSX')).not.toBeInTheDocument();
+    expect(screen.queryByText('DOCX')).not.toBeInTheDocument();
+  });
 });

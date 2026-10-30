@@ -701,8 +701,35 @@ class DocumentTemplatesModelAndAPITests(TestCase):
         secret_att.refresh_from_db()
         self.assertTrue(secret_att.is_deleted)
 
+    def test_upload_zip_and_rar_with_temporary_file(self):
+        """Kiểm tra đính kèm tệp zip/rar dạng TemporaryUploadedFile (BufferedRandom) không bị lỗi deepcopy/pickle."""
+        from django.core.files.uploadedfile import TemporaryUploadedFile
+        from django.http import QueryDict
+        from document_templates.serializers import TaiLieuChiTietSerializer
 
+        self.client.force_authenticate(user=self.user)
+        # 1. Test qua APIClient với SimpleUploadedFile .zip và .rar
+        zip_file = SimpleUploadedFile("archive.zip", b"PK\x03\x04test_content", content_type="application/zip")
+        rar_file = SimpleUploadedFile("archive.rar", b"Rar!test_content", content_type="application/x-rar-compressed")
+        res = self.client.patch(
+            f'/api/resources/documents/{self.doc1.id}/',
+            {'files': [zip_file, rar_file]},
+            format='multipart'
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        active_names = [a['name'] for a in res.data['attachments']]
+        self.assertIn('archive.zip', active_names)
+        self.assertIn('archive.rar', active_names)
 
+        # 2. Test trực tiếp serializer với QueryDict immutable chứa TemporaryUploadedFile (tránh TypeError BufferedRandom)
+        qd = QueryDict('tieu_de=TaiLieuTest&dm_tai_lieu=' + str(self.cat1.id) + '&ngay_dang=2026-10-30&ngay_het_hieu_luc=', mutable=True)
+        tf = TemporaryUploadedFile('big_archive.zip', 'application/zip', 100, 'utf-8')
+        tf.write(b'PK\x03\x04test')
+        tf.seek(0)
+        qd.setlist('files', [tf])
+        qd._mutable = False  # Giả lập immutable QueryDict như trong production Django request
 
-
+        serializer = TaiLieuChiTietSerializer(data=qd)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertIsNone(serializer.validated_data.get('ngay_het_hieu_luc'))
 

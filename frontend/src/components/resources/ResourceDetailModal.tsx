@@ -5,6 +5,7 @@ import { Badge } from '@components/common/Badge';
 import { Button } from '@components/common/Button';
 import { useTranslation } from '@i18n/translate';
 import { computeEffectiveStatus } from '@lib/resourceValidity';
+import { apiClientBlob, downloadBlob } from '@lib/apiClient';
 import { FilePreviewModal } from './FilePreviewModal';
 
 export interface ResourceDetailModalProps {
@@ -26,6 +27,89 @@ export const ResourceDetailModal: React.FC<ResourceDetailModalProps> = ({
 }) => {
   const { t } = useTranslation();
   const [previewAttachment, setPreviewAttachment] = useState<ResourceAttachment | null>(null);
+  const [loadingFileId, setLoadingFileId] = useState<number | string | null>(null);
+
+  // Kiểm tra tệp có thể mở xem trực tiếp trong tab mới (PDF, Ảnh)
+  const isDirectPreviewable = (fileName?: string) => {
+    if (!fileName) return false;
+    const ext = fileName.split('.').pop()?.toLowerCase() || '';
+    return ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'svg', 'bmp'].includes(ext);
+  };
+
+  // Tải tệp đính kèm về máy (ZIP, DOCX, EXCEL hoặc khi bấm Tải về)
+  const handleDownloadAttachment = async (file: { id?: number; name: string; path?: string }) => {
+    const downloadUrl = file.id
+      ? `/api/resources/attachments/${file.id}/download/`
+      : (file.path || item?.file_dinh_kem || '');
+
+    if (!downloadUrl) return;
+
+    try {
+      setLoadingFileId(file.id ?? file.name);
+      await downloadBlob(downloadUrl, file.name);
+    } catch (err) {
+      console.warn('Lỗi downloadBlob, chuyển sang fallback tải file:', err);
+      if (item && onDownloadFile) {
+        onDownloadFile(item, file.name, file.path);
+      } else {
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = file.name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
+    } finally {
+      setLoadingFileId(null);
+    }
+  };
+
+  // Xem trước tệp: PDF/Ảnh -> mở tab mới; ZIP/DOCX/EXCEL -> tải về máy
+  const handlePreviewAttachment = async (file: { id?: number; name: string; path?: string; file_size?: number; mime_type?: string }) => {
+    const isPreviewable = isDirectPreviewable(file.name);
+    const targetUrl = file.id
+      ? `/api/resources/attachments/${file.id}/view/`
+      : (file.path || item?.file_dinh_kem);
+
+    if (!targetUrl) return;
+
+    // Đối với zip, docx, excel hoặc tệp không xem trực tiếp được -> Tải về máy
+    if (!isPreviewable) {
+      await handleDownloadAttachment(file);
+      return;
+    }
+
+    // Đối với PDF hoặc Ảnh -> Mở tab mới xem luôn
+    try {
+      setLoadingFileId(file.id ?? file.name);
+      const rawBlob = await apiClientBlob(targetUrl);
+      const lower = file.name.toLowerCase();
+      let mimeType = rawBlob.type;
+      if (lower.endsWith('.pdf')) {
+        mimeType = 'application/pdf';
+      } else if (lower.endsWith('.png')) {
+        mimeType = 'image/png';
+      } else if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
+        mimeType = 'image/jpeg';
+      } else if (lower.endsWith('.webp')) {
+        mimeType = 'image/webp';
+      } else if (lower.endsWith('.gif')) {
+        mimeType = 'image/gif';
+      } else if (lower.endsWith('.svg')) {
+        mimeType = 'image/svg+xml';
+      } else if (lower.endsWith('.bmp')) {
+        mimeType = 'image/bmp';
+      }
+      const viewBlob = mimeType ? new Blob([rawBlob], { type: mimeType }) : rawBlob;
+      const blobUrl = window.URL.createObjectURL(viewBlob);
+      window.open(blobUrl, '_blank');
+    } catch (err) {
+      console.error('Lỗi khi mở xem trước tệp trong tab mới:', err);
+      window.open(targetUrl, '_blank');
+    } finally {
+      setLoadingFileId(null);
+    }
+  };
 
   // Lắng nghe phím ESC để đóng Modal
   useEffect(() => {
@@ -365,24 +449,12 @@ export const ResourceDetailModal: React.FC<ResourceDetailModalProps> = ({
               <div className="space-y-2">
                 {filesList.map((file, idx) => {
                   const ext = getFileExt(file.name || file.path, file.mime_type);
-                  const targetUrl = file.id
-                    ? `/api/resources/attachments/${file.id}/view/`
-                    : (file.path || item.file_dinh_kem);
-
-                  const handlePreview = () => {
-                    setPreviewAttachment({
-                      id: file.id,
-                      name: file.name,
-                      path: targetUrl,
-                      file_size: file.file_size,
-                      mime_type: file.mime_type,
-                    });
-                  };
+                  const isCurrentLoading = loadingFileId === (file.id ?? file.name);
 
                   return (
                     <div
                       key={idx}
-                      onClick={handlePreview}
+                      onClick={() => handlePreviewAttachment(file)}
                       className="p-3 rounded-xl bg-surface-elevated border border-border-subtle flex items-center justify-between gap-3 text-xs sm:text-sm hover:border-primary/50 hover:bg-primary-subtle/10 transition-all cursor-pointer group"
                       title={t('resourceManagement.previewAttachment')}
                     >
@@ -404,20 +476,20 @@ export const ResourceDetailModal: React.FC<ResourceDetailModalProps> = ({
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            handlePreview();
+                            handlePreviewAttachment(file);
                           }}
                           className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-surface border border-border-subtle text-secondary hover:text-primary hover:border-primary/40 hover:bg-surface-elevated transition-colors cursor-pointer"
                           title={t('resourceManagement.previewAttachment')}
                           aria-label={t('resourceManagement.previewAttachment')}
                         >
-                          <i className="fa-solid fa-eye text-xs" />
+                          <i className={`fa-solid ${isCurrentLoading ? 'fa-spinner fa-spin' : 'fa-eye'} text-xs`} />
                           <span className="hidden sm:inline">{t('resourceManagement.previewAttachment')}</span>
                         </button>
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            onDownloadFile?.(item, file.name, file.path);
+                            handleDownloadAttachment(file);
                           }}
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-surface border border-border-subtle text-secondary hover:text-primary hover:border-primary/40 hover:bg-surface-elevated transition-colors cursor-pointer"
                           title={t('resourceManagement.download')}

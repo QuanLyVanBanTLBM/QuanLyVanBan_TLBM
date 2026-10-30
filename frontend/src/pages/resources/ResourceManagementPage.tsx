@@ -669,7 +669,7 @@ export default function ResourceManagementPage() {
     });
   };
 
-  // Danh sách năm trích xuất từ dữ liệu thực tế
+  // Danh sách năm trích xuất từ dữ liệu thực tế kết hợp sinh động năm hiện tại
   const availableYears = useMemo(() => {
     const yearsSet = new Set<string>();
     documents.forEach((d) => {
@@ -677,9 +677,11 @@ export default function ResourceManagementPage() {
         yearsSet.add(d.ngay_dang.substring(0, 4));
       }
     });
-    yearsSet.add('2026');
-    yearsSet.add('2025');
-    yearsSet.add('2024');
+    // Luôn tự động sinh ra năm hiện tại và 3 năm liền kề trước đó
+    const currentYear = new Date().getFullYear();
+    for (let y = currentYear; y >= currentYear - 3; y--) {
+      yearsSet.add(String(y));
+    }
     return Array.from(yearsSet).sort().reverse();
   }, [documents]);
 
@@ -1103,9 +1105,21 @@ export default function ResourceManagementPage() {
       // Đồng bộ ngầm với server sau khi cập nhật local state và thông báo cho các tab/client khác
       await fetchResources(true, true);
       notifyMutation();
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Lỗi khi lưu tài liệu lên server:', error);
-      showToast('Không thể lưu tài liệu lên hệ thống máy chủ', 'danger', 'Lỗi lưu trữ');
+      const err = error as { response?: { data?: Record<string, unknown> | string }; message?: string };
+      const serverMsg =
+        (typeof err?.response?.data === 'object' && err?.response?.data !== null && 'detail' in err.response.data
+          ? String(err.response.data.detail)
+          : null) ||
+        (typeof err?.response?.data === 'string' ? err.response.data : null) ||
+        (err?.response?.data && typeof err?.response?.data === 'object'
+          ? Object.entries(err.response.data)
+              .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
+              .join(' | ')
+          : null) ||
+        err?.message;
+      showToast(serverMsg || 'Không thể lưu tài liệu lên hệ thống máy chủ', 'danger', 'Lỗi lưu trữ');
     } finally {
       setIsSubmittingDoc(false);
     }

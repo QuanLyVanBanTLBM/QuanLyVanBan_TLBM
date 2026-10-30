@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.core.exceptions import ValidationError as DjangoValidationError
 from .models import DanhMucTaiLieu, LoaiTaiLieu, TaiLieuChiTiet, ChiTietTaiLieuAttachment, store_template_file, validate_document_file
 
 
@@ -133,15 +134,27 @@ class TaiLieuChiTietSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'nguoi_tao', 'created_at', 'updated_at', 'is_expired', 'effective_hieu_luc']
 
     def to_internal_value(self, data):
-        if hasattr(data, '_mutable') and not data._mutable:
-            data = data.copy()
-        elif isinstance(data, dict):
-            data = data.copy()
-        if data.get('ngay_het_hieu_luc') == '':
-            data['ngay_het_hieu_luc'] = None
-        if data.get('link_thay_the') is None:
-            data['link_thay_the'] = ''
-        return super().to_internal_value(data)
+        if hasattr(data, '_mutable'):
+            # Tránh gọi data.copy() trên QueryDict vì QueryDict.copy() thực hiện deepcopy,
+            # gây lỗi TypeError: cannot pickle 'BufferedRandom' instances khi đính kèm TemporaryUploadedFile
+            orig_mutable = data._mutable
+            data._mutable = True
+            try:
+                if data.get('ngay_het_hieu_luc') == '':
+                    data['ngay_het_hieu_luc'] = None
+                if data.get('link_thay_the') is None:
+                    data['link_thay_the'] = ''
+                return super().to_internal_value(data)
+            finally:
+                data._mutable = orig_mutable
+        else:
+            if isinstance(data, dict):
+                data = data.copy()
+            if data.get('ngay_het_hieu_luc') == '':
+                data['ngay_het_hieu_luc'] = None
+            if data.get('link_thay_the') is None:
+                data['link_thay_the'] = ''
+            return super().to_internal_value(data)
 
     def get_loai_tai_lieu_names(self, obj):
         return [loai.ten_loai for loai in obj.loai_tai_lieu.all()]
@@ -176,6 +189,17 @@ class TaiLieuChiTietSerializer(serializers.ModelSerializer):
                 attrs['ngay_het_hieu_luc'] = None
         elif hieu_luc in ('CON_HIEU_LUC_1_PHAN', 'HET_HIEU_LUC'):
             attrs['link_thay_the'] = ''
+
+        # Kiểm tra tính hợp lệ và dung lượng (<= 20MB) của các tệp đính kèm trong request.FILES
+        request = self.context.get('request')
+        if request and hasattr(request, 'FILES') and hasattr(request.FILES, 'getlist'):
+            for f in request.FILES.getlist('files'):
+                try:
+                    validate_document_file(f)
+                except DjangoValidationError as exc:
+                    msg = exc.messages if hasattr(exc, 'messages') else [str(exc)]
+                    raise serializers.ValidationError({'files': msg})
+
         return attrs
 
     def to_representation(self, instance):

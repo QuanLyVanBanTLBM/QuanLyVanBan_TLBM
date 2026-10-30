@@ -170,13 +170,15 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
       case 'JPG':
       case 'JPEG':
       case 'PNG':
+      case 'WEBP':
+      case 'IMG':
         return 'fa-file-image text-purple-500';
       default:
         return 'fa-file-lines text-secondary';
     }
   };
 
-  // Hiển thị các badge loại file đính kèm (bỏ nút Tải về, hiển thị màu sắc theo loại tệp)
+  // Hiển thị các badge loại file đính kèm (hiển thị loại đầu tiên, còn lại hiển thị "...")
   const renderFileBadges = (item: ResourceItem) => {
     const fileList: { name: string; ext: string }[] = [];
     if (item.attachments && item.attachments.length > 0) {
@@ -208,6 +210,11 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
       names[f.ext].push(f.name);
     });
 
+    const entries = Object.entries(counts);
+    const [firstExt, firstCount] = entries[0];
+    const hasMore = entries.length > 1;
+    const remainingFiles = fileList.filter((f) => f.ext !== firstExt);
+
     const getBadgeStyle = (extension: string) => {
       switch (extension) {
         case 'PDF':
@@ -227,36 +234,47 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
         case 'JPEG':
         case 'PNG':
         case 'WEBP':
+        case 'IMG':
           return 'bg-amber-50 text-amber-600 border-amber-200/80 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800/60';
         default:
           return 'bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700';
       }
     };
 
+    const remainingTooltip = hasMore
+      ? `Còn ${remainingFiles.length} tệp khác (${entries.slice(1).map(([ext, cnt]) => `${ext}: ${cnt}`).join(', ')}):\n` +
+        remainingFiles.map((f) => `• ${f.name}`).join('\n')
+      : '';
+
     return (
       <div
-        className="inline-flex items-center justify-center gap-1.5 flex-wrap cursor-pointer"
+        className="inline-flex items-center justify-center gap-1.5 flex-nowrap cursor-pointer"
         onClick={(e) => {
           e.stopPropagation();
           onViewDetail?.(item);
         }}
         title={fileList.map((f) => f.name).join('\n')}
       >
-        {Object.entries(counts).map(([extension, count]) => (
+        <span
+          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold border hover:opacity-80 transition-all whitespace-nowrap ${getBadgeStyle(
+            firstExt
+          )}`}
+        >
+          <i className={`fa-solid ${getFileIcon(firstExt)} text-xs`} />
+          <span>{firstExt}{firstCount > 1 ? ` (${firstCount})` : ''}</span>
+        </span>
+
+        {hasMore && (
           <span
-            key={extension}
-            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold border hover:opacity-80 transition-all ${getBadgeStyle(
-              extension
-            )}`}
+            className="inline-flex items-center justify-center px-1.5 py-0.5 rounded-md text-[11px] font-bold border bg-slate-100 text-slate-600 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-600 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all whitespace-nowrap shadow-2xs"
+            title={remainingTooltip}
           >
-            <i className={`fa-solid ${getFileIcon(extension)} text-xs`} />
-            <span>{extension}{count > 1 ? ` (${count})` : ''}</span>
+            ...
           </span>
-        ))}
+        )}
       </div>
     );
   };
-
 
   const renderStatusBadge = (itemOrStatus: ResourceItem | HieuLucType) => {
     let effectiveStatus: HieuLucType;

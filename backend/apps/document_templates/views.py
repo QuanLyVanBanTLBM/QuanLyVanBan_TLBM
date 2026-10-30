@@ -493,6 +493,27 @@ class ChiTietTaiLieuAttachmentViewSet(viewsets.ModelViewSet):
         response['Content-Disposition'] = f'inline; filename="{att.name}"'
         return response
 
+    @action(detail=True, methods=['get'], url_path='download')
+    def download_file(self, request, pk=None):
+        """
+        Tải tệp đính kèm về máy (as_attachment=True)
+        """
+        import os
+        import mimetypes
+        from django.http import FileResponse, Http404
+
+        att = self.get_object()
+        disk_path = template_disk_path(att.path)
+        if not disk_path or not os.path.exists(disk_path):
+            raise Http404("Tệp không tồn tại trên máy chủ")
+
+        content_type, _ = mimetypes.guess_type(disk_path)
+        if not content_type:
+            content_type = 'application/octet-stream'
+
+        response = FileResponse(open(disk_path, 'rb'), content_type=content_type, as_attachment=True, filename=att.name)
+        return response
+
     @action(detail=True, methods=['get'], url_path='preview')
     def preview(self, request, pk=None):
         """
