@@ -23,10 +23,45 @@ interface NguoiKyNhap {
 }
 interface CapNhap { ten_cap_ky: string; so_gio_xu_ly: string; don_vi_id: number | null; nguoi_ky: NguoiKyNhap[] }
 
+interface GioiHanThuBac {
+  hienTai: number | null;
+  truoc: ChucVu | null;
+  sau: ChucVu | null;
+}
+
 const CAP_TRONG: CapNhap = { ten_cap_ky: '', so_gio_xu_ly: '', don_vi_id: null, nguoi_ky: [] };
 /** Phạm vi tìm người giữ chức vụ chọn được trên form (DON_VI_CO_DINH cần cấp có đơn vị, giữ nguyên khi sửa). */
 const PHAM_VI_CHUC_VU = ['DON_VI_NGUOI_TAO', 'TOAN_CO_QUAN'] as const;
 const TOI_DA_GOI_Y = 500;
+
+function chucVuCaoNhat(cap: CapNhap, danhMuc: ChucVu[]): ChucVu | null {
+  const chucVuIds = new Set(cap.nguoi_ky.map((nguoiKy) => nguoiKy.chuc_vu_id).filter((id) => id != null));
+  return danhMuc
+    .filter((chucVu) => chucVuIds.has(chucVu.id))
+    .reduce<ChucVu | null>((caoNhat, chucVu) => (
+      caoNhat == null || chucVu.display_order < caoNhat.display_order ? chucVu : caoNhat
+    ), null);
+}
+
+/** Giới hạn từ hai cấp gần nhất có người ký theo chức danh; cấp chỉ có tài khoản được bỏ qua. */
+function tinhGioiHanThuBac(cap: CapNhap[], viTri: number, danhMuc: ChucVu[]): GioiHanThuBac {
+  const thuBacCap = cap.map((item) => chucVuCaoNhat(item, danhMuc));
+  let truoc: ChucVu | null = null;
+  let sau: ChucVu | null = null;
+  for (let i = viTri - 1; i >= 0; i -= 1) {
+    if (thuBacCap[i]) {
+      truoc = thuBacCap[i];
+      break;
+    }
+  }
+  for (let i = viTri + 1; i < thuBacCap.length; i += 1) {
+    if (thuBacCap[i]) {
+      sau = thuBacCap[i];
+      break;
+    }
+  }
+  return { hienTai: thuBacCap[viTri]?.display_order ?? null, truoc, sau };
+}
 
 function capTuQuyTrinh(q: QuyTrinh, t: HamDich): CapNhap[] {
   return q.cap_ky.map((c) => ({
@@ -206,11 +241,13 @@ function ThemNguoiKyCap({
   onChonChucVu,
   donViTim,
   chucVuCapKy,
+  gioiHanThuBac,
 }: {
   onChonCanBo: (u: CanBo) => void;
   onChonChucVu: (cv: { id: number; ten: string }, pham_vi: string) => void;
   donViTim: (pham_vi_chuc_vu: string) => number | null;
   chucVuCapKy?: ChucVu | null;
+  gioiHanThuBac: GioiHanThuBac;
 }) {
   const { t, loi } = useSigningT();
   const ds = useTai(() => signingApi.chucVu(), []);
@@ -221,10 +258,18 @@ function ThemNguoiKyCap({
     setPrevChucVuCapKy(chucVuCapKy);
     setChucVuGoc(null);
   }
-  const chucVu = chucVuGoc !== null ? chucVuGoc : (chucVuCapKy ? String(chucVuCapKy.id) : '');
+  const chucVuHopLe = (ds.duLieu ?? []).filter((item) => {
+    const thuBacHieuLuc = Math.min(gioiHanThuBac.hienTai ?? Number.POSITIVE_INFINITY, item.display_order);
+    return (gioiHanThuBac.truoc == null || thuBacHieuLuc <= gioiHanThuBac.truoc.display_order)
+      && (gioiHanThuBac.sau == null || gioiHanThuBac.sau.display_order <= thuBacHieuLuc);
+  });
+  const chucVuCapKyHopLe = chucVuCapKy && chucVuHopLe.some((item) => item.id === chucVuCapKy.id);
+  const chucVu = chucVuGoc !== null ? chucVuGoc : (chucVuCapKyHopLe ? String(chucVuCapKy.id) : '');
   const setChucVu = (val: string) => setChucVuGoc(val);
 
-  const chon = ds.duLieu?.find((c) => String(c.id) === chucVu);
+  const chon = chucVuHopLe.find((c) => String(c.id) === chucVu);
+  const coGioiHanThuBac = gioiHanThuBac.truoc != null || gioiHanThuBac.sau != null;
+  const khongCoChucVuHopLe = coGioiHanThuBac && ds.duLieu != null && chucVuHopLe.length === 0;
 
   return (
     <div className="space-y-2 pt-2 border-t border-border-subtle">
@@ -250,7 +295,7 @@ function ThemNguoiKyCap({
             onChange={(e) => setChucVu(e.target.value)}
           >
             <option value="">{t('quyTrinh.tatCaChucVu')}</option>
-            {ds.duLieu?.map((c) => (
+            {chucVuHopLe.map((c) => (
               <option key={c.id} value={String(c.id)}>{c.name}</option>
             ))}
           </select>
@@ -281,6 +326,18 @@ function ThemNguoiKyCap({
           </Button>
         </div>
         {ds.loi && <p className="basis-full text-xs text-danger">{loi(ds.loi)}</p>}
+        {coGioiHanThuBac && (
+          <p role={khongCoChucVuHopLe ? 'alert' : undefined}
+            className={`basis-full text-xs ${khongCoChucVuHopLe ? 'font-semibold text-warning-text' : 'text-muted'}`}>
+            {khongCoChucVuHopLe
+              ? t('quyTrinh.gioiHanThuBacKhongCoLuaChon')
+              : gioiHanThuBac.truoc && gioiHanThuBac.sau
+                ? t('quyTrinh.gioiHanThuBacHaiPhia', { truoc: gioiHanThuBac.truoc.name, sau: gioiHanThuBac.sau.name })
+                : gioiHanThuBac.truoc
+                  ? t('quyTrinh.gioiHanThuBacTruoc', { ten: gioiHanThuBac.truoc.name })
+                  : t('quyTrinh.gioiHanThuBacSau', { ten: gioiHanThuBac.sau?.name ?? '' })}
+          </p>
+        )}
         {chon && (
           <div className="basis-full">
             <CanBoChucVu
@@ -458,6 +515,7 @@ function FormTao({ mo, onDong, onXong, banDau }: { mo: boolean; onDong: () => vo
             ))}
             <ThemNguoiKyCap
               chucVuCapKy={dsChucVu.duLieu?.find((cv) => cv.name === c.ten_cap_ky) ?? null}
+              gioiHanThuBac={tinhGioiHanThuBac(cap, i, dsChucVu.duLieu ?? [])}
               donViTim={(pham_vi) => donViTimCanBo(pham_vi, c.don_vi_id, phamVi, donViApDung)}
               onChonCanBo={(u: CanBo) => !c.nguoi_ky.some((n) => n.nguoi_ky === u.id)
                 && sua(i, { nguoi_ky: [...c.nguoi_ky, {
