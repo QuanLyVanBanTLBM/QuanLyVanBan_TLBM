@@ -1,5 +1,7 @@
 # Plan backend Trình ký — Nhóm 5
 
+> **Cập nhật issue #356:** ủy quyền ký khẩn cấp và cấu hình người được ký thay đã bỏ khỏi phạm vi triển khai (xem `README.md`). Các mục ủy quyền trong plan này là thiết kế lịch sử; bảng và cột ủy quyền giữ nguyên trong schema.
+
 > Cập nhật 06/10/2026 theo [`danh-gia-nghiep-vu-va-de-xuat.md`](danh-gia-nghiep-vu-va-de-xuat.md): cấp ký luôn tuần tự (bỏ `kieu_ky`), từ chối là kết thúc, chức vụ tương đối theo đơn vị, ủy quyền theo thời gian kèm hình thức ký, leo thang quá hạn, tách khâu văn thư.
 > Cập nhật 08/10/2026 theo #80: MVP là luồng duyệt nội bộ hoàn chỉnh, kết thúc ở **hoàn tất duyệt nội bộ, chưa phát hành**. CA, chứng thư số, `LegalSignerAdapter`, DocMDP, cấp số và phát hành pháp lý đã gỡ khỏi roadmap của #80 (mục 1.4). Văn bản mật đã bỏ nên không còn phụ thuộc pháp chế về phạm vi văn bản mật.
 

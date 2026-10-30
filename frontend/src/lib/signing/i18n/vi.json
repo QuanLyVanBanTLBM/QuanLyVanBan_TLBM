@@ -1,14 +1,5 @@
 {
   "tieuDe": "Trình ký",
-  "uyQuyenCauHinh": "Cấu hình người được ký thay",
-  "uyQuyenHuongDan": "Chọn chức danh người ký, sau đó chọn những chức danh được phép ký thay. Danh sách trống nghĩa là chưa có người được phép ký thay.",
-  "uyQuyenChucDanhGiao": "Chức danh của người ký",
-  "uyQuyenChucDanhNhan": "Chức danh được phép ký thay",
-  "uyQuyenTim": "Tìm theo chức danh hoặc tên người",
-  "uyQuyenKhongCoCanBo": "Chưa có cán bộ đang hoạt động",
-  "uyQuyenDaLuu": "Đã lưu danh sách chức danh được ký thay.",
-  "uyQuyenBoThayDoi": "Danh sách chưa được lưu. Bỏ thay đổi và chọn chức danh khác?",
-  "uyQuyenBoThayDoiDong": "Danh sách chưa được lưu. Bỏ thay đổi và đóng?",
   "nav": {
     "canToiKy": "Cần tôi ký duyệt",
     "toiGui": "Hồ sơ tôi trình",
@@ -258,17 +249,9 @@
     "xacNhanThuHoi": "Thu hồi chữ ký của bạn? Chữ ký cũ vẫn được giữ làm lịch sử.",
     "xacNhanTrinhLai": "Tạo hồ sơ nháp mới từ hồ sơ bị từ chối?",
     "thanhCong": "Đã thực hiện.",
-    "uyQuyen": "Ủy quyền ký",
     "fileKhoa": "File khóa ký",
     "fileKhoaGhiChu": "Tải lên file khóa (.tlbmkey) đã xuất ở trang Khóa ký; bỏ trống thì dùng khóa đã lưu trên thiết bị này.",
-    "daChonFile": "Đã đọc tệp khóa trên trình duyệt. Tệp không được gửi lên máy chủ.",
-    "nguoiDuocUyQuyen": "Người cần được ký thay",
-    "nguoiNhanUyQuyen": "Người nhận ủy quyền",
-    "timNguoiNhan": "Tìm theo tên, chức danh, đơn vị…",
-    "lyDoUyQuyen": "Lý do ủy quyền",
-    "khongCoNguoiNhan": "Không khớp từ khóa. Thử họ tên, tên đăng nhập hoặc chức danh khác.",
-    "chuaCoAiDuDieuKienUyQuyen": "Chưa có ai đủ điều kiện nhận ủy quyền cho chức danh này. Có thể do chưa cấu hình chức danh được phép ký thay (mục \"Cấu hình ủy quyền\" của quản trị viên), chức danh được cấu hình chưa có ai đang hoạt động và có quyền ký, hoặc người đủ điều kiện đã có mặt trong cấp ký này.",
-    "chuaCoChucDanh": "Chưa có chức danh"
+    "daChonFile": "Đã đọc tệp khóa trên trình duyệt. Tệp không được gửi lên máy chủ."
   },
   "traoDoi": {
     "tieuDe": "Trao đổi về yêu cầu sửa",
@@ -428,7 +411,6 @@
     "nguoi_ky_khong_cho_ky": "Chỉ ủy quyền người ký đang chờ ký.",
     "nguoi_nhan_khong_hop_le": "Người nhận không hoạt động hoặc không có quyền ký.",
     "nguoi_nhan_khong_du_tham_quyen": "Chức danh người nhận chưa được phép ký thay người này.",
-    "uy_quyen_vong_lap": "Không thể ủy quyền lại cho người đã giao quyền ban đầu.",
     "uy_quyen_khong_con_hop_le": "Người nhận không còn chức danh được phép ký thay. Hãy liên hệ quản trị để kiểm tra và ủy quyền lại.",
     "chuc_vu_khong_hop_le": "Có chức danh được chọn không còn hợp lệ. Hãy tải lại danh sách.",
     "khong_co_chuc_danh_goc": "Hồ sơ không lưu chức danh ban đầu của người ký. Hãy liên hệ quản trị để xử lý.",

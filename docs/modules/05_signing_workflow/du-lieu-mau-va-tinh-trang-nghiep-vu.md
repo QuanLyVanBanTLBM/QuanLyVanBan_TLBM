@@ -1,5 +1,11 @@
 # Dữ liệu mẫu và tình trạng nghiệp vụ Trình ký (Nhóm 5)
 
+> **Phạm vi (issue #356):** chức năng "Ủy quyền ký" và màn hình "Cấu hình người được ký thay" đã bỏ khỏi module Trình ký
+> (không còn nút, hộp thoại, endpoint tạo ủy quyền hoặc cấu hình ký thay). Schema giữ nguyên (`signing_delegation_role`,
+> các cột `uy_quyen_tu`, `chuc_vu_goc_uy_quyen`, `ly_do_uy_quyen`, `ngay_uy_quyen`). Hồ sơ đang chờ ký có dòng người ký
+> được ủy quyền từ trước vẫn ký được: bước ký còn kiểm tra chức danh người nhận theo `signing_delegation_role`, giao
+> diện còn hiện nhãn "Ký thay". Các mô tả về ủy quyền ký bên dưới là lịch sử thiết kế, không còn là chức năng đang có.
+
 Cập nhật 23/10/2026, nhánh `feat/5-hoan-thien-nghiep-vu`. Đối chiếu với [`signing-backend-plan.md`](signing-backend-plan.md). Tổng quan module: [`README.md`](README.md).
 
 ## 1. Tình trạng các flow nghiệp vụ
@@ -20,7 +26,7 @@ Cập nhật 23/10/2026, nhánh `feat/5-hoan-thien-nghiep-vu`. Đối chiếu v�
 | 12 | Hoàn tất: bằng chứng tổng hợp, PDF hoàn tất, xác minh lại | Xong | Xong | |
 | 13 | Lịch sử / nhật ký hồ sơ | Dở | Xong | Thêm tên người thực hiện |
 | 14 | Thông báo trong ứng dụng + email (outbox, gửi lại khi lỗi: `gui_thong_bao_trinh_ky`) | Dở | Xong | Thêm loại `UY_QUYEN`, `TIN_NHAN`, `NHAC_HAN`, `QUA_HAN`; số thông báo mới ở tab |
-| 15 | Ủy quyền ký khẩn cấp từng hồ sơ (`delegate_trinhky`) | Chưa có | Xong | `POST /trinh-ky/{id}/uy-quyen/`, mục 4 |
+| 15 | Ủy quyền ký khẩn cấp từng hồ sơ (`delegate_trinhky`) | Chưa có | Đã bỏ khỏi phạm vi (#356) | Không còn endpoint tạo ủy quyền; mục 4 |
 | 16 | Nhắc hạn, quá hạn | Chưa có | Xong (MVP) | Lệnh `nhac_han_trinh_ky`; chưa leo thang cấp trên |
 | 17 | Ủy quyền theo thời gian (`signing_delegation`), thể thức `hinh_thuc_ky` (KT./TL./TUQ.) | Chưa có | Chưa có | DDL chưa có bảng/cột; cần PR đổi schema riêng |
 | 18 | Leo thang quá hạn cho cấp trên trực tiếp | Chưa có | Chưa có | Nhóm 7 chưa có dữ liệu cấp trên trực tiếp |
@@ -31,8 +37,8 @@ Cập nhật 23/10/2026, nhánh `feat/5-hoan-thien-nghiep-vu`. Đối chiếu v�
 |---|---|
 | Văn thư (VT) | xem, tạo, gửi trình ký |
 | Chuyên viên (CV) | xem, tạo nháp, gửi trình ký (đã cấp `send_trinhky` theo PR #254) |
-| Trưởng phòng (TP) | xem, tạo, gửi, ký, ủy quyền (người ký cùng đơn vị), hủy thay, quản lý quy trình phòng ban |
-| Ban Giám đốc (BGD) | xem, tạo, gửi, ký, ủy quyền, hủy thay, xem nhật ký mọi hồ sơ |
+| Trưởng phòng (TP) | xem, tạo, gửi, ký, hủy thay, quản lý quy trình phòng ban |
+| Ban Giám đốc (BGD) | xem, tạo, gửi, ký, hủy thay, xem nhật ký mọi hồ sơ |
 | Quản trị (ADMIN) | toàn quyền, quản lý quy trình công ty |
 
 Server kiểm quyền ở từng API; giao diện chỉ ẩn/hiện thao tác.
@@ -48,7 +54,9 @@ Server kiểm quyền ở từng API; giao diện chỉ ẩn/hiện thao tác.
 - File khóa chỉ đọc trong trình duyệt, không gửi lên máy chủ. Đổi PIN xoay vòng `k_srv` nên file cũ không còn mở
   được; trang tự tải file mới. Có thể nhập file khóa vào thiết bị khác ở cùng trang.
 
-## 4. Ủy quyền ký khẩn cấp
+## 4. Ủy quyền ký khẩn cấp (đã bỏ chức năng tạo, issue #356)
+
+Chỉ còn xử lý dữ liệu ủy quyền tạo từ trước: người nhận ký được hồ sơ đang `CHO_KY` nếu còn giữ chức danh được phép trong `signing_delegation_role`; người giao vẫn xem được hồ sơ. Mô tả dưới đây là quy tắc cũ khi tạo ủy quyền.
 
 - Người thực hiện: có `delegate_trinhky` và là quản trị, Ban Giám đốc, hoặc Trưởng phòng cùng đơn vị với người ký.
   Người ký không tự ủy quyền.
@@ -89,7 +97,7 @@ Lệnh tự đủ trên DB vừa `migrate`: đơn vị, chức vụ, nhóm quy�
 | M07 | Đã sửa, lượt 2 đang ký cấp 2 | giamdoc |
 | M08 | Đã hủy | — |
 | M09 | Quá hạn ở cấp 1 | truongphong |
-| M10 | Ủy quyền: Giám đốc ký thay Trưởng phòng ở cấp lấy ý kiến | giamdoc |
+| M10 | Hai người ký song song, một người đã ký, một người chờ ký (không còn ví dụ ủy quyền) | truongphong |
 
 Lịch sử và thông báo (`CAN_KY`, `HOAN_THANH`, `TU_CHOI`, `YEU_CAU_SUA`, `HUY`, `UY_QUYEN`, `TIN_NHAN`, `NHAC_HAN`,
 `QUA_HAN`) sinh từ chính các thao tác trên vì lệnh gọi service nghiệp vụ, không ghi bảng trực tiếp.

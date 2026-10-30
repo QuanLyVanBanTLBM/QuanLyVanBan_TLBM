@@ -96,15 +96,6 @@ def su_kien(yeu_cau, luot, loai, nguoi_thuc_hien):
         _tao(yeu_cau, nguoi, loai, f"{loai}:{yeu_cau.pk}:{luot.pk if luot else 0}:{nguoi.pk}")
 
 
-def uy_quyen(dong, nguoi_cu, nguoi_thuc_hien):
-    """Người nhận ủy quyền (được ký thay) và người được giao ban đầu."""
-    yeu_cau = dong.buoc_ky.luot_trinh.trinh_ky
-    moc = f"{dong.pk}:{dong.ngay_uy_quyen.timestamp():.6f}"
-    for nguoi in (dong.nguoi_ky, nguoi_cu):
-        if nguoi.pk != nguoi_thuc_hien.pk:
-            _tao(yeu_cau, nguoi, "UY_QUYEN", f"UY_QUYEN:{moc}:{nguoi.pk}", buoc_ky=dong)
-
-
 def tin_nhan(tin, nguoi_nhan):
     """Tin nhắn mới trong trao đổi trả sửa: báo bên còn lại (người tạo hoặc người yêu cầu sửa)."""
     if nguoi_nhan.pk != tin.nguoi_viet_id:

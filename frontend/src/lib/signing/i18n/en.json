@@ -1,14 +1,5 @@
 {
   "tieuDe": "Signing",
-  "uyQuyenCauHinh": "Configure signing substitutes",
-  "uyQuyenHuongDan": "Choose the signer's position, then choose positions allowed to sign on their behalf. An empty list means no substitute is allowed.",
-  "uyQuyenChucDanhGiao": "Signer's position",
-  "uyQuyenChucDanhNhan": "Positions allowed to sign on their behalf",
-  "uyQuyenTim": "Search by position or name",
-  "uyQuyenKhongCoCanBo": "No active staff",
-  "uyQuyenDaLuu": "Signing substitute positions saved.",
-  "uyQuyenBoThayDoi": "The list has unsaved changes. Discard them and choose another position?",
-  "uyQuyenBoThayDoiDong": "The list has unsaved changes. Discard them and close?",
   "nav": {
     "canToiKy": "Awaiting my signature",
     "toiGui": "Submitted by me",
@@ -258,17 +249,9 @@
     "xacNhanThuHoi": "Revoke your signature? The old signature is kept in the history.",
     "xacNhanTrinhLai": "Create a new draft from the rejected request?",
     "thanhCong": "Done.",
-    "uyQuyen": "Delegate signing",
     "fileKhoa": "Signing key file",
     "fileKhoaGhiChu": "Upload the key file (.tlbmkey) exported on the Signing key page; leave empty to use the key stored on this device.",
-    "daChonFile": "The key file was read in this browser and was not sent to the server.",
-    "nguoiDuocUyQuyen": "Signer to replace",
-    "nguoiNhanUyQuyen": "Delegate",
-    "timNguoiNhan": "Search by name, position, unit…",
-    "lyDoUyQuyen": "Delegation reason",
-    "khongCoNguoiNhan": "No match for this keyword. Try a different name, username or title.",
-    "chuaCoAiDuDieuKienUyQuyen": "No one is eligible to receive this delegation yet. This can happen if no substitute title has been configured for this role (admin's \"Delegation configuration\"), the configured title has no active user with signing rights, or eligible users are already part of this signing step.",
-    "chuaCoChucDanh": "No position"
+    "daChonFile": "The key file was read in this browser and was not sent to the server."
   },
   "traoDoi": {
     "tieuDe": "Discussion on the change request",
@@ -428,7 +411,6 @@
     "nguoi_ky_khong_cho_ky": "Only signers awaiting signature can be delegated.",
     "nguoi_nhan_khong_hop_le": "The delegate is inactive or lacks signing permission.",
     "nguoi_nhan_khong_du_tham_quyen": "The recipient's position is not authorized to sign for this person.",
-    "uy_quyen_vong_lap": "You cannot delegate back to the person who originally assigned the signing authority.",
     "uy_quyen_khong_con_hop_le": "The delegate no longer holds a position authorized to sign for this request. Contact an administrator to review and reassign.",
     "chuc_vu_khong_hop_le": "A selected position is no longer available. Reload the list.",
     "khong_co_chuc_danh_goc": "The request does not contain the signer's original position. Contact an administrator.",

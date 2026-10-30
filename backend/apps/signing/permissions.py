@@ -21,7 +21,6 @@ TAO_TRINH_KY = "add_trinhky"
 QUAN_LY_QUY_TRINH = "manage_signing_process"
 GUI_TRINH_KY = "send_trinhky"
 KY_TRINH_KY = "sign_trinhky"
-UY_QUYEN_TRINH_KY = "delegate_trinhky"
 HUY_TRINH_KY = "cancel_trinhky"
 XEM_NHAT_KY = "view_signing_audit"
 

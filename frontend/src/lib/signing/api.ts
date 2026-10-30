@@ -6,7 +6,7 @@
 import apiClient, { ApiError } from '@lib/apiClient';
 import { resolveDocumentApiUrl } from '@lib/routes';
 import type {
-  BangChung, BoLocHoSo, BoLocTaiLieu, BoLocThongBao, CanBo, CanBoChucVu, ChucVu, DonViLuaChon, TepTaiLieu, ThongKeHoSo, HoSo, HoSoChiTiet, KhoaKy, LoiNghiepVu, NguoiDungHienTai, NguoiDungTim, QuyTrinh,
+  BangChung, BoLocHoSo, BoLocTaiLieu, BoLocThongBao, CanBo, CanBoChucVu, ChucVu, DonViLuaChon, TepTaiLieu, ThongKeHoSo, HoSo, HoSoChiTiet, KhoaKy, LoiNghiepVu, NguoiDungHienTai, QuyTrinh,
   ThamSoKdf, ThongBaoTrinhKy, TinNhan, TrangKetQua, TraoDoi, VanBanDi, VanBanDiTepDinhKem, ViTriKy,
 } from './types';
 
@@ -95,8 +95,6 @@ export const signingApi = {
     apiClient.post<HoSoChiTiet>(`${SIGNING_BASE}/trinh-ky/${id}/tu-choi/`, { ly_do_tu_choi }, tieuDe(khoa)),
   thuHoi: (id: number, khoa: string) =>
     apiClient.post<HoSoChiTiet>(`${SIGNING_BASE}/trinh-ky/${id}/thu-hoi/`, {}, tieuDe(khoa)),
-  uyQuyen: (id: number, khoa: string, body: { dong_nguoi_ky: number; nguoi_nhan: number; ly_do_uy_quyen: string }) =>
-    apiClient.post<HoSoChiTiet>(`${SIGNING_BASE}/trinh-ky/${id}/uy-quyen/`, body, tieuDe(khoa)),
   yeuCauSua: (id: number, khoa: string, tieu_de: string, ly_do: string) =>
     apiClient.post<HoSoChiTiet>(`${SIGNING_BASE}/trinh-ky/${id}/yeu-cau-sua/`, { tieu_de, ly_do }, tieuDe(khoa)),
 
@@ -203,13 +201,6 @@ export const signingApi = {
     if (don_vi) tham_so.set('don_vi', String(don_vi));
     return apiClient.get<{ count: number; results: CanBoChucVu[] }>(`${SIGNING_BASE}/can-bo-theo-chuc-vu/?${tham_so}`);
   },
-  /** Người nhận ủy quyền ký: tài khoản có quyền ký (cần delegate_trinhky). */
-  timNguoiNhanUyQuyen: (q: string, hoSo: number, dong: number) =>
-    apiClient.get<NguoiDungTim[]>(`${SIGNING_BASE}/nguoi-dung/?muc_dich=uy_quyen&ho_so=${hoSo}&dong_nguoi_ky=${dong}&q=${encodeURIComponent(q)}`),
-  cauHinhUyQuyen: () => apiClient.get<Array<{ chuc_vu_giao_id: number; chuc_vu_nhan_id: number }>>(`${SIGNING_BASE}/cau-hinh-uy-quyen/`),
-  chucVuUyQuyen: () => apiClient.get<Array<{ id: number; ten: string; stt: number }>>(`${SIGNING_BASE}/chuc-vu/`),
-  luuCauHinhUyQuyen: (chuc_vu_giao: number, chuc_vu_nhan: number[]) =>
-    apiClient.put(`${SIGNING_BASE}/cau-hinh-uy-quyen/`, { chuc_vu_giao, chuc_vu_nhan }),
   donVi: () => apiClient.get<DonViLuaChon[]>(`${SIGNING_BASE}/don-vi/`),
   taiLieu: (loc: BoLocTaiLieu = {}, trang = 1) => {
     const tham_so = new URLSearchParams({ page: String(trang), page_size: String(SO_HO_SO_MOI_TRANG) });

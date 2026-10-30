@@ -68,20 +68,18 @@ class DuLieuMauTests(TestCase):
         self.assertEqual(trinh_ky.luot_hien_hanh(self.ho_so("M06")).trang_thai, "YEU_CAU_SUA")
         self.assertEqual(trinh_ky.luot_hien_hanh(self.ho_so("M07")).so_luot, 2)
         self.assertEqual(SigningRequest.objects.filter(ho_so_goc=self.ho_so("M05"), trang_thai="NHAP").count(), 1)
-        # Hoàn tất có tệp hoàn tất; ủy quyền ghi người giao
+        # Hoàn tất có tệp hoàn tất; dữ liệu mẫu không còn hồ sơ ủy quyền ký
         self.assertEqual(trinh_ky.luot_hien_hanh(self.ho_so("M04")).trang_thai_tep_hoan_tat, "THANH_CONG")
-        dong = SigningRequestStepSigner.objects.get(buoc_ky__luot_trinh__trinh_ky=self.ho_so("M10"),
-                                                    uy_quyen_tu__username="truongphong")
-        self.assertEqual(dong.nguoi_ky.username, "giamdoc")
+        self.assertFalse(SigningRequestStepSigner.objects.filter(uy_quyen_tu__isnull=False).exists())
         # Người dùng thấy hồ sơ ở hộp "cần tôi ký"
         giamdoc, truongphong = User.objects.get(username="giamdoc"), User.objects.get(username="truongphong")
         self.assertIn(self.ho_so("M03"), trinh_ky.dang_cho_toi_ky(giamdoc))
-        self.assertIn(self.ho_so("M10"), trinh_ky.dang_cho_toi_ky(giamdoc))
+        self.assertIn(self.ho_so("M10"), trinh_ky.dang_cho_toi_ky(truongphong))
         self.assertIn(self.ho_so("M02"), trinh_ky.dang_cho_toi_ky(truongphong))
         # Lịch sử và thông báo tương ứng
-        self.assertTrue(SigningAuditLog.objects.filter(trinh_ky=self.ho_so("M10"), hanh_dong="UY_QUYEN_KY").exists())
+        self.assertFalse(SigningAuditLog.objects.filter(hanh_dong="UY_QUYEN_KY").exists())
         loai = set(SigningNotification.objects.values_list("loai_thong_bao", flat=True))
-        self.assertTrue({"CAN_KY", "HOAN_THANH", "TU_CHOI", "YEU_CAU_SUA", "HUY", "UY_QUYEN", "TIN_NHAN",
+        self.assertTrue({"CAN_KY", "HOAN_THANH", "TU_CHOI", "YEU_CAU_SUA", "HUY", "TIN_NHAN",
                          "QUA_HAN"} <= loai, loai)
         # Khóa tạm đã thu hồi: không ai còn khóa hoạt động do lệnh tạo
         self.assertFalse(SigningKey.objects.filter(trang_thai=enums.TrangThaiKhoa.HOAT_DONG).exists())
@@ -105,7 +103,7 @@ class DuLieuMauTests(TestCase):
 
     def test_dashboard_data_for_signers_with_distinct_dates(self):
         chay(self, DEMO_PASSWORD=MAT_KHAU)
-        for username, toi_thieu in (("truongphong", 2), ("giamdoc", 3)):
+        for username, toi_thieu in (("truongphong", 2), ("giamdoc", 2)):
             c = APIClient()
             c.force_authenticate(User.objects.get(username=username))
             d = c.get("/api/v1/signing/dashboard/").data

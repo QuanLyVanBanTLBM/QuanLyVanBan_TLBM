@@ -271,45 +271,24 @@ class HuyTrinhKySerializer(serializers.Serializer):
     ly_do = serializers.CharField(max_length=MAX_LY_DO, required=False, allow_blank=True, default="")
 
 
-class UyQuyenSerializer(serializers.Serializer):
-    dong_nguoi_ky = serializers.IntegerField(min_value=1)
-    nguoi_nhan = serializers.IntegerField(min_value=1)
-    ly_do_uy_quyen = serializers.CharField(max_length=MAX_LY_DO)
-
-
 class TrinhLaiSerializer(serializers.Serializer):
     han_chot = serializers.DateTimeField(required=False, allow_null=True)
 
 
 class NguoiKyLuotSerializer(serializers.ModelSerializer):
     chu_ky = serializers.SerializerMethodField()
-    co_the_uy_quyen = serializers.SerializerMethodField()
 
     class Meta:
         model = SigningRequestStepSigner
         fields = ["id", "nguoi_ky", "ten_nguoi_ky", "ten_chuc_vu", "vai_tro_ky", "chan_ky_chinh", "trang_thai",
                   "thoi_diem_mo", "ngay_ky", "ngay_tu_choi", "ly_do_tu_choi", "uy_quyen_tu", "ten_nguoi_uy_quyen",
                   "ly_do_uy_quyen", "ngay_uy_quyen", "trang_ky", "toa_do_x", "toa_do_y", "chieu_rong_khung",
-                  "chieu_cao_khung", "chu_ky", "co_the_uy_quyen"]
+                  "chieu_cao_khung", "chu_ky"]
 
     ten_nguoi_uy_quyen = serializers.SerializerMethodField()
 
     def get_ten_nguoi_uy_quyen(self, obj):
         return to_chuc.ten_hien_thi(obj.uy_quyen_tu) if obj.uy_quyen_tu_id else None
-
-    def get_co_the_uy_quyen(self, obj):
-        request = self.context.get("request")
-        nguoi = getattr(request, "user", None)
-        if nguoi is None or not nguoi.is_authenticated:
-            return False
-        cache = self.context.setdefault("_co_the_uy_quyen_cache", {})
-        if nguoi.pk not in cache:
-            cache[nguoi.pk] = {}
-        if obj.nguoi_ky_id not in cache[nguoi.pk]:
-            from .services.uy_quyen import co_quyen_uy_quyen
-
-            cache[nguoi.pk][obj.nguoi_ky_id] = co_quyen_uy_quyen(nguoi, obj.nguoi_ky)
-        return cache[nguoi.pk][obj.nguoi_ky_id]
 
     def get_chu_ky(self, obj):
         """Chữ ký hiện hành (ghi chú, trễ hạn, kết quả xác minh, có ảnh snapshot); không trả nội dung chữ ký."""

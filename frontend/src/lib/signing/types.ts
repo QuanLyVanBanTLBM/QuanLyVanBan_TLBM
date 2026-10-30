@@ -85,7 +85,6 @@ export interface NguoiKyLuot {
   chan_ky_chinh: boolean;
   trang_thai: TrangThaiNguoiKy;
   /** Backend policy projection for the current user; missing means not eligible. */
-  co_the_uy_quyen?: boolean;
   thoi_diem_mo: string | null;
   ngay_ky: string | null;
   ngay_tu_choi: string | null;
@@ -370,15 +369,6 @@ export interface CanBo {
   don_vi_ten: string;
   chuc_vu_id: number | null;
   chuc_vu_ten: string;
-}
-
-export interface NguoiDungTim {
-  id: number;
-  ten: string;
-  ten_dang_nhap: string;
-  chuc_vu: string | null;
-  don_vi_id: number | null;
-  don_vi: string | null;
 }
 
 /** Lỗi nghiệp vụ chuẩn của backend: {code, detail, fields}. */

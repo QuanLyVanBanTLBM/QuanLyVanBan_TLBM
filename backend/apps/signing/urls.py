@@ -44,7 +44,6 @@ urlpatterns = [
     path("trinh-ky/<int:pk>/ky/", views.HanhDongKyView.as_view(action="ky"), name="trinh-ky-ky"),
     path("trinh-ky/<int:pk>/tu-choi/", views.HanhDongKyView.as_view(action="tu-choi"), name="trinh-ky-tu-choi"),
     path("trinh-ky/<int:pk>/thu-hoi/", views.HanhDongKyView.as_view(action="thu-hoi"), name="trinh-ky-thu-hoi"),
-    path("trinh-ky/<int:pk>/uy-quyen/", views.UyQuyenView.as_view(), name="trinh-ky-uy-quyen"),
 
     # Trả lại để sửa (lõi Phase 9, #80)
     path("trinh-ky/<int:pk>/yeu-cau-sua/", views.YeuCauSuaView.as_view(), name="trinh-ky-yeu-cau-sua"),
@@ -60,7 +59,6 @@ urlpatterns = [
 
     # Tìm tài khoản để cấu hình người ký (người quản lý quy trình)
     path("nguoi-dung/", views.NguoiDungView.as_view(), name="nguoi-dung"),
-    path("cau-hinh-uy-quyen/", views.CauHinhUyQuyenView.as_view(), name="cau-hinh-uy-quyen"),
     path("don-vi/", views.DonViView.as_view(), name="don-vi"),
     path("chuc-vu/", views.ChucVuView.as_view(), name="chuc-vu"),
     path("can-bo-theo-chuc-vu/", views.CanBoTheoChucVuView.as_view(), name="can-bo-theo-chuc-vu"),

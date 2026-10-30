@@ -8,7 +8,6 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Badge, Button, Card } from '@components/common';
-import CauHinhUyQuyen from '@components/signing/CauHinhUyQuyen';
 import { DangTai, HopThoai, LoiTai, Rong, ThongBao, TrangThaiBadge, TruongNhap } from '@components/signing/ChungUI';
 import { docLoi, signingApi } from '@lib/signing/api';
 import { boDau, GIOI_HAN, LOP_O_NHAP, MA_QUY_TRINH_HOP_LE, tenNguoiKyCauHinh } from '@lib/signing/dinhDang';
@@ -640,7 +639,6 @@ export default function QuyTrinhPage() {
     && (!locPhamVi || q.pham_vi === locPhamVi)
     && (!tuKhoa || [q.ma_quy_trinh, q.ten_quy_trinh, q.ten_don_vi_ap_dung ?? ''].some((x) => boDau(x).includes(tuKhoa))));
   const [taoMo, setTaoMo] = useState(false);
-  const [cauHinhUyQuyen, setCauHinhUyQuyen] = useState(false);
   const [dangSua, setDangSua] = useState<QuyTrinh | null>(null);
   const [xemId, setXemId] = useState<number | null>(null);
   const [canXoa, setCanXoa] = useState<QuyTrinh | null>(null);
@@ -709,7 +707,6 @@ export default function QuyTrinhPage() {
               <option value="PHONG_BAN">{t('phamVi.PHONG_BAN')}</option>
             </select>
           </label>
-          {quanLy && toi?.la_quan_tri && <Button variant="secondary" onClick={() => setCauHinhUyQuyen(true)}>{t('uyQuyenCauHinh')}</Button>}
           {quanLy && <Button className="ml-auto" icon="fa-plus" onClick={() => setTaoMo(true)}>{t('quyTrinh.tao')}</Button>}
         </div>
       </Card>
@@ -767,7 +764,6 @@ export default function QuyTrinhPage() {
         ))}
       </div>
       {taoMo && <FormTao mo={taoMo} onDong={() => setTaoMo(false)} onXong={() => { setTaoMo(false); ds.tai(); }} />}
-      {cauHinhUyQuyen && <CauHinhUyQuyen onDong={() => setCauHinhUyQuyen(false)} />}
       {dangSua && (
         <FormTao key={dangSua.id} mo banDau={dangSua} onDong={() => setDangSua(null)} onXong={() => { setDangSua(null); ds.tai(); }} />
       )}

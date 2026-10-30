@@ -2,7 +2,6 @@ import base64
 from collections.abc import Mapping
 
 from django.contrib.auth import get_user_model
-from django.db import transaction
 from django.db.models import Exists, OuterRef, Q, Subquery
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -17,11 +16,11 @@ from rest_framework.response import Response
 from . import crypto, enums, selectors, tim_kiem
 from .errors import ConflictError, SigningAPIView, SigningError
 from .models import (
-    SigningAttempt, SigningDelegationRole, SigningKey, SigningNotification, SigningRequest, SigningRequestStep,
-    SigningRequestStepSigner, SigningSignature,
+    SigningAttempt, SigningKey, SigningNotification, SigningRequest, SigningRequestStep,
+    SigningSignature,
 )
 from .permissions import (
-    GUI_TRINH_KY, HUY_TRINH_KY, KY_TRINH_KY, QUAN_LY_QUY_TRINH, TAO_TRINH_KY, UY_QUYEN_TRINH_KY, XEM_NHAT_KY,
+    GUI_TRINH_KY, HUY_TRINH_KY, KY_TRINH_KY, QUAN_LY_QUY_TRINH, TAO_TRINH_KY, XEM_NHAT_KY,
     XEM_TRINH_KY, co_quyen, yeu_cau_quyen,
 )
 from .serializers import (
@@ -30,7 +29,7 @@ from .serializers import (
     KhoaSerializer, KySerializer, LienKetVanBanDiSerializer, MoKhoaKySerializer, QuyTrinhInputSerializer,
     QuyTrinhSerializer, ThuHoiKhoaSerializer, TrinhKyChiTietSerializer, TrinhKySerializer, TrinhKySuaSerializer,
     TrinhKyTaoSerializer, TrinhLaiSerializer,
-    TinNhanInputSerializer, TinNhanSerializer, TuChoiSerializer, UyQuyenSerializer, XacMinhSoHuuSerializer,
+    TinNhanInputSerializer, TinNhanSerializer, TuChoiSerializer, XacMinhSoHuuSerializer,
     XoayVongSerializer, YeuCauSuaSerializer, YeuCauSuaThreadSerializer,
 )
 from .services import bang_chung as bang_chung_service
@@ -41,7 +40,6 @@ from .services import process as process_service
 from .services import thong_bao as thong_bao_service
 from .services import tep_hoan_tat as tep_hoan_tat_service
 from .services import trinh_ky as trinh_ky_service
-from .services import uy_quyen as uy_quyen_service
 from .services import yeu_cau_sua as yeu_cau_sua_service
 from .storage import StorageError, get_storage
 from .tich_hop import to_chuc
@@ -510,26 +508,6 @@ class HanhDongKyView(SigningAPIView):
         return Response(_du_lieu_chi_tiet_trinh_ky(ket_qua, request))
 
 
-class UyQuyenView(SigningAPIView):
-    """
-    POST /trinh-ky/<pk>/uy-quyen/: ủy quyền khẩn cấp một người ký đang chờ ký sang người nhận (plan mục 3.5, 6.2).
-    Body: `dong_nguoi_ky` (id dòng người ký của lượt hiện hành), `nguoi_nhan`, `ly_do_uy_quyen`. Quyền
-    `delegate_trinhky` kèm vai trò cấp trên/quản trị (kiểm ở service); bắt buộc Idempotency-Key.
-    """
-
-    def post(self, request, pk):
-        ho_so = _ho_so_xem_duoc(request, pk)
-        yeu_cau_quyen(request.user, UY_QUYEN_TRINH_KY)
-        khoa = _khoa_chong_trung(request)
-        data = UyQuyenSerializer(data=request.data)
-        data.is_valid(raise_exception=True)
-        ket_qua = uy_quyen_service.uy_quyen(
-            ho_so, request.user, dong_nguoi_ky=data.validated_data["dong_nguoi_ky"],
-            nguoi_nhan=data.validated_data["nguoi_nhan"], ly_do=data.validated_data["ly_do_uy_quyen"],
-            khoa_chong_trung=khoa, dia_chi_ip=_ip(request))
-        return Response(_du_lieu_chi_tiet_trinh_ky(ket_qua, request))
-
-
 # ── Trả lại để sửa (lõi Phase 9, #80; plan mục 3.3 "Nhánh 2") ───────────────
 
 
@@ -815,46 +793,9 @@ class ChucVuView(SigningAPIView):
         ])
 
 
-class CauHinhUyQuyenView(SigningAPIView):
-    """Quản trị cấu hình chức danh nhận thay cho từng chức danh ký."""
-
-    def kiem_tra_quan_tri(self, user):
-        yeu_cau_quyen(user, QUAN_LY_QUY_TRINH)
-        if not to_chuc.la_quan_tri(user):
-            raise SigningError(code="khong_co_quyen", detail="Chỉ quản trị được cấu hình ủy quyền.",
-                               status_code=status.HTTP_403_FORBIDDEN)
-
-    def get(self, request):
-        self.kiem_tra_quan_tri(request.user)
-        return Response(list(SigningDelegationRole.objects.order_by("chuc_vu_giao_id", "chuc_vu_nhan_id")
-                             .values("chuc_vu_giao_id", "chuc_vu_nhan_id")))
-
-    @transaction.atomic
-    def put(self, request):
-        self.kiem_tra_quan_tri(request.user)
-        class Input(serializers.Serializer):
-            chuc_vu_giao = serializers.IntegerField(min_value=1)
-            chuc_vu_nhan = serializers.ListField(child=serializers.IntegerField(min_value=1), allow_empty=True)
-        data = Input(data=request.data)
-        data.is_valid(raise_exception=True)
-        from accounts.models import Position
-        from .services.audit import ghi_nhat_ky
-        giao = get_object_or_404(Position.objects.select_for_update(), pk=data.validated_data["chuc_vu_giao"])
-        nhan = set(data.validated_data["chuc_vu_nhan"])
-        if Position.objects.filter(pk__in=nhan, is_public=True).count() != len(nhan):
-            raise SigningError(code="chuc_vu_khong_hop_le", detail="Có chức danh nhận không hợp lệ.")
-        truoc = list(SigningDelegationRole.objects.filter(chuc_vu_giao=giao).values_list("chuc_vu_nhan_id", flat=True))
-        SigningDelegationRole.objects.filter(chuc_vu_giao=giao).delete()
-        SigningDelegationRole.objects.bulk_create([SigningDelegationRole(chuc_vu_giao=giao, chuc_vu_nhan_id=n) for n in nhan])
-        ghi_nhat_ky(request.user, "signing_delegation_role", giao.pk, "CAU_HINH_UY_QUYEN",
-                    du_lieu_kem_theo={"truoc": sorted(truoc), "sau": sorted(nhan)})
-        return Response({"chuc_vu_giao": giao.pk, "chuc_vu_nhan": sorted(nhan)})
-
-
 class NguoiDungView(SigningAPIView):
     """
     GET /nguoi-dung/?q=: tìm tài khoản đang hoạt động để chọn người ký khi cấu hình quy trình (manage_signing_process).
-    `?muc_dich=uy_quyen`: tìm người nhận ủy quyền ký (delegate_trinhky), chỉ trả tài khoản có sign_trinhky.
     Tìm theo họ tên, tên đăng nhập, chức vụ, đơn vị; không phân biệt hoa thường và dấu tiếng Việt. Chỉ trả thông tin
     hiển thị; danh bạ đầy đủ do Nhóm 7 cung cấp.
     """
@@ -862,42 +803,16 @@ class NguoiDungView(SigningAPIView):
     TOI_DA = 500
 
     def get(self, request):
-        uy_quyen = request.query_params.get("muc_dich") == "uy_quyen"
-        yeu_cau_quyen(request.user, UY_QUYEN_TRINH_KY if uy_quyen else QUAN_LY_QUY_TRINH)
-        chuc_vu_nhan = None
-        if uy_quyen:
-            ho_so_id = request.query_params.get("ho_so", "")
-            dong_id = request.query_params.get("dong_nguoi_ky", "")
-            if not ho_so_id.isdigit() or not dong_id.isdigit():
-                raise SigningError(code="tham_so_khong_hop_le", detail="Chọn hồ sơ và người ký trước.")
-            ho_so = _ho_so_xem_duoc(request, int(ho_so_id))
-            luot = trinh_ky_service.luot_hien_hanh(ho_so)
-            dong = get_object_or_404(SigningRequestStepSigner.objects.select_related("nguoi_ky", "buoc_ky"),
-                                     pk=int(dong_id), buoc_ky__luot_trinh=luot)
-            if (ho_so.trang_thai != enums.TrangThaiYeuCau.CHO_KY or luot.trang_thai != enums.TrangThaiLuotTrinh.CHO_KY
-                    or dong.trang_thai != enums.TrangThaiNguoiKy.CHO_KY
-                    or dong.buoc_ky.trang_thai not in (enums.TrangThaiCapKy.DANG_KY, enums.TrangThaiCapKy.CHUA_MO)
-                    or not uy_quyen_service.co_quyen_uy_quyen(request.user, dong.nguoi_ky)):
-                raise SigningError(code="khong_co_quyen", detail="Không thể ủy quyền người ký này.",
-                                   status_code=status.HTTP_403_FORBIDDEN)
-            chuc_vu_giao = uy_quyen_service.chuc_vu_goc(dong)
-            if not chuc_vu_giao:
-                raise SigningError(code="khong_co_chuc_danh_goc",
-                                   detail="Không xác định được chức danh gốc của người ký trong hồ sơ.")
-            chuc_vu_nhan = SigningDelegationRole.objects.filter(chuc_vu_giao_id=chuc_vu_giao).values_list("chuc_vu_nhan_id", flat=True)
+        yeu_cau_quyen(request.user, QUAN_LY_QUY_TRINH)
         tu_khoa = tim_kiem.bo_dau(tu_khoa_tim_kiem(request.query_params.get("q")))
         User = get_user_model()
         lien_quan = [f for f in ("chuc_vu", "don_vi") if any(x.name == f for x in User._meta.get_fields())]
         ket_qua = []
         users = User.objects.filter(is_active=True)
-        if uy_quyen:
-            users = users.filter(chuc_vu_id__in=chuc_vu_nhan).exclude(pk__in=dong.buoc_ky.nguoi_ky_set.values("nguoi_ky_id"))
         for u in users.select_related(*lien_quan).order_by("pk").iterator(chunk_size=500):
             ten, chuc_vu, don_vi = to_chuc.ten_hien_thi(u), to_chuc.ten_chuc_vu(u), to_chuc.ten_don_vi(u)
             chuc_danh = getattr(u, "chuc_danh", "") or ""
             if tu_khoa and tu_khoa not in tim_kiem.bo_dau(" ".join((ten, u.get_username(), chuc_vu, chuc_danh, don_vi))):
-                continue
-            if uy_quyen and not co_quyen(u, KY_TRINH_KY):
                 continue
             ket_qua.append({"id": u.pk, "ten": ten, "ten_dang_nhap": u.get_username(), "chuc_vu": chuc_vu or None,
                             "don_vi_id": to_chuc.don_vi_cua(u), "don_vi": don_vi or None})
@@ -955,8 +870,7 @@ class ToiView(SigningAPIView):
         return Response({
             "id": u.pk, "ten": to_chuc.ten_hien_thi(u), "don_vi_id": don_vi,
             "quyen": {ma: co_quyen(u, ma) for ma in (XEM_TRINH_KY, TAO_TRINH_KY, GUI_TRINH_KY, KY_TRINH_KY,
-                                                     HUY_TRINH_KY, XEM_NHAT_KY, QUAN_LY_QUY_TRINH,
-                                                     UY_QUYEN_TRINH_KY)},
+                                                     HUY_TRINH_KY, XEM_NHAT_KY, QUAN_LY_QUY_TRINH)},
             "la_quan_tri": to_chuc.la_quan_tri(u), "la_lanh_dao_don_vi": to_chuc.la_lanh_dao_don_vi(u, don_vi),
         })
 
