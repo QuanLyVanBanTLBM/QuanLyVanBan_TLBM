@@ -6,7 +6,7 @@
 import apiClient, { ApiError } from '@lib/apiClient';
 import { resolveDocumentApiUrl } from '@lib/routes';
 import type {
-  BangChung, BoLocHoSo, BoLocTaiLieu, CanBo, CanBoChucVu, ChucVu, DonViLuaChon, TepTaiLieu, ThongKeHoSo, HoSo, HoSoChiTiet, KhoaKy, LoiNghiepVu, NguoiDungHienTai, NguoiDungTim, QuyTrinh,
+  BangChung, BoLocHoSo, BoLocTaiLieu, CanBo, CanBoChucVu, ChucVu, DonViApDungHoSo, DonViLuaChon, TepTaiLieu, ThongKeHoSo, HoSo, HoSoChiTiet, KhoaKy, LoiNghiepVu, NguoiDungHienTai, NguoiDungTim, QuyTrinh,
   ThamSoKdf, TinNhan, TrangKetQua, TraoDoi, VanBanDi, VanBanDiTepDinhKem, ViTriKy,
 } from './types';
 
@@ -71,12 +71,14 @@ export const signingApi = {
     Object.entries(loc).forEach(([k, v]) => v && tham_so.set(k, v));
     return apiClient.get<TrangKetQua<HoSo>>(`${SIGNING_BASE}/trinh-ky/?${tham_so}`);
   },
-  /** Số hồ sơ theo thẻ lọc nhanh; `loc` (từ khóa, quy trình, khoảng ngày) làm số khớp với danh sách đang xem. */
+  /** Số hồ sơ theo thẻ lọc nhanh; cùng từ khóa, quy trình, đơn vị áp dụng và khoảng ngày với danh sách. */
   thongKe: (hop: 'can_toi_ky' | 'toi_gui' | 'tat_ca', loc: BoLocHoSo = {}) => {
     const tham_so = new URLSearchParams({ hop });
     Object.entries(loc).forEach(([k, v]) => k !== 'nhanh' && v && tham_so.set(k, v));
     return apiClient.get<ThongKeHoSo>(`${SIGNING_BASE}/trinh-ky/thong-ke/?${tham_so}`);
   },
+  donViApDungTheoHop: (hop: 'can_toi_ky' | 'toi_gui' | 'tat_ca') =>
+    apiClient.get<DonViApDungHoSo[]>(`${SIGNING_BASE}/trinh-ky/don-vi-ap-dung/?${new URLSearchParams({ hop })}`),
   chiTiet: (id: number) => apiClient.get<HoSoChiTiet>(`${SIGNING_BASE}/trinh-ky/${id}/`),
   taoNhap: (form: FormData) => postForm<HoSoChiTiet>('/trinh-ky/', form),
   /** Chi tiết văn bản đi và danh sách tệp để chọn PDF từ đúng bản ghi. */

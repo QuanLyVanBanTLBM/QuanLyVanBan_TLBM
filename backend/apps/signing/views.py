@@ -17,7 +17,7 @@ from rest_framework.response import Response
 from . import crypto, enums, selectors, tim_kiem
 from .errors import ConflictError, SigningAPIView, SigningError
 from .models import (
-    SigningAttempt, SigningDelegationRole, SigningKey, SigningNotification, SigningRequest, SigningRequestStep,
+    SigningAttempt, SigningDelegationRole, SigningKey, SigningNotification, SigningProcess, SigningRequest, SigningRequestStep,
     SigningRequestStepSigner, SigningSignature,
 )
 from .permissions import (
@@ -335,8 +335,7 @@ def tu_khoa_tim_kiem(gia_tri):
 
 
 def _loc_ho_so(queryset, tham_so):
-    """Bộ lọc danh sách: trạng thái, quy trình (id), từ khóa (số hiệu, trích yếu văn bản trình ký — văn bản đi hoặc
-    nhập tay, mã/tên quy trình, ghi chú, mã hồ sơ), khoảng ngày tạo `tu_ngay`/`den_ngay` (YYYY-MM-DD)."""
+    """Lọc trạng thái, quy trình/đơn vị áp dụng (ID), từ khóa (văn bản, quy trình, ghi chú, mã hồ sơ) và ngày tạo."""
     if tham_so.get("trang_thai"):
         queryset = queryset.filter(trang_thai=tham_so["trang_thai"].replace("\x00", ""))
     if tham_so.get("nhanh"):
@@ -350,6 +349,23 @@ def _loc_ho_so(queryset, tham_so):
             raise SigningError(code="tham_so_khong_hop_le", detail="quy_trinh phải là số.",
                                fields={"quy_trinh": ["Giá trị không hợp lệ."]})
         queryset = queryset.filter(quy_trinh_id=int(tham_so["quy_trinh"]))
+    if tham_so.get("don_vi_ap_dung"):
+        gia_tri_don_vi = tham_so["don_vi_ap_dung"]
+        if not gia_tri_don_vi.isascii() or not gia_tri_don_vi.isdecimal():
+            raise SigningError(code="tham_so_khong_hop_le", detail="don_vi_ap_dung phải là số.",
+                               fields={"don_vi_ap_dung": ["Giá trị không hợp lệ."]})
+        try:
+            don_vi_id = int(gia_tri_don_vi)
+        except ValueError as exc:
+            raise SigningError(
+                code="tham_so_khong_hop_le",
+                detail="don_vi_ap_dung vượt giới hạn.",
+                fields={"don_vi_ap_dung": ["Giá trị vượt giới hạn cho phép."]},
+            ) from exc
+        if don_vi_id > 9223372036854775807:
+            raise SigningError(code="tham_so_khong_hop_le", detail="don_vi_ap_dung vượt giới hạn.",
+                               fields={"don_vi_ap_dung": ["Giá trị không hợp lệ."]})
+        queryset = queryset.filter(quy_trinh__don_vi_ap_dung_id=don_vi_id)
     tu_khoa = tu_khoa_tim_kiem(tham_so.get("q"))
     if tu_khoa:
         cot = ("quy_trinh__ten_quy_trinh", "quy_trinh__ma_quy_trinh", "ghi_chu", "so_hieu_van_ban", "trich_yeu_van_ban")
@@ -658,8 +674,8 @@ class AnhChuKyView(SigningAPIView):
 class ThongKeHoSoView(SigningAPIView):
     """
     GET /trinh-ky/thong-ke/?hop=: số hồ sơ theo từng thẻ lọc nhanh của hộp. Nhận cùng các bộ lọc khác của danh sách
-    (`q`, `quy_trinh`, `tu_ngay`, `den_ngay`) để số trên thẻ khớp với danh sách đang xem; `nhanh` không áp dụng vì
-    mỗi thẻ chính là một giá trị của `nhanh`.
+    (`q`, `quy_trinh`, `don_vi_ap_dung`, `tu_ngay`, `den_ngay`) để số trên thẻ khớp với danh sách đang xem; `nhanh`
+    không áp dụng vì mỗi thẻ chính là một giá trị của `nhanh`.
     """
 
     def get(self, request):
@@ -669,6 +685,23 @@ class ThongKeHoSoView(SigningAPIView):
             pk__in=_loc_ho_so(_ho_so_theo_hop(request), loc).values("pk")))
         dem = {"tat_ca": queryset.count(), **{k: queryset.filter(v).count() for k, v in _dieu_kien_nhanh().items()}}
         return Response(dem)
+
+
+class DonViApDungHoSoView(SigningAPIView):
+    """GET /trinh-ky/don-vi-ap-dung/?hop=: đơn vị áp dụng có trong các hồ sơ của hộp hiện tại."""
+
+    def get(self, request):
+        ho_so = _ho_so_theo_hop(request)
+        cac_don_vi = SigningProcess.objects.filter(
+            pk__in=ho_so.values("quy_trinh_id"), don_vi_ap_dung__isnull=False,
+        ).values(
+            "don_vi_ap_dung_id", "don_vi_ap_dung__ten", "don_vi_ap_dung__khoi__ten",
+        ).distinct().order_by("don_vi_ap_dung__khoi__ten", "don_vi_ap_dung__ten", "don_vi_ap_dung_id")
+        return Response([{
+            "id": dv["don_vi_ap_dung_id"],
+            "ten": dv["don_vi_ap_dung__ten"],
+            "ten_khoi": dv["don_vi_ap_dung__khoi__ten"],
+        } for dv in cac_don_vi])
 
 
 class TaiLieuView(SigningAPIView):

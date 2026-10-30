@@ -29,7 +29,7 @@ vi.mock('@lib/signing/api', async () => {
     toi: vi.fn(), danhSach: vi.fn(), thongKe: vi.fn(), chiTiet: vi.fn(), tepGoc: vi.fn(), taiLieu: vi.fn(), huy: vi.fn(),
     timVanBanDi: vi.fn(), chiTietVanBanDi: vi.fn(), lienKetVanBanDi: vi.fn(), quyTrinh: vi.fn(), taoNhap: vi.fn(), khoa: vi.fn(), thuHoiKhoa: vi.fn(), traoDoi: vi.fn(),
     guiTinNhan: vi.fn(), giaiQuyet: vi.fn(), thaoTacQuyTrinh: vi.fn(), taoQuyTrinh: vi.fn(), xoaQuyTrinh: vi.fn(),
-    donVi: vi.fn(), chucVu: vi.fn(), danhBaCanBo: vi.fn(), canBoTheoChucVu: vi.fn(),
+    donVi: vi.fn(), donViApDungTheoHop: vi.fn(), chucVu: vi.fn(), danhBaCanBo: vi.fn(), canBoTheoChucVu: vi.fn(),
   } };
 });
 vi.mock('@lib/signing/pdf', () => ({
@@ -52,6 +52,7 @@ beforeEach(() => {
   localStorage.setItem('tlbm_lang', 'vi');
   api.timVanBanDi.mockResolvedValue([]);
   api.quyTrinh.mockResolvedValue([]);
+  api.donViApDungTheoHop.mockResolvedValue([]);
   api.donVi.mockResolvedValue([]);
   api.chucVu.mockResolvedValue([]);
   api.danhBaCanBo.mockResolvedValue([]);
@@ -395,9 +396,9 @@ describe('Hạn chót, ghi chú và tìm kiếm tự áp dụng', () => {
     api.danhSach.mockResolvedValue({ count: 0, next: null, previous: null, results: [] });
     boc(<DanhSachPage hop="tat_ca" />);
     await screen.findByRole('searchbox');
-    expect(api.thongKe).toHaveBeenLastCalledWith('tat_ca', { q: undefined, quy_trinh: undefined, tu_ngay: undefined, den_ngay: undefined });
+    expect(api.thongKe).toHaveBeenLastCalledWith('tat_ca', { q: undefined, quy_trinh: undefined, don_vi_ap_dung: undefined, tu_ngay: undefined, den_ngay: undefined });
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'mua sam' } });
-    await waitFor(() => expect(api.thongKe).toHaveBeenLastCalledWith('tat_ca', { q: 'mua sam', quy_trinh: undefined, tu_ngay: undefined, den_ngay: undefined }));
+    await waitFor(() => expect(api.thongKe).toHaveBeenLastCalledWith('tat_ca', { q: 'mua sam', quy_trinh: undefined, don_vi_ap_dung: undefined, tu_ngay: undefined, den_ngay: undefined }));
     const soLan = api.thongKe.mock.calls.length;
     fireEvent.click(screen.getByRole('button', { name: /Quá hạn/ }));
     await waitFor(() => expect(api.danhSach).toHaveBeenLastCalledWith('tat_ca', { q: 'mua sam', nhanh: 'qua_han' }, 1));

@@ -3,11 +3,11 @@
  * chỉ giữ ở ô nhập kèm cảnh báo tại form, không gọi `onDoi` nên không gửi request cho tới khi khoảng hợp lệ.
  */
 import { useId, useState } from 'react';
+import { TruongLoc } from '@components/signing/BoLocTrinhKy';
 import { LOP_O_NHAP } from '@lib/signing/dinhDang';
 import { khoangNgaySai } from '@lib/signing/khoangNgay';
 import { useSigningT } from '@lib/signing/i18n';
 
-const LOP_NHAN = 'mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-secondary';
 const LOP_O_LOI = 'border-danger focus:border-danger focus:ring-danger-subtle';
 
 interface Props {
@@ -50,16 +50,14 @@ export default function LocKhoangNgay({ tuNgay = '', denNgay = '', onDoi, lopO =
 
   return (
     <>
-      <label className={`block ${lopO}`}>
-        <span className={LOP_NHAN}>{t('danhSach.tuNgay')}</span>
+      <TruongLoc nhan={t('danhSach.tuNgay')} icon="fa-calendar" className={lopO}>
         <input className={`${LOP_O_NHAP} ${loi ? LOP_O_LOI : ''}`} type="date" value={tu} {...thuocTinh}
           onChange={(e) => doi('tu_ngay', e.target.value)} />
-      </label>
-      <label className={`block ${lopO}`}>
-        <span className={LOP_NHAN}>{t('danhSach.denNgay')}</span>
+      </TruongLoc>
+      <TruongLoc nhan={t('danhSach.denNgay')} icon="fa-calendar" className={lopO}>
         <input className={`${LOP_O_NHAP} ${loi ? LOP_O_LOI : ''}`} type="date" value={den} {...thuocTinh}
           onChange={(e) => doi('den_ngay', e.target.value)} />
-      </label>
+      </TruongLoc>
       {loi && (
         <p id={idLoi} role="alert" className="col-span-full flex items-center gap-1.5 text-xs font-semibold text-danger">
           <i className="fa-solid fa-circle-exclamation" aria-hidden="true" />{t('danhSach.loiKhoangNgay')}

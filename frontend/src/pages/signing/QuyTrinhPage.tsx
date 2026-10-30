@@ -9,6 +9,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Badge, Button, Card } from '@components/common';
 import CauHinhUyQuyen from '@components/signing/CauHinhUyQuyen';
+import { BoLocKhung, TruongLoc } from '@components/signing/BoLocTrinhKy';
 import { DangTai, HopThoai, LoiTai, Rong, ThongBao, TrangThaiBadge, TruongNhap } from '@components/signing/ChungUI';
 import { docLoi, signingApi } from '@lib/signing/api';
 import { boDau, GIOI_HAN, LOP_O_NHAP, MA_QUY_TRINH_HOP_LE, tenNguoiKyCauHinh } from '@lib/signing/dinhDang';
@@ -687,32 +688,30 @@ export default function QuyTrinhPage() {
 
   return (
     <div className="space-y-3">
-      <Card className="p-4">
+      <BoLocKhung hanhDong={<>
+        {quanLy && toi?.la_quan_tri && <Button variant="secondary" onClick={() => setCauHinhUyQuyen(true)}>{t('uyQuyenCauHinh')}</Button>}
+        {quanLy && <Button icon="fa-plus" onClick={() => setTaoMo(true)}>{t('quyTrinh.tao')}</Button>}
+      </>}>
         <div className="flex flex-wrap items-end gap-3">
-          <label className="flex min-w-48 flex-1 flex-col gap-1.5 text-xs font-semibold text-secondary">
-            <span><i className="fa-solid fa-magnifying-glass text-primary text-xs mr-1" aria-hidden="true" />{t('danhSach.timKiem')}</span>
+          <TruongLoc nhan={t('danhSach.timKiem')} icon="fa-magnifying-glass" className="min-w-48 flex-1">
             <input className={LOP_O_NHAP} type="search" value={tim} placeholder={t('quyTrinh.goiYTim')} onChange={(e) => setTim(e.target.value)} />
-          </label>
-          <label className="flex flex-col gap-1.5 text-xs font-semibold text-secondary">
-            <span><i className="fa-solid fa-filter text-primary text-xs mr-1" aria-hidden="true" />{t('danhSach.trangThai')}</span>
+          </TruongLoc>
+          <TruongLoc nhan={t('danhSach.trangThai')} icon="fa-filter" className="w-full sm:w-auto">
             <select className={`${LOP_O_NHAP} w-auto`} value={locTrangThai} onChange={(e) => setLocTrangThai(e.target.value)}>
               <option value="CON_DUNG">{t('quyTrinh.conDung')}</option>
               <option value="">{t('danhSach.tatCa')}</option>
               {['NHAP', 'HOAT_DONG', 'NGUNG'].map((s) => <option key={s} value={s}>{t(`trangThai.${s}`)}</option>)}
             </select>
-          </label>
-          <label className="flex flex-col gap-1.5 text-xs font-semibold text-secondary">
-            <span><i className="fa-solid fa-diagram-project text-primary text-xs mr-1" aria-hidden="true" />{t('quyTrinh.phamVi')}</span>
+          </TruongLoc>
+          <TruongLoc nhan={t('quyTrinh.phamVi')} icon="fa-diagram-project" className="w-full sm:w-auto">
             <select className={`${LOP_O_NHAP} w-auto`} value={locPhamVi} onChange={(e) => setLocPhamVi(e.target.value)}>
               <option value="">{t('danhSach.tatCa')}</option>
               <option value="CONG_TY">{t('phamVi.CONG_TY')}</option>
               <option value="PHONG_BAN">{t('phamVi.PHONG_BAN')}</option>
             </select>
-          </label>
-          {quanLy && toi?.la_quan_tri && <Button variant="secondary" onClick={() => setCauHinhUyQuyen(true)}>{t('uyQuyenCauHinh')}</Button>}
-          {quanLy && <Button className="ml-auto" icon="fa-plus" onClick={() => setTaoMo(true)}>{t('quyTrinh.tao')}</Button>}
+          </TruongLoc>
         </div>
-      </Card>
+      </BoLocKhung>
       {!quanLy && <ThongBao loai="thong_tin">{t('quyTrinh.chiQuanLy')}</ThongBao>}
       {thongBao && <ThongBao>{thongBao}</ThongBao>}
       {ds.dangTai && <DangTai />}

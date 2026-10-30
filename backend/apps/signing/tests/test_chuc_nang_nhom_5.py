@@ -12,8 +12,9 @@ from documents.models import VanBanDi
 
 from signing import enums
 from signing.models import SigningNotification, SigningProcess, SigningRequest
+from signing.services import process as process_service
 
-from .helpers import cap_quyen
+from .helpers import cap_quyen, tao_don_vi
 from .test_hanh_dong_ky_phase8 import KyBase
 from .test_trinh_ky_phase7 import BASE, TrinhKyBase
 
@@ -176,6 +177,63 @@ class BoLocTests(TrinhKyBase):
         SigningRequest.objects.filter(pk=self.a).update(created_at="2026-01-05T08:00:00Z")
         self.assertEqual(self.ids(tu_ngay="2026-01-01", den_ngay="2026-01-31"), {self.a})
         self.assertNotIn(self.a, self.ids(tu_ngay="2026-02-01"))
+
+    def test_filter_by_process_applied_unit_and_scoped_unit_choices(self):
+        from signing.enums import PhamViQuyTrinh
+
+        don_vi_a, don_vi_b, don_vi_khac = [tao_don_vi(ten) for ten in ("Phòng A", "Phòng B", "Phòng khác")]
+
+        def tao_quy_trinh_phong_ban(ma, don_vi, nguoi_ky):
+            nhap = process_service.tao_quy_trinh(
+                self.tao, ma_quy_trinh=ma, ten_quy_trinh=ma, pham_vi=PhamViQuyTrinh.PHONG_BAN,
+                don_vi_ap_dung_id=don_vi.pk, cap_ky=[{
+                    "cap_ky": 1, "ten_cap_ky": "Duyệt", "thu_tu": 1,
+                    "nguoi_ky": [{"nguoi_ky": nguoi_ky, "thu_tu": 1}],
+                }],
+            )
+            return process_service.kich_hoat(nhap, self.tao)
+
+        qt_a = tao_quy_trinh_phong_ban("QT-DV-A", don_vi_a, self.ky1)
+        qt_b = tao_quy_trinh_phong_ban("QT-DV-B", don_vi_b, self.ky1)
+        qt_khac = tao_quy_trinh_phong_ban("QT-DV-KHAC", don_vi_khac, self.ky2)
+
+        self.tao.don_vi = don_vi_a
+        self.tao.save(update_fields=["don_vi"])
+        r_a = self.tao_nhap(quy_trinh=qt_a.pk)
+        self.assertEqual(r_a.status_code, 201, r_a.data)
+        ho_so_a = r_a.data["id"]
+        self.tao.don_vi = don_vi_b
+        self.tao.save(update_fields=["don_vi"])
+        r_b = self.tao_nhap(quy_trinh=qt_b.pk)
+        self.assertEqual(r_b.status_code, 201, r_b.data)
+        ho_so_b = r_b.data["id"]
+
+        self.la.don_vi = don_vi_khac
+        self.la.save(update_fields=["don_vi"])
+        cap_quyen(self.la, "add_trinhky", "view_vanbandi")
+        client_khac = self.client_cua(self.la)
+        r_khac = self.tao_nhap(client=client_khac, quy_trinh=qt_khac.pk)
+        self.assertEqual(r_khac.status_code, 201, r_khac.data)
+        ho_so_khac = r_khac.data["id"]
+
+        self.assertEqual(self.ids(don_vi_ap_dung=str(don_vi_a.pk)), {ho_so_a})
+        self.assertEqual(self.ids(don_vi_ap_dung=str(don_vi_b.pk)), {ho_so_b})
+        self.assertEqual(self.ids(don_vi_ap_dung="999999"), set())
+
+        dem = self.c.get(f"{BASE}/thong-ke/", {"hop": "toi_gui", "don_vi_ap_dung": don_vi_a.pk})
+        self.assertEqual(dem.status_code, 200, dem.data)
+        self.assertEqual(dem.data["tat_ca"], 1)
+
+        lua_chon = self.c.get(f"{BASE}/don-vi-ap-dung/", {"hop": "toi_gui"})
+        self.assertEqual(lua_chon.status_code, 200, lua_chon.data)
+        self.assertEqual({x["id"] for x in lua_chon.data}, {don_vi_a.pk, don_vi_b.pk})
+        self.assertNotIn(ho_so_khac, self.ids())
+
+    def test_invalid_process_applied_unit_filter_returns_400(self):
+        for duong_dan in (f"{BASE}/", f"{BASE}/thong-ke/"):
+            for gia_tri in ("abc", "²", "9223372036854775808", "9" * 4301):
+                r = self.c.get(duong_dan, {"hop": "toi_gui", "don_vi_ap_dung": gia_tri})
+                self.assertEqual((r.status_code, r.data["code"]), (400, "tham_so_khong_hop_le"), gia_tri)
 
     def test_invalid_parameters(self):
         for tham_so in ({"tu_ngay": "05/01/2026"}, {"quy_trinh": "abc"}):

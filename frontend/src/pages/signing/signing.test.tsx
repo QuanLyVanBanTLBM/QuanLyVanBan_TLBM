@@ -37,7 +37,7 @@ import TaiLieuPage from './TaiLieuPage';
 vi.mock('@lib/signing/api', async () => {
   const actual = await vi.importActual<typeof import('@lib/signing/api')>('@lib/signing/api');
   return { ...actual, signingApi: {
-    toi: vi.fn(), danhSach: vi.fn(), thongKe: vi.fn(), taiLieu: vi.fn(), quyTrinh: vi.fn(), donVi: vi.fn(), chiTietQuyTrinh: vi.fn(),
+    toi: vi.fn(), danhSach: vi.fn(), thongKe: vi.fn(), taiLieu: vi.fn(), quyTrinh: vi.fn(), donVi: vi.fn(), donViApDungTheoHop: vi.fn(), chiTietQuyTrinh: vi.fn(),
     xoaQuyTrinh: vi.fn(), taoQuyTrinh: vi.fn(), suaQuyTrinh: vi.fn(), chucVu: vi.fn(), danhBaCanBo: vi.fn(), canBoTheoChucVu: vi.fn(), tepCuaLuot: vi.fn(), tepGoc: vi.fn(), tepHoanTat: vi.fn(), bangChung: vi.fn(),
     uyQuyen: vi.fn(), timNguoiNhanUyQuyen: vi.fn(), thaoTacQuyTrinh: vi.fn(),
     cauHinhUyQuyen: vi.fn(), chucVuUyQuyen: vi.fn(), luuCauHinhUyQuyen: vi.fn(),
@@ -93,6 +93,7 @@ const boc = (ui: React.ReactNode, toi: NguoiDungHienTai = TOI) => render(
 beforeEach(() => {
   vi.clearAllMocks();
   api.quyTrinh.mockResolvedValue([]);
+  api.donViApDungTheoHop.mockResolvedValue([]);
   api.chucVu.mockResolvedValue([]);
   api.danhBaCanBo.mockResolvedValue([]);
   api.canBoTheoChucVu.mockResolvedValue({ count: 0, results: [] });
@@ -180,6 +181,22 @@ describe('DanhSachPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /Xóa lọc/ }));
     await waitFor(() => expect(api.danhSach).toHaveBeenLastCalledWith('toi_gui', {}, 1));
     expect(screen.getByRole('searchbox')).toHaveValue('');
+  });
+
+  it('lọc theo đơn vị áp dụng của quy trình và đồng bộ bộ lọc sang thống kê', async () => {
+    api.danhSach.mockResolvedValue(trang([]));
+    api.donViApDungTheoHop.mockResolvedValue([{ id: 4, ten: 'Phòng Kế hoạch', ten_khoi: 'Khối Kỹ thuật' }]);
+    boc(<DanhSachPage hop="toi_gui" />);
+    await screen.findByText('Bạn chưa gửi trình hồ sơ nào.');
+    fireEvent.click(screen.getByRole('button', { name: /Lọc thêm/ }));
+    const donVi = await screen.findByLabelText('Đơn vị áp dụng');
+    expect(within(donVi).getByRole('option', { name: 'Phòng Kế hoạch (Khối Kỹ thuật)' })).toBeInTheDocument();
+    fireEvent.change(donVi, { target: { value: '4' } });
+    await waitFor(() => expect(api.danhSach).toHaveBeenLastCalledWith('toi_gui', { don_vi_ap_dung: '4' }, 1));
+    expect(api.thongKe).toHaveBeenLastCalledWith('toi_gui', {
+      q: undefined, quy_trinh: undefined, don_vi_ap_dung: '4', tu_ngay: undefined, den_ngay: undefined,
+    });
+    expect(screen.getByRole('button', { name: /Lọc thêm \(1\)/ })).toBeInTheDocument();
   });
 
   it('hộp rỗng và chưa lọc: không hiện khối lọc, chỉ hiện trạng thái rỗng; thống kê gọi một lần', async () => {

@@ -282,9 +282,17 @@ export interface BoLocHoSo {
   nhanh?: LocNhanh | '';
   trang_thai?: string;
   quy_trinh?: string;
+  don_vi_ap_dung?: string;
   q?: string;
   tu_ngay?: string;
   den_ngay?: string;
+}
+
+/** Đơn vị áp dụng trong các hồ sơ hiện có của hộp đang xem (`GET /trinh-ky/don-vi-ap-dung/`). */
+export interface DonViApDungHoSo {
+  id: number;
+  ten: string;
+  ten_khoi: string;
 }
 
 export type LoaiTepTaiLieu = 'DU_THAO' | 'LUOT' | 'HOAN_TAT';

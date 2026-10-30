@@ -7,6 +7,7 @@ import { useEffect, useId, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Badge, Button, Card } from '@components/common';
 import type { BadgeProps } from '@components/common/Badge';
+import { BoLocKhung, TruongLoc } from '@components/signing/BoLocTrinhKy';
 import { DangTai, KhungModal, LoiTai, Rong, ThongBao } from '@components/signing/ChungUI';
 import LocKhoangNgay from '@components/signing/LocKhoangNgay';
 import { PhanTrang } from '@components/signing/PhanTrang';
@@ -29,7 +30,6 @@ const MAU_LOAI_TEP: Record<LoaiTepTaiLieu, BadgeProps['variant']> = {
   HOAN_TAT: 'success',
 };
 const TRE_TIM_KIEM_MS = 300;
-const LOP_NHAN = 'mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-secondary';
 
 
 function layTep(tep: TepTaiLieu): Promise<Blob> {
@@ -115,24 +115,22 @@ export default function TaiLieuPage() {
 
   return (
     <div className="space-y-4">
-      <Card className="p-4 sm:p-5">
+      <BoLocKhung>
         <form className="grid grid-cols-1 items-end gap-3 md:grid-cols-2 lg:grid-cols-12"
           onSubmit={(e) => { e.preventDefault(); dat({ q: tuKhoa.trim() }); }}>
-          <label className="block lg:col-span-4">
-            <span className={LOP_NHAN}><i className="fa-solid fa-magnifying-glass text-primary" aria-hidden="true" />{t('danhSach.timKiem')}</span>
+          <TruongLoc nhan={t('danhSach.timKiem')} icon="fa-magnifying-glass" className="lg:col-span-4">
             <span className="relative block">
               <input className={`${LOP_O_NHAP} pl-9`} type="search" value={tuKhoa} placeholder={t('taiLieu.goiYTim')}
                 onChange={(e) => setTuKhoa(e.target.value)} />
               <i className="fa-solid fa-search pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted" aria-hidden="true" />
             </span>
-          </label>
-          <label className="block lg:col-span-2">
-            <span className={LOP_NHAN}><i className="fa-solid fa-file text-primary" aria-hidden="true" />{t('taiLieu.loaiTep')}</span>
+          </TruongLoc>
+          <TruongLoc nhan={t('taiLieu.loaiTep')} icon="fa-file" className="lg:col-span-2">
             <select className={LOP_O_NHAP} value={loc.loai ?? ''} onChange={(e) => dat({ loai: e.target.value as LoaiTepTaiLieu | '' })}>
               <option value="">{t('danhSach.tatCa')}</option>
               {LOAI.map((l) => <option key={l} value={l}>{t(`taiLieu.loai.${l}`)}</option>)}
             </select>
-          </label>
+          </TruongLoc>
           <LocKhoangNgay tuNgay={loc.tu_ngay} denNgay={loc.den_ngay} onDoi={dat} lopO="lg:col-span-2" />
           <div className="flex gap-2 lg:col-span-2">
             <Button type="submit" size="sm" icon="fa-filter">{t('danhSach.loc')}</Button>
@@ -143,7 +141,7 @@ export default function TaiLieuPage() {
             )}
           </div>
         </form>
-      </Card>
+      </BoLocKhung>
       <Card className="p-4 space-y-3">
         {ds.dangTai && <DangTai />}
         {ds.loi && <LoiTai thongBao={loi(ds.loi)} onThuLai={ds.tai} />}
