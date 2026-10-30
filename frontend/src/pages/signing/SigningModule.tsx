@@ -70,7 +70,8 @@ export default function SigningModule() {
   const canKy = useTai(() => signingApi.thongKe('can_toi_ky'), [pathname]);
   // Hồ sơ chờ tôi ký gồm cả hồ sơ đã quá hạn (bộ lọc tách hai nhóm)
   const soCanKy = canKy.duLieu ? canKy.duLieu.cho_ky + canKy.duLieu.qua_han : undefined;
-  const thongBao = useTai(() => signingApi.thongBao(), [pathname]);
+  // page_size lớn hơn mặc định: đủ các thông báo gần đây để đếm đúng số "mới kể từ lần xem trước" ở huy hiệu tab
+  const thongBao = useTai(() => signingApi.thongBao({}, 1, 50), [pathname]);
   const { tai: taiLaiCanKy } = canKy;
   const { tai: taiLaiThongBao } = thongBao;
   const lamMoiDem = useCallback(() => {
@@ -80,7 +81,7 @@ export default function SigningModule() {
   const ngu_canh = useMemo(() => ({ toi: toi.duLieu, taiLaiToi: toi.tai, daXemThongBao, lamMoiDem }),
     [toi.duLieu, toi.tai, daXemThongBao, lamMoiDem]);
   // lanXem đổi khi trang Thông báo đánh dấu đã xem: tính lại số mới
-  const soMoi = lanXem >= 0 ? soThongBaoMoi(thongBao.duLieu, toi.duLieu?.id) : 0;
+  const soMoi = lanXem >= 0 ? soThongBaoMoi(thongBao.duLieu?.results ?? null, toi.duLieu?.id) : 0;
 
   const tabChinh = [
     { den: '/approvals', nhan: t('nav.canToiKy'), icon: 'fa-pen-nib', end: true, so: soCanKy },

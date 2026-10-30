@@ -110,12 +110,44 @@ class ThongBaoTests(KyBase):
         self.assertFalse(thong_bao(self.ky1, kenh=enums.KenhThongBao.EMAIL).filter(trinh_ky_id=pk).exists())
         r = self.client_cua(User.objects.get(pk=self.ky1.pk)).get("/api/v1/signing/thong-bao/")
         self.assertEqual(r.status_code, 200)
-        self.assertEqual((r.data[0]["loai_thong_bao"], r.data[0]["trinh_ky"]), ("CAN_KY", pk))
-        self.assertEqual(r.data[0]["van_ban"], "20/QD — Văn bản thử")  # văn bản 10 thuộc hồ sơ tạo ở setUp
-        self.assertTrue(r.data[0]["kenh_in_app"])
-        self.assertFalse(r.data[0]["email_da_gui"])
-        self.assertIsNone(r.data[0]["email_trang_thai"])
-        self.assertEqual(self.client_cua(User.objects.get(pk=self.ky3.pk)).get("/api/v1/signing/thong-bao/").data, [])
+        ket_qua = r.data["results"]
+        self.assertEqual((ket_qua[0]["loai_thong_bao"], ket_qua[0]["trinh_ky"]), ("CAN_KY", pk))
+        self.assertEqual(ket_qua[0]["van_ban"], "20/QD — Văn bản thử")  # văn bản 10 thuộc hồ sơ tạo ở setUp
+        self.assertTrue(ket_qua[0]["kenh_in_app"])
+        self.assertFalse(ket_qua[0]["email_da_gui"])
+        self.assertIsNone(ket_qua[0]["email_trang_thai"])
+        r_rong = self.client_cua(User.objects.get(pk=self.ky3.pk)).get("/api/v1/signing/thong-bao/")
+        self.assertEqual((r_rong.data["results"], r_rong.data["count"]), ([], 0))
+
+    def test_thong_bao_phan_trang_tim_kiem_va_loc_loai(self):
+        User.objects.filter(pk=self.ky1.pk).update(email="")
+        SigningNotification.objects.filter(nguoi_nhan_id=self.ky1.pk).delete()  # mốc sạch cho đếm/phân trang
+        pk1 = self.gui_moi()
+        pk2 = self.gui_moi()
+        c1 = self.client_cua(User.objects.get(pk=self.ky1.pk))
+
+        r = c1.get("/api/v1/signing/thong-bao/", {"page_size": 1})
+        self.assertEqual((r.status_code, r.data["count"], len(r.data["results"])), (200, 2, 1))
+        self.assertIsNotNone(r.data["next"])
+        r2 = c1.get("/api/v1/signing/thong-bao/", {"page_size": 1, "page": 2})
+        self.assertEqual(len(r2.data["results"]), 1)
+        self.assertNotEqual(r.data["results"][0]["id"], r2.data["results"][0]["id"])
+
+        r_loc = c1.get("/api/v1/signing/thong-bao/", {"loai_thong_bao": "CAN_KY"})
+        self.assertEqual(r_loc.data["count"], 2)
+        self.assertTrue(all(x["loai_thong_bao"] == "CAN_KY" for x in r_loc.data["results"]))
+        r_loc_khac = c1.get("/api/v1/signing/thong-bao/", {"loai_thong_bao": "HUY"})
+        self.assertEqual(r_loc_khac.data["count"], 0)
+        r_loc_sai = c1.get("/api/v1/signing/thong-bao/", {"loai_thong_bao": "khong-ton-tai"})
+        self.assertEqual((r_loc_sai.status_code, r_loc_sai.data["code"]), (400, "tham_so_khong_hop_le"))
+
+        r_q = c1.get("/api/v1/signing/thong-bao/", {"q": "Văn bản thử"})
+        self.assertEqual(r_q.data["count"], 2)
+        r_q_khong_dau = c1.get("/api/v1/signing/thong-bao/", {"q": "van ban thu"})  # không phân biệt hoa thường/dấu
+        self.assertEqual(r_q_khong_dau.data["count"], 2)
+        r_q_khong_khop = c1.get("/api/v1/signing/thong-bao/", {"q": "khong-khop"})
+        self.assertEqual(r_q_khong_khop.data["count"], 0)
+        self.assertEqual(r_q_khong_khop.data["results"], [])
 
 
 class BoLocTests(TrinhKyBase):

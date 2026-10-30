@@ -58,7 +58,7 @@ beforeEach(() => {
   api.danhBaCanBo.mockResolvedValue([]);
   api.canBoTheoChucVu.mockResolvedValue({ count: 0, results: [] });
   api.thongKe.mockResolvedValue({ tat_ca: 25, cho_ky: 0, qua_han: 0, hoan_thanh: 0, tra_lai: 0 });
-  api.thongBao.mockResolvedValue([]);
+  api.thongBao.mockResolvedValue({ count: 0, next: null, previous: null, results: [] });
 });
 
 describe('HopThoai: bàn phím và bấm nền', () => {
@@ -525,22 +525,26 @@ describe('Danh sách, thông báo, lỗi dữ liệu', () => {
     expect(screen.queryByText(/Không tìm thấy/)).not.toBeInTheDocument();
   });
 
-  it('thông báo đủ 50 mục: ghi rõ chỉ hiển thị 50 thông báo gần nhất', async () => {
-    const tb = Array.from({ length: 50 }, (_, i) => ({
-      id: i + 1, loai_thong_bao: 'CAN_KY', trinh_ky: i + 1, van_ban: `VB ${i + 1}`, trang_thai_ho_so: 'CHO_KY',
-      ten_quy_trinh: 'QT', created_at: '2026-10-07T01:00:00Z', kenh_in_app: true, email_da_gui: false,
-      email_trang_thai: null, email_nguoi_nhan: null, nguoi_thao_tac: null, ly_do: null, han_xu_ly: null,
-    }));
-    api.thongBao.mockResolvedValue(tb as never);
+  it('thông báo nhiều trang: bấm "Sau" gọi đúng trang kế tiếp (không còn gộp 50 mục một lần)', async () => {
+    const mot_trang = (trang: number) => ({
+      count: 25, next: trang < 3 ? 'x' : null, previous: trang > 1 ? 'x' : null,
+      results: [{
+        id: trang, loai_thong_bao: 'CAN_KY' as const, trinh_ky: trang, van_ban: `VB ${trang}`,
+        trang_thai_ho_so: 'CHO_KY' as const, ten_quy_trinh: 'QT', created_at: '2026-10-07T01:00:00Z',
+      }],
+    });
+    api.thongBao.mockImplementation((_loc, trang = 1) => Promise.resolve(mot_trang(trang)));
     boc(<ThongBaoPage />);
-    expect(await screen.findByText('Hiển thị 50 thông báo gần nhất.')).toBeInTheDocument();
+    expect(await screen.findByText(/VB 1$/)).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: /Sau/ }));
+    await waitFor(() => expect(api.thongBao.mock.calls.map((c) => c[1])).toEqual([1, 2]));
+    expect(await screen.findByText(/VB 2$/)).toBeInTheDocument();
   });
 
-  it('thông báo ít hơn 50 mục: không hiện ghi chú giới hạn', async () => {
-    api.thongBao.mockResolvedValue([]);
+  it('chưa có thông báo nào', async () => {
+    api.thongBao.mockResolvedValue({ count: 0, next: null, previous: null, results: [] });
     boc(<ThongBaoPage />);
     expect(await screen.findByText('Chưa có thông báo nào.')).toBeInTheDocument();
-    expect(screen.queryByText(/thông báo gần nhất/)).not.toBeInTheDocument();
   });
 });
 

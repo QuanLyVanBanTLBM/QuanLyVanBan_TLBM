@@ -126,7 +126,8 @@
     "sau": "Next",
     "trang": "Page {trang}/{tong}",
     "tomTat": "Showing {dau}–{cuoi} of {tong} requests",
-    "tomTatTep": "Showing {dau}–{cuoi} of {tong} files"
+    "tomTatTep": "Showing {dau}–{cuoi} of {tong} files",
+    "tomTatThongBao": "Showing {dau}–{cuoi} of {tong} notifications"
   },
   "tao": {
     "buoc1": "Request details",
@@ -508,6 +509,10 @@
   },
   "thongBao": {
     "rong": "No notifications yet.",
+    "khongKhopLoc": "No notifications match the filters.",
+    "goiYTim": "Search by document, process, actor, reason…",
+    "locLoai": "Notification type",
+    "chuaXem": "Unseen",
     "loai": {
       "CAN_KY": "Awaiting your approval",
       "HOAN_THANH": "Internal approval completed",
@@ -529,8 +534,7 @@
     "lyDo": "Reason",
     "hanXuLy": "Due",
     "hoSoHien": "Request",
-    "noiDung": "Message",
-    "toiDa": "Showing the {so} most recent notifications."
+    "noiDung": "Message"
   },
   "taiLieu": {
     "goiYTim": "Number, summary, request number, process…",

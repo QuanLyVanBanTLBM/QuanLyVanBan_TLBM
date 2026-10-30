@@ -311,8 +311,9 @@ class ThongBaoHoanThienTests(KyBase):
         self.assertIn("Người gửi: ke_toan", than)
         self.assertIn("Nội dung: Đồng ý", than)
         r = self.client_cua(self.tao).get("/api/v1/signing/thong-bao/")
-        self.assertEqual(r.data[0]["loai_thong_bao"], "TIN_NHAN")
-        self.assertEqual((r.data[0]["nguoi_thao_tac"], r.data[0]["ly_do"]), ("ke_toan", "Đồng ý"))
+        d = r.data["results"][0]
+        self.assertEqual(d["loai_thong_bao"], "TIN_NHAN")
+        self.assertEqual((d["nguoi_thao_tac"], d["ly_do"]), ("ke_toan", "Đồng ý"))
 
     def test_deadline_reminders_are_idempotent(self):
         cap = SigningRequestStep.objects.get(luot_trinh__trinh_ky=self.pk, trang_thai=enums.TrangThaiCapKy.DANG_KY)
@@ -366,7 +367,7 @@ class RaSoatStagingTests(KyBase):
         _, than, _ = thong_bao.noi_dung(tb)
         self.assertIn("Người thực hiện: ke_toan", than)
         self.assertIn("Lý do: Sai căn cứ pháp lý", than)
-        d = self.client_cua(self.tao).get("/api/v1/signing/thong-bao/").data[0]
+        d = self.client_cua(self.tao).get("/api/v1/signing/thong-bao/").data["results"][0]
         self.assertEqual((d["nguoi_thao_tac"], d["ly_do"]), ("ke_toan", "Sai căn cứ pháp lý"))
 
     def test_change_request_notification_reason(self):
