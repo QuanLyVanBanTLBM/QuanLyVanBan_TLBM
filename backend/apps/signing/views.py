@@ -728,12 +728,21 @@ def gio_dia_phuong(gia_tri):
 
 
 class ThongBaoView(SigningAPIView):
-    """GET /thong-bao/: thông báo trong ứng dụng của người dùng hiện tại (mới nhất trước, tối đa 50). `han_xu_ly`: hạn của
-    cấp ký với thông báo cần ký, nhắc hạn, quá hạn."""
+    """GET /thong-bao/: thông báo trong ứng dụng của người dùng hiện tại, mới nhất trước. Nhận `q` (tìm theo văn bản,
+    quy trình, người thực hiện, lý do — không phân biệt hoa thường/dấu), `loai_thong_bao` (một khóa của `TEN_LOAI`)
+    và phân trang `page`, `page_size` (mặc định 10, tối đa 100, như danh sách hồ sơ). `han_xu_ly`: hạn của cấp ký với
+    thông báo cần ký, nhắc hạn, quá hạn."""
+
+    GIOI_HAN = 500  # đủ cho lọc/tìm kiếm/phân trang trên lịch sử gần, tránh quét toàn bộ bảng
 
     def get(self, request):
+        ts = request.query_params
+        loai_loc = ts.get("loai_thong_bao", "")
+        if loai_loc and loai_loc not in thong_bao_service.TEN_LOAI:
+            raise SigningError(code="tham_so_khong_hop_le", detail="loai_thong_bao không hợp lệ.",
+                               fields={"loai_thong_bao": ["Giá trị không hợp lệ."]})
         ket_qua = []
-        danh_sach = list(thong_bao_service.cua_toi(request.user))
+        danh_sach = list(thong_bao_service.cua_toi(request.user, gioi_han=self.GIOI_HAN))
         email_keys = [
             tb.khoa_chong_gui_trung[:-7] + ":EMAIL"
             for tb in danh_sach
@@ -771,7 +780,18 @@ class ThongBaoView(SigningAPIView):
                 "ly_do": ly_do or None,
                 "han_xu_ly": gio_dia_phuong(thong_bao_service.han_xu_ly(tb)),
             })
-        return Response(ket_qua)
+        if loai_loc:
+            ket_qua = [tb for tb in ket_qua if tb["loai_thong_bao"] == loai_loc]
+        tu_khoa_goc = tu_khoa_tim_kiem(ts.get("q"))
+        if tu_khoa_goc:
+            tu_khoa = tim_kiem.bo_dau(tu_khoa_goc)
+            ket_qua = [
+                tb for tb in ket_qua
+                if tu_khoa in tim_kiem.bo_dau(" ".join(filter(
+                    None, (tb["van_ban"], tb["ten_quy_trinh"], tb["nguoi_thao_tac"], tb["ly_do"]))))
+            ]
+        trang = TrangHoSo()
+        return trang.get_paginated_response(trang.paginate_queryset(ket_qua, request, view=self))
 
 
 class DonViView(SigningAPIView):

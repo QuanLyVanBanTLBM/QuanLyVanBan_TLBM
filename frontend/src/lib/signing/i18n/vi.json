@@ -125,7 +125,8 @@
     "sau": "Sau",
     "trang": "Trang {trang}/{tong}",
     "tomTat": "Hiển thị {dau}–{cuoi} trên {tong} hồ sơ",
-    "tomTatTep": "Hiển thị {dau}–{cuoi} trên {tong} tệp"
+    "tomTatTep": "Hiển thị {dau}–{cuoi} trên {tong} tệp",
+    "tomTatThongBao": "Hiển thị {dau}–{cuoi} trên {tong} thông báo"
   },
   "tao": {
     "buoc1": "Thông tin hồ sơ",
@@ -501,6 +502,10 @@
   },
   "thongBao": {
     "rong": "Chưa có thông báo nào.",
+    "khongKhopLoc": "Không có thông báo nào khớp bộ lọc.",
+    "goiYTim": "Tìm theo văn bản, quy trình, người thực hiện, lý do…",
+    "locLoai": "Loại thông báo",
+    "chuaXem": "Chưa xem",
     "loai": {
       "CAN_KY": "Cần ký duyệt",
       "HOAN_THANH": "Đã hoàn tất duyệt nội bộ",
@@ -522,8 +527,7 @@
     "lyDo": "Lý do",
     "hanXuLy": "Hạn xử lý",
     "hoSoHien": "Hồ sơ",
-    "noiDung": "Nội dung",
-    "toiDa": "Hiển thị {so} thông báo gần nhất."
+    "noiDung": "Nội dung"
   },
   "taiLieu": {
     "goiYTim": "Số hiệu, trích yếu, số hồ sơ, quy trình…",

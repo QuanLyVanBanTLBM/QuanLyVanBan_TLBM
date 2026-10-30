@@ -94,7 +94,7 @@ const boc = (ui: React.ReactNode, toi: NguoiDungHienTai = TOI) => render(
 beforeEach(() => {
   vi.clearAllMocks();
   api.quyTrinh.mockResolvedValue([]);
-  api.thongBao.mockResolvedValue([]);
+  api.thongBao.mockResolvedValue(trang([]));
   api.chucVu.mockResolvedValue([]);
   api.danhBaCanBo.mockResolvedValue([]);
   api.canBoTheoChucVu.mockResolvedValue({ count: 0, results: [] });
@@ -521,10 +521,10 @@ describe('QuyTrinhPage bộ lọc', () => {
 
 describe('ThongBaoPage', () => {
   it('hiện thông báo của tôi với loại, văn bản và liên kết tới hồ sơ', async () => {
-    api.thongBao.mockResolvedValue([{
+    api.thongBao.mockResolvedValue(trang([{
       id: 1, loai_thong_bao: 'CAN_KY', trinh_ky: 12, van_ban: '15/TTr — Mua sắm', trang_thai_ho_so: 'CHO_KY',
       ten_quy_trinh: 'Duyệt mua sắm', created_at: '2026-10-07T01:00:00Z',
-    }]);
+    }]));
     boc(<ThongBaoPage />);
     const lienKet = await screen.findByRole('link', { name: /Cần ký duyệt/ });
     expect(lienKet).toHaveAttribute('href', '/approvals/12');
@@ -533,14 +533,15 @@ describe('ThongBaoPage', () => {
 
   it('loại thông báo mới (ủy quyền, tin nhắn, nhắc hạn) có nhãn riêng; mở trang thì đánh dấu đã xem', async () => {
     localStorage.removeItem('tlbm_signing_thong_bao_xem_luc:7');
-    api.thongBao.mockResolvedValue(['UY_QUYEN', 'TIN_NHAN', 'QUA_HAN'].map((loai, i) => ({
+    api.thongBao.mockResolvedValue(trang(['UY_QUYEN', 'TIN_NHAN', 'QUA_HAN'].map((loai, i) => ({
       id: i + 1, loai_thong_bao: loai as 'UY_QUYEN', trinh_ky: 12, van_ban: '15/TTr', trang_thai_ho_so: 'CHO_KY' as const,
       ten_quy_trinh: 'Duyệt', created_at: '2026-10-07T01:00:00Z',
-    })));
+    }))));
     boc(<ThongBaoPage />);
-    expect(await screen.findByText('Ủy quyền ký')).toBeInTheDocument();
-    expect(screen.getByText('Tin nhắn trao đổi')).toBeInTheDocument();
-    expect(screen.getByText('Quá hạn ký')).toBeInTheDocument();
+    const ds = within(await screen.findByRole('list'));
+    expect(ds.getByText('Ủy quyền ký')).toBeInTheDocument();
+    expect(ds.getByText('Tin nhắn trao đổi')).toBeInTheDocument();
+    expect(ds.getByText('Quá hạn ký')).toBeInTheDocument();
     await waitFor(() => expect(Number(localStorage.getItem('tlbm_signing_thong_bao_xem_luc:7'))).toBeGreaterThan(0));
   });
 
@@ -548,20 +549,20 @@ describe('ThongBaoPage', () => {
     localStorage.setItem('tlbm_signing_thong_bao_xem_luc:7', String(Date.parse('2026-10-07T00:00:00Z')));
     api.toi.mockResolvedValue(TOI);
     api.danhSach.mockResolvedValue(trang([]));
-    api.thongBao.mockResolvedValue([
+    api.thongBao.mockResolvedValue(trang([
       { id: 1, loai_thong_bao: 'CAN_KY', trinh_ky: 12, van_ban: 'a', trang_thai_ho_so: 'CHO_KY', ten_quy_trinh: 'Q', created_at: '2026-10-07T01:00:00Z' },
       { id: 2, loai_thong_bao: 'HUY', trinh_ky: 13, van_ban: 'b', trang_thai_ho_so: 'HUY', ten_quy_trinh: 'Q', created_at: '2026-10-06T01:00:00Z' },
-    ]);
+    ]));
     moModule();
     const tab = await screen.findByRole('link', { name: /Thông báo/ });
     await waitFor(() => expect(tab).toHaveTextContent('Thông báo1'));
   });
 
   it('thông báo cần ký hiện hạn xử lý theo định dạng ngày Việt Nam', async () => {
-    api.thongBao.mockResolvedValue([{
+    api.thongBao.mockResolvedValue(trang([{
       id: 1, loai_thong_bao: 'CAN_KY', trinh_ky: 12, van_ban: '15/TTr', trang_thai_ho_so: 'CHO_KY',
       ten_quy_trinh: 'Duyệt', created_at: '2026-10-07T01:00:00Z', han_xu_ly: '2026-10-08T03:30:00Z',
-    }]);
+    }]));
     boc(<ThongBaoPage />);
     const han = new Date('2026-10-08T03:30:00Z').toLocaleString('vi-VN', {
       day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
@@ -592,9 +593,46 @@ describe('ThongBaoPage', () => {
   });
 
   it('chưa có thông báo', async () => {
-    api.thongBao.mockResolvedValue([]);
+    api.thongBao.mockResolvedValue(trang([]));
     boc(<ThongBaoPage />);
     expect(await screen.findByText('Chưa có thông báo nào.')).toBeInTheDocument();
+  });
+
+  it('thông báo mới hơn lần xem trước được tô đậm; thông báo cũ thì không, dù huy hiệu ở tab đã về 0', async () => {
+    localStorage.setItem('tlbm_signing_thong_bao_xem_luc:7', String(Date.parse('2026-10-07T00:30:00Z')));
+    api.thongBao.mockResolvedValue(trang([
+      { id: 1, loai_thong_bao: 'CAN_KY', trinh_ky: 12, van_ban: 'Mới', trang_thai_ho_so: 'CHO_KY', ten_quy_trinh: 'Q', created_at: '2026-10-07T01:00:00Z' },
+      { id: 2, loai_thong_bao: 'HUY', trinh_ky: 13, van_ban: 'Cũ', trang_thai_ho_so: 'HUY', ten_quy_trinh: 'Q', created_at: '2026-10-06T01:00:00Z' },
+    ]));
+    boc(<ThongBaoPage />);
+    const ds = within(await screen.findByRole('list'));
+    const moi = ds.getByText('Cần ký duyệt');
+    const cu = ds.getByText('Hồ sơ đã hủy');
+    expect(moi.closest('div')).toHaveClass('font-bold');
+    expect(cu.closest('div')).not.toHaveClass('font-bold');
+    // Mốc trên trình duyệt cập nhật ngay (huy hiệu ở tab về 0) nhưng mốc dùng để tô đậm không đổi khi đang xem trang này
+    await waitFor(() => expect(Number(localStorage.getItem('tlbm_signing_thong_bao_xem_luc:7')))
+      .toBeGreaterThan(Date.parse('2026-10-07T01:00:00Z')));
+    expect(moi.closest('div')).toHaveClass('font-bold');
+  });
+
+  it('ô tìm kiếm gọi lại API sau khi gõ xong (debounce)', async () => {
+    api.thongBao.mockResolvedValue(trang([]));
+    boc(<ThongBaoPage />);
+    await screen.findByText('Chưa có thông báo nào.');
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'mua sam' } });
+    await waitFor(() => expect(api.thongBao).toHaveBeenLastCalledWith({ q: 'mua sam' }, 1));
+  });
+
+  it('chọn loại thông báo gọi lại API với loai_thong_bao, về trang 1', async () => {
+    api.thongBao.mockResolvedValue(trang([]));
+    boc(<ThongBaoPage />);
+    await screen.findByText('Chưa có thông báo nào.');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Loại thông báo' }), { target: { value: 'QUA_HAN' } });
+    await waitFor(() => expect(api.thongBao).toHaveBeenLastCalledWith({ loai_thong_bao: 'QUA_HAN' }, 1));
+    expect(screen.getByRole('button', { name: /Xóa lọc/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Xóa lọc/ }));
+    await waitFor(() => expect(api.thongBao).toHaveBeenLastCalledWith({}, 1));
   });
 });
 

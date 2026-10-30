@@ -314,6 +314,12 @@ export interface BoLocTaiLieu {
 export type LoaiThongBao =
   | 'CAN_KY' | 'HOAN_THANH' | 'TU_CHOI' | 'YEU_CAU_SUA' | 'HUY' | 'UY_QUYEN' | 'TIN_NHAN' | 'NHAC_HAN' | 'QUA_HAN';
 
+/** Bộ lọc danh sách thông báo (`GET /thong-bao/`): từ khóa và loại sự kiện. */
+export interface BoLocThongBao {
+  q?: string;
+  loai_thong_bao?: LoaiThongBao | '';
+}
+
 /** Thông báo trong ứng dụng của người dùng hiện tại (bảng signing_notification, kênh IN_APP và trạng thái EMAIL). */
 export interface ThongBaoTrinhKy {
   id: number;

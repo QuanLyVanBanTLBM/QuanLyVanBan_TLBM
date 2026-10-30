@@ -83,7 +83,7 @@ class HanXuLyThongBaoTests(KyBase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn(chuoi, mail.outbox[0].body)
         r = self.client_cua(User.objects.get(pk=self.ky3.pk)).get("/api/v1/signing/thong-bao/")
-        tb = next(x for x in r.data if x["loai_thong_bao"] == "CAN_KY")
+        tb = next(x for x in r.data["results"] if x["loai_thong_bao"] == "CAN_KY")
         self.assertEqual(parse_datetime(tb["han_xu_ly"]), han)  # cùng thời điểm, chuỗi giờ +07:00
 
     def test_reminder_and_overdue_show_deadline(self):
@@ -222,5 +222,5 @@ class RaSoatGiaoDienTests(TrinhKyBase):
     def test_notifications_use_local_timezone(self):
         self.ho_so_da_gui()
         r = self.client_cua(self.ky1).get("/api/v1/signing/thong-bao/")
-        self.assertTrue(r.data)
-        self.assertTrue(all(x["created_at"].endswith("+07:00") for x in r.data))
+        self.assertTrue(r.data["results"])
+        self.assertTrue(all(x["created_at"].endswith("+07:00") for x in r.data["results"]))

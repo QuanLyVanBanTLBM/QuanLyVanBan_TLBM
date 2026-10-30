@@ -6,15 +6,13 @@
 import apiClient, { ApiError } from '@lib/apiClient';
 import { resolveDocumentApiUrl } from '@lib/routes';
 import type {
-  BangChung, BoLocHoSo, BoLocTaiLieu, CanBo, CanBoChucVu, ChucVu, DonViLuaChon, TepTaiLieu, ThongKeHoSo, HoSo, HoSoChiTiet, KhoaKy, LoiNghiepVu, NguoiDungHienTai, NguoiDungTim, QuyTrinh,
+  BangChung, BoLocHoSo, BoLocTaiLieu, BoLocThongBao, CanBo, CanBoChucVu, ChucVu, DonViLuaChon, TepTaiLieu, ThongKeHoSo, HoSo, HoSoChiTiet, KhoaKy, LoiNghiepVu, NguoiDungHienTai, NguoiDungTim, QuyTrinh,
   ThamSoKdf, ThongBaoTrinhKy, TinNhan, TrangKetQua, TraoDoi, VanBanDi, VanBanDiTepDinhKem, ViTriKy,
 } from './types';
 
 export const SIGNING_BASE = '/api/v1/signing';
-/** Số hồ sơ mỗi trang danh sách (server mặc định 10, tối đa 100). */
+/** Số hồ sơ (hoặc thông báo) mỗi trang danh sách (server mặc định 10, tối đa 100). */
 export const SO_HO_SO_MOI_TRANG = 10;
-/** Số thông báo tối đa máy chủ trả (mới nhất trước), khớp `thong_bao.cua_toi`. */
-export const SO_THONG_BAO_TOI_DA = 50;
 
 export function taoKhoaChongTrung(): string {
   return crypto.randomUUID();
@@ -211,7 +209,15 @@ export const signingApi = {
     Object.entries(loc).forEach(([k, v]) => v && tham_so.set(k, v));
     return apiClient.get<TrangKetQua<TepTaiLieu>>(`${SIGNING_BASE}/tai-lieu/?${tham_so}`);
   },
-  thongBao: () => apiClient.get<ThongBaoTrinhKy[]>(`${SIGNING_BASE}/thong-bao/`),
+  /**
+   * Thông báo của tôi, mới nhất trước; `loc` (từ khóa, loại) và `trang` lọc/phân trang phía server.
+   * `page_size` riêng cho huy hiệu số thông báo mới ở tab (cần nhiều hơn một trang hiển thị để đếm đúng).
+   */
+  thongBao: (loc: BoLocThongBao = {}, trang = 1, page_size = SO_HO_SO_MOI_TRANG) => {
+    const tham_so = new URLSearchParams({ page: String(trang), page_size: String(page_size) });
+    Object.entries(loc).forEach(([k, v]) => v && tham_so.set(k, v));
+    return apiClient.get<TrangKetQua<ThongBaoTrinhKy>>(`${SIGNING_BASE}/thong-bao/?${tham_so}`);
+  },
   timVanBanDi: (q: string) => apiClient.get<VanBanDi[]>(`${SIGNING_BASE}/van-ban-di/?q=${encodeURIComponent(q)}`),
 
   // ── Khóa ký, PIN ─────────────────────────────────────────────────────────
