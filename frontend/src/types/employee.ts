@@ -118,3 +118,14 @@ export interface ExcelImportResponse {
   errors?: ExcelImportError[];
   total_errors?: number;
 }
+
+export interface ExcelImportJob {
+  job_id: string;
+  status: 'queued' | 'processing' | 'done' | 'failed';
+  phase: 'queued' | 'validation' | 'saving' | 'complete' | 'failed';
+  processed: number;
+  total: number;
+  created_count: number;
+  message: string;
+  errors: ExcelImportError[];
+}

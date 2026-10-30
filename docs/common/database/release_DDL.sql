@@ -417,6 +417,28 @@ CREATE INDEX idx_emp_assign_donvi ON accounts_employee_assignment (don_vi_id);
 
 CREATE INDEX idx_emp_assign_chucvu ON accounts_employee_assignment (chuc_vu_id);
 
+-- Lượt nhập Excel CBNV chạy nền; active_key đảm bảo toàn hệ thống chỉ có một lượt đang chạy.
+CREATE TABLE accounts_employee_import_job (
+    id UUID PRIMARY KEY,
+    owner_id BIGINT NOT NULL REFERENCES accounts_employee (id),
+    idempotency_key VARCHAR(128),
+    active_key VARCHAR(32),
+    file_path VARCHAR(1024) NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'queued',
+    phase VARCHAR(16) NOT NULL DEFAULT 'queued',
+    processed INTEGER NOT NULL DEFAULT 0 CHECK (processed >= 0),
+    total INTEGER NOT NULL DEFAULT 0 CHECK (total >= 0),
+    created_count INTEGER NOT NULL DEFAULT 0 CHECK (created_count >= 0),
+    errors JSONB NOT NULL DEFAULT '[]'::jsonb,
+    message VARCHAR(100) NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uq_employee_import_owner_idem UNIQUE (owner_id, idempotency_key),
+    CONSTRAINT uq_employee_import_active_key UNIQUE (active_key)
+);
+
+CREATE INDEX idx_employee_import_status ON accounts_employee_import_job (status, created_at);
+
 -- Ghi chú: spec mới (tab "Đvị, phòngban") không có trường "Trưởng đơn vị"
 -- trên organizations_donvi -> không tạo cột manager_id.
 

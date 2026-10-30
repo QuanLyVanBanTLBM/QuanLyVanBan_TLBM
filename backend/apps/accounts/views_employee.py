@@ -2,10 +2,19 @@
 API ViewSets cho phân hệ Quản lý Cán bộ Nhân viên (CBNV - Issue #24).
 Tác giả: Lê Duy Khánh (leduykhanhdevs).
 """
-from django.db import transaction
+import logging
+import queue
+import threading
+import uuid
+from datetime import timedelta
+from pathlib import Path
+
+from django.conf import settings
+from django.db import IntegrityError, close_old_connections, transaction
 from django.db.models import Q, ProtectedError, RestrictedError, Prefetch
 from django.contrib.auth.models import Group
 from django.http import HttpResponse
+from django.utils import timezone
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
@@ -14,7 +23,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import Employee, EmployeeAssignment
+from .models import Employee, EmployeeAssignment, EmployeeImportJob
 from .serializers import (
     GroupSimpleSerializer,
     EmployeeSerializer,
@@ -36,6 +45,246 @@ SAFE_ORDERING_FIELDS = {
     "chuc_vu__display_order", "-chuc_vu__display_order",
     "id", "-id",
 }
+
+logger = logging.getLogger(__name__)
+_employee_import_workers = {}
+_employee_import_workers_lock = threading.Lock()
+_EMPLOYEE_IMPORT_ACTIVE_KEY = "cbnv-import"
+_EMPLOYEE_IMPORT_MAX_BYTES = 5 * 1024 * 1024
+_EMPLOYEE_IMPORT_STALE_AFTER = timedelta(seconds=30)
+_EMPLOYEE_IMPORT_HISTORY_TTL = timedelta(days=1)
+
+
+def _employee_import_path(relative_path):
+    root = (Path(settings.MEDIA_ROOT) / ".private" / "cbnv-import-jobs").resolve()
+    file_path = (Path(settings.MEDIA_ROOT) / relative_path).resolve()
+    if root not in file_path.parents:
+        raise ValueError("Invalid CBNV import file path")
+    return file_path
+
+
+def _save_employee_import_upload(upload, job_id):
+    if upload.size > _EMPLOYEE_IMPORT_MAX_BYTES:
+        raise ValueError("employees.import.fileTooLarge")
+
+    relative_path = f".private/cbnv-import-jobs/{job_id}.xlsx"
+    file_path = _employee_import_path(relative_path)
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        try:
+            file_path.parent.chmod(0o700)
+        except OSError:
+            # Windows applies ACLs; production uses the owning service account on a private path.
+            pass
+        with file_path.open("xb") as destination:
+            for chunk in upload.chunks():
+                destination.write(chunk)
+        try:
+            file_path.chmod(0o600)
+        except OSError:
+            pass
+        return relative_path
+    except Exception:
+        file_path.unlink(missing_ok=True)
+        raise
+
+
+def _update_employee_import_job(job_id, **values):
+    values["updated_at"] = timezone.now()
+    EmployeeImportJob.objects.filter(pk=job_id).update(**values)
+
+
+def _run_employee_import_job(job_id):
+    """Claim a persisted job once and publish progress outside the atomic employee insert transaction."""
+    close_old_connections()
+    claimed = EmployeeImportJob.objects.filter(
+        pk=job_id,
+        status=EmployeeImportJob.Status.QUEUED,
+    ).update(
+        status=EmployeeImportJob.Status.PROCESSING,
+        phase=EmployeeImportJob.Phase.VALIDATION,
+        message="employees.import.jobValidating",
+        updated_at=timezone.now(),
+    )
+    if not claimed:
+        close_old_connections()
+        return
+
+    job = EmployeeImportJob.objects.get(pk=job_id)
+    updates = queue.Queue(maxsize=64)
+    result_holder = {}
+    source_thread = None
+
+    def report_progress(phase, processed, total):
+        updates.put((phase, processed, total))
+
+    def run_import():
+        close_old_connections()
+        try:
+            file_path = _employee_import_path(job.file_path)
+
+            def mark_import_committed(created_count):
+                EmployeeImportJob.objects.filter(
+                    pk=job_id,
+                    status=EmployeeImportJob.Status.PROCESSING,
+                ).update(
+                    status=EmployeeImportJob.Status.DONE,
+                    active_key=None,
+                    phase=EmployeeImportJob.Phase.COMPLETE,
+                    processed=created_count,
+                    total=created_count,
+                    created_count=created_count,
+                    errors=[],
+                    message="employees.import.importSuccess",
+                    updated_at=timezone.now(),
+                )
+
+            with file_path.open("rb") as source:
+                result_holder["result"] = import_cbnv_from_excel(
+                    source,
+                    progress_callback=report_progress,
+                    completion_callback=mark_import_committed,
+                )
+        except Exception as exc:
+            result_holder["error"] = exc
+        finally:
+            close_old_connections()
+
+    try:
+        source_thread = threading.Thread(
+            target=run_import,
+            daemon=True,
+            name=f"cbnv-import-db-{str(job_id)[:8]}",
+        )
+        source_thread.start()
+        last_heartbeat = timezone.now()
+        while source_thread.is_alive() or not updates.empty():
+            try:
+                phase, processed, total = updates.get(timeout=2)
+                _update_employee_import_job(
+                    job_id,
+                    phase=phase,
+                    processed=processed,
+                    total=total,
+                    message=(
+                        "employees.import.jobSaving"
+                        if phase == EmployeeImportJob.Phase.SAVING
+                        else "employees.import.jobValidating"
+                    ),
+                )
+                last_heartbeat = timezone.now()
+            except queue.Empty:
+                if (timezone.now() - last_heartbeat).total_seconds() >= 5:
+                    _update_employee_import_job(job_id)
+                    last_heartbeat = timezone.now()
+
+        source_thread.join()
+        result = result_holder.get("result")
+        if result and result.get("success"):
+            _update_employee_import_job(
+                job_id,
+                status=EmployeeImportJob.Status.DONE,
+                active_key=None,
+                phase=EmployeeImportJob.Phase.COMPLETE,
+                processed=result.get("created_count", 0),
+                total=result.get("created_count", 0),
+                created_count=result.get("created_count", 0),
+                errors=[],
+                message="employees.import.importSuccess",
+            )
+        elif result:
+            _update_employee_import_job(
+                job_id,
+                status=EmployeeImportJob.Status.FAILED,
+                active_key=None,
+                phase=EmployeeImportJob.Phase.VALIDATION,
+                errors=result.get("errors", []),
+                message=result.get("message", "employees.import.uploadError"),
+            )
+        else:
+            raise result_holder.get("error", RuntimeError("Import returned no result"))
+    except Exception:
+        logger.exception("CBNV Excel import job failed: %s", job_id)
+        EmployeeImportJob.objects.filter(
+            pk=job_id,
+            status=EmployeeImportJob.Status.PROCESSING,
+        ).update(
+            status=EmployeeImportJob.Status.FAILED,
+            active_key=None,
+            phase=EmployeeImportJob.Phase.FAILED,
+            errors=[],
+            message="employees.import.uploadError",
+            updated_at=timezone.now(),
+        )
+    finally:
+        try:
+            _employee_import_path(job.file_path).unlink(missing_ok=True)
+        except (OSError, ValueError):
+            logger.warning("Unable to remove CBNV import file for job %s", job_id)
+        with _employee_import_workers_lock:
+            _employee_import_workers.pop(str(job_id), None)
+        close_old_connections()
+
+
+def _start_employee_import_worker(job_id):
+    key = str(job_id)
+    with _employee_import_workers_lock:
+        worker = _employee_import_workers.get(key)
+        if worker and worker.is_alive():
+            return
+        worker = threading.Thread(
+            target=_run_employee_import_job,
+            args=(job_id,),
+            daemon=True,
+            name=f"cbnv-import-{key[:8]}",
+        )
+        _employee_import_workers[key] = worker
+        try:
+            worker.start()
+        except Exception:
+            _employee_import_workers.pop(key, None)
+            raise
+
+
+def _resume_stale_employee_import_job(job):
+    if job.status == EmployeeImportJob.Status.QUEUED:
+        _start_employee_import_worker(job.pk)
+        return job
+    if (
+        job.status != EmployeeImportJob.Status.PROCESSING
+        or timezone.now() - job.updated_at <= _EMPLOYEE_IMPORT_STALE_AFTER
+    ):
+        return job
+
+    with transaction.atomic():
+        stale_job = EmployeeImportJob.objects.select_for_update().filter(pk=job.pk).first()
+        if (
+            stale_job
+            and stale_job.status == EmployeeImportJob.Status.PROCESSING
+            and timezone.now() - stale_job.updated_at > _EMPLOYEE_IMPORT_STALE_AFTER
+        ):
+            try:
+                file_exists = _employee_import_path(stale_job.file_path).is_file()
+            except ValueError:
+                file_exists = False
+            stale_job.status = EmployeeImportJob.Status.QUEUED
+            stale_job.phase = EmployeeImportJob.Phase.QUEUED
+            stale_job.processed = 0
+            stale_job.total = 0
+            stale_job.message = "employees.import.jobQueued"
+            if not file_exists:
+                stale_job.status = EmployeeImportJob.Status.FAILED
+                stale_job.active_key = None
+                stale_job.phase = EmployeeImportJob.Phase.FAILED
+                stale_job.message = "employees.import.uploadError"
+            stale_job.save(update_fields=[
+                "status", "active_key", "phase", "processed", "total", "message", "updated_at",
+            ])
+            job = stale_job
+
+    if job.status == EmployeeImportJob.Status.QUEUED:
+        _start_employee_import_worker(job.pk)
+    return job
 
 
 class StandardEmployeePagination(PageNumberPagination):
@@ -80,7 +329,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             permission_classes = [IsAuthenticated, IsEmployeeAdminOnly]
         elif self.action == "destroy":
             permission_classes = [IsAuthenticated, require_permission("delete_cbnv")]
-        elif self.action == "import_excel":
+        elif self.action in ["import_excel", "import_excel_async", "import_job_status"]:
             permission_classes = [IsAuthenticated, require_permission("import_cbnv")]
         else:
             permission_classes = [IsAuthenticated]
@@ -375,6 +624,11 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 {"detail": "employees.messages.fileInvalidType"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        if file_obj.size > _EMPLOYEE_IMPORT_MAX_BYTES:
+            return Response(
+                {"detail": "employees.import.fileTooLarge"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         result = import_cbnv_from_excel(file_obj)
         if not result["success"]:
@@ -396,3 +650,149 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             },
             status=status.HTTP_201_CREATED,
         )
+
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path="import-async",
+        parser_classes=[MultiPartParser, FormParser],
+    )
+    def import_excel_async(self, request):
+        """Lưu yêu cầu import bền vững rồi xử lý nền, không giữ request upload chờ đọc Excel."""
+        upload = request.FILES.get("file")
+        if not upload:
+            return Response(
+                {"detail": "employees.messages.fileRequired"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not upload.name.lower().endswith(".xlsx"):
+            return Response(
+                {"detail": "employees.messages.fileInvalidType"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if upload.size > _EMPLOYEE_IMPORT_MAX_BYTES:
+            return Response(
+                {"detail": "employees.import.fileTooLarge"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        raw_idempotency_key = request.headers.get("Idempotency-Key", "").strip()
+        if len(raw_idempotency_key) > 128:
+            return Response(
+                {"detail": "Invalid Idempotency-Key."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        idempotency_key = raw_idempotency_key or None
+
+        if idempotency_key:
+            existing_job = EmployeeImportJob.objects.filter(
+                owner=request.user,
+                idempotency_key=idempotency_key,
+            ).first()
+            if existing_job:
+                existing_job = _resume_stale_employee_import_job(existing_job)
+                return Response(
+                    {"job_id": str(existing_job.pk), "status": existing_job.status},
+                    status=status.HTTP_202_ACCEPTED,
+                )
+
+        active_job = EmployeeImportJob.objects.filter(active_key=_EMPLOYEE_IMPORT_ACTIVE_KEY).first()
+        if active_job:
+            _resume_stale_employee_import_job(active_job)
+            return Response(
+                {"detail": "employees.import.jobAlreadyRunning"},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        cutoff = timezone.now() - _EMPLOYEE_IMPORT_HISTORY_TTL
+        EmployeeImportJob.objects.filter(
+            status__in=[EmployeeImportJob.Status.DONE, EmployeeImportJob.Status.FAILED],
+            created_at__lt=cutoff,
+        ).delete()
+
+        job_id = uuid.uuid4()
+        relative_path = None
+        try:
+            relative_path = _save_employee_import_upload(upload, job_id)
+            try:
+                with transaction.atomic():
+                    job = EmployeeImportJob.objects.create(
+                        id=job_id,
+                        owner=request.user,
+                        idempotency_key=idempotency_key,
+                        active_key=_EMPLOYEE_IMPORT_ACTIVE_KEY,
+                        file_path=relative_path,
+                        status=EmployeeImportJob.Status.QUEUED,
+                        phase=EmployeeImportJob.Phase.QUEUED,
+                        message="employees.import.jobQueued",
+                    )
+            except IntegrityError:
+                _employee_import_path(relative_path).unlink(missing_ok=True)
+                if idempotency_key:
+                    existing_job = EmployeeImportJob.objects.filter(
+                        owner=request.user,
+                        idempotency_key=idempotency_key,
+                    ).first()
+                    if existing_job:
+                        existing_job = _resume_stale_employee_import_job(existing_job)
+                        return Response(
+                            {"job_id": str(existing_job.pk), "status": existing_job.status},
+                            status=status.HTTP_202_ACCEPTED,
+                        )
+                return Response(
+                    {"detail": "employees.import.jobAlreadyRunning"},
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            _start_employee_import_worker(job.pk)
+        except ValueError as exc:
+            if relative_path:
+                _employee_import_path(relative_path).unlink(missing_ok=True)
+            detail = str(exc) if str(exc) == "employees.import.fileTooLarge" else "employees.import.uploadError"
+            return Response(
+                {"detail": detail},
+                status=status.HTTP_400_BAD_REQUEST if detail.endswith("fileTooLarge") else status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        except Exception:
+            logger.exception("Unable to start CBNV Excel import job: %s", job_id)
+            if relative_path:
+                _employee_import_path(relative_path).unlink(missing_ok=True)
+            EmployeeImportJob.objects.filter(pk=job_id).update(
+                status=EmployeeImportJob.Status.FAILED,
+                active_key=None,
+                phase=EmployeeImportJob.Phase.FAILED,
+                message="employees.import.uploadError",
+                updated_at=timezone.now(),
+            )
+            return Response(
+                {"detail": "employees.import.uploadError"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        return Response({"job_id": str(job.pk), "status": job.status}, status=status.HTTP_202_ACCEPTED)
+
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path=r"import-jobs/(?P<job_id>[0-9a-f-]+)",
+    )
+    def import_job_status(self, request, job_id=None):
+        """Trả trạng thái job; chỉ người đã tạo job được đọc kết quả và lỗi theo dòng."""
+        try:
+            job_id = uuid.UUID(job_id)
+        except (AttributeError, TypeError, ValueError):
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        job = EmployeeImportJob.objects.filter(pk=job_id, owner=request.user).first()
+        if not job:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        job = _resume_stale_employee_import_job(job)
+        return Response({
+            "job_id": str(job.pk),
+            "status": job.status,
+            "phase": job.phase,
+            "processed": job.processed,
+            "total": job.total,
+            "created_count": job.created_count,
+            "errors": job.errors,
+            "message": job.message,
+        }, status=status.HTTP_200_OK)
