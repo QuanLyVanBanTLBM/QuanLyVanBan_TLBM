@@ -403,6 +403,7 @@
     "pin_khong_dung": "Incorrect PIN.",
     "pin_tam_khoa": "Too many wrong PINs; the signing key is locked for 15 minutes.",
     "pin_khoa_cung": "The signing key is locked after too many wrong PINs. Contact an administrator.",
+    "khong_ho_tro_webcrypto": "Signing requires opening the system over HTTPS (or localhost). The current HTTP address does not allow the browser to use Web Crypto; contact the administrator for an HTTPS address.",
     "thieu_ban_boc_thiet_bi": "This device does not hold your active signing key. Open “Signing key & PIN” to create one for this device.",
     "ma_bam_khong_khop": "The file changed since this round started; reload the request before signing.",
     "chua_den_luot_ky": "It is not your turn because the previous signing level is not complete, or you have already acted.",

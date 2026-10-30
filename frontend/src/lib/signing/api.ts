@@ -14,8 +14,14 @@ export const SIGNING_BASE = '/api/v1/signing';
 /** Số hồ sơ (hoặc thông báo) mỗi trang danh sách (server mặc định 10, tối đa 100). */
 export const SO_HO_SO_MOI_TRANG = 10;
 
+/** `crypto.randomUUID` chỉ có ở ngữ cảnh an toàn; `getRandomValues` có ở mọi ngữ cảnh (khóa này không phải bí mật). */
 export function taoKhoaChongTrung(): string {
-  return crypto.randomUUID();
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const h = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
 function tieuDe(khoa?: string): RequestInit {
