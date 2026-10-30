@@ -11,20 +11,26 @@ Bao gồm:
 import base64
 from io import BytesIO
 import os
+from pathlib import Path
 from datetime import date, timedelta
 from unittest.mock import patch
 import openpyxl
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, Permission
 from django.db import connection
 from django.db.models import ProtectedError, RestrictedError, Max
-from django.test import TestCase
+from django.test import TestCase, TransactionTestCase
+from django.test.utils import CaptureQueriesContext
+from django.utils import timezone
 from django.urls import reverse
 from rest_framework import status
-from rest_framework.test import APITestCase
+from rest_framework.test import APIClient, APITestCase
 
 from organizations.models import KhoiKhuVuc, DonVi
-from accounts.models import Employee, Position, EmployeeAssignment
+from accounts.models import Employee, EmployeeImportJob, Position, EmployeeAssignment
+from accounts.excel_cbnv import import_cbnv_from_excel
+from accounts.views_employee import _run_employee_import_job
 
 User = get_user_model()
 
@@ -537,6 +543,100 @@ class EmployeeExcelImportExportTests(EmployeeBaseTestCase):
         # Kiểm tra bản ghi trong DB
         self.assertTrue(User.objects.filter(email="doanvanhau@donvi.gov.vn").exists())
         self.assertTrue(User.objects.filter(ho_ten="Đoàn Văn Hậu", don_vi=self.don_vi_1).exists())
+
+    def test_import_excel_prefetches_lookup_data_for_many_rows(self):
+        """Số truy vấn đọc danh mục/email không tăng theo số dòng Excel."""
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.append([
+            "Họ và tên (*)", "Ngày sinh (*)", "Email (*)", "Số điện thoại",
+            "Tên Khối / Khu vực (*)", "Tên Đơn vị / Phòng ban (*)",
+            "Tên Chức vụ (*)", "Chức danh", "Trạng thái", "Ghi chú",
+        ])
+        for index in range(20):
+            ws.append([
+                f"Nhân viên tối ưu {index}", "1990-01-01", f"fast-import-{index}@example.test",
+                "0912345678", self.khoi.ten, self.don_vi_1.ten, self.cv_chuyen_vien.name,
+                "", "Đang làm việc", "",
+            ])
+        bio = BytesIO()
+        wb.save(bio)
+        bio.seek(0)
+        bio.name = "danh_sach_toi_uu.xlsx"
+
+        with CaptureQueriesContext(connection) as captured:
+            result = import_cbnv_from_excel(bio)
+
+        self.assertTrue(result["success"], result.get("errors"))
+        self.assertEqual(result["created_count"], 20)
+        select_queries = [
+            query for query in captured.captured_queries
+            if query["sql"].lstrip().upper().startswith("SELECT")
+        ]
+        self.assertLessEqual(len(select_queries), 10)
+
+    def test_import_excel_async_returns_owned_job_and_deduplicates_retry(self):
+        """Endpoint nền nhận nhanh, giới hạn xem trạng thái theo chủ job và chống gửi lặp."""
+        self.client.force_authenticate(user=self.sensitive_user)
+        upload = BytesIO(b"queued test payload")
+        upload.name = "danh_sach.xlsx"
+        idempotency_key = "9a04c357-e2fa-4b04-89da-6f459f8c367b"
+        url = "/api/accounts/employees/import-async/"
+
+        with patch("accounts.views_employee._start_employee_import_worker") as start_worker:
+            response = self.client.post(
+                url,
+                {"file": upload},
+                format="multipart",
+                HTTP_IDEMPOTENCY_KEY=idempotency_key,
+            )
+            self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+            job_id = response.json()["job_id"]
+            job = EmployeeImportJob.objects.get(pk=job_id)
+            self.assertEqual(job.owner_id, self.sensitive_user.pk)
+            self.assertEqual(job.status, EmployeeImportJob.Status.QUEUED)
+            self.assertEqual(job.active_key, "cbnv-import")
+            file_path = Path(settings.MEDIA_ROOT) / job.file_path
+            self.addCleanup(file_path.unlink, missing_ok=True)
+            start_worker.assert_called_once_with(job.pk)
+
+            retry_upload = BytesIO(b"queued test payload")
+            retry_upload.name = "danh_sach.xlsx"
+            retry = self.client.post(
+                url,
+                {"file": retry_upload},
+                format="multipart",
+                HTTP_IDEMPOTENCY_KEY=idempotency_key,
+            )
+            self.assertEqual(retry.status_code, status.HTTP_202_ACCEPTED)
+            self.assertEqual(retry.json()["job_id"], job_id)
+            self.assertEqual(EmployeeImportJob.objects.count(), 1)
+
+        status_url = f"/api/accounts/employees/import-jobs/{job_id}/"
+        EmployeeImportJob.objects.filter(pk=job_id).update(
+            status=EmployeeImportJob.Status.PROCESSING,
+            updated_at=timezone.now() - timedelta(minutes=1),
+        )
+        status_response = self.client.get(status_url)
+        self.assertEqual(status_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(status_response.json()["status"], "queued")
+        self.assertNotIn("file_path", status_response.json())
+
+        self.client.force_authenticate(user=self.admin_user)
+        self.assertEqual(self.client.get(status_url).status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_import_excel_async_rejects_files_over_template_limit(self):
+        self.client.force_authenticate(user=self.sensitive_user)
+        upload = BytesIO(b"x" * (5 * 1024 * 1024 + 1))
+        upload.name = "too-large.xlsx"
+        response = self.client.post(
+            "/api/accounts/employees/import-async/",
+            {"file": upload},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.json()["detail"], "employees.import.fileTooLarge")
+        self.assertFalse(EmployeeImportJob.objects.exists())
 
     def test_import_excel_xls_format_rejected(self):
         """Tệp Excel định dạng cũ (.xls) bị từ chối 400 fileInvalidType (hệ thống chuẩn hóa chỉ hỗ trợ .xlsx)."""
@@ -2117,3 +2217,48 @@ class EmployeeDefaultGroupAssignmentTests(EmployeeBaseTestCase):
         )
         self.assertEqual(assigned_codes, {"CV"})
         self.assertNotIn("BGD", assigned_codes)
+
+
+class EmployeeImportWorkerIntegrationTests(TransactionTestCase):
+    """Kiểm thử worker nền với transaction thật để thread khác đọc được job đã commit."""
+
+    def setUp(self):
+        super().setUp()
+        EmployeeBaseTestCase.setUp(self)
+        self.client = APIClient()
+
+    def test_worker_persists_success_and_removes_private_file(self):
+        self.client.force_authenticate(user=self.sensitive_user)
+        workbook = openpyxl.Workbook()
+        sheet = workbook.active
+        sheet.append([
+            "Họ và tên (*)", "Ngày sinh (*)", "Email (*)", "Số điện thoại",
+            "Tên Đơn vị / Phòng ban (*)", "Tên Chức vụ (*)", "Chức danh", "Trạng thái", "Ghi chú",
+        ])
+        sheet.append([
+            "Nhân viên nền", "1990-01-01", "worker-import@example.test", "0912345678",
+            self.don_vi_1.ten, self.cv_chuyen_vien.name, "", "Đang làm việc", "",
+        ])
+        file_obj = BytesIO()
+        workbook.save(file_obj)
+        file_obj.seek(0)
+        file_obj.name = "worker_import.xlsx"
+
+        with patch("accounts.views_employee._start_employee_import_worker"):
+            response = self.client.post(
+                "/api/accounts/employees/import-async/",
+                {"file": file_obj},
+                format="multipart",
+                HTTP_IDEMPOTENCY_KEY="worker-success-import",
+            )
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+        job = EmployeeImportJob.objects.get(pk=response.json()["job_id"])
+        stored_file = Path(settings.MEDIA_ROOT) / job.file_path
+        _run_employee_import_job(job.pk)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, EmployeeImportJob.Status.DONE)
+        self.assertIsNone(job.active_key)
+        self.assertEqual(job.created_count, 1)
+        self.assertTrue(User.objects.filter(email="worker-import@example.test").exists())
+        self.assertFalse(stored_file.exists())
