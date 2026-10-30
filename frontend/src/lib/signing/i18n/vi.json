@@ -357,7 +357,11 @@
     "vaiTroKy": "Vai trò ký",
     "nhomTheoChucVu": "Theo chức danh",
     "nhomTheoCanBo": "Cán bộ nhân viên",
-    "giaiThichChucVuForm": "Phân công người ký theo chức danh"
+    "giaiThichChucVuForm": "Phân công người ký theo chức danh",
+    "gioiHanThuBacTruoc": "Thứ bậc hiệu lực của cấp phải cao hơn hoặc bằng “{ten}” ở cấp có chức danh liền trước.",
+    "gioiHanThuBacSau": "Thứ bậc hiệu lực của cấp không được cao hơn “{ten}” ở cấp có chức danh liền sau.",
+    "gioiHanThuBacHaiPhia": "Thứ bậc hiệu lực của cấp phải cao hơn hoặc bằng “{truoc}” ở cấp trước và không cao hơn “{sau}” ở cấp sau.",
+    "gioiHanThuBacKhongCoLuaChon": "Không có chức danh nào phù hợp với thứ bậc của hai cấp liền kề. Hãy điều chỉnh người ký theo chức danh ở các cấp."
   },
   "khoa": {
     "gioiThieu": "Khóa ký được tạo trên trình duyệt và bảo vệ bằng PIN 8 chữ số. Tệp khóa đã mã hóa được tải về thiết bị; khi ký, tải lại tệp và nhập PIN. Máy chủ không nhận PIN hoặc tệp khóa.",
@@ -463,6 +467,7 @@
     "quy_trinh_thieu_nguoi_ky": "Quy trình không có cấp ký hoặc có cấp chưa có người ký.",
     "cap_ky_khong_co_nguoi_ky": "Có cấp ký chưa có người ký.",
     "cap_ky_trung_thu_tu": "Thứ tự cấp ký đã tồn tại trong quy trình.",
+    "cap_ky_thu_bac_khong_hop_le": "Chức danh ở cấp ký sau phải cao hơn hoặc bằng cấp ký có chức danh liền trước.",
     "nguoi_ky_trung_trong_cap": "Người ký bị trùng trong cùng một cấp.",
     "nguoi_ky_hoac_chuc_vu": "Mỗi người ký chỉ chọn một: tài khoản hoặc chức danh.",
     "quy_trinh_phong_ban_thieu_don_vi": "Quy trình phòng ban phải có đơn vị áp dụng.",
