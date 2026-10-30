@@ -37,12 +37,6 @@ export default function TienTrinh({ luot, toiId }: { luot: LuotTrinh; toiId?: nu
                     </span>
                     {n.ten_chuc_vu && <span className="text-secondary"> · {n.ten_chuc_vu}</span>}
                     <span className="text-muted"> · {t(`vaiTro.${n.vai_tro_ky}`)}</span>
-                    {n.ten_nguoi_uy_quyen && (
-                      <div className="text-xs text-secondary" title={n.ly_do_uy_quyen}>
-                        <i className="fa-solid fa-user-group mr-1" aria-hidden="true" />
-                        {t('chiTiet.uyQuyenTu', { ten: n.ten_nguoi_uy_quyen })}
-                      </div>
-                    )}
                     {n.chu_ky?.ghi_chu_ky && <div className="text-xs text-secondary italic break-words">“{n.chu_ky.ghi_chu_ky}”</div>}
                     {n.ly_do_tu_choi && <div className="text-xs text-danger break-words">{n.ly_do_tu_choi}</div>}
                   </div>

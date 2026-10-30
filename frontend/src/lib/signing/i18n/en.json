@@ -59,7 +59,6 @@
     "HOAN_THANH": "Done"
   },
   "vaiTro": {
-    "KY_NHAY": "Legacy role (unsupported)",
     "KY_CHINH": "Main signature"
   },
   "phamVi": {
@@ -225,8 +224,7 @@
     "banLuot": "Signing document",
     "maBam": "File check value",
     "bangChungJson": "Download evidence",
-    "xemChiTiet": "View details",
-    "uyQuyenTu": "On behalf of {ten}"
+    "xemChiTiet": "View details"
   },
   "hanhDong": {
     "kyDuyet": "Sign and approve",
@@ -255,7 +253,7 @@
     "thaFileKhoaVaoDay": "Drop the signing key file here",
     "thaFileKhoaGhiChu": "The key file (.tlbmkey) will be loaded immediately",
     "fileKhoaGhiChu": "Upload the key file (.tlbmkey) exported on the Signing key page; leave empty to use the key stored on this device.",
-"daChonFile": "The key file was read in this browser and was not sent to the server.",
+    "daChonFile": "The key file was read in this browser and was not sent to the server.",
     "caiDatKhoaVaChuKy": "Go to Signing Keys & Signature",
     "anhChuKySeDung": "Applied signature image"
   },
@@ -307,8 +305,6 @@
     "timCanBoTheoChucVu": "Search staff with position {chucVu} by name, username…",
     "khongThayCanBoChucVu": "No staff found with position “{chucVu}” in directory.",
     "soGio": "Hours to process (optional)",
-    "chanKyChinh": "Legacy signing setup",
-    "kyNhayCu": "This workflow contains an unsupported legacy signing setup. Remove it and any empty signing levels before saving.",
     "kichHoat": "Activate",
     "ngung": "Stop",
     "nhanBan": "New version",
@@ -438,7 +434,6 @@
     "khong_xac_dinh_duoc_nguoi_ky": "A signer could not be determined (inactive signer or nobody holds the position).",
     "vi_tri_ky_khong_hop_le": "A signature position does not fit the file's pages.",
     "quy_trinh_khong_ap_dung": "This workflow does not apply to your department.",
-    "ky_nhay_khong_ho_tro": "This workflow contains an unsupported legacy signing setup. Remove it from the draft or create a new version.",
     "van_ban_han_che_khong_trinh_ky": "Restricted documents do not go through signing.",
     "tep_khong_phai_pdf": "The file is not a valid PDF (damaged or has no pages).",
     "tep_pdf_co_mat_khau": "Password-protected PDFs are not accepted.",
@@ -452,7 +447,6 @@
     "file_khoa_khong_khop": "The key file does not belong to this account or to the active key.",
     "khong_tim_thay_nguoi_ky": "Signer not found in the current round.",
     "nguoi_nhan_khong_du_tham_quyen": "The recipient's position is not authorized to sign for this person.",
-    "uy_quyen_khong_con_hop_le": "The delegate no longer holds a position authorized to sign for this request. Contact an administrator to review and reassign.",
     "chuc_vu_khong_hop_le": "A selected position is no longer available. Reload the list.",
     "khong_co_chuc_danh_goc": "The request does not contain the signer's original position. Contact an administrator.",
     "khong_hien_thi_duoc_pdf": "The PDF could not be read. Check the file response, PDF format, and browser version; retry or download the file.",
@@ -528,8 +522,7 @@
     "TAO_TEP_HOAN_TAT": "Final file generated",
     "LOI_TAO_TEP_HOAN_TAT": "Final file generation failed",
     "TAO_LAI_TEP_HOAN_TAT": "Final file regenerated",
-    "LIEN_KET_VAN_BAN_DI": "Outgoing document linked",
-    "UY_QUYEN_KY": "Signing delegated"
+    "LIEN_KET_VAN_BAN_DI": "Outgoing document linked"
   },
   "taiLieu": {
     "goiYTim": "Number, summary, request number, process…",
@@ -569,7 +562,6 @@
     "van_ban_id": "Document",
     "ly_do": "Reason",
     "ly_do_tu_choi": "Reason",
-    "ly_do_uy_quyen": "Reason",
     "noi_dung": "Content",
     "tieu_de": "Title",
     "ten_quy_trinh": "Process name",

@@ -1,6 +1,6 @@
 # Plan backend Trình ký — Nhóm 5
 
-> **Cập nhật issue #356:** ủy quyền ký khẩn cấp và cấu hình người được ký thay đã bỏ khỏi phạm vi triển khai (xem `README.md`). Các mục ủy quyền trong plan này là thiết kế lịch sử; bảng và cột ủy quyền giữ nguyên trong schema.
+> **Phạm vi:** mọi người ký trong một cấp có cùng một vai trò (ký chính). Ký nháy và ủy quyền ký chưa có.
 
 > Cập nhật 06/10/2026 theo [`danh-gia-nghiep-vu-va-de-xuat.md`](danh-gia-nghiep-vu-va-de-xuat.md): cấp ký luôn tuần tự (bỏ `kieu_ky`), từ chối là kết thúc, chức vụ tương đối theo đơn vị, ủy quyền theo thời gian kèm hình thức ký, leo thang quá hạn, tách khâu văn thư.
 > Cập nhật 08/10/2026 theo #80: MVP là luồng duyệt nội bộ hoàn chỉnh, kết thúc ở **hoàn tất duyệt nội bộ, chưa phát hành**. CA, chứng thư số, `LegalSignerAdapter`, DocMDP, cấp số và phát hành pháp lý đã gỡ khỏi roadmap của #80 (mục 1.4). Văn bản mật đã bỏ nên không còn phụ thuộc pháp chế về phạm vi văn bản mật.
@@ -21,7 +21,7 @@ Xây dựng backend Django REST Framework cho nghiệp vụ trình ký văn bả
 - Chọn quy trình khi tạo yêu cầu trình ký.
 - Cấp ký tuần tự; song song là nhiều người ký trong cùng một cấp (không còn cách thức ký áp dụng cho toàn yêu cầu).
 - Người ký cấu hình theo tài khoản hoặc theo chức vụ (tương đối theo đơn vị, mục 3.2); chốt snapshot người ký tại thời điểm gửi.
-- Hai vai trò trong một cấp: ký nháy (`KY_NHAY`) và ký chính (`KY_CHINH`), có cơ chế chặn tuần tự trong cấp.
+- Mọi người ký trong một cấp có cùng một vai trò: ký chính (`KY_CHINH`).
 - Chữ ký số nội bộ Ed25519; backend không nhận và không lưu private key.
 - Khóa nội dung văn bản bằng phiên bản và mã băm SHA-256 tại thời điểm gửi.
 - Phản hồi hai nhánh:
@@ -81,12 +81,9 @@ Theo #80 mục 8, MVP dùng chữ ký điện tử nội bộ Ed25519 và kết 
 **Cấp ký và vai trò**
 
 - Một cấp có thể có nhiều người ký; mọi người ký đều bắt buộc. Không có người ký tùy chọn, không có quorum.
-- Hai vai trò trong cùng một cấp (`vai_tro_ky`):
-  - `KY_NHAY`: chuyên viên rà soát thể thức, số liệu, tính pháp lý.
-  - `KY_CHINH`: trưởng bộ phận hoặc người có thẩm quyền cao nhất của cấp.
-- **Chặn trong cấp:** nếu cấp có người `KY_NHAY` với `chan_ky_chinh = true`, người `KY_CHINH` của cấp đó chỉ được mở ký (`thoi_diem_mo` được gán) khi toàn bộ người ký nháy chặn đã `DA_KY`.
+- Mọi người ký của một cấp được mở cùng lúc và ký song song.
 - `thu_tu` của cấp quyết định thứ tự mở cấp; `cap_ky` chỉ là số hiệu hiển thị.
-- Chỉ cấp có `thu_tu` nhỏ nhất chưa hoàn thành được mở; cấp sau chỉ mở khi mọi người ký (ký nháy và ký chính) của cấp trước đã ký. Người trong cùng cấp ký song song (trừ quy tắc chặn ký nháy).
+- Chỉ cấp có `thu_tu` nhỏ nhất chưa hoàn thành được mở; cấp sau chỉ mở khi mọi người ký của cấp trước đã ký. Người trong cùng cấp ký song song.
 - Yêu cầu hoàn thành khi cấp cuối hoàn thành.
 - Người tạo không mặc nhiên là người ký; chỉ là người ký nếu có trong cấu hình quy trình.
 
@@ -202,10 +199,9 @@ GVHD đã chốt bỏ văn bản mật hành chính. Tài liệu nội bộ hạ
 - **Thu hồi:**
   - Chỉ khi cấp của người ký còn `DANG_KY` (chưa đóng) và lượt trình chưa hoàn thành.
   - Thu hồi ghi thành sự kiện nhật ký tham chiếu chữ ký bị thu hồi; `chu_ky_hien_hanh` về rỗng, người ký về `CHO_KY`; ký lại tạo bản ghi chữ ký mới. Chữ ký cũ giữ nguyên.
-  - Người `KY_NHAY` chặn không được thu hồi khi đã có người `KY_CHINH` cùng cấp ký, vì sẽ phá quy tắc chặn trong cấp.
 - Không cho thu hồi sau khi cấp đã đóng và luồng đã sang cấp sau; muốn sửa thì đi qua yêu cầu chỉnh sửa và lượt trình mới.
 
-### 3.5. Hạn xử lý và ủy quyền khẩn cấp
+### 3.5. Hạn xử lý
 
 **Hạn xử lý**
 
@@ -222,18 +218,10 @@ GVHD đã chốt bỏ văn bản mật hành chính. Tài liệu nội bộ hạ
   - Trước `han_xu_ly` 24 giờ: nhắc người ký.
   - Tại `han_xu_ly`: nhắc người ký và người tạo.
   - Quá hạn mỗi 24 giờ: nhắc lặp người ký.
-  - Quá hạn 48 giờ: leo thang cho cấp trên trực tiếp của người ký (theo cơ cấu Nhóm 7) và người tạo, kèm gợi ý ủy quyền khẩn cấp.
+  - Quá hạn 48 giờ: leo thang cho cấp trên trực tiếp của người ký (theo cơ cấu Nhóm 7) và người tạo.
 - Báo cáo trễ hạn theo người/đơn vị (số hồ sơ đang quá hạn, thời gian xử lý trung bình) đọc từ `ky_tre_han`, `so_giay_tre`, `han_xu_ly`.
 
-**Ủy quyền** (căn cứ NĐ 30/2020 Điều 13; `[CẦN XÁC NHẬN]` danh sách người nhận hợp lệ trước Phase 9)
-
-- **Ủy quyền đặt trước theo thời gian** (`signing_delegation`): người ủy quyền hoặc cấp trên trực tiếp/quản trị khai báo người nhận, khoảng thời gian, phạm vi (quy trình/loại văn bản, rỗng = tất cả), hình thức ký (`KT`, `TL`, `TUQ`), lý do. Khi mở cấp ký, người ký có ủy quyền đang hiệu lực khớp phạm vi thì chuyển sang người nhận; ghi `uy_quyen_tu`, `ngay_uy_quyen`, `ly_do_uy_quyen`, `hinh_thuc_ky` và nhật ký.
-- **Ủy quyền khẩn cấp** từng hồ sơ: chỉ cấp trên trực tiếp của người ký hoặc quản trị (`delegate_trinhky`) thực hiện; người ký không tự ủy quyền từng hồ sơ. Lý do bắt buộc.
-- **Thẩm quyền tương đương** = người nhận thuộc danh sách người nhận ủy quyền hợp lệ của chức danh người ký (cấu hình sẵn, ví dụ cấp phó được phân công). Không cho chọn tự do.
-- Người ký cập nhật sang tài khoản mới; lượt trình và mã băm không đổi.
-- Chỉ ủy quyền cho người ký đang `CHO_KY`.
-- Không ủy quyền cho người đã có mặt trong cùng cấp (ràng buộc duy nhất `(buoc_ky, nguoi_ky)`); nếu cần gộp người ký thì đi qua yêu cầu chỉnh sửa.
-- **Thể thức:** `hinh_thuc_ky` của người ký (`KY_TRUC_TIEP`, `KT`, `TL`, `TUQ`) quyết định khối chữ ký khi phẳng hóa và khi ký số pháp lý (ví dụ "KT. GIÁM ĐỐC / PHÓ GIÁM ĐỐC"). Bỏ qua bước này thì văn bản ban hành sai thể thức.
+**Ủy quyền ký (backlog sau MVP)**: chưa có. Trước khi bổ sung cần chốt người nhận hợp lệ theo chức danh (Nhóm 7), phạm vi, thời hạn và thể thức khối chữ ký.
 
 ## 4. Kiến trúc backend
 
@@ -252,7 +240,7 @@ GVHD đã chốt bỏ văn bản mật hành chính. Tài liệu nội bộ hạ
 
 ### 4.2. Transaction và xử lý đồng thời
 
-- Các hành động `gui`, `ky`, `tu_choi`, `yeu_cau_sua`, `uy_quyen`, `thu_hoi`, `huy`, `trinh_lai` chạy trong `transaction.atomic()`.
+- Các hành động `gui`, `ky`, `tu_choi`, `yeu_cau_sua`, `thu_hoi`, `huy`, `trinh_lai` chạy trong `transaction.atomic()`.
 - Khóa dòng lượt trình (và yêu cầu khi cần) bằng `select_for_update()` trước khi kiểm tra trạng thái và cập nhật người ký.
 - Mọi hành động chuyển trạng thái nhận header `Idempotency-Key`; gửi lặp không tạo thêm chữ ký, lượt trình hay thông báo.
   - Gửi / gửi lại: lưu tại `signing_attempt.khoa_chong_trung`.
@@ -319,8 +307,7 @@ Ràng buộc: unique `(quy_trinh, thu_tu)`.
 | Người ký | `nguoi_ky` | ForeignKey (auth_user) | | Nhập người ký HOẶC chức vụ |
 | Chức vụ ký | `chuc_vu_id` | ForeignKey (Chức vụ) | | Nhập người ký HOẶC chức vụ; FK `accounts_position` của Nhóm 7 (migration `0010`) |
 | Phạm vi chức vụ | `pham_vi_chuc_vu` | Text (20) [DON_VI_NGUOI_TAO, DON_VI_CO_DINH, TOAN_CO_QUAN] | | Bắt buộc khi cấu hình theo chức vụ (mục 3.2). Thêm ở Phase 7 |
-| Vai trò ký | `vai_tro_ky` | Text (20) [KY_NHAY, KY_CHINH] | X | Mặc định KY_CHINH |
-| Chặn ký chính | `chan_ky_chinh` | Boolean | X | Mặc định True; ký nháy xong mới mở ký chính |
+| Vai trò ký | `vai_tro_ky` | Text (20) [KY_CHINH] | X | Mặc định KY_CHINH |
 | Thứ tự trong cấp | `thu_tu` | Number (SmallInt) | X | |
 | Ngày tạo | `created_at` | DateTime (auto) | | |
 
@@ -409,19 +396,13 @@ Ràng buộc: unique `(luot_trinh, thu_tu)`.
 | Chức vụ lúc trình | `chuc_vu_id` | Number (BigInt) | | Tạm là số nguyên, đổi sang ForeignKey (Chức vụ) ở Phase 7 |
 | Tên người ký | `ten_nguoi_ky` | Text (255) | X | Snapshot tại lúc gửi |
 | Tên chức vụ | `ten_chuc_vu` | Text (255) | | Snapshot tại lúc gửi |
-| Vai trò ký | `vai_tro_ky` | Text (20) [KY_NHAY, KY_CHINH] | X | |
-| Chặn ký chính | `chan_ky_chinh` | Boolean | X | Mặc định True |
+| Vai trò ký | `vai_tro_ky` | Text (20) [KY_CHINH] | X | |
 | Trạng thái | `trang_thai` | Text (20) [CHO_KY, DA_KY, TU_CHOI, YEU_CAU_SUA] | X | Mặc định CHO_KY |
 | Thời điểm mở lượt ký | `thoi_diem_mo` | DateTime | | Rỗng: chưa được phép ký |
 | Ngày ký | `ngay_ky` | DateTime | | |
 | Ngày từ chối | `ngay_tu_choi` | DateTime | | |
 | Lý do từ chối | `ly_do_tu_choi` | Text | | |
 | Chữ ký hiện hành | `chu_ky_hien_hanh` | ForeignKey (signing_signature) | | Phải thuộc đúng người ký này |
-| Ủy quyền từ người | `uy_quyen_tu` | ForeignKey (auth_user) | | |
-| Lý do ủy quyền | `ly_do_uy_quyen` | Text | | Bắt buộc khi ủy quyền |
-| Ngày ủy quyền | `ngay_uy_quyen` | DateTime | | |
-| Ủy quyền theo | `uy_quyen_theo` | ForeignKey (signing_delegation) | | Rỗng khi ủy quyền khẩn cấp hoặc không ủy quyền |
-| Hình thức ký | `hinh_thuc_ky` | Text (20) [KY_TRUC_TIEP, KT, TL, TUQ] | X | Mặc định KY_TRUC_TIEP; quyết định thể thức khối chữ ký |
 | Trang đặt chữ ký | `trang_ky` | Number | | |
 | Tọa độ X | `toa_do_x` | Number (thập phân) | | |
 | Tọa độ Y | `toa_do_y` | Number (thập phân) | | |
@@ -573,26 +554,6 @@ Ràng buộc: CHECK `loai_doi_tuong` thuộc luồng ký (request/attempt/signer
 
 Bảng trạng thái, không phải bảng bằng chứng: được cập nhật. Mọi sự kiện đặt/đổi/mở khóa/sai/khóa PIN ghi vào `signing_audit_log` (loại đối tượng `signing_key`).
 
-#### `signing_delegation` — Ủy quyền ký theo thời gian (NĐ 30/2020 Điều 13: ủy quyền có thời hạn và phạm vi)
-
-| Tên trường | Field | Kiểu dữ liệu | Bắt buộc | Ghi chú |
-|---|---|---|---|---|
-| ID | `id` | Number (auto) | | |
-| Người ủy quyền | `nguoi_uy_quyen` | ForeignKey (auth_user) | X | |
-| Người nhận ủy quyền | `nguoi_nhan` | ForeignKey (auth_user) | X | Thuộc danh sách người nhận hợp lệ của chức danh |
-| Từ thời điểm | `tu_ngay` | DateTime | X | |
-| Đến thời điểm | `den_ngay` | DateTime | X | Sau `tu_ngay` |
-| Hình thức ký | `hinh_thuc_ky` | Text (20) [KT, TL, TUQ] | X | |
-| Quy trình áp dụng | `quy_trinh` | ForeignKey (signing_process) | | Rỗng: mọi quy trình |
-| Lý do | `ly_do` | Text | X | |
-| Trạng thái | `trang_thai` | Text (20) [HIEU_LUC, DA_HUY] | X | Mặc định HIEU_LUC |
-| Người tạo | `create_by` | ForeignKey (auth_user) | X | Người ủy quyền, cấp trên trực tiếp hoặc quản trị |
-| Ngày tạo | `created_at` | DateTime (auto) | | |
-| Người cập nhật | `update_by` | ForeignKey (auth_user) | | |
-| Ngày cập nhật | `update_at` | DateTime (auto) | | |
-
-Ràng buộc: CHECK `den_ngay > tu_ngay`; CHECK `nguoi_uy_quyen <> nguoi_nhan`; không có hai ủy quyền `HIEU_LUC` chồng thời gian của cùng người ủy quyền trên cùng phạm vi (kiểm tra ở service). Không xóa cứng; hủy bằng `DA_HUY` kèm nhật ký.
-
 #### Phụ thuộc nhóm khác
 
 | Nhóm / Sheet | Field | Nội dung |
@@ -600,7 +561,7 @@ Ràng buộc: CHECK `den_ngay > tu_ngay`; CHECK `nguoi_uy_quyen <> nguoi_nhan`; 
 | Nhóm 7 — CBNV | `anh_chu_ky` | Image (PNG nền trong suốt, tối đa 2MB); ảnh chữ ký cá nhân trong hồ sơ |
 | Nhóm 2 — Văn bản | `document_type`, `van_ban_id` | CSDL chung có 3 bảng đến/đi/mật; Trình ký tham chiếu bằng cặp này, không FK. Cần Nhóm 2 xác nhận khóa chính từng bảng |
 | Nhóm 2 — Sổ văn bản đi | API cấp số | Cấp số, ký hiệu, ngày ban hành cho văn bản đã hoàn tất trình ký; chuyển trạng thái phát hành (mục 1.4) |
-| Nhóm 7 — Cơ cấu tổ chức | Cấp trên trực tiếp, người nhận ủy quyền hợp lệ | Dùng cho leo thang quá hạn (mục 3.5) và kiểm tra thẩm quyền tương đương khi ủy quyền |
+| Nhóm 7 — Cơ cấu tổ chức | Cấp trên trực tiếp | Dùng cho leo thang quá hạn (mục 3.5) |
 
 ### 5.3. Ràng buộc tổng hợp
 
@@ -652,8 +613,7 @@ TU_CHOI     -> (kết thúc)
 | `ky` | Người ký `CHO_KY`, `thoi_diem_mo` có giá trị, khóa `HOAT_DONG`, verify Ed25519 thành công | Người ký `DA_KY`; tạo chữ ký `HOP_LE` kèm snapshot ảnh; gán `chu_ky_hien_hanh`; tính `ky_tre_han`. Kiểm tra mở `KY_CHINH`, mở cấp sau, hoàn thành lượt trình. |
 | `tu_choi` | Lý do bắt buộc | Người ký và lượt trình `TU_CHOI`; yêu cầu `TU_CHOI` (kết thúc) |
 | `yeu_cau_sua` | Lý do bắt buộc | Người ký và lượt trình `YEU_CAU_SUA`; cấp đang mở `TAM_DUNG`; mở thread |
-| `uy_quyen` | Người thực hiện là cấp trên trực tiếp hoặc quản trị; người ký `CHO_KY`; lý do bắt buộc; người nhận thuộc danh sách hợp lệ và chưa có trong cấp | Đổi `nguoi_ky`; gán `uy_quyen_tu`, `ngay_uy_quyen`, `ly_do_uy_quyen`, `hinh_thuc_ky` |
-| `thu_hoi` | Cấp của người ký còn `DANG_KY`, lượt trình chưa hoàn thành, người ký `DA_KY`, không phá quy tắc chặn ký nháy | Ghi nhật ký; `chu_ky_hien_hanh` rỗng; người ký về `CHO_KY` |
+| `thu_hoi` | Cấp của người ký còn `DANG_KY`, lượt trình chưa hoàn thành, người ký `DA_KY` | Ghi nhật ký; `chu_ky_hien_hanh` rỗng; người ký về `CHO_KY` |
 
 ## 7. API dự kiến
 
@@ -663,7 +623,7 @@ Prefix `/api/v1/`. Tên đoạn đường dẫn theo convention tiếng Việt �
 
 - `GET /signing/quy-trinh/`: danh sách theo phạm vi/quyền.
 - `POST /signing/quy-trinh/`: tạo quy trình `NHAP`.
-- `GET /signing/quy-trinh/{id}/`: chi tiết kèm cấp và người ký (`vai_tro_ky`, `chan_ky_chinh`).
+- `GET /signing/quy-trinh/{id}/`: chi tiết kèm cấp và người ký (`vai_tro_ky`).
 - `PATCH /signing/quy-trinh/{id}/`: chỉ khi `NHAP`.
 - `POST /signing/quy-trinh/{id}/kich-hoat/`
 - `POST /signing/quy-trinh/{id}/ngung/`
@@ -690,7 +650,7 @@ Prefix `/api/v1/`. Tên đoạn đường dẫn theo convention tiếng Việt �
 Đã triển khai ở Phase 8 (#80), đường dẫn theo hồ sơ (người ký được xác định từ tài khoản đăng nhập; cấp mở tuần tự nên mỗi người có tối đa một dòng đang mở). Quyền `sign_trinhky`, bắt buộc `Idempotency-Key`:
 - `POST /signing/trinh-ky/{id}/ky/`: `khoa_ky`, `hash_tai_lieu` (hex 64), `chu_ky_so` (Base64 Ed25519 trên raw bytes của SHA-256), `ghi_chu_ky` (tùy chọn). Kiểm: lượt `CHO_KY`, người ký đã mở và chờ ký, mã băm khớp lượt, khóa thuộc người ký và đang hoạt động trong hiệu lực, chữ ký verify được. Ghi chữ ký `HOP_LE`, `ky_tre_han`/`so_giay_tre` theo `han_xu_ly` của cấp; mở ký chính khi ký nháy chặn ký đủ; đóng cấp khi mọi người ký trong cấp đã ký; mở cấp sau hoặc hoàn thành lượt và hồ sơ.
 - `POST /signing/trinh-ky/{id}/tu-choi/`: "Không đồng ý ban hành", `ly_do_tu_choi` bắt buộc; chỉ người ký đang được mở; lượt và hồ sơ `TU_CHOI` (kết thúc).
-- `POST /signing/trinh-ky/{id}/thu-hoi/`: khi cấp của người ký còn `DANG_KY`; ký nháy chặn không thu hồi khi ký chính cùng cấp đã ký; thu hồi ký nháy chặn khóa lại ký chính đã mở mà chưa ký. Chữ ký cũ giữ nguyên, ký lại tạo bản ghi mới.
+- `POST /signing/trinh-ky/{id}/thu-hoi/`: khi cấp của người ký còn `DANG_KY`. Chữ ký cũ giữ nguyên, ký lại tạo bản ghi mới.
 - Đồng thời: mọi hành động khóa dòng lượt trình trước khi xử lý; thao tác lặp cùng khóa trả kết quả lần trước.
 - Ảnh chữ ký cá nhân để sau MVP (Nhóm 7 chốt ở #67 mục 2), `vi_tri_anh_chu_ky` để trống ở MVP; tệp hoàn tất in khối chữ thay ảnh.
 
@@ -700,11 +660,6 @@ Trả lại để sửa, đã triển khai ở lõi Phase 9 (#80):
 - `POST /signing/trinh-ky/{id}/trao-doi/`: `noi_dung`; chỉ người tạo hồ sơ và người yêu cầu sửa, khi thread đang mở và hồ sơ còn `CHO_KY`.
 - `POST /signing/trinh-ky/{id}/giai-quyet/` (multipart `tep`, tùy chọn `vi_tri_ky` dạng chuỗi JSON theo id dòng người ký lượt hiện hành; mặc định giữ vị trí lượt trước, tệp mới ít trang hơn thì báo lỗi): người tạo hồ sơ (quyền `send_trinhky`, `Idempotency-Key`) tải bản sửa; server băm, tăng `phien_ban_van_ban`, thread `DA_GIAI_QUYET`, tạo lượt mới (`luot_truoc`) cùng cấp và người ký của lượt cũ, mở cấp đầu; toàn bộ các cấp ký lại. Chữ ký lượt cũ giữ làm lịch sử, không dùng cho tệp mới (mã băm khác). Có người ký không còn hoạt động thì lỗi `khong_xac_dinh_duoc_nguoi_ky`, chưa lưu tệp.
 
-Ủy quyền khẩn cấp, đã triển khai (23/10/2026, [`du-lieu-mau-va-tinh-trang-nghiep-vu.md`](du-lieu-mau-va-tinh-trang-nghiep-vu.md) mục 4):
-- `POST /signing/trinh-ky/{id}/uy-quyen/`: `dong_nguoi_ky`, `nguoi_nhan`, `ly_do_uy_quyen` bắt buộc; quyền `delegate_trinhky` kèm vai trò quản trị, Ban Giám đốc hoặc Trưởng phòng cùng đơn vị người ký (thay cho "cấp trên trực tiếp" khi Nhóm 7 chưa có dữ liệu này); `Idempotency-Key`. Chưa ghi `hinh_thuc_ky` vì DDL chưa có cột.
-
-Ngoài MVP (#80 mục 8), giữ trong roadmap:
-- `GET|POST /signing/uy-quyen/`, `POST /signing/uy-quyen/{id}/huy/`: ủy quyền theo thời gian.
 
 ### 7.4. Khóa, nhật ký, bằng chứng tổng hợp
 
@@ -751,7 +706,6 @@ Ngoài MVP (#80 mục 8), giữ trong roadmap:
   - `view_signing_audit`
 - Ánh xạ từ tên trong bản nháp cũ: `xem_trinh_ky` → `view_trinhky`, `tao_trinh_ky` → `add_trinhky`, `quan_ly_quy_trinh_ky` → `manage_signing_process`, `gui_trinh_ky` → `send_trinhky`, `ky_trinh_ky` → `sign_trinhky`, `uy_quyen_trinh_ky` → `delegate_trinhky`, `huy_trinh_ky` → `cancel_trinhky`, `xem_nhat_ky_trinh_ky` → `view_signing_audit`.
 - `manage_signing_process` kiểm tra kèm phạm vi: quy trình `CONG_TY` cần quản trị; quy trình `PHONG_BAN` cần là lãnh đạo của `don_vi_ap_dung` hoặc quản trị (mục 3.1). Cần nhóm CSDL cấp thêm quyền này cho nhóm TP.
-- `delegate_trinhky` chỉ dùng cho cấp trên trực tiếp của người ký và quản trị; người ký không tự ủy quyền từng hồ sơ.
 - Quyền kiểm tra ở API/service; frontend chỉ hỗ trợ UX.
 
 ## 9. Hạn xử lý, thông báo và Celery
@@ -762,7 +716,6 @@ Ngoài MVP (#80 mục 8), giữ trong roadmap:
 - Tạo thông báo với `khoa_chong_gui_trung`; worker retry không gửi trùng.
 - Mốc mặc định theo mục 3.5 (trước 24h, tại hạn, nhắc lặp 24h, leo thang 48h); `cau_hinh_nhac_han` của quy trình được ưu tiên.
 - Leo thang gửi cấp trên trực tiếp của người ký và người tạo; chỉ tạo thông báo và nhật ký; không đổi trạng thái, không chặn ký muộn, không tự đổi người ký, không tự từ chối.
-- Áp dụng ủy quyền theo thời gian khi mở cấp ký (đồng bộ trong transaction mở cấp, không chỉ trong task nền).
 - Quét bản ghi thông báo `CHO_GUI` bị sót (outbox, mục 4.1).
 - Chuyển khóa quá `ngay_het_han` sang `HET_HAN`.
 
@@ -786,7 +739,7 @@ Ngoài MVP (#80 mục 8), giữ trong roadmap:
 
 ### Pha 1 — Schema và quản lý quy trình
 
-- Migration cho quy trình, cấp, người ký cấu hình (`vai_tro_ky`, `chan_ky_chinh`), nhật ký.
+- Migration cho quy trình, cấp, người ký cấu hình (`vai_tro_ky`), nhật ký.
 - Tạo/kích hoạt/ngừng/nhân bản quy trình; phạm vi `PHONG_BAN`/`CONG_TY`.
 - Chặn sửa quy trình đã kích hoạt.
 - Test: unique, quy trình không có cấp, cấp không có người ký, chức vụ trống, CHECK người ký XOR chức vụ, phân quyền.
@@ -794,7 +747,7 @@ Ngoài MVP (#80 mục 8), giữ trong roadmap:
 ### Pha 2 — Yêu cầu, lượt trình, snapshot người ký
 
 - Tạo nháp, gửi, snapshot quy trình/văn bản/người ký/vị trí ký.
-- Mở cấp tuần tự/song song, hoàn thành; chặn ký chính theo ký nháy.
+- Mở cấp tuần tự/song song, hoàn thành.
 - Khóa dòng và chống trùng.
 - Test đồng thời: hai người ký cùng lúc, gửi lặp, ký lặp.
 
@@ -803,12 +756,11 @@ Ngoài MVP (#80 mục 8), giữ trong roadmap:
 - Challenge/proof-of-possession (hiện tại chuỗi cố định; Redis TTL khi chuyển sang challenge ngẫu nhiên, mục 3.4), xoay vòng, thu hồi, hết hạn.
 - Verify Ed25519 trên raw digest.
 - Lưu chữ ký bất biến (`ghi_chu_ky`, `ky_tre_han`, snapshot ảnh), con trỏ `chu_ky_hien_hanh`, bằng chứng chuẩn hóa.
-- Test: lệch mã băm, khóa không hoạt động, chữ ký sai, khóa cũ verify lịch sử, thu hồi/ký lại song song, ký nháy không thu hồi được sau khi ký chính đã ký, không xóa được chữ ký/bằng chứng.
+- Test: lệch mã băm, khóa không hoạt động, chữ ký sai, khóa cũ verify lịch sử, thu hồi/ký lại song song, không xóa được chữ ký/bằng chứng.
 
-### Pha 4 — Chỉnh sửa, ủy quyền, từ chối, hủy, hạn xử lý
+### Pha 4 — Chỉnh sửa, từ chối, hủy, hạn xử lý
 
 - Thread/message, tạm dừng lượt trình, giải quyết và gửi lại toàn bộ bằng lượt mới.
-- Ủy quyền khẩn cấp có nhật ký; chặn ủy quyền cho người đã có trong cấp.
 - Từ chối/xem xét lại/hủy/quản trị hủy thay.
 - Hạn UTC, lịch nhắc, escalation; ký muộn có gắn cờ trễ hạn.
 - Test: nhiều người cùng yêu cầu sửa; không có gửi lại một phần; quá hạn vẫn `CHO_KY` và ký muộn được.
@@ -832,12 +784,10 @@ Ngoài MVP (#80 mục 8), giữ trong roadmap:
 
 ### Luồng ký
 
-- Tạo được quy trình nhiều cấp, mỗi cấp nhiều người ký, phân biệt `KY_NHAY` và `KY_CHINH`.
-- `KY_CHINH` chỉ mở khi mọi `KY_NHAY` chặn trong cấp đã ký.
+- Tạo được quy trình nhiều cấp, mỗi cấp nhiều người ký.
 - Cấp sau không mở khi cấp hiện tại chưa hoàn thành; người trong cùng cấp ký song song và đều phải ký.
 - Từ chối kết thúc yêu cầu; trình lại tạo yêu cầu mới có `ho_so_goc`.
 - Chức vụ có nhiều người thì bắt người tạo chọn khi gửi.
-- Ủy quyền (theo thời gian hoặc khẩn cấp) không hủy lượt trình và ghi đúng `hinh_thuc_ky`.
 - Quy trình đã kích hoạt không sửa được; thay đổi đi qua nhân bản phiên bản.
 - Chức vụ trống chặn gửi.
 
@@ -858,7 +808,7 @@ Ngoài MVP (#80 mục 8), giữ trong roadmap:
 - Private key không xuất hiện trong request, CSDL, log hoặc bằng chứng tổng hợp.
 - Bản bọc private key không lên server; `k_srv` chỉ trả sau khi xác minh PIN; sai PIN quá ngưỡng thì khóa và có nhật ký; sai PIN không lộ thông tin về PIN.
 - Chữ ký verify được từ khóa công khai và raw SHA-256 digest.
-- Xoay vòng/thu hồi khóa, thu hồi chữ ký, từ chối, yêu cầu sửa, ủy quyền, hủy, quản trị hủy thay đều có nhật ký, kể cả sự kiện không gắn yêu cầu.
+- Xoay vòng/thu hồi khóa, thu hồi chữ ký, từ chối, yêu cầu sửa, hủy, quản trị hủy thay đều có nhật ký, kể cả sự kiện không gắn yêu cầu.
 - Bằng chứng chuẩn hóa kiểm tra độc lập được theo lượt trình; `DA_CHOT` bất biến.
 - Tệp hoàn tất mang nhận diện "bản duyệt nội bộ, chưa phát hành"; bằng chứng tổng hợp xác minh lại được (mã băm, chữ ký Ed25519, tệp gốc, tệp hoàn tất, ảnh chữ ký).
 - Phát hành pháp lý bằng chứng thư số CA nằm ngoài MVP (#80 mục 8).
@@ -894,7 +844,7 @@ Nếu repo có chuẩn lint/type check thì bổ sung đúng lệnh của repo t
 - `[RỦI RO]` Xác thực khi ký phụ thuộc thiết kế PIN ở mục 3.4; chưa triển khai. Hiện tại ký chỉ dựa vào phiên đăng nhập và khóa phía client.
 - `[RỦI RO]` Chống chối bỏ nội bộ chỉ đáng tin ở mức tin cậy vào CSDL (khóa công khai và chữ ký đều lưu trong CSDL). Giảm bằng chuỗi hash nhật ký hoặc dấu thời gian bên thứ ba; chưa thuộc MVP.
 - `[CẦN XÁC NHẬN]` Contract cấp số văn bản đi và chuyển trạng thái phát hành với Nhóm 2 (mục 1.4), trước Phase 10.
-- `[CẦN XÁC NHẬN]` Danh sách cấp trên trực tiếp và người nhận ủy quyền hợp lệ theo chức danh (Nhóm 7), trước Phase 9.
+- `[CẦN XÁC NHẬN]` Danh sách cấp trên trực tiếp (Nhóm 7), trước Phase 9.
 - `[CHƯA CHỐT]` Luồng tự do (không theo quy trình mẫu): ngoài MVP.
 - `[ĐÃ CHỐT]` Văn bản mật đã bỏ (GVHD). Khách hàng là doanh nghiệp bảo hiểm; tài liệu nội bộ hạn chế (`pham_vi = 'HAN_CHE'`) không ký và không đi qua trình ký (mục 3.3). Căn cứ bảo vệ dữ liệu: Luật Bảo vệ dữ liệu cá nhân 2025 (Luật số 91/2025/QH15).
 - `[CHƯA CHỐT]` Thu hồi hoặc thay thế sau khi lượt trình `HOAN_THANH`; nhiều tệp đính kèm; vai trò xem/góp ý không ký.
@@ -904,8 +854,8 @@ Nếu repo có chuẩn lint/type check thì bổ sung đúng lệnh của repo t
 
 - Migration áp dụng được trên database test sạch.
 - FK/retention chặn xóa yêu cầu/lượt trình đã có lịch sử và chặn cascade xóa chữ ký, thread/message, nhật ký, bằng chứng `DA_CHOT`.
-- API/service đã kiểm tra chuyển trạng thái, quyền, quyền sở hữu, ủy quyền, chống trùng.
-- Unit/integration test bao phủ: mở cấp tuần tự, nhiều người ký song song trong cấp, chặn ký nháy - ký chính, từ chối, yêu cầu sửa, gửi lại toàn bộ, ủy quyền, thu hồi/ký lại giữ lịch sử, ký muộn, ký đồng thời, phẳng hóa không đổi tệp gốc.
+- API/service đã kiểm tra chuyển trạng thái, quyền, quyền sở hữu, chống trùng.
+- Unit/integration test bao phủ: mở cấp tuần tự, nhiều người ký song song trong cấp, từ chối, yêu cầu sửa, gửi lại toàn bộ, thu hồi/ký lại giữ lịch sử, ký muộn, ký đồng thời, phẳng hóa không đổi tệp gốc.
 - Test mật mã: lệch mã băm, ranh giới private key, xoay vòng khóa, challenge dùng một lần (khi áp dụng challenge ngẫu nhiên), PIN và khóa theo số lần sai (Phase 6).
 - Test outbox/Celery: retry không gửi trùng.
 - Không sửa hoặc stage file ngoài phạm vi backend Trình ký.

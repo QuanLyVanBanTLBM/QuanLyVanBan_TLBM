@@ -10,17 +10,6 @@ User = settings.AUTH_USER_MODEL
 DB_NOW = models.Func(function="now", output_field=models.DateTimeField())
 
 
-class SigningDelegationRole(models.Model):
-    """Chức danh được phép nhận ủy quyền từ một chức danh ký."""
-
-    chuc_vu_giao = models.ForeignKey("accounts.Position", on_delete=models.PROTECT, related_name="+")
-    chuc_vu_nhan = models.ForeignKey("accounts.Position", on_delete=models.PROTECT, related_name="+")
-
-    class Meta:
-        db_table = "signing_delegation_role"
-        constraints = [models.UniqueConstraint(fields=["chuc_vu_giao", "chuc_vu_nhan"], name="uq_signing_delegation_role")]
-
-
 def sha256_or_null(field):
     """CHECK: giá trị rỗng (NULL) hoặc SHA-256 hex 64 ký tự thường."""
     return Q(**{f"{field}__isnull": True}) | Q(**{f"{field}__regex": r"^[0-9a-f]{64}$"})
@@ -150,7 +139,6 @@ class SigningProcessStepSigner(models.Model):
     # Chỉ dùng khi cấu hình theo chức vụ; rỗng khi cấu hình theo tài khoản (#80 Phase 7)
     pham_vi_chuc_vu = models.CharField(max_length=20, choices=enums.PhamViChucVu.choices, null=True, blank=True)
     vai_tro_ky = models.CharField(max_length=20, choices=enums.VaiTroKy.choices, db_default="KY_CHINH", default=enums.VaiTroKy.KY_CHINH)
-    chan_ky_chinh = models.BooleanField(db_default=True, default=True)
     thu_tu = models.PositiveSmallIntegerField()
     created_at = models.DateTimeField(auto_now_add=True, db_default=DB_NOW)
 
@@ -299,7 +287,6 @@ class SigningRequestStepSigner(models.Model):
     ten_nguoi_ky = models.CharField(max_length=255)
     ten_chuc_vu = models.CharField(max_length=255, null=True, blank=True)
     vai_tro_ky = models.CharField(max_length=20, choices=enums.VaiTroKy.choices)
-    chan_ky_chinh = models.BooleanField(db_default=True, default=True)
     trang_thai = models.CharField(
         max_length=20, choices=enums.TrangThaiNguoiKy.choices, db_default="CHO_KY", default=enums.TrangThaiNguoiKy.CHO_KY
     )
@@ -311,12 +298,6 @@ class SigningRequestStepSigner(models.Model):
     chu_ky_hien_hanh = models.ForeignKey(
         "SigningSignature", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
-    uy_quyen_tu = models.ForeignKey(User, null=True, blank=True, on_delete=models.PROTECT, related_name="+")
-    chuc_vu_goc_uy_quyen = models.ForeignKey(
-        "accounts.Position", null=True, blank=True, on_delete=models.PROTECT, related_name="+"
-    )
-    ly_do_uy_quyen = models.TextField(blank=True, db_default="", default="")
-    ngay_uy_quyen = models.DateTimeField(null=True, blank=True)
     trang_ky = models.PositiveIntegerField(null=True, blank=True)
     toa_do_x = models.DecimalField(max_digits=10, decimal_places=4, null=True, blank=True)
     toa_do_y = models.DecimalField(max_digits=10, decimal_places=4, null=True, blank=True)
@@ -329,10 +310,6 @@ class SigningRequestStepSigner(models.Model):
         db_table = "signing_request_step_signer"
         constraints = [
             models.UniqueConstraint(fields=["buoc_ky", "nguoi_ky"], name="uq_signing_request_step_signer_nguoi_ky"),
-            models.CheckConstraint(
-                condition=Q(uy_quyen_tu__isnull=True) | ~Q(ly_do_uy_quyen=""),
-                name="chk_signing_signer_ly_do_uy_quyen",
-            ),
         ]
 
 

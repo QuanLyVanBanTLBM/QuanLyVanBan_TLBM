@@ -24,10 +24,9 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import HanhDong from '@components/signing/HanhDong';
 import TaiLieuPanel from '@components/signing/TaiLieuPanel';
-import TienTrinh from '@components/signing/TienTrinh';
 import { signingApi } from '@lib/signing/api';
 import { SigningContext } from '@lib/signing/hooks';
-import type { HoSoChiTiet, LuotTrinh, NguoiKyLuot, NguoiDungHienTai, QuyTrinh } from '@lib/signing/types';
+import type { HoSoChiTiet, NguoiDungHienTai, QuyTrinh } from '@lib/signing/types';
 import DanhSachPage from './DanhSachPage';
 import QuyTrinhPage from './QuyTrinhPage';
 import SigningModule from './SigningModule';
@@ -271,23 +270,6 @@ describe('HanhDong', () => {
   });
 });
 
-function nguoiKy(sua: Partial<NguoiKyLuot>): NguoiKyLuot {
-  return {
-    id: 21, nguoi_ky: 9, ten_nguoi_ky: 'Giám đốc', ten_chuc_vu: null, vai_tro_ky: 'KY_CHINH', chan_ky_chinh: true,
-    trang_thai: 'CHO_KY', thoi_diem_mo: '2026-10-07T01:00:00Z', ngay_ky: null, ngay_tu_choi: null, ly_do_tu_choi: '',
-    uy_quyen_tu: null, ten_nguoi_uy_quyen: null, ly_do_uy_quyen: '', ngay_uy_quyen: null, trang_ky: null,
-    toa_do_x: null, toa_do_y: null, chieu_rong_khung: null, chieu_cao_khung: null, chu_ky: null, ...sua,
-  };
-}
-
-function luotCo(nguoi: NguoiKyLuot[]): LuotTrinh {
-  return {
-    ...hoSo().luot_trinh[0],
-    cap_ky: [{ id: 2, cap_ky: 1, ten_cap_ky: 'Duyệt', thu_tu: 1, trang_thai: 'DANG_KY', han_xu_ly: null,
-      thoi_diem_mo: null, thoi_diem_hoan_thanh: null, nguoi_ky: nguoi }],
-  };
-}
-
 describe('Danh sách: trạng thái trả lại, quá hạn', () => {
   it('hồ sơ chỉ hiển thị duy nhất một trạng thái: trả sửa hiện "Đang trả lại để sửa", quá hạn hiện "Quá hạn"', async () => {
     api.danhSach.mockResolvedValue(trang([
@@ -297,20 +279,6 @@ describe('Danh sách: trạng thái trả lại, quá hạn', () => {
     boc(<DanhSachPage hop="tat_ca" />);
     expect((await screen.findAllByText('Chờ người trình sửa')).length).toBe(2);
     expect(screen.getAllByText('Quá hạn').length).toBe(3);
-  });
-});
-
-describe('Dòng người ký đã được ủy quyền từ trước', () => {
-  it('không còn nút Ủy quyền ký, kể cả khi tài khoản còn quyền delegate_trinhky', () => {
-    const luot = luotCo([nguoiKy({})]);
-    boc(<HanhDong hoSo={hoSo({ luot_trinh: [luot] })} luot={luot} maBamTepDangXem={null} onXong={() => undefined} />,
-      { ...TOI, id: 1, quyen: { ...TOI.quyen, delegate_trinhky: true } });
-    expect(screen.queryByRole('button', { name: /Ủy quyền ký/ })).not.toBeInTheDocument();
-  });
-
-  it('tiến trình hiện người ký thay', () => {
-    boc(<TienTrinh luot={luotCo([nguoiKy({ ten_nguoi_ky: 'Phó giám đốc', ten_nguoi_uy_quyen: 'Giám đốc' })])} />);
-    expect(screen.getByText('Ký thay Giám đốc')).toBeInTheDocument();
   });
 });
 
@@ -354,42 +322,12 @@ describe('QuyTrinhPage', () => {
     await waitFor(() => expect(within(o).getByRole('option', { name: 'Trưởng phòng' })).toBeInTheDocument());
   });
 
-  it('quy trình cũ phải bỏ người ký nháy trước khi lưu, vẫn giữ người ký chính', async () => {
-    const nhap: QuyTrinh = {
-      ...QT, id: 2, trang_thai: 'NHAP', so_ho_so: 0, cap_ky: [{
-        id: 9, cap_ky: 1, ten_cap_ky: 'Duyệt', thu_tu: 1, don_vi_id: null, so_gio_xu_ly: null,
-        nguoi_ky: [
-          { id: 3, nguoi_ky: 7, ten_nguoi_ky: 'Người nháy', chuc_vu_id: null, ten_chuc_vu: null,
-            pham_vi_chuc_vu: null, vai_tro_ky: 'KY_NHAY', chan_ky_chinh: true, thu_tu: 1 },
-          { id: 4, nguoi_ky: 8, ten_nguoi_ky: 'Người ký chính', chuc_vu_id: null, ten_chuc_vu: null,
-            pham_vi_chuc_vu: null, vai_tro_ky: 'KY_CHINH', chan_ky_chinh: true, thu_tu: 2 },
-        ],
-      }],
-    };
-    api.quyTrinh.mockResolvedValue([nhap]);
-    api.donVi.mockResolvedValue([{ id: 4, ten: 'Phòng Kế hoạch' }]);
-    api.suaQuyTrinh.mockResolvedValue(nhap);
-    boc(<QuyTrinhPage />, TP);
-    fireEvent.click(await screen.findByRole('button', { name: 'Sửa quy trình' }));
-    const hop = await screen.findByRole('dialog', { name: 'Sửa quy trình' });
-    expect(within(hop).getByText(/Quy trình này còn cấu hình ký cũ/)).toBeInTheDocument();
-    expect(within(hop).getByRole('button', { name: /Lưu/ })).toBeDisabled();
-    expect(within(hop).queryByRole('combobox', { name: /Vai trò ký/ })).not.toBeInTheDocument();
-    fireEvent.click(within(hop).getAllByRole('button', { name: 'Bỏ người ký' })[0]);
-    expect(within(hop).getByRole('button', { name: /Lưu/ })).toBeEnabled();
-    fireEvent.click(within(hop).getByRole('button', { name: /Lưu/ }));
-    await waitFor(() => expect(api.suaQuyTrinh).toHaveBeenCalledTimes(1));
-    expect(api.suaQuyTrinh.mock.calls[0][1]).toMatchObject({
-      cap_ky: [{ nguoi_ky: [{ nguoi_ky: 8, vai_tro_ky: 'KY_CHINH' }] }],
-    });
-  });
-
   it('xem chi tiết quy trình; chỉ nháp có Sửa; chưa có hồ sơ thì Xóa được (phải xác nhận), có hồ sơ thì Xóa bị khóa', async () => {
     const nhap: QuyTrinh = {
       ...QT, id: 2, trang_thai: 'NHAP', ten_quy_trinh: 'Quy trình nháp', cap_ky: [{
         id: 9, cap_ky: 1, ten_cap_ky: 'Trưởng phòng', thu_tu: 1, don_vi_id: null, so_gio_xu_ly: 24, nguoi_ky: [{
           id: 3, nguoi_ky: 7, ten_nguoi_ky: 'Trần Trưởng', chuc_vu_id: null, ten_chuc_vu: null, pham_vi_chuc_vu: null,
-          vai_tro_ky: 'KY_CHINH', chan_ky_chinh: true, thu_tu: 1,
+          vai_tro_ky: 'KY_CHINH', thu_tu: 1,
         }],
       }],
       so_ho_so: 0,
@@ -772,7 +710,7 @@ describe('QuyTrinhPage tên cán bộ theo chức danh và đơn vị', () => {
       pham_vi: 'CONG_TY', don_vi_ap_dung_id: null, ten_don_vi_ap_dung: null, so_ho_so: 0, cap_ky: [{
         id: 1, cap_ky: 1, ten_cap_ky: 'Duyệt', thu_tu: 1, don_vi_id: null, so_gio_xu_ly: null, nguoi_ky: [{
           id: 2, nguoi_ky: null, ten_nguoi_ky: null, chuc_vu_id: 2, ten_chuc_vu: 'Giám đốc', pham_vi_chuc_vu: 'TOAN_CO_QUAN',
-          vai_tro_ky: 'KY_CHINH', chan_ky_chinh: true, thu_tu: 1,
+          vai_tro_ky: 'KY_CHINH', thu_tu: 1,
         }],
       }],
     };
@@ -835,7 +773,6 @@ describe('Chọn cấp ký từ danh mục chức danh CBNV (#297)', () => {
           ten_chuc_vu: null,
           pham_vi_chuc_vu: null,
           vai_tro_ky: 'KY_CHINH',
-          chan_ky_chinh: true,
           thu_tu: 1,
         }],
       }],

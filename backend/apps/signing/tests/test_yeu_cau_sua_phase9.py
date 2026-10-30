@@ -89,8 +89,8 @@ class YeuCauSuaTests(KyBase):
     def test_rules(self):
         r = self.yeu_cau_sua(self.ky1, tieu_de="")
         self.assertEqual((r.status_code, r.data["code"]), (400, "du_lieu_khong_hop_le"))
-        r = self.yeu_cau_sua(self.ky2)  # ký chính chưa mở
-        self.assertEqual((r.status_code, r.data["code"]), (409, "chua_den_luot_ky"))
+        r = self.yeu_cau_sua(self.ky3)  # cấp 2 chưa mở
+        self.assertEqual((r.status_code, r.data["code"]), (403, "khong_phai_nguoi_ky_dang_mo"))
         r = self.giai_quyet()
         self.assertEqual((r.status_code, r.data["code"]), (409, "khong_co_yeu_cau_sua_dang_mo"))
         self.assertEqual(self.tin_nhan(self.tao, "x").data["code"], "khong_co_trao_doi_dang_mo")

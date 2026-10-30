@@ -1196,7 +1196,6 @@ CREATE TABLE signing_process_step_signer (
     chuc_vu_id BIGINT REFERENCES accounts_position (id) ON DELETE RESTRICT,
     pham_vi_chuc_vu VARCHAR(20), -- [P7] DON_VI_NGUOI_TAO | DON_VI_CO_DINH | TOAN_CO_QUAN; chỉ dùng khi cấu hình theo chức vụ
     vai_tro_ky VARCHAR(20) NOT NULL DEFAULT 'KY_CHINH',
-    chan_ky_chinh BOOLEAN NOT NULL DEFAULT true,
     thu_tu SMALLINT NOT NULL CHECK (thu_tu >= 0),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT chk_signing_process_step_signer_mot_doi_tuong CHECK (
@@ -1207,16 +1206,6 @@ CREATE TABLE signing_process_step_signer (
 
 CREATE INDEX idx_signing_process_step_signer_buoc ON signing_process_step_signer (buoc_quy_trinh_id);
 CREATE INDEX idx_signing_process_step_signer_nguoi ON signing_process_step_signer (nguoi_ky_id);
-
--- Chức vụ được phép ký thay cho từng chức vụ của người ký.
-CREATE TABLE signing_delegation_role (
-    id BIGSERIAL PRIMARY KEY,
-    chuc_vu_giao_id BIGINT NOT NULL REFERENCES accounts_position (id) ON DELETE RESTRICT,
-    chuc_vu_nhan_id BIGINT NOT NULL REFERENCES accounts_position (id) ON DELETE RESTRICT,
-    CONSTRAINT uq_signing_delegation_role UNIQUE (chuc_vu_giao_id, chuc_vu_nhan_id)
-);
-CREATE INDEX idx_signing_delegation_role_giao ON signing_delegation_role (chuc_vu_giao_id);
-CREATE INDEX idx_signing_delegation_role_nhan ON signing_delegation_role (chuc_vu_nhan_id);
 
 -- 9.4. Phiếu yêu cầu trình ký
 -- Issue #47 P0.1: Bổ sung document_type document_kind NOT NULL và index (document_type, document_id)
@@ -1317,7 +1306,7 @@ CREATE INDEX idx_signing_request_step_buoc_quy_trinh ON signing_request_step (bu
 CREATE INDEX idx_signing_request_step_luot_trinh ON signing_request_step (luot_trinh_id);
 CREATE INDEX idx_signing_request_step_hanxuly ON signing_request_step (han_xu_ly); -- Issue #47 P2.12
 
--- 9.7. Người ký thực tế trong cấp ký (Tọa độ box ký, ảnh chữ ký, ủy quyền)
+-- 9.7. Người ký thực tế trong cấp ký (Tọa độ box ký, ảnh chữ ký)
 -- Issue #47 P1.9: Cho phép NULL ở ten_chuc_vu và khoa_chong_trung_thao_tac khi tạo nháp
 CREATE TABLE signing_request_step_signer (
     id BIGSERIAL PRIMARY KEY,
@@ -1327,17 +1316,12 @@ CREATE TABLE signing_request_step_signer (
     ten_nguoi_ky VARCHAR(255) NOT NULL,
     ten_chuc_vu VARCHAR(255), -- Cho phép NULL ở bản nháp ban đầu
     vai_tro_ky VARCHAR(20) NOT NULL,
-    chan_ky_chinh BOOLEAN NOT NULL DEFAULT true,
     trang_thai VARCHAR(20) NOT NULL DEFAULT 'CHO_KY',
     thoi_diem_mo TIMESTAMPTZ,
     ngay_ky TIMESTAMPTZ,
     ngay_tu_choi TIMESTAMPTZ,
     ly_do_tu_choi TEXT NOT NULL DEFAULT '',
     chu_ky_hien_hanh_id BIGINT, -- Khóa ngoại trỏ sang signing_signature thêm sau
-    uy_quyen_tu_id BIGINT REFERENCES accounts_employee (id) ON DELETE RESTRICT,
-    chuc_vu_goc_uy_quyen_id BIGINT REFERENCES accounts_position (id) ON DELETE RESTRICT,
-    ly_do_uy_quyen TEXT NOT NULL DEFAULT '',
-    ngay_uy_quyen TIMESTAMPTZ,
     trang_ky INTEGER CHECK (trang_ky >= 0),
     toa_do_x NUMERIC(10, 4),
     toa_do_y NUMERIC(10, 4),
@@ -1345,14 +1329,11 @@ CREATE TABLE signing_request_step_signer (
     chieu_cao_khung NUMERIC(10, 4),
     khoa_chong_trung_thao_tac VARCHAR(255), -- Cho phép NULL ở bản nháp ban đầu
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT uq_signing_request_step_signer_nguoi_ky UNIQUE (buoc_ky_id, nguoi_ky_id),
-    CONSTRAINT chk_signing_signer_ly_do_uy_quyen CHECK (uy_quyen_tu_id IS NULL OR NOT (ly_do_uy_quyen = ''))
+    CONSTRAINT uq_signing_request_step_signer_nguoi_ky UNIQUE (buoc_ky_id, nguoi_ky_id)
 );
 
 CREATE INDEX idx_signing_request_step_signer_buoc ON signing_request_step_signer (buoc_ky_id);
 CREATE INDEX idx_signing_request_step_signer_nguoi ON signing_request_step_signer (nguoi_ky_id);
-CREATE INDEX idx_signing_request_step_signer_uy_quyen ON signing_request_step_signer (uy_quyen_tu_id);
-CREATE INDEX idx_signing_request_step_signer_chuc_vu_goc ON signing_request_step_signer (chuc_vu_goc_uy_quyen_id);
 
 -- 9.8. Quản lý Khóa ký số (Zero-Knowledge: Backend tuyệt đối không lưu private key)
 CREATE TABLE signing_key (

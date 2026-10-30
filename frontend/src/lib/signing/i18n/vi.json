@@ -59,7 +59,6 @@
     "HOAN_THANH": "Đã xong"
   },
   "vaiTro": {
-    "KY_NHAY": "Vai trò ký cũ (không hỗ trợ)",
     "KY_CHINH": "Ký chính"
   },
   "phamVi": {
@@ -225,8 +224,7 @@
     "banLuot": "Bản trình ký",
     "maBam": "Mã kiểm tra tệp",
     "bangChungJson": "Tải bằng chứng",
-    "xemChiTiet": "Xem chi tiết",
-    "uyQuyenTu": "Ký thay {ten}"
+    "xemChiTiet": "Xem chi tiết"
   },
   "hanhDong": {
     "kyDuyet": "Ký duyệt",
@@ -255,7 +253,7 @@
     "thaFileKhoaVaoDay": "Thả file khóa ký vào đây để ký",
     "thaFileKhoaGhiChu": "Hệ thống sẽ nạp file khóa (.tlbmkey) ngay lập tức",
     "fileKhoaGhiChu": "Tải lên file khóa (.tlbmkey) đã xuất ở trang Khóa ký; bỏ trống thì dùng khóa đã lưu trên thiết bị này.",
-"daChonFile": "Đã đọc tệp khóa trên trình duyệt. Tệp không được gửi lên máy chủ.",
+    "daChonFile": "Đã đọc tệp khóa trên trình duyệt. Tệp không được gửi lên máy chủ.",
     "caiDatKhoaVaChuKy": "Đi đến trang Khóa & Chữ ký cá nhân",
     "anhChuKySeDung": "Ảnh chữ ký cá nhân áp dụng"
   },
@@ -307,8 +305,6 @@
     "timCanBoTheoChucVu": "Tìm cán bộ giữ chức danh {chucVu} theo tên, tài khoản…",
     "khongThayCanBoChucVu": "Không có cán bộ nào giữ chức danh “{chucVu}” trong danh bạ.",
     "soGio": "Số giờ xử lý (tùy chọn)",
-    "chanKyChinh": "Cấu hình ký cũ",
-    "kyNhayCu": "Quy trình này còn cấu hình ký cũ không được hỗ trợ. Hãy xóa cấu hình đó và các cấp không còn người ký trước khi lưu.",
     "kichHoat": "Kích hoạt",
     "ngung": "Ngừng",
     "nhanBan": "Tạo phiên bản mới",
@@ -438,7 +434,6 @@
     "khong_xac_dinh_duoc_nguoi_ky": "Không xác định được người ký (người ký nghỉ việc hoặc không có ai giữ chức danh).",
     "vi_tri_ky_khong_hop_le": "Vị trí ký không hợp lệ với số trang của tệp.",
     "quy_trinh_khong_ap_dung": "Quy trình không áp dụng cho đơn vị của bạn.",
-    "ky_nhay_khong_ho_tro": "Quy trình chứa cấu hình ký cũ không được hỗ trợ. Hãy xóa cấu hình này trong bản nháp hoặc tạo phiên bản mới.",
     "van_ban_han_che_khong_trinh_ky": "Văn bản hạn chế không đi qua trình ký.",
     "tep_khong_phai_pdf": "Tệp không phải PDF hợp lệ (hỏng hoặc không có trang).",
     "tep_pdf_co_mat_khau": "Không nhận PDF có mật khẩu.",
@@ -452,7 +447,6 @@
     "file_khoa_khong_khop": "File khóa không thuộc tài khoản này hoặc không phải khóa đang hoạt động.",
     "khong_tim_thay_nguoi_ky": "Không tìm thấy người ký trên lượt trình hiện hành.",
     "nguoi_nhan_khong_du_tham_quyen": "Chức danh người nhận chưa được phép ký thay người này.",
-    "uy_quyen_khong_con_hop_le": "Người nhận không còn chức danh được phép ký thay. Hãy liên hệ quản trị để kiểm tra và ủy quyền lại.",
     "chuc_vu_khong_hop_le": "Có chức danh được chọn không còn hợp lệ. Hãy tải lại danh sách.",
     "khong_co_chuc_danh_goc": "Hồ sơ không lưu chức danh ban đầu của người ký. Hãy liên hệ quản trị để xử lý.",
     "khong_hien_thi_duoc_pdf": "Không đọc được PDF. Kiểm tra phản hồi tải tệp, định dạng PDF và phiên bản trình duyệt; thử tải lại hoặc tải tệp về để xem.",
@@ -528,8 +522,7 @@
     "TAO_TEP_HOAN_TAT": "Tạo tệp hoàn tất",
     "LOI_TAO_TEP_HOAN_TAT": "Lỗi tạo tệp hoàn tất",
     "TAO_LAI_TEP_HOAN_TAT": "Tạo lại tệp hoàn tất",
-    "LIEN_KET_VAN_BAN_DI": "Liên kết văn bản đi đã đăng ký",
-    "UY_QUYEN_KY": "Ủy quyền ký"
+    "LIEN_KET_VAN_BAN_DI": "Liên kết văn bản đi đã đăng ký"
   },
   "taiLieu": {
     "goiYTim": "Số hiệu, trích yếu, số hồ sơ, quy trình…",
@@ -569,7 +562,6 @@
     "van_ban_id": "Văn bản",
     "ly_do": "Lý do",
     "ly_do_tu_choi": "Lý do",
-    "ly_do_uy_quyen": "Lý do",
     "noi_dung": "Nội dung",
     "tieu_de": "Tiêu đề",
     "ten_quy_trinh": "Tên quy trình",

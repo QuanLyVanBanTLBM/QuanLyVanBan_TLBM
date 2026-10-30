@@ -27,7 +27,7 @@ from ..models import (
 from ..permissions import KY_TRINH_KY, co_quyen
 from ..storage import StorageError, get_storage
 from ..tich_hop import to_chuc
-from . import tep_hoan_tat, thong_bao, uy_quyen
+from . import tep_hoan_tat, thong_bao
 from .audit import ghi_nhat_ky
 from .bang_chung import chot_bang_chung
 from .trinh_ky import dung_cap_dang_mo, luot_hien_hanh, mo_cap, mo_nguoi_ky_trong_cap
@@ -148,7 +148,6 @@ def ky(yeu_cau, nguoi, *, khoa_ky, hash_tai_lieu, chu_ky_so, khoa_chong_trung, g
         return SigningRequest.objects.get(pk=yeu_cau.pk)
     dong = _dong_cua_toi(luot, nguoi)
     nguoi = _nguoi_ky_hien_hanh(nguoi)
-    uy_quyen.kiem_tra_tham_quyen_ky(dong, nguoi)
     thoi_diem = timezone.now()
     khoa = _kiem_tra_khoa(nguoi, khoa_ky, thoi_diem)
     if hash_tai_lieu != luot.ma_bam_tai_lieu:
@@ -230,29 +229,13 @@ def thu_hoi(yeu_cau, nguoi, *, khoa_chong_trung, dia_chi_ip=None):
     if dong.buoc_ky.trang_thai != enums.TrangThaiCapKy.DANG_KY:
         raise ConflictError(code="cap_da_dong_khong_thu_hoi",
                             detail="Cấp ký đã đóng và luồng đã sang cấp sau; muốn sửa hãy trả lại để sửa.")
-    cap = SigningRequestStep.objects.select_for_update().get(pk=dong.buoc_ky_id)
-    nguoi_cap = list(cap.nguoi_ky_set.select_for_update())
-    if dong.vai_tro_ky == enums.VaiTroKy.KY_NHAY and dong.chan_ky_chinh and any(
-        n.vai_tro_ky == enums.VaiTroKy.KY_CHINH and n.trang_thai == enums.TrangThaiNguoiKy.DA_KY for n in nguoi_cap
-    ):
-        raise ConflictError(code="ky_chinh_da_ky",
-                            detail="Không thể thu hồi vì cấp ký chính đã ký sau cấu hình ký cũ này.")
+    SigningRequestStep.objects.select_for_update().get(pk=dong.buoc_ky_id)
     chu_ky_cu = dong.chu_ky_hien_hanh_id
     dong.trang_thai = enums.TrangThaiNguoiKy.CHO_KY
     dong.ngay_ky = None
     dong.chu_ky_hien_hanh = None
     dong.khoa_chong_trung_thao_tac = khoa_chong_trung
     dong.save(update_fields=["trang_thai", "ngay_ky", "chu_ky_hien_hanh", "khoa_chong_trung_thao_tac"])
-    if dong.vai_tro_ky == enums.VaiTroKy.KY_NHAY and dong.chan_ky_chinh:
-        # Ký nháy chặn quay về chờ ký: khóa lại ký chính đã mở mà chưa ký (plan LUONG-08)
-        for n in nguoi_cap:
-            if (
-                n.vai_tro_ky == enums.VaiTroKy.KY_CHINH
-                and n.trang_thai == enums.TrangThaiNguoiKy.CHO_KY
-                and n.thoi_diem_mo is not None
-            ):
-                n.thoi_diem_mo = None
-                n.save(update_fields=["thoi_diem_mo"])
     ghi_nhat_ky(nguoi, LOAI, dong.pk, "THU_HOI_CHU_KY", trinh_ky=yeu_cau, luot_trinh=luot, buoc_ky=dong,
                 trang_thai_truoc=enums.TrangThaiNguoiKy.DA_KY, trang_thai_sau=dong.trang_thai,
                 dia_chi_ip=dia_chi_ip, du_lieu_kem_theo={"chu_ky_thu_hoi": chu_ky_cu})

@@ -15,7 +15,7 @@ from rest_framework.test import APIClient
 from authorization.models import GroupInfo
 from signing import enums
 from signing.models import (
-    SigningDelegationRole, SigningNotification, SigningRequestStep, SigningRequestStepSigner,
+    SigningNotification, SigningRequestStep, SigningRequestStepSigner,
     SigningSignature,
 )
 from signing.services import thong_bao
@@ -39,103 +39,6 @@ def vao_nhom(user, ma):
 
 def thong_bao_cua(user, loai):
     return SigningNotification.objects.filter(nguoi_nhan=user, loai_thong_bao=loai, kenh=enums.KenhThongBao.IN_APP)
-
-
-class UyQuyenDaCapTests(KyBase):
-    """Chức năng tạo ủy quyền đã bỏ; dòng người ký được ủy quyền từ trước vẫn phải ký được và được kiểm lại khi ký."""
-
-    def setUp(self):
-        super().setUp()
-        self.nhan = User.objects.create_user("pho_phong")
-        cap_quyen(self.nhan, "sign_trinhky")
-        self.dong_ky1 = SigningRequestStepSigner.objects.get(buoc_ky__luot_trinh__trinh_ky=self.pk, nguoi_ky=self.ky1)
-        self.chuc_vu_giao = tao_chuc_vu("Người ký")
-        self.chuc_vu_nhan = tao_chuc_vu("Người nhận")
-        User.objects.filter(pk=self.ky1.pk).update(chuc_vu=self.chuc_vu_giao)
-        User.objects.filter(pk=self.nhan.pk).update(chuc_vu=self.chuc_vu_nhan)
-        SigningDelegationRole.objects.create(chuc_vu_giao=self.chuc_vu_giao, chuc_vu_nhan=self.chuc_vu_nhan)
-        # Dữ liệu ủy quyền đã có từ trước: chuyển dòng người ký ky1 sang người nhận
-        SigningRequestStepSigner.objects.filter(pk=self.dong_ky1.pk).update(
-            uy_quyen_tu=self.ky1, chuc_vu_goc_uy_quyen=self.chuc_vu_giao, nguoi_ky=self.nhan,
-            ten_nguoi_ky="pho_phong", chuc_vu=self.chuc_vu_nhan, ly_do_uy_quyen="Đi công tác",
-            ngay_uy_quyen=timezone.now())
-        self.dong_ky1.refresh_from_db()
-
-    def test_existing_delegation_recipient_signs(self):
-        # Người giao vẫn xem được hồ sơ; người nhận ký bằng khóa của mình
-        self.assertEqual(self.client_cua(self.ky1).get(f"{BASE}/{self.pk}/").status_code, 200)
-        self.assertEqual(self.ky(self.ky1).status_code, 403)
-        self.khoa[self.nhan.pk] = khoa_hoat_dong(self.nhan, "K-pho-phong")
-        r = self.ky(self.nhan)
-        self.assertEqual(r.status_code, 200, r.data)
-        _, dong = self.nguoi_ky(r.data, "pho_phong")
-        self.assertEqual((dong["trang_thai"], dong["uy_quyen_tu"], dong["ten_nguoi_uy_quyen"]),
-                         ("DA_KY", self.ky1.pk, "ke_toan"))
-
-    def test_delegated_signer_must_retain_an_allowed_position_at_signing_time(self):
-        self.khoa[self.nhan.pk] = khoa_hoat_dong(self.nhan, "K-pho-phong-role-change")
-        User.objects.filter(pk=self.nhan.pk).update(chuc_vu=tao_chuc_vu("Chuyên viên"))
-
-        response = self.ky(User.objects.get(pk=self.nhan.pk))
-
-        self.assertEqual((response.status_code, response.data["code"]), (403, "uy_quyen_khong_con_hop_le"))
-        self.assertFalse(SigningSignature.objects.filter(luot_trinh__trinh_ky_id=self.pk).exists())
-        self.dong_ky1.refresh_from_db()
-        self.assertEqual(self.dong_ky1.trang_thai, enums.TrangThaiNguoiKy.CHO_KY)
-
-    def test_delegated_signer_is_rechecked_when_role_mapping_is_removed(self):
-        self.khoa[self.nhan.pk] = khoa_hoat_dong(self.nhan, "K-pho-phong-mapping-removed")
-        SigningDelegationRole.objects.filter(
-            chuc_vu_giao=self.chuc_vu_giao, chuc_vu_nhan=self.chuc_vu_nhan,
-        ).delete()
-
-        response = self.ky(User.objects.get(pk=self.nhan.pk))
-
-        self.assertEqual((response.status_code, response.data["code"]), (403, "uy_quyen_khong_con_hop_le"))
-        self.assertFalse(SigningSignature.objects.filter(luot_trinh__trinh_ky_id=self.pk).exists())
-        self.dong_ky1.refresh_from_db()
-        self.assertEqual(self.dong_ky1.trang_thai, enums.TrangThaiNguoiKy.CHO_KY)
-
-    def test_deactivated_delegated_signer_cannot_sign(self):
-        self.khoa[self.nhan.pk] = khoa_hoat_dong(self.nhan, "K-pho-phong-deactivated")
-        User.objects.filter(pk=self.nhan.pk).update(is_active=False)
-
-        response = self.ky(User.objects.get(pk=self.nhan.pk))
-
-        self.assertEqual(response.status_code, 403, response.data)
-        self.assertFalse(SigningSignature.objects.filter(luot_trinh__trinh_ky_id=self.pk).exists())
-        self.dong_ky1.refresh_from_db()
-        self.assertEqual(self.dong_ky1.trang_thai, enums.TrangThaiNguoiKy.CHO_KY)
-
-    def test_return_for_changes_preserves_delegation_and_original_role(self):
-        response = self.hanh_dong(self.nhan, "yeu-cau-sua", tieu_de="Sửa", ly_do="Sai nội dung")
-        self.assertEqual(response.status_code, 200, response.data)
-        response = self.c.post(f"{BASE}/{self.pk}/giai-quyet/", {"tep": tep_pdf(PDF + b"% updated\n")},
-                               format="multipart", HTTP_IDEMPOTENCY_KEY="giai-quyet-uq")
-        self.assertEqual(response.status_code, 200, response.data)
-        dong_moi = SigningRequestStepSigner.objects.get(buoc_ky__luot_trinh__trinh_ky=self.pk,
-                                                       buoc_ky__luot_trinh__so_luot=2, nguoi_ky=self.nhan)
-        self.assertEqual((dong_moi.uy_quyen_tu_id, dong_moi.chuc_vu_goc_uy_quyen_id),
-                         (self.ky1.pk, self.chuc_vu_giao.pk))
-
-    def test_create_and_config_endpoints_removed(self):
-        quan_tri = User.objects.create_user("quan_tri_uq")
-        cap_quyen(quan_tri, "manage_signing_process", "view_signing_audit")
-        vao_nhom(quan_tri, "ADMIN")
-        c = self.client_cua(quan_tri)
-        r = c.post(f"{BASE}/{self.pk}/uy-quyen/", {"dong_nguoi_ky": self.dong_ky1.pk, "nguoi_nhan": self.nhan.pk,
-                                                    "ly_do_uy_quyen": "x"}, format="json", HTTP_IDEMPOTENCY_KEY="uq-x")
-        self.assertEqual(r.status_code, 404)
-        self.assertEqual(c.get("/api/v1/signing/cau-hinh-uy-quyen/").status_code, 404)
-        self.assertEqual(c.put("/api/v1/signing/cau-hinh-uy-quyen/", {}, format="json").status_code, 404)
-        # Tham số muc_dich=uy_quyen không còn đổi hành vi tìm người dùng (không lọc theo ủy quyền)
-        r = c.get(f"/api/v1/signing/nguoi-dung/?muc_dich=uy_quyen&ho_so={self.pk}&dong_nguoi_ky={self.dong_ky1.pk}&q=pho")
-        self.assertEqual(r.status_code, 200, r.data)
-        self.assertEqual([u["ten_dang_nhap"] for u in r.data], ["pho_phong"])
-        # Chi tiết hồ sơ không còn trường co_the_uy_quyen
-        r = c.get(f"{BASE}/{self.pk}/")
-        self.assertEqual(r.status_code, 200, r.data)
-        self.assertNotIn("co_the_uy_quyen", r.data["luot_trinh"][0]["cap_ky"][0]["nguoi_ky"][0])
 
 
 class ThongBaoHoanThienTests(KyBase):
@@ -176,7 +79,7 @@ class ThongBaoHoanThienTests(KyBase):
         cap = SigningRequestStep.objects.get(luot_trinh__trinh_ky=self.pk, trang_thai=enums.TrangThaiCapKy.DANG_KY)
         cap.han_xu_ly = timezone.now() + timedelta(hours=3)
         cap.save(update_fields=["han_xu_ly"])
-        self.assertEqual(thong_bao.nhac_han(), 1)  # người ký nháy đang mở
+        self.assertEqual(thong_bao.nhac_han(), 2)  # hai người ký của cấp đang mở
         self.assertEqual(thong_bao.nhac_han(), 0)
         self.assertTrue(thong_bao_cua(self.ky1, "NHAC_HAN").exists())
         cap.han_xu_ly = timezone.now() - timedelta(hours=1)
@@ -185,7 +88,7 @@ class ThongBaoHoanThienTests(KyBase):
         self.assertTrue(thong_bao_cua(self.ky1, "QUA_HAN").exists())
         self.assertTrue(thong_bao_cua(self.tao, "QUA_HAN").exists())
         self.assertEqual(thong_bao.nhac_han(), 0)
-        self.assertEqual(thong_bao.nhac_han(timezone.now() + timedelta(days=1)), 2)  # nhắc lặp ngày sau
+        self.assertEqual(thong_bao.nhac_han(timezone.now() + timedelta(days=1)), 4)  # nhắc lặp ngày sau: mỗi dòng người ký đang mở báo người ký và người tạo
 
 
 class RaSoatStagingTests(KyBase):

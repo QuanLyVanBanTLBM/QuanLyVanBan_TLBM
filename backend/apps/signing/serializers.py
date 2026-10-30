@@ -34,8 +34,6 @@ class NguoiKyInputSerializer(serializers.Serializer):
     )
     chuc_vu_id = serializers.IntegerField(min_value=1, required=False, allow_null=True)
     pham_vi_chuc_vu = serializers.ChoiceField(choices=enums.PhamViChucVu.choices, required=False, allow_null=True)
-    vai_tro_ky = serializers.ChoiceField(choices=enums.VaiTroKy.choices, default=enums.VaiTroKy.KY_CHINH)
-    chan_ky_chinh = serializers.BooleanField(default=True)
 
 
 class CapKyInputSerializer(serializers.Serializer):
@@ -84,8 +82,7 @@ class NguoiKyCauHinhSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SigningProcessStepSigner
-        fields = ["id", "nguoi_ky", "ten_nguoi_ky", "chuc_vu_id", "ten_chuc_vu", "pham_vi_chuc_vu", "vai_tro_ky",
-                  "chan_ky_chinh", "thu_tu"]
+        fields = ["id", "nguoi_ky", "ten_nguoi_ky", "chuc_vu_id", "ten_chuc_vu", "pham_vi_chuc_vu", "vai_tro_ky", "thu_tu"]
 
     def get_ten_nguoi_ky(self, obj):
         """Tên để xem trước người ký trước khi gửi (UI); người ký theo chức vụ được xác định lúc gửi."""
@@ -280,15 +277,9 @@ class NguoiKyLuotSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SigningRequestStepSigner
-        fields = ["id", "nguoi_ky", "ten_nguoi_ky", "ten_chuc_vu", "vai_tro_ky", "chan_ky_chinh", "trang_thai",
-                  "thoi_diem_mo", "ngay_ky", "ngay_tu_choi", "ly_do_tu_choi", "uy_quyen_tu", "ten_nguoi_uy_quyen",
-                  "ly_do_uy_quyen", "ngay_uy_quyen", "trang_ky", "toa_do_x", "toa_do_y", "chieu_rong_khung",
+        fields = ["id", "nguoi_ky", "ten_nguoi_ky", "ten_chuc_vu", "vai_tro_ky", "trang_thai",
+                  "thoi_diem_mo", "ngay_ky", "ngay_tu_choi", "ly_do_tu_choi", "trang_ky", "toa_do_x", "toa_do_y", "chieu_rong_khung",
                   "chieu_cao_khung", "chu_ky"]
-
-    ten_nguoi_uy_quyen = serializers.SerializerMethodField()
-
-    def get_ten_nguoi_uy_quyen(self, obj):
-        return to_chuc.ten_hien_thi(obj.uy_quyen_tu) if obj.uy_quyen_tu_id else None
 
     def get_chu_ky(self, obj):
         """Chữ ký hiện hành (ghi chú, trễ hạn, kết quả xác minh, có ảnh snapshot); không trả nội dung chữ ký."""

@@ -8,7 +8,7 @@ Thông báo người trong luồng trình ký (bảng `signing_notification`, ki
   `gui_thong_bao_trinh_ky` gửi lại các bản ghi `CHO_GUI`/`THAT_BAI`. Sau này chuyển sang task Celery chỉ nhận id.
 - Sự kiện: người ký được mở (`CAN_KY`); hồ sơ hoàn tất (`HOAN_THANH`), không đồng ý (`TU_CHOI`), trả lại để
   sửa (`YEU_CAU_SUA`), bị hủy (`HUY`: người ký đã được mở trên lượt hiện hành và người tạo khi quản trị hủy
-  thay); ủy quyền ký (`UY_QUYEN`); tin nhắn trao đổi khi trả sửa (`TIN_NHAN`); nhắc hạn (`NHAC_HAN`, `QUA_HAN`,
+  thay); tin nhắn trao đổi khi trả sửa (`TIN_NHAN`); nhắc hạn (`NHAC_HAN`, `QUA_HAN`,
   lệnh `nhac_han_trinh_ky`). Người thực hiện thao tác không tự nhận thông báo của mình.
 """
 
@@ -40,7 +40,6 @@ TEN_LOAI = {
     "TU_CHOI": "Không đồng ý ban hành",
     "YEU_CAU_SUA": "Trả lại để sửa",
     "HUY": "Hồ sơ đã hủy",
-    "UY_QUYEN": "Ủy quyền ký",
     "TIN_NHAN": "Tin nhắn trao đổi",
     "NHAC_HAN": "Sắp đến hạn ký",
     "QUA_HAN": "Quá hạn ký",
@@ -134,8 +133,7 @@ def nhac_han(bay_gio=None):
 
 
 # Loại thông báo -> hành động nhật ký sinh ra nó (để lấy người thao tác và lý do)
-HANH_DONG_CUA_LOAI = {"TU_CHOI": "TU_CHOI", "HUY": "HUY_TRINH_KY", "YEU_CAU_SUA": "YEU_CAU_SUA",
-                      "UY_QUYEN": "UY_QUYEN_KY"}
+HANH_DONG_CUA_LOAI = {"TU_CHOI": "TU_CHOI", "HUY": "HUY_TRINH_KY", "YEU_CAU_SUA": "YEU_CAU_SUA"}
 
 
 def thao_tac(tb):

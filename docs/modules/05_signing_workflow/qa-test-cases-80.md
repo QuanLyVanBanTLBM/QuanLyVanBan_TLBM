@@ -1,6 +1,6 @@
 # Bộ test case QA — MVP Trình ký duyệt nội bộ (#80, kèm Phase 6c #79)
 
-> Phạm vi: PR #111 (DDL) và PR #112 (backend `signing`, giao diện `/approvals`), đối chiếu đầy đủ checklist #80 (118 case: 58 P1, 41 P2, 19 P3 qua 11 nhóm).
+> Phạm vi: PR #111 (DDL) và PR #112 (backend `signing`, giao diện `/approvals`), đối chiếu đầy đủ checklist #80 (116 case: 57 P1, 41 P2, 18 P3 qua 11 nhóm).
 > Mục tiêu: kiểm thử thủ công các luồng nghiệp vụ, quyền, lỗi, giao diện và tích hợp staging. Cột **Tự động** ghi test tự động đã có (nếu có) để QA ưu tiên kiểm phần chưa được tự động hóa, đặc biệt giao diện và môi trường thật.
 > Ưu tiên: **P1** chặn phát hành; **P2** quan trọng; **P3** bổ sung.
 
@@ -94,7 +94,6 @@
 | KY-02 | Ký duyệt kèm ghi chú | Trưởng phòng → Ký duyệt, ghi chú, PIN đúng | Cấp 1 Đã xong, cấp 2 Đang ký, hạn xử lý +24 giờ; lịch sử có "Ký duyệt · <ghi chú>"; khung ký trên PDF chuyển màu đã ký | P1 | Có |
 | KY-03 | Hộp thoại ký hiện tệp và mã băm | Mở hộp thoại Ký duyệt | Hiện tên tệp và SHA-256 của lượt trình | P1 | Có |
 | KY-04 | Chặn ký khi tệp đang xem lệch mã băm | Giả lập tệp tải về khác mã băm (sửa tệp lưu trữ trên môi trường thử) | Hộp thoại báo tệp đã thay đổi, nút Ký duyệt bị khóa; API ký với hash cũ trả 409 `ma_bam_khong_khop` | P1 | Có |
-| KY-05 | Ký nháy chặn ký chính | Quy trình cấp có ký nháy (chặn) + ký chính | Ký chính chưa thấy hồ sơ trong hộp, ký → 409 `chua_den_luot_ky`; sau khi ký nháy ký thì ký chính được ký | P1 | Có |
 | KY-06 | Ký song song trong cấp | Cấp có hai người ký chính | Hai người ký theo thứ tự bất kỳ; cấp chỉ đóng khi cả hai đã ký | P1 | Có |
 | KY-07 | Cấp sau chưa mở | Người ký cấp 2 gọi API ký khi cấp 1 chưa xong | 403 `khong_phai_nguoi_ky_dang_mo` | P2 | Có |
 | KY-08 | Ký trễ hạn | Đặt hạn xử lý đã qua (môi trường thử) → ký | Ký được; tiến trình gắn nhãn "Ký trễ hạn" | P2 | Có |
@@ -102,7 +101,6 @@
 | KY-10 | Trình lại sau từ chối | Người tạo → Trình lại | Tạo hồ sơ Nháp mới, mở bước đặt vị trí; hồ sơ mới có liên kết "Trình lại từ hồ sơ #…" | P1 | Có |
 | KY-11 | Thu hồi chữ ký khi cấp còn mở | Cấp có hai người; một người ký rồi Thu hồi | Người đó về Đang chờ ký; chữ ký cũ vẫn trong lịch sử; ký lại được | P2 | Có |
 | KY-12 | Không thu hồi khi cấp đã đóng | Thu hồi sau khi cấp đã chuyển sang cấp sau | 409 `cap_da_dong_khong_thu_hoi`; nút không hiện trên UI | P2 | Có |
-| KY-13 | Ký nháy không thu hồi khi ký chính đã ký | Thu hồi của ký nháy chặn sau khi ký chính cùng cấp đã ký | 409 `ky_chinh_da_ky` | P3 | Có |
 | KY-14 | Người tạo hủy hồ sơ đang chờ ký | Người tạo → Hủy hồ sơ | Hồ sơ Đã hủy; người ký không còn thấy trong hộp; ký → 409 | P1 | Có |
 | KY-15 | Hủy thay bắt buộc lý do | Tài khoản có `cancel_trinhky` (không phải người tạo) hủy, bỏ trống lý do | Không cho xác nhận; có lý do → hủy, lịch sử ghi hủy thay | P2 | Có |
 | KY-16 | Người ngoài luồng | Chuyên viên mở URL chi tiết hồ sơ | Báo không tìm thấy (404); không lộ thông tin hồ sơ | P1 | Có |
@@ -235,4 +233,4 @@
 
 ---
 
-**Ngoài phạm vi kiểm thử đợt này (backlog #80 mục 8):** ủy quyền theo thời gian và khẩn cấp, nhắc/leo thang/email, báo cáo trễ hạn, phân trang và lọc phòng ban/khoảng thời gian, CA/ký số pháp lý/phát hành.
+**Ngoài phạm vi kiểm thử đợt này (backlog #80 mục 8):** ủy quyền ký, nhắc/leo thang/email, báo cáo trễ hạn, phân trang và lọc phòng ban/khoảng thời gian, CA/ký số pháp lý/phát hành.

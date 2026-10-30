@@ -18,7 +18,7 @@ import type { CanBo, ChucVu, PhamViQuyTrinh, QuyTrinh, VaiTroKy } from '@lib/sig
 /** Người ký trong form: theo tài khoản (`nguoi_ky`) hoặc theo chức vụ (giữ nguyên khi sửa quy trình nháp). */
 interface NguoiKyNhap {
   khoa: string; ten: string; chuc_danh?: string; nguoi_ky: number | null; chuc_vu_id: number | null;
-  pham_vi_chuc_vu: string | null; vai_tro_ky: VaiTroKy; chan_ky_chinh: boolean;
+  pham_vi_chuc_vu: string | null; vai_tro_ky: VaiTroKy;
 }
 interface CapNhap { ten_cap_ky: string; so_gio_xu_ly: string; don_vi_id: number | null; nguoi_ky: NguoiKyNhap[] }
 
@@ -68,7 +68,7 @@ function capTuQuyTrinh(q: QuyTrinh, t: HamDich): CapNhap[] {
     nguoi_ky: c.nguoi_ky.map((n) => ({
       khoa: `c${n.id}`, ten: tenNguoiKyCauHinh(n, t), nguoi_ky: n.nguoi_ky, chuc_vu_id: n.chuc_vu_id,
       chuc_danh: n.pham_vi_chuc_vu ? t(`phamViChucVu.${n.pham_vi_chuc_vu}`) : undefined,
-      pham_vi_chuc_vu: n.pham_vi_chuc_vu, vai_tro_ky: n.vai_tro_ky, chan_ky_chinh: n.chan_ky_chinh,
+      pham_vi_chuc_vu: n.pham_vi_chuc_vu, vai_tro_ky: n.vai_tro_ky,
     })),
   }));
 }
@@ -377,7 +377,6 @@ function FormTao({ mo, onDong, onXong, banDau }: { mo: boolean; onDong: () => vo
   const sua = (i: number, gia_tri: Partial<CapNhap>) => setCap((c) => c.map((x, j) => (j === i ? { ...x, ...gia_tri } : x)));
   const loiMa = !banDau && ma.trim() && !MA_QUY_TRINH_HOP_LE.test(ma.trim()) ? t('quyTrinh.loiMa') : '';
   const soGioQuaLon = (c: CapNhap) => Number(c.so_gio_xu_ly) > GIOI_HAN.soGio;
-  const coKyNhayCu = cap.some((c) => c.nguoi_ky.some((n) => n.vai_tro_ky === 'KY_NHAY'));
   const lyDoChuaLuu = [
     !banDau && !ma.trim() ? t('quyTrinh.thieuMa') : '',
     loiMa ? t('quyTrinh.maKhongHopLe') : '',
@@ -386,7 +385,6 @@ function FormTao({ mo, onDong, onXong, banDau }: { mo: boolean; onDong: () => vo
     cap.some((c) => !c.ten_cap_ky.trim()) ? t('quyTrinh.thieuTenCap') : '',
     cap.some((c) => !c.nguoi_ky.length) ? t('quyTrinh.thieuNguoiKy') : '',
     cap.some(soGioQuaLon) ? t('quyTrinh.soGioKhongHopLe') : '',
-    coKyNhayCu ? t('quyTrinh.kyNhayCu') : '',
   ].filter(Boolean);
   const hopLe = lyDoChuaLuu.length === 0;
 
@@ -402,7 +400,7 @@ function FormTao({ mo, onDong, onXong, banDau }: { mo: boolean; onDong: () => vo
           so_gio_xu_ly: c.so_gio_xu_ly ? Number(c.so_gio_xu_ly) : null,
           nguoi_ky: c.nguoi_ky.map((n, j) => ({
             ...(n.nguoi_ky ? { nguoi_ky: n.nguoi_ky } : { chuc_vu_id: n.chuc_vu_id, pham_vi_chuc_vu: n.pham_vi_chuc_vu }),
-            thu_tu: j + 1, vai_tro_ky: n.vai_tro_ky, chan_ky_chinh: n.chan_ky_chinh,
+            thu_tu: j + 1, vai_tro_ky: n.vai_tro_ky,
           })),
         })),
       };
@@ -498,7 +496,6 @@ function FormTao({ mo, onDong, onXong, banDau }: { mo: boolean; onDong: () => vo
                   <span className="font-semibold">{n.ten}</span>
                   {n.chuc_danh && <span className="ml-1 text-xs text-secondary">({n.chuc_danh})</span>}
                 </span>
-                {n.vai_tro_ky === 'KY_NHAY' && <span className="text-danger">{t('vaiTro.KY_NHAY')}</span>}
                 <button type="button" className="text-danger" aria-label={t('quyTrinh.boNguoiKy')}
                   onClick={() => sua(i, { nguoi_ky: c.nguoi_ky.filter((_, k) => k !== j) })}>
                   <i className="fa-solid fa-trash" aria-hidden="true" />
@@ -519,12 +516,12 @@ function FormTao({ mo, onDong, onXong, banDau }: { mo: boolean; onDong: () => vo
               onChonCanBo={(u: CanBo) => !c.nguoi_ky.some((n) => n.nguoi_ky === u.id)
                 && sua(i, { nguoi_ky: [...c.nguoi_ky, {
                   khoa: `u${u.id}`, ten: u.ho_ten, chuc_danh: chucDanh(u, ''), nguoi_ky: u.id, chuc_vu_id: null, pham_vi_chuc_vu: null,
-                  vai_tro_ky: 'KY_CHINH', chan_ky_chinh: true,
+                  vai_tro_ky: 'KY_CHINH',
                 }] })}
               onChonChucVu={(cv, pham_vi) => !c.nguoi_ky.some((n) => n.chuc_vu_id === cv.id && n.pham_vi_chuc_vu === pham_vi)
                 && sua(i, { nguoi_ky: [...c.nguoi_ky, {
                   khoa: `p${cv.id}-${pham_vi}`, ten: t('quyTrinh.theoChucVu', { ten: cv.ten }), chuc_danh: t(`phamViChucVu.${pham_vi}`),
-                  nguoi_ky: null, chuc_vu_id: cv.id, pham_vi_chuc_vu: pham_vi, vai_tro_ky: 'KY_CHINH', chan_ky_chinh: true,
+                  nguoi_ky: null, chuc_vu_id: cv.id, pham_vi_chuc_vu: pham_vi, vai_tro_ky: 'KY_CHINH',
                 }] })}
             />
           </div>
@@ -603,8 +600,7 @@ function ChiTietQuyTrinh({
                       {c.nguoi_ky.map((n) => (
                         <li key={n.id} className="text-main">
                           {tenNguoiKyCauHinh(n, t)}
-                          <span className="ml-1 text-secondary">({t(`vaiTro.${n.vai_tro_ky}`)}
-                            {n.vai_tro_ky === 'KY_NHAY' && n.chan_ky_chinh ? ` · ${t('quyTrinh.chanKyChinh')}` : ''})</span>
+                          <span className="ml-1 text-secondary">({t(`vaiTro.${n.vai_tro_ky}`)})</span>
                           {n.chuc_vu_id != null && (
                             <CanBoChucVu chucVuId={n.chuc_vu_id}
                               donViId={donViTimCanBo(n.pham_vi_chuc_vu, c.don_vi_id, q.pham_vi, q.don_vi_ap_dung_id)}

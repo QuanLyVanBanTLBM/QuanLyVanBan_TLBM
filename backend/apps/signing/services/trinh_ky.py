@@ -165,7 +165,6 @@ def _kiem_tra_quy_trinh(quy_trinh, nguoi_tao):
     if not SigningProcess.objects.filter(pk=quy_trinh.pk).filter(process_service.dung_duoc(nguoi_tao)).exists():
         raise _loi("quy_trinh_khong_ap_dung", "Chỉ chọn quy trình công ty hoặc quy trình phòng ban của đơn vị mình.",
                    status.HTTP_403_FORBIDDEN, quy_trinh=["Quy trình không áp dụng cho đơn vị của người trình."])
-    process_service.kiem_tra_khong_co_ky_nhay(quy_trinh)
 
 
 # ── Phạm vi xem ─────────────────────────────────────────────────────────────
@@ -173,7 +172,7 @@ def _kiem_tra_quy_trinh(quy_trinh, nguoi_tao):
 
 def trinh_ky_xem_duoc(nguoi):
     """
-    Người tạo, người ký của bất kỳ lượt trình nào (kể cả người nhận và người giao ủy quyền), người có quyền
+    Người tạo, người ký của bất kỳ lượt trình nào , người có quyền
     xem nhật ký trình ký (kiểm toán) xem được hồ sơ. Không mở quyền xem chỉ vì tên tab.
     """
     queryset = SigningRequest.objects.select_related("quy_trinh", "create_by")
@@ -181,7 +180,6 @@ def trinh_ky_xem_duoc(nguoi):
         return queryset
     return queryset.filter(
         Q(create_by=nguoi) | Q(luot_trinh_set__cap_ky_set__nguoi_ky_set__nguoi_ky=nguoi)
-        | Q(luot_trinh_set__cap_ky_set__nguoi_ky_set__uy_quyen_tu=nguoi)
     ).distinct()
 
 
@@ -440,20 +438,10 @@ def _han_xu_ly(cap, thoi_diem_mo, han_chot, so_cap_chua_mo):
 
 
 def mo_nguoi_ky_trong_cap(cap, thoi_diem):
-    """
-    Mở người ký trong cấp đang ký. Ký nháy mở ngay; ký chính chỉ mở khi mọi người ký nháy có
-    `chan_ky_chinh` đã ký (plan mục 3.2). Trả danh sách người ký vừa được mở.
-    """
-    nguoi_ky = list(cap.nguoi_ky_set.select_for_update().order_by("pk"))
-    con_chan = any(
-        n.vai_tro_ky == enums.VaiTroKy.KY_NHAY and n.chan_ky_chinh and n.trang_thai != enums.TrangThaiNguoiKy.DA_KY
-        for n in nguoi_ky
-    )
+    """Mở mọi người ký còn chờ trong cấp đang ký. Trả danh sách người ký vừa được mở."""
     vua_mo = []
-    for n in nguoi_ky:
+    for n in cap.nguoi_ky_set.select_for_update().order_by("pk"):
         if n.thoi_diem_mo is not None or n.trang_thai != enums.TrangThaiNguoiKy.CHO_KY:
-            continue
-        if n.vai_tro_ky == enums.VaiTroKy.KY_CHINH and con_chan:
             continue
         n.thoi_diem_mo = thoi_diem
         n.save(update_fields=["thoi_diem_mo"])
@@ -536,7 +524,7 @@ def tao_luot_trinh(yeu_cau, nguoi, *, chon_nguoi_ky, khoa_chong_trung, vi_tri_ky
                 chuc_vu_id=cau_hinh.chuc_vu_id or getattr(tai_khoan, "chuc_vu_id", None),
                 ten_nguoi_ky=to_chuc.ten_hien_thi(tai_khoan) or tai_khoan.get_username(),
                 ten_chuc_vu=to_chuc.ten_chuc_vu(tai_khoan) or None,
-                vai_tro_ky=cau_hinh.vai_tro_ky, chan_ky_chinh=cau_hinh.chan_ky_chinh,
+                vai_tro_ky=cau_hinh.vai_tro_ky,
                 **vi_tri_ky.get(str(cau_hinh.pk), {}),
             )
     return luot, cap_dau

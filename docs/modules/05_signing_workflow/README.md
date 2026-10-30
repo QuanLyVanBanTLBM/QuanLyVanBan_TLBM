@@ -1,10 +1,7 @@
 # Module 05: Trình ký số (Nhóm 5)
 
-> **Phạm vi (issue #356):** chức năng "Ủy quyền ký" và màn hình "Cấu hình người được ký thay" đã bỏ khỏi module Trình ký
-> (không còn nút, hộp thoại, endpoint tạo ủy quyền hoặc cấu hình ký thay). Schema giữ nguyên (`signing_delegation_role`,
-> các cột `uy_quyen_tu`, `chuc_vu_goc_uy_quyen`, `ly_do_uy_quyen`, `ngay_uy_quyen`). Hồ sơ đang chờ ký có dòng người ký
-> được ủy quyền từ trước vẫn ký được: bước ký còn kiểm tra chức danh người nhận theo `signing_delegation_role`, giao
-> diện còn hiện nhãn "Ký thay". Các mô tả về ủy quyền ký bên dưới là lịch sử thiết kế, không còn là chức năng đang có.
+> **Phạm vi:** mọi người ký trong một cấp có cùng một vai trò (ký chính). Ký nháy, ủy quyền ký và ký thay chưa có trong
+> module.
 
 Phân hệ trình ký văn bản đi qua nhiều cấp, ký điện tử nội bộ Ed25519, kết thúc ở **hoàn tất duyệt nội bộ, chưa phát
 hành**. Giao diện ở `/approvals`, API dưới `/api/v1/signing/`.
@@ -14,7 +11,7 @@ Tài liệu liên quan (không chép lại ở đây):
 - [`signing-backend-plan.md`](signing-backend-plan.md): quy tắc nghiệp vụ, bất biến, thiết kế dữ liệu, máy trạng thái, API.
 - [`danh-gia-plan-va-tich-hop.md`](danh-gia-plan-va-tich-hop.md): đánh giá plan và tích hợp với các nhóm.
 - [`du-lieu-mau-va-tinh-trang-nghiep-vu.md`](du-lieu-mau-va-tinh-trang-nghiep-vu.md): bảng tình trạng flow, file khóa,
-  ủy quyền, dữ liệu mẫu chi tiết, hợp đồng API Dashboard đầy đủ.
+  dữ liệu mẫu chi tiết, hợp đồng API Dashboard đầy đủ.
 - [`spec.md`](spec.md), [`qa-test-cases-80.md`](qa-test-cases-80.md).
 
 ## 1. Flow nghiệp vụ
@@ -24,15 +21,14 @@ Tài liệu liên quan (không chép lại ở đây):
 | Quy trình mẫu: tạo nháp, sửa, kích hoạt, ngừng, nhân bản phiên bản, xóa phiên bản chưa có hồ sơ; phạm vi công ty/phòng ban; người ký theo tài khoản (danh bạ CBNV) hoặc chức vụ (Danh mục chức vụ) | Xong |
 | Tạo hồ sơ nháp (chọn PDF đính kèm trên văn bản đi hoặc tải PDF dự thảo chưa vào sổ; quy trình, hạn chót), sửa nháp | Xong |
 | Trình ký: khóa tệp và mã băm, chọn người ký theo chức vụ, đặt vị trí ký | Xong |
-| Ký chính tuần tự theo cấp, song song trong cấp; bảo toàn lượt ký nháy đã gửi trước đây | Xong |
+| Ký tuần tự theo cấp, song song trong cấp | Xong |
 | Khóa ký Ed25519 + PIN 8 số (Argon2id + salt, `k_srv`); xuất file khóa; ký bằng file khóa + PIN | Xong |
 | Không đồng ý ban hành (kết thúc); trình lại thành hồ sơ mới | Xong |
 | Trả lại để sửa → trao đổi → gửi bản sửa → lượt trình mới | Xong |
 | Hủy (người tạo; quản trị hủy thay có lý do); thu hồi chữ ký khi cấp còn mở | Xong |
 | Hoàn tất: bằng chứng tổng hợp, PDF hoàn tất, xác minh lại | Xong |
-| Ủy quyền ký khẩn cấp từng hồ sơ | Xong |
 | Thông báo qua email và outbox `signing_notification` (gửi lại khi lỗi), nhắc hạn/quá hạn; không còn trang xem trong ứng dụng | Xong |
-| Ủy quyền theo thời gian, thể thức KT./TL./TUQ., leo thang quá hạn | Chưa làm (mục 8) |
+| Ký nháy, ủy quyền ký, thể thức KT./TL./TUQ., leo thang quá hạn | Chưa làm (mục 8) |
 
 Trạng thái hồ sơ (`signing_request.trang_thai`) và lượt trình (`signing_attempt.trang_thai`):
 
@@ -79,7 +75,7 @@ Codename: `view_trinhky`, `add_trinhky`, `send_trinhky`, `sign_trinhky`, `delega
 ```text
 backend/apps/signing/
   models.py, enums.py, permissions.py, errors.py   # model theo DDL, mã trạng thái, kiểm quyền, định dạng lỗi
-  services/                                        # nghiệp vụ: trinh_ky, hanh_dong_ky, yeu_cau_sua, uy_quyen (chỉ còn kiểm tra khi ký),
+  services/                                        # nghiệp vụ: trinh_ky, hanh_dong_ky, yeu_cau_sua,
                                                    #   keys, pin, thong_bao, bang_chung, tep_hoan_tat, process
   selectors.py                                     # selector chỉ đọc cho module khác (Dashboard)
   tich_hop/                                        # đọc văn bản đi (Nhóm 2), tổ chức/nhân sự (Nhóm 7)
@@ -133,7 +129,7 @@ Thao tác đổi trạng thái bắt buộc header `Idempotency-Key`. Lỗi tr�
   lịch (tháng 13, 30/02) hoặc `tu_ngay` > `den_ngay` trả 400 `tham_so_khong_hop_le`. Từ khóa `q` bỏ ký tự NUL, cắt
   khoảng trắng, tối đa 100 ký tự.
 - Giới hạn nhập tay (serializer; giao diện đặt `maxLength` bằng đúng các số này): trích yếu văn bản 1000 ký tự; số hiệu
-  100; ghi chú (hồ sơ, ký, cấp ký), mô tả quy trình, lý do (hủy, từ chối, trả sửa, ủy quyền, thu hồi khóa), tin nhắn
+  100; ghi chú (hồ sơ, ký, cấp ký), mô tả quy trình, lý do (hủy, từ chối, trả sửa, thu hồi khóa), tin nhắn
   trao đổi 2000; tên quy trình 255; mã quy trình 50 ký tự gồm chữ không dấu, số, `-`, `_`, `.` (không trùng khi khác
   hoa thường); `so_gio_xu_ly` của cấp 0–8760 giờ. Một người (hoặc một chức vụ cùng phạm vi) chỉ xuất hiện một lần trong
   một cấp ký (400 `nguoi_ky_trung_trong_cap`).
@@ -152,7 +148,7 @@ Thao tác đổi trạng thái bắt buộc header `Idempotency-Key`. Lỗi tr�
 
 Yêu cầu đăng nhập (JWT); chưa đăng nhập trả 401. Chỉ dữ liệu của người đang đăng nhập. Backend có thể gọi
 `signing.selectors.tong_quan_dashboard(user)`. Mẫu (rút gọn từ dữ liệu `seed_signing_demo`, tài khoản `truongphong`;
-bản đầy đủ ở `du-lieu-mau-va-tinh-trang-nghiep-vu.md` mục 6.2):
+bản đầy đủ ở `du-lieu-mau-va-tinh-trang-nghiep-vu.md` mục 5.2):
 
 ```json
 {
@@ -250,7 +246,7 @@ python manage.py runserver                              # cùng `pnpm dev` ở f
 ```
 
 Trên staging, deploy chỉ chạy migration; lệnh dữ liệu mẫu chạy tay một lần trên máy chủ (xem
-`du-lieu-mau-va-tinh-trang-nghiep-vu.md` mục 5.6).
+`du-lieu-mau-va-tinh-trang-nghiep-vu.md` mục 4.6).
 
 Tài khoản mẫu: `truongphong` (ký cấp 1, có hồ sơ chờ ký), `giamdoc` (ký cấp 2), `vanthu`
 (người trình, đủ trạng thái), `chuyenvien` (soạn nháp), `admin` (quản trị). Sau khi chạy lệnh mẫu, mỗi người
@@ -271,23 +267,13 @@ frontend lint, typecheck, i18n, tokens sạch, 525 test đạt, build đạt. E2
 khóa và tải file khóa, ký bằng file khóa + PIN, trả sửa, gửi bản sửa, không đồng ý ban hành, hủy, xem PDF
 desktop và mobile 390px, thông báo có người thực hiện và lý do.
 
-Báo cáo chi tiết các luồng nghiệp vụ (Happy path, Trả sửa lượt 2, Từ chối, Ủy quyền), ca biên (Edge cases) và nhật ký bằng chứng kiểm thử: xem tại [`FLOW_TEST_EVIDENCE.md`](./FLOW_TEST_EVIDENCE.md). Danh mục 118 test case đối chiếu theo Issue #80 và #248: xem tại [`qa-test-cases-80.md`](./qa-test-cases-80.md).
+Báo cáo chi tiết các luồng nghiệp vụ (Happy path, Trả sửa lượt 2, Từ chối), ca biên (Edge cases) và nhật ký bằng chứng kiểm thử: xem tại [`FLOW_TEST_EVIDENCE.md`](./FLOW_TEST_EVIDENCE.md). Danh mục 116 test case đối chiếu theo Issue #80 và #248: xem tại [`qa-test-cases-80.md`](./qa-test-cases-80.md).
 
 ## 8. Chưa làm và lý do
 
-- Ủy quyền theo thời gian (`signing_delegation`) và thể thức `hinh_thuc_ky` (KT./TL./TUQ.): DDL chưa có bảng/cột, cần
-  PR đổi schema riêng (DDL + migration + `DDL_CHANGELOG.md`).
-- (Đã bỏ chức năng, ghi lại để tham khảo) Ủy quyền khẩn cấp từng dùng ma trận chức danh toàn cục (`signing_delegation_role`: chức danh giao → chức danh
-  nhận). Ma trận chưa giới hạn theo quy trình, loại văn bản, khối/phòng ban hoặc giá trị hợp đồng; vì vậy không đáp ứng
-  chính sách kiểu “chỉ văn bản kỹ thuật” hay “dưới 500 triệu”. Chỉ dùng cho phạm vi hồ sơ mà cặp chức danh được phép
-  ký thay không cần các giới hạn này. Muốn áp giới hạn phải chốt chính sách và dữ liệu nghiệp vụ trước khi mở rộng.
-- Ủy quyền khẩn cấp ghi người giao quyền, lý do và thời điểm, nhưng chưa lưu/render thể thức KT./TL./TUQ. Khối chữ
-  ký trong PDF hoàn tất dùng tên người ký và chức danh snapshot, chưa có tiền tố thể thức; đây là kết quả duyệt nội bộ,
-  chưa phải văn bản đã phát hành. Không dùng luồng này để khẳng định thể thức ký thay/thừa lệnh đã được thể hiện trên
-  văn bản chính thức.
-- Nhân sự có thể có nhiều phân công trong `accounts_employee_assignment`, nhưng Trình ký hiện chỉ xét chức danh chính
-  `Employee.chuc_vu_id` khi tìm và kiểm tra người nhận ủy quyền. Chức vụ kiêm nhiệm chưa được tính là căn cứ nhận ủy
-  quyền; khi hỗ trợ cần chốt phạm vi đơn vị, hiệu lực phân công và chức danh nào được lưu làm snapshot.
+- Ký nháy, ủy quyền ký (theo thời gian và khẩn cấp) và thể thức KT./TL./TUQ.: chưa có. Trước khi bổ sung cần chốt
+  chính sách nghiệp vụ (ai được ký thay, giới hạn theo loại văn bản hoặc giá trị, cách thể hiện trên khối chữ ký) và
+  thực hiện bằng PR đổi schema riêng (DDL + migration + `DDL_CHANGELOG.md`).
 - Nhóm Chuyên viên (CV) đã được cấp quyền `send_trinhky` qua PR #254 (migration `authorization/0007_grant_cv_send_trinhky`, issue #226), cho phép chuyên viên tự gửi hồ sơ do mình tạo.
 - Tab "Thông báo" và trang `/approvals/thong-bao` đã bỏ khỏi giao diện (issue #355). Thông báo vẫn gửi qua email và
   outbox `signing_notification` (`gui_thong_bao_trinh_ky`, `nhac_han_trinh_ky`); API `thong-bao/` giữ nguyên. Đường dẫn
@@ -319,7 +305,6 @@ Báo cáo chi tiết các luồng nghiệp vụ (Happy path, Trả sửa lượt
 
 ## 10. Nhật ký thay đổi PR #251
 
-- Ủy quyền ký khẩn cấp `POST trinh-ky/{id}/uy-quyen/` (đã bỏ ở issue #356; người giao ủy quyền cũ vẫn xem được hồ sơ, giao diện còn nhãn "Ký thay").
 - File khóa `.tlbmkey` (bản bọc private key): xuất khi tạo khóa và đổi PIN, nhập vào thiết bị, ký bằng file + PIN.
 - Thông báo: hủy báo người tạo (khi hủy thay) và người đã ký; tin nhắn trao đổi; nhắc hạn/quá hạn (`nhac_han_trinh_ky`);
   số thông báo mới ở tab; email và thông báo ghi người thực hiện và lý do.
@@ -364,7 +349,7 @@ Báo cáo chi tiết các luồng nghiệp vụ (Happy path, Trả sửa lượt
 - Dữ liệu cán bộ: Trình ký đọc qua lớp `tich_hop/to_chuc.py` (model của Nhóm 7) và API công khai của CBNV ở giao diện;
   bản chụp tên người ký/chức vụ trên lượt trình là bằng chứng bất biến, không phải danh bạ riêng. Đề xuất Nhóm 7 bổ
   sung selector Python công khai (tìm cán bộ, cán bộ theo chức vụ/đơn vị, lãnh đạo đơn vị) để thay các truy vấn trực
-  tiếp trong `tich_hop/to_chuc.py`. API `nguoi-dung/` chỉ phục vụ chọn người ký khi cấu hình quy trình (tham số `muc_dich=uy_quyen` đã bỏ).
+  tiếp trong `tich_hop/to_chuc.py`. API `nguoi-dung/` chỉ phục vụ chọn người ký khi cấu hình quy trình.
 
 ## 12. Rà soát trước kiểm thử chéo (issue #286, PR #287)
 
