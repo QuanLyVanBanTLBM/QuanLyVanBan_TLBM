@@ -215,39 +215,9 @@ describe('EmployeesPage Component (Issue #24)', () => {
     fireEvent.change(container.querySelector('input[name="ngay_sinh"]')!, {
       target: { value: '01/01/1990' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Đơn vị / Phòng ban' }));
-    fireEvent.click(screen.getByRole('option', { name: 'Văn phòng Viện' }));
     fireEvent.submit(container.querySelector('form')!);
 
     expect(await screen.findByText('Vui lòng chọn chức vụ cho cán bộ nhân viên.')).toBeInTheDocument();
-    expect(mockedApiClient.post).not.toHaveBeenCalled();
-  });
-
-  it('requires an explicit primary unit for a new employee', async () => {
-    const { container } = render(
-      <MemoryRouter>
-        <EmployeesPage />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText('Nguyễn Văn Bình')).toBeInTheDocument();
-    });
-    fireEvent.click(screen.getByRole('button', { name: /Thêm nhân viên/i }));
-    await screen.findByText('Thêm Mới Cán Bộ Nhân Viên');
-
-    fireEvent.change(container.querySelector('input[name="ho_ten"]')!, {
-      target: { value: 'Nhân viên kiểm tra đơn vị' },
-    });
-    fireEvent.change(container.querySelector('input[name="email"]')!, {
-      target: { value: 'unit-required@donvi.gov.vn' },
-    });
-    fireEvent.change(container.querySelector('input[name="ngay_sinh"]')!, {
-      target: { value: '01/01/1990' },
-    });
-    fireEvent.submit(container.querySelector('form')!);
-
-    expect(await screen.findByText('Tên Đơn vị / Phòng ban không được để trống.')).toBeInTheDocument();
     expect(mockedApiClient.post).not.toHaveBeenCalled();
   });
 

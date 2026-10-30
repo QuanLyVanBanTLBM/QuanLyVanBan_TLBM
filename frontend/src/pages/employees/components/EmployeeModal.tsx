@@ -103,7 +103,7 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
       username: '',
       password: '',
       ngay_sinh: '',
-      don_vi_id: '',
+      don_vi_id: units.length > 0 ? String(units[0].id) : '',
       chuc_vu_id: '',
       chuc_danh: '',
       sdt: '',
@@ -124,9 +124,6 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
-  const [showInitialPassword, setShowInitialPassword] = useState(false);
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false);
 
   const handleAddAssignment = () => {
     const usedUnitIds = new Set([
@@ -264,19 +261,13 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
     if (!formData.ho_ten.trim()) {
       const msg = t('employees.validation.nameRequired');
       setErrorKey(msg);
-      formRef.current?.scrollTo?.({ top: 0, behavior: 'smooth' });
+      formRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     if (!formData.email.trim()) {
       const msg = t('employees.validation.emailRequired');
       setErrorKey(msg);
-      formRef.current?.scrollTo?.({ top: 0, behavior: 'smooth' });
-      return;
-    }
-    if (!initialData && !formData.don_vi_id) {
-      const msg = t('employees.import.errors.unitRequired');
-      setErrorKey(msg);
-      formRef.current?.scrollTo?.({ top: 0, behavior: 'smooth' });
+      formRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
 
@@ -286,20 +277,20 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
       if (!isoBirthday) {
         const msg = t('employees.import.errors.invalidBirthday', { value: formData.ngay_sinh });
         setErrorKey(msg);
-        formRef.current?.scrollTo?.({ top: 0, behavior: 'smooth' });
+        formRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
         return;
       }
     } else if (!initialData) {
       const msg = t('employees.validation.birthdayRequired');
       setErrorKey(msg);
-      formRef.current?.scrollTo?.({ top: 0, behavior: 'smooth' });
+      formRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
 
     if (formData.sdt && !/^(0|\+84)[1-9][0-9]{7,9}$/.test(formData.sdt.replace(/\s+/g, ''))) {
       const msg = t('employees.validation.phoneInvalid');
       setErrorKey(msg);
-      formRef.current?.scrollTo?.({ top: 0, behavior: 'smooth' });
+      formRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
 
@@ -329,19 +320,19 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
             if (!a.don_vi_id) {
               const msg = t('employees.fields.duplicateAssignmentUnit');
               setErrorKey(msg);
-              formRef.current?.scrollTo?.({ top: 0, behavior: 'smooth' });
+              formRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
               return;
             }
             if (!a.chuc_vu_id) {
               const msg = t('employees.validation.positionRequired');
               setErrorKey(msg);
-              formRef.current?.scrollTo?.({ top: 0, behavior: 'smooth' });
+              formRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
               return;
             }
             if (a.don_vi_id === pUnit) {
               const msg = t('employees.fields.duplicateAssignmentUnit');
               setErrorKey(msg);
-              formRef.current?.scrollTo?.({ top: 0, behavior: 'smooth' });
+              formRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
               return;
             }
           }
@@ -349,7 +340,7 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
           if (seenUnits.size !== formData.assignments.length) {
             const msg = t('employees.fields.duplicateAssignmentUnit');
             setErrorKey(msg);
-            formRef.current?.scrollTo?.({ top: 0, behavior: 'smooth' });
+            formRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
             return;
           }
         }
@@ -413,7 +404,7 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
       }
 
       setErrorKey(resolvedMsg);
-      formRef.current?.scrollTo?.({ top: 0, behavior: 'smooth' });
+      formRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
 
@@ -575,45 +566,23 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <label className="block text-sm font-medium text-secondary">
                       {t('employees.passwordChange.newPassword')}
-                      <span className="relative mt-1 block">
-                        <input
-                          type={showNewPassword ? 'text' : 'password'}
-                          autoComplete="new-password"
-                          value={newPassword}
-                          onChange={(event) => setNewPassword(event.target.value)}
-                          className="employee-password-input w-full px-3 py-2 pr-10 text-sm bg-surface border border-border rounded-lg text-main focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                        />
-                        <button
-                          type="button"
-                          aria-label={t(showNewPassword ? 'employees.passwordChange.hidePassword' : 'employees.passwordChange.showPassword')}
-                          title={t(showNewPassword ? 'employees.passwordChange.hidePassword' : 'employees.passwordChange.showPassword')}
-                          onClick={() => setShowNewPassword((visible) => !visible)}
-                          className="absolute inset-y-0 right-2 inline-flex items-center px-1 text-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded"
-                        >
-                          <i aria-hidden="true" className={`fa-solid ${showNewPassword ? 'fa-eye-slash' : 'fa-eye'}`} />
-                        </button>
-                      </span>
+                      <input
+                        type="password"
+                        autoComplete="new-password"
+                        value={newPassword}
+                        onChange={(event) => setNewPassword(event.target.value)}
+                        className="mt-1 w-full px-3 py-2 text-sm bg-surface border border-border rounded-lg text-main focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                      />
                     </label>
                     <label className="block text-sm font-medium text-secondary">
                       {t('employees.passwordChange.confirmPassword')}
-                      <span className="relative mt-1 block">
-                        <input
-                          type={showConfirmNewPassword ? 'text' : 'password'}
-                          autoComplete="new-password"
-                          value={confirmNewPassword}
-                          onChange={(event) => setConfirmNewPassword(event.target.value)}
-                          className="employee-password-input w-full px-3 py-2 pr-10 text-sm bg-surface border border-border rounded-lg text-main focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                        />
-                        <button
-                          type="button"
-                          aria-label={t(showConfirmNewPassword ? 'employees.passwordChange.hidePassword' : 'employees.passwordChange.showPassword')}
-                          title={t(showConfirmNewPassword ? 'employees.passwordChange.hidePassword' : 'employees.passwordChange.showPassword')}
-                          onClick={() => setShowConfirmNewPassword((visible) => !visible)}
-                          className="absolute inset-y-0 right-2 inline-flex items-center px-1 text-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded"
-                        >
-                          <i aria-hidden="true" className={`fa-solid ${showConfirmNewPassword ? 'fa-eye-slash' : 'fa-eye'}`} />
-                        </button>
-                      </span>
+                      <input
+                        type="password"
+                        autoComplete="new-password"
+                        value={confirmNewPassword}
+                        onChange={(event) => setConfirmNewPassword(event.target.value)}
+                        className="mt-1 w-full px-3 py-2 text-sm bg-surface border border-border rounded-lg text-main focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                      />
                     </label>
                     {passwordError && (
                       <p role="alert" className="md:col-span-2 text-sm text-danger">{passwordError}</p>
@@ -717,25 +686,14 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                   <label className="block text-sm font-semibold text-secondary mb-1.5">
                     {t('employees.fields.initialPassword')}
                   </label>
-                  <span className="relative block">
-                    <input
-                      type={showInitialPassword ? 'text' : 'password'}
-                      name="password"
-                      value={formData.password}
-                      onChange={handleChange}
-                      placeholder={t('employees.placeholders.initialPassword')}
-                      className="employee-password-input w-full px-3.5 py-2 pr-10 text-sm bg-surface-elevated border border-border rounded-lg text-main placeholder-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
-                    />
-                    <button
-                      type="button"
-                      aria-label={t(showInitialPassword ? 'employees.passwordChange.hidePassword' : 'employees.passwordChange.showPassword')}
-                      title={t(showInitialPassword ? 'employees.passwordChange.hidePassword' : 'employees.passwordChange.showPassword')}
-                      onClick={() => setShowInitialPassword((visible) => !visible)}
-                      className="absolute inset-y-0 right-2 inline-flex items-center px-1 text-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded"
-                    >
-                      <i aria-hidden="true" className={`fa-solid ${showInitialPassword ? 'fa-eye-slash' : 'fa-eye'}`} />
-                    </button>
-                  </span>
+                  <input
+                    type="password"
+                    name="password"
+                    value={formData.password}
+                    onChange={handleChange}
+                    placeholder={t('employees.placeholders.initialPassword')}
+                    className="w-full px-3.5 py-2 text-sm bg-surface-elevated border border-border rounded-lg text-main placeholder-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+                  />
                   <span className="text-xs text-muted block mt-1">
                     {t('employees.hints.passwordAuto')}
                   </span>
@@ -823,7 +781,6 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                   label={t('employees.fields.unit')}
                   name="don_vi_id"
                   value={formData.don_vi_id}
-                  required={!initialData && !isSelfEditOnly}
                   disabled={isSelfEditOnly}
                   onChange={(val) => {
                     setFormData((prev) => ({ ...prev, don_vi_id: val }));

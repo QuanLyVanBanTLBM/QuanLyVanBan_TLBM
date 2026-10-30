@@ -86,8 +86,8 @@
       "username": "Enter username (leave blank to auto-generate)...",
       "initialPassword": "Enter password (leave blank to generate random 10-char password)...",
       "phone": "Enter phone number (e.g. 0912345678)...",
-      "selectUnit": "Select Unit / Department",
-      "selectPosition": "Select Position",
+      "selectUnit": "-- Select Unit / Department --",
+      "selectPosition": "-- Select Position --",
       "title": "e.g. Senior Specialist, Assistant...",
       "notes": "Enter additional notes if any..."
     },
@@ -109,11 +109,9 @@
     },
     "passwordChange": {
       "title": "Change account password",
-      "help": "The current password is stored as a hash and cannot be viewed. An administrator can reset it.",
+      "help": "Only an administrator can reset the password for this profile.",
       "newPassword": "New password",
       "confirmPassword": "Confirm new password",
-      "showPassword": "Show password",
-      "hidePassword": "Hide password",
       "submit": "Save new password"
     },
     "created": {

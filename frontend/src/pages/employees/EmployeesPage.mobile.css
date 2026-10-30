@@ -268,9 +268,3 @@
     max-width: none;
   }
 }
-
-/* Hide Edge's built-in password reveal control; EmployeeModal provides an accessible toggle. */
-input.employee-password-input::-ms-reveal,
-input.employee-password-input::-ms-clear {
-  display: none;
-}

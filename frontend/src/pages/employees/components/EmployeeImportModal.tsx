@@ -195,7 +195,7 @@ export const EmployeeImportModal: React.FC<EmployeeImportModalProps> = ({
           return;
         }
 
-        await new Promise((resolve) => window.setTimeout(resolve, 250));
+        await new Promise((resolve) => window.setTimeout(resolve, 700));
       }
     } catch (err: unknown) {
       if (err && typeof err === 'object' && 'data' in err) {

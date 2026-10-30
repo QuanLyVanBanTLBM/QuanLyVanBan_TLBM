@@ -86,8 +86,8 @@
       "username": "Nhập tên đăng nhập (để trống sẽ tự sinh)...",
       "initialPassword": "Nhập mật khẩu (để trống sẽ tự sinh ngẫu nhiên)...",
       "phone": "Nhập số điện thoại (ví dụ: 0912345678)...",
-      "selectUnit": "Chọn Đơn vị / Phòng ban",
-      "selectPosition": "Chọn Chức vụ",
+      "selectUnit": "-- Chọn Đơn vị / Phòng ban --",
+      "selectPosition": "-- Chọn Chức vụ --",
       "title": "Ví dụ: Chuyên viên chính, Trợ lý viện trưởng...",
       "notes": "Nhập ghi chú bổ sung nếu có..."
     },
@@ -109,11 +109,9 @@
     },
     "passwordChange": {
       "title": "Đổi mật khẩu tài khoản",
-      "help": "Mật khẩu hiện tại được bảo vệ dạng băm nên không thể xem. Quản trị viên có thể đặt lại mật khẩu.",
+      "help": "Chỉ quản trị viên mới có thể đặt lại mật khẩu cho hồ sơ này.",
       "newPassword": "Mật khẩu mới",
       "confirmPassword": "Xác nhận mật khẩu mới",
-      "showPassword": "Hiện mật khẩu",
-      "hidePassword": "Ẩn mật khẩu",
       "submit": "Lưu mật khẩu mới"
     },
     "created": {

@@ -299,7 +299,7 @@ def import_cbnv_from_excel(
     total_rows = len(rows) - 1
     for idx, row in enumerate(rows[1:], start=2):
         processed_rows = idx - 1
-        if progress_callback:
+        if progress_callback and (processed_rows % 10 == 0 or processed_rows == total_rows):
             progress_callback("validation", processed_rows, total_rows)
         if not any(row):
             continue  # Bỏ qua dòng trống hoàn toàn
@@ -564,9 +564,6 @@ def import_cbnv_from_excel(
             # through the regular save path while batching the M2M group rows.
             for imported_user in imported_users:
                 imported_user.save(force_insert=True)
-                created_count += 1
-                if progress_callback:
-                    progress_callback("saving", created_count, total_to_create)
             group_rows = [
                 groups_through(**{
                     owner_field.attname: imported_user.pk,
@@ -578,6 +575,9 @@ def import_cbnv_from_excel(
             if group_rows:
                 groups_through.objects.bulk_create(group_rows, batch_size=500)
 
+            created_count += len(imported_users)
+            if progress_callback:
+                progress_callback("saving", created_count, total_to_create)
 
         # Commit trạng thái hoàn tất cùng transaction tạo CBNV để job không thể bị chạy lại
         # nếu tiến trình dừng ngay sau khi dữ liệu đã được commit.
