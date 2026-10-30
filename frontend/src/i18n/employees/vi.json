@@ -27,7 +27,8 @@
       "create": "Thêm mới",
       "close": "Đóng",
       "exportExcel": "Xuất Excel",
-      "exporting": "Đang xuất tệp..."
+      "exporting": "Đang xuất tệp...",
+      "changePassword": "Đổi mật khẩu"
     },
     "table": {
       "employee": "Cán bộ nhân viên",
@@ -94,6 +95,7 @@
       "usernameAuto": "Để trống hệ thống sẽ tự động tạo từ phần tên của email.",
       "passwordAuto": "Để trống hệ thống sẽ sinh mật khẩu an toàn ngẫu nhiên 10 ký tự.",
       "statusNotice": "Lưu ý: Chuyển sang 'Nghỉ việc' sẽ tự động vô hiệu hóa tài khoản đăng nhập.",
+      "birthdayFormat": "Định dạng: DD/MM/YYYY (Ví dụ: 15/06/2003)",
       "birthdayMaskedTooltip": "Năm sinh được che bảo mật (yêu cầu quyền view_sensitive_cbnv để xem đầy đủ)",
       "masked": "Đã che năm",
       "groupsHidden": "Danh sách nhóm quyền bị ẩn theo quyền riêng tư bảo mật.",
@@ -105,11 +107,19 @@
       "editTitle": "Chỉnh Sửa Hồ Sơ Nhân Viên",
       "editDesc": "Cập nhật thông tin công tác, chức vụ và phân quyền."
     },
+    "passwordChange": {
+      "title": "Đổi mật khẩu tài khoản",
+      "help": "Chỉ quản trị viên mới có thể đặt lại mật khẩu cho hồ sơ này.",
+      "newPassword": "Mật khẩu mới",
+      "confirmPassword": "Xác nhận mật khẩu mới",
+      "submit": "Lưu mật khẩu mới"
+    },
     "created": {
       "successTitle": "Thêm Nhân Viên Thành Công!",
       "passwordNotice": "Hệ thống đã tự động tạo tài khoản và sinh mật khẩu tạm thời. Hãy sao chép và gửi cho nhân viên:",
       "copyPassword": "Sao chép mật khẩu",
       "copied": "Đã sao chép!",
+      "copyFailed": "Không thể sao chép tự động. Hãy chọn và sao chép mật khẩu thủ công.",
       "clickToCopy": "Bấm vào mật khẩu hoặc biểu tượng để sao chép"
     },
     "detail": {
@@ -167,7 +177,8 @@
       "birthdayRequired": "Vui lòng chọn ngày sinh cho nhân viên.",
       "phoneInvalid": "Số điện thoại không hợp lệ theo chuẩn Việt Nam.",
       "roleRequired": "Vui lòng chọn ít nhất một nhóm quyền cho cán bộ nhân viên.",
-      "positionRequired": "Vui lòng chọn chức vụ cho cán bộ nhân viên."
+      "positionRequired": "Vui lòng chọn chức vụ cho cán bộ nhân viên.",
+      "passwordRequired": "Vui lòng nhập và xác nhận mật khẩu mới."
     },
     "messages": {
       "fetchError": "Không thể tải danh sách cán bộ nhân viên.",
@@ -175,6 +186,10 @@
       "downloadError": "Không thể tải tệp mẫu. Vui lòng thử lại sau.",
       "createSuccess": "Thêm cán bộ nhân viên thành công!",
       "updateSuccess": "Cập nhật hồ sơ thành công!",
+      "passwordChangeSuccess": "Đổi mật khẩu tài khoản thành công.",
+      "passwordChangeError": "Không thể đổi mật khẩu. Vui lòng thử lại.",
+      "passwordMismatch": "Mật khẩu mới và xác nhận mật khẩu không khớp.",
+      "passwordNotAccepted": "Mật khẩu chưa đạt yêu cầu bảo mật của hệ thống.",
       "deleteSuccess": "Đã xóa cán bộ nhân viên thành công!",
       "deleteError": "Không thể xóa cán bộ nhân viên này.",
       "cannotDeleteSelf": "Bạn không thể tự xóa tài khoản của chính mình.",

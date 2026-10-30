@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import './EmployeesPage.mobile.css';
 import { useTranslation } from '@i18n/translate';
 import { apiClient, downloadBlob } from '@lib/apiClient';
@@ -22,8 +22,11 @@ import { DeleteConfirmModal } from './components/DeleteConfirmModal';
 
 export default function EmployeesPage() {
   const { t } = useTranslation();
-  const { can } = usePermissions();
+  const { can, isSuperuser } = usePermissions();
   const currentSession = authService.getSession();
+  const canEditEmployee = (employee: Employee) =>
+    isSuperuser ||
+    (can('change_self_cbnv') && Boolean(currentSession?.username && currentSession.username === employee.username));
 
   // Dữ liệu danh sách & phân trang
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -54,6 +57,7 @@ export default function EmployeesPage() {
 
   const [detailEmployee, setDetailEmployee] = useState<Employee | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState<boolean>(false);
+  const detailTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
 
@@ -541,18 +545,19 @@ export default function EmployeesPage() {
                           {/* Xem chi tiết */}
                           <button
                             type="button"
-                            onClick={() => {
+                            onClick={(event) => {
+                              detailTriggerRef.current = event.currentTarget;
                               setDetailEmployee(emp);
                               setIsDetailModalOpen(true);
                             }}
-                            className="p-1.5 rounded-lg text-secondary hover:text-primary hover:bg-surface-elevated transition-colors"
+                            className="p-1.5 rounded-lg text-secondary hover:text-primary hover:bg-surface-elevated transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                             title={t('employees.actions.view')}
                           >
                             <i className="fa-solid fa-eye text-sm" />
                           </button>
 
                           {/* Chỉnh sửa: Có quyền change_full_cbnv hoặc change_self_cbnv đối với chính mình */}
-                          {(can('change_full_cbnv') || (can('change_self_cbnv') && Boolean(currentSession?.username && currentSession.username === emp.username))) && (
+                          {canEditEmployee(emp) && (
                             <button
                               type="button"
                               onClick={() => {
@@ -640,6 +645,14 @@ export default function EmployeesPage() {
         positions={positions}
         groups={groups}
         isLoading={isSubmitting}
+        isAdmin={isSuperuser}
+        onChangePassword={async (employeeId, newPassword, confirmPassword) => {
+          await apiClient.post(`/api/accounts/employees/${employeeId}/change-password/`, {
+            new_password: newPassword,
+            confirm_password: confirmPassword,
+          });
+          showToast(t('employees.messages.passwordChangeSuccess'));
+        }}
       />
 
       <EmployeeDetailModal
@@ -649,10 +662,13 @@ export default function EmployeesPage() {
           setDetailEmployee(null);
         }}
         employee={detailEmployee}
-        onEdit={(emp) => {
+        returnFocusRef={detailTriggerRef}
+        onEdit={detailEmployee && canEditEmployee(detailEmployee) ? (emp) => {
+          setIsDetailModalOpen(false);
+          setDetailEmployee(null);
           setEditingEmployee(emp);
           setIsEmployeeModalOpen(true);
-        }}
+        } : undefined}
       />
 
       {isImportModalOpen && (

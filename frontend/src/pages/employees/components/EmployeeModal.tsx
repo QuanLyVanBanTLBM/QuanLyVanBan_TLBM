@@ -5,7 +5,6 @@ import { Unit } from '@app-types/organization';
 import { Button } from '@components/common/Button';
 import { Badge } from '@components/common/Badge';
 import { Select } from '@components/common/Select';
-import { usePermissions } from '@lib/permissions';
 import { ApiError } from '@lib/apiClient';
 
 interface EmployeeModalProps {
@@ -17,6 +16,8 @@ interface EmployeeModalProps {
   positions: Position[];
   groups: GroupSimple[];
   isLoading?: boolean;
+  isAdmin?: boolean;
+  onChangePassword?: (employeeId: number, newPassword: string, confirmPassword: string) => Promise<void>;
 }
 
 export const EmployeeModal: React.FC<EmployeeModalProps> = ({
@@ -28,11 +29,14 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
   positions,
   groups,
   isLoading = false,
+  isAdmin = false,
+  onChangePassword,
 }) => {
   const { t } = useTranslation();
-  const { can } = usePermissions();
   const formRef = useRef<HTMLFormElement>(null);
-  const isSelfEditOnly = Boolean(initialData && !can('change_full_cbnv'));
+  const birthdayDateInputRef = useRef<HTMLInputElement>(null);
+  const birthdayDateButtonRef = useRef<HTMLButtonElement>(null);
+  const isSelfEditOnly = Boolean(initialData && !isAdmin);
 
   const toDisplayDateString = (dateStr?: string | null): string => {
     if (!dateStr) return '';
@@ -114,6 +118,12 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
   const [errorKey, setErrorKey] = useState<string | null>(null);
   const [createdPassword, setCreatedPassword] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState<boolean>(false);
+  const [copyFailed, setCopyFailed] = useState<boolean>(false);
+  const [isPasswordFormOpen, setIsPasswordFormOpen] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   const handleAddAssignment = () => {
     const usedUnitIds = new Set([
@@ -181,6 +191,53 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
           : [...prev.nhom_quyen_ids, groupId],
       };
     });
+  };
+
+  const openBirthdayPicker = () => {
+    const input = birthdayDateInputRef.current;
+    if (!input) return;
+    const pickerInput = input as HTMLInputElement & { showPicker?: () => void };
+    if (pickerInput.showPicker) {
+      pickerInput.showPicker();
+    } else {
+      input.click();
+    }
+  };
+
+  const handleAdminPasswordChange = async () => {
+    if (!initialData || !isAdmin || !onChangePassword) return;
+    setPasswordError(null);
+    if (!newPassword || !confirmNewPassword) {
+      setPasswordError(t('employees.validation.passwordRequired'));
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setPasswordError(t('employees.messages.passwordMismatch'));
+      return;
+    }
+
+    setIsChangingPassword(true);
+    try {
+      await onChangePassword(initialData.id, newPassword, confirmNewPassword);
+      setNewPassword('');
+      setConfirmNewPassword('');
+      setIsPasswordFormOpen(false);
+    } catch (error: unknown) {
+      let rawError: unknown;
+      if (error instanceof ApiError) {
+        rawError = error.data?.detail || error.data?.error || error.data?.message;
+        if (!rawError && error.data && typeof error.data === 'object') {
+          const firstValue = Object.values(error.data).find((value) => value !== undefined);
+          rawError = Array.isArray(firstValue) ? firstValue[0] : firstValue;
+        }
+      }
+      const message = typeof rawError === 'string'
+        ? resolveErrorMessage(rawError)
+        : t('employees.messages.passwordChangeError');
+      setPasswordError(message);
+    } finally {
+      setIsChangingPassword(false);
+    }
   };
 
   const resolveErrorMessage = (rawError: string): string => {
@@ -351,11 +408,42 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
     }
   };
 
-  const handleCopyPassword = () => {
-    if (createdPassword) {
-      navigator.clipboard.writeText(createdPassword);
+  const copyWithFallback = (value: string): boolean => {
+    const temporaryInput = document.createElement('textarea');
+    temporaryInput.value = value;
+    temporaryInput.setAttribute('readonly', '');
+    temporaryInput.style.position = 'fixed';
+    temporaryInput.style.opacity = '0';
+    document.body.appendChild(temporaryInput);
+    try {
+      temporaryInput.select();
+      return document.execCommand('copy');
+    } finally {
+      temporaryInput.remove();
+    }
+  };
+
+  const handleCopyPassword = async () => {
+    if (!createdPassword) return;
+
+    setCopyFailed(false);
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(createdPassword);
+      } else if (!copyWithFallback(createdPassword)) {
+        throw new Error('clipboardCopyFailed');
+      }
       setIsCopied(true);
-      setTimeout(() => setIsCopied(false), 2500);
+      window.setTimeout(() => setIsCopied(false), 2500);
+    } catch {
+      try {
+        if (!copyWithFallback(createdPassword)) throw new Error('clipboardCopyFailed');
+        setIsCopied(true);
+        window.setTimeout(() => setIsCopied(false), 2500);
+      } catch {
+        setIsCopied(false);
+        setCopyFailed(true);
+      }
     }
   };
 
@@ -432,6 +520,11 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                   <i className="fa-regular fa-hand-pointer text-[11px]" />
                   {t('employees.created.clickToCopy')}
                 </span>
+                {copyFailed && (
+                  <span role="alert" className="text-xs text-danger">
+                    {t('employees.created.copyFailed')}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -448,6 +541,65 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                 <i className="fa-solid fa-circle-info text-sm shrink-0" />
                 <span>{t('employees.hints.selfEditNotice')}</span>
               </div>
+            )}
+
+            {initialData && isAdmin && onChangePassword && (
+              <section className="p-3 bg-surface-elevated border border-border rounded-lg space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-main">{t('employees.passwordChange.title')}</h3>
+                    <p className="text-xs text-muted">{t('employees.passwordChange.help')}</p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      setIsPasswordFormOpen((open) => !open);
+                      setPasswordError(null);
+                    }}
+                  >
+                    {isPasswordFormOpen ? t('employees.actions.cancel') : t('employees.actions.changePassword')}
+                  </Button>
+                </div>
+                {isPasswordFormOpen && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <label className="block text-sm font-medium text-secondary">
+                      {t('employees.passwordChange.newPassword')}
+                      <input
+                        type="password"
+                        autoComplete="new-password"
+                        value={newPassword}
+                        onChange={(event) => setNewPassword(event.target.value)}
+                        className="mt-1 w-full px-3 py-2 text-sm bg-surface border border-border rounded-lg text-main focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                      />
+                    </label>
+                    <label className="block text-sm font-medium text-secondary">
+                      {t('employees.passwordChange.confirmPassword')}
+                      <input
+                        type="password"
+                        autoComplete="new-password"
+                        value={confirmNewPassword}
+                        onChange={(event) => setConfirmNewPassword(event.target.value)}
+                        className="mt-1 w-full px-3 py-2 text-sm bg-surface border border-border rounded-lg text-main focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                      />
+                    </label>
+                    {passwordError && (
+                      <p role="alert" className="md:col-span-2 text-sm text-danger">{passwordError}</p>
+                    )}
+                    <div className="md:col-span-2 flex justify-end">
+                      <Button
+                        type="button"
+                        variant="primary"
+                        isLoading={isChangingPassword}
+                        onClick={handleAdminPasswordChange}
+                      >
+                        {t('employees.passwordChange.submit')}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </section>
             )}
 
             {errorKey && (
@@ -575,26 +727,37 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                     className="w-full pl-3.5 pr-10 py-2 text-sm bg-surface-elevated border border-border rounded-lg text-main placeholder-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
                     required={!initialData}
                   />
-                  <label
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-primary cursor-pointer transition-colors p-1"
-                    title="Chọn ngày sinh từ lịch"
-                  >
-                    <i className="fa-solid fa-calendar-days text-sm" />
+                  <div className="pointer-events-none absolute inset-y-0 left-0 flex w-full items-center justify-end text-muted">
+                    <button
+                      ref={birthdayDateButtonRef}
+                      type="button"
+                      aria-label={t('employees.fields.birthday')}
+                      title={t('employees.fields.birthday')}
+                      onClick={openBirthdayPicker}
+                      className="pointer-events-auto z-10 mr-2.5 inline-flex h-8 w-8 items-center justify-center rounded-md hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    >
+                      <i aria-hidden="true" className="fa-solid fa-calendar-days text-sm" />
+                    </button>
                     <input
+                      ref={birthdayDateInputRef}
                       type="date"
-                      className="sr-only"
+                      value={parseToIso(formData.ngay_sinh) || ''}
                       onChange={(e) => {
                         const iso = e.target.value;
                         if (iso) {
                           const [y, m, d] = iso.split('-');
                           setFormData((prev) => ({ ...prev, ngay_sinh: `${d}/${m}/${y}` }));
                           if (errorKey) setErrorKey(null);
+                          birthdayDateButtonRef.current?.focus();
                         }
                       }}
+                      tabIndex={-1}
+                      aria-hidden="true"
+                      className="pointer-events-none absolute left-0 top-1/2 h-8 w-8 -translate-y-1/2 opacity-0 md:left-auto md:right-0"
                     />
-                  </label>
+                  </div>
                 </div>
-                <span className="text-xs text-muted block mt-1">Định dạng: DD/MM/YYYY (Ví dụ: 15/06/2003)</span>
+                <span className="text-xs text-muted block mt-1">{t('employees.hints.birthdayFormat')}</span>
               </div>
 
               {/* Số điện thoại */}

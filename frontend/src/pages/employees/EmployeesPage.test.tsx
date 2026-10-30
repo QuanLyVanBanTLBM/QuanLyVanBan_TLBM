@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import EmployeesPage from './EmployeesPage';
 import * as apiClientModule from '@lib/apiClient';
@@ -343,6 +343,22 @@ describe('EmployeesPage Component (Issue #24)', () => {
       expect(screen.getByText('Nguyễn Văn Bình')).toBeInTheDocument();
     });
 
+    const detailButtons = screen.getAllByTitle('Xem chi tiết');
+    fireEvent.click(detailButtons[1]);
+    const detailDialog = await screen.findByRole('dialog', { name: 'Thông Tin Chi Tiết Cán Bộ Nhân Viên' });
+    expect(within(detailDialog).queryByRole('button', { name: 'Chỉnh sửa' })).not.toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(detailDialog).toContainElement(document.activeElement as HTMLElement);
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(detailDialog).toContainElement(document.activeElement as HTMLElement);
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Thông Tin Chi Tiết Cán Bộ Nhân Viên' })).not.toBeInTheDocument();
+    });
+    await waitFor(() => expect(document.activeElement).toBe(detailButtons[1]));
+
     // Sửa button should appear for binhnv row (only 1 edit button on the page)
     const editBtns = screen.getAllByTitle('Chỉnh sửa');
     expect(editBtns.length).toBe(1);
@@ -363,6 +379,29 @@ describe('EmployeesPage Component (Issue #24)', () => {
 
     // Clean up
     localStorage.removeItem('tlbm_session');
+  });
+
+  it('opens the birthday picker and writes a selected date in DD/MM/YYYY format', async () => {
+    const { container } = render(
+      <MemoryRouter>
+        <EmployeesPage />
+      </MemoryRouter>
+    );
+
+    await screen.findByText('Nguyễn Văn Bình');
+    fireEvent.click(screen.getByRole('button', { name: /Thêm nhân viên/i }));
+    await screen.findByText('Thêm Mới Cán Bộ Nhân Viên');
+
+    const datePicker = container.querySelector<HTMLInputElement>('input[type="date"]');
+    expect(datePicker).not.toBeNull();
+    expect(datePicker!).not.toHaveClass('sr-only');
+    const showPicker = vi.fn();
+    Object.defineProperty(datePicker!, 'showPicker', { configurable: true, value: showPicker });
+    fireEvent.click(screen.getByRole('button', { name: 'Ngày sinh' }));
+    expect(showPicker).toHaveBeenCalledOnce();
+    fireEvent.change(datePicker!, { target: { value: '1990-01-02' } });
+
+    expect(container.querySelector<HTMLInputElement>('input[name="ngay_sinh"]')).toHaveValue('02/01/1990');
   });
 
   it('displays error message from backend when delete fails', async () => {
