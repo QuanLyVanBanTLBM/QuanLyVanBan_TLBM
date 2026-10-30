@@ -57,6 +57,36 @@ class ChangePasswordSerializer(serializers.Serializer):
     )
 
 
+class EmployeeAdminPasswordChangeSerializer(serializers.Serializer):
+    """Xác thực mật khẩu mới do admin đặt cho một hồ sơ CBNV."""
+
+    new_password = serializers.CharField(
+        required=True,
+        write_only=True,
+        trim_whitespace=False,
+        min_length=8,
+        max_length=128,
+        style={"input_type": "password"},
+    )
+    confirm_password = serializers.CharField(
+        required=True,
+        write_only=True,
+        trim_whitespace=False,
+        min_length=8,
+        max_length=128,
+        style={"input_type": "password"},
+    )
+
+    def validate(self, attrs):
+        if attrs["new_password"] != attrs["confirm_password"]:
+            raise serializers.ValidationError("employees.messages.passwordMismatch")
+        try:
+            validate_password(attrs["new_password"], user=self.context.get("employee"))
+        except DjangoValidationError:
+            raise serializers.ValidationError("employees.messages.passwordNotAccepted")
+        return attrs
+
+
 class PositionSerializer(serializers.ModelSerializer):
     """
     Danh mục Chức vụ (accounts_position, Issue #20). Key API trùng tên cột DDL: display_order, name, is_public, note.

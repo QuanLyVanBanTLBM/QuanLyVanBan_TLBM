@@ -20,10 +20,11 @@ from .serializers import (
     EmployeeSerializer,
     EmployeeCreateSerializer,
     EmployeeUpdateSerializer,
+    EmployeeAdminPasswordChangeSerializer,
     user_can_view_sensitive,
 )
 from .excel_cbnv import generate_cbnv_template, import_cbnv_from_excel, export_cbnv_to_excel
-from .permissions import CanChangeEmployeePermission, CanViewGroupPermission, require_permission
+from .permissions import CanChangeEmployeePermission, CanViewGroupPermission, IsEmployeeAdminOnly, require_permission
 
 
 SAFE_ORDERING_FIELDS = {
@@ -75,6 +76,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             permission_classes = [IsAuthenticated, require_permission("add_cbnv")]
         elif self.action in ["update", "partial_update"]:
             permission_classes = [IsAuthenticated, CanChangeEmployeePermission]
+        elif self.action == "change_password":
+            permission_classes = [IsAuthenticated, IsEmployeeAdminOnly]
         elif self.action == "destroy":
             permission_classes = [IsAuthenticated, require_permission("delete_cbnv")]
         elif self.action == "import_excel":
@@ -115,7 +118,9 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 
         don_vi_id = self.request.query_params.get("don_vi_id")
         if don_vi_id:
-            queryset = queryset.filter(don_vi_id=don_vi_id)
+            queryset = queryset.filter(
+                Q(don_vi_id=don_vi_id) | Q(assignments__don_vi_id=don_vi_id)
+            ).distinct()
 
         khoi_id = self.request.query_params.get("khoi_id")
         if khoi_id:
@@ -193,9 +198,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         instance = self.get_object()
         user = request.user
 
-        # Bảo vệ đặc quyền: Người dùng không có quyền change_full_cbnv và không phải superuser
-        # CHỈ ĐƯỢC PHÉP sửa các trường thông tin cá nhân (sdt, email, ngay_sinh).
-        if not (user.is_superuser or user.has_perm("change_full_cbnv")):
+        # Người không phải admin chỉ được sửa hồ sơ của chính mình và các trường cá nhân.
+        if not user.is_superuser:
             allowed_self_fields = {"sdt", "email", "ngay_sinh"}
             disallowed_fields = set(request.data.keys()) - allowed_self_fields
             if disallowed_fields:
@@ -255,6 +259,21 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         updated_employee = serializer.save()
         output_serializer = EmployeeSerializer(updated_employee, context={"request": request})
         return Response(output_serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="change-password")
+    def change_password(self, request, pk=None):
+        employee = self.get_object()
+        serializer = EmployeeAdminPasswordChangeSerializer(
+            data=request.data,
+            context={"employee": employee},
+        )
+        serializer.is_valid(raise_exception=True)
+        employee.set_password(serializer.validated_data["new_password"])
+        employee.save(update_fields=["password"])
+        return Response(
+            {"detail": "employees.messages.passwordChangeSuccess"},
+            status=status.HTTP_200_OK,
+        )
 
     def partial_update(self, request, *args, **kwargs):
         kwargs["partial"] = True

@@ -27,7 +27,8 @@
       "create": "Create Employee",
       "close": "Close",
       "exportExcel": "Export Excel",
-      "exporting": "Exporting..."
+      "exporting": "Exporting...",
+      "changePassword": "Change Password"
     },
     "table": {
       "employee": "Employee",
@@ -94,6 +95,7 @@
       "usernameAuto": "Leave blank to automatically generate from email address.",
       "passwordAuto": "Leave blank to generate a secure random 10-character password.",
       "statusNotice": "Note: Changing to 'Resigned' automatically deactivates the login account.",
+      "birthdayFormat": "Format: DD/MM/YYYY (Example: 15/06/2003)",
       "birthdayMaskedTooltip": "Birth year is masked for privacy (requires view_sensitive_cbnv permission)",
       "masked": "Masked",
       "groupsHidden": "Permission groups hidden due to privacy policy.",
@@ -105,11 +107,19 @@
       "editTitle": "Edit Employee Profile",
       "editDesc": "Update assignment, position, and permission groups."
     },
+    "passwordChange": {
+      "title": "Change account password",
+      "help": "Only an administrator can reset the password for this profile.",
+      "newPassword": "New password",
+      "confirmPassword": "Confirm new password",
+      "submit": "Save new password"
+    },
     "created": {
       "successTitle": "Employee Created Successfully!",
       "passwordNotice": "A system account and temporary password have been generated. Please copy and provide it to the employee:",
       "copyPassword": "Copy Password",
       "copied": "Copied!",
+      "copyFailed": "Automatic copy failed. Select and copy the password manually.",
       "clickToCopy": "Click password or icon to copy"
     },
     "detail": {
@@ -167,7 +177,8 @@
       "birthdayRequired": "Birthday is required.",
       "phoneInvalid": "Phone number is not valid.",
       "roleRequired": "Please select at least one role/group for the employee.",
-      "positionRequired": "Please select a position for the employee."
+      "positionRequired": "Please select a position for the employee.",
+      "passwordRequired": "Enter and confirm the new password."
     },
     "messages": {
       "fetchError": "Failed to load employee list.",
@@ -175,6 +186,10 @@
       "downloadError": "Failed to download template. Please try again.",
       "createSuccess": "Employee added successfully!",
       "updateSuccess": "Profile updated successfully!",
+      "passwordChangeSuccess": "Account password changed successfully.",
+      "passwordChangeError": "Could not change the password. Please try again.",
+      "passwordMismatch": "The new password and confirmation do not match.",
+      "passwordNotAccepted": "The password does not meet the system security requirements.",
       "deleteSuccess": "Employee deleted successfully!",
       "deleteError": "Cannot delete this employee.",
       "cannotDeleteSelf": "You cannot delete your own account.",
