@@ -7,9 +7,7 @@
     "taoMoi": "Tạo hồ sơ trình ký",
     "quyTrinh": "Quy trình ký",
     "khoaCuaToi": "Khóa ký & PIN",
-    "thongBao": "Thông báo",
-    "taiLieu": "Tệp hồ sơ",
-    "moi": "mới"
+    "taiLieu": "Tệp hồ sơ"
   },
   "chung": {
     "dangTai": "Đang tải…",
@@ -22,6 +20,7 @@
     "khong": "Không",
     "co": "Có",
     "taiVe": "Tải xuống",
+    "in": "In",
     "xem": "Xem",
     "tiepTuc": "Tiếp tục",
     "batBuoc": "Bắt buộc",
@@ -409,13 +408,10 @@
     "file_khoa_khong_hop_le": "File khóa không đúng định dạng.",
     "file_khoa_khong_khop": "File khóa không thuộc tài khoản này hoặc không phải khóa đang hoạt động.",
     "khong_tim_thay_nguoi_ky": "Không tìm thấy người ký trên lượt trình hiện hành.",
-    "nguoi_ky_khong_cho_ky": "Chỉ ủy quyền người ký đang chờ ký.",
-    "nguoi_nhan_khong_hop_le": "Người nhận không hoạt động hoặc không có quyền ký.",
     "nguoi_nhan_khong_du_tham_quyen": "Chức danh người nhận chưa được phép ký thay người này.",
     "uy_quyen_khong_con_hop_le": "Người nhận không còn chức danh được phép ký thay. Hãy liên hệ quản trị để kiểm tra và ủy quyền lại.",
     "chuc_vu_khong_hop_le": "Có chức danh được chọn không còn hợp lệ. Hãy tải lại danh sách.",
     "khong_co_chuc_danh_goc": "Hồ sơ không lưu chức danh ban đầu của người ký. Hãy liên hệ quản trị để xử lý.",
-    "nguoi_nhan_da_co_trong_cap": "Người nhận đã có mặt trong cùng cấp ký.",
     "khong_hien_thi_duoc_pdf": "Không đọc được PDF. Kiểm tra phản hồi tải tệp, định dạng PDF và phiên bản trình duyệt; thử tải lại hoặc tải tệp về để xem.",
     "pdfCanMatKhau": "PDF này yêu cầu mật khẩu. Hãy tải lên bản PDF không đặt mật khẩu.",
     "pdfKhongHopLe": "PDF bị lỗi hoặc không đúng định dạng. Hãy tải lại bản PDF hợp lệ.",
@@ -488,35 +484,6 @@
     "TAO_LAI_TEP_HOAN_TAT": "Tạo lại tệp hoàn tất",
     "LIEN_KET_VAN_BAN_DI": "Liên kết văn bản đi đã đăng ký",
     "UY_QUYEN_KY": "Ủy quyền ký"
-  },
-  "thongBao": {
-    "rong": "Chưa có thông báo nào.",
-    "khongKhopLoc": "Không có thông báo nào khớp bộ lọc.",
-    "goiYTim": "Tìm theo văn bản, quy trình, người thực hiện, lý do…",
-    "locLoai": "Loại thông báo",
-    "chuaXem": "Chưa xem",
-    "loai": {
-      "CAN_KY": "Cần ký duyệt",
-      "HOAN_THANH": "Đã hoàn tất duyệt nội bộ",
-      "TU_CHOI": "Hồ sơ bị từ chối",
-      "YEU_CAU_SUA": "Trả lại để sửa",
-      "HUY": "Hồ sơ đã hủy",
-      "UY_QUYEN": "Ủy quyền ký",
-      "TIN_NHAN": "Tin nhắn trao đổi",
-      "NHAC_HAN": "Sắp đến hạn ký",
-      "QUA_HAN": "Quá hạn ký"
-    },
-    "kenh": {
-      "inApp": "Ứng dụng",
-      "emailDaGui": "Email: Đã gửi",
-      "emailChoGui": "Email: Đang gửi",
-      "emailNguoiNhan": "Người nhận"
-    },
-    "nguoiThaoTac": "Người thực hiện",
-    "lyDo": "Lý do",
-    "hanXuLy": "Hạn xử lý",
-    "hoSoHien": "Hồ sơ",
-    "noiDung": "Nội dung"
   },
   "taiLieu": {
     "goiYTim": "Số hiệu, trích yếu, số hồ sơ, quy trình…",

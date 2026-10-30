@@ -74,6 +74,37 @@ export function taiXuong(blob: Blob, ten: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/**
+ * Gửi lệnh in PDF qua iframe ẩn: trình duyệt dùng trình xem PDF gốc (đủ số trang, giữ chất lượng), không vẽ lại
+ * bằng canvas như khung xem trước. Lỗi khi trình duyệt chặn in trong iframe (hiếm) bị bỏ qua; người dùng vẫn tải
+ * về được bằng nút Tải về.
+ */
+export function inPdf(blob: Blob) {
+  const url = URL.createObjectURL(blob);
+  const khung = document.createElement('iframe');
+  khung.style.position = 'fixed';
+  khung.style.right = '0';
+  khung.style.bottom = '0';
+  khung.style.width = '0';
+  khung.style.height = '0';
+  khung.style.border = 'none';
+  khung.src = url;
+  khung.onload = () => {
+    try {
+      khung.contentWindow?.focus();
+      khung.contentWindow?.print();
+    } catch {
+      // bỏ qua: trình duyệt chặn in trong iframe
+    }
+  };
+  document.body.appendChild(khung);
+  // Không có sự kiện chuẩn báo hộp thoại in đã đóng: dọn iframe sau một khoảng đủ dài.
+  setTimeout(() => {
+    khung.remove();
+    URL.revokeObjectURL(url);
+  }, 60_000);
+}
+
 /** Người ký chưa ký trên lượt đã kết thúc (từ chối, hủy) không còn phải ký; lượt đang trả sửa thì tạm dừng. */
 export function trangThaiNguoiKy(luot: string, nguoi: string, da_mo: boolean): string {
   if (nguoi !== 'CHO_KY') return nguoi;

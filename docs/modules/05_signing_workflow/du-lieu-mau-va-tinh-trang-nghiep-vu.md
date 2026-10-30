@@ -25,7 +25,7 @@ Cập nhật 23/10/2026, nhánh `feat/5-hoan-thien-nghiep-vu`. Đối chiếu v�
 | 11 | Thu hồi chữ ký khi cấp còn mở | Xong | Xong | |
 | 12 | Hoàn tất: bằng chứng tổng hợp, PDF hoàn tất, xác minh lại | Xong | Xong | |
 | 13 | Lịch sử / nhật ký hồ sơ | Dở | Xong | Thêm tên người thực hiện |
-| 14 | Thông báo trong ứng dụng + email (outbox, gửi lại khi lỗi: `gui_thong_bao_trinh_ky`) | Dở | Xong | Thêm loại `UY_QUYEN`, `TIN_NHAN`, `NHAC_HAN`, `QUA_HAN`; số thông báo mới ở tab |
+| 14 | Thông báo qua email + outbox (gửi lại khi lỗi: `gui_thong_bao_trinh_ky`); không còn trang xem trong ứng dụng | Dở | Xong | Thêm loại `UY_QUYEN`, `TIN_NHAN`, `NHAC_HAN`, `QUA_HAN`; tab Thông báo đã bỏ (#355) |
 | 15 | Ủy quyền ký khẩn cấp từng hồ sơ (`delegate_trinhky`) | Chưa có | Đã bỏ khỏi phạm vi (#356) | Không còn endpoint tạo ủy quyền; mục 4 |
 | 16 | Nhắc hạn, quá hạn | Chưa có | Xong (MVP) | Lệnh `nhac_han_trinh_ky`; chưa leo thang cấp trên |
 | 17 | Ủy quyền theo thời gian (`signing_delegation`), thể thức `hinh_thuc_ky` (KT./TL./TUQ.) | Chưa có | Chưa có | DDL chưa có bảng/cột; cần PR đổi schema riêng |
@@ -116,7 +116,7 @@ Lịch sử và thông báo (`CAN_KY`, `HOAN_THANH`, `TU_CHOI`, `YEU_CAU_SUA`, `
   ký (lần chạy đầu), khóa đang hoạt động của `truongphong`, `giamdoc`, `admin` được xoay vòng sang khóa tạm rồi thu
   hồi. Sau đó mỗi người tự tạo khóa ký ở trang **Khóa ký & PIN** để ký tiếp các hồ sơ đang chờ.
 - `--email-domain <miền>`: gán email `<username>@<miền>` cho tài khoản mẫu chưa có email. Cần tùy chọn này thì tài
-  khoản mẫu mới có email và thông báo mới có kênh email; không có thì chỉ có thông báo trong ứng dụng.
+  khoản mẫu mới có email và thông báo mới có kênh email; không có thì thông báo chỉ ghi vào outbox, không có email.
 
 ### 5.3. Mật khẩu chung của tài khoản demo
 

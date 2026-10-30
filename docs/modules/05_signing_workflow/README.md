@@ -31,7 +31,7 @@ Tài liệu liên quan (không chép lại ở đây):
 | Hủy (người tạo; quản trị hủy thay có lý do); thu hồi chữ ký khi cấp còn mở | Xong |
 | Hoàn tất: bằng chứng tổng hợp, PDF hoàn tất, xác minh lại | Xong |
 | Ủy quyền ký khẩn cấp từng hồ sơ | Xong |
-| Thông báo trong ứng dụng + email (gửi lại khi lỗi), nhắc hạn/quá hạn | Xong |
+| Thông báo qua email và outbox `signing_notification` (gửi lại khi lỗi), nhắc hạn/quá hạn; không còn trang xem trong ứng dụng | Xong |
 | Ủy quyền theo thời gian, thể thức KT./TL./TUQ., leo thang quá hạn | Chưa làm (mục 8) |
 
 Trạng thái hồ sơ (`signing_request.trang_thai`) và lượt trình (`signing_attempt.trang_thai`):
@@ -105,7 +105,7 @@ frontend/src/
 | `trinh-ky/{id}/{trao-doi,giai-quyet}/` | Trao đổi khi trả sửa, gửi bản sửa |
 | `trinh-ky/{id}/{tep,tep-hoan-tat,bang-chung,tao-lai-tep-hoan-tat}/` | Tệp, tệp hoàn tất, bằng chứng |
 | `khoa/`, `khoa/{id}/{thach-thuc,xac-minh,kich-hoat,thu-hoi,xoay-vong,dat-pin,mo-khoa-ky,doi-pin}/` | Khóa ký, PIN |
-| `thong-bao/`, `tai-lieu/`, `toi/`, `nguoi-dung/`, `don-vi/`, `van-ban-di/` | Hỗ trợ giao diện |
+| `thong-bao/`, `tai-lieu/`, `toi/`, `nguoi-dung/`, `don-vi/`, `van-ban-di/` | Hỗ trợ giao diện (`thong-bao/` giữ ở backend, giao diện Trình ký không còn gọi) |
 | `dashboard/` | Dữ liệu Dashboard/Header cho Nhóm 1 |
 
 Thao tác đổi trạng thái bắt buộc header `Idempotency-Key`. Lỗi trả dạng `{"code", "detail", "fields"}` (tiếng Việt).
@@ -233,7 +233,7 @@ không nạp được.
 2. Kiểm tra cấu hình: `pnpm manage check` (không có `signing.W002`, `signing.W003`), rồi gửi thư thử:
    `pnpm manage sendtestemail <email nhận>`.
 3. Tài khoản mẫu cần có email thì thông báo mới có kênh email: chạy `seed_signing_demo --email-domain <miền>` (gán
-   `<username>@<miền>` cho tài khoản mẫu chưa có email). Không có email thì chỉ có thông báo trong ứng dụng.
+   `<username>@<miền>` cho tài khoản mẫu chưa có email). Không có email thì thông báo chỉ ghi vào outbox, không gửi email.
 4. Email lỗi được ghi `THAT_BAI` kèm lý do trong `signing_notification`; sửa cấu hình xong chạy
    `python manage.py gui_thong_bao_trinh_ky` để gửi lại.
 
@@ -289,7 +289,10 @@ Báo cáo chi tiết các luồng nghiệp vụ (Happy path, Trả sửa lượt
   `Employee.chuc_vu_id` khi tìm và kiểm tra người nhận ủy quyền. Chức vụ kiêm nhiệm chưa được tính là căn cứ nhận ủy
   quyền; khi hỗ trợ cần chốt phạm vi đơn vị, hiệu lực phân công và chức danh nào được lưu làm snapshot.
 - Nhóm Chuyên viên (CV) đã được cấp quyền `send_trinhky` qua PR #254 (migration `authorization/0007_grant_cv_send_trinhky`, issue #226), cho phép chuyên viên tự gửi hồ sơ do mình tạo.
-- Đánh dấu đã đọc thông báo lưu ở trình duyệt; bảng `signing_notification` chưa có cột đã đọc.
+- Tab "Thông báo" và trang `/approvals/thong-bao` đã bỏ khỏi giao diện (issue #355). Thông báo vẫn gửi qua email và
+  outbox `signing_notification` (`gui_thong_bao_trinh_ky`, `nhac_han_trinh_ky`); API `thong-bao/` giữ nguyên. Đường dẫn
+  `/approvals/thong-bao` chuyển về trang chính. Phân trang, tìm kiếm, lọc loại và đánh dấu đã xem của PR #344 chỉ còn
+  ở backend.
 - Tìm không dấu dùng `LOWER(TRANSLATE(...))` sẵn có của PostgreSQL, quét tuần tự (đủ cho quy mô hiện tại). Muốn dùng
   extension `unaccent` và index theo biểu thức thì phải đổi `release_DDL.sql` (`CREATE EXTENSION`, function
   `IMMUTABLE`, index), cần PR đổi schema riêng theo AGENTS.md mục 5–6. Dữ liệu lưu dạng tổ hợp (NFD) chưa được chuẩn
@@ -406,3 +409,6 @@ Kết quả kiểm tra local (PostgreSQL 16): `manage.py check` và `makemigrati
 toàn bộ 1160 test đạt (1 skip có sẵn); frontend lint, `tsc -b`, `check:i18n`, `check:tokens` sạch, 628 test đạt, build
 đạt (cảnh báo chunk lớn do bundle chung, không thuộc Nhóm 5). E2E Playwright Chromium: hộp thoại, đường dẫn sai, tệp và
 hạn chót sai, form quy trình, trao đổi, ký bằng file khóa + PIN (kể cả Enter), số đếm sau khi ký, 768px và 390px.
+
+Ghi chú #355: các mục "số thông báo mới ở tab" và "thông báo chỉ hiển thị 50 mục gần nhất" ở trên không còn áp dụng
+vì tab Thông báo đã bỏ khỏi giao diện.

@@ -2,12 +2,12 @@
  * Phân hệ Trình ký duyệt nội bộ (Nhóm 5, #80 mục E) dưới đường dẫn /approvals/*.
  * Tab chỉ là bộ lọc hiển thị; quyền đọc/ghi do server kiểm ở từng API.
  */
-import { Component, type ErrorInfo, lazy, type ReactNode, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Component, type ErrorInfo, lazy, type ReactNode, Suspense, useEffect, useMemo, useRef } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@components/common';
 import { DangTai, KhongTimThay, LoiTai } from '@components/signing/ChungUI';
 import { signingApi } from '@lib/signing/api';
-import { coQuyen, SigningContext, soThongBaoMoi, useTai } from '@lib/signing/hooks';
+import { coQuyen, SigningContext, useTai } from '@lib/signing/hooks';
 import { useSigningT } from '@lib/signing/i18n';
 import './signing.css';
 
@@ -16,7 +16,6 @@ const TaoHoSoPage = lazy(() => import('./TaoHoSoPage'));
 const ChiTietPage = lazy(() => import('./ChiTietPage'));
 const QuyTrinhPage = lazy(() => import('./QuyTrinhPage'));
 const KhoaPage = lazy(() => import('./KhoaPage'));
-const ThongBaoPage = lazy(() => import('./ThongBaoPage'));
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -59,8 +58,6 @@ export default function SigningModule() {
   const { t, loi } = useSigningT();
   const toi = useTai(() => signingApi.toi());
   const dieuHuong = useNavigate();
-  const [lanXem, setLanXem] = useState(0);
-  const daXemThongBao = useCallback(() => setLanXem((n) => n + 1), []);
   const { pathname } = useLocation();
   // Màn hẹp: thanh tab cuộn ngang, đưa tab đang xem vào vùng nhìn thấy (vd. vào thẳng "Khóa ký & PIN")
   const thanhTab = useRef<HTMLElement>(null);
@@ -70,18 +67,9 @@ export default function SigningModule() {
   const canKy = useTai(() => signingApi.thongKe('can_toi_ky'), [pathname]);
   // Hồ sơ chờ tôi ký gồm cả hồ sơ đã quá hạn (bộ lọc tách hai nhóm)
   const soCanKy = canKy.duLieu ? canKy.duLieu.cho_ky + canKy.duLieu.qua_han : undefined;
-  // page_size lớn hơn mặc định: đủ các thông báo gần đây để đếm đúng số "mới kể từ lần xem trước" ở huy hiệu tab
-  const thongBao = useTai(() => signingApi.thongBao({}, 1, 50), [pathname]);
-  const { tai: taiLaiCanKy } = canKy;
-  const { tai: taiLaiThongBao } = thongBao;
-  const lamMoiDem = useCallback(() => {
-    taiLaiCanKy();
-    taiLaiThongBao();
-  }, [taiLaiCanKy, taiLaiThongBao]);
-  const ngu_canh = useMemo(() => ({ toi: toi.duLieu, taiLaiToi: toi.tai, daXemThongBao, lamMoiDem }),
-    [toi.duLieu, toi.tai, daXemThongBao, lamMoiDem]);
-  // lanXem đổi khi trang Thông báo đánh dấu đã xem: tính lại số mới
-  const soMoi = lanXem >= 0 ? soThongBaoMoi(thongBao.duLieu?.results ?? null, toi.duLieu?.id) : 0;
+  const { tai: lamMoiDem } = canKy;
+  const ngu_canh = useMemo(() => ({ toi: toi.duLieu, taiLaiToi: toi.tai, lamMoiDem }),
+    [toi.duLieu, toi.tai, lamMoiDem]);
 
   const tabChinh = [
     { den: '/approvals', nhan: t('nav.canToiKy'), icon: 'fa-pen-nib', end: true, so: soCanKy },
@@ -89,7 +77,6 @@ export default function SigningModule() {
     { den: '/approvals/tat-ca', nhan: t('nav.tatCa'), icon: 'fa-folder-open' },
   ];
   const tabPhu = [
-    { den: '/approvals/thong-bao', nhan: t('nav.thongBao'), icon: 'fa-bell', so: soMoi },
     ...(coQuyen(toi.duLieu, 'manage_signing_process') || coQuyen(toi.duLieu, 'view_trinhky')
       ? [{ den: '/approvals/quy-trinh', nhan: t('nav.quyTrinh'), icon: 'fa-diagram-project' }] : []),
     ...(coQuyen(toi.duLieu, 'sign_trinhky') ? [{ den: '/approvals/khoa', nhan: t('nav.khoaCuaToi'), icon: 'fa-key' }] : []),
@@ -100,9 +87,8 @@ export default function SigningModule() {
         : pathname === '/approvals/tao-moi' ? t('nav.taoMoi')
           : pathname === '/approvals/quy-trinh' ? t('nav.quyTrinh')
             : pathname === '/approvals/khoa' ? t('nav.khoaCuaToi')
-              : pathname === '/approvals/thong-bao' ? t('nav.thongBao')
-                : pathname === '/approvals/tai-lieu' ? t('nav.taiLieu')
-                  : /^\/approvals\/\d+$/.test(pathname) ? t('chiTiet.tienTrinh') : t('chung.trangKhongTonTai');
+              : pathname === '/approvals/tai-lieu' ? t('nav.taiLieu')
+                : /^\/approvals\/\d+$/.test(pathname) ? t('chiTiet.tienTrinh') : t('chung.trangKhongTonTai');
 
   return (
     <SigningContext.Provider value={ngu_canh}>
@@ -171,14 +157,6 @@ export default function SigningModule() {
               >
                 <i className={`fa-solid ${m.icon}`} aria-hidden="true" />
                 <span>{m.nhan}</span>
-                {!!m.so && (
-                  <span
-                    className="rounded-full bg-danger px-1.5 py-0.5 text-xs font-bold text-inverse"
-                    title={t('nav.moi')}
-                  >
-                    {m.so}
-                  </span>
-                )}
               </NavLink>
             ))}
           </div>
@@ -198,7 +176,8 @@ export default function SigningModule() {
                 <Route path="tao-moi" element={<TaoHoSoPage />} />
                 <Route path="quy-trinh" element={<QuyTrinhPage />} />
                 <Route path="khoa" element={<KhoaPage />} />
-                <Route path="thong-bao" element={<ThongBaoPage />} />
+                {/* Tab Thông báo đã bỏ: giữ đường dẫn cũ để liên kết lưu sẵn không rơi vào 404 */}
+                <Route path="thong-bao" element={<Navigate to="/approvals" replace />} />
                 <Route path="tai-lieu" element={<Navigate to="/approvals/tat-ca?che_do=tep" replace />} />
                 <Route path=":id" element={<ChiTietPage />} />
                 <Route path="*" element={<KhongTimThay thongBao={t('chung.trangKhongTonTai')} />} />

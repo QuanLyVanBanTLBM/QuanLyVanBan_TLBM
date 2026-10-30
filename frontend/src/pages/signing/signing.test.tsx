@@ -32,12 +32,11 @@ import DanhSachPage from './DanhSachPage';
 import QuyTrinhPage from './QuyTrinhPage';
 import SigningModule from './SigningModule';
 import TaiLieuPage from './TaiLieuPage';
-import ThongBaoPage from './ThongBaoPage';
 
 vi.mock('@lib/signing/api', async () => {
   const actual = await vi.importActual<typeof import('@lib/signing/api')>('@lib/signing/api');
   return { ...actual, signingApi: {
-    toi: vi.fn(), danhSach: vi.fn(), thongKe: vi.fn(), taiLieu: vi.fn(), quyTrinh: vi.fn(), donVi: vi.fn(), thongBao: vi.fn(), chiTietQuyTrinh: vi.fn(),
+    toi: vi.fn(), danhSach: vi.fn(), thongKe: vi.fn(), taiLieu: vi.fn(), quyTrinh: vi.fn(), donVi: vi.fn(), chiTietQuyTrinh: vi.fn(),
     xoaQuyTrinh: vi.fn(), taoQuyTrinh: vi.fn(), suaQuyTrinh: vi.fn(), chucVu: vi.fn(), danhBaCanBo: vi.fn(), canBoTheoChucVu: vi.fn(), tepCuaLuot: vi.fn(), tepGoc: vi.fn(), tepHoanTat: vi.fn(), bangChung: vi.fn(),
     thaoTacQuyTrinh: vi.fn(),
   } };
@@ -92,7 +91,6 @@ const boc = (ui: React.ReactNode, toi: NguoiDungHienTai = TOI) => render(
 beforeEach(() => {
   vi.clearAllMocks();
   api.quyTrinh.mockResolvedValue([]);
-  api.thongBao.mockResolvedValue(trang([]));
   api.chucVu.mockResolvedValue([]);
   api.danhBaCanBo.mockResolvedValue([]);
   api.canBoTheoChucVu.mockResolvedValue({ count: 0, results: [] });
@@ -120,10 +118,19 @@ describe('SigningModule', () => {
     await waitFor(() => expect(tabKy).toHaveTextContent('2'));
     expect(api.thongKe).toHaveBeenCalledWith('can_toi_ky');
     const nav = within(screen.getByRole('navigation'));
-    for (const ten of [/Hồ sơ tôi trình/, /Hồ sơ được xem/, /Thông báo/, /Khóa ký & PIN/]) {
+    for (const ten of [/Hồ sơ tôi trình/, /Hồ sơ được xem/, /Khóa ký & PIN/]) {
       expect(nav.getByRole('link', { name: ten })).toBeInTheDocument();
     }
     expect(nav.queryByRole('link', { name: /^Quy trình/ })).toBeInTheDocument();
+    expect(nav.queryByRole('link', { name: /Thông báo/ })).not.toBeInTheDocument();
+  });
+
+  it('đường dẫn cũ /approvals/thong-bao chuyển về trang chính, không gọi API thông báo', async () => {
+    api.toi.mockResolvedValue(TOI);
+    api.danhSach.mockResolvedValue(trang([]));
+    moModule('/approvals/thong-bao');
+    expect(await screen.findByRole('heading', { level: 2, name: 'Cần tôi ký duyệt' })).toBeInTheDocument();
+    expect(screen.queryByText(/Trang không tồn tại/)).not.toBeInTheDocument();
   });
 
   it('có quyền tạo thì có nút riêng "Tạo hồ sơ trình ký" ở đầu trang, không nằm trong tab', async () => {
@@ -459,58 +466,7 @@ describe('QuyTrinhPage bộ lọc', () => {
   });
 });
 
-describe('ThongBaoPage', () => {
-  it('hiện thông báo của tôi với loại, văn bản và liên kết tới hồ sơ', async () => {
-    api.thongBao.mockResolvedValue(trang([{
-      id: 1, loai_thong_bao: 'CAN_KY', trinh_ky: 12, van_ban: '15/TTr — Mua sắm', trang_thai_ho_so: 'CHO_KY',
-      ten_quy_trinh: 'Duyệt mua sắm', created_at: '2026-10-07T01:00:00Z',
-    }]));
-    boc(<ThongBaoPage />);
-    const lienKet = await screen.findByRole('link', { name: /Cần ký duyệt/ });
-    expect(lienKet).toHaveAttribute('href', '/approvals/12');
-    expect(within(lienKet).getByText(/#12 · 15\/TTr — Mua sắm/)).toBeInTheDocument();
-  });
-
-  it('loại thông báo mới (ủy quyền, tin nhắn, nhắc hạn) có nhãn riêng; mở trang thì đánh dấu đã xem', async () => {
-    localStorage.removeItem('tlbm_signing_thong_bao_xem_luc:7');
-    api.thongBao.mockResolvedValue(trang(['UY_QUYEN', 'TIN_NHAN', 'QUA_HAN'].map((loai, i) => ({
-      id: i + 1, loai_thong_bao: loai as 'UY_QUYEN', trinh_ky: 12, van_ban: '15/TTr', trang_thai_ho_so: 'CHO_KY' as const,
-      ten_quy_trinh: 'Duyệt', created_at: '2026-10-07T01:00:00Z',
-    }))));
-    boc(<ThongBaoPage />);
-    const ds = within(await screen.findByRole('list'));
-    expect(ds.getByText('Ủy quyền ký')).toBeInTheDocument();
-    expect(ds.getByText('Tin nhắn trao đổi')).toBeInTheDocument();
-    expect(ds.getByText('Quá hạn ký')).toBeInTheDocument();
-    await waitFor(() => expect(Number(localStorage.getItem('tlbm_signing_thong_bao_xem_luc:7'))).toBeGreaterThan(0));
-  });
-
-  it('tab Thông báo hiện số thông báo mới kể từ lần xem trước', async () => {
-    localStorage.setItem('tlbm_signing_thong_bao_xem_luc:7', String(Date.parse('2026-10-07T00:00:00Z')));
-    api.toi.mockResolvedValue(TOI);
-    api.danhSach.mockResolvedValue(trang([]));
-    api.thongBao.mockResolvedValue(trang([
-      { id: 1, loai_thong_bao: 'CAN_KY', trinh_ky: 12, van_ban: 'a', trang_thai_ho_so: 'CHO_KY', ten_quy_trinh: 'Q', created_at: '2026-10-07T01:00:00Z' },
-      { id: 2, loai_thong_bao: 'HUY', trinh_ky: 13, van_ban: 'b', trang_thai_ho_so: 'HUY', ten_quy_trinh: 'Q', created_at: '2026-10-06T01:00:00Z' },
-    ]));
-    moModule();
-    const tab = await screen.findByRole('link', { name: /Thông báo/ });
-    await waitFor(() => expect(tab).toHaveTextContent('Thông báo1'));
-  });
-
-  it('thông báo cần ký hiện hạn xử lý theo định dạng ngày Việt Nam', async () => {
-    api.thongBao.mockResolvedValue(trang([{
-      id: 1, loai_thong_bao: 'CAN_KY', trinh_ky: 12, van_ban: '15/TTr', trang_thai_ho_so: 'CHO_KY',
-      ten_quy_trinh: 'Duyệt', created_at: '2026-10-07T01:00:00Z', han_xu_ly: '2026-10-08T03:30:00Z',
-    }]));
-    boc(<ThongBaoPage />);
-    const han = new Date('2026-10-08T03:30:00Z').toLocaleString('vi-VN', {
-      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
-    });
-    expect(await screen.findByText(han)).toBeInTheDocument();
-    expect(screen.getByText(/Hạn xử lý/)).toBeInTheDocument();
-  });
-
+describe('DanhSachPage: bộ lọc ngày', () => {
   it('Từ ngày lớn hơn Đến ngày: báo lỗi tại form, không gửi request; sửa lại hợp lệ thì lọc', async () => {
     api.danhSach.mockResolvedValue(trang([]));
     boc(<DanhSachPage hop="toi_gui" />);
@@ -530,49 +486,6 @@ describe('ThongBaoPage', () => {
     await waitFor(() => expect(api.danhSach).toHaveBeenLastCalledWith('toi_gui', { tu_ngay: '2026-09-30', den_ngay: '2026-10-01' }, 1));
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Từ ngày')).not.toHaveAttribute('aria-invalid');
-  });
-
-  it('chưa có thông báo', async () => {
-    api.thongBao.mockResolvedValue(trang([]));
-    boc(<ThongBaoPage />);
-    expect(await screen.findByText('Chưa có thông báo nào.')).toBeInTheDocument();
-  });
-
-  it('thông báo mới hơn lần xem trước được tô đậm; thông báo cũ thì không, dù huy hiệu ở tab đã về 0', async () => {
-    localStorage.setItem('tlbm_signing_thong_bao_xem_luc:7', String(Date.parse('2026-10-07T00:30:00Z')));
-    api.thongBao.mockResolvedValue(trang([
-      { id: 1, loai_thong_bao: 'CAN_KY', trinh_ky: 12, van_ban: 'Mới', trang_thai_ho_so: 'CHO_KY', ten_quy_trinh: 'Q', created_at: '2026-10-07T01:00:00Z' },
-      { id: 2, loai_thong_bao: 'HUY', trinh_ky: 13, van_ban: 'Cũ', trang_thai_ho_so: 'HUY', ten_quy_trinh: 'Q', created_at: '2026-10-06T01:00:00Z' },
-    ]));
-    boc(<ThongBaoPage />);
-    const ds = within(await screen.findByRole('list'));
-    const moi = ds.getByText('Cần ký duyệt');
-    const cu = ds.getByText('Hồ sơ đã hủy');
-    expect(moi.closest('div')).toHaveClass('font-bold');
-    expect(cu.closest('div')).not.toHaveClass('font-bold');
-    // Mốc trên trình duyệt cập nhật ngay (huy hiệu ở tab về 0) nhưng mốc dùng để tô đậm không đổi khi đang xem trang này
-    await waitFor(() => expect(Number(localStorage.getItem('tlbm_signing_thong_bao_xem_luc:7')))
-      .toBeGreaterThan(Date.parse('2026-10-07T01:00:00Z')));
-    expect(moi.closest('div')).toHaveClass('font-bold');
-  });
-
-  it('ô tìm kiếm gọi lại API sau khi gõ xong (debounce)', async () => {
-    api.thongBao.mockResolvedValue(trang([]));
-    boc(<ThongBaoPage />);
-    await screen.findByText('Chưa có thông báo nào.');
-    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'mua sam' } });
-    await waitFor(() => expect(api.thongBao).toHaveBeenLastCalledWith({ q: 'mua sam' }, 1));
-  });
-
-  it('chọn loại thông báo gọi lại API với loai_thong_bao, về trang 1', async () => {
-    api.thongBao.mockResolvedValue(trang([]));
-    boc(<ThongBaoPage />);
-    await screen.findByText('Chưa có thông báo nào.');
-    fireEvent.change(screen.getByRole('combobox', { name: 'Loại thông báo' }), { target: { value: 'QUA_HAN' } });
-    await waitFor(() => expect(api.thongBao).toHaveBeenLastCalledWith({ loai_thong_bao: 'QUA_HAN' }, 1));
-    expect(screen.getByRole('button', { name: /Xóa lọc/ })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Xóa lọc/ }));
-    await waitFor(() => expect(api.thongBao).toHaveBeenLastCalledWith({}, 1));
   });
 });
 
@@ -636,6 +549,22 @@ describe('TaiLieuPage khoảng ngày và tải trong hộp xem', () => {
     expect(await hop.findByRole('alert')).toBeInTheDocument();
     expect(click).toHaveBeenCalledTimes(1);
     click.mockRestore();
+  });
+
+  it('hộp xem PDF có nút In dùng lại dữ liệu đã tải để xem (không gọi API thêm lần nữa)', async () => {
+    api.taiLieu.mockResolvedValue(trang([tep]));
+    api.tepCuaLuot.mockResolvedValue(new Blob(['%PDF-']));
+    URL.createObjectURL = vi.fn(() => 'blob:tep');
+    URL.revokeObjectURL = vi.fn();
+    boc(<TaiLieuPage />);
+    fireEvent.click((await screen.findAllByText(/PDF trình ký · lượt 1|trinh-ky-12-luot-1\.pdf/))[0]);
+    const hop = within(await screen.findByRole('dialog'));
+    const nutIn = await hop.findByRole('button', { name: 'In' });
+    await waitFor(() => expect(nutIn).toBeEnabled());
+    expect(api.tepCuaLuot).toHaveBeenCalledTimes(1);
+    fireEvent.click(nutIn);
+    expect(URL.createObjectURL).toHaveBeenCalled();
+    expect(api.tepCuaLuot).toHaveBeenCalledTimes(1);  // In không gọi lại API tải tệp
   });
 });
 

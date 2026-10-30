@@ -22,12 +22,11 @@ import QuyTrinhPage from './QuyTrinhPage';
 import SigningModule from './SigningModule';
 import TaiLieuPage from './TaiLieuPage';
 import TaoHoSoPage from './TaoHoSoPage';
-import ThongBaoPage from './ThongBaoPage';
 
 vi.mock('@lib/signing/api', async () => {
   const actual = await vi.importActual<typeof import('@lib/signing/api')>('@lib/signing/api');
   return { ...actual, signingApi: {
-    toi: vi.fn(), danhSach: vi.fn(), thongKe: vi.fn(), thongBao: vi.fn(), chiTiet: vi.fn(), tepGoc: vi.fn(), taiLieu: vi.fn(), huy: vi.fn(),
+    toi: vi.fn(), danhSach: vi.fn(), thongKe: vi.fn(), chiTiet: vi.fn(), tepGoc: vi.fn(), taiLieu: vi.fn(), huy: vi.fn(),
     timVanBanDi: vi.fn(), chiTietVanBanDi: vi.fn(), lienKetVanBanDi: vi.fn(), quyTrinh: vi.fn(), taoNhap: vi.fn(), khoa: vi.fn(), thuHoiKhoa: vi.fn(), traoDoi: vi.fn(),
     guiTinNhan: vi.fn(), giaiQuyet: vi.fn(), thaoTacQuyTrinh: vi.fn(), taoQuyTrinh: vi.fn(), xoaQuyTrinh: vi.fn(),
     donVi: vi.fn(), chucVu: vi.fn(), danhBaCanBo: vi.fn(), canBoTheoChucVu: vi.fn(),
@@ -58,7 +57,6 @@ beforeEach(() => {
   api.danhBaCanBo.mockResolvedValue([]);
   api.canBoTheoChucVu.mockResolvedValue({ count: 0, results: [] });
   api.thongKe.mockResolvedValue({ tat_ca: 25, cho_ky: 0, qua_han: 0, hoan_thanh: 0, tra_lai: 0 });
-  api.thongBao.mockResolvedValue({ count: 0, next: null, previous: null, results: [] });
 });
 
 describe('HopThoai: bàn phím và bấm nền', () => {
@@ -524,28 +522,6 @@ describe('Danh sách, thông báo, lỗi dữ liệu', () => {
     await waitFor(() => expect(api.danhSach.mock.calls.map((c) => c[2])).toEqual([1, 2, 1]));
     expect(screen.queryByText(/Không tìm thấy/)).not.toBeInTheDocument();
   });
-
-  it('thông báo nhiều trang: bấm "Sau" gọi đúng trang kế tiếp (không còn gộp 50 mục một lần)', async () => {
-    const mot_trang = (trang: number) => ({
-      count: 25, next: trang < 3 ? 'x' : null, previous: trang > 1 ? 'x' : null,
-      results: [{
-        id: trang, loai_thong_bao: 'CAN_KY' as const, trinh_ky: trang, van_ban: `VB ${trang}`,
-        trang_thai_ho_so: 'CHO_KY' as const, ten_quy_trinh: 'QT', created_at: '2026-10-07T01:00:00Z',
-      }],
-    });
-    api.thongBao.mockImplementation((_loc, trang = 1) => Promise.resolve(mot_trang(trang)));
-    boc(<ThongBaoPage />);
-    expect(await screen.findByText(/VB 1$/)).toBeInTheDocument();
-    fireEvent.click(await screen.findByRole('button', { name: /Sau/ }));
-    await waitFor(() => expect(api.thongBao.mock.calls.map((c) => c[1])).toEqual([1, 2]));
-    expect(await screen.findByText(/VB 2$/)).toBeInTheDocument();
-  });
-
-  it('chưa có thông báo nào', async () => {
-    api.thongBao.mockResolvedValue({ count: 0, next: null, previous: null, results: [] });
-    boc(<ThongBaoPage />);
-    expect(await screen.findByText('Chưa có thông báo nào.')).toBeInTheDocument();
-  });
 });
 
 function HienLoi({ err }: { err: unknown }) {
@@ -569,7 +545,7 @@ describe('i18n lỗi dữ liệu không hợp lệ', () => {
   it('đủ khóa vi/en cho nhãn trường và thông báo mới', () => {
     for (const lang of ['vi', 'en'] as const) {
       for (const khoa of ['chung.trangKhongTonTai', 'chung.veDanhSach', 'tao.loiTepRong', 'tao.loiHanChot',
-        'khoa.xacNhanThuHoi', 'traoDoi.ban', 'thongBao.toiDa', 'quyTrinh.xoaCap', 'quyTrinh.loiMa', 'truong.tep',
+        'khoa.xacNhanThuHoi', 'traoDoi.ban', 'quyTrinh.xoaCap', 'quyTrinh.loiMa', 'truong.tep',
         'loi.du_lieu_khong_hop_le', 'loi.quy_trinh_trung_ma', 'loi.nguoi_ky_trung_trong_cap']) {
         expect(dich(lang, khoa, { so: 1, ma: 'x', ten: 'x', phienBan: 1 }), `${lang}:${khoa}`).not.toBe(khoa);
       }

@@ -12,7 +12,7 @@ import LocKhoangNgay from '@components/signing/LocKhoangNgay';
 import { PhanTrang } from '@components/signing/PhanTrang';
 import XemPdf from '@components/signing/XemPdf';
 import { docLoi, SO_HO_SO_MOI_TRANG, signingApi } from '@lib/signing/api';
-import { dinhDangNgay, LOP_O_NHAP, moTaVanBan, taiXuong, tenTepTaiVe } from '@lib/signing/dinhDang';
+import { dinhDangNgay, inPdf, LOP_O_NHAP, moTaVanBan, taiXuong, tenTepTaiVe } from '@lib/signing/dinhDang';
 import { useTai } from '@lib/signing/hooks';
 import { useSigningT, type HamDich } from '@lib/signing/i18n';
 import type { BoLocTaiLieu, LoaiTepTaiLieu, TepTaiLieu } from '@lib/signing/types';
@@ -106,6 +106,11 @@ export default function TaiLieuPage() {
     } catch (err) {
       setTaiVe({ dang: false, loi: err });
     }
+  };
+
+  // Dùng lại dữ liệu đã tải để xem (không gọi API thêm lần nữa)
+  const inTepXem = () => {
+    if (duLieuXem?.buf) inPdf(new Blob([duLieuXem.buf], { type: 'application/pdf' }));
   };
 
   return (
@@ -279,6 +284,9 @@ export default function TaiLieuPage() {
             {/* Footer */}
             <div className="flex items-center justify-end gap-2 border-t border-border-subtle px-5 py-2.5 bg-surface text-xs text-muted shrink-0">
               {taiVe.loi != null && <div className="mr-auto min-w-0"><ThongBao>{loi(taiVe.loi)}</ThongBao></div>}
+              <Button size="sm" variant="secondary" icon="fa-print" disabled={!duLieuXem?.buf} onClick={inTepXem}>
+                {t('chung.in')}
+              </Button>
               <Button size="sm" variant="secondary" icon="fa-download" isLoading={taiVe.dang} onClick={taiTepXem}>
                 {t('chung.taiVe')}
               </Button>

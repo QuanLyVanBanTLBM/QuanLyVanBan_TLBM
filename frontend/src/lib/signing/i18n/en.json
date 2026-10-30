@@ -7,9 +7,7 @@
     "taoMoi": "New signing request",
     "quyTrinh": "Signing workflows",
     "khoaCuaToi": "Signing key & PIN",
-    "thongBao": "Notifications",
-    "taiLieu": "Request files",
-    "moi": "new"
+    "taiLieu": "Request files"
   },
   "chung": {
     "dangTai": "Loading…",
@@ -22,6 +20,7 @@
     "khong": "No",
     "co": "Yes",
     "taiVe": "Download",
+    "in": "Print",
     "xem": "View",
     "tiepTuc": "Continue",
     "batBuoc": "Required",
@@ -409,13 +408,10 @@
     "file_khoa_khong_hop_le": "Invalid key file format.",
     "file_khoa_khong_khop": "The key file does not belong to this account or to the active key.",
     "khong_tim_thay_nguoi_ky": "Signer not found in the current round.",
-    "nguoi_ky_khong_cho_ky": "Only signers awaiting signature can be delegated.",
-    "nguoi_nhan_khong_hop_le": "The delegate is inactive or lacks signing permission.",
     "nguoi_nhan_khong_du_tham_quyen": "The recipient's position is not authorized to sign for this person.",
     "uy_quyen_khong_con_hop_le": "The delegate no longer holds a position authorized to sign for this request. Contact an administrator to review and reassign.",
     "chuc_vu_khong_hop_le": "A selected position is no longer available. Reload the list.",
     "khong_co_chuc_danh_goc": "The request does not contain the signer's original position. Contact an administrator.",
-    "nguoi_nhan_da_co_trong_cap": "The delegate is already in the same level.",
     "khong_hien_thi_duoc_pdf": "The PDF could not be read. Check the file response, PDF format, and browser version; retry or download the file.",
     "pdfCanMatKhau": "This PDF requires a password. Upload a PDF without password protection.",
     "pdfKhongHopLe": "This PDF is damaged or invalid. Upload a valid PDF file.",
@@ -488,35 +484,6 @@
     "TAO_LAI_TEP_HOAN_TAT": "Final file regenerated",
     "LIEN_KET_VAN_BAN_DI": "Outgoing document linked",
     "UY_QUYEN_KY": "Signing delegated"
-  },
-  "thongBao": {
-    "rong": "No notifications yet.",
-    "khongKhopLoc": "No notifications match the filters.",
-    "goiYTim": "Search by document, process, actor, reason…",
-    "locLoai": "Notification type",
-    "chuaXem": "Unseen",
-    "loai": {
-      "CAN_KY": "Awaiting your approval",
-      "HOAN_THANH": "Internal approval completed",
-      "TU_CHOI": "Request rejected",
-      "YEU_CAU_SUA": "Returned for revision",
-      "HUY": "Request cancelled",
-      "UY_QUYEN": "Signing delegated",
-      "TIN_NHAN": "New discussion message",
-      "NHAC_HAN": "Signing due soon",
-      "QUA_HAN": "Signing overdue"
-    },
-    "kenh": {
-      "inApp": "In-app",
-      "emailDaGui": "Email: Sent",
-      "emailChoGui": "Email: Sending",
-      "emailNguoiNhan": "Recipient"
-    },
-    "nguoiThaoTac": "By",
-    "lyDo": "Reason",
-    "hanXuLy": "Due",
-    "hoSoHien": "Request",
-    "noiDung": "Message"
   },
   "taiLieu": {
     "goiYTim": "Number, summary, request number, process…",

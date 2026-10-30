@@ -49,9 +49,7 @@ export function useKhoaChongTrung() {
 export const SigningContext = createContext<{
   toi: NguoiDungHienTai | null;
   taiLaiToi: () => void;
-  /** Trang Thông báo báo đã xem để tab cập nhật số thông báo mới. */
-  daXemThongBao?: () => void;
-  /** Sau khi ký, từ chối, hủy… trên hồ sơ: tải lại số "Cần tôi ký duyệt" và số thông báo mới ở thanh tab. */
+  /** Sau khi ký, từ chối, hủy… trên hồ sơ: tải lại số "Cần tôi ký duyệt" ở thanh tab. */
   lamMoiDem?: () => void;
 }>({
   toi: null,
@@ -64,30 +62,4 @@ export function useToi() {
 
 export function coQuyen(toi: NguoiDungHienTai | null, ma: string): boolean {
   return Boolean(toi?.quyen?.[ma]);
-}
-
-// Thông báo mới: so thời điểm tạo với lần xem trang Thông báo gần nhất, lưu trên trình duyệt (tiện ích hiển thị,
-// không phải trạng thái nghiệp vụ; bảng signing_notification chưa có cột đã đọc).
-const KHOA_DA_XEM = 'tlbm_signing_thong_bao_xem_luc';
-
-export function lanXemThongBao(userId: number): number {
-  try {
-    return Number(localStorage.getItem(`${KHOA_DA_XEM}:${userId}`)) || 0;
-  } catch {
-    return 0;
-  }
-}
-
-export function danhDauDaXemThongBao(userId: number): void {
-  try {
-    localStorage.setItem(`${KHOA_DA_XEM}:${userId}`, String(Date.now()));
-  } catch {
-    // trình duyệt chặn lưu trữ: bỏ qua, chỉ mất số thông báo mới
-  }
-}
-
-export function soThongBaoMoi(ds: { created_at: string }[] | null, userId: number | undefined): number {
-  if (!ds || userId == null) return 0;
-  const moc = lanXemThongBao(userId);
-  return ds.filter((tb) => new Date(tb.created_at).getTime() > moc).length;
 }
