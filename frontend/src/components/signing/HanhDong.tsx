@@ -245,7 +245,11 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
             value={timNhan}
             onChange={(e) => { setTimNhan(e.target.value); setDangTimNhan(Boolean(dongUyQuyen)); setNguoiNhan(''); setLoiTimNhan(null); }} />
           {dongUyQuyen && <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border border-border-subtle" role="group" aria-label={t('hanhDong.nguoiNhanUyQuyen')}>
-            {dangTimNhan ? <p className="p-3 text-sm text-muted">{t('chung.dangTai')}</p> : ungVien.length === 0 && loiTimNhan == null && <p className="p-3 text-sm text-muted">{t('hanhDong.khongCoNguoiNhan')}</p>}
+            {dangTimNhan ? <p className="p-3 text-sm text-muted">{t('chung.dangTai')}</p> : ungVien.length === 0 && loiTimNhan == null && (
+              <p className="p-3 text-sm text-muted">
+                {t(timNhan.trim() ? 'hanhDong.khongCoNguoiNhan' : 'hanhDong.chuaCoAiDuDieuKienUyQuyen')}
+              </p>
+            )}
             {!dangTimNhan && ungVien.map((u) => <button type="button" key={u.id} onClick={() => setNguoiNhan(String(u.id))} aria-pressed={nguoiNhan === String(u.id)}
               className={`block w-full border-b border-border-subtle p-2 text-left ${nguoiNhan === String(u.id) ? 'bg-primary-subtle' : 'hover:bg-surface-hover'}`}>
               <span className="block text-sm font-semibold">{u.chuc_vu || t('hanhDong.chuaCoChucDanh')}</span>

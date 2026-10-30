@@ -265,7 +265,8 @@
     "nguoiNhanUyQuyen": "Người nhận ủy quyền",
     "timNguoiNhan": "Tìm theo tên, chức danh, đơn vị…",
     "lyDoUyQuyen": "Lý do ủy quyền",
-    "khongCoNguoiNhan": "Không tìm thấy người phù hợp. Kiểm tra từ khóa, chức danh người ký và cấu hình ký thay.",
+    "khongCoNguoiNhan": "Không khớp từ khóa. Thử họ tên, tên đăng nhập hoặc chức danh khác.",
+    "chuaCoAiDuDieuKienUyQuyen": "Chưa có ai đủ điều kiện nhận ủy quyền cho chức danh này. Có thể do chưa cấu hình chức danh được phép ký thay (mục \"Cấu hình ủy quyền\" của quản trị viên), chức danh được cấu hình chưa có ai đang hoạt động và có quyền ký, hoặc người đủ điều kiện đã có mặt trong cấp ký này.",
     "chuaCoChucDanh": "Chưa có chức danh"
   },
   "traoDoi": {
