@@ -344,6 +344,27 @@ describe('Ủy quyền ký', () => {
     await waitFor(() => expect(xong).toHaveBeenCalledWith(ho_so));
   });
 
+  it('từ khóa để trống mà vẫn rỗng thì báo chưa có ai đủ điều kiện, không phải lỗi từ khóa', async () => {
+    const luot = luotCo([nguoiKy({ co_the_uy_quyen: true })]);
+    const ho_so = hoSo({ luot_trinh: [luot] });
+    api.timNguoiNhanUyQuyen.mockResolvedValue([]);
+    boc(<HanhDong hoSo={ho_so} luot={luot} maBamTepDangXem={null} onXong={() => undefined} />, QUAN_TRI);
+    fireEvent.click(screen.getByRole('button', { name: /Ủy quyền ký/ }));
+    fireEvent.change(await screen.findByRole('combobox', { name: /Người cần được ký thay/ }), { target: { value: '21' } });
+    expect(await screen.findByText(/Chưa có ai đủ điều kiện nhận ủy quyền/)).toBeInTheDocument();
+  });
+
+  it('gõ từ khóa mà vẫn rỗng thì báo không khớp từ khóa', async () => {
+    const luot = luotCo([nguoiKy({ co_the_uy_quyen: true })]);
+    const ho_so = hoSo({ luot_trinh: [luot] });
+    api.timNguoiNhanUyQuyen.mockResolvedValue([]);
+    boc(<HanhDong hoSo={ho_so} luot={luot} maBamTepDangXem={null} onXong={() => undefined} />, QUAN_TRI);
+    fireEvent.click(screen.getByRole('button', { name: /Ủy quyền ký/ }));
+    fireEvent.change(await screen.findByRole('combobox', { name: /Người cần được ký thay/ }), { target: { value: '21' } });
+    fireEvent.change(screen.getByPlaceholderText('Tìm theo tên, chức danh, đơn vị…'), { target: { value: 'nguoi_ngoai' } });
+    expect(await screen.findByText(/Không khớp từ khóa/)).toBeInTheDocument();
+  });
+
   it('chỉ cho chọn người ký mà backend xác nhận người hiện tại được ủy quyền', async () => {
     const truongPhong = {
       ...TOI, id: 4, la_lanh_dao_don_vi: true,

@@ -266,7 +266,8 @@
     "nguoiNhanUyQuyen": "Delegate",
     "timNguoiNhan": "Search by name, position, unit…",
     "lyDoUyQuyen": "Delegation reason",
-    "khongCoNguoiNhan": "No matching staff found. Check the search, signer's position and substitute settings.",
+    "khongCoNguoiNhan": "No match for this keyword. Try a different name, username or title.",
+    "chuaCoAiDuDieuKienUyQuyen": "No one is eligible to receive this delegation yet. This can happen if no substitute title has been configured for this role (admin's \"Delegation configuration\"), the configured title has no active user with signing rights, or eligible users are already part of this signing step.",
     "chuaCoChucDanh": "No position"
   },
   "traoDoi": {
