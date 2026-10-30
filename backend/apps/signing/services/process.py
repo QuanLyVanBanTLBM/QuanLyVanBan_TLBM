@@ -58,6 +58,44 @@ def kiem_tra_pham_vi(pham_vi, don_vi_ap_dung_id):
                            fields={"don_vi_ap_dung_id": ["Bỏ trống khi pham_vi = CONG_TY."]})
 
 
+def kiem_tra_thu_bac_cap_ky(cap_ky):
+    """
+    Cấp ký sau không được chọn chức vụ thấp hơn cấp liền trước có người ký theo chức vụ (#issue thứ bậc chức vụ).
+    Thứ bậc lấy từ accounts_position.display_order (danh mục Chức vụ của Nhóm 7): số nhỏ hơn là chức vụ cao
+    hơn. Chỉ áp dụng cho người ký cấu hình theo chức vụ (chuc_vu_id); người ký theo tài khoản cụ thể không có
+    chức vụ gắn sẵn nên không bị ràng buộc. Một cấp có nhiều người ký theo nhiều chức vụ khác nhau (song ký)
+    thì so chức vụ cao nhất của cấp sau với chức vụ cao nhất của cấp trước. Chức vụ không tồn tại bị bỏ qua ở
+    đây; `them_nguoi_ky` báo lỗi "chuc_vu_khong_ton_tai" cho trường hợp đó.
+    """
+    cac_cap = sorted(cap_ky, key=lambda cap: cap["thu_tu"])
+    chuc_vu_id_dung = {
+        nk["chuc_vu_id"] for cap in cac_cap for nk in cap.get("nguoi_ky", ()) if nk.get("chuc_vu_id")
+    }
+    if not chuc_vu_id_dung:
+        return
+    thu_bac = dict(Position.objects.filter(pk__in=chuc_vu_id_dung).values_list("id", "display_order"))
+    cap_truoc = None
+    for cap in cac_cap:
+        thu_bac_cap = [
+            thu_bac[nk["chuc_vu_id"]] for nk in cap.get("nguoi_ky", ()) if nk.get("chuc_vu_id") in thu_bac
+        ]
+        if not thu_bac_cap:
+            continue
+        if cap_truoc is not None:
+            thu_bac_truoc, thu_tu_truoc = cap_truoc
+            if max(thu_bac_cap) > thu_bac_truoc:
+                message = (
+                    f"Cấp ký thứ tự {cap['thu_tu']} phải chọn chức danh cao hơn hoặc bằng cấp ký thứ tự "
+                    f"{thu_tu_truoc}."
+                )
+                raise SigningError(
+                    code="cap_ky_thu_bac_khong_hop_le",
+                    detail=message,
+                    fields={"cap_ky": [{"thu_tu": cap["thu_tu"], "thu_tu_truoc": thu_tu_truoc}]},
+                )
+        cap_truoc = (min(thu_bac_cap), cap["thu_tu"])
+
+
 def duoc_quan_ly(nguoi, pham_vi, don_vi_ap_dung_id):
     """CONG_TY: quản trị. PHONG_BAN: quản trị hoặc lãnh đạo của đơn vị áp dụng (có manage_signing_process)."""
     if to_chuc.la_quan_tri(nguoi):
@@ -108,6 +146,7 @@ def tao_quy_trinh(nguoi_tao, *, ma_quy_trinh, ten_quy_trinh, pham_vi, don_vi_ap_
     nguoi_ky: [{nguoi_ky?, chuc_vu_id?, vai_tro_ky?, chan_ky_chinh?, thu_tu}]}.
     """
     kiem_tra_pham_vi(pham_vi, don_vi_ap_dung_id)
+    kiem_tra_thu_bac_cap_ky(cap_ky)
     _kiem_tra_tham_chieu(
         DonVi, don_vi_ap_dung_id, field="don_vi_ap_dung_id", code="don_vi_khong_ton_tai", ten="Đơn vị"
     )
@@ -272,6 +311,7 @@ def sua_quy_trinh(process, nguoi_thuc_hien, *, ten_quy_trinh, pham_vi, don_vi_ap
     process = _khoa(process.pk)
     _yeu_cau_ban_nhap(process)
     kiem_tra_pham_vi(pham_vi, don_vi_ap_dung_id)
+    kiem_tra_thu_bac_cap_ky(cap_ky)
     _kiem_tra_tham_chieu(
         DonVi, don_vi_ap_dung_id, field="don_vi_ap_dung_id", code="don_vi_khong_ton_tai", ten="Đơn vị"
     )

@@ -783,6 +783,36 @@ describe('QuyTrinhPage chọn người ký từ phân hệ CBNV', () => {
     fireEvent.click(screen.getByRole('button', { name: /tothanhtan/ }));
     expect(await screen.findByText('tothanhtan')).toBeInTheDocument();
   });
+
+  it('cấp ký liền sau chỉ gợi ý chức danh cao hơn hoặc bằng cấp liền trước (thứ bậc chức vụ)', async () => {
+    api.quyTrinh.mockResolvedValue([]);
+    api.donVi.mockResolvedValue([]);
+    api.danhBaCanBo.mockResolvedValue([]);
+    api.chucVu.mockResolvedValue([
+      { id: 2, name: 'Giám đốc', display_order: 2 },
+      { id: 4, name: 'Phó Giám đốc', display_order: 4 },
+      { id: 6, name: 'Trưởng phòng', display_order: 6 },
+    ]);
+    boc(<QuyTrinhPage />, QUAN_TRI);
+    fireEvent.click(await screen.findByRole('button', { name: /Tạo quy trình/ }));
+
+    // Biên: chỉ một cấp thì ô chọn chức danh không bị giới hạn, thấy đủ cả 3 chức danh.
+    const chonCv1 = screen.getByRole('combobox', { name: 'Thêm người ký theo chức danh' });
+    await waitFor(() => expect(within(chonCv1).getByRole('option', { name: 'Trưởng phòng' })).toBeInTheDocument());
+    expect(within(chonCv1).getByRole('option', { name: 'Phó Giám đốc' })).toBeInTheDocument();
+
+    // Cấp 1 thêm người ký theo chức danh Giám đốc.
+    fireEvent.change(chonCv1, { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: /Thêm người ký theo chức danh/ }));
+
+    // Thêm cấp 2: ô chọn chức danh chỉ còn Giám đốc (bằng cấp 1); Phó Giám đốc, Trưởng phòng (thấp hơn) bị lọc.
+    fireEvent.click(screen.getByRole('button', { name: /Thêm cấp/ }));
+    const chonCv2 = screen.getAllByRole('combobox', { name: 'Thêm người ký theo chức danh' })[1];
+    await waitFor(() => expect(within(chonCv2).getByRole('option', { name: 'Giám đốc' })).toBeInTheDocument());
+    expect(within(chonCv2).queryByRole('option', { name: 'Phó Giám đốc' })).not.toBeInTheDocument();
+    expect(within(chonCv2).queryByRole('option', { name: 'Trưởng phòng' })).not.toBeInTheDocument();
+    expect(screen.getAllByText(/Chỉ hiện chức danh phù hợp thứ bậc/).length).toBeGreaterThan(0);
+  });
 });
 
 describe('QuyTrinhPage tên cán bộ theo chức danh và đơn vị', () => {

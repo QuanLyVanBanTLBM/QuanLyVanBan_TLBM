@@ -355,7 +355,9 @@
     "vaiTroKy": "Vai trò ký",
     "nhomTheoChucVu": "Theo chức danh",
     "nhomTheoCanBo": "Cán bộ nhân viên",
-    "giaiThichChucVuForm": "Phân công người ký theo chức danh"
+    "giaiThichChucVuForm": "Phân công người ký theo chức danh",
+    "gioiHanThuBacCapKy": "Chỉ hiện chức danh phù hợp thứ bậc với cấp ký liền kề (cấp sau phải cao hơn hoặc bằng cấp trước).",
+    "khongConChucVuPhuHopThuBac": "Không còn chức danh nào phù hợp thứ bậc với cấp ký liền kề để thêm."
   },
   "khoa": {
     "gioiThieu": "Khóa ký được tạo trên trình duyệt và bảo vệ bằng PIN 8 chữ số. Tệp khóa đã mã hóa được tải về thiết bị; khi ký, tải lại tệp và nhập PIN. Máy chủ không nhận PIN hoặc tệp khóa.",
@@ -425,6 +427,7 @@
     "uy_quyen_vong_lap": "Không thể ủy quyền lại cho người đã giao quyền ban đầu.",
     "uy_quyen_khong_con_hop_le": "Người nhận không còn chức danh được phép ký thay. Hãy liên hệ quản trị để kiểm tra và ủy quyền lại.",
     "chuc_vu_khong_hop_le": "Có chức danh được chọn không còn hợp lệ. Hãy tải lại danh sách.",
+    "cap_ky_thu_bac_khong_hop_le": "Cấp ký phải chọn chức danh cao hơn hoặc bằng cấp ký liền trước.",
     "khong_co_chuc_danh_goc": "Hồ sơ không lưu chức danh ban đầu của người ký. Hãy liên hệ quản trị để xử lý.",
     "nguoi_nhan_da_co_trong_cap": "Người nhận đã có mặt trong cùng cấp ký.",
     "khong_hien_thi_duoc_pdf": "Không đọc được PDF. Kiểm tra phản hồi tải tệp, định dạng PDF và phiên bản trình duyệt; thử tải lại hoặc tải tệp về để xem.",

@@ -355,7 +355,9 @@
     "vaiTroKy": "Signing role",
     "nhomTheoChucVu": "By position",
     "nhomTheoCanBo": "Employees",
-    "giaiThichChucVuForm": "Assign signer by position"
+    "giaiThichChucVuForm": "Assign signer by position",
+    "gioiHanThuBacCapKy": "Only positions consistent with the ranking of adjacent levels are shown (each level must be equal to or higher than the one before it).",
+    "khongConChucVuPhuHopThuBac": "No position left that fits the ranking of adjacent levels."
   },
   "khoa": {
     "gioiThieu": "Your signing key is created in this browser and protected by an 8-digit PIN. The encrypted key file is downloaded to your device; to sign, upload the file and enter your PIN. The server never receives your PIN or key file.",
@@ -425,6 +427,7 @@
     "uy_quyen_vong_lap": "You cannot delegate back to the person who originally assigned the signing authority.",
     "uy_quyen_khong_con_hop_le": "The delegate no longer holds a position authorized to sign for this request. Contact an administrator to review and reassign.",
     "chuc_vu_khong_hop_le": "A selected position is no longer available. Reload the list.",
+    "cap_ky_thu_bac_khong_hop_le": "This level must use a position equal to or higher than the level before it.",
     "khong_co_chuc_danh_goc": "The request does not contain the signer's original position. Contact an administrator.",
     "nguoi_nhan_da_co_trong_cap": "The delegate is already in the same level.",
     "khong_hien_thi_duoc_pdf": "The PDF could not be read. Check the file response, PDF format, and browser version; retry or download the file.",
