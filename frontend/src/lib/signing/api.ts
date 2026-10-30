@@ -130,7 +130,12 @@ export const signingApi = {
   thaoTacQuyTrinh: (id: number, thao_tac: 'kich-hoat' | 'ngung' | 'nhan-ban') =>
     apiClient.post<QuyTrinh>(`${SIGNING_BASE}/quy-trinh/${id}/${thao_tac}/`, {}),
   // Dữ liệu cán bộ, chức vụ lấy từ API của phân hệ CBNV (Nhóm 7), không giữ danh sách riêng trong Trình ký
-  /** Danh bạ cán bộ đang hoạt động (họ tên, chức vụ, đơn vị) để chọn người ký khi cấu hình quy trình. */
+  /**
+   * Danh bạ cán bộ đang hoạt động (họ tên, chức vụ, đơn vị) để chọn người ký khi cấu hình quy trình.
+   * Lỗi quyền (403, thiếu `view_list_cbnv`) không được che bằng các nguồn dự phòng dưới đây: những nguồn đó có
+   * phạm vi khác (không phải toàn bộ CBNV), tự chuyển sang khi thiếu quyền sẽ hiện một danh sách ngắn hơn mà
+   * người dùng tưởng là toàn bộ cán bộ nhân viên. Lỗi 403 được báo thật để người dùng biết cần cấp quyền.
+   */
   danhBaCanBo: () =>
     apiClient
       .get<CanBo[] | { results?: CanBo[] }>('/api/accounts/employees/?all=true')
@@ -141,8 +146,9 @@ export const signingApi = {
           Array.isArray(s) ? s : (s && Array.isArray((s as { results?: CanBo[] }).results) ? (s as { results: CanBo[] }).results : [])
         );
       })
-      .catch(() =>
-        apiClient
+      .catch((err) => {
+        if (err instanceof ApiError && err.status === 403) throw err;
+        return apiClient
           .get<CanBo[] | { results?: CanBo[] }>('/api/accounts/staffs/')
           .then((res) => {
             if (Array.isArray(res)) return res;
@@ -150,10 +156,11 @@ export const signingApi = {
               return (res as { results: CanBo[] }).results;
             }
             return [];
-          })
-      )
-      .catch(() =>
-        apiClient
+          });
+      })
+      .catch((err) => {
+        if (err instanceof ApiError && err.status === 403) throw err;
+        return apiClient
           .get<
             Array<{
               id: number;
@@ -179,8 +186,8 @@ export const signingApi = {
               chuc_vu_id: u.chuc_vu_id ?? null,
               chuc_vu_ten: u.chuc_vu_ten || u.chuc_vu || '',
             }))
-          )
-      ),
+          );
+      }),
   /** Danh mục chức vụ (thứ tự hiển thị của CBNV) để chọn người ký theo chức vụ. */
   chucVu: () =>
     apiClient.get<ChucVu[]>('/api/positions/?all=true').catch(() =>
