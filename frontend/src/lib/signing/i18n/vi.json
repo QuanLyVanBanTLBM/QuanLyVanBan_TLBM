@@ -385,6 +385,7 @@
     "pin_khong_dung": "PIN không đúng.",
     "pin_tam_khoa": "Nhập sai PIN quá nhiều lần; khóa ký tạm khóa 15 phút.",
     "pin_khoa_cung": "Khóa ký đã bị khóa do sai PIN nhiều lần. Liên hệ quản trị.",
+    "khong_ho_tro_webcrypto": "Chức năng ký cần mở hệ thống qua HTTPS (hoặc localhost). Địa chỉ HTTP hiện tại không cho trình duyệt dùng mã hóa Web Crypto; liên hệ quản trị để được cấp địa chỉ HTTPS.",
     "thieu_ban_boc_thiet_bi": "Thiết bị này không giữ khóa ký đang hoạt động. Vào “Khóa ký & PIN” để tạo khóa cho thiết bị này.",
     "ma_bam_khong_khop": "Tệp đã thay đổi so với lượt trình; tải lại hồ sơ trước khi ký.",
     "chua_den_luot_ky": "Chưa đến lượt bạn ký vì cấp ký trước chưa hoàn tất, hoặc bạn đã xử lý.",

@@ -79,6 +79,12 @@ export function kiemTraPin(pin: string): string | null {
 
 // ── Dẫn xuất khóa ─────────────────────────────────────────────────────────────
 
+/** `crypto.subtle` chỉ có ở ngữ cảnh an toàn (HTTPS hoặc localhost); thiếu thì báo lỗi có mã thay vì TypeError thô. */
+function subtle(): SubtleCrypto {
+  if (typeof crypto === 'undefined' || !crypto.subtle) throw new Error('khong_ho_tro_webcrypto');
+  return crypto.subtle;
+}
+
 export function taoThamSoKdf(): ThamSoKdf {
   return { ...KDF_MAC_DINH, salt: b64(crypto.getRandomValues(new Uint8Array(16))) };
 }
@@ -91,10 +97,10 @@ async function master(pin: string, tham_so: ThamSoKdf): Promise<Bytes> {
 }
 
 async function hkdf(ikm: Bytes, salt: Bytes, info: string, dung: 'bits' | 'aes'): Promise<ArrayBuffer | CryptoKey> {
-  const goc = await crypto.subtle.importKey('raw', ikm, 'HKDF', false, ['deriveBits', 'deriveKey']);
+  const goc = await subtle().importKey('raw', ikm, 'HKDF', false, ['deriveBits', 'deriveKey']);
   const tham_so = { name: 'HKDF', hash: 'SHA-256', salt, info: new TextEncoder().encode(info) };
-  if (dung === 'bits') return crypto.subtle.deriveBits(tham_so, goc, 256);
-  return crypto.subtle.deriveKey(tham_so, goc, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+  if (dung === 'bits') return subtle().deriveBits(tham_so, goc, 256);
+  return subtle().deriveKey(tham_so, goc, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
 }
 
 export interface DanXuatPin {
@@ -145,23 +151,23 @@ export async function sinhCapKhoa(): Promise<CapKhoaMoi> {
 }
 
 async function nhapPrivate(pkcs8: Bytes): Promise<CryptoKey> {
-  return crypto.subtle.importKey('pkcs8', pkcs8, { name: 'Ed25519' }, false, ['sign']);
+  return subtle().importKey('pkcs8', pkcs8, { name: 'Ed25519' }, false, ['sign']);
 }
 
 /** Ký Base64 trên bytes cho trước (challenge UTF-8 hoặc raw SHA-256 của tài liệu). */
 export async function kyBytes(pkcs8: Bytes, du_lieu: Bytes): Promise<string> {
-  return b64(await crypto.subtle.sign({ name: 'Ed25519' }, await nhapPrivate(pkcs8), du_lieu));
+  return b64(await subtle().sign({ name: 'Ed25519' }, await nhapPrivate(pkcs8), du_lieu));
 }
 
 export async function bocKhoa(pkcs8: Bytes, master_pin: Bytes, kSrv: string) {
   const nonce = crypto.getRandomValues(new Uint8Array(12));
-  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, await khoaBoc(master_pin, kSrv), pkcs8);
+  const ct = await subtle().encrypt({ name: 'AES-GCM', iv: nonce }, await khoaBoc(master_pin, kSrv), pkcs8);
   return { nonce: b64(nonce), banBoc: b64(ct) };
 }
 
 /** Mở bản bọc; sai master/k_srv thì AES-GCM báo lỗi. */
 export async function moBanBoc(ban: Pick<BanBocKhoa, 'nonce' | 'banBoc'>, master_pin: Bytes, kSrv: string): Promise<Bytes> {
-  const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: tuB64(ban.nonce) }, await khoaBoc(master_pin, kSrv),
+  const pt = await subtle().decrypt({ name: 'AES-GCM', iv: tuB64(ban.nonce) }, await khoaBoc(master_pin, kSrv),
     tuB64(ban.banBoc));
   return new Uint8Array(pt);
 }
