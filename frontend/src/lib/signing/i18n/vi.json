@@ -6,7 +6,7 @@
     "tatCa": "Hồ sơ được xem",
     "taoMoi": "Tạo hồ sơ trình ký",
     "quyTrinh": "Quy trình ký",
-    "khoaCuaToi": "Khóa ký & PIN",
+    "khoaCuaToi": "Cấu hình khóa ký",
     "taiLieu": "Tệp hồ sơ"
   },
   "chung": {
@@ -254,7 +254,7 @@
     "keoFileVaoModal": "Hãy đưa file vào phạm vi modal để nạp khóa",
     "thaFileKhoaVaoDay": "Thả file khóa ký vào đây để ký",
     "thaFileKhoaGhiChu": "Hệ thống sẽ nạp file khóa (.tlbmkey) ngay lập tức",
-    "fileKhoaGhiChu": "Tải lên file khóa (.tlbmkey) đã xuất ở trang Khóa ký; bỏ trống thì dùng khóa đã lưu trên thiết bị này.",
+    "fileKhoaGhiChu": "Tải lên file khóa (.tlbmkey) đã xuất ở trang Cấu hình khóa ký; bỏ trống thì dùng khóa đã lưu trên thiết bị này.",
 "daChonFile": "Đã đọc tệp khóa trên trình duyệt. Tệp không được gửi lên máy chủ.",
     "caiDatKhoaVaChuKy": "Đi đến trang Khóa & Chữ ký cá nhân",
     "anhChuKySeDung": "Ảnh chữ ký cá nhân áp dụng"
@@ -428,12 +428,12 @@
     "pin_tam_khoa": "Nhập sai PIN quá nhiều lần; khóa ký tạm khóa 15 phút.",
     "pin_khoa_cung": "Khóa ký đã bị khóa do sai PIN nhiều lần. Liên hệ quản trị.",
     "khong_ho_tro_webcrypto": "Chức năng ký cần mở hệ thống qua HTTPS (hoặc localhost). Địa chỉ HTTP hiện tại không cho trình duyệt dùng mã hóa Web Crypto; liên hệ quản trị để được cấp địa chỉ HTTPS.",
-    "thieu_ban_boc_thiet_bi": "Thiết bị này không giữ khóa ký đang hoạt động. Vào “Khóa ký & PIN” để tạo khóa cho thiết bị này.",
+    "thieu_ban_boc_thiet_bi": "Thiết bị này không giữ khóa ký đang hoạt động. Vào “Cấu hình khóa ký” để tạo khóa cho thiết bị này.",
     "ma_bam_khong_khop": "Tệp đã thay đổi so với lượt trình; tải lại hồ sơ trước khi ký.",
     "chua_den_luot_ky": "Chưa đến lượt bạn ký vì cấp ký trước chưa hoàn tất, hoặc bạn đã xử lý.",
     "khong_phai_nguoi_ky_dang_mo": "Bạn không có lượt ký đang mở trên hồ sơ này.",
     "luot_trinh_khong_cho_ky": "Lượt trình không còn chờ ký (đã trả sửa, từ chối, hủy hoặc hoàn tất).",
-    "khoa_ky_khong_hoat_dong": "Khóa ký không còn hoạt động. Tạo khóa mới trong “Khóa ký & PIN”.",
+    "khoa_ky_khong_hoat_dong": "Khóa ký không còn hoạt động. Tạo khóa mới trong “Cấu hình khóa ký”.",
     "can_chon_nguoi_ky": "Có chức danh nhiều người phù hợp — hãy chọn người ký.",
     "khong_xac_dinh_duoc_nguoi_ky": "Không xác định được người ký (người ký nghỉ việc hoặc không có ai giữ chức danh).",
     "vi_tri_ky_khong_hop_le": "Vị trí ký không hợp lệ với số trang của tệp.",
@@ -506,8 +506,8 @@
     "tep_hoan_tat_bi_thay_doi": "Tệp hoàn tất không khớp mã băm đã lưu.",
     "anh_chu_ky_bi_thay_doi": "Ảnh chữ ký không khớp mã băm đã lưu.",
     "chua_co_bang_chung": "Hồ sơ chưa hoàn tất duyệt, chưa có bằng chứng.",
-    "chua_co_anh_chu_ky": "Bạn chưa thiết lập ảnh chữ ký cá nhân. Vui lòng vào trang Khóa ký để tạo hoặc tải lên ảnh chữ ký trước khi ký duyệt.",
-    "chua_co_khoa_ky": "Tài khoản của bạn chưa có khóa ký nào đang hoạt động. Vui lòng vào trang Khóa ký để tạo khóa.",
+    "chua_co_anh_chu_ky": "Bạn chưa thiết lập ảnh chữ ký cá nhân. Vui lòng vào trang Cấu hình khóa ký để tạo hoặc tải lên ảnh chữ ký trước khi ký duyệt.",
+    "chua_co_khoa_ky": "Tài khoản của bạn chưa có khóa ký nào đang hoạt động. Vui lòng vào trang Cấu hình khóa ký để tạo khóa.",
     "pin_khong_hop_le": "Vui lòng nhập đúng mã PIN ký gồm đúng 8 chữ số."
   },
   "nhatKy": {

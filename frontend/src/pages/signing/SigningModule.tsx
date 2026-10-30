@@ -60,7 +60,7 @@ export default function SigningModule() {
   const dieuHuong = useNavigate();
   const location = useLocation();
   const { pathname } = location;
-  // Màn hẹp: thanh tab cuộn ngang, đưa tab đang xem vào vùng nhìn thấy (vd. vào thẳng "Khóa ký & PIN")
+  // Màn hẹp: thanh tab cuộn ngang, đưa tab đang xem vào vùng nhìn thấy (vd. vào thẳng "Cấu hình khóa ký")
   const thanhTab = useRef<HTMLElement>(null);
   useEffect(() => {
     thanhTab.current?.querySelector('[aria-current="page"]')?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });

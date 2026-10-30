@@ -6,7 +6,7 @@
     "tatCa": "Requests available to me",
     "taoMoi": "New signing request",
     "quyTrinh": "Signing workflows",
-    "khoaCuaToi": "Signing key & PIN",
+    "khoaCuaToi": "Signing key settings",
     "taiLieu": "Request files"
   },
   "chung": {
@@ -254,7 +254,7 @@
     "keoFileVaoModal": "Move file into modal area to load key",
     "thaFileKhoaVaoDay": "Drop the signing key file here",
     "thaFileKhoaGhiChu": "The key file (.tlbmkey) will be loaded immediately",
-    "fileKhoaGhiChu": "Upload the key file (.tlbmkey) exported on the Signing key page; leave empty to use the key stored on this device.",
+    "fileKhoaGhiChu": "Upload the key file (.tlbmkey) exported on the Signing key settings page; leave empty to use the key stored on this device.",
 "daChonFile": "The key file was read in this browser and was not sent to the server.",
     "caiDatKhoaVaChuKy": "Go to Signing Keys & Signature",
     "anhChuKySeDung": "Applied signature image"
@@ -428,12 +428,12 @@
     "pin_tam_khoa": "Too many wrong PINs; the signing key is locked for 15 minutes.",
     "pin_khoa_cung": "The signing key is locked after too many wrong PINs. Contact an administrator.",
     "khong_ho_tro_webcrypto": "Signing requires opening the system over HTTPS (or localhost). The current HTTP address does not allow the browser to use Web Crypto; contact the administrator for an HTTPS address.",
-    "thieu_ban_boc_thiet_bi": "This device does not hold your active signing key. Open “Signing key & PIN” to create one for this device.",
+    "thieu_ban_boc_thiet_bi": "This device does not hold your active signing key. Open “Signing key settings” to create one for this device.",
     "ma_bam_khong_khop": "The file changed since this round started; reload the request before signing.",
     "chua_den_luot_ky": "It is not your turn because the previous signing level is not complete, or you have already acted.",
     "khong_phai_nguoi_ky_dang_mo": "You have no open signing step on this request.",
     "luot_trinh_khong_cho_ky": "This round is no longer awaiting signatures (returned, rejected, cancelled or completed).",
-    "khoa_ky_khong_hoat_dong": "Your signing key is no longer active. Create a new one in “Signing key & PIN”.",
+    "khoa_ky_khong_hoat_dong": "Your signing key is no longer active. Create a new one in “Signing key settings”.",
     "can_chon_nguoi_ky": "Several people hold a position — choose the signer.",
     "khong_xac_dinh_duoc_nguoi_ky": "A signer could not be determined (inactive signer or nobody holds the position).",
     "vi_tri_ky_khong_hop_le": "A signature position does not fit the file's pages.",
@@ -506,8 +506,8 @@
     "tep_hoan_tat_bi_thay_doi": "The completed file does not match its stored hash.",
     "anh_chu_ky_bi_thay_doi": "The signature image does not match its stored hash.",
     "chua_co_bang_chung": "The request has not finished approval, so there is no evidence yet.",
-    "chua_co_anh_chu_ky": "You have not set up a personal signature image. Please go to Signing Keys to upload one before signing.",
-    "chua_co_khoa_ky": "Your account does not have an active signing key. Please go to Signing Keys to generate one.",
+    "chua_co_anh_chu_ky": "You have not set up a personal signature image. Please go to Signing key settings to upload one before signing.",
+    "chua_co_khoa_ky": "Your account does not have an active signing key. Please go to Signing key settings to generate one.",
     "pin_khong_hop_le": "Please enter a valid 8-digit signing PIN."
   },
   "nhatKy": {

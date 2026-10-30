@@ -45,7 +45,7 @@ Server kiểm quyền ở từng API; giao diện chỉ ẩn/hiện thao tác.
 
 ## 3. File khóa ký
 
-- Tạo khóa ở trang **Khóa ký & PIN**: trình duyệt sinh cặp khóa Ed25519, đăng ký khóa công khai (chứng minh sở hữu),
+- Tạo khóa ở trang **Cấu hình khóa ký**: trình duyệt sinh cặp khóa Ed25519, đăng ký khóa công khai (chứng minh sở hữu),
   đặt PIN 8 số. Private key được bọc AES-GCM bằng khóa dẫn xuất `HKDF(Argon2id(PIN, salt), k_srv, "wrap")`, lưu trên
   thiết bị và tự tải về file `<mã khóa>.tlbmkey`.
 - Ký: hộp thoại ký nhận file khóa và PIN. Trình duyệt kiểm file đúng tài khoản và đúng khóa đang hoạt động, gửi
@@ -114,7 +114,7 @@ Lịch sử và thông báo (`CAN_KY`, `HOAN_THANH`, `TU_CHOI`, `YEU_CAU_SUA`, `
 - Ngày trình của các hồ sơ cách nhau 24 giờ để danh sách và Dashboard có ngày khác nhau.
 - Chữ ký mẫu dùng khóa Ed25519 tạm sinh trong bộ nhớ, thu hồi ngay sau khi ký; khóa bí mật không lưu. Khi lệnh cần
   ký (lần chạy đầu), khóa đang hoạt động của `truongphong`, `giamdoc`, `admin` được xoay vòng sang khóa tạm rồi thu
-  hồi. Sau đó mỗi người tự tạo khóa ký ở trang **Khóa ký & PIN** để ký tiếp các hồ sơ đang chờ.
+  hồi. Sau đó mỗi người tự tạo khóa ký ở trang **Cấu hình khóa ký** để ký tiếp các hồ sơ đang chờ.
 - `--email-domain <miền>`: gán email `<username>@<miền>` cho tài khoản mẫu chưa có email. Cần tùy chọn này thì tài
   khoản mẫu mới có email và thông báo mới có kênh email; không có thì thông báo chỉ ghi vào outbox, không có email.
 

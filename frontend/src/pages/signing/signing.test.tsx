@@ -104,7 +104,7 @@ describe('SigningModule', () => {
     api.danhSach.mockResolvedValue(trang([]));
     moModule();
     expect(await screen.findByRole('link', { name: /Cần tôi ký duyệt/ })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Khóa ký & PIN/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Cấu hình khóa ký/ })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Tạo hồ sơ trình ký/ })).not.toBeInTheDocument();
     expect(screen.queryByText(/Ký số & Phê duyệt điện tử/)).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 1, name: 'Trình ký' })).toBeInTheDocument();
@@ -118,7 +118,7 @@ describe('SigningModule', () => {
     await waitFor(() => expect(tabKy).toHaveTextContent('2'));
     expect(api.thongKe).toHaveBeenCalledWith('can_toi_ky');
     const nav = within(screen.getByRole('navigation'));
-    for (const ten of [/Hồ sơ tôi trình/, /Hồ sơ được xem/, /Khóa ký & PIN/]) {
+    for (const ten of [/Hồ sơ tôi trình/, /Hồ sơ được xem/, /Cấu hình khóa ký/]) {
       expect(nav.getByRole('link', { name: ten })).toBeInTheDocument();
     }
     expect(nav.queryByRole('link', { name: /^Quy trình/ })).toBeInTheDocument();

@@ -122,7 +122,7 @@ API ảnh chữ ký cá nhân thuộc Nhóm 7, không nằm trong phân hệ nà
 3. **Tạo hồ sơ:** bước 1 chọn văn bản đi đã đăng ký rồi chọn PDF đính kèm trên bản ghi, hoặc tải PDF dự thảo chưa vào sổ (hồ sơ được cấp mã tự động; số hiệu nhập tay là tham chiếu), chọn quy trình được dùng, hạn chót → lưu nháp; bước 2 xem trước PDF, xem người ký theo quy trình, kéo-thả khung ký từng người, chọn người ký khi chức vụ nhiều ứng viên, xác nhận mã băm rồi gửi. Nháp mở lại được. Sau khi duyệt PDF dự thảo, người tạo đăng ký tệp kết quả trong Văn bản đi rồi liên kết hồ sơ.
 4. **Chi tiết:** PDF của lượt hiện hành kèm lớp phủ chữ ký (ảnh snapshot hoặc khối "đã ký"; người đang chờ nét đứt), tiến trình theo cấp (vai trò, hạn xử lý, ký trễ), người đang chờ, lịch sử, các lượt trước. Hành động theo quyền/trạng thái: *Ký duyệt* (PIN, hiện tên tệp và mã băm, chặn ký khi tệp đang xem khác mã băm đã khóa), *Trả lại để sửa*, *Không đồng ý ban hành*, *Thu hồi chữ ký*, *Hủy*, *Trình lại*. Trao đổi và tải bản sửa khi trả sửa.
 5. **Kết quả:** nhận diện "Hoàn tất duyệt nội bộ, chưa phát hành"; trạng thái tạo tệp đang xử lý/lỗi/thành công; chỉ cho tải khi tạo tệp thành công; thử lại khi lỗi; xác minh bằng chứng.
-6. **Quy trình và Khóa ký & PIN:** cấu hình quy trình theo phạm vi; tạo khóa trên thiết bị (Argon2id ở trình duyệt), đổi PIN, đổi thiết bị bằng xoay vòng khóa, thu hồi khóa.
+6. **Quy trình và Cấu hình khóa ký:** cấu hình quy trình theo phạm vi; tạo khóa trên thiết bị (Argon2id ở trình duyệt), đổi PIN, đổi thiết bị bằng xoay vòng khóa, thu hồi khóa.
 
 ## 5. TIÊU CHUẨN KỸ THUẬT & INVARIANTS
 

@@ -308,7 +308,7 @@ describe('Vào thẳng đường dẫn khi thiếu quyền', () => {
   const CHUYEN_VIEN: NguoiDungHienTai = { ...TOI, id: 9, la_quan_tri: false,
     quyen: { view_trinhky: true, add_trinhky: false, send_trinhky: true, sign_trinhky: false } };
 
-  it('Khóa ký & PIN: không có quyền ký thì báo ngay, không hiện ô nhập PIN', async () => {
+  it('Cấu hình khóa ký: không có quyền ký thì báo ngay, không hiện ô nhập PIN', async () => {
     api.khoa.mockResolvedValue([]);
     boc(<KhoaPage />, CHUYEN_VIEN);
     expect(await screen.findByText(/chưa được cấp quyền ký nên không cần khóa ký/)).toBeInTheDocument();

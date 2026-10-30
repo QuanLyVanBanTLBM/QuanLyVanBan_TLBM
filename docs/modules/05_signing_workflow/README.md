@@ -254,7 +254,7 @@ Trên staging, deploy chỉ chạy migration; lệnh dữ liệu mẫu chạy ta
 
 Tài khoản mẫu: `truongphong` (ký cấp 1, có hồ sơ chờ ký), `giamdoc` (ký cấp 2), `vanthu`
 (người trình, đủ trạng thái), `chuyenvien` (soạn nháp), `admin` (quản trị). Sau khi chạy lệnh mẫu, mỗi người
-ký tự tạo khóa ký ở trang **Khóa ký & PIN** (tải file khóa) trước khi ký.
+ký tự tạo khóa ký ở trang **Cấu hình khóa ký** (tải file khóa) trước khi ký.
 
 ## 7. Kiểm thử
 
@@ -383,7 +383,7 @@ chữ, i18n, kiểm tra nhập liệu, truy cập). Danh sách lỗi và bằng 
 - **Hộp thoại**: tiêu điểm vào ô nhập đầu tiên, Tab quay vòng trong hộp, trả tiêu điểm khi đóng, Esc và bấm nền đóng
   (hộp trên cùng), chặn đóng khi đang gửi; hộp xem tệp của "Văn bản công khai" dùng chung khung này.
 - **Đường dẫn**: `/approvals/<không phải số nguyên dương>` báo không tìm thấy mà không gọi API; đường dẫn con không có
-  trang hiện "Trang không tồn tại"; lỗi 404 có đường về danh sách (không có "Thử lại"); vào thẳng "Khóa ký & PIN",
+  trang hiện "Trang không tồn tại"; lỗi 404 có đường về danh sách (không có "Thử lại"); vào thẳng "Cấu hình khóa ký",
   "Tạo hồ sơ" khi thiếu quyền thì báo ngay.
 - **Nhập liệu**: chặn ở trình duyệt tệp rỗng, không phải PDF, quá 20 MB và hạn chót ở quá khứ (không gửi request);
   `maxLength` khớp máy chủ; xóa thông báo lỗi cũ khi đổi dữ liệu; tìm văn bản đi chờ ngừng gõ; "Văn bản công khai" tự áp
@@ -392,7 +392,7 @@ chữ, i18n, kiểm tra nhập liệu, truy cập). Danh sách lỗi và bằng 
   nhận; kiểm tra mã và số giờ ngay trên form. **Khóa ký**: thu hồi khóa cần xác nhận; ô nhập file khóa theo ngôn ngữ
   giao diện.
 - **Hiển thị**: danh sách hồ sơ chuyển sang dạng thẻ dưới 1024px, "Văn bản công khai" dưới 1280px (bảng không còn cắt cột
-  Hạn chót ở 768px); chuỗi dài không có dấu cách xuống dòng, tiêu đề tối đa 3 dòng trong thẻ; trang Khóa ký không tràn
+  Hạn chót ở 768px); chuỗi dài không có dấu cách xuống dòng, tiêu đề tối đa 3 dòng trong thẻ; trang Cấu hình khóa ký không tràn
   ngang ở 390px; số trên thẻ lọc khớp danh sách; số "Cần tôi ký duyệt" và thông báo mới tải lại ngay sau thao tác;
   hạn xử lý của cấp hiện khi hồ sơ không đặt hạn chót; chi tiết hiện ghi chú; tin nhắn trao đổi hiện tên người viết;
   thông báo ghi rõ chỉ hiển thị 50 mục gần nhất; nút "Xem trước và đặt vị trí ký" không còn là nút lồng trong liên kết.

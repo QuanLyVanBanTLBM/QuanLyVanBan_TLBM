@@ -23,7 +23,7 @@ trình lại) nên lịch sử, bằng chứng, tệp hoàn tất và thông bá
   thông báo trong ứng dụng, không có email.
 
 Ký mẫu dùng khóa Ed25519 tạm sinh trong bộ nhớ (khóa bí mật không lưu); xong thì thu hồi khóa tạm, người dùng tự tạo
-khóa ký của mình ở trang Khóa ký (file khóa + PIN). Hồ sơ nhận diện qua ghi chú "Dữ liệu mẫu <mã>:".
+khóa ký của mình ở trang Cấu hình khóa ký (file khóa + PIN). Hồ sơ nhận diện qua ghi chú "Dữ liệu mẫu <mã>:".
 """
 
 import base64
