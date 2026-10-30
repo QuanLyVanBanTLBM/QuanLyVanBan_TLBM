@@ -15,7 +15,7 @@ import TienTrinh from '@components/signing/TienTrinh';
 import TraoDoiPanel from '@components/signing/TraoDoiPanel';
 import XemPdf, { type KhungHienThi } from '@components/signing/XemPdf';
 import { docLoi, signingApi } from '@lib/signing/api';
-import { dinhDangNgay, loiTepHoanTatHienThi, moTaVanBan } from '@lib/signing/dinhDang';
+import { dinhDangNgay, inPdf, loiTepHoanTatHienThi, moTaVanBan } from '@lib/signing/dinhDang';
 import { useTai, useToi } from '@lib/signing/hooks';
 import { useSigningT, type HamDich } from '@lib/signing/i18n';
 import { sha256Hex } from '@lib/signing/khoaKy';
@@ -191,7 +191,15 @@ function ChiTietHoSo({ id }: { id: number }) {
           {hoSo.trang_thai === 'HUY' && hoSo.ly_do_huy && <ThongBao loai="canh_bao">{t('chiTiet.lyDoHuy')}: {hoSo.ly_do_huy}</ThongBao>}
         </Card>
         <Card className="p-4 space-y-2">
-          <h3 className="text-xl font-bold text-main">{t('chiTiet.taiLieu')}</h3>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-xl font-bold text-main">{t('chiTiet.taiLieu')}</h3>
+            {tep && (
+              <Button size="sm" variant="secondary" icon="fa-print"
+                onClick={() => inPdf(new Blob([tep], { type: 'application/pdf' }))}>
+                {t('chung.in')}
+              </Button>
+            )}
+          </div>
           {/* PDF cuộn trong khung riêng để trang không dài theo số trang tài liệu */}
           <div className="max-h-[calc(100vh-12rem)] overflow-y-auto rounded-lg bg-surface-subtle p-3">
             {loiTep ? <LoiTai thongBao={loi(loiTep)} /> : tep ? <XemPdf duLieu={tep} khung={khung} /> : <DangTai />}
