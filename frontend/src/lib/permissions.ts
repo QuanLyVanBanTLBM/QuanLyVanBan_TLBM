@@ -106,5 +106,9 @@ export function usePermissions() {
     };
   }, []);
 
-  return { loaded, can: (codename: string) => hasPermission(me, codename) };
+  return {
+    loaded,
+    isSuperuser: Boolean(me?.is_superuser),
+    can: (codename: string) => hasPermission(me, codename),
+  };
 }

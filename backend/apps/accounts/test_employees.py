@@ -247,6 +247,24 @@ class EmployeeCRUDAndFilterTests(EmployeeBaseTestCase):
         results = res_unit.json()["results"]
         self.assertTrue(all(item["don_vi_id"] == self.don_vi_2.id for item in results))
 
+    def test_filter_unit_includes_concurrent_assignments_without_duplicates(self):
+        """Lọc theo đơn vị phải gồm CBNV kiêm nhiệm đơn vị đó."""
+        EmployeeAssignment.objects.create(
+            employee=self.normal_user,
+            don_vi=self.don_vi_2,
+            chuc_vu=self.cv_truong_phong,
+            chuc_danh="Phụ trách kiêm nhiệm",
+        )
+        self.client.force_authenticate(user=self.admin_user)
+
+        response = self.client.get(f"{self.employee_list_url}?don_vi_id={self.don_vi_2.id}")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        results = response.json()["results"]
+        employee_ids = [item["id"] for item in results]
+        self.assertIn(self.normal_user.id, employee_ids)
+        self.assertEqual(len(employee_ids), len(set(employee_ids)))
+
     def test_update_employee(self):
         """Cập nhật thông tin CBNV."""
         self.client.force_authenticate(user=self.admin_user)
@@ -1052,6 +1070,53 @@ class EmployeePermissionSecurityTests(EmployeeBaseTestCase):
         res_other = self.client.patch(other_url, {"sdt": "0901112233"}, format="json")
         self.assertEqual(res_other.status_code, status.HTTP_403_FORBIDDEN)
 
+        original_email = self.normal_user.email
+        original_birthday = self.normal_user.ngay_sinh
+        res_other_sensitive = self.client.patch(
+            other_url,
+            {"email": "unauthorized@example.com", "ngay_sinh": "1990-01-01"},
+            format="json",
+        )
+        self.assertEqual(res_other_sensitive.status_code, status.HTTP_403_FORBIDDEN)
+        self.normal_user.refresh_from_db()
+        self.assertEqual(self.normal_user.email, original_email)
+        self.assertEqual(self.normal_user.ngay_sinh, original_birthday)
+
+    def test_admin_only_can_change_employee_password(self):
+        """Password reset chỉ dành cho admin; RBAC change_full không đủ quyền."""
+        url = f"{self.employee_list_url}{self.normal_user.id}/change-password/"
+        new_password = "Secure-Reset-Password-42!"
+        self.normal_user.user_permissions.add(self.perm_change_full)
+
+        self.client.force_authenticate(user=self.normal_user)
+        denied = self.client.post(
+            url,
+            {"new_password": new_password, "confirm_password": new_password},
+            format="json",
+        )
+        self.assertEqual(denied.status_code, status.HTTP_403_FORBIDDEN)
+        self.normal_user.refresh_from_db()
+        self.assertTrue(self.normal_user.check_password("NormalPassword123"))
+
+        self.client.force_authenticate(user=self.admin_user)
+        mismatch = self.client.post(
+            url,
+            {"new_password": new_password, "confirm_password": "Different-Password-43!"},
+            format="json",
+        )
+        self.assertEqual(mismatch.status_code, status.HTTP_400_BAD_REQUEST)
+        self.normal_user.refresh_from_db()
+        self.assertTrue(self.normal_user.check_password("NormalPassword123"))
+
+        changed = self.client.post(
+            url,
+            {"new_password": new_password, "confirm_password": new_password},
+            format="json",
+        )
+        self.assertEqual(changed.status_code, status.HTTP_200_OK)
+        self.normal_user.refresh_from_db()
+        self.assertTrue(self.normal_user.check_password(new_password))
+
     def test_change_self_cannot_escalate_privileges_or_modify_admin_fields(self):
         """
         Tài khoản chỉ có change_self_cbnv tuyệt đối không được tự nâng quyền
@@ -1105,8 +1170,8 @@ class EmployeePermissionSecurityTests(EmployeeBaseTestCase):
         self.assertEqual(self.self_user.email, "newself@donvi.gov.vn")
         self.assertEqual(self.self_user.ngay_sinh.strftime("%Y-%m-%d"), "1993-03-03")
 
-    def test_change_full_permission_can_update_any_employee(self):
-        """User có quyền change_full_cbnv có thể sửa thông tin của bất kỳ CBNV nào."""
+    def test_change_full_permission_cannot_edit_other_employee_without_admin_role(self):
+        """Quyền change_full_cbnv không thay thế role admin khi sửa hồ sơ người khác."""
         hr_user = User.objects.create_user(
             username="hr_user",
             email="hr@donvi.gov.vn",
@@ -1120,7 +1185,14 @@ class EmployeePermissionSecurityTests(EmployeeBaseTestCase):
 
         target_url = f"{self.employee_list_url}{self.normal_user.id}/"
         res = self.client.patch(target_url, {"sdt": "0988776655"}, format="json")
-        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(res.data["detail"], "roles.messages.permissionDenied")
+        self.normal_user.refresh_from_db()
+        self.assertEqual(self.normal_user.sdt, "0912345678")
+
+        self.client.force_authenticate(user=self.admin_user)
+        admin_res = self.client.patch(target_url, {"sdt": "0988776655"}, format="json")
+        self.assertEqual(admin_res.status_code, status.HTTP_200_OK)
         self.normal_user.refresh_from_db()
         self.assertEqual(self.normal_user.sdt, "0988776655")
 
@@ -1264,7 +1336,7 @@ class EmployeePermissionSecurityTests(EmployeeBaseTestCase):
             format="json",
         )
         self.assertEqual(res_deact_su.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(res_deact_su.data["detail"], "employees.messages.cannotDeactivateSuperuser")
+        self.assertEqual(res_deact_su.data["detail"], "roles.messages.permissionDenied")
 
         # 5. Superuser thứ 2 thôi việc superuser đầu tiên, nhưng không thể thôi việc superuser cuối cùng
         # Khôi phục dòng staging: loại tài khoản admin hệ thống khỏi phép đếm superuser
