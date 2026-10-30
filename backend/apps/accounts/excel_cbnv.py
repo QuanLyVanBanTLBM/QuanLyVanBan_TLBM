@@ -7,8 +7,10 @@ import secrets
 import unicodedata
 from io import BytesIO
 from datetime import datetime, date
+from typing import Callable
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from django.contrib.auth.models import Group
 from django.db import transaction
 from django.contrib.auth import get_user_model
 
@@ -151,8 +153,10 @@ def _read_rows_from_excel(file_obj) -> list[tuple]:
     Đọc dữ liệu từ file Excel định dạng .xlsx qua openpyxl.
     """
     wb = openpyxl.load_workbook(file_obj, data_only=True)
-    ws = wb.active
-    return list(ws.iter_rows(values_only=True))
+    try:
+        return list(wb.active.iter_rows(values_only=True))
+    finally:
+        wb.close()
 
 
 def _normalize_excel_header(value) -> str:
@@ -193,7 +197,11 @@ def _map_excel_headers(header_row: tuple) -> dict[str, int]:
     return mapped
 
 
-def import_cbnv_from_excel(file_obj) -> dict:
+def import_cbnv_from_excel(
+    file_obj,
+    progress_callback: Callable[[str, int, int], None] | None = None,
+    completion_callback: Callable[[int], None] | None = None,
+) -> dict:
     """
     Đọc và kiểm tra tính hợp lệ từng dòng của tệp Excel nhập danh sách CBNV (.xlsx).
     Trả về dict gồm:
@@ -251,6 +259,30 @@ def import_cbnv_from_excel(file_obj) -> dict:
             "ghi_chu": 8 + offset,
         }
 
+    # Đọc trước các danh mục và email hiện có để tránh lặp nhiều truy vấn theo từng dòng.
+    # Giữ toàn bộ đơn vị trùng tên để phân biệt bằng Khối / Khu vực khi file có cột này.
+    def _comparison_key(value):
+        return str(value or "").upper()
+
+    UserModel = get_user_model()
+    existing_email_keys = {
+        _comparison_key(value)
+        for value in UserModel.objects.exclude(email__isnull=True)
+        .exclude(email="")
+        .values_list("email", flat=True)
+    }
+    units_by_name = {}
+    units_by_name_and_block = {}
+    for unit in DonVi.objects.select_related("khoi").all():
+        name_key = _comparison_key(unit.ten)
+        block_key = _comparison_key(unit.khoi.ten if unit.khoi_id else "")
+        units_by_name.setdefault(name_key, []).append(unit)
+        units_by_name_and_block.setdefault((name_key, block_key), []).append(unit)
+
+    positions_by_name = {}
+    for position in Position.objects.all():
+        positions_by_name.setdefault(_comparison_key(position.name), position)
+
     errors = []
     valid_records = []
     seen_emails_in_file = set()
@@ -264,7 +296,11 @@ def import_cbnv_from_excel(file_obj) -> dict:
             "message": message,
         })
 
+    total_rows = len(rows) - 1
     for idx, row in enumerate(rows[1:], start=2):
+        processed_rows = idx - 1
+        if progress_callback and (processed_rows % 10 == 0 or processed_rows == total_rows):
+            progress_callback("validation", processed_rows, total_rows)
         if not any(row):
             continue  # Bỏ qua dòng trống hoàn toàn
 
@@ -347,7 +383,7 @@ def import_cbnv_from_excel(file_obj) -> dict:
                 raw_email,
                 f"Email '{raw_email}' bị trùng lặp trong chính tệp Excel tải lên.",
             )
-        elif get_user_model().objects.filter(email__iexact=raw_email).exists():
+        elif _comparison_key(raw_email) in existing_email_keys:
             add_error(
                 idx,
                 "email",
@@ -388,10 +424,13 @@ def import_cbnv_from_excel(file_obj) -> dict:
             # Đã báo lỗi thiếu Khối; không tra cứu không phân biệt Khối để tránh gán nhầm đơn vị.
             pass
         else:
-            matching_units = DonVi.objects.filter(ten__iexact=don_vi_name)
-            if has_block_column:
-                matching_units = matching_units.filter(khoi__ten__iexact=khoi_name)
-            unit_count = matching_units.count()
+            unit_key = _comparison_key(don_vi_name)
+            matching_units = (
+                units_by_name_and_block.get((unit_key, _comparison_key(khoi_name)), [])
+                if has_block_column
+                else units_by_name.get(unit_key, [])
+            )
+            unit_count = len(matching_units)
             if unit_count == 0:
                 scope = f" trong Khối / Khu vực '{khoi_name}'" if has_block_column else ""
                 add_error(
@@ -420,14 +459,14 @@ def import_cbnv_from_excel(file_obj) -> dict:
                     ambiguous_message,
                 )
             else:
-                don_vi_instance = matching_units.first()
+                don_vi_instance = matching_units[0]
 
         # 6. Validate Chức vụ
         chuc_vu_instance = None
         if not chuc_vu_name:
             add_error(idx, "chuc_vu", "employees.import.errors.positionRequired", "", "Tên Chức vụ không được để trống.")
         else:
-            chuc_vu_instance = Position.objects.filter(name__iexact=chuc_vu_name).first()
+            chuc_vu_instance = positions_by_name.get(_comparison_key(chuc_vu_name))
             if not chuc_vu_instance:
                 add_error(
                     idx,
@@ -454,6 +493,9 @@ def import_cbnv_from_excel(file_obj) -> dict:
             "ghi_chu": ghi_chu,
         })
 
+    if progress_callback and total_rows:
+        progress_callback("validation", total_rows, total_rows)
+
     if errors:
         return {
             "success": False,
@@ -463,35 +505,87 @@ def import_cbnv_from_excel(file_obj) -> dict:
 
     # Nếu toàn bộ dữ liệu hợp lệ, tiến hành lưu nguyên tử (atomic) vào CSDL
     created_count = 0
-    UserModel = get_user_model()
+    existing_username_keys = {
+        _comparison_key(value)
+        for value in UserModel.objects.values_list("username", flat=True)
+    }
+    default_groups_by_position = {}
+    total_to_create = len(valid_records)
+    batch_size = 100
     with transaction.atomic():
-        for item in valid_records:
-            email = item["email"]
-            local_part = email.split("@")[0]
-            candidate = local_part
-            idx = 1
-            while UserModel.objects.filter(username__iexact=candidate).exists():
-                candidate = f"{local_part}{idx}"
-                idx += 1
+        groups_through = UserModel.groups.through
+        owner_field = next(
+            field for field in groups_through._meta.fields
+            if field.is_relation and field.related_model is UserModel
+        )
+        group_field = next(
+            field for field in groups_through._meta.fields
+            if field.is_relation and field.related_model is Group
+        )
 
-            imported_user = UserModel.objects.create_user(
-                username=candidate,
-                password=f"ITC@{secrets.token_hex(4)}",
-                email=email,
-                ho_ten=item["ho_ten"],
-                ngay_sinh=item["ngay_sinh"],
-                don_vi=item["don_vi"],
-                chuc_vu=item["chuc_vu"],
-                chuc_danh=item["chuc_danh"],
-                sdt=item["sdt"],
-                trang_thai=item["trang_thai"],
-                is_active=(item["trang_thai"] != Employee.Status.NGHI_VIEC),
-                ghi_chu=item["ghi_chu"],
-            )
-            default_groups = get_default_groups_for_position(item["chuc_vu"])
-            if default_groups:
-                imported_user.groups.set(default_groups)
-            created_count += 1
+        for batch_start in range(0, total_to_create, batch_size):
+            batch = valid_records[batch_start:batch_start + batch_size]
+            imported_users = []
+            groups_for_batch = []
+            for item in batch:
+                email = item["email"]
+                local_part = email.split("@")[0]
+                candidate = local_part
+                suffix = 1
+                while _comparison_key(candidate) in existing_username_keys:
+                    candidate = f"{local_part}{suffix}"
+                    suffix += 1
+                existing_username_keys.add(_comparison_key(candidate))
+
+                imported_user = UserModel(
+                    username=candidate,
+                    email=UserModel.objects.normalize_email(email),
+                    ho_ten=item["ho_ten"],
+                    ngay_sinh=item["ngay_sinh"],
+                    don_vi=item["don_vi"],
+                    chuc_vu=item["chuc_vu"],
+                    chuc_danh=item["chuc_danh"],
+                    sdt=item["sdt"],
+                    trang_thai=item["trang_thai"],
+                    is_active=(item["trang_thai"] != Employee.Status.NGHI_VIEC),
+                    ghi_chu=item["ghi_chu"],
+                )
+                imported_user.set_password(f"ITC@{secrets.token_hex(4)}")
+                imported_users.append(imported_user)
+
+                position_id = item["chuc_vu"].pk
+                if position_id not in default_groups_by_position:
+                    default_groups_by_position[position_id] = get_default_groups_for_position(item["chuc_vu"])
+                groups_for_batch.append(default_groups_by_position[position_id])
+
+            # `trang_thai` is a PostgreSQL ENUM in release_DDL.sql. Django's
+            # PostgreSQL bulk INSERT uses UNNEST(varchar[]) and cannot assign
+            # that array to employee_work_status, so keep model inserts typed
+            # through the regular save path while batching the M2M group rows.
+            for imported_user in imported_users:
+                imported_user.save(force_insert=True)
+            group_rows = [
+                groups_through(**{
+                    owner_field.attname: imported_user.pk,
+                    group_field.attname: group.pk,
+                })
+                for imported_user, default_groups in zip(imported_users, groups_for_batch)
+                for group in default_groups
+            ]
+            if group_rows:
+                groups_through.objects.bulk_create(group_rows, batch_size=500)
+
+            created_count += len(imported_users)
+            if progress_callback:
+                progress_callback("saving", created_count, total_to_create)
+
+        # Commit trạng thái hoàn tất cùng transaction tạo CBNV để job không thể bị chạy lại
+        # nếu tiến trình dừng ngay sau khi dữ liệu đã được commit.
+        if completion_callback:
+            completion_callback(created_count)
+
+    if progress_callback and total_to_create:
+        progress_callback("saving", total_to_create, total_to_create)
 
     return {
         "success": True,

@@ -44,6 +44,47 @@ def _yeu_cau_ban_nhap(process):
         )
 
 
+def _kiem_tra_thu_bac_chuc_vu_cap_ky(cap_ky):
+    """Cấp có chức vụ phía sau phải cao hơn hoặc bằng cấp có chức vụ liền trước."""
+    chuc_vu_ids = {
+        nguoi_ky.get("chuc_vu_id")
+        for cap in cap_ky
+        for nguoi_ky in cap.get("nguoi_ky", ())
+        if nguoi_ky.get("chuc_vu_id") is not None
+    }
+    if not chuc_vu_ids:
+        return
+
+    thu_bac = dict(
+        Position.objects.select_for_update()
+        .filter(pk__in=chuc_vu_ids)
+        .values_list("pk", "display_order")
+    )
+    if set(thu_bac) != chuc_vu_ids:
+        # Giữ nguyên lỗi tham chiếu chi tiết của `them_nguoi_ky` cho ID không tồn tại.
+        return
+    cap_truoc = None
+    for cap in sorted(cap_ky, key=lambda item: item["thu_tu"]):
+        thu_bac_cap = [
+            thu_bac[nguoi_ky["chuc_vu_id"]]
+            for nguoi_ky in cap.get("nguoi_ky", ())
+            if nguoi_ky.get("chuc_vu_id") in thu_bac
+        ]
+        if not thu_bac_cap:
+            continue
+        cap_hien_tai = (cap["thu_tu"], min(thu_bac_cap))
+        if cap_truoc is not None and cap_hien_tai[1] > cap_truoc[1]:
+            raise SigningError(
+                code="cap_ky_thu_bac_khong_hop_le",
+                detail="Chức vụ ở cấp ký sau phải cao hơn hoặc bằng cấp ký có chức vụ liền trước.",
+                fields={
+                    "cap_ky": [cap_hien_tai[0]],
+                    "cap_ky_truoc": [cap_truoc[0]],
+                },
+            )
+        cap_truoc = cap_hien_tai
+
+
 # ── Phạm vi quy trình theo đơn vị (#80 mục A; plan mục 3.1, 8) ──────────────
 
 
@@ -113,6 +154,7 @@ def tao_quy_trinh(nguoi_tao, *, ma_quy_trinh, ten_quy_trinh, pham_vi, don_vi_ap_
     )
     if SigningProcess.objects.filter(ma_quy_trinh__iexact=ma_quy_trinh).exists():  # "qt-1" và "QT-1" là một mã
         raise ConflictError(code="quy_trinh_trung_ma", detail="Mã quy trình đã tồn tại.")
+    _kiem_tra_thu_bac_chuc_vu_cap_ky(cap_ky)
     try:
         with transaction.atomic():
             process = SigningProcess.objects.create(
@@ -275,6 +317,7 @@ def sua_quy_trinh(process, nguoi_thuc_hien, *, ten_quy_trinh, pham_vi, don_vi_ap
     _kiem_tra_tham_chieu(
         DonVi, don_vi_ap_dung_id, field="don_vi_ap_dung_id", code="don_vi_khong_ton_tai", ten="Đơn vị"
     )
+    _kiem_tra_thu_bac_chuc_vu_cap_ky(cap_ky)
     process.ten_quy_trinh, process.mo_ta, process.pham_vi = ten_quy_trinh, mo_ta, pham_vi
     process.don_vi_ap_dung_id = don_vi_ap_dung_id
     process.cau_hinh_nhac_han = cau_hinh_nhac_han or process.cau_hinh_nhac_han or CAU_HINH_NHAC_HAN_MAC_DINH

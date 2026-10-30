@@ -94,6 +94,9 @@ describe('EmployeesPage Component (Issue #24)', () => {
       if (options?.method === 'POST') {
         return mockedApiClient.post(endpoint, options.body, options);
       }
+      if (endpoint.includes('/api/accounts/employees/import-jobs/')) {
+        return mockedApiClient.get(endpoint);
+      }
       if (endpoint.includes('/api/auth/me/permissions/')) {
         return {
           is_superuser: true,
@@ -697,12 +700,71 @@ describe('EmployeesPage Component (Issue #24)', () => {
     expect(screen.getByText('Kéo thả tệp .xlsx vào đây hoặc bấm để chọn tệp')).toBeInTheDocument();
   });
 
+  it('shows upload progress while the server accepts the file', async () => {
+    let resolveUpload: ((value: { job_id: string }) => void) | undefined;
+    mockedApiClient.post.mockReturnValue(new Promise((resolve) => {
+      resolveUpload = resolve;
+    }));
+    mockedApiClient.get.mockResolvedValue({
+      job_id: 'pending-upload-job',
+      status: 'done',
+      phase: 'complete',
+      processed: 0,
+      total: 0,
+      created_count: 0,
+      errors: [],
+      message: 'employees.import.importSuccess',
+    });
+
+    render(
+      <MemoryRouter>
+        <EmployeesPage />
+      </MemoryRouter>
+    );
+    await screen.findByText('Nguyễn Văn Bình');
+    fireEvent.click(screen.getByRole('button', { name: /Nhập từ Excel/i }));
+    await screen.findByText('Nhập Danh Sách CBNV Từ Excel');
+
+    const file = new File(['xlsx'], 'danh_sach.xlsx', {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    fireEvent.change(document.querySelector<HTMLInputElement>('input[type="file"]')!, {
+      target: { files: [file] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Tiến hành nạp dữ liệu/i }));
+
+    expect(await screen.findByText('Đang tải tệp lên máy chủ...')).toBeInTheDocument();
+    resolveUpload?.({ job_id: 'pending-upload-job' });
+    await waitFor(() => {
+      expect(screen.queryByText('Nhập Danh Sách CBNV Từ Excel')).not.toBeInTheDocument();
+    });
+  });
+
   it('supports selecting and importing valid .xlsx Excel files', async () => {
     mockedApiClient.post.mockResolvedValue({
-      success: true,
-      message: 'employees.messages.importSuccess',
-      created_count: 2,
+      job_id: 'test-import-job',
     });
+    mockedApiClient.get
+      .mockResolvedValueOnce({
+        job_id: 'test-import-job',
+        status: 'processing',
+        phase: 'validation',
+        processed: 10,
+        total: 20,
+        created_count: 0,
+        errors: [],
+        message: 'employees.import.jobValidating',
+      })
+      .mockResolvedValueOnce({
+      job_id: 'test-import-job',
+      status: 'done',
+      phase: 'complete',
+      processed: 2,
+      total: 2,
+      created_count: 2,
+      errors: [],
+      message: 'employees.import.importSuccess',
+      });
 
     render(
       <MemoryRouter>
@@ -731,9 +793,21 @@ describe('EmployeesPage Component (Issue #24)', () => {
     const submitBtn = screen.getByRole('button', { name: /Tiến hành nạp dữ liệu/i });
     fireEvent.click(submitBtn);
 
+    expect(await screen.findByText('Đang kiểm tra dữ liệu trong tệp...')).toBeInTheDocument();
+    expect(screen.getByText('Đã xử lý 10/20 dòng')).toBeInTheDocument();
+
     await waitFor(() => {
       expect(screen.getByText('Nhập thành công cán bộ nhân viên từ Excel!')).toBeInTheDocument();
     });
+
+    expect(mockedApiClient.post).toHaveBeenCalledWith(
+      '/api/accounts/employees/import-async/',
+      expect.any(FormData),
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(mockedApiClient.get).toHaveBeenCalledWith(
+      '/api/accounts/employees/import-jobs/test-import-job/',
+    );
   });
 
   it('renders concurrent assignments badge on employee unit cell', async () => {

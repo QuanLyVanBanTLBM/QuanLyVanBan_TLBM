@@ -1,4 +1,5 @@
 import datetime
+import uuid
 
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.contrib.auth.models import PermissionsMixin
@@ -290,3 +291,67 @@ class EmployeeAssignment(models.Model):
 
     def __str__(self):
         return f"{self.employee.ho_ten} - {self.don_vi.ten} ({self.chuc_vu.name})"
+
+
+class EmployeeImportJob(models.Model):
+    """Trạng thái bền vững của một lượt nhập Excel CBNV nền."""
+
+    class Status(models.TextChoices):
+        QUEUED = "queued", "Đang chờ"
+        PROCESSING = "processing", "Đang xử lý"
+        DONE = "done", "Hoàn tất"
+        FAILED = "failed", "Thất bại"
+
+    class Phase(models.TextChoices):
+        QUEUED = "queued", "Đang chờ"
+        VALIDATION = "validation", "Kiểm tra dữ liệu"
+        SAVING = "saving", "Đang lưu"
+        COMPLETE = "complete", "Hoàn tất"
+        FAILED = "failed", "Thất bại"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(
+        Employee,
+        on_delete=models.CASCADE,
+        related_name="employee_import_jobs",
+    )
+    idempotency_key = models.CharField(max_length=128, null=True, blank=True)
+    active_key = models.CharField(max_length=32, null=True, blank=True)
+    file_path = models.CharField(max_length=1024)
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.QUEUED,
+        db_default=Status.QUEUED,
+    )
+    phase = models.CharField(
+        max_length=16,
+        choices=Phase.choices,
+        default=Phase.QUEUED,
+        db_default=Phase.QUEUED,
+    )
+    processed = models.PositiveIntegerField(default=0, db_default=0)
+    total = models.PositiveIntegerField(default=0, db_default=0)
+    created_count = models.PositiveIntegerField(default=0, db_default=0)
+    errors = models.JSONField(default=list, db_default=models.Value([], output_field=models.JSONField()))
+    message = models.CharField(max_length=100, blank=True, default="", db_default="")
+    created_at = models.DateTimeField(auto_now_add=True, db_default=DbNow())
+    updated_at = models.DateTimeField(auto_now=True, db_default=DbNow())
+
+    class Meta:
+        db_table = "accounts_employee_import_job"
+        verbose_name = "Lượt nhập Excel CBNV"
+        verbose_name_plural = "Lượt nhập Excel CBNV"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["owner", "idempotency_key"],
+                name="uq_employee_import_owner_idem",
+            ),
+            models.UniqueConstraint(
+                fields=["active_key"],
+                name="uq_employee_import_active_key",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["status", "created_at"], name="idx_employee_import_status"),
+        ]
