@@ -337,6 +337,23 @@ def tu_khoa_tim_kiem(gia_tri):
     return (gia_tri or "").replace("\x00", "").strip()[:100]
 
 
+BIGINT_TOI_DA = 9223372036854775807
+BIGINT_SO_CHU_SO = len(str(BIGINT_TOI_DA))
+
+
+def _doc_so_nguyen(gia_tri, ten):
+    """Đọc tham số truy vấn là số nguyên dương: chỉ nhận chữ số ASCII 0-9 (`str.isdigit()` còn nhận chữ số Unicode mà
+    `int()` hoặc cột bigint xử lý sai) và không vượt giới hạn bigint; sai thì trả 400 `tham_so_khong_hop_le`."""
+    if not (gia_tri.isascii() and gia_tri.isdigit()):
+        raise SigningError(code="tham_so_khong_hop_le", detail=f"{ten} phải là số.",
+                           fields={ten: ["Giá trị không hợp lệ."]})
+    so = int(gia_tri) if len(gia_tri) <= BIGINT_SO_CHU_SO else BIGINT_TOI_DA + 1  # tránh giới hạn 4300 chữ số của int()
+    if so > BIGINT_TOI_DA:
+        raise SigningError(code="tham_so_khong_hop_le", detail=f"{ten} vượt giới hạn.",
+                           fields={ten: ["Giá trị vượt giới hạn cho phép."]})
+    return so
+
+
 def _loc_ho_so(queryset, tham_so):
     """Lọc trạng thái, quy trình/đơn vị áp dụng (ID), từ khóa (văn bản, quy trình, ghi chú, mã hồ sơ) và ngày tạo."""
     if tham_so.get("trang_thai"):
@@ -348,33 +365,18 @@ def _loc_ho_so(queryset, tham_so):
         queryset = _gan_luot_cuoi(SigningRequest.objects.filter(pk__in=queryset.values("pk"))).filter(
             _dieu_kien_nhanh()[tham_so["nhanh"]])
     if tham_so.get("quy_trinh"):
-        if not tham_so["quy_trinh"].isdigit():
-            raise SigningError(code="tham_so_khong_hop_le", detail="quy_trinh phải là số.",
-                               fields={"quy_trinh": ["Giá trị không hợp lệ."]})
-        queryset = queryset.filter(quy_trinh_id=int(tham_so["quy_trinh"]))
+        queryset = queryset.filter(quy_trinh_id=_doc_so_nguyen(tham_so["quy_trinh"], "quy_trinh"))
     if tham_so.get("don_vi_ap_dung"):
-        gia_tri_don_vi = tham_so["don_vi_ap_dung"]
-        if not gia_tri_don_vi.isascii() or not gia_tri_don_vi.isdecimal():
-            raise SigningError(code="tham_so_khong_hop_le", detail="don_vi_ap_dung phải là số.",
-                               fields={"don_vi_ap_dung": ["Giá trị không hợp lệ."]})
-        try:
-            don_vi_id = int(gia_tri_don_vi)
-        except ValueError as exc:
-            raise SigningError(
-                code="tham_so_khong_hop_le",
-                detail="don_vi_ap_dung vượt giới hạn.",
-                fields={"don_vi_ap_dung": ["Giá trị vượt giới hạn cho phép."]},
-            ) from exc
-        if don_vi_id > 9223372036854775807:
-            raise SigningError(code="tham_so_khong_hop_le", detail="don_vi_ap_dung vượt giới hạn.",
-                               fields={"don_vi_ap_dung": ["Giá trị không hợp lệ."]})
+        don_vi_id = _doc_so_nguyen(tham_so["don_vi_ap_dung"], "don_vi_ap_dung")
         queryset = queryset.filter(quy_trinh__don_vi_ap_dung_id=don_vi_id)
     tu_khoa = tu_khoa_tim_kiem(tham_so.get("q"))
     if tu_khoa:
         cot = ("quy_trinh__ten_quy_trinh", "quy_trinh__ma_quy_trinh", "ghi_chu", "so_hieu_van_ban", "trich_yeu_van_ban")
         dieu_kien = Q(van_ban_id__in=id_van_ban_khop(tu_khoa)) | tim_kiem.khop_khong_dau(tu_khoa, *cot)
-        if tu_khoa.lstrip("#").isdigit():
-            dieu_kien |= Q(pk=int(tu_khoa.lstrip("#")))
+        ma_ho_so = tu_khoa.lstrip("#")
+        if (ma_ho_so.isascii() and ma_ho_so.isdigit() and len(ma_ho_so) <= BIGINT_SO_CHU_SO
+                and int(ma_ho_so) <= BIGINT_TOI_DA):
+            dieu_kien |= Q(pk=int(ma_ho_so))
         queryset = tim_kiem.chu_thich(queryset, *cot).filter(dieu_kien)
     khoang = _doc_khoang_ngay(tham_so)
     if khoang.get("tu_ngay"):
@@ -481,10 +483,7 @@ class TrinhKyTepView(SigningAPIView):
         ho_so = _ho_so_xem_duoc(request, pk)
         luot_id = request.query_params.get("luot")
         if luot_id:
-            luot = get_object_or_404(ho_so.luot_trinh_set, pk=luot_id) if luot_id.isdigit() else None
-            if luot is None:
-                raise SigningError(code="tham_so_khong_hop_le", detail="luot phải là số.",
-                                   fields={"luot": ["Giá trị không hợp lệ."]})
+            luot = get_object_or_404(ho_so.luot_trinh_set, pk=_doc_so_nguyen(luot_id, "luot"))
         else:
             luot = trinh_ky_service.luot_hien_hanh(ho_so)
         vi_tri = luot.vi_tri_luu_tep if luot else ho_so.vi_tri_luu_tep
@@ -889,10 +888,7 @@ class CanBoTheoChucVuView(SigningAPIView):
             gia_tri = request.query_params.get(ten, "").strip()
             if not gia_tri and not bat_buoc:
                 continue
-            if not gia_tri.isdigit():
-                raise SigningError(code="tham_so_khong_hop_le", detail=f"{ten} phải là số.",
-                                   fields={ten: ["Giá trị không hợp lệ."]})
-            tham_so[ten] = int(gia_tri)
+            tham_so[ten] = _doc_so_nguyen(gia_tri, ten)
         queryset = to_chuc.can_bo_giu_chuc_vu(tham_so["chuc_vu"], tham_so.get("don_vi"))
         can_bo = list(queryset.select_related("chuc_vu", "don_vi")
                       .order_by("don_vi__stt_uu_tien", "ho_ten", "pk")[: self.TOI_DA])
