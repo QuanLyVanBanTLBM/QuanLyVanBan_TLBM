@@ -59,6 +59,11 @@ def kiem_tra_van_ban_trinh_ky(nguoi_dung, document_type, van_ban_id):
     return van_ban
 
 
+def ma_van_ban_di_xem_duoc(nguoi_dung):
+    """Truy vấn con các mã văn bản đi mà `nguoi_dung` xem được theo quy tắc của module Văn bản (`van_ban_xem_duoc`)."""
+    return van_ban_xem_duoc(nguoi_dung, "DI").values("pk")
+
+
 def mo_ta_van_ban(document_type, van_ban_id):
     """{"so_hieu", "trich_yeu"} của văn bản; rỗng khi không đọc được (văn bản đã xóa, lỗi CSDL)."""
     if document_type != enums.LoaiVanBan.VAN_BAN_DI:

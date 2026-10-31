@@ -19,10 +19,10 @@ from ..errors import ConflictError, SigningError
 from ..models import (
     SigningAttempt, SigningAuditLog, SigningProcess, SigningRequest, SigningRequestStep, SigningRequestStepSigner,
 )
-from ..permissions import HUY_TRINH_KY, XEM_NHAT_KY, co_quyen
+from ..permissions import HUY_TRINH_KY, XEM_NHAT_KY, XEM_TAT_CA, co_quyen
 from ..storage import StorageError, get_storage
 from ..tich_hop import to_chuc
-from ..tich_hop.van_ban import kiem_tra_van_ban_trinh_ky
+from ..tich_hop.van_ban import kiem_tra_van_ban_trinh_ky, ma_van_ban_di_xem_duoc
 from . import process as process_service
 from . import thong_bao
 from .audit import ghi_nhat_ky
@@ -172,15 +172,18 @@ def _kiem_tra_quy_trinh(quy_trinh, nguoi_tao):
 
 def trinh_ky_xem_duoc(nguoi):
     """
-    Người tạo, người ký của bất kỳ lượt trình nào , người có quyền
-    xem nhật ký trình ký (kiểm toán) xem được hồ sơ. Không mở quyền xem chỉ vì tên tab.
+    Người tạo, người ký của bất kỳ lượt trình nào, người có quyền xem nhật ký trình ký (kiểm toán) xem được hồ sơ.
+    Người có quyền xem tất cả hồ sơ trình ký (`view_all_trinhky`) xem được mọi hồ sơ nháp (chưa gắn văn bản)
+    và hồ sơ gắn văn bản đi mà họ xem được theo quy tắc của module Văn bản (`van_ban_xem_duoc`), nên hồ sơ của
+    văn bản hạn chế không bị lộ. Quyền này chỉ mở việc xem, không mở ký, hủy, trả lại hay sửa.
     """
     queryset = SigningRequest.objects.select_related("quy_trinh", "create_by")
     if co_quyen(nguoi, XEM_NHAT_KY):
         return queryset
-    return queryset.filter(
-        Q(create_by=nguoi) | Q(luot_trinh_set__cap_ky_set__nguoi_ky_set__nguoi_ky=nguoi)
-    ).distinct()
+    dieu_kien = Q(create_by=nguoi) | Q(luot_trinh_set__cap_ky_set__nguoi_ky_set__nguoi_ky=nguoi)
+    if co_quyen(nguoi, XEM_TAT_CA):
+        dieu_kien |= Q(van_ban_id__isnull=True) | Q(van_ban_id__in=ma_van_ban_di_xem_duoc(nguoi))
+    return queryset.filter(dieu_kien).distinct()
 
 
 def dang_cho_toi_ky(nguoi):

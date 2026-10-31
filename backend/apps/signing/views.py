@@ -25,7 +25,7 @@ from .models import (
     SigningSignature,
 )
 from .permissions import (
-    GUI_TRINH_KY, HUY_TRINH_KY, KY_TRINH_KY, QUAN_LY_QUY_TRINH, TAO_TRINH_KY, XEM_NHAT_KY,
+    GUI_TRINH_KY, HUY_TRINH_KY, KY_TRINH_KY, QUAN_LY_QUY_TRINH, TAO_TRINH_KY, XEM_NHAT_KY, XEM_TAT_CA,
     XEM_TRINH_KY, co_quyen, yeu_cau_quyen,
 )
 from .serializers import (
@@ -250,7 +250,7 @@ class KhoaPinView(SigningAPIView):
 
 
 # ── Hồ sơ trình ký (Phase 7, #80; plan mục 3.3, 6.1, 7.2) ────────────────────
-# Xem: người tạo, người ký của hồ sơ, kiểm toán (view_signing_audit). Tạo: add_trinhky.
+# Xem: người tạo, người ký của hồ sơ, kiểm toán (view_signing_audit), xem tất cả (view_all_trinhky; chỉ xem). Tạo: add_trinhky.
 # Gửi, trình lại: send_trinhky + là người tạo. Hủy: người tạo, hoặc cancel_trinhky (bắt buộc lý do).
 # Thao tác đổi trạng thái bắt buộc header Idempotency-Key (plan mục 7.5).
 
@@ -908,7 +908,7 @@ class ToiView(SigningAPIView):
         return Response({
             "id": u.pk, "ten": to_chuc.ten_hien_thi(u), "don_vi_id": don_vi,
             "quyen": {ma: co_quyen(u, ma) for ma in (XEM_TRINH_KY, TAO_TRINH_KY, GUI_TRINH_KY, KY_TRINH_KY,
-                                                     HUY_TRINH_KY, XEM_NHAT_KY, QUAN_LY_QUY_TRINH)},
+                                                     HUY_TRINH_KY, XEM_NHAT_KY, XEM_TAT_CA, QUAN_LY_QUY_TRINH)},
             "la_quan_tri": to_chuc.la_quan_tri(u), "la_lanh_dao_don_vi": to_chuc.la_lanh_dao_don_vi(u, don_vi),
         })
 

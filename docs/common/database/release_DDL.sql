@@ -1,4 +1,12 @@
 -- =====================================================================
+-- THAY ĐỔI QUYỀN XEM TẤT CẢ HỒ SƠ TRÌNH KÝ (Nhóm 5; đánh dấu [XTKY] tại vị trí)
+-- Căn cứ: yêu cầu nghiệp vụ: Văn thư xem toàn bộ hồ sơ trình ký như Ban Giám đốc và Quản trị hệ thống,
+--   không mở nhật ký kiểm toán (view_signing_audit).
+--   Thêm quyền view_all_trinhky (nhóm Trình ký); gán cho nhóm ADMIN (CROSS JOIN sẵn có), BGD và VT: thêm 3 lượt phân quyền.
+--   Migration authorization 0013_add_view_all_trinhky_permission bổ sung cho DB đã seed từ trước.
+-- Quy mô sau [XTKY] (cộng sau [EXDV]): 80 -> 81 quyền thao tác; 211 -> 214 lượt phân quyền.
+-- =====================================================================
+-- =====================================================================
 -- THAY ĐỔI CẤP QUYỀN XUẤT DANH BẠ PHÒNG BAN CHO TRƯỞNG PHÒNG VÀ BAN GIÁM ĐỐC (Nhóm 7; đánh dấu [EXDV] tại vị trí)
 -- Căn cứ: quyết định nhóm trưởng (30/10/2026): xuất danh bạ do admin, Tổng giám đốc và các chức vụ cao cấp thực hiện,
 --   cùng mức với export_cbnv (TP, BGD, ADMIN).
@@ -2499,6 +2507,11 @@ VALUES
         'view_signing_audit',
         'Trình ký'
     ),
+    (
+        'Xem tất cả hồ sơ trình ký',
+        'view_all_trinhky',
+        'Trình ký'
+    ),
     -- Quản lý Công việc (Nhóm 6)
     (
         'Xem công việc (chung)',
@@ -2661,6 +2674,7 @@ WHERE
         'delegate_trinhky',
         'cancel_trinhky',
         'view_signing_audit',
+        'view_all_trinhky',
         'view_congviec',
         'view_all_congviec',
         'view_dept_congviec',
@@ -2785,6 +2799,7 @@ WHERE
         'view_trinhky',
         'send_trinhky',
         'add_trinhky',
+        'view_all_trinhky',
         'view_congviec',
         'view_dept_congviec',
         'add_congviec',

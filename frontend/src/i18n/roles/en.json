@@ -146,6 +146,7 @@
       "delegate_trinhky": "Delegate signing authority",
       "cancel_trinhky": "Cancel an approval request",
       "view_signing_audit": "View approval audit log",
+      "view_all_trinhky": "View all approval requests",
       "view_congviec": "View tasks",
       "view_all_congviec": "View all tasks across the system",
       "view_dept_congviec": "View department tasks",

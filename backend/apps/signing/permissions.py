@@ -23,6 +23,7 @@ GUI_TRINH_KY = "send_trinhky"
 KY_TRINH_KY = "sign_trinhky"
 HUY_TRINH_KY = "cancel_trinhky"
 XEM_NHAT_KY = "view_signing_audit"
+XEM_TAT_CA = "view_all_trinhky"
 
 
 def co_quyen(user, codename):
