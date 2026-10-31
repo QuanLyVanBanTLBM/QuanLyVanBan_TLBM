@@ -23,6 +23,7 @@ from .models import (
     SigningRequest,
     SigningRequestStep,
     SigningSignature,
+    SigningUserSignature,
 )
 from .permissions import (
     GUI_TRINH_KY, HUY_TRINH_KY, KY_TRINH_KY, QUAN_LY_QUY_TRINH, TAO_TRINH_KY, XEM_NHAT_KY,
@@ -906,6 +907,7 @@ class ToiView(SigningAPIView):
             "quyen": {ma: co_quyen(u, ma) for ma in (XEM_TRINH_KY, TAO_TRINH_KY, GUI_TRINH_KY, KY_TRINH_KY,
                                                      HUY_TRINH_KY, XEM_NHAT_KY, QUAN_LY_QUY_TRINH)},
             "la_quan_tri": to_chuc.la_quan_tri(u), "la_lanh_dao_don_vi": to_chuc.la_lanh_dao_don_vi(u, don_vi),
+            "co_anh_chu_ky": SigningUserSignature.objects.filter(nguoi_dung=u).exists(),
         })
 
 
@@ -915,3 +917,130 @@ class VanBanDiView(SigningAPIView):
     def get(self, request):
         yeu_cau_quyen(request.user, TAO_TRINH_KY)
         return Response(tim_van_ban_di(request.user, tu_khoa_tim_kiem(request.query_params.get("q"))))
+
+
+
+# ── Ảnh chữ ký cá nhân (Issue #424) ──────────────────────────────────────────
+
+
+class AnhChuKyCaNhanView(SigningAPIView):
+    """
+    Quản lý ảnh chữ ký cá nhân của người dùng hiện tại (Issue #424).
+    GET: Lấy thông tin trạng thái ảnh chữ ký cá nhân.
+    POST: Tải lên hoặc cập nhật ảnh chữ ký cá nhân (PNG, <= 2MB, nền trong suốt).
+    DELETE: Xóa ảnh chữ ký cá nhân.
+    """
+
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def get(self, request):
+        sig = SigningUserSignature.objects.filter(nguoi_dung=request.user).first()
+        if not sig:
+            return Response({"co_anh": False})
+        return Response({
+            "co_anh": True,
+            "ma_bam": sig.ma_bam,
+            "dung_luong_bytes": sig.dung_luong_bytes,
+            "url": "/api/signing/anh-chu-ky-ca-nhan/tep/",
+            "updated_at": sig.updated_at,
+        })
+
+    def post(self, request):
+        yeu_cau_quyen(request.user, KY_TRINH_KY)
+        data = None
+        tep = request.FILES.get("tep") or request.FILES.get("file")
+        if tep:
+            if tep.size > to_chuc.ANH_CHU_KY_TOI_DA:
+                raise SigningError(
+                    code="tep_qua_lon",
+                    detail="Tệp ảnh chữ ký vượt quá dung lượng tối đa 2 MB.",
+                    fields={"tep": ["Dung lượng vượt quá 2 MB."]},
+                )
+            data = tep.read()
+        elif "du_lieu_base64" in request.data:
+            raw = request.data["du_lieu_base64"]
+            if "," in raw:
+                raw = raw.split(",", 1)[1]
+            try:
+                data = base64.b64decode(raw)
+            except Exception:
+                raise SigningError(
+                    code="dinh_dang_khong_hop_le",
+                    detail="Dữ liệu Base64 ảnh chữ ký không hợp lệ.",
+                    fields={"du_lieu_base64": ["Dữ liệu Base64 không hợp lệ."]},
+                )
+            if len(data) > to_chuc.ANH_CHU_KY_TOI_DA:
+                raise SigningError(
+                    code="tep_qua_lon",
+                    detail="Tệp ảnh chữ ký vượt quá dung lượng tối đa 2 MB.",
+                    fields={"du_lieu_base64": ["Dung lượng vượt quá 2 MB."]},
+                )
+        else:
+            raise SigningError(
+                code="thieu_tep_anh",
+                detail="Vui lòng cung cấp tệp ảnh hoặc dữ liệu Base64 ảnh chữ ký.",
+                fields={"tep": ["Thiếu tệp ảnh hoặc dữ liệu Base64."]},
+            )
+
+        if not data.startswith(to_chuc.CHU_KY_PNG):
+            raise SigningError(
+                code="dinh_dang_khong_hop_le",
+                detail="Ảnh chữ ký bắt buộc phải có định dạng PNG.",
+                fields={"tep": ["Chỉ chấp nhận định dạng PNG."]},
+            )
+
+        storage = get_storage()
+        try:
+            meta = storage.save_bytes(data, "anh_chu_ky_nguoi_dung", "png")
+        except StorageError as exc:
+            raise SigningError(
+                code="loi_luu_tep",
+                detail="Không thể lưu tệp ảnh chữ ký lên hệ thống lưu trữ.",
+            ) from exc
+
+        ma_bam = crypto.sha256_hex(data)
+        sig, _ = SigningUserSignature.objects.update_or_create(
+            nguoi_dung=request.user,
+            defaults={
+                "vi_tri_tep": meta.vi_tri_luu_tep,
+                "ma_bam": ma_bam,
+                "dung_luong_bytes": meta.kich_thuoc,
+            },
+        )
+        return Response({
+            "co_anh": True,
+            "ma_bam": sig.ma_bam,
+            "dung_luong_bytes": sig.dung_luong_bytes,
+            "url": "/api/signing/anh-chu-ky-ca-nhan/tep/",
+            "updated_at": sig.updated_at,
+        }, status=status.HTTP_200_OK)
+
+    def delete(self, request):
+        yeu_cau_quyen(request.user, KY_TRINH_KY)
+        SigningUserSignature.objects.filter(nguoi_dung=request.user).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class AnhChuKyCaNhanTepView(SigningAPIView):
+    """GET /anh-chu-ky-ca-nhan/tep/: tải tệp ảnh chữ ký của người dùng hiện tại để hiển thị preview."""
+
+    def get(self, request):
+        sig = SigningUserSignature.objects.filter(nguoi_dung=request.user).first()
+        if not sig:
+            raise SigningError(
+                code="chua_co_anh_chu_ky",
+                detail="Người dùng chưa thiết lập ảnh chữ ký.",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+        try:
+            data = get_storage().read_bytes(sig.vi_tri_tep)
+        except StorageError:
+            raise SigningError(
+                code="khong_doc_duoc_tep",
+                detail="Không đọc được tệp ảnh chữ ký.",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+        response = HttpResponse(data, content_type="image/png")
+        response["Cache-Control"] = "private, no-cache"
+        response["X-Content-Type-Options"] = "nosniff"
+        return response

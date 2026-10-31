@@ -93,6 +93,20 @@ CHU_KY_PNG = b"\x89PNG\r\n\x1a\n"
 
 
 def anh_chu_ky(nguoi_dung):
+    # 1. Ưu tiên đọc từ SigningUserSignature trong module Trình ký (Issue #424)
+    try:
+        from ..models import SigningUserSignature
+        from ..storage import get_storage
+        sig = SigningUserSignature.objects.filter(nguoi_dung=nguoi_dung).first()
+        if sig:
+            du_lieu = get_storage().read_bytes(sig.vi_tri_tep)
+            if len(du_lieu) <= ANH_CHU_KY_TOI_DA and du_lieu.startswith(CHU_KY_PNG):
+                return du_lieu
+            logger.warning("Ảnh chữ ký của người dùng %s không hợp lệ (dung lượng hoặc định dạng)", nguoi_dung.pk)
+    except Exception:
+        logger.exception("Không đọc được ảnh chữ ký của người dùng %s từ signing_user_signature", nguoi_dung.pk)
+
+    # 2. Hồ sơ cá nhân thuộc Nhóm 7 (nếu có sau này)
     tep = getattr(nguoi_dung, "anh_chu_ky", None)
     if not tep:
         return None

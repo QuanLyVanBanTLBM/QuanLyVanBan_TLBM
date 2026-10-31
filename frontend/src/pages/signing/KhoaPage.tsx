@@ -27,7 +27,7 @@ function OPin({ nhan, gia_tri, onDoi }: { nhan: string; gia_tri: string; onDoi: 
 
 export default function KhoaPage() {
   const { t, loi } = useSigningT();
-  const { toi } = useToi();
+  const { toi, taiLaiToi } = useToi();
   const ds = useTai(() => signingApi.khoa());
   const [hoTro, setHoTro] = useState<boolean | null>(null);
   const [banBoc, setBanBoc] = useState<{ keyId: number; co: boolean } | null>(null);
@@ -41,9 +41,11 @@ export default function KhoaPage() {
   const [thongBao, setThongBao] = useState<{ loai: 'loi' | 'thanh_cong'; noi_dung: string } | null>(null);
   const [lanTaiBanBoc, setLanTaiBanBoc] = useState(0);
   const [anhChuKyTuyChinh, setAnhChuKyTuyChinh] = useState<string | null | undefined>(undefined);
+  const anhChuKyServer = toi?.co_anh_chu_ky ? `/api/signing/anh-chu-ky-ca-nhan/tep/?v=${toi.id}` : null;
+  const anhChuKyLocal = toi ? localStorage.getItem(`tlbm_user_sig_${toi.id}`) : null;
   const anhChuKy = anhChuKyTuyChinh !== undefined
     ? anhChuKyTuyChinh
-    : (toi ? localStorage.getItem(`tlbm_user_sig_${toi.id}`) : null);
+    : (anhChuKyServer || anhChuKyLocal);
   const [tepChon, setTepChon] = useState<File | null>(null);
   const [moCrop, setMoCrop] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -63,18 +65,38 @@ export default function KhoaPage() {
     e.target.value = '';
   };
 
-  const onLuuAnhChuKy = async (_blob: Blob, dataUrl: string) => {
-    setAnhChuKyTuyChinh(dataUrl);
-    if (toi) localStorage.setItem(`tlbm_user_sig_${toi.id}`, dataUrl);
-    setMoCrop(false);
-    setTepChon(null);
-    setThongBao({ loai: 'thanh_cong', noi_dung: t('khoa.daLuuChuKy') });
+  const onLuuAnhChuKy = async (blob: Blob, dataUrl: string) => {
+    setDangLam(true);
+    setThongBao(null);
+    try {
+      await signingApi.taiLenAnhChuKy(blob);
+      setAnhChuKyTuyChinh(dataUrl);
+      if (toi) localStorage.removeItem(`tlbm_user_sig_${toi.id}`);
+      taiLaiToi?.();
+      setMoCrop(false);
+      setTepChon(null);
+      setThongBao({ loai: 'thanh_cong', noi_dung: t('khoa.daLuuChuKy') });
+    } catch (err) {
+      setThongBao({ loai: 'loi', noi_dung: loi(err) });
+    } finally {
+      setDangLam(false);
+    }
   };
 
-  const onXoaAnhChuKy = () => {
-    setAnhChuKyTuyChinh(null);
-    if (toi) localStorage.removeItem(`tlbm_user_sig_${toi.id}`);
-    setThongBao({ loai: 'thanh_cong', noi_dung: t('khoa.daXoaChuKy') });
+  const onXoaAnhChuKy = async () => {
+    setDangLam(true);
+    setThongBao(null);
+    try {
+      await signingApi.xoaAnhChuKy();
+      setAnhChuKyTuyChinh(null);
+      if (toi) localStorage.removeItem(`tlbm_user_sig_${toi.id}`);
+      taiLaiToi?.();
+      setThongBao({ loai: 'thanh_cong', noi_dung: t('khoa.daXoaChuKy') });
+    } catch (err) {
+      setThongBao({ loai: 'loi', noi_dung: loi(err) });
+    } finally {
+      setDangLam(false);
+    }
   };
 
   useEffect(() => {
@@ -221,6 +243,7 @@ export default function KhoaPage() {
                   size="sm"
                   variant="danger"
                   icon="fa-trash"
+                  isLoading={dangLam}
                   onClick={onXoaAnhChuKy}
                 >
                   {t('khoa.xoaChuKy')}
@@ -364,6 +387,7 @@ export default function KhoaPage() {
         }}
         tep={tepChon}
         onLuu={onLuuAnhChuKy}
+        dangXuLy={dangLam}
       />
 
       {canThuHoi && (

@@ -6,7 +6,7 @@
 import apiClient, { ApiError } from '@lib/apiClient';
 import { resolveDocumentApiUrl } from '@lib/routes';
 import type {
-  BangChung, BoLocHoSo, BoLocTaiLieu, CanBo, CanBoChucVu, ChucVu, DonViApDungHoSo, DonViLuaChon, TepTaiLieu, ThongKeHoSo, HoSo, HoSoChiTiet, KhoaKy, LoiNghiepVu, NguoiDungHienTai, QuyTrinh,
+  BangChung, BoLocHoSo, BoLocTaiLieu, CanBo, CanBoChucVu, ChucVu, DonViApDungHoSo, DonViLuaChon, TepTaiLieu, ThongKeHoSo, HoSo, HoSoChiTiet, KhoaKy, LoiNghiepVu, NguoiDungHienTai, QuyTrinh, ThongTinAnhChuKyCaNhan,
   ThamSoKdf, TinNhan, TrangKetQua, TraoDoi, VanBanDi, VanBanDiTepDinhKem, ViTriKy,
 } from './types';
 
@@ -218,6 +218,15 @@ export const signingApi = {
   timVanBanDi: (q: string) => apiClient.get<VanBanDi[]>(`${SIGNING_BASE}/van-ban-di/?q=${encodeURIComponent(q)}`),
 
   // ── Khóa ký, PIN ─────────────────────────────────────────────────────────
+  // ── Ảnh chữ ký cá nhân (Issue #424) ──────────────────────────────────────
+  anhChuKyCaNhan: () => apiClient.get<ThongTinAnhChuKyCaNhan>(`${SIGNING_BASE}/anh-chu-ky-ca-nhan/`),
+  taiLenAnhChuKy: (tep: Blob | File) => {
+    const form = new FormData();
+    form.append('tep', tep, 'signature.png');
+    return apiClient.post<ThongTinAnhChuKyCaNhan>(`${SIGNING_BASE}/anh-chu-ky-ca-nhan/`, form);
+  },
+  xoaAnhChuKy: () => apiClient.delete<void>(`${SIGNING_BASE}/anh-chu-ky-ca-nhan/`),
+
   khoa: () => apiClient.get<KhoaKy[]>(`${SIGNING_BASE}/khoa/`),
   dangKyKhoa: (ma_khoa: string, khoa_cong_khai: string) =>
     apiClient.post<KhoaKy>(`${SIGNING_BASE}/khoa/`, { ma_khoa, khoa_cong_khai, ngay_hieu_luc: new Date().toISOString() }),

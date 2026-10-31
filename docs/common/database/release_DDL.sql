@@ -1393,6 +1393,20 @@ CREATE TABLE signing_key_unlock (
 CREATE TRIGGER trg_signing_key_unlock_updated_at BEFORE UPDATE ON signing_key_unlock
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
+-- 9.8c. Quản lý ảnh chữ ký cá nhân (Nhóm 5)
+CREATE TABLE signing_user_signature (
+    id BIGSERIAL PRIMARY KEY,
+    nguoi_dung_id BIGINT NOT NULL UNIQUE REFERENCES accounts_employee (id) ON DELETE CASCADE,
+    vi_tri_tep VARCHAR(500) NOT NULL,
+    ma_bam VARCHAR(64) NOT NULL,
+    dung_luong_bytes INTEGER NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TRIGGER trg_signing_user_signature_updated_at BEFORE UPDATE ON signing_user_signature
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
 -- 9.9. Chữ ký số điện tử (Bảo toàn bằng chứng pháp lý — Bất biến không thể sửa/xóa)
 -- Issue #47 P0.3: Chặn DELETE và chặn UPDATE mọi cột, CHỈ CHO PHÉP cập nhật trang_thai_xac_minh và thoi_diem_xac_minh
 CREATE TABLE signing_signature (

@@ -24,6 +24,16 @@ const docAnhChuKy = (id: number): string | null => {
   }
 };
 
+const coAnhChuKy = (toi: { id: number; co_anh_chu_ky?: boolean } | null): boolean => {
+  return Boolean(toi?.co_anh_chu_ky || (toi ? docAnhChuKy(toi.id) : null));
+};
+
+const layAnhChuKyUrl = (toi: { id: number; co_anh_chu_ky?: boolean } | null): string | null => {
+  if (!toi) return null;
+  if (toi.co_anh_chu_ky) return `/api/signing/anh-chu-ky-ca-nhan/tep/?v=${toi.id}`;
+  return docAnhChuKy(toi.id);
+};
+
 type LoaiHopThoai = 'ky' | 'sua' | 'tu_choi' | 'thu_hoi' | 'huy' | 'trinh_lai' | null;
 
 interface Props {
@@ -82,7 +92,7 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
   const khoaKiem = `${toi?.id ?? ''}#${lanKiem}`;
   const dangKiem = !ketQuaKiem || ketQuaKiem.khoa !== khoaKiem;
   const loiKiem = !dangKiem ? ketQuaKiem.loi : null;
-  const anhChuKy = toi ? docAnhChuKy(toi.id) : null;
+  const anhChuKy = layAnhChuKyUrl(toi);
   const thieuAnh = !anhChuKy;
   const thieuKhoa = !dangKiem && !loiKiem && !ketQuaKiem.coKhoa;
   const hienThieu = !dangKiem && !loiKiem && (thieuAnh || thieuKhoa);
@@ -192,8 +202,8 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
   const ky = () => thucHien(async () => {
     if (!toi || !luot) throw new Error('khong_co_quyen');
 
-    // 1. Kiểm tra ảnh chữ ký cá nhân
-    if (!docAnhChuKy(toi.id)) {
+    // 1. Kiểm tra ảnh chữ ký cá nhân (Issue #424)
+    if (!coAnhChuKy(toi)) {
       throw new Error('chua_co_anh_chu_ky');
     }
 
