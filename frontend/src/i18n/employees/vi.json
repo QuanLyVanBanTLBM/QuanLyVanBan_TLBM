@@ -219,6 +219,7 @@
       "invalidDataFormat": "Dữ liệu yêu cầu phải là một JSON object.",
       "invalidOrdering": "Tham số sắp xếp không hợp lệ.",
       "invalidFilterParam": "Tham số bộ lọc không hợp lệ.",
+      "adminGroupForbidden": "Chỉ tài khoản Quản trị hệ thống mới được cấp hoặc gỡ nhóm quyền Quản trị hệ thống.",
       "emailExists": "Địa chỉ email '{value}' đã tồn tại trong hệ thống.",
       "usernameExists": "Tên đăng nhập '{value}' đã tồn tại trong hệ thống.",
       "unitNotFound": "Không tìm thấy Đơn vị có tên '{value}' trong hệ thống.",

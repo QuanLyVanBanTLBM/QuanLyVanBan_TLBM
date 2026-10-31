@@ -219,6 +219,7 @@
       "invalidDataFormat": "Request data must be a JSON object.",
       "invalidOrdering": "Invalid ordering parameter.",
       "invalidFilterParam": "Filter parameter is invalid.",
+      "adminGroupForbidden": "Only System Administrator accounts can grant or remove the System Administrator group.",
       "emailExists": "Email address '{value}' already exists in the system.",
       "usernameExists": "Username '{value}' already exists in the system.",
       "unitNotFound": "Unit '{value}' was not found in the system.",
