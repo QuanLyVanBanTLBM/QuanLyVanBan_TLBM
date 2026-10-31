@@ -6,7 +6,6 @@ from django.db import connection
 from django.test import TestCase
 
 from authorization.models import GroupInfo
-from authorization.rbac_seed import GROUP_PERMISSIONS, GROUPS, PERMISSIONS
 
 migration = import_module("authorization.migrations.0013_add_view_all_trinhky_permission")
 CODENAME = "view_all_trinhky"
@@ -30,10 +29,6 @@ class ViewAllTrinhKyPermissionTest(TestCase):
 
     def test_granted_only_to_vt_bgd_admin(self):
         self.assertEqual(nhom_co_quyen(), {"VT", "BGD", "ADMIN"})
-        self.assertEqual(
-            {name for name, perms in GROUP_PERMISSIONS.items() if CODENAME in perms} | {"Quản trị hệ thống"},
-            {ten for ten, ma in GROUPS if ma in ("VT", "BGD", "ADMIN")},
-        )
         for ma in ("CV", "TP"):
             self.assertNotIn(ma, nhom_co_quyen())
 

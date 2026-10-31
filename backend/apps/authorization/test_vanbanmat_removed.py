@@ -35,8 +35,9 @@ class VanBanMatRemovedTest(TestCase):
         self.assertFalse(Permission.objects.filter(codename__contains="vanbanmat").exists())
         with connection.cursor() as cursor:
             cursor.execute("SELECT COUNT(*) FROM auth_permission WHERE module_ten <> ''")
-            # 78 quyền (77 của rbac_seed + export_cbnv) + 2 quyền đổi hiệu lực văn bản (migration 0011).
-            self.assertEqual(cursor.fetchone()[0], 80)
+            # 78 quyền (77 của rbac_seed + export_cbnv) + 2 quyền đổi hiệu lực văn bản (migration 0011)
+            # + view_all_trinhky (migration 0013).
+            self.assertEqual(cursor.fetchone()[0], 81)
 
     def test_migration_removes_existing_vanbanmat_permissions_and_grants(self):
         with connection.cursor() as cursor:
