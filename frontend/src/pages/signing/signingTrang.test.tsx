@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import KetQuaPanel from '@components/signing/KetQuaPanel';
 import XemPdf from '@components/signing/XemPdf';
 import TraoDoiPanel from '@components/signing/TraoDoiPanel';
+import { ApiError } from '@lib/apiClient';
 import { signingApi } from '@lib/signing/api';
 import { SigningContext } from '@lib/signing/hooks';
 import type { HoSoChiTiet, KhoaKy, LuotTrinh, NguoiDungHienTai, QuyTrinh } from '@lib/signing/types';
@@ -177,6 +178,18 @@ describe('KhoaPage', () => {
     expect(tao).toBeDisabled();
     fireEvent.change(screen.getByLabelText('Nhập lại PIN'), { target: { value: '48273916' } });
     await waitFor(() => expect(tao).toBeEnabled());
+  });
+
+  it.each([
+    [500, { detail: 'Internal Server Error' }, 'Máy chủ gặp sự cố. Vui lòng thử lại sau.'],
+    [429, { detail: 'Request was throttled.' }, 'Thao tác quá nhanh. Vui lòng thử lại sau ít phút.'],
+    [404, { detail: 'Not found.' }, 'Không tìm thấy dữ liệu yêu cầu.'],
+    [403, { detail: 'You do not have permission.' }, 'Bạn không có quyền thực hiện thao tác này.'],
+  ])('tải khóa lỗi HTTP %i: hiện thông báo theo mã trạng thái, không hiện chuỗi thô của máy chủ', async (status, data, mong_doi) => {
+    api.khoa.mockRejectedValue(new ApiError(status, data));
+    boc(<KhoaPage />);
+    expect(await screen.findByText(mong_doi)).toBeInTheDocument();
+    expect(screen.queryByText(data.detail)).not.toBeInTheDocument();
   });
 
   it('khóa đang hoạt động thuộc thiết bị khác: cho nhập file khóa vào thiết bị này', async () => {
