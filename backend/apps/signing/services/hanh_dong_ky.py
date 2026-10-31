@@ -1,11 +1,10 @@
 """
 Hành động người ký — Phase 8 (#80; plan mục 3.2, 3.4 "Chữ ký", 5.3, 6.2).
 
-- ky: ký Ed25519 trên raw bytes của SHA-256 tệp đã khóa ở lượt trình; mở ký chính khi ký nháy chặn đã
-  ký đủ, đóng cấp khi mọi người ký trong cấp đã ký, mở cấp sau hoặc hoàn thành lượt trình và hồ sơ.
+- ky: ký Ed25519 trên raw bytes của SHA-256 tệp đã khóa ở lượt trình; đóng cấp khi mọi người ký trong cấp
+  đã ký, mở cấp sau hoặc hoàn thành lượt trình và hồ sơ.
 - tu_choi: "không đồng ý ban hành", bắt buộc lý do; lượt trình và hồ sơ TU_CHOI (kết thúc).
-- thu_hoi: khi cấp của người ký còn mở và lượt chưa hoàn thành; ký nháy chặn không thu hồi được khi
-  ký chính cùng cấp đã ký; ký chính đã mở nhưng chưa ký thì bị khóa lại.
+- thu_hoi: khi cấp của người ký còn mở và lượt chưa hoàn thành.
 
 Mọi hành động trên một lượt trình khóa dòng lượt trình trước (select_for_update) nên các thao tác đồng
 thời (ký – ký, ký – từ chối, ký – hủy) được xử lý tuần tự; chỉ một kết quả hợp lệ. Chống thao tác lặp
@@ -86,7 +85,7 @@ def _hoan_tat_neu_du(luot, cap, nguoi, thoi_diem):
     """Đóng cấp khi mọi người ký trong cấp đã ký; mở cấp sau hoặc hoàn thành lượt trình và hồ sơ."""
     con_cho = cap.nguoi_ky_set.exclude(trang_thai=enums.TrangThaiNguoiKy.DA_KY).exists()
     if con_cho:
-        mo_nguoi_ky_trong_cap(cap, thoi_diem)  # ký nháy chặn vừa ký đủ thì mở ký chính
+        mo_nguoi_ky_trong_cap(cap, thoi_diem)
         return
     cap.trang_thai = enums.TrangThaiCapKy.HOAN_THANH
     cap.thoi_diem_hoan_thanh = thoi_diem

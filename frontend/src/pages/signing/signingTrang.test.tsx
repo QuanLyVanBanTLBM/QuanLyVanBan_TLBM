@@ -136,7 +136,7 @@ describe('Buoc2 định vị khung ký', () => {
     pham_vi: 'CONG_TY', don_vi_ap_dung_id: null, ten_don_vi_ap_dung: null, so_ho_so: 0,
     cap_ky: [{
       id: 10, cap_ky: 1, ten_cap_ky: 'Phê duyệt', bat_buoc: true, loai_ky: 'KY_DUYET',
-      nguoi_ky: [{ id: 101, ten_nguoi_ky: 'Nguyễn Văn A', vai_tro_ky: 'KY_CHINH', nguoi_ky: 1, chuc_vu: null, loai_nguoi_ky: 'CAN_BO', chan_ky_chinh: true }],
+      nguoi_ky: [{ id: 101, ten_nguoi_ky: 'Nguyễn Văn A', vai_tro_ky: 'KY_CHINH', nguoi_ky: 1, chuc_vu: null, loai_nguoi_ky: 'CAN_BO' }],
     }],
   };
   const HO_SO_GIA_LAP = {

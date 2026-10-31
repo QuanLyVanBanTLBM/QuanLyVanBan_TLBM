@@ -3,7 +3,7 @@ Hồ sơ trình ký, lượt trình và snapshot người ký — Phase 7 (#80; 
 
 Vòng đời yêu cầu: NHAP -> CHO_KY (gui) -> HOAN_THANH | TU_CHOI | HUY; NHAP -> HUY.
 TU_CHOI là kết thúc; trình lại tạo yêu cầu mới có `ho_so_goc` trỏ về yêu cầu bị từ chối.
-Cấp ký mở tuần tự theo `thu_tu`; người trong cùng cấp ký song song (ký chính chờ ký nháy chặn).
+Cấp ký mở tuần tự theo `thu_tu`; người trong cùng cấp ký song song.
 """
 
 import io

@@ -1,5 +1,5 @@
 """
-Hoàn thiện nghiệp vụ Nhóm 5: ký với dòng đã ủy quyền từ trước, thông báo khi hủy (kể cả hủy thay), tin nhắn trao đổi,
+Hoàn thiện nghiệp vụ Nhóm 5: thông báo khi hủy (kể cả hủy thay), tin nhắn trao đổi,
 nhắc hạn/quá hạn, tên người thực hiện trong lịch sử.
 """
 
@@ -43,7 +43,7 @@ def thong_bao_cua(user, loai):
 
 class ThongBaoHoanThienTests(KyBase):
     def test_creator_cancel_notifies_opened_and_signed_signers(self):
-        self.ky(self.ky1)  # ký nháy xong, ký chính được mở
+        self.ky(self.ky1)  # người ký cấp 1 đã ký
         r = self.hanh_dong(self.tao, "huy", ly_do="Đổi nội dung")
         self.assertEqual(r.status_code, 200, r.data)
         self.assertTrue(thong_bao_cua(self.ky1, "HUY").exists())  # đã ký

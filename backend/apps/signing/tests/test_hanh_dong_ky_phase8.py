@@ -1,6 +1,6 @@
 """
-Phase 8 (#80): ký, không đồng ý ban hành, thu hồi chữ ký; mở cấp tuần tự, ký song song trong cấp,
-ký nháy chặn ký chính; chống thao tác lặp và thao tác đồng thời.
+Phase 8 (#80): ký, không đồng ý ban hành, thu hồi chữ ký; mở cấp tuần tự, ký song song trong cấp;
+chống thao tác lặp và thao tác đồng thời.
 """
 
 import base64
@@ -112,7 +112,7 @@ class LuongKyTests(KyBase):
         cap1, kt = self.nguoi_ky(r.data, "ke_toan")
         _, pc = self.nguoi_ky(r.data, "phap_che")
         self.assertEqual((kt["trang_thai"], kt["chu_ky"]["ghi_chu_ky"]), ("DA_KY", "Số liệu khớp"))
-        self.assertIsNotNone(pc["thoi_diem_mo"])  # ký nháy chặn đã ký: mở ký chính
+        self.assertIsNotNone(pc["thoi_diem_mo"])  # người ký cùng cấp đã mở từ khi cấp mở
         self.assertEqual(cap1["trang_thai"], "DANG_KY")
         r = self.ky(self.ky2)
         cap1, _ = self.nguoi_ky(r.data, "phap_che")
