@@ -2097,11 +2097,10 @@ class EmployeeDefaultGroupAssignmentTests(EmployeeBaseTestCase):
         self.assertEqual(assigned_codes, {"CV", "TLBGD"})
 
     def test_single_group_positions_auto_assign(self):
-        """Các chức vụ gán 1 nhóm quyền: Quản trị viên -> ADMIN, Tổng Giám đốc -> BGD, Trưởng phòng -> TP, Chuyên viên -> CV, Văn thư -> VT."""
+        """Các chức vụ gán 1 nhóm quyền: Tổng Giám đốc -> BGD, Trưởng phòng -> TP, Chuyên viên -> CV, Văn thư -> VT."""
         from authorization.models import GroupInfo
 
         cases = [
-            ("Quản trị viên", "ADMIN"),
             ("Tổng Giám đốc", "BGD"),
             ("Chủ tịch HĐQT", "BGD"),
             ("Giám đốc Khối", "TP"),
@@ -2189,17 +2188,132 @@ class EmployeeDefaultGroupAssignmentTests(EmployeeBaseTestCase):
 
     def test_group_not_exist_in_db_skips_without_500(self):
         """Nhóm trong bảng ánh xạ chưa tồn tại trong DB thì bỏ qua, không trả lỗi 500."""
-        # Xóa nhóm ADMIN khỏi auth_group
+        # Xóa nhóm BGD khỏi auth_group
         with connection.cursor() as cursor:
-            cursor.execute("DELETE FROM auth_group WHERE ma_nhom_quyen = 'ADMIN'")
+            cursor.execute("DELETE FROM auth_group WHERE ma_nhom_quyen = 'BGD'")
 
-        pos = self._create_position("Quản trị viên")
-        emp = self._post_employee("Nguyễn Admin Test", "admin_skip_500@donvi.gov.vn", pos)
+        pos = self._create_position("Tổng Giám đốc")
+        emp = self._post_employee("Nguyễn Bgd Test", "bgd_skip_500@donvi.gov.vn", pos)
         self.assertEqual(emp.groups.count(), 0)
 
         pos_custom = self._create_position("Chức vụ Chưa Định Nghĩa")
         emp_custom = self._post_employee("Nguyễn Tự Do", "custom_pos@donvi.gov.vn", pos_custom)
         self.assertEqual(emp_custom.groups.count(), 0)
+
+    def test_quan_tri_vien_position_does_not_auto_assign_admin(self):
+        """Chức vụ Quản trị viên không tự nhận nhóm ADMIN, kể cả khi người tạo là superuser."""
+        pos = self._create_position("Quản trị viên")
+        emp = self._post_employee("Nguyễn Quản Trị", "qtv_no_auto@donvi.gov.vn", pos)
+        self.assertEqual(emp.groups.count(), 0)
+
+    def _manager_client(self, codename="change_full_cbnv"):
+        from rest_framework.test import APIClient
+
+        manager = User.objects.create_user(
+            username=f"mgr_{codename}",
+            email=f"mgr_{codename}@donvi.gov.vn",
+            password="ManagerPassword123",
+            ho_ten="Trưởng Phòng Quản Lý",
+            ngay_sinh=date(1985, 1, 1),
+            don_vi=self.don_vi_1,
+            chuc_vu=self.cv_truong_phong,
+        )
+        manager.user_permissions.add(*Permission.objects.filter(codename__in=[codename, "add_cbnv"]))
+        client = APIClient()
+        client.force_authenticate(user=manager)
+        return manager, client
+
+    def _create_payload(self, email, pos, group_ids):
+        return {
+            "ho_ten": "Người Mới",
+            "email": email,
+            "ngay_sinh": "1990-01-01",
+            "don_vi_id": self.don_vi_1.id,
+            "chuc_vu_id": pos.id,
+            "nhom_quyen_ids": group_ids,
+        }
+
+    def test_non_admin_cannot_grant_admin_group_on_create(self):
+        admin_group = Group.objects.get(name="Quản trị hệ thống")
+        cv_group = Group.objects.get(name="Chuyên viên")
+        pos = self._create_position("Chuyên viên")
+        _, client = self._manager_client()
+
+        denied = client.post(self.employee_list_url, self._create_payload("deny_admin@donvi.gov.vn", pos, [admin_group.id]), format="json")
+        self.assertEqual(denied.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("employees.messages.adminGroupForbidden", str(denied.data))
+        self.assertFalse(User.objects.filter(email="deny_admin@donvi.gov.vn").exists())
+
+        allowed = client.post(self.employee_list_url, self._create_payload("allow_cv@donvi.gov.vn", pos, [cv_group.id]), format="json")
+        self.assertEqual(allowed.status_code, status.HTTP_201_CREATED)
+
+    def test_admin_group_member_and_superuser_can_grant_admin_group(self):
+        admin_group = Group.objects.get(name="Quản trị hệ thống")
+        pos = self._create_position("Chuyên viên")
+
+        superuser_emp = self._post_employee("Do Superuser", "by_super@donvi.gov.vn", pos, nhom_quyen_ids=[admin_group.id])
+        self.assertTrue(superuser_emp.groups.filter(pk=admin_group.pk).exists())
+
+        admin_member, client = self._manager_client()
+        admin_member.groups.add(admin_group)
+        response = client.post(self.employee_list_url, self._create_payload("by_member@donvi.gov.vn", pos, [admin_group.id]), format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_non_admin_cannot_add_or_remove_admin_group_on_update(self):
+        """Người không phải ADMIN/superuser không đổi được thành viên nhóm ADMIN khi sửa CBNV.
+
+        Từ khi chỉ superuser được sửa CBNV khác, view trả 403 trước; serializer vẫn chặn riêng
+        như lớp bảo vệ thứ hai nên được kiểm thử trực tiếp.
+        """
+        from rest_framework.test import APIRequestFactory
+
+        from accounts.serializers import EmployeeUpdateSerializer
+
+        admin_group = Group.objects.get(name="Quản trị hệ thống")
+        cv_group = Group.objects.get(name="Chuyên viên")
+        pos = self._create_position("Chuyên viên")
+        target = self._post_employee("Mục Tiêu", "target_update@donvi.gov.vn", pos, nhom_quyen_ids=[cv_group.id])
+        url = f"{self.employee_list_url}{target.id}/"
+        manager, client = self._manager_client()
+
+        add = client.patch(url, {"nhom_quyen_ids": [cv_group.id, admin_group.id]}, format="json")
+        self.assertEqual(add.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(target.groups.filter(pk=admin_group.pk).exists())
+
+        request = APIRequestFactory().patch(url)
+        request.user = manager
+        serializer = EmployeeUpdateSerializer(
+            target, data={"nhom_quyen_ids": [cv_group.id, admin_group.id]}, partial=True, context={"request": request}
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("nhom_quyen_ids", serializer.errors)
+
+        target.groups.add(admin_group)
+        serializer = EmployeeUpdateSerializer(
+            target, data={"nhom_quyen_ids": [cv_group.id]}, partial=True, context={"request": request}
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("nhom_quyen_ids", serializer.errors)
+
+        serializer = EmployeeUpdateSerializer(
+            target, data={"nhom_quyen_ids": [admin_group.id, self.group_van_thu.id]}, partial=True, context={"request": request}
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
+    def test_superuser_can_add_admin_group_on_update(self):
+        admin_group = Group.objects.get(name="Quản trị hệ thống")
+        cv_group = Group.objects.get(name="Chuyên viên")
+        pos = self._create_position("Chuyên viên")
+        target = self._post_employee("Mục Tiêu Hai", "target_update2@donvi.gov.vn", pos, nhom_quyen_ids=[cv_group.id])
+
+        response = self.client.patch(
+            f"{self.employee_list_url}{target.id}/",
+            {"nhom_quyen_ids": [cv_group.id, admin_group.id]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(target.groups.filter(pk=admin_group.pk).exists())
 
     def test_manual_group_selection_does_not_auto_assign(self):
         """Có chọn nhóm quyền thủ công thì không tự gán theo chức vụ."""
