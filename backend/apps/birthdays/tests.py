@@ -171,6 +171,35 @@ class BirthdaySystemTests(TestCase):
         self.assertNotIn("email", emp1)
         self.assertNotIn("sdt", emp1)
 
+    def test_day_birthdays_prioritizes_position_before_unit_across_pages(self):
+        high_position = Position.objects.create(
+            display_order=Position.get_next_display_order(), name="Chức vụ ưu tiên cao"
+        )
+        low_position = Position.objects.create(
+            display_order=Position.get_next_display_order(), name="Chức vụ ưu tiên thấp"
+        )
+        later_unit = DonVi.objects.create(
+            khoi=self.don_vi.khoi,
+            stt_uu_tien=self.don_vi.stt_uu_tien + 1,
+            ten="Đơn vị kiểm thử khác",
+        )
+        low = Employee.objects.create_user(
+            username="birthday_lower_position", ho_ten="Nhân viên A",
+            ngay_sinh=date(1990, 10, 30), don_vi=self.don_vi, chuc_vu=low_position,
+        )
+        high = Employee.objects.create_user(
+            username="birthday_higher_position", ho_ten="Nhân viên B",
+            ngay_sinh=date(1990, 10, 30), don_vi=later_unit, chuc_vu=high_position,
+        )
+        self.client.force_authenticate(user=self.emp_staff)
+        params = {"month": 10, "day": 30, "year": 2026, "page_size": 1}
+        first = self.client.get(reverse("birthdays:day_birthdays"), {**params, "page": 1})
+        second = self.client.get(reverse("birthdays:day_birthdays"), {**params, "page": 2})
+        self.assertEqual(first.status_code, status.HTTP_200_OK)
+        self.assertEqual(second.status_code, status.HTTP_200_OK)
+        self.assertEqual(first.json()["employees"][0]["id"], high.id)
+        self.assertEqual(second.json()["employees"][0]["id"], low.id)
+
     def test_birthday_email_logs_api(self):
         """API nhật ký chỉ cho superuser xem và chuẩn hóa trang_thai không phân biệt hoa thường."""
         log = BirthdayEmailLog.objects.create(

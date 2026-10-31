@@ -158,7 +158,7 @@ def day_birthdays_api(request):
         .exclude(ngay_sinh__isnull=True)
         .filter(birthday_filter)
         .select_related("don_vi", "chuc_vu")
-        .order_by("don_vi__stt_uu_tien", "chuc_vu__display_order", "ho_ten", "id")
+        .order_by("chuc_vu__display_order", "don_vi__stt_uu_tien", "ho_ten", "id")
     )
 
     paginator = Paginator(staff_on_day, page_size)
