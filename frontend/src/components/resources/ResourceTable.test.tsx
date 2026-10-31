@@ -419,4 +419,65 @@ describe('ResourceTable Component', () => {
     expect(screen.queryByText('XLSX')).not.toBeInTheDocument();
     expect(screen.queryByText('DOCX')).not.toBeInTheDocument();
   });
+
+  it('hides edit and delete action menu items when canEdit and canDelete return false', () => {
+    const handleEdit = vi.fn();
+    const handleDelete = vi.fn();
+
+    render(
+      <ResourceTable
+        items={mockItems}
+        currentPage={1}
+        totalPages={1}
+        pageSize={10}
+        totalCount={3}
+        onPageChange={vi.fn()}
+        onViewDetail={vi.fn()}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
+        canEdit={() => false}
+        canDelete={() => false}
+      />
+    );
+
+    // Mở menu ⋯
+    const menuButtons = screen.getAllByTitle('Thao tác');
+    fireEvent.click(menuButtons[0]);
+
+    // "Xem chi tiết" vẫn có
+    expect(screen.getByRole('button', { name: 'Xem chi tiết tài liệu' })).toBeInTheDocument();
+
+    // "Chỉnh sửa" và "Xóa" bị ẩn do thiếu quyền RBAC
+    expect(screen.queryByRole('button', { name: 'Chỉnh sửa' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Xóa' })).not.toBeInTheDocument();
+  });
+
+  it('shows edit and delete action menu items when canEdit and canDelete return true', () => {
+    const handleEdit = vi.fn();
+    const handleDelete = vi.fn();
+
+    render(
+      <ResourceTable
+        items={mockItems}
+        currentPage={1}
+        totalPages={1}
+        pageSize={10}
+        totalCount={3}
+        onPageChange={vi.fn()}
+        onViewDetail={vi.fn()}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
+        canEdit={() => true}
+        canDelete={() => true}
+      />
+    );
+
+    // Mở menu ⋯
+    const menuButtons = screen.getAllByTitle('Thao tác');
+    fireEvent.click(menuButtons[0]);
+
+    // Cả "Chỉnh sửa" và "Xóa" đều hiển thị
+    expect(screen.getByRole('button', { name: 'Chỉnh sửa' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Xóa' })).toBeInTheDocument();
+  });
 });

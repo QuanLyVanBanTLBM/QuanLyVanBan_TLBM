@@ -22,6 +22,7 @@ class StandardResourcePagination(PageNumberPagination):
     max_page_size = 100
 
 
+from authorization.permissions import require_permission
 from .selectors import visible_resources
 from .filters import TaiLieuChiTietFilter
 from .models import DanhMucTaiLieu, LoaiTaiLieu, TaiLieuChiTiet, ChiTietTaiLieuAttachment, template_disk_path
@@ -31,6 +32,52 @@ from .serializers import (
     TaiLieuChiTietSerializer,
     ChiTietTaiLieuAttachmentSerializer,
 )
+
+
+class CanChangeTaiLieu(permissions.BasePermission):
+    """
+    Quyền sửa tài liệu (RBAC contract Issue #21):
+    - Quản trị viên tối cao (is_superuser) hoặc có quyền change_tailieu
+    - Hoặc là người trực tiếp tạo ra tài liệu đó (nguoi_tao == request.user)
+    """
+    message = "roles.messages.permissionDenied"
+
+    def has_permission(self, request, view):
+        user = request.user
+        return bool(user and user.is_authenticated)
+
+    def has_object_permission(self, request, view, obj):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser or user.has_perm("change_tailieu"):
+            return True
+        if obj.nguoi_tao_id and obj.nguoi_tao_id == user.id:
+            return True
+        return False
+
+
+class CanDeleteTaiLieu(permissions.BasePermission):
+    """
+    Quyền xóa tài liệu (RBAC contract Issue #21):
+    - Quản trị viên tối cao (is_superuser) hoặc có quyền delete_tailieu
+    - Hoặc là người trực tiếp tạo ra tài liệu đó (nguoi_tao == request.user)
+    """
+    message = "roles.messages.permissionDenied"
+
+    def has_permission(self, request, view):
+        user = request.user
+        return bool(user and user.is_authenticated)
+
+    def has_object_permission(self, request, view, obj):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser or user.has_perm("delete_tailieu"):
+            return True
+        if obj.nguoi_tao_id and obj.nguoi_tao_id == user.id:
+            return True
+        return False
 
 
 class DanhMucTaiLieuViewSet(viewsets.ModelViewSet):
@@ -49,6 +96,15 @@ class DanhMucTaiLieuViewSet(viewsets.ModelViewSet):
     search_fields = ['ten_tai_lieu', 'ky_hieu', 'ghi_chu']
     ordering_fields = ['stt_uu_tien', 'id', 'created_at', 'ten_tai_lieu']
     ordering = ['stt_uu_tien', 'id']
+
+    def get_permissions(self):
+        if self.action == "create":
+            return [permissions.IsAuthenticated(), require_permission("add_loaitailieubieumau")()]
+        if self.action in ["update", "partial_update"]:
+            return [permissions.IsAuthenticated(), require_permission("change_loaitailieubieumau")()]
+        if self.action == "destroy":
+            return [permissions.IsAuthenticated(), require_permission("delete_loaitailieubieumau")()]
+        return [permissions.IsAuthenticatedOrReadOnly()]
 
     def perform_create(self, serializer):
         kwargs = {}
@@ -140,6 +196,15 @@ class LoaiTaiLieuViewSet(viewsets.ModelViewSet):
     ordering_fields = ['id', 'ten_loai', 'created_at']
     ordering = ['id']
 
+    def get_permissions(self):
+        if self.action == "create":
+            return [permissions.IsAuthenticated(), require_permission("add_loaitailieubieumau")()]
+        if self.action in ["update", "partial_update"]:
+            return [permissions.IsAuthenticated(), require_permission("change_loaitailieubieumau")()]
+        if self.action == "destroy":
+            return [permissions.IsAuthenticated(), require_permission("delete_loaitailieubieumau")()]
+        return [permissions.IsAuthenticatedOrReadOnly()]
+
 
 class TaiLieuChiTietViewSet(viewsets.ModelViewSet):
     """
@@ -159,6 +224,15 @@ class TaiLieuChiTietViewSet(viewsets.ModelViewSet):
     search_fields = ['tieu_de', 'ky_hieu', 'noi_ban_hanh', 'ghi_chu']
     ordering_fields = ['ngay_dang', 'id', 'tieu_de', 'ky_hieu']
     ordering = ['-ngay_dang', '-id']
+
+    def get_permissions(self):
+        if self.action == "create":
+            return [permissions.IsAuthenticated(), require_permission("add_tailieu")()]
+        if self.action in ["update", "partial_update", "toggle_validity"]:
+            return [permissions.IsAuthenticated(), CanChangeTaiLieu()]
+        if self.action == "destroy":
+            return [permissions.IsAuthenticated(), CanDeleteTaiLieu()]
+        return [permissions.IsAuthenticatedOrReadOnly()]
 
     def get_queryset(self):
         qs = TaiLieuChiTiet.objects.select_related(
@@ -423,6 +497,11 @@ class ChiTietTaiLieuAttachmentViewSet(viewsets.ModelViewSet):
     ordering_fields = ['id', 'created_at', 'name', 'file_size']
     ordering = ['id']
 
+    def get_permissions(self):
+        if self.action in ['create', 'destroy']:
+            return [permissions.IsAuthenticated()]
+        return [permissions.IsAuthenticatedOrReadOnly()]
+
     def get_queryset(self):
         user = self.request.user
         # Bảo vệ IDOR: Chỉ cho phép truy vấn tệp thuộc về các tài liệu mà người dùng có quyền xem
@@ -435,31 +514,31 @@ class ChiTietTaiLieuAttachmentViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         user = self.request.user
         if not user or not user.is_authenticated:
-            raise exceptions.PermissionDenied("Yêu cầu đăng nhập để tải lên tệp đính kèm.")
+            raise exceptions.PermissionDenied("roles.messages.permissionDenied")
         doc = serializer.validated_data.get('document')
         can_add = (
             user.is_superuser or
-            user.is_staff or
+            user.has_perm('change_tailieu') or
             (doc and doc.nguoi_tao == user) or
             (doc and hasattr(user, 'don_vi_id') and user.don_vi_id and doc.don_vi_id == user.don_vi_id)
         )
         if not can_add:
-            raise exceptions.PermissionDenied("Không có quyền tải lên tệp đính kèm cho tài liệu này.")
+            raise exceptions.PermissionDenied("roles.messages.permissionDenied")
         serializer.save(nguoi_tao=user)
 
     def perform_destroy(self, instance):
         user = self.request.user
         if not user or not user.is_authenticated:
-            raise exceptions.PermissionDenied("Yêu cầu đăng nhập để xóa tệp đính kèm.")
+            raise exceptions.PermissionDenied("roles.messages.permissionDenied")
         can_delete = (
             user.is_superuser or
-            user.is_staff or
+            user.has_perm('delete_tailieu') or
             instance.nguoi_tao == user or
             instance.document.nguoi_tao == user or
             (hasattr(user, 'don_vi_id') and user.don_vi_id and instance.document.don_vi_id == user.don_vi_id)
         )
         if not can_delete:
-            raise exceptions.PermissionDenied("Không có quyền xóa tệp đính kèm này.")
+            raise exceptions.PermissionDenied("roles.messages.permissionDenied")
         instance.is_deleted = True
         instance.save()
 
