@@ -4,7 +4,7 @@ from django.utils import timezone
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
-from . import enums
+from . import anh_chu_ky as anh_ck, enums
 from .errors import SigningError
 from .models import (
     SigningAttempt, SigningAuditLog, SigningChangeMessage, SigningChangeThread, SigningKey, SigningKeyUnlock,
@@ -442,6 +442,16 @@ class KySerializer(serializers.Serializer):
     hash_tai_lieu = serializers.RegexField(r"^[0-9a-f]{64}$")
     chu_ky_so = serializers.CharField(max_length=200)  # Ed25519 Base64 là 88 ký tự
     ghi_chu_ky = serializers.CharField(max_length=MAX_GHI_CHU, required=False, allow_blank=True, default="")
+    # Ảnh chữ ký PNG (Base64 hoặc data URL) do trình duyệt gửi; bỏ trống thì snapshot rỗng như trước (#420)
+    anh_chu_ky = serializers.CharField(required=False, allow_blank=True, write_only=True, trim_whitespace=False)
+
+    def validate_anh_chu_ky(self, value):
+        if not value.strip():
+            return None
+        try:
+            return anh_ck.giai_ma_anh(value)
+        except anh_ck.AnhChuKyKhongHop as exc:
+            raise serializers.ValidationError(str(exc))
 
 
 class TuChoiSerializer(serializers.Serializer):
