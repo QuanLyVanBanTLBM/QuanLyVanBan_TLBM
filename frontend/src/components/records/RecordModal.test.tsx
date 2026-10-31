@@ -80,6 +80,22 @@ describe('RecordModal', () => {
     });
   });
 
+  it('validates dossier fields in their visual order', () => {
+    const onSubmit = vi.fn();
+    render(<RecordModal open mode="dossier" onClose={vi.fn()} onSubmit={onSubmit} />);
+    const dialog = screen.getByRole('dialog');
+    fireEvent.submit(dialog);
+    expect(screen.getByRole('alert')).toHaveTextContent('Vui lòng nhập số/ký hiệu hồ sơ.');
+    fireEvent.change(screen.getByLabelText(/Số\/ký hiệu/), { target: { value: 'HS' } });
+    fireEvent.change(screen.getByLabelText(/Thứ tự ưu tiên/), { target: { value: '0' } });
+    fireEvent.submit(dialog);
+    expect(screen.getByRole('alert')).toHaveTextContent('Số thứ tự ưu tiên phải là số nguyên dương.');
+    fireEvent.change(screen.getByLabelText(/Thứ tự ưu tiên/), { target: { value: '1' } });
+    fireEvent.submit(dialog);
+    expect(screen.getByRole('alert')).toHaveTextContent('Vui lòng nhập tên hồ sơ.');
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
   it('rejects priority zero before calling the API', () => {
     const onSubmit = vi.fn();
     render(
