@@ -11,6 +11,7 @@ import {
 import { Button } from '@components/common/Button';
 import { useTranslation } from '@i18n/translate';
 import { authService } from '@lib/authService';
+import { usePermissions } from '@lib/permissions';
 import { formatDate } from '@lib/dateUtils';
 import { ConfirmationModal } from './ConfirmationModal';
 import { apiClientBlob, downloadBlob } from '@lib/apiClient';
@@ -140,7 +141,17 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
   const isEditMode = Boolean(initialData);
 
   const currentSession = authService.getSession();
-  const isAdmin = currentSession?.role === 'admin' || currentSession?.username === 'admin';
+  const isSessionAdmin = currentSession?.role === 'admin' || currentSession?.username === 'admin';
+  const { can, isSuperuser } = usePermissions();
+  const canAdd = isSuperuser || isSessionAdmin || can('add_tailieu');
+  const canEdit = isSuperuser || isSessionAdmin || can('change_tailieu') || Boolean(
+    initialData && (
+      (currentSession?.fullName && initialData.nguoi_tao_name === currentSession.fullName) ||
+      (currentSession?.username && initialData.nguoi_tao_name === currentSession.username)
+    )
+  );
+  const canSubmit = isEditMode ? canEdit : canAdd;
+
   const defaultAuthor =
     currentSession?.fullName ||
     currentSession?.username ||
@@ -1553,8 +1564,8 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
             icon={isLoading ? 'fa-spinner fa-spin' : 'fa-check'}
             onClick={handleSubmit}
             isLoading={isLoading}
-            disabled={isLoading || categories.length === 0 || (!isAdmin && !isEditMode)}
-            title={!isAdmin && !isEditMode ? t('resourceManagement.adminOnlyAddDocument') : undefined}
+            disabled={isLoading || categories.length === 0 || !canSubmit}
+            title={!canSubmit ? t('roles.messages.permissionDenied') : undefined}
             className="text-xs shadow-sm"
           >
             {isEditMode ? t('resourceManagement.saveChanges') : t('resourceManagement.save')}

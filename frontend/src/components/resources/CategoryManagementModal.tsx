@@ -6,6 +6,7 @@ import { Badge } from '@components/common/Badge';
 import { useTranslation } from '@i18n/translate';
 import { ConfirmationModal } from './ConfirmationModal';
 import { authService } from '@lib/authService';
+import { usePermissions } from '@lib/permissions';
 
 export interface CategoryManagementModalProps {
   isOpen: boolean;
@@ -339,7 +340,13 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
   const [isSubmittingUnified, setIsSubmittingUnified] = useState(false);
 
   const currentSession = authService.getSession();
-  const isAdmin = currentSession?.role === 'admin' || currentSession?.username === 'admin';
+  const isSessionAdmin = currentSession?.role === 'admin' || currentSession?.username === 'admin';
+  const { can, isSuperuser } = usePermissions();
+  const canAdd = isSuperuser || isSessionAdmin || can('add_loaitailieubieumau');
+  const canEdit = isSuperuser || isSessionAdmin || can('change_loaitailieubieumau');
+  const canDelete = isSuperuser || isSessionAdmin || can('delete_loaitailieubieumau');
+  const canManage = isSuperuser || isSessionAdmin || canAdd || canEdit || canDelete;
+  const isAdmin = canManage;
   const defaultAdminAuthor = currentSession?.fullName || currentSession?.username || t('resourceManagement.defaultAdminAuthor');
 
   // State Thư mục
@@ -1140,13 +1147,13 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                   variant="primary"
                   size="sm"
                   icon="fa-plus"
-                  disabled={!isAdmin}
+                  disabled={!canAdd}
                   onClick={() => {
-                    if (!isAdmin) return;
+                    if (!canAdd) return;
                     handleOpenUnifiedCreate('category');
                   }}
                   className="h-9 px-3.5 rounded-xl text-xs font-bold shrink-0 shadow-sm hover:shadow-glow disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto justify-center"
-                  title={isAdmin ? t('resourceManagement.addNew') : t('resourceManagement.adminOnlyFolder')}
+                  title={canAdd ? t('resourceManagement.addNew') : t('resourceManagement.adminOnlyFolder')}
                 >
                   {t('resourceManagement.addNew')}
                 </Button>
@@ -1363,13 +1370,13 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                   variant="primary"
                   size="sm"
                   icon="fa-plus"
-                  disabled={!isAdmin}
+                  disabled={!canAdd}
                   onClick={() => {
-                    if (!isAdmin) return;
+                    if (!canAdd) return;
                     handleOpenUnifiedCreate('type');
                   }}
                   className="h-9 px-3.5 rounded-xl text-xs font-bold shrink-0 shadow-sm hover:shadow-glow disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto justify-center"
-                  title={isAdmin ? t('resourceManagement.addNewTypeTitle') : t('resourceManagement.adminOnlyType')}
+                  title={canAdd ? t('resourceManagement.addNewTypeTitle') : t('resourceManagement.adminOnlyType')}
                 >
                   {t('resourceManagement.addNew')}
                 </Button>
@@ -2147,32 +2154,36 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
           style={{ top: `${menuPos.top}px`, right: `${menuPos.right}px` }}
           onClick={(e) => e.stopPropagation()}
         >
-          {isAdmin ? (
+          {canEdit || canDelete ? (
             <>
-              <button
-                type="button"
-                onClick={() => {
-                  const cat = categories.find((c) => c.id === activeMenuCatId);
-                  if (cat) handleOpenEditCat(cat);
-                  closeAllMenus();
-                }}
-                className="w-full px-3 py-1.5 text-xs text-left text-main hover:bg-surface-elevated flex items-center gap-2 cursor-pointer font-medium"
-              >
-                <i className="fa-solid fa-pen-to-square text-primary text-xs" />
-                <span>{t('resourceManagement.edit')}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const cat = categories.find((c) => c.id === activeMenuCatId);
-                  if (cat) handleDeleteCategoryWithCheck(cat);
-                  closeAllMenus();
-                }}
-                className="w-full px-3 py-1.5 text-xs text-left text-danger hover:bg-danger/10 flex items-center gap-2 cursor-pointer font-medium"
-              >
-                <i className="fa-solid fa-trash-can text-danger text-xs" />
-                <span>{t('resourceManagement.delete')}</span>
-              </button>
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const cat = categories.find((c) => c.id === activeMenuCatId);
+                    if (cat) handleOpenEditCat(cat);
+                    closeAllMenus();
+                  }}
+                  className="w-full px-3 py-1.5 text-xs text-left text-main hover:bg-surface-elevated flex items-center gap-2 cursor-pointer font-medium"
+                >
+                  <i className="fa-solid fa-pen-to-square text-primary text-xs" />
+                  <span>{t('resourceManagement.edit')}</span>
+                </button>
+              )}
+              {canDelete && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const cat = categories.find((c) => c.id === activeMenuCatId);
+                    if (cat) handleDeleteCategoryWithCheck(cat);
+                    closeAllMenus();
+                  }}
+                  className="w-full px-3 py-1.5 text-xs text-left text-danger hover:bg-danger/10 flex items-center gap-2 cursor-pointer font-medium"
+                >
+                  <i className="fa-solid fa-trash-can text-danger text-xs" />
+                  <span>{t('resourceManagement.delete')}</span>
+                </button>
+              )}
             </>
           ) : (
             <div className="px-3 py-1.5 text-xs text-muted italic text-center">
@@ -2190,32 +2201,36 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
           style={{ top: `${menuPos.top}px`, right: `${menuPos.right}px` }}
           onClick={(e) => e.stopPropagation()}
         >
-          {isAdmin ? (
+          {canEdit || canDelete ? (
             <>
-              <button
-                type="button"
-                onClick={() => {
-                  const t = types.find((item) => item.id === activeMenuTypeId);
-                  if (t) handleOpenEditType(t);
-                  closeAllMenus();
-                }}
-                className="w-full px-3 py-1.5 text-xs text-left text-main hover:bg-surface-elevated flex items-center gap-2 cursor-pointer font-medium"
-              >
-                <i className="fa-solid fa-pen-to-square text-primary text-xs" />
-                <span>{t('resourceManagement.edit')}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const t = types.find((item) => item.id === activeMenuTypeId);
-                  if (t) handleDeleteTypeConfirm(t);
-                  closeAllMenus();
-                }}
-                className="w-full px-3 py-1.5 text-xs text-left text-danger hover:bg-danger/10 flex items-center gap-2 cursor-pointer font-medium"
-              >
-                <i className="fa-solid fa-trash-can text-danger text-xs" />
-                <span>{t('resourceManagement.delete')}</span>
-              </button>
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const t = types.find((item) => item.id === activeMenuTypeId);
+                    if (t) handleOpenEditType(t);
+                    closeAllMenus();
+                  }}
+                  className="w-full px-3 py-1.5 text-xs text-left text-main hover:bg-surface-elevated flex items-center gap-2 cursor-pointer font-medium"
+                >
+                  <i className="fa-solid fa-pen-to-square text-primary text-xs" />
+                  <span>{t('resourceManagement.edit')}</span>
+                </button>
+              )}
+              {canDelete && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const t = types.find((item) => item.id === activeMenuTypeId);
+                    if (t) handleDeleteTypeConfirm(t);
+                    closeAllMenus();
+                  }}
+                  className="w-full px-3 py-1.5 text-xs text-left text-danger hover:bg-danger/10 flex items-center gap-2 cursor-pointer font-medium"
+                >
+                  <i className="fa-solid fa-trash-can text-danger text-xs" />
+                  <span>{t('resourceManagement.delete')}</span>
+                </button>
+              )}
             </>
           ) : (
             <div className="px-3 py-1.5 text-xs text-muted italic text-center">

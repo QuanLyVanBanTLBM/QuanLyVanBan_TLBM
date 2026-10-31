@@ -80,6 +80,17 @@ class DocumentTemplatesModelAndAPITests(TestCase):
             password='password123',
             **extra_user
         )
+        from django.contrib.auth.models import Permission
+        for codename in [
+            'view_loaitailieubieumau', 'add_loaitailieubieumau', 'change_loaitailieubieumau', 'delete_loaitailieubieumau',
+            'view_tailieu', 'add_tailieu', 'change_tailieu', 'delete_tailieu',
+        ]:
+            perm, _ = Permission.objects.get_or_create(
+                codename=codename,
+                defaults={'name': codename}
+            )
+            self.user.user_permissions.add(perm)
+
         self.admin = User.objects.create_superuser(
             username='templates_admin_test',
             email='admin@example.com',
@@ -732,4 +743,169 @@ class DocumentTemplatesModelAndAPITests(TestCase):
         serializer = TaiLieuChiTietSerializer(data=qd)
         self.assertTrue(serializer.is_valid(), serializer.errors)
         self.assertIsNone(serializer.validated_data.get('ngay_het_hieu_luc'))
+
+
+@override_settings(DOCUMENT_STORAGE_ROOT=TEMP_STORAGE_ROOT)
+class DocumentTemplatesRBACPermissionsTests(TestCase):
+    """Kiểm thử ma trận phân quyền RBAC (contract Issue #21) cho Tài liệu & Biểu mẫu"""
+
+    def setUp(self):
+        from django.contrib.auth.models import Permission
+        self.client = APIClient()
+
+        # 1. Plain user: không có bất kỳ quyền nào
+        self.plain_user = User.objects.create_user(username="plain_user", password="password123")
+
+        # 2. Creator user: có quyền add_tailieu
+        self.creator_user = User.objects.create_user(username="creator_user", password="password123")
+        perm_add, _ = Permission.objects.get_or_create(codename="add_tailieu", defaults={"name": "add_tailieu"})
+        self.creator_user.user_permissions.add(perm_add)
+
+        # 3. Editor user: có quyền change_tailieu
+        self.editor_user = User.objects.create_user(username="editor_user", password="password123")
+        perm_change, _ = Permission.objects.get_or_create(codename="change_tailieu", defaults={"name": "change_tailieu"})
+        self.editor_user.user_permissions.add(perm_change)
+
+        # 4. Deleter user: có quyền delete_tailieu
+        self.deleter_user = User.objects.create_user(username="deleter_user", password="password123")
+        perm_del, _ = Permission.objects.get_or_create(codename="delete_tailieu", defaults={"name": "delete_tailieu"})
+        self.deleter_user.user_permissions.add(perm_del)
+
+        # 5. Category manager: có quyền add_loaitailieubieumau, change_loaitailieubieumau, delete_loaitailieubieumau
+        self.cat_user = User.objects.create_user(username="cat_user", password="password123")
+        for c in ["add_loaitailieubieumau", "change_loaitailieubieumau", "delete_loaitailieubieumau"]:
+            p, _ = Permission.objects.get_or_create(codename=c, defaults={"name": c})
+            self.cat_user.user_permissions.add(p)
+
+        # 6. Superuser
+        self.superuser = User.objects.create_superuser(username="rbac_root", password="password123", email="root@example.com")
+
+        # Dữ liệu ban đầu
+        self.cat = DanhMucTaiLieu.objects.create(
+            stt_uu_tien=1, ky_hieu="CAT-RBAC", ten_tai_lieu="Danh mục RBAC", nguoi_lap=self.superuser
+        )
+        self.type_item = LoaiTaiLieu.objects.create(
+            dm_tai_lieu=self.cat, ten_loai="Loại RBAC", is_public=True
+        )
+        self.doc_by_creator = TaiLieuChiTiet.objects.create(
+            dm_tai_lieu=self.cat,
+            ky_hieu="01/CREATOR",
+            tieu_de="Tài liệu do creator tạo",
+            ngay_dang=date(2026, 1, 1),
+            hieu_luc="CON_HIEU_LUC",
+            hien_thi="TAT_CA",
+            file_dinh_kem=SimpleUploadedFile("doc1.pdf", b"%PDF content"),
+            nguoi_tao=self.creator_user,
+        )
+        self.doc_by_admin = TaiLieuChiTiet.objects.create(
+            dm_tai_lieu=self.cat,
+            ky_hieu="02/ADMIN",
+            tieu_de="Tài liệu do admin tạo",
+            ngay_dang=date(2026, 1, 2),
+            hieu_luc="CON_HIEU_LUC",
+            hien_thi="TAT_CA",
+            file_dinh_kem=SimpleUploadedFile("doc2.pdf", b"%PDF content"),
+            nguoi_tao=self.superuser,
+        )
+
+    def test_create_document_permission(self):
+        """User thiếu add_tailieu nhận 403, có add_tailieu nhận 201"""
+        payload = {
+            'dm_tai_lieu': self.cat.id,
+            'tieu_de': 'Tài liệu test quyền',
+            'ngay_dang': '2026-03-01',
+            'file_dinh_kem': SimpleUploadedFile("test.pdf", b"%PDF content", content_type="application/pdf"),
+        }
+        # 1. Plain user không có add_tailieu -> 403
+        self.client.force_authenticate(user=self.plain_user)
+        res_denied = self.client.post('/api/resources/documents/', payload, format='multipart')
+        self.assertEqual(res_denied.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(res_denied.data.get('detail'), "roles.messages.permissionDenied")
+
+        # 2. Creator user có add_tailieu -> 201
+        self.client.force_authenticate(user=self.creator_user)
+        payload['file_dinh_kem'] = SimpleUploadedFile("test2.pdf", b"%PDF content", content_type="application/pdf")
+        res_ok = self.client.post('/api/resources/documents/', payload, format='multipart')
+        self.assertEqual(res_ok.status_code, status.HTTP_201_CREATED)
+
+    def test_update_document_permission(self):
+        """Creator sửa được tài liệu của mình; người khác phải có change_tailieu mới sửa được"""
+        # 1. Plain user sửa doc của creator -> 403
+        self.client.force_authenticate(user=self.plain_user)
+        res = self.client.patch(f'/api/resources/documents/{self.doc_by_creator.id}/', {'tieu_de': 'Sửa trái phép'})
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+        # 2. Creator user sửa doc của chính mình -> 200
+        self.client.force_authenticate(user=self.creator_user)
+        res_self = self.client.patch(f'/api/resources/documents/{self.doc_by_creator.id}/', {'tieu_de': 'Creator tự sửa'})
+        self.assertEqual(res_self.status_code, status.HTTP_200_OK)
+
+        # 3. Creator user sửa doc của admin -> 403 (vì creator không có change_tailieu)
+        res_other = self.client.patch(f'/api/resources/documents/{self.doc_by_admin.id}/', {'tieu_de': 'Sửa doc admin'})
+        self.assertEqual(res_other.status_code, status.HTTP_403_FORBIDDEN)
+
+        # 4. Editor user có change_tailieu sửa doc của người khác -> 200
+        self.client.force_authenticate(user=self.editor_user)
+        res_editor = self.client.patch(f'/api/resources/documents/{self.doc_by_creator.id}/', {'tieu_de': 'Editor sửa'})
+        self.assertEqual(res_editor.status_code, status.HTTP_200_OK)
+
+    def test_toggle_validity_permission(self):
+        """Toggle validity yêu cầu change_tailieu hoặc chính là người tạo"""
+        url_creator_doc = f'/api/resources/documents/{self.doc_by_creator.id}/toggle-validity/'
+        url_admin_doc = f'/api/resources/documents/{self.doc_by_admin.id}/toggle-validity/'
+
+        # Plain user -> 403
+        self.client.force_authenticate(user=self.plain_user)
+        res = self.client.post(url_creator_doc, {})
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+        # Creator user toggle doc của mình -> 200
+        self.client.force_authenticate(user=self.creator_user)
+        res = self.client.post(url_creator_doc, {})
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+        # Creator user toggle doc của admin -> 403
+        res = self.client.post(url_admin_doc, {})
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_delete_document_permission(self):
+        """Creator xóa được doc của mình; xóa doc người khác cần delete_tailieu hoặc superuser"""
+        # 1. Plain user xóa doc creator -> 403
+        self.client.force_authenticate(user=self.plain_user)
+        res = self.client.delete(f'/api/resources/documents/{self.doc_by_creator.id}/')
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+        # 2. Deleter user có delete_tailieu xóa doc admin -> 204
+        self.client.force_authenticate(user=self.deleter_user)
+        res = self.client.delete(f'/api/resources/documents/{self.doc_by_admin.id}/')
+        self.assertEqual(res.status_code, status.HTTP_204_NO_CONTENT)
+
+        # 3. Creator user xóa doc của chính mình -> 204
+        self.client.force_authenticate(user=self.creator_user)
+        res = self.client.delete(f'/api/resources/documents/{self.doc_by_creator.id}/')
+        self.assertEqual(res.status_code, status.HTTP_204_NO_CONTENT)
+
+    def test_category_and_type_rbac_permissions(self):
+        """Danh mục và Loại tài liệu: thêm, sửa, xóa yêu cầu quyền tương ứng"""
+        # 1. Plain user thêm danh mục -> 403
+        self.client.force_authenticate(user=self.plain_user)
+        res_cat = self.client.post('/api/resources/categories/', {'ten_tai_lieu': 'DM Mới'})
+        self.assertEqual(res_cat.status_code, status.HTTP_403_FORBIDDEN)
+
+        res_type = self.client.post('/api/resources/types/', {'dm_tai_lieu': self.cat.id, 'ten_loai': 'Loại Mới'})
+        self.assertEqual(res_type.status_code, status.HTTP_403_FORBIDDEN)
+
+        # 2. Cat user có quyền -> 201
+        self.client.force_authenticate(user=self.cat_user)
+        res_cat_ok = self.client.post('/api/resources/categories/', {'stt_uu_tien': 99, 'ten_tai_lieu': 'DM Mới Đạt'})
+        self.assertEqual(res_cat_ok.status_code, status.HTTP_201_CREATED)
+        new_cat_id = res_cat_ok.data['id']
+
+        # Cat user sửa danh mục -> 200
+        res_edit = self.client.patch(f'/api/resources/categories/{new_cat_id}/', {'ten_tai_lieu': 'DM Sửa'})
+        self.assertEqual(res_edit.status_code, status.HTTP_200_OK)
+
+        # Cat user xóa danh mục -> 204
+        res_del = self.client.delete(f'/api/resources/categories/{new_cat_id}/')
+        self.assertEqual(res_del.status_code, status.HTTP_204_NO_CONTENT)
 

@@ -19,8 +19,8 @@ export const Toast: React.FC<ToastProps> = ({ toast, onClose }) => {
 
   useEffect(() => {
     if (!toast) return;
-    const duration = toast.duration || 2600;
-    const interval = 50;
+    const duration = toast.duration || 3200;
+    const interval = 40;
     const startTime = Date.now();
 
     const timer = setInterval(() => {
@@ -40,92 +40,89 @@ export const Toast: React.FC<ToastProps> = ({ toast, onClose }) => {
   if (typeof document === 'undefined') return null;
 
   const type = toast.type || 'success';
+  const isDeleteAction =
+    type === 'danger' &&
+    ((toast.title && /xóa|delete/i.test(toast.title)) ||
+      (toast.message && /đã xóa|xóa thành công|deleted/i.test(toast.message)));
 
   const config = {
     success: {
       icon: 'fa-circle-check',
-      iconBg: 'bg-emerald-50 text-emerald-600 border border-emerald-200 dark:bg-emerald-950/80 dark:text-emerald-400 dark:border-emerald-800',
-      badgeBg: 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/90 dark:text-emerald-300 dark:border-emerald-800',
+      iconBox: 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-500/15 dark:text-emerald-400 dark:border-emerald-500/25',
+      badge: 'bg-emerald-50 text-emerald-700 border-emerald-200/80 dark:bg-emerald-500/20 dark:text-emerald-300 dark:border-emerald-500/30',
+      progressBar: 'bg-emerald-500 dark:bg-emerald-400',
       defaultTitle: 'Thành công',
-      accentBorder: 'border-l-4 border-l-emerald-500 border-border-subtle',
-      progressBar: 'bg-emerald-500',
     },
     danger: {
-      icon: 'fa-circle-xmark',
-      iconBg: 'bg-rose-50 text-rose-600 border border-rose-200 dark:bg-rose-950/80 dark:text-rose-400 dark:border-rose-800',
-      badgeBg: 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/90 dark:text-rose-300 dark:border-rose-800',
-      defaultTitle: 'Đã xóa',
-      accentBorder: 'border-l-4 border-l-rose-500 border-border-subtle',
-      progressBar: 'bg-rose-500',
+      icon: isDeleteAction ? 'fa-trash-can' : 'fa-circle-exclamation',
+      iconBox: 'bg-rose-50 text-rose-600 border-rose-100 dark:bg-rose-500/15 dark:text-rose-400 dark:border-rose-500/25',
+      badge: 'bg-rose-50 text-rose-700 border-rose-200/80 dark:bg-rose-500/20 dark:text-rose-300 dark:border-rose-500/30',
+      progressBar: 'bg-rose-500 dark:bg-rose-400',
+      defaultTitle: isDeleteAction ? 'Đã xóa' : 'Lỗi thao tác',
     },
     warning: {
       icon: 'fa-triangle-exclamation',
-      iconBg: 'bg-amber-50 text-amber-600 border border-amber-200 dark:bg-amber-950/80 dark:text-amber-400 dark:border-amber-800',
-      badgeBg: 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/90 dark:text-amber-300 dark:border-amber-800',
+      iconBox: 'bg-amber-50 text-amber-600 border-amber-100 dark:bg-amber-500/15 dark:text-amber-400 dark:border-amber-500/25',
+      badge: 'bg-amber-50 text-amber-700 border-amber-200/80 dark:bg-amber-500/20 dark:text-amber-300 dark:border-amber-500/30',
+      progressBar: 'bg-amber-500 dark:bg-amber-400',
       defaultTitle: 'Cảnh báo',
-      accentBorder: 'border-l-4 border-l-amber-500 border-border-subtle',
-      progressBar: 'bg-amber-500',
     },
     info: {
       icon: 'fa-circle-info',
-      iconBg: 'bg-sky-50 text-sky-600 border border-sky-200 dark:bg-sky-950/80 dark:text-sky-400 dark:border-sky-800',
-      badgeBg: 'bg-sky-50 text-sky-700 border border-sky-200 dark:bg-sky-950/90 dark:text-sky-300 dark:border-sky-800',
+      iconBox: 'bg-sky-50 text-sky-600 border-sky-100 dark:bg-sky-500/15 dark:text-sky-400 dark:border-sky-500/25',
+      badge: 'bg-sky-50 text-sky-700 border-sky-200/80 dark:bg-sky-500/20 dark:text-sky-300 dark:border-sky-500/30',
+      progressBar: 'bg-sky-500 dark:bg-sky-400',
       defaultTitle: 'Thông báo',
-      accentBorder: 'border-l-4 border-l-sky-500 border-border-subtle',
-      progressBar: 'bg-sky-500',
     },
   }[type];
 
   return createPortal(
     <div
-      className="fixed top-6 right-6 z-[999999] max-w-sm sm:max-w-md w-full px-3 sm:px-0 animate-fade-in pointer-events-auto"
+      className="fixed top-5 right-5 sm:top-6 sm:right-6 z-[999999] max-w-sm sm:max-w-md w-[calc(100%-2.5rem)] sm:w-full pointer-events-auto animate-fade-in"
       role="status"
       aria-live="polite"
     >
-      {/* Khung Toast: Nền đặc 100% OPAQUE (bg-white trên nền sáng, bg-[#121824] trên nền tối), tuyệt đối không trong suốt */}
+      {/* Toast Card */}
       <div
-        className={`relative overflow-hidden rounded-2xl bg-white dark:bg-[#121824] border border-border-subtle shadow-2xl p-4 transition-all ${config.accentBorder}`}
-        style={{
-          boxShadow: '0 20px 45px -10px rgba(0, 0, 0, 0.25), 0 10px 20px -5px rgba(0, 0, 0, 0.15)',
-        }}
+        className="relative overflow-hidden rounded-2xl bg-white/98 dark:bg-[#121824]/98 backdrop-blur-md border border-slate-200/90 dark:border-slate-800/90 shadow-[0_12px_36px_-6px_rgba(15,23,42,0.16),0_4px_16px_-2px_rgba(15,23,42,0.08)] dark:shadow-[0_16px_40px_-6px_rgba(0,0,0,0.6),0_4px_16px_-2px_rgba(0,0,0,0.4)] p-4"
       >
-        <div className="flex items-start gap-3">
-          {/* Icon badge */}
+        <div className="flex items-start gap-3.5">
+          {/* Status Icon */}
           <div
-            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${config.iconBg}`}
+            className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${config.iconBox}`}
           >
             <i className={`fa-solid ${config.icon} text-base`} />
           </div>
 
-          {/* Content */}
-          <div className="flex-1 min-w-0 pr-1">
+          {/* Toast Body */}
+          <div className="flex-1 min-w-0 pt-0.5">
             <div className="flex items-center gap-2 mb-1">
               <span
-                className={`text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md ${config.badgeBg}`}
+                className={`inline-flex items-center text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border ${config.badge}`}
               >
                 {toast.title || config.defaultTitle}
               </span>
             </div>
-            <p className="text-xs sm:text-sm text-neutral-900 dark:text-neutral-100 font-semibold leading-snug break-words">
+            <p className="text-xs sm:text-[13.5px] text-slate-700 dark:text-slate-200 font-medium leading-relaxed break-words">
               {toast.message}
             </p>
           </div>
 
-          {/* Close button */}
+          {/* Close Button */}
           <button
             type="button"
             onClick={onClose}
-            className="w-7 h-7 rounded-lg text-muted hover:text-main hover:bg-neutral-100 dark:hover:bg-neutral-800 flex items-center justify-center transition-colors cursor-pointer shrink-0 -mr-1 -mt-1"
+            className="w-7 h-7 rounded-lg text-slate-400 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/70 flex items-center justify-center transition-colors cursor-pointer shrink-0 -mr-1 -mt-1"
             aria-label="Đóng thông báo"
           >
             <i className="fa-solid fa-xmark text-sm" />
           </button>
         </div>
 
-        {/* Progress bar countdown */}
-        <div className="absolute bottom-0 left-0 right-0 h-1 bg-neutral-100 dark:bg-neutral-800">
+        {/* Countdown Progress Bar */}
+        <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-slate-100 dark:bg-slate-800/60 overflow-hidden">
           <div
-            className={`h-full transition-all duration-75 ${config.progressBar}`}
+            className={`h-full transition-all duration-75 ease-linear ${config.progressBar}`}
             style={{ width: `${progress}%` }}
           />
         </div>
