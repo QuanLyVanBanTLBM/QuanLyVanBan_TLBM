@@ -36,7 +36,7 @@ vi.mock('@lib/signing/api', async () => {
   const actual = await vi.importActual<typeof import('@lib/signing/api')>('@lib/signing/api');
   return { ...actual, signingApi: {
     toi: vi.fn(), danhSach: vi.fn(), thongKe: vi.fn(), taiLieu: vi.fn(), quyTrinh: vi.fn(), donVi: vi.fn(), donViApDungTheoHop: vi.fn(), chiTietQuyTrinh: vi.fn(),
-    xoaQuyTrinh: vi.fn(), taoQuyTrinh: vi.fn(), suaQuyTrinh: vi.fn(), chucVu: vi.fn(), danhBaCanBo: vi.fn(), canBoTheoChucVu: vi.fn(), tepCuaLuot: vi.fn(), tepGoc: vi.fn(), tepHoanTat: vi.fn(), bangChung: vi.fn(),
+    xoaQuyTrinh: vi.fn(), taoQuyTrinh: vi.fn(), suaQuyTrinh: vi.fn(), chucVu: vi.fn(), danhBaCanBo: vi.fn(), nguoiKyCoQuyen: vi.fn(), canBoTheoChucVu: vi.fn(), tepCuaLuot: vi.fn(), tepGoc: vi.fn(), tepHoanTat: vi.fn(), bangChung: vi.fn(),
     thaoTacQuyTrinh: vi.fn(), khoa: vi.fn(), ky: vi.fn(),
   } };
 });
@@ -96,6 +96,7 @@ beforeEach(() => {
   api.donViApDungTheoHop.mockResolvedValue([]);
   api.chucVu.mockResolvedValue([]);
   api.danhBaCanBo.mockResolvedValue([]);
+  api.nguoiKyCoQuyen.mockResolvedValue(Array.from({ length: 100 }, (_, i) => i + 1));
   api.canBoTheoChucVu.mockResolvedValue({ count: 0, results: [] });
   api.thongKe.mockResolvedValue({ tat_ca: 3, cho_ky: 1, qua_han: 1, hoan_thanh: 0, tra_lai: 1 });
   localStorage.setItem('tlbm_lang', 'vi');
@@ -659,6 +660,23 @@ describe('QuyTrinhPage chọn người ký từ phân hệ CBNV', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Tạo quy trình/ }));
     return screen.findAllByRole('combobox', { name: 'Thêm người ký theo chức danh' });
   }
+
+  it('vô hiệu cán bộ không có quyền ký trong danh bạ chọn người ký cụ thể', async () => {
+    api.quyTrinh.mockResolvedValue([]);
+    api.donVi.mockResolvedValue([]);
+    api.danhBaCanBo.mockResolvedValue([
+      { id: 31, username: 'tp_kh', ho_ten: 'Lê Văn Minh', don_vi_id: 4, don_vi_ten: 'Phòng Kế hoạch', chuc_vu_id: 5, chuc_vu_ten: 'Trưởng phòng' },
+      { id: 32, username: 'cv_kt', ho_ten: 'Phạm Thu Hà', don_vi_id: 2, don_vi_ten: 'Phòng Kế toán', chuc_vu_id: 9, chuc_vu_ten: 'Chuyên viên' },
+    ]);
+    api.nguoiKyCoQuyen.mockResolvedValue([31]);
+    boc(<QuyTrinhPage />, QUAN_TRI);
+    fireEvent.click(await screen.findByRole('button', { name: /Tạo quy trình/ }));
+    fireEvent.focus(screen.getByRole('textbox', { name: 'Thêm người ký' }));
+    const khongKy = await screen.findByRole('button', { name: /Phạm Thu Hà/ });
+    await waitFor(() => expect(khongKy).toBeDisabled());
+    expect(screen.getByRole('button', { name: /Lê Văn Minh/ })).toBeEnabled();
+    expect(within(khongKy).getByText('Không có quyền ký')).toBeInTheDocument();
+  });
 
   it('chọn cán bộ từ danh bạ CBNV và chức danh từ Danh mục chức danh; lưu đúng payload', async () => {
     api.quyTrinh.mockResolvedValue([]);

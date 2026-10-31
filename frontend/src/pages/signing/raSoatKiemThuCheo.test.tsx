@@ -29,7 +29,7 @@ vi.mock('@lib/signing/api', async () => {
     toi: vi.fn(), danhSach: vi.fn(), thongKe: vi.fn(), chiTiet: vi.fn(), tepGoc: vi.fn(), taiLieu: vi.fn(), huy: vi.fn(),
     timVanBanDi: vi.fn(), chiTietVanBanDi: vi.fn(), lienKetVanBanDi: vi.fn(), quyTrinh: vi.fn(), taoNhap: vi.fn(), khoa: vi.fn(), thuHoiKhoa: vi.fn(), traoDoi: vi.fn(),
     guiTinNhan: vi.fn(), giaiQuyet: vi.fn(), thaoTacQuyTrinh: vi.fn(), taoQuyTrinh: vi.fn(), xoaQuyTrinh: vi.fn(),
-    donVi: vi.fn(), donViApDungTheoHop: vi.fn(), chucVu: vi.fn(), danhBaCanBo: vi.fn(), canBoTheoChucVu: vi.fn(),
+    donVi: vi.fn(), donViApDungTheoHop: vi.fn(), chucVu: vi.fn(), danhBaCanBo: vi.fn(), nguoiKyCoQuyen: vi.fn(), canBoTheoChucVu: vi.fn(),
   } };
 });
 vi.mock('@lib/signing/pdf', () => ({
@@ -56,6 +56,7 @@ beforeEach(() => {
   api.donVi.mockResolvedValue([]);
   api.chucVu.mockResolvedValue([]);
   api.danhBaCanBo.mockResolvedValue([]);
+  api.nguoiKyCoQuyen.mockResolvedValue(Array.from({ length: 100 }, (_, i) => i + 1));
   api.canBoTheoChucVu.mockResolvedValue({ count: 0, results: [] });
   api.thongKe.mockResolvedValue({ tat_ca: 25, cho_ky: 0, qua_han: 0, hoan_thanh: 0, tra_lai: 0 });
 });

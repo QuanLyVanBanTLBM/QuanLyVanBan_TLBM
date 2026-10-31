@@ -16,7 +16,7 @@ import { useSigningT } from '@lib/signing/i18n';
 import type { HoSoChiTiet, QuyTrinh, VanBanDi, ViTriKy } from '@lib/signing/types';
 import { KHUNG_MAC_DINH, khungTuDiemBam, soKhung } from '@lib/signing/viTri';
 
-interface UngVien { cau_hinh: number; ung_vien: Array<{ id: number; ten: string }> }
+interface UngVien { cau_hinh: number; ung_vien: Array<{ id: number; ten: string; co_quyen_ky?: boolean }> }
 type NguonVanBan = 'van_ban_di' | 'khac';
 
 function Buoc1({ onXong }: { onXong: (ho_so: HoSoChiTiet, tep: ArrayBuffer | null) => void }) {
@@ -254,7 +254,10 @@ export function Buoc2({ hoSo, tep, quyTrinh, onQuyTrinhNgung }: {
       const l = docLoi(err);
       const ds = (l.fields?.nguoi_ky as Array<{ loai: string } & UngVien>) || [];
       setUngVien(ds.filter((v) => v.loai === 'can_chon_nguoi_ky'));
-      setThongBao(loi(err));
+      const thieuQuyen = (ds as Array<{ loai: string; ten?: string }>).filter((v) => v.loai === 'nguoi_ky_thieu_quyen_ky');
+      setThongBao(thieuQuyen.length
+        ? `${loi(err)} ${t('tao.nguoiKyThieuQuyen', { ten: thieuQuyen.map((v) => v.ten).filter(Boolean).join(', ') })}`
+        : loi(err));
       setXacNhan(false);
     } finally {
       setDangGui(false);
@@ -356,7 +359,11 @@ export function Buoc2({ hoSo, tep, quyTrinh, onQuyTrinhNgung }: {
                   <select className={LOP_O_NHAP} value={chonNguoiKy[n.id] || ''}
                     onChange={(e) => setChonNguoiKy((c) => ({ ...c, [n.id]: Number(e.target.value) }))}>
                     <option value="">—</option>
-                    {u.ung_vien.map((v) => <option key={v.id} value={v.id}>{v.ten}</option>)}
+                    {u.ung_vien.map((v) => (
+                      <option key={v.id} value={v.id} disabled={v.co_quyen_ky === false}>
+                        {v.co_quyen_ky === false ? `${v.ten} (${t('tao.khongCoQuyenKy')})` : v.ten}
+                      </option>
+                    ))}
                   </select>
                 </TruongNhap>
               ))}

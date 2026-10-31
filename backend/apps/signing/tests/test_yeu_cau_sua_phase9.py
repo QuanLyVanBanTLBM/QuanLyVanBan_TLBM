@@ -140,6 +140,7 @@ class TraSuaDongThoiTests(TransactionTestCase):
         self.ky2 = User.objects.create_user("ky2")
         cap_quyen(self.tao, "add_trinhky", "send_trinhky", "view_vanbandi")
         cap_quyen(self.ky1, "sign_trinhky")
+        cap_quyen(self.ky2, "sign_trinhky")
         qt = process_service.tao_quy_trinh(self.tao, ma_quy_trinh="DT", ten_quy_trinh="DT", pham_vi="CONG_TY", cap_ky=[
             {"cap_ky": 1, "ten_cap_ky": "C", "thu_tu": 1, "nguoi_ky": [
                 {"nguoi_ky": self.ky1, "thu_tu": 1}, {"nguoi_ky": self.ky2, "thu_tu": 2}]}])

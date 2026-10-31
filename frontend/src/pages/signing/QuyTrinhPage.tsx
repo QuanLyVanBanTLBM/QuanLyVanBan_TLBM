@@ -90,6 +90,9 @@ function ChonNguoiDung({ onChon }: ChonNguoiDungProps) {
   const [mo, setMo] = useState(false);
   const hopRef = useRef<HTMLDivElement>(null);
   const ds = useTai(() => signingApi.danhBaCanBo(), []);
+  const coQuyenKy = useTai(() => signingApi.nguoiKyCoQuyen(), []);
+  // Chưa tải được danh sách quyền ký thì không vô hiệu ai; backend vẫn chặn lúc gửi hồ sơ.
+  const khongKyDuoc = (id: number) => !!coQuyenKy.duLieu && !coQuyenKy.duLieu.includes(id);
 
   useEffect(() => {
     const onBamNgoai = (e: MouseEvent) => {
@@ -163,7 +166,8 @@ function ChonNguoiDung({ onChon }: ChonNguoiDungProps) {
               <li key={`cb-${u.id}`}>
                 <button
                   type="button"
-                  className="w-full px-3 py-2 text-left hover:bg-surface-hover flex items-center justify-between group transition-colors"
+                  disabled={khongKyDuoc(u.id)}
+                  className="w-full px-3 py-2 text-left hover:bg-surface-hover flex items-center justify-between group transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                   onClick={() => {
                     onChon(u);
                     setQ('');
@@ -178,10 +182,14 @@ function ChonNguoiDung({ onChon }: ChonNguoiDungProps) {
                     <span className="block text-xs text-secondary truncate">{chucDanh(u, t('quyTrinh.chuaCoChucVu'))}</span>
                     <span className="block text-2xs text-muted truncate">@{u.username}</span>
                   </div>
-                  <span className="text-xs text-primary font-medium shrink-0 flex items-center gap-1 opacity-80 group-hover:opacity-100">
-                    <i className="fa-solid fa-plus text-2xs" aria-hidden="true" />
-                    <span>{t('chung.chon')}</span>
-                  </span>
+                  {khongKyDuoc(u.id) ? (
+                    <span className="text-xs text-warning-text shrink-0">{t('quyTrinh.khongCoQuyenKy')}</span>
+                  ) : (
+                    <span className="text-xs text-primary font-medium shrink-0 flex items-center gap-1 opacity-80 group-hover:opacity-100">
+                      <i className="fa-solid fa-plus text-2xs" aria-hidden="true" />
+                      <span>{t('chung.chon')}</span>
+                    </span>
+                  )}
                 </button>
               </li>
             ))}

@@ -53,3 +53,17 @@ describe('signingApi.danhBaCanBo', () => {
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('signingApi.nguoiKyCoQuyen', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it('trả danh sách id tài khoản có quyền ký từ API signing', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(phanHoi(200, { ids: [3, 5] }));
+
+    await expect(signingApi.nguoiKyCoQuyen()).resolves.toEqual([3, 5]);
+    expect(String((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0])).toContain('/api/v1/signing/nguoi-ky-co-quyen/');
+  });
+});

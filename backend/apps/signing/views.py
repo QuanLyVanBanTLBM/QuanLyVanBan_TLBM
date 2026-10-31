@@ -859,6 +859,18 @@ class NguoiDungView(SigningAPIView):
         return Response(ket_qua)
 
 
+class NguoiKyCoQuyenView(SigningAPIView):
+    """
+    GET /nguoi-ky-co-quyen/: id tài khoản đang hoạt động có quyền ký (`sign_trinhky`) để form cấu hình quy trình
+    vô hiệu người không ký được; cần quyền quản lý quy trình. Backend vẫn chặn lúc gửi hồ sơ (`nguoi_ky_thieu_quyen_ky`).
+    """
+
+    def get(self, request):
+        yeu_cau_quyen(request.user, QUAN_LY_QUY_TRINH)
+        users = get_user_model().objects.filter(is_active=True).order_by("pk")
+        return Response({"ids": [u.pk for u in users.iterator(chunk_size=500) if co_quyen(u, KY_TRINH_KY)]})
+
+
 class CanBoTheoChucVuView(SigningAPIView):
     """
     GET /can-bo-theo-chuc-vu/?chuc_vu=<id>[&don_vi=<id>]: cán bộ đang làm việc giữ chức vụ (trong đơn vị nếu có) để
