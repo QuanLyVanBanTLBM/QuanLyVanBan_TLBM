@@ -68,7 +68,12 @@ export function useSigningT() {
     const ban_dich = ma ? tra(TU_DIEN[currentLang], `loi.${ma}`) : undefined;
     if (ban_dich) return ban_dich;
     if (l.status === 0 && !l.code && err instanceof TypeError) return t('chung.loiMang');
+    // Lỗi HTTP không kèm mã nghiệp vụ: thông báo theo mã trạng thái, không hiện chuỗi thô của máy chủ/ApiError
+    if (l.status === 401) return t('chung.hetPhien');
     if (l.status === 403) return t('chung.khongCoQuyen');
+    if (l.status === 404 && !l.code) return t('chung.khongTimThay');
+    if (l.status === 429) return t('chung.quaNhieuYeuCau');
+    if (l.status >= 500) return t('chung.loiMayChu');
     return l.detail || t('chung.loiMang');
   };
   return { t, loi, lang: currentLang };
