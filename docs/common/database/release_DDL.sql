@@ -470,6 +470,29 @@ CREATE TABLE accounts_employee_import_job (
 
 CREATE INDEX idx_employee_import_status ON accounts_employee_import_job (status, created_at);
 
+-- Nhật ký đặt lại mật khẩu CBNV do quản trị viên thực hiện; không lưu mật khẩu/hash.
+CREATE TABLE accounts_password_reset_audit (
+    id BIGSERIAL PRIMARY KEY,
+    actor_id BIGINT REFERENCES accounts_employee (id),
+    target_id BIGINT REFERENCES accounts_employee (id),
+    actor_username VARCHAR(150) NOT NULL,
+    target_username VARCHAR(150) NOT NULL,
+    reason_code VARCHAR(32) NOT NULL,
+    reason_detail VARCHAR(500),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT chk_pwd_reset_reason_code
+        CHECK (reason_code IN ('FORGOT_PASSWORD', 'COMPROMISED', 'LOST_ACCESS', 'OTHER')),
+    CONSTRAINT chk_pwd_reset_reason_detail
+        CHECK (
+            (reason_code = 'OTHER' AND reason_detail IS NOT NULL)
+            OR (reason_code <> 'OTHER' AND reason_detail IS NULL)
+        )
+);
+
+CREATE INDEX idx_pwd_reset_target_time ON accounts_password_reset_audit (target_id, created_at);
+
+CREATE INDEX idx_pwd_reset_actor_time ON accounts_password_reset_audit (actor_id, created_at);
+
 -- Ghi chú: spec mới (tab "Đvị, phòngban") không có trường "Trưởng đơn vị"
 -- trên organizations_donvi -> không tạo cột manager_id.
 

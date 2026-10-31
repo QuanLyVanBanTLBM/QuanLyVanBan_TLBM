@@ -191,6 +191,47 @@ describe('EmployeesPage Component (Issue #24)', () => {
     });
   });
 
+  it('requires a password reset reason and sends it with an admin reset request', async () => {
+    render(
+      <MemoryRouter>
+        <EmployeesPage />
+      </MemoryRouter>
+    );
+
+    await screen.findByText('Nguyễn Văn Bình');
+    fireEvent.click((await screen.findAllByTitle('Chỉnh sửa'))[0]);
+    await screen.findByText('Chỉnh Sửa Hồ Sơ Nhân Viên');
+    fireEvent.click(screen.getByRole('button', { name: 'Đổi mật khẩu' }));
+
+    fireEvent.change(screen.getByLabelText('Mật khẩu mới'), {
+      target: { value: 'Secure-Reset-Password-42!' },
+    });
+    fireEvent.change(screen.getByLabelText('Xác nhận mật khẩu mới'), {
+      target: { value: 'Secure-Reset-Password-42!' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu mật khẩu mới' }));
+
+    expect(await screen.findByText('Vui lòng chọn lý do đặt lại mật khẩu.')).toBeInTheDocument();
+    expect(mockedApiClient.post).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText('Lý do đặt lại mật khẩu'), {
+      target: { value: 'FORGOT_PASSWORD' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu mật khẩu mới' }));
+
+    await waitFor(() => {
+      expect(mockedApiClient.post).toHaveBeenCalledWith(
+        '/api/accounts/employees/1/change-password/',
+        {
+          new_password: 'Secure-Reset-Password-42!',
+          confirm_password: 'Secure-Reset-Password-42!',
+          reason_code: 'FORGOT_PASSWORD',
+          reason_detail: undefined,
+        },
+      );
+    });
+  });
+
   it('requires an explicit position instead of defaulting a new employee to the first position', async () => {
     const { container } = render(
       <MemoryRouter>

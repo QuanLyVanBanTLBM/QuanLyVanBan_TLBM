@@ -60,3 +60,32 @@ class ReleaseDdlSchemaTests(TestCase):
         khoi = _constraints("organizations_khoi")
         self.assertEqual(khoi, {"organizations_khoi_pkey": "p"})
         self.assertNotIn("c", _constraints("organizations_donvi").values())
+
+    def test_password_reset_audit_schema(self):
+        self.assertEqual(_column("accounts_password_reset_audit", "actor_id")[2], "YES")
+        self.assertEqual(_column("accounts_password_reset_audit", "target_id")[2], "YES")
+        self.assertEqual(_column("accounts_password_reset_audit", "actor_username")[:3], ("varchar", 150, "NO"))
+        self.assertEqual(_column("accounts_password_reset_audit", "target_username")[:3], ("varchar", 150, "NO"))
+        self.assertEqual(_column("accounts_password_reset_audit", "reason_code")[:3], ("varchar", 32, "NO"))
+        self.assertEqual(_column("accounts_password_reset_audit", "reason_detail")[:3], ("varchar", 500, "YES"))
+        self.assertEqual(_column("accounts_password_reset_audit", "created_at")[3], "now()")
+        constraints = _constraints("accounts_password_reset_audit")
+        self.assertEqual(list(constraints.values()).count("f"), 2)
+        self.assertEqual(list(constraints.values()).count("c"), 2)
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT a.attname, c.confdeltype, c.condeferrable, c.condeferred "
+                "FROM pg_constraint c "
+                "JOIN unnest(c.conkey) WITH ORDINALITY AS key(attnum, ord) ON TRUE "
+                "JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = key.attnum "
+                "WHERE c.conrelid = 'accounts_password_reset_audit'::regclass AND c.contype = 'f'"
+            )
+            foreign_keys = {column: (delete_action, deferrable, deferred) for column, delete_action, deferrable, deferred in cursor.fetchall()}
+        self.assertEqual(foreign_keys, {"actor_id": ("a", True, True), "target_id": ("a", True, True)})
+        self.assertTrue(
+            {
+                "idx_pwd_reset_target_time",
+                "idx_pwd_reset_actor_time",
+            }
+            <= _indexes("accounts_password_reset_audit")
+        )

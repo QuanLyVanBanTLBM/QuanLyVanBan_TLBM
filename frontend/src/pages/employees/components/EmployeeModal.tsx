@@ -18,7 +18,13 @@ interface EmployeeModalProps {
   groups: GroupSimple[];
   isLoading?: boolean;
   isAdmin?: boolean;
-  onChangePassword?: (employeeId: number, newPassword: string, confirmPassword: string) => Promise<void>;
+  onChangePassword?: (
+    employeeId: number,
+    newPassword: string,
+    confirmPassword: string,
+    reasonCode: string,
+    reasonDetail?: string
+  ) => Promise<void>;
 }
 
 export const EmployeeModal: React.FC<EmployeeModalProps> = ({
@@ -123,6 +129,8 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
   const [isPasswordFormOpen, setIsPasswordFormOpen] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [passwordResetReason, setPasswordResetReason] = useState('');
+  const [passwordResetReasonDetail, setPasswordResetReasonDetail] = useState('');
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [showInitialPassword, setShowInitialPassword] = useState(false);
@@ -215,6 +223,14 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
       setPasswordError(t('employees.validation.passwordRequired'));
       return;
     }
+    if (!passwordResetReason) {
+      setPasswordError(t('employees.validation.passwordReasonRequired'));
+      return;
+    }
+    if (passwordResetReason === 'OTHER' && !passwordResetReasonDetail.trim()) {
+      setPasswordError(t('employees.validation.passwordReasonDetailRequired'));
+      return;
+    }
     if (newPassword !== confirmNewPassword) {
       setPasswordError(t('employees.messages.passwordMismatch'));
       return;
@@ -222,9 +238,17 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
 
     setIsChangingPassword(true);
     try {
-      await onChangePassword(initialData.id, newPassword, confirmNewPassword);
+      await onChangePassword(
+        initialData.id,
+        newPassword,
+        confirmNewPassword,
+        passwordResetReason,
+        passwordResetReason === 'OTHER' ? passwordResetReasonDetail.trim() : undefined
+      );
       setNewPassword('');
       setConfirmNewPassword('');
+      setPasswordResetReason('');
+      setPasswordResetReasonDetail('');
       setIsPasswordFormOpen(false);
     } catch (error: unknown) {
       let rawError: unknown;
@@ -565,8 +589,15 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                     variant="secondary"
                     size="sm"
                     onClick={() => {
-                      setIsPasswordFormOpen((open) => !open);
+                      const nextOpen = !isPasswordFormOpen;
+                      setIsPasswordFormOpen(nextOpen);
                       setPasswordError(null);
+                      if (!nextOpen) {
+                        setNewPassword('');
+                        setConfirmNewPassword('');
+                        setPasswordResetReason('');
+                        setPasswordResetReasonDetail('');
+                      }
                     }}
                   >
                     {isPasswordFormOpen ? t('employees.actions.cancel') : t('employees.actions.changePassword')}
@@ -574,6 +605,45 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                 </div>
                 {isPasswordFormOpen && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="md:col-span-2">
+                      <Select
+                        label={t('employees.passwordChange.reason')}
+                        name="password-reset-reason"
+                        value={passwordResetReason}
+                        required
+                        onChange={(reason) => {
+                          setPasswordResetReason(reason);
+                          if (reason !== 'OTHER') setPasswordResetReasonDetail('');
+                          setPasswordError(null);
+                        }}
+                        placeholder={t('employees.passwordChange.reasonPlaceholder')}
+                        ariaLabel={t('employees.passwordChange.reason')}
+                        searchable={false}
+                        options={[
+                          { value: 'FORGOT_PASSWORD', label: t('employees.passwordChange.reasonForgotPassword') },
+                          { value: 'COMPROMISED', label: t('employees.passwordChange.reasonCompromised') },
+                          { value: 'LOST_ACCESS', label: t('employees.passwordChange.reasonLostAccess') },
+                          { value: 'OTHER', label: t('employees.passwordChange.reasonOther') },
+                        ]}
+                      />
+                    </div>
+                    {passwordResetReason === 'OTHER' && (
+                      <label className="block text-sm font-medium text-secondary md:col-span-2">
+                        {t('employees.passwordChange.reasonDetail')}
+                        <textarea
+                          required
+                          maxLength={500}
+                          value={passwordResetReasonDetail}
+                          onChange={(event) => {
+                            setPasswordResetReasonDetail(event.target.value);
+                            setPasswordError(null);
+                          }}
+                          placeholder={t('employees.passwordChange.reasonDetailPlaceholder')}
+                          rows={2}
+                          className="mt-1 w-full px-3 py-2 text-sm bg-surface border border-border rounded-lg text-main focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                        />
+                      </label>
+                    )}
                     <label className="block text-sm font-medium text-secondary">
                       {t('employees.passwordChange.newPassword')}
                       <span className="relative mt-1 block">

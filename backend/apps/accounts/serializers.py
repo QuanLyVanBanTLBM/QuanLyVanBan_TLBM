@@ -15,7 +15,14 @@ from django.db.models import Q
 from rest_framework import serializers
 
 from organizations.models import DonVi
-from .models import MAX_DISPLAY_ORDER, Employee, EmployeeAssignment, Position, vietnam_phone_regex
+from .models import (
+    MAX_DISPLAY_ORDER,
+    Employee,
+    EmployeeAssignment,
+    EmployeePasswordResetAudit,
+    Position,
+    vietnam_phone_regex,
+)
 
 
 def validate_employee_birthday(value: date) -> date:
@@ -60,6 +67,24 @@ class ChangePasswordSerializer(serializers.Serializer):
 class EmployeeAdminPasswordChangeSerializer(serializers.Serializer):
     """Xác thực mật khẩu mới do admin đặt cho một hồ sơ CBNV."""
 
+    reason_code = serializers.ChoiceField(
+        choices=EmployeePasswordResetAudit.Reason.choices,
+        error_messages={
+            "required": "employees.validation.passwordReasonRequired",
+            "blank": "employees.validation.passwordReasonRequired",
+            "invalid_choice": "employees.validation.passwordReasonInvalid",
+        },
+    )
+    reason_detail = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        trim_whitespace=True,
+        max_length=500,
+        error_messages={
+            "max_length": "employees.validation.passwordReasonDetailTooLong",
+        },
+    )
     new_password = serializers.CharField(
         required=True,
         write_only=True,
@@ -80,6 +105,15 @@ class EmployeeAdminPasswordChangeSerializer(serializers.Serializer):
     def validate(self, attrs):
         if attrs["new_password"] != attrs["confirm_password"]:
             raise serializers.ValidationError("employees.messages.passwordMismatch")
+        reason_detail = (attrs.get("reason_detail") or "").strip()
+        if attrs["reason_code"] == EmployeePasswordResetAudit.Reason.OTHER:
+            if not reason_detail:
+                raise serializers.ValidationError(
+                    {"reason_detail": "employees.validation.passwordReasonDetailRequired"}
+                )
+            attrs["reason_detail"] = reason_detail
+        else:
+            attrs["reason_detail"] = None
         try:
             validate_password(attrs["new_password"], user=self.context.get("employee"))
         except DjangoValidationError:

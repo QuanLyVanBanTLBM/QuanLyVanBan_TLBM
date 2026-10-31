@@ -112,6 +112,14 @@
       "help": "Mật khẩu hiện tại được bảo vệ dạng băm nên không thể xem. Quản trị viên có thể đặt lại mật khẩu.",
       "newPassword": "Mật khẩu mới",
       "confirmPassword": "Xác nhận mật khẩu mới",
+      "reason": "Lý do đặt lại mật khẩu",
+      "reasonPlaceholder": "Chọn lý do...",
+      "reasonForgotPassword": "Quên mật khẩu",
+      "reasonCompromised": "Bị xâm phạm",
+      "reasonLostAccess": "Mất quyền truy cập",
+      "reasonOther": "Khác",
+      "reasonDetail": "Chi tiết lý do",
+      "reasonDetailPlaceholder": "Nhập lý do đặt lại mật khẩu...",
       "showPassword": "Hiện mật khẩu",
       "hidePassword": "Ẩn mật khẩu",
       "submit": "Lưu mật khẩu mới"
@@ -190,7 +198,11 @@
       "phoneInvalid": "Số điện thoại không hợp lệ theo chuẩn Việt Nam.",
       "roleRequired": "Vui lòng chọn ít nhất một nhóm quyền cho cán bộ nhân viên.",
       "positionRequired": "Vui lòng chọn chức vụ cho cán bộ nhân viên.",
-      "passwordRequired": "Vui lòng nhập và xác nhận mật khẩu mới."
+      "passwordRequired": "Vui lòng nhập và xác nhận mật khẩu mới.",
+      "passwordReasonRequired": "Vui lòng chọn lý do đặt lại mật khẩu.",
+      "passwordReasonInvalid": "Lý do đặt lại mật khẩu không hợp lệ.",
+      "passwordReasonDetailRequired": "Vui lòng nhập chi tiết lý do khi chọn “Khác”.",
+      "passwordReasonDetailTooLong": "Chi tiết lý do không được vượt quá 500 ký tự."
     },
     "messages": {
       "fetchError": "Không thể tải danh sách cán bộ nhân viên.",
@@ -198,7 +210,7 @@
       "downloadError": "Không thể tải tệp mẫu. Vui lòng thử lại sau.",
       "createSuccess": "Thêm cán bộ nhân viên thành công!",
       "updateSuccess": "Cập nhật hồ sơ thành công!",
-      "passwordChangeSuccess": "Đổi mật khẩu tài khoản thành công.",
+      "passwordChangeSuccess": "Đặt lại mật khẩu tài khoản thành công.",
       "passwordChangeError": "Không thể đổi mật khẩu. Vui lòng thử lại.",
       "passwordMismatch": "Mật khẩu mới và xác nhận mật khẩu không khớp.",
       "passwordNotAccepted": "Mật khẩu chưa đạt yêu cầu bảo mật của hệ thống.",

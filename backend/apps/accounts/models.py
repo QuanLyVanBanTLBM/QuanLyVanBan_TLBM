@@ -1,6 +1,7 @@
 import datetime
 import uuid
 
+from django.conf import settings
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.contrib.auth.models import PermissionsMixin
 from django.core.validators import MinValueValidator, RegexValidator
@@ -354,4 +355,64 @@ class EmployeeImportJob(models.Model):
         ]
         indexes = [
             models.Index(fields=["status", "created_at"], name="idx_employee_import_status"),
+        ]
+
+
+class EmployeePasswordResetAudit(models.Model):
+    """Nhật ký kiểm toán về lần admin đặt lại mật khẩu CBNV."""
+
+    class Reason(models.TextChoices):
+        FORGOT_PASSWORD = "FORGOT_PASSWORD", "Quên mật khẩu"
+        COMPROMISED = "COMPROMISED", "Bị xâm phạm"
+        LOST_ACCESS = "LOST_ACCESS", "Mất quyền truy cập"
+        OTHER = "OTHER", "Khác"
+
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        db_index=False,
+        related_name="password_reset_actions",
+        verbose_name="Quản trị viên thực hiện",
+    )
+    target = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        db_index=False,
+        related_name="password_reset_events",
+        verbose_name="Tài khoản được đặt lại mật khẩu",
+    )
+    actor_username = models.CharField(max_length=150)
+    target_username = models.CharField(max_length=150)
+    reason_code = models.CharField(max_length=32, choices=Reason.choices)
+    reason_detail = models.CharField(max_length=500, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_default=DbNow())
+
+    class Meta:
+        db_table = "accounts_password_reset_audit"
+        verbose_name = "Nhật ký đặt lại mật khẩu CBNV"
+        verbose_name_plural = "Nhật ký đặt lại mật khẩu CBNV"
+        default_permissions = ()
+        indexes = [
+            models.Index(fields=["target", "created_at"], name="idx_pwd_reset_target_time"),
+            models.Index(fields=["actor", "created_at"], name="idx_pwd_reset_actor_time"),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(
+                    reason_code__in=["FORGOT_PASSWORD", "COMPROMISED", "LOST_ACCESS", "OTHER"]
+                ),
+                name="chk_pwd_reset_reason_code",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(reason_code="OTHER", reason_detail__isnull=False)
+                )
+                | (
+                    ~models.Q(reason_code="OTHER")
+                    & models.Q(reason_detail__isnull=True)
+                ),
+                name="chk_pwd_reset_reason_detail",
+            ),
         ]

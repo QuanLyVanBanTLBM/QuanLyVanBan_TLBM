@@ -28,7 +28,13 @@ from rest_framework import status
 from rest_framework.test import APIClient, APITestCase
 
 from organizations.models import KhoiKhuVuc, DonVi
-from accounts.models import Employee, EmployeeImportJob, Position, EmployeeAssignment
+from accounts.models import (
+    Employee,
+    EmployeeImportJob,
+    EmployeePasswordResetAudit,
+    Position,
+    EmployeeAssignment,
+)
 from accounts.excel_cbnv import import_cbnv_from_excel
 from accounts.views_employee import _run_employee_import_job
 
@@ -1190,6 +1196,12 @@ class EmployeePermissionSecurityTests(EmployeeBaseTestCase):
         """Password reset chỉ dành cho admin; RBAC change_full không đủ quyền."""
         url = f"{self.employee_list_url}{self.normal_user.id}/change-password/"
         new_password = "Secure-Reset-Password-42!"
+        valid_payload = {
+            "new_password": new_password,
+            "confirm_password": new_password,
+            "reason_code": EmployeePasswordResetAudit.Reason.OTHER,
+            "reason_detail": "Yêu cầu hỗ trợ đã xác minh",
+        }
         self.normal_user.user_permissions.add(self.perm_change_full)
 
         self.client.force_authenticate(user=self.normal_user)
@@ -1205,21 +1217,65 @@ class EmployeePermissionSecurityTests(EmployeeBaseTestCase):
         self.client.force_authenticate(user=self.admin_user)
         mismatch = self.client.post(
             url,
-            {"new_password": new_password, "confirm_password": "Different-Password-43!"},
+            {
+                **valid_payload,
+                "confirm_password": "Different-Password-43!",
+            },
             format="json",
         )
         self.assertEqual(mismatch.status_code, status.HTTP_400_BAD_REQUEST)
         self.normal_user.refresh_from_db()
         self.assertTrue(self.normal_user.check_password("NormalPassword123"))
+        self.assertFalse(EmployeePasswordResetAudit.objects.exists())
+
+        missing_reason = self.client.post(
+            url,
+            {
+                "new_password": new_password,
+                "confirm_password": new_password,
+            },
+            format="json",
+        )
+        self.assertEqual(missing_reason.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(EmployeePasswordResetAudit.objects.exists())
+
+        missing_other_detail = self.client.post(
+            url,
+            {
+                **valid_payload,
+                "reason_detail": "   ",
+            },
+            format="json",
+        )
+        self.assertEqual(missing_other_detail.status_code, status.HTTP_400_BAD_REQUEST)
+        self.normal_user.refresh_from_db()
+        self.assertTrue(self.normal_user.check_password("NormalPassword123"))
+        self.assertFalse(EmployeePasswordResetAudit.objects.exists())
 
         changed = self.client.post(
             url,
-            {"new_password": new_password, "confirm_password": new_password},
+            valid_payload,
             format="json",
         )
         self.assertEqual(changed.status_code, status.HTTP_200_OK)
         self.normal_user.refresh_from_db()
         self.assertTrue(self.normal_user.check_password(new_password))
+        audit = EmployeePasswordResetAudit.objects.get()
+        self.assertEqual(audit.actor_id, self.admin_user.id)
+        self.assertEqual(audit.target_id, self.normal_user.id)
+        self.assertEqual(audit.actor_username, self.admin_user.username)
+        self.assertEqual(audit.target_username, self.normal_user.username)
+        self.assertEqual(audit.reason_code, EmployeePasswordResetAudit.Reason.OTHER)
+        self.assertEqual(audit.reason_detail, "Yêu cầu hỗ trợ đã xác minh")
+        self.assertIsNotNone(audit.created_at)
+        self.assertFalse(hasattr(audit, "password"))
+        self.assertNotIn(new_password, str(audit.__dict__))
+        self.assertNotIn(self.normal_user.password, str(audit.__dict__))
+
+        User.objects.filter(pk=self.normal_user.pk).delete()
+        audit.refresh_from_db()
+        self.assertIsNone(audit.target_id)
+        self.assertEqual(audit.target_username, "normal_user")
 
     def test_change_self_cannot_escalate_privileges_or_modify_admin_fields(self):
         """

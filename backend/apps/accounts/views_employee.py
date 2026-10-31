@@ -23,7 +23,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import Employee, EmployeeAssignment, EmployeeImportJob
+from .models import Employee, EmployeeAssignment, EmployeeImportJob, EmployeePasswordResetAudit
 from .serializers import (
     GroupSimpleSerializer,
     EmployeeSerializer,
@@ -517,8 +517,17 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             context={"employee": employee},
         )
         serializer.is_valid(raise_exception=True)
-        employee.set_password(serializer.validated_data["new_password"])
-        employee.save(update_fields=["password"])
+        with transaction.atomic():
+            employee.set_password(serializer.validated_data["new_password"])
+            employee.save(update_fields=["password"])
+            EmployeePasswordResetAudit.objects.create(
+                actor=request.user,
+                target=employee,
+                actor_username=request.user.get_username(),
+                target_username=employee.get_username(),
+                reason_code=serializer.validated_data["reason_code"],
+                reason_detail=serializer.validated_data["reason_detail"],
+            )
         return Response(
             {"detail": "employees.messages.passwordChangeSuccess"},
             status=status.HTTP_200_OK,
