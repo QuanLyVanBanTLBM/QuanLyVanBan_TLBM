@@ -193,7 +193,8 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
     if (!toi || !luot) throw new Error('khong_co_quyen');
 
     // 1. Kiểm tra ảnh chữ ký cá nhân
-    if (!docAnhChuKy(toi.id)) {
+    const anh_chu_ky = docAnhChuKy(toi.id);
+    if (!anh_chu_ky) {
       throw new Error('chua_co_anh_chu_ky');
     }
 
@@ -212,7 +213,7 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
     // 4. Ký số bằng private key từ PIN và bản bọc (hoặc file khóa)
     const chu_ky_so = await kyBangPin(toi.id, khoa_ky, pin, luot.ma_bam_tai_lieu, fileKhoa ?? undefined);
     return signingApi.ky(hoSo.id, khoa.lay(), {
-      khoa_ky: khoa_ky.id, hash_tai_lieu: luot.ma_bam_tai_lieu, chu_ky_so, ghi_chu_ky: o1,
+      khoa_ky: khoa_ky.id, hash_tai_lieu: luot.ma_bam_tai_lieu, chu_ky_so, ghi_chu_ky: o1, anh_chu_ky,
     });
   });
 

@@ -344,13 +344,22 @@ class DocumentAPITests(TestCase):
         self.assertIn("application/vnd.openxmlformats-officedocument", response["Content-Type"])
 
     def test_api_excel_export(self):
-        """GET /api/documents/export/?loai=DEN xuất file Excel theo bộ lọc."""
+        """GET /api/documents/export/?loai=DEN xuất file Excel theo bộ lọc (khi có quyền)."""
+        self.user.is_staff = True
+        self.user.save()
         response = self.client.get("/api/documents/export/?loai=DEN")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn("application/vnd.openxmlformats-officedocument", response["Content-Type"])
 
+    def test_api_excel_export_without_permission_denied(self):
+        """GET /api/documents/export/?loai=DEN trả về 403 nếu không có quyền export."""
+        self.user.is_staff = False
+        self.user.save()
+        response = self.client.get("/api/documents/export/?loai=DEN")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
     def test_api_excel_import(self):
-        """POST /api/documents/import/ nhận file Excel và import."""
+        """POST /api/documents/import/ nhận file Excel và import (khi có quyền)."""
         self.user.is_staff = True
         self.user.save()
         template_stream = generate_excel_template("DEN")
@@ -366,6 +375,23 @@ class DocumentAPITests(TestCase):
             format="multipart",
         )
         self.assertIn(response.status_code, [status.HTTP_200_OK, status.HTTP_201_CREATED, status.HTTP_400_BAD_REQUEST])
+
+    def test_api_excel_import_without_permission_denied(self):
+        """POST /api/documents/import/ trả về 403 nếu không có quyền import."""
+        self.user.is_staff = False
+        self.user.save()
+        template_stream = generate_excel_template("DEN")
+        excel_file = SimpleUploadedFile(
+            "import_test.xlsx",
+            template_stream.read(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response = self.client.post(
+            "/api/documents/import/",
+            {"file": excel_file, "loai": "DEN"},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_attachment_upload_path_by_document_type(self):
         """Kiểm tra file đính kèm được tự động phân vào folder: den, di theo phân loại: thuong, han_che."""
