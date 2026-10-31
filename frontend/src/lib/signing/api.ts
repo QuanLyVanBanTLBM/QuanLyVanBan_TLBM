@@ -142,6 +142,9 @@ export const signingApi = {
    * phạm vi khác (không phải toàn bộ CBNV), tự chuyển sang khi thiếu quyền sẽ hiện một danh sách ngắn hơn mà
    * người dùng tưởng là toàn bộ cán bộ nhân viên. Lỗi 403 được báo thật để người dùng biết cần cấp quyền.
    */
+  /** Id tài khoản đang hoạt động có quyền ký (`sign_trinhky`); cần quyền quản lý quy trình. */
+  nguoiKyCoQuyen: () => apiClient.get<{ ids: number[] }>('/api/v1/signing/nguoi-ky-co-quyen/').then((r) => r.ids),
+
   danhBaCanBo: () =>
     apiClient
       .get<CanBo[] | { results?: CanBo[] }>('/api/accounts/employees/?all=true')

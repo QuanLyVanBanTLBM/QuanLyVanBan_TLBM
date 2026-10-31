@@ -99,6 +99,9 @@ class TrinhKyBase(TestCase):
             display_order=Position.get_next_display_order(), name="Trưởng phòng"
         )
         cap_quyen(self.tao, "add_trinhky", "send_trinhky", "view_vanbandi")
+        cap_quyen(self.ky1, "sign_trinhky")
+        cap_quyen(self.ky2, "sign_trinhky")
+        cap_quyen(self.ky3, "sign_trinhky")
         self._van_ban_tiep = iter([10, *range(20, 60)])
         self.process = self.tao_quy_trinh()
         self.c = self.client_cua(self.tao)

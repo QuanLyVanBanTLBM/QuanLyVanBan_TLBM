@@ -19,7 +19,7 @@ from ..errors import ConflictError, SigningError
 from ..models import (
     SigningAttempt, SigningAuditLog, SigningProcess, SigningRequest, SigningRequestStep, SigningRequestStepSigner,
 )
-from ..permissions import HUY_TRINH_KY, XEM_NHAT_KY, XEM_TAT_CA, co_quyen
+from ..permissions import HUY_TRINH_KY, KY_TRINH_KY, XEM_NHAT_KY, XEM_TAT_CA, co_quyen
 from ..storage import StorageError, get_storage
 from ..tich_hop import to_chuc
 from ..tich_hop.van_ban import kiem_tra_van_ban_trinh_ky, ma_van_ban_di_xem_duoc
@@ -423,7 +423,8 @@ def _xac_dinh_nguoi_ky(yeu_cau, cau_hinh, chon_nguoi_ky):
             return nguoi, None
     return None, {
         "loai": "can_chon_nguoi_ky", "cau_hinh": cau_hinh.pk,
-        "ung_vien": [{"id": u.pk, "ten": to_chuc.ten_hien_thi(u)} for u in ung_vien],
+        "ung_vien": [{"id": u.pk, "ten": to_chuc.ten_hien_thi(u), "co_quyen_ky": co_quyen(u, KY_TRINH_KY)}
+                     for u in ung_vien],
     }
 
 
@@ -494,12 +495,22 @@ def tao_luot_trinh(yeu_cau, nguoi, *, chon_nguoi_ky, khoa_chong_trung, vi_tri_ky
             tai_khoan, van_de = _xac_dinh_nguoi_ky(yeu_cau, cau_hinh, chon_nguoi_ky)
             if van_de:
                 loi.append(van_de)
+            elif not co_quyen(tai_khoan, KY_TRINH_KY):
+                loi.append({"loai": "nguoi_ky_thieu_quyen_ky", "cau_hinh": cau_hinh.pk, "nguoi_ky": tai_khoan.pk,
+                            "ten": to_chuc.ten_hien_thi(tai_khoan) or tai_khoan.get_username()})
             elif any(t.pk == tai_khoan.pk for _, t in nguoi_cap):
                 loi.append({"loai": "nguoi_ky_trung_trong_cap", "cau_hinh": cau_hinh.pk, "nguoi_ky": tai_khoan.pk})
             else:
                 nguoi_cap.append((cau_hinh, tai_khoan))
         xac_dinh.append((cap, nguoi_cap))
     if loi:
+        thieu_quyen = [v for v in loi if v["loai"] == "nguoi_ky_thieu_quyen_ky"]
+        if thieu_quyen:
+            raise SigningError(
+                code="nguoi_ky_thieu_quyen_ky",
+                detail="Có người ký không có quyền ký trình ký; chọn người khác hoặc cấp quyền trước khi gửi.",
+                fields={"nguoi_ky": loi},
+            )
         can_chon = [v for v in loi if v["loai"] == "can_chon_nguoi_ky"]
         raise SigningError(
             code="can_chon_nguoi_ky" if len(can_chon) == len(loi) else "khong_xac_dinh_duoc_nguoi_ky",
