@@ -148,20 +148,11 @@ class RequestAttemptTests(Base):
                 luot_trinh=self.attempt, buoc_quy_trinh=self.pstep, cap_ky=2, ten_cap_ky="C2", thu_tu=1
             )
 
-    def test_signer_unique_in_step_and_delegation_reason(self):
+    def test_signer_unique_in_step(self):
         with self.assertRaises(IntegrityError), transaction.atomic():
             SigningRequestStepSigner.objects.create(
-                buoc_ky=self.step, nguoi_ky=self.u1, ten_nguoi_ky="U1", vai_tro_ky=enums.VaiTroKy.KY_NHAY
+                buoc_ky=self.step, nguoi_ky=self.u1, ten_nguoi_ky="U1", vai_tro_ky=enums.VaiTroKy.KY_CHINH
             )
-        with self.assertRaises(IntegrityError), transaction.atomic():
-            SigningRequestStepSigner.objects.create(
-                buoc_ky=self.step, nguoi_ky=self.u2, ten_nguoi_ky="U2", vai_tro_ky=enums.VaiTroKy.KY_NHAY,
-                uy_quyen_tu=self.u1, ly_do_uy_quyen="",
-            )
-        SigningRequestStepSigner.objects.create(
-            buoc_ky=self.step, nguoi_ky=self.u2, ten_nguoi_ky="U2", vai_tro_ky=enums.VaiTroKy.KY_NHAY,
-            uy_quyen_tu=self.u1, ly_do_uy_quyen="Đi công tác",
-        )
 
 
 class SignatureImmutabilityTests(Base):

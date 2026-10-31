@@ -35,6 +35,7 @@ const localDatabaseEnvironment = {
   DB_PASSWORD: "qlvb_local_only",
   DB_HOST: "127.0.0.1",
   DB_PORT: dbPort,
+  PYTHONUTF8: "1",
 };
 
 function run(command, args, options = {}) {
@@ -96,7 +97,10 @@ async function ensurePythonEnvironment() {
   const installedHash = existsSync(dependencyMarker) ? readFileSync(dependencyMarker, "utf8").trim() : "";
   if (requirementsHash !== installedHash) {
     console.log("Đang cài/cập nhật thư viện backend theo backend/requirements.txt...");
-    await runChecked(python, ["-m", "pip", "install", "-r", requirementsFile], { cwd: backendDir });
+    await runChecked(python, ["-m", "pip", "install", "-r", requirementsFile], {
+      cwd: backendDir,
+      env: { ...process.env, PYTHONUTF8: "1" },
+    });
     writeFileSync(dependencyMarker, `${requirementsHash}\n`, "utf8");
   }
 }

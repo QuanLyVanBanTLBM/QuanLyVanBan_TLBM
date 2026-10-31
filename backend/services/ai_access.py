@@ -35,7 +35,7 @@ def resolve_employee_id(request):
                 return row[0]
         except Exception:
             pass
-    return getattr(user, "pk", None)
+    return None
 
 
 def has_permission_codename(user, codename):

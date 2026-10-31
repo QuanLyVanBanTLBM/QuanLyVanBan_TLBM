@@ -140,6 +140,24 @@ class HierarchicalFolderAPITests(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(user=self.user)
 
+    def test_folder_endpoints_require_authentication(self):
+        self.client.force_authenticate(user=None)
+        endpoints = (
+            ("get", "/api/folders/"),
+            ("get", "/api/folders/tree/"),
+            ("get", "/api/folder-files/"),
+        )
+        for method, endpoint in endpoints:
+            with self.subTest(method=method, endpoint=endpoint):
+                response = getattr(self.client, method)(endpoint)
+                self.assertIn(response.status_code, (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN))
+
+    def test_authenticated_user_can_access_folder_endpoints(self):
+        self.client.force_authenticate(user=self.user)
+        self.assertEqual(self.client.get("/api/folders/").status_code, status.HTTP_200_OK)
+        self.assertEqual(self.client.get("/api/folders/tree/").status_code, status.HTTP_200_OK)
+        self.assertEqual(self.client.get("/api/folder-files/").status_code, status.HTTP_200_OK)
+
     def test_create_and_query_folder_tree_api(self):
         """Kiểm thử API tạo thư mục và lấy cây thư mục."""
         # 1. Tạo root folder qua API

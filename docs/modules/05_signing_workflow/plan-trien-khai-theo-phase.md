@@ -44,7 +44,7 @@ Tài liệu này là lộ trình triển khai backend, sắp xếp từ phần �
 - `SigningProcessStepSigner`, `SigningRequest`, `SigningAttempt`, `SigningRequestStep`, `SigningRequestStepSigner`, `SigningSignature`, `SigningManifest`, `SigningChangeThread`, `SigningChangeMessage`, `SigningAuditLog`, `SigningNotification`.
 - Văn bản: `document_type` (đến/đi/mật) + `van_ban_id`, không FK.
 - Chức vụ: `chuc_vu_id` số nguyên cho phép rỗng tạm thời; CHECK "người ký hoặc chức vụ" khai báo ngay.
-- Ràng buộc unique, CHECK SHA-256, CHECK nhật ký luồng ký, CHECK lý do ủy quyền theo `signing-backend-plan.md` mục 5.2, 5.3.
+- Ràng buộc unique, CHECK SHA-256, CHECK nhật ký luồng ký theo `signing-backend-plan.md` mục 5.2, 5.3.
 - Bất biến ở tầng model (môi trường SQLite chưa có trigger): chặn sửa chữ ký (trừ trường xác minh), chặn sửa/xóa manifest `DA_CHOT`, nhật ký chỉ ghi thêm.
 - Trigger PostgreSQL tương ứng đã có trong CSDL chung; áp dụng khi chuyển sang PostgreSQL.
 
@@ -108,7 +108,7 @@ Căn cứ: `danh-gia-nghiep-vu-va-de-xuat.md`. Làm trước Phase 7 vì đụng
 
 ### Phase 8 — Hành động người ký (xong trên máy, #80)
 - `services/hanh_dong_ky.py`: `ky`, `tu_choi`, `thu_hoi`; API ở `signing-backend-plan.md` mục 7.3.
-- Quy tắc: cấp mở tuần tự, người trong cấp ký song song, cấp đóng khi mọi người ký (ký nháy và ký chính) đã ký; ký chính chờ ký nháy chặn; từ chối là kết thúc; thu hồi chỉ khi cấp còn mở.
+- Quy tắc: cấp mở tuần tự, người trong cấp ký song song, cấp đóng khi mọi người ký đã ký; từ chối là kết thúc; thu hồi chỉ khi cấp còn mở.
 - Đồng thời: khóa dòng lượt trình; chống lặp bằng `khoa_chong_trung_thao_tac` của dòng người ký. Test PostgreSQL: ký trùng hai khóa chỉ tạo một chữ ký; ký cạnh tranh với hủy cho một kết quả nhất quán.
 - Test: `tests/test_hanh_dong_ky_phase8.py`.
 

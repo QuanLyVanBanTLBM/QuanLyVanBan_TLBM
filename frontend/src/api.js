@@ -8,9 +8,10 @@ export async function uploadDocument(file) {
   return apiClient(apiPath("/upload"), { method: "POST", body: formData });
 }
 
-export async function uploadDocumentAsync(file) {
+export async function uploadDocumentAsync(file, replaceExisting = false) {
   const formData = new FormData();
   formData.append("file", file);
+  formData.append("replace_existing", String(replaceExisting));
   return apiClient(apiPath("/upload/async"), { method: "POST", body: formData });
 }
 
@@ -33,8 +34,10 @@ export async function getCategories() {
   return apiClient(apiPath("/categories"));
 }
 
-export async function deleteDocuments() {
-  return apiClient.delete(apiPath("/documents"));
+export async function deleteDocuments(confirmation) {
+  return apiClient.delete(apiPath("/documents"), {
+    body: JSON.stringify({ confirmation }),
+  });
 }
 
 export async function deleteDocument(filename) {

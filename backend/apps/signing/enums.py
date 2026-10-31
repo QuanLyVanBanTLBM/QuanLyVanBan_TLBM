@@ -21,7 +21,6 @@ class PhamViChucVu(models.TextChoices):
 
 
 class VaiTroKy(models.TextChoices):
-    KY_NHAY = "KY_NHAY", "Ký nháy"
     KY_CHINH = "KY_CHINH", "Ký chính"
 
 

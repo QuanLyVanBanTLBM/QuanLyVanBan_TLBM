@@ -31,6 +31,26 @@ describe.each([
     vi.clearAllMocks();
   }
   function request() { return Page === DossiersPage ? recordsService.listDossiers : recordsService.listDocumentTypeCatalog; }
+  it('applies the selected year only on submit, preserves applied year during search, and resets', async () => {
+    await show();
+    const year = String(new Date().getFullYear() - 1);
+    await act(async () => { fireEvent.change(screen.getByRole('combobox'), { target: { value: year } }); });
+    await act(async () => { vi.advanceTimersByTime(500); });
+    expect(request()).not.toHaveBeenCalled();
+    vi.mocked(request()).mockClear();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Apply filters' })); });
+    expect(request()).toHaveBeenCalledTimes(1);
+    expect(request()).toHaveBeenLastCalledWith(expect.objectContaining({ year, page: 1 }));
+    vi.mocked(request()).mockClear();
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: '' } });
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'query' } });
+    await act(async () => { vi.advanceTimersByTime(500); });
+    expect(request()).toHaveBeenLastCalledWith(expect.objectContaining({ year, search: 'query' }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Apply filters' })); });
+    expect(request()).toHaveBeenLastCalledWith(expect.objectContaining({ year: '', search: 'query', page: 1 }));
+    await act(async () => { fireEvent.click(screen.getAllByRole('button', { name: 'Reset' }).at(-1)!); });
+    expect(request()).toHaveBeenLastCalledWith(expect.objectContaining({ year: '', search: '', page: 1 }));
+  });
   it('debounces rapid typing to the latest query', async () => {
     await show();
     const input = screen.getByRole('textbox');

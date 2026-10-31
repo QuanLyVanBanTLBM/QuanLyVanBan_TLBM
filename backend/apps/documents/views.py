@@ -320,6 +320,17 @@ class DocumentViewSet(viewsets.ViewSet):
         raw_data = getattr(self.request, "data", None)
         data_loai = raw_data.get("loai") if (raw_data and hasattr(raw_data, "get")) else None
         loai = self.request.query_params.get("loai") or self.request.query_params.get("type") or data_loai
+
+        # Fallback suy luận loai từ referer nếu request không truyền kèm param
+        if not loai and hasattr(self.request, "headers"):
+            referer = (self.request.headers.get("referer") or "").lower()
+            if "van-ban-di" in referer or "outbound" in referer:
+                loai = "DI"
+            elif "van-ban-den" in referer or "inbound" in referer:
+                loai = "DEN"
+            elif "van-ban-mat" in referer or "confidential" in referer:
+                loai = "MAT"
+
         found_doc = None
         if loai:
             model = get_document_model(loai)
@@ -333,7 +344,8 @@ class DocumentViewSet(viewsets.ViewSet):
                     break
 
         if not found_doc:
-            for model in (VanBanDen, VanBanDi, VanBanMat):
+            order = (VanBanDi, VanBanDen, VanBanMat) if str(loai).upper() in ("DI", "VANBANDI") else (VanBanDen, VanBanDi, VanBanMat)
+            for model in order:
                 obj = model.objects.filter(pk=pk).first()
                 if obj:
                     found_doc = obj

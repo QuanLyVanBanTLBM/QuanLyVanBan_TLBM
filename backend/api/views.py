@@ -1,4 +1,6 @@
 import os
+import json
+import logging
 import threading
 import uuid
 import urllib.error
@@ -19,15 +21,22 @@ from backend.services.ai_access import has_permission_codename, is_ai_admin, res
 from backend.services.document_service import (
     add_to_registry,
     clear_documents,
+    commit_staged_upload,
+    discard_staged_upload,
     delete_document_file,
     list_categories,
     list_documents,
-    save_upload_file,
+    stage_upload_file,
     update_category_in_registry,
 )
 from backend.services.sql_document_source import SqlDocumentAccessError
+from backend.services.ai_model_config import MODEL_CONFIG
+
 _jobs = {}
 _jobs_lock = threading.Lock()
+_upload_lock = threading.Lock()
+logger = logging.getLogger(__name__)
+MAX_CHAT_QUESTION_LENGTH = 4000
 
 
 def _json_body(request):
@@ -37,8 +46,11 @@ def _json_body(request):
         return None
 
 
-def _error(message, status=400):
-    return JsonResponse({"detail": message}, status=status)
+def _error(message, status=400, code=None):
+    payload = {"detail": message}
+    if code:
+        payload["code"] = code
+    return JsonResponse(payload, status=status)
 
 
 def _require_ai_access(request):
@@ -59,18 +71,21 @@ def _set_job(job_id, **values):
         _jobs[job_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
 
 
-def _run_index_job(job_id, saved_path, filename):
+def _run_index_job(job_id, staged_path, filename):
     try:
         from backend.services.rag_service import index_document
 
-        _set_job(job_id, status="processing", message="Đang đọc và phân tích tài liệu...")
-        result = index_document(saved_path)
-        category = result.get("category", "Chưa phân loại")
-        _set_job(job_id, status="processing", message="Đang lưu thông tin tài liệu...")
-        add_to_registry(filename, category, saved_path.stat().st_size)
+        _set_job(job_id, status="processing", message="Đang lập chỉ mục tài liệu...")
+        with _upload_lock:
+            result = index_document(staged_path, source_metadata={"file_name": filename})
+            category = result.get("category", "Chưa phân loại")
+            final_path = commit_staged_upload(staged_path, filename)
+            add_to_registry(filename, category, final_path.stat().st_size)
         _set_job(job_id, status="done", message="Tải lên và lập chỉ mục thành công.", category=category, result=result, error=None)
-    except Exception as exc:
-        _set_job(job_id, status="error", message=f"Lỗi xử lý tài liệu: {exc}", error=str(exc))
+    except Exception:
+        logger.exception("AI document indexing failed for filename=%s", filename)
+        discard_staged_upload(staged_path)
+        _set_job(job_id, status="error", message="Không thể lập chỉ mục tài liệu. Tệp chưa được thêm vào kho.", error="indexing_failed")
 
 
 def root(request):
@@ -89,8 +104,7 @@ def readiness(request):
 
 
 def ai_health(request):
-    has_key = bool(config.GEMINI_API_KEY) if config.MODEL_PROVIDER == "gemini" else bool(os.getenv("OPENAI_API_KEY"))
-    return JsonResponse({"status": "ok", "provider": config.MODEL_PROVIDER, "llm_model": config.LLM_MODEL, "llm_available": has_key, "embed_model": config.EMBED_MODEL, "embed_available": has_key, "available_models": [config.LLM_MODEL, config.EMBED_MODEL]})
+    return JsonResponse({"status": "ok"})
 
 
 @api_view(["POST"])
@@ -111,7 +125,7 @@ def chat(request):
         filename = filename.strip()
     if not isinstance(question, str) or not question.strip():
         return _error("Câu hỏi không được để trống.")
-    if len(question) > 4000:
+    if len(question) > MAX_CHAT_QUESTION_LENGTH:
         return _error("Câu hỏi không được vượt quá 4000 ký tự.")
     if not isinstance(history, list):
         return _error("Lịch sử hội thoại không hợp lệ.")
@@ -132,11 +146,12 @@ def chat(request):
             filename=filename,
         )
         return JsonResponse({"question": question.strip(), "category": category or None, "filename": filename or None, **result})
-    except SqlDocumentAccessError as exc:
-        status = 401 if "danh tính" in str(exc).lower() or "đăng nhập" in str(exc).lower() else 403
-        return _error(str(exc), status)
-    except Exception as exc:
-        return _error(f"Không thể xử lý câu hỏi: {exc}", 502)
+    except SqlDocumentAccessError:
+        logger.exception("AI SQL source failed for user_id=%s", request.user.pk)
+        return _error("Không thể truy cập nguồn dữ liệu AI lúc này.", 503)
+    except Exception:
+        logger.exception("AI chat request failed for user_id=%s", request.user.pk)
+        return _error("Không thể xử lý yêu cầu lúc này. Vui lòng thử lại sau.", 502)
 
 
 def _validate_upload(upload):
@@ -149,23 +164,37 @@ def _validate_upload(upload):
     return ""
 
 
+def _validate_upload_replacement(request, upload):
+    filename = Path(upload.name).name
+    existing_path = config.DOCS_DIR / filename
+    replace_existing = str(request.data.get("replace_existing", "")).lower() == "true"
+    if existing_path.is_file() and not replace_existing:
+        return _error(
+            "A document with this filename already exists. Confirm replacement before uploading.",
+            409,
+            "duplicate_filename",
+        )
+    return None
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def upload_async(request):
     denied = _require_ai_admin(request)
     if denied:
         return denied
-    if request.method != "POST":
-        return _error("Phương thức không được hỗ trợ.", 405)
     upload = request.FILES.get("file")
     error = _validate_upload(upload)
     if error:
         return _error(error)
-    saved_path, _ = save_upload_file(upload)
+    replacement_error = _validate_upload_replacement(request, upload)
+    if replacement_error:
+        return replacement_error
+    staged_path, filename, is_reupload = stage_upload_file(upload)
     job_id = str(uuid.uuid4())
-    _set_job(job_id, status="queued", message="Đang chờ xử lý...", filename=upload.name, category=None, result=None, error=None, started_at=datetime.now(timezone.utc).isoformat())
-    threading.Thread(target=_run_index_job, args=(job_id, saved_path, upload.name), daemon=True).start()
-    return JsonResponse({"job_id": job_id, "filename": upload.name, "reupload": False, "message": "Đã nhận tệp, đang lập chỉ mục...", "poll_url": f"/upload/progress/{job_id}"}, status=202)
+    _set_job(job_id, status="queued", message="Đang chờ xử lý...", filename=filename, category=None, result=None, error=None, started_at=datetime.now(timezone.utc).isoformat())
+    threading.Thread(target=_run_index_job, args=(job_id, staged_path, filename), daemon=True).start()
+    return JsonResponse({"job_id": job_id, "filename": filename, "reupload": is_reupload, "message": "Đã nhận tệp, đang lập chỉ mục...", "poll_url": f"/upload/progress/{job_id}"}, status=202)
 
 
 @api_view(["GET"])
@@ -176,7 +205,7 @@ def upload_progress(request, job_id):
         return denied
     with _jobs_lock:
         job = dict(_jobs.get(job_id, {}))
-    return JsonResponse(job or {"detail": f"Không tìm thấy job '{job_id}'"}, status=200 if job else 404)
+    return JsonResponse(job or {"detail": "Không tìm thấy tiến trình tải lên."}, status=200 if job else 404)
 
 
 @api_view(["POST"])
@@ -185,22 +214,27 @@ def upload_sync(request):
     denied = _require_ai_admin(request)
     if denied:
         return denied
-    if request.method != "POST":
-        return _error("Phương thức không được hỗ trợ.", 405)
     upload = request.FILES.get("file")
     error = _validate_upload(upload)
     if error:
         return _error(error)
-    saved_path, is_reupload = save_upload_file(upload)
+    replacement_error = _validate_upload_replacement(request, upload)
+    if replacement_error:
+        return replacement_error
+    staged_path, filename, is_reupload = stage_upload_file(upload)
     try:
         from backend.services.rag_service import index_document
 
-        result = index_document(saved_path)
-        category = result.get("category", "Chưa phân loại")
-        add_to_registry(upload.name, category, saved_path.stat().st_size)
-        return JsonResponse({"message": "Tải lên và lập chỉ mục thành công.", "filename": upload.name, "saved_path": str(saved_path), "category": category, "reupload": is_reupload, "indexed": result})
-    except Exception as exc:
-        return _error(f"Lỗi xử lý tài liệu: {exc}", 500)
+        with _upload_lock:
+            result = index_document(staged_path, source_metadata={"file_name": filename})
+            category = result.get("category", "Chưa phân loại")
+            final_path = commit_staged_upload(staged_path, filename)
+            add_to_registry(filename, category, final_path.stat().st_size)
+        return JsonResponse({"message": "Tải lên và lập chỉ mục thành công.", "filename": filename, "category": category, "reupload": is_reupload, "indexed": result})
+    except Exception:
+        logger.exception("Synchronous AI document indexing failed for filename=%s", filename)
+        discard_staged_upload(staged_path)
+        return _error("Không thể lập chỉ mục tài liệu. Tệp chưa được thêm vào kho.", 500)
 
 
 @api_view(["GET", "DELETE"])
@@ -210,15 +244,28 @@ def documents(request, filename=None):
         denied = _require_ai_access(request)
         if denied:
             return denied
-        return JsonResponse({"documents": list_documents()})
+        public_documents = [
+            {
+                "filename": item["filename"],
+                "size": item.get("size"),
+                "category": item.get("category"),
+                "upload_time": item.get("upload_time"),
+            }
+            for item in list_documents()
+        ]
+        return JsonResponse({"documents": public_documents})
     denied = _require_ai_admin(request)
     if denied:
         return denied
     if request.method == "DELETE":
+        payload = _json_body(request)
+        if not isinstance(payload, dict) or payload.get("confirmation") != "DELETE":
+            return _error("Cần xác nhận bằng cách nhập DELETE.", 400)
         from backend.services.rag_service import clear_vector_database
 
-        clear_documents()
-        clear_vector_database()
+        with _upload_lock:
+            clear_vector_database()
+            clear_documents()
         return JsonResponse({"message": "Đã xóa tài liệu và dữ liệu chỉ mục."})
     return _error("Phương thức không được hỗ trợ.", 405)
 
@@ -243,14 +290,14 @@ def document_detail(request, filename):
         return _error("Tên tệp không hợp lệ.", 400)
     if request.method != "DELETE":
         return _error("Phương thức không được hỗ trợ.", 405)
-    existed = delete_document_file(safe_name)
-    if existed:
-        try:
-            from backend.services.rag_service import delete_document_vectors
+    try:
+        from backend.services.rag_service import delete_document_vectors
 
-            delete_document_vectors(safe_name)
-        except Exception as exc:
-            print(f"Không xóa được vector cho {safe_name}: {exc}")
+        delete_document_vectors(safe_name)
+    except Exception:
+        logger.exception("AI document vector deletion failed for filename=%s", safe_name)
+        return _error("Không thể xóa tài liệu khỏi kho lúc này.", 503)
+    existed = delete_document_file(safe_name)
     return JsonResponse({"message": f"Đã xóa tài liệu '{safe_name}'." if existed else f"Không tìm thấy tài liệu '{safe_name}'.", "deleted": existed})
 
 
@@ -342,12 +389,29 @@ def ai_settings(request):
         denied = _require_ai_access(request)
         if denied:
             return denied
+        model_options = {
+            name: {"llm_models": list(values["llm_models"]), "embed_model": values["embed_model"]}
+            for name, values in MODEL_CONFIG.items()
+        }
         info = {"status": "ok", "provider": config.MODEL_PROVIDER, "llm_model": config.LLM_MODEL, "embed_model": config.EMBED_MODEL, "vision_model": config.VISION_MODEL}
         if not is_ai_admin(request.user):
             return JsonResponse(info)
-        key = config.GEMINI_API_KEY if config.MODEL_PROVIDER == "gemini" else os.getenv("OPENAI_API_KEY", "")
-        masked = f"{key[:6]}...{key[-4:]}" if len(key) > 10 else ("********" if key else "")
-        return JsonResponse({**info, "has_api_key": bool(key), "api_key_masked": masked})
+        keys = {
+            "gemini": config.GEMINI_API_KEY,
+            "openai": os.getenv("OPENAI_API_KEY", ""),
+        }
+        masked_keys = {
+            provider_name: f"{key[:6]}...{key[-4:]}" if len(key) > 10 else ("********" if key else "")
+            for provider_name, key in keys.items()
+        }
+        return JsonResponse({
+            **info,
+            "has_api_key": bool(keys.get(config.MODEL_PROVIDER)),
+            "api_key_masked": masked_keys.get(config.MODEL_PROVIDER, ""),
+            "api_keys": {name: bool(key) for name, key in keys.items()},
+            "api_key_masked_by_provider": masked_keys,
+            "model_options": model_options,
+        })
     denied = _require_ai_admin(request)
     if denied:
         return denied
@@ -357,33 +421,56 @@ def ai_settings(request):
     if not isinstance(payload, dict):
         return _error("Cấu hình không hợp lệ.")
     provider = str(payload.get("provider", "")).lower().strip()
-    if provider not in {"gemini", "openai"}:
-        return _error("Provider phải là 'gemini' hoặc 'openai'.")
+    if provider not in MODEL_CONFIG:
+        return _error("Provider phải là 'gemini' hoặc 'openai'.", code="provider_not_supported")
     key = str(payload.get("api_key") or (config.GEMINI_API_KEY if provider == "gemini" else os.getenv("OPENAI_API_KEY", ""))).strip()
     if not key:
-        return _error(f"Vui lòng cung cấp API key {provider.upper()}.")
+        return _error(f"Vui lòng cung cấp API key {provider.upper()}.", code="api_key_required")
+    if "\n" in key or "\r" in key:
+        return _error("API key không hợp lệ.", code="invalid_api_key")
+    provider_config = MODEL_CONFIG[provider]
+    llm = str(payload.get("llm_model") or provider_config["default_llm"]).strip()
+    if llm not in provider_config["llm_models"]:
+        return _error("Mô hình LLM không nằm trong danh sách được hỗ trợ.", code="model_not_supported")
+    embed = provider_config["embed_model"]
+    if provider != config.MODEL_PROVIDER:
+        from backend.services import rag_service
+
+        if rag_service.get_chroma_collection().count() > 0:
+            return _error("Đổi nhà cung cấp sẽ đổi kích thước vector. Hãy xóa và lập chỉ mục lại kho tài liệu trước khi chuyển provider.", 409, "provider_switch_reindex_required")
     if provider == "gemini":
         check = urllib.request.Request(
-            f"https://generativelanguage.googleapis.com/v1beta/models?key={key}",
+            "https://generativelanguage.googleapis.com/v1beta/models",
             headers={"x-goog-api-key": key},
         )
-        defaults = ("gemini-3.8-flash", "models/gemini-embedding-001")
     else:
         check = urllib.request.Request("https://api.openai.com/v1/models", headers={"Authorization": f"Bearer {key}"})
-        defaults = ("gpt-4o-mini", "text-embedding-3-small")
     try:
         with urllib.request.urlopen(check, timeout=10) as response:
-            valid = response.status == 200
-        message = "API key không hợp lệ."
+            catalog = json.loads(response.read().decode("utf-8"))
+        if provider == "gemini":
+            available_models = {
+                str(item.get("name", "")).removeprefix("models/")
+                for item in catalog.get("models", [])
+                if "generateContent" in item.get("supportedGenerationMethods", [])
+            }
+            embedding_available = any(
+                str(item.get("name", "")) == embed for item in catalog.get("models", [])
+            )
+        else:
+            available_models = {item.get("id") for item in catalog.get("data", [])}
+            embedding_available = embed in available_models
+        if llm not in available_models:
+            return _error("API key không có quyền sử dụng mô hình đã chọn.", 400, "model_access_denied")
+        if not embedding_available:
+            return _error("API key không có quyền sử dụng mô hình embedding mặc định của provider.", 400, "embedding_access_denied")
     except urllib.error.HTTPError as exc:
-        valid, message = False, f"API key không hợp lệ (HTTP {exc.code})."
-    except (urllib.error.URLError, TimeoutError) as exc:
-        valid, message = False, f"Không thể xác thực API key: {exc}"
-    if not valid:
-        return _error(message)
-    llm = str(payload.get("llm_model") or defaults[0]).strip()
-    embed = str(payload.get("embed_model") or defaults[1]).strip()
-    vision = str(payload.get("vision_model") or llm).strip()
+        logger.warning("AI provider credentials rejected provider=%s status=%s", provider, exc.code)
+        return _error("Không thể xác thực API key với nhà cung cấp.", 400, "invalid_api_key")
+    except (urllib.error.URLError, TimeoutError, ValueError, KeyError):
+        logger.exception("AI provider model catalog check failed provider=%s", provider)
+        return _error("Không thể kết nối nhà cung cấp để xác thực cấu hình.", 503, "provider_unavailable")
+    vision = llm
     updates = {"MODEL_PROVIDER": provider, f"{'GEMINI' if provider == 'gemini' else 'OPENAI'}_API_KEY": key, "LLM_MODEL": llm, "EMBED_MODEL": embed, "VISION_MODEL": vision}
     for name, value in updates.items():
         os.environ[name] = value
@@ -405,7 +492,9 @@ def ai_settings(request):
                 output.append(line)
         output.extend(f"{name}={value}" for name, value in updates.items() if name not in seen)
         env_path.write_text("\n".join(output) + "\n", encoding="utf-8")
-    from backend.services.rag_service import setup_llamaindex
+    from backend.services import rag_service
 
-    setup_llamaindex()
+    for name, value in updates.items():
+        setattr(rag_service, name, value)
+    rag_service.setup_llamaindex()
     return JsonResponse({"success": True, "message": f"Đã cập nhật cấu hình {provider.upper()}.", "provider": provider, "llm_model": llm, "embed_model": embed, "api_key_masked": f"{key[:6]}...{key[-4:]}" if len(key) > 10 else "********"})

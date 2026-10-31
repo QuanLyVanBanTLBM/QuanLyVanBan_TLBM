@@ -1,4 +1,7 @@
+import json
 import sys
+import tempfile
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -99,3 +102,47 @@ class AIAccessTests(TestCase):
             )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(ask.call_args.kwargs["employee_id"], self.ai_user.pk)
+
+    def test_openai_settings_use_bearer_auth_and_supported_models(self):
+        self.client.force_authenticate(self.superuser)
+        fake_rag = SimpleNamespace(setup_llamaindex=MagicMock())
+        response_body = {
+            "data": [
+                {"id": "gpt-4o-mini"},
+                {"id": "text-embedding-3-small"},
+            ]
+        }
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(response_body).encode()
+        mock_response.__enter__.return_value = mock_response
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            (Path(temp_dir) / "backend").mkdir()
+            with (
+                patch.dict(sys.modules, {"backend.services.rag_service": fake_rag}),
+                patch("backend.services.rag_service", fake_rag),
+                patch.dict("os.environ", {}, clear=False),
+                patch("backend.api.views.config.OPENAI_API_KEY", "", create=True),
+                patch("backend.api.views.urllib.request.urlopen", return_value=mock_response) as urlopen,
+                patch.multiple(
+                    "backend.api.views.config",
+                    MODEL_PROVIDER="openai",
+                    BASE_DIR=Path(temp_dir),
+                    LLM_MODEL="gemini-3.8-flash",
+                    EMBED_MODEL="models/gemini-embedding-001",
+                    VISION_MODEL="gemini-3.8-flash",
+                ),
+            ):
+                response = self.client.post(
+                    "/api/ai/settings",
+                    {
+                        "provider": "openai",
+                        "api_key": "test-openai-key",
+                        "llm_model": "gpt-4o-mini",
+                    },
+                    format="json",
+                )
+
+        self.assertEqual(response.status_code, 200)
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.get_header("Authorization"), "Bearer test-openai-key")

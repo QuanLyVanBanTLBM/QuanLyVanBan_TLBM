@@ -31,6 +31,25 @@ describe('DocumentTypesPage shared-list handoff', () => {
     vi.mocked(recordsService.deleteDocumentType).mockResolvedValue(undefined);
   });
   afterEach(() => { cleanup(); setLanguage('vi'); });
+  it('waits for filter submission before changing the year in a dossier', async () => {
+    await show('/records/9/document-types');
+    const request = vi.mocked(recordsService.listDocumentTypes);
+    request.mockClear();
+    const year = String(new Date().getFullYear() - 1);
+    await act(async () => {
+      fireEvent.change(screen.getByRole('combobox', { name: 'Filter by year' }), { target: { value: year } });
+    });
+    expect(request).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Category A' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    await waitFor(() => expect(request).toHaveBeenCalledWith('9', expect.objectContaining({ year, page: 1 })));
+    request.mockClear();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filter by year' }), { target: { value: '' } });
+    expect(request).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    await waitFor(() => expect(request).toHaveBeenCalledWith('9', expect.objectContaining({ year: '', page: 1 })));
+  });
+
   it('shows an independent catalog and forwards the clicked category to incoming', async () => {
     await show();
     fireEvent.click(await screen.findByRole('button', { name: 'Category A' }));

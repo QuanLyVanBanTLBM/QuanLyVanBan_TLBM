@@ -48,7 +48,7 @@ jobs:
   migrate-postgres:
     name: migrate-postgres
     if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     services:
       postgres:
@@ -117,6 +117,26 @@ jobs:
         working-directory: .
         run: python -m unittest discover -s .github/scripts -p "test_*.py"
 
+      - name: Install PostgreSQL 16 client tools for scripts/build_db.py tests
+        run: |
+          set -euo pipefail
+          sudo install -d /etc/apt/keyrings
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/keyrings/postgresql.gpg
+          echo "deb [signed-by=/etc/apt/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client-16
+          CLIENT_BIN=/usr/lib/postgresql/16/bin
+          for tool in psql pg_dump pg_restore; do
+            test -x "$CLIENT_BIN/$tool"
+            version=$("$CLIENT_BIN/$tool" --version)
+            printf '%s\n' "$version"
+            case "$version" in
+              *"(PostgreSQL) 16."*) ;;
+              *) echo "$tool must be PostgreSQL 16, got: $version" >&2; exit 1 ;;
+            esac
+          done
+          echo "$CLIENT_BIN" >> "$GITHUB_PATH"
+
       - name: Test collation của scripts/build_db.py
         working-directory: .
         run: python -m unittest discover -s scripts -p "test_build_db.py"
@@ -184,7 +204,7 @@ jobs:
   all-branches:
     name: all-branches
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     services:
       postgres:

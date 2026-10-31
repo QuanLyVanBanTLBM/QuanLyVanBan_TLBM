@@ -2810,6 +2810,96 @@ class ExcelAttachmentAndOldfileTests(APITestCase):
         att = doc.attachments.first()
         self.assertEqual(att.name, "API_Doc.pdf")
 
+    def test_import_excel_outbound_with_multiple_attachments_and_normalization(self):
+        """Import Văn bản Đi với 2 tệp đính kèm (có khoảng trắng thừa trước đuôi file) vẫn nhận diện đủ cả 2."""
+        from documents.services import import_from_excel
+        from openpyxl import Workbook
+        import io
+
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["Số, ký hiệu VB", "Ngày ban hành", "Trích yếu nội dung", "Hiệu lực", "Phạm vi", "Tệp đính kèm"])
+        # Ghi 2 tệp trong đó tệp 1 có khoảng trắng thừa trước dấu chấm (.pdf)
+        ws.append(["201/DI-NORM", "25/10/2026", "Công văn đi test 2 file đính kèm", "CON_HIEU_LUC", "Nội bộ", "CV_Di_1 .pdf; CV_Di_2.docx"])
+
+        excel_bio = io.BytesIO()
+        wb.save(excel_bio)
+        excel_bio.seek(0)
+
+        f1 = SimpleUploadedFile("CV_Di_1.pdf", b"%PDF-1.4 content di 1", content_type="application/pdf")
+        f2 = SimpleUploadedFile("CV_Di_2.docx", b"content di 2", content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+        res = import_from_excel(excel_bio, "DI", self.user, pham_vi="NOI_BO", attachments=[f1, f2])
+        self.assertEqual(res["created"], 1)
+
+        doc = VanBanDi.objects.get(so_hieu="201/DI-NORM")
+        self.assertEqual(doc.attachments.count(), 2)
+        att_names = set(doc.attachments.values_list("name", flat=True))
+        self.assertIn("CV_Di_1 .pdf", att_names)
+        self.assertIn("CV_Di_2.docx", att_names)
+
+    def test_import_excel_with_smart_extension_matching(self):
+        """Khớp thông minh định dạng tệp: Excel ghi .doc nhưng tệp tải lên là .docx (hoặc không ghi đuôi) vẫn nhận đủ."""
+        from documents.services import import_from_excel
+        from openpyxl import Workbook
+        import io
+
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["Số, ký hiệu VB", "Ngày ban hành", "Trích yếu nội dung", "Hiệu lực", "Phạm vi", "Tệp đính kèm"])
+        # Cột tệp ghi: 1 file pdf, 1 file .doc (nhưng thực tế là .docx), 1 file không đuôi (nhưng thực tế là .xlsx)
+        ws.append(["202/DI-SMART", "25/10/2026", "VB test smart extension", "CON_HIEU_LUC", "Nội bộ", "HoaDon_test.pdf; QNA.doc; BangLuong"])
+
+        excel_bio = io.BytesIO()
+        wb.save(excel_bio)
+        excel_bio.seek(0)
+
+        f1 = SimpleUploadedFile("HoaDon_test.pdf", b"%PDF-1.4 sample", content_type="application/pdf")
+        f2 = SimpleUploadedFile("QNA.docx", b"docx sample content", content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        f3 = SimpleUploadedFile("BangLuong.png", b"\x89PNG\r\n\x1a\n sample", content_type="image/png")
+
+        res = import_from_excel(excel_bio, "DI", self.user, pham_vi="NOI_BO", attachments=[f1, f2, f3])
+        self.assertEqual(res["created"], 1)
+        self.assertEqual(len(res["errors"]), 0)
+
+        doc = VanBanDi.objects.get(so_hieu="202/DI-SMART")
+        self.assertEqual(doc.attachments.count(), 3)
+        att_names = set(doc.attachments.values_list("name", flat=True))
+        self.assertIn("HoaDon_test.pdf", att_names)
+        self.assertIn("QNA.docx", att_names)
+        self.assertIn("BangLuong.png", att_names)
+
+    def test_delete_outbound_document_with_same_id_as_inbound_restricted(self):
+        """Xóa Văn bản Đi khi tồn tại Văn bản Đến Hạn chế có cùng ID: gọi với ?loai=DI xóa đúng Văn bản Đi."""
+        self.user.is_superuser = True
+        self.user.save()
+
+        # Tạo 1 VB Đến Hạn chế
+        doc_den = VanBanDen.objects.create(
+            so_hieu="100/DEN-HC",
+            pham_vi=PhamVi.HAN_CHE,
+            trich_yeu="Văn bản đến hạn chế cấm xóa",
+            nguoi_tao=self.user,
+        )
+        # Tạo 1 VB Đi Nội bộ và gán cùng ID với doc_den để kiểm thử trùng ID giữa 2 bảng
+        doc_di = VanBanDi(
+            id=doc_den.id,
+            so_hieu="100/DI-NB",
+            pham_vi=PhamVi.NOI_BO,
+            trich_yeu="Văn bản đi nội bộ được phép xóa",
+            nguoi_tao=self.user,
+        )
+        doc_di.save(force_insert=True)
+
+        # 1. Gọi DELETE không có loai=DI nhưng có Header Referer từ trang văn bản đi
+        res1 = self.client.delete(f"/api/documents/{doc_di.id}/?loai=DI")
+        self.assertEqual(res1.status_code, status.HTTP_204_NO_CONTENT)
+
+        # Kiểm chứng: Văn bản Đi đã bị xóa
+        self.assertFalse(VanBanDi.objects.filter(id=doc_di.id).exists())
+        # Văn bản Đến Hạn chế vẫn an toàn, không hề bị ảnh hưởng
+        self.assertTrue(VanBanDen.objects.filter(id=doc_den.id).exists())
+
 
 
 class HieuLucPermissionTests(APITestCase):

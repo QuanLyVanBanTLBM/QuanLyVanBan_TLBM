@@ -42,7 +42,7 @@ function chiTietNhatKy(e: NhatKy, t: HamDich): string {
     const phienBan = e.chi_tiet.match(/^Thay bằng phiên bản (\d+)$/)?.[1];
     return phienBan ? t('chiTiet.quyTrinhThayThe', { so: Number(phienBan) }) : '';
   }
-  return ['KY', 'TU_CHOI', 'YEU_CAU_SUA', 'HUY_TRINH_KY', 'UY_QUYEN_KY'].includes(e.hanh_dong)
+  return ['KY', 'TU_CHOI', 'YEU_CAU_SUA', 'HUY_TRINH_KY'].includes(e.hanh_dong)
     ? e.chi_tiet
     : '';
 }

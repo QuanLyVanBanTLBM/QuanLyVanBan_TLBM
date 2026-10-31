@@ -182,13 +182,18 @@ class DualAuthenticationTests(TestCase):
     def test_provider_errors_never_accept_sample_credentials(self):
         for error in (urllib.error.URLError("offline"), TimeoutError(), ValueError("invalid JSON")):
             with self.subTest(error=type(error).__name__):
-                self.provider.side_effect = error
-                result = check_alpaca_auth("phanquocdung", "Alpaca#2025")
-                self.assertFalse(result["success"])
-                self.assertFalse(result["is_fallback"])
-                response = self.client.post("/api/auth/login/", {
-                    "username": "phanquocdung", "password": "Alpaca#2025",
-                })
+                if isinstance(error, ValueError):
+                    self.provider.side_effect = None
+                    self.provider.return_value.__enter__.return_value.read.return_value = b"not-json"
+                else:
+                    self.provider.side_effect = error
+                with self.assertLogs("accounts.alpaca_auth", level="WARNING"):
+                    result = check_alpaca_auth("phanquocdung", "Alpaca#2025")
+                    self.assertFalse(result["success"])
+                    self.assertFalse(result["is_fallback"])
+                    response = self.client.post("/api/auth/login/", {
+                        "username": "phanquocdung", "password": "Alpaca#2025",
+                    })
                 self.assertEqual(response.status_code, 401)
                 self.assertNotIn("access", response.data)
                 self.assertFalse(User.objects.filter(username="phanquocdung").exists())

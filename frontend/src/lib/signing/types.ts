@@ -7,7 +7,7 @@ export type TrangThaiLuot = 'CHO_KY' | 'YEU_CAU_SUA' | 'HOAN_THANH' | 'TU_CHOI' 
 export type TrangThaiCap = 'CHUA_MO' | 'DANG_KY' | 'TAM_DUNG' | 'HOAN_THANH';
 export type TrangThaiNguoiKy = 'CHO_KY' | 'DA_KY' | 'TU_CHOI' | 'YEU_CAU_SUA';
 export type TrangThaiTepHoanTat = 'DANG_XU_LY' | 'LOI' | 'THANH_CONG' | null;
-export type VaiTroKy = 'KY_NHAY' | 'KY_CHINH';
+export type VaiTroKy = 'KY_CHINH';
 export type PhamViQuyTrinh = 'CONG_TY' | 'PHONG_BAN';
 
 export interface NguoiDungHienTai {
@@ -37,7 +37,6 @@ export interface NguoiKyCauHinh {
   ten_chuc_vu: string | null;
   pham_vi_chuc_vu: string | null;
   vai_tro_ky: VaiTroKy;
-  chan_ky_chinh: boolean;
   thu_tu: number;
 }
 
@@ -82,17 +81,12 @@ export interface NguoiKyLuot {
   ten_nguoi_ky: string;
   ten_chuc_vu: string | null;
   vai_tro_ky: VaiTroKy;
-  chan_ky_chinh: boolean;
   trang_thai: TrangThaiNguoiKy;
   /** Backend policy projection for the current user; missing means not eligible. */
   thoi_diem_mo: string | null;
   ngay_ky: string | null;
   ngay_tu_choi: string | null;
   ly_do_tu_choi: string;
-  uy_quyen_tu: number | null;
-  ten_nguoi_uy_quyen: string | null;
-  ly_do_uy_quyen: string;
-  ngay_uy_quyen: string | null;
   trang_ky: number | null;
   toa_do_x: string | null;
   toa_do_y: string | null;

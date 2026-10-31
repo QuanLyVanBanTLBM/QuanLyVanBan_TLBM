@@ -5,6 +5,9 @@ import base64
 import io
 import json
 import hashlib
+import logging
+import os
+import uuid
 import urllib.request
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -34,6 +37,7 @@ from backend.config import (
     CHAT_HISTORY_MAX_TURNS,
     CHROMA_DIR,
     COLLECTION_NAME,
+    DOCS_DIR,
     EMBED_MODEL,
     GEMINI_API_KEY,
     LLM_MODEL,
@@ -51,6 +55,8 @@ from backend.config import (
     VISION_OCR_PDF_DPI,
     VISION_OCR_TIMEOUT,
 )
+
+logger = logging.getLogger(__name__)
 
 
 NO_ANSWER = "Xin lỗi, thông tin bạn hỏi không có trong tài liệu được cung cấp nên tôi không thể trả lời."
@@ -110,6 +116,8 @@ def setup_llamaindex():
     provider = MODEL_PROVIDER.lower().strip()
 
     if provider == "openai":
+        if not os.getenv("OPENAI_API_KEY", "").strip():
+            raise RuntimeError("OPENAI_API_KEY is not configured")
         from llama_index.embeddings.openai import OpenAIEmbedding
         from llama_index.llms.openai import OpenAI
 
@@ -117,8 +125,9 @@ def setup_llamaindex():
         Settings.llm = OpenAI(model=LLM_MODEL, request_timeout=180.0)
         print(f"✅ OpenAI LLM: {LLM_MODEL}")
         print(f"✅ OpenAI Embed: {EMBED_MODEL}")
-    else:
-        # Default: Gemini Cloud AI
+    elif provider == "gemini":
+        if not GEMINI_API_KEY.strip():
+            raise RuntimeError("GEMINI_API_KEY is not configured")
         from backend.services.gemini_service import GeminiRESTLLM, GeminiRESTEmbedding
 
         Settings.embed_model = GeminiRESTEmbedding(api_key=GEMINI_API_KEY, model_name=EMBED_MODEL)
@@ -126,6 +135,8 @@ def setup_llamaindex():
         print(f"✅ Gemini LLM: {LLM_MODEL}")
         print(f"✅ Gemini Embed: {EMBED_MODEL}")
         print(f"✅ Gemini Vision Model: {VISION_MODEL}")
+    else:
+        raise ValueError(f"Unsupported AI provider: {provider}")
 
     Settings.text_splitter = SentenceSplitter(
         chunk_size=CHILD_CHUNK_SIZE,
@@ -1483,39 +1494,63 @@ def index_document(file_path: Path, category=None, source_metadata=None, extra_t
     if extra_text:
         page_items.insert(0, {"text": extra_text, "page": None, "reader": "sql-metadata"})
     text = "\n\n".join(item["text"] for item in page_items if item["text"].strip())
-
-    print("=" * 60)
-    print("FILE:", file_path.name)
-    print("SECTIONS:", len(page_items))
-    print("TEXT LENGTH:", len(text))
-    print("TEXT PREVIEW:")
-    print(text[:3000])
-    print("=" * 60)
-
     if not text or len(text.strip()) < 20:
         raise ValueError("Không đọc được nội dung tài liệu. File có thể là PDF scan ảnh cần OCR.")
 
-    # Tự động phân loại chủ đề bằng LLM
     category = category or classify_document(text)
-    print(f"CATEGORY: {category}")
+    source_metadata = dict(source_metadata or {})
+    if not source_metadata.get("sql_doc_key"):
+        source_metadata.setdefault("source_class", "ai_knowledge_base")
+    logical_filename = Path(source_metadata.get("file_name") or file_path.name).name
+    ingest_id = uuid.uuid4().hex
+    source_metadata["file_name"] = logical_filename
+    source_metadata["file_path"] = str(DOCS_DIR / logical_filename)
+    source_metadata["_upload_ingest_id"] = ingest_id
 
-    if not source_metadata or not source_metadata.get("sql_doc_key"):
-        source_metadata = {**(source_metadata or {}), "source_class": "ai_knowledge_base"}
+    collection = get_chroma_collection()
+    if source_metadata.get("sql_doc_key"):
+        existing = collection.get(where={"sql_doc_key": source_metadata["sql_doc_key"]})
+    else:
+        existing = collection.get(where={"file_name": logical_filename})
+    existing_ids = existing.get("ids") or []
+
     documents = build_parent_child_documents(file_path, page_items, category=category, source_metadata=source_metadata)
-
     if not documents:
         raise ValueError("Không tạo được chunk nào từ tài liệu.")
 
     try:
-        if source_metadata and source_metadata.get("sql_doc_key"):
-            get_chroma_collection().delete(where={"sql_doc_key": source_metadata["sql_doc_key"]})
-        else:
-            delete_document_vectors(file_path.name)
-        print(f"♻️  Đã xóa vector cũ của: {file_path.name}")
-    except Exception as error:
-        print(f"⚠️  Không xóa được vector cũ của {file_path.name}: {error}")
+        _insert_documents(documents)
+        inserted = collection.get(where={"_upload_ingest_id": ingest_id}, include=["metadatas"])
+        inserted_ids = inserted.get("ids") or []
+        if not inserted_ids:
+            raise RuntimeError("Document indexing produced no stored chunks")
+    except Exception:
+        try:
+            collection.delete(where={"_upload_ingest_id": ingest_id})
+        except Exception:
+            logger.exception("Failed to clean partial document indexing for %s", logical_filename)
+        raise
 
-    _insert_documents(documents)
+    # Preserve the previous vectors until every new chunk has been embedded and stored.
+    try:
+        if existing_ids:
+            collection.delete(ids=existing_ids)
+    except Exception:
+        try:
+            collection.delete(where={"_upload_ingest_id": ingest_id})
+        except Exception:
+            logger.exception("Failed to roll back replacement vectors for %s", logical_filename)
+        raise
+
+    try:
+        promoted_metadata = []
+        for metadata in inserted.get("metadatas") or []:
+            clean_metadata = dict(metadata)
+            clean_metadata.pop("_upload_ingest_id", None)
+            promoted_metadata.append(clean_metadata)
+        collection.update(ids=inserted_ids, metadatas=promoted_metadata)
+    except Exception:
+        logger.exception("Indexed document replacement cleanup failed for %s", logical_filename)
 
     return {
         "document_count": len(documents),
@@ -1832,8 +1867,9 @@ def generate_conversational_response(question: str, history=None) -> str:
         answer = str(Settings.llm.complete(prompt)).strip()
         if answer:
             return answer
-    except Exception as exc:
-        print(f"Conversational LLM generation failed: {exc}")
+    except Exception:
+        logger.exception("Conversational LLM generation failed")
+        raise
 
     # Fallback tự nhiên nếu có lỗi kết nối
     norm = normalize_for_match(question)
@@ -1984,20 +2020,23 @@ def ask_document(question: str, history=None, category: str | None = None, user=
             context = build_context_from_sources(sources)
     except Exception as error:
         if sql_mode:
+            logger.exception("SQL document retrieval failed")
             raise SqlDocumentAccessError("Khong the truy cap kho tai lieu SQL an toan.") from error
         if business_sources and not clean_filename:
             sources = business_sources[:MAX_VISIBLE_SOURCES]
             context = build_context_from_sources(sources)
         # An unavailable/empty vector store should not prevent general chat or spec answers.
-        print(f"Document retrieval unavailable; answering without retrieved sources: {error}")
+        logger.exception("Document retrieval failed")
+
+    if not sources or not context.strip():
+        return {"answer": NO_ANSWER, "sources": []}
 
     prompt = build_answer_prompt(question, context, history, clean_filename)
     try:
         answer = str(Settings.llm.complete(prompt)).strip()
-    except Exception as error:
-        print(f"LLM generation failed: {error}")
-        fallback = LLM_FALLBACK_ANSWER if sources else "Mình chưa kết nối được mô hình AI lúc này. Bạn thử lại sau nhé."
-        return {"answer": fallback, "sources": public_sources(sources)}
+    except Exception:
+        logger.exception("LLM generation failed")
+        raise
 
     if is_no_answer(answer):
         return {"answer": NO_ANSWER, "sources": public_sources(sources)}

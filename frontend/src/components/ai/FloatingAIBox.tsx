@@ -1,403 +1,403 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivePageId } from '@app-types/navigation';
+import { askQuestion, getAISettings } from '../../api';
+import { t as translate, useTranslation, type SupportedLanguage } from '@i18n/translate';
 
 interface FloatingAIBoxProps {
   onNavigate?: (pageId: ActivePageId) => void;
+}
+
+interface Source {
+  file_name?: string;
+  page?: number | null;
+  source_type?: string | null;
 }
 
 interface Message {
   id: string;
   sender: 'ai' | 'user';
   text: string;
-  time: string;
+  createdAt: number;
   quickReplies?: string[];
+  sources?: Source[];
 }
 
+interface AIConfig {
+  provider?: string;
+  llm_model?: string;
+}
+
+const MAX_WIDGET_QUESTION_LENGTH = 4000;
+
 let floatingMsgSeq = 0;
-function createBoxMessage(sender: 'ai' | 'user', text: string): Message {
+function createBoxMessage(sender: Message['sender'], text: string, extras: Partial<Message> = {}): Message {
   return {
     id: `${sender}-${Date.now().toString(36)}-${++floatingMsgSeq}`,
     sender,
     text,
-    time: 'Vừa xong',
+    createdAt: Date.now(),
+    ...extras,
   };
 }
 
-const INITIAL_MESSAGES: Message[] = [
-  {
-    id: 'msg-init',
-    sender: 'ai',
-    text: `**Xin chào Quý Cán bộ!**\nTôi là **Trợ Lý AI TLBM (GPT-4o)** — trợ lý tra cứu quy trình và hỗ trợ nghiệp vụ văn bản.\n\nHãy chọn gợi ý bên dưới hoặc gõ câu hỏi để tôi hỗ trợ bạn ngay!`,
-    time: 'Vừa xong',
-    quickReplies: [
-      'Quy trình tiếp nhận văn bản đến?',
-      'Quy chế xử lý văn bản Tuyệt Mật?',
-      'Sơ đồ trình ký số điện tử?',
-      'Phân quyền vai trò cán bộ nhân viên?',
-    ],
-  },
-];
+function createInitialMessages(language: SupportedLanguage): Message[] {
+  const t = (key: string) => translate(key, undefined, language);
+  return [
+    {
+      id: 'msg-init',
+      sender: 'ai',
+      text: t('floatingAI.welcome'),
+      createdAt: Date.now(),
+      quickReplies: [
+        t('floatingAI.suggestionIncoming'),
+        t('floatingAI.suggestionLookup'),
+        t('floatingAI.suggestionSigning'),
+        t('floatingAI.suggestionPermissions'),
+      ],
+    },
+  ];
+}
+
+function safeLinkTarget(href: string): string | null {
+  if (href.startsWith('/') && !href.startsWith('//')) return href;
+  try {
+    const parsed = new URL(href, window.location.origin);
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? href : null;
+  } catch {
+    return null;
+  }
+}
+
+function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
+  const pattern = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[[^\]]+\]\((?:https?:\/\/|\/)[^)]+\))/g;
+  const nodes: React.ReactNode[] = [];
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > cursor) nodes.push(text.slice(cursor, match.index));
+    const token = match[0];
+    if (token.startsWith('**')) {
+      nodes.push(<strong key={`${keyPrefix}-${match.index}`}>{token.slice(2, -2)}</strong>);
+    } else if (token.startsWith('`')) {
+      nodes.push(<code key={`${keyPrefix}-${match.index}`} className="rounded bg-surface-hover px-1">{token.slice(1, -1)}</code>);
+    } else if (token.startsWith('[')) {
+      const linkMatch = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(token);
+      const href = linkMatch ? safeLinkTarget(linkMatch[2]) : null;
+      nodes.push(href ? (
+        <a key={`${keyPrefix}-${match.index}`} href={href} target={href.startsWith('/') ? undefined : '_blank'} rel="noreferrer" className="text-primary underline">
+          {linkMatch?.[1]}
+        </a>
+      ) : token);
+    } else {
+      nodes.push(<em key={`${keyPrefix}-${match.index}`}>{token.slice(1, -1)}</em>);
+    }
+    cursor = pattern.lastIndex;
+  }
+  if (cursor < text.length) nodes.push(text.slice(cursor));
+  return nodes;
+}
+
+function FormattedMessage({ text }: { text: string }) {
+  const lines = text.split('\n');
+  const blocks: React.ReactNode[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index];
+    if (line.trim().startsWith('```')) {
+      const code: string[] = [];
+      index += 1;
+      while (index < lines.length && !lines[index].trim().startsWith('```')) {
+        code.push(lines[index]);
+        index += 1;
+      }
+      blocks.push(<pre key={`code-${index}`} className="my-2 overflow-x-auto rounded-lg bg-surface-hover p-2"><code>{code.join('\n')}</code></pre>);
+      index += 1;
+      continue;
+    }
+
+    const trimmed = line.trim();
+    if (!trimmed) {
+      blocks.push(<div key={`space-${index}`} className="h-1" />);
+      index += 1;
+      continue;
+    }
+    const isTableSeparator = (candidate: string) => /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(candidate);
+    if (trimmed.includes('|') && index + 1 < lines.length && isTableSeparator(lines[index + 1])) {
+      const parseRow = (row: string) => row.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => cell.trim());
+      const headers = parseRow(trimmed);
+      index += 2;
+      const rows: string[][] = [];
+      while (index < lines.length && lines[index].includes('|') && lines[index].trim()) {
+        rows.push(parseRow(lines[index]));
+        index += 1;
+      }
+      blocks.push(<div key={`table-${index}`} className="my-2 max-w-full overflow-x-auto">
+        <table className="w-full border-collapse text-left text-[11px]">
+          <thead><tr>{headers.map((cell, cellIndex) => <th key={cellIndex} className="border border-subtle bg-surface-hover px-2 py-1">{renderInline(cell, `table-head-${index}-${cellIndex}`)}</th>)}</tr></thead>
+          <tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}>{headers.map((_, cellIndex) => <td key={cellIndex} className="border border-subtle px-2 py-1">{renderInline(row[cellIndex] || '', `table-cell-${index}-${rowIndex}-${cellIndex}`)}</td>)}</tr>)}</tbody>
+        </table>
+      </div>);
+      continue;
+    }
+    if (/^#{1,3}\s/.test(trimmed)) {
+      blocks.push(<h4 key={`heading-${index}`} className="my-1 font-bold">{renderInline(trimmed.replace(/^#{1,3}\s+/, ''), `heading-${index}`)}</h4>);
+      index += 1;
+      continue;
+    }
+    if (trimmed.startsWith('> ')) {
+      blocks.push(<blockquote key={`quote-${index}`} className="my-1 border-l-2 border-primary ps-2 text-text-secondary">{renderInline(trimmed.slice(2), `quote-${index}`)}</blockquote>);
+      index += 1;
+      continue;
+    }
+    if (/^[-*]\s+/.test(trimmed) || /^\d+\.\s+/.test(trimmed)) {
+      const ordered = /^\d+\.\s+/.test(trimmed);
+      const items: string[] = [];
+      while (index < lines.length && (ordered ? /^\s*\d+\.\s+/.test(lines[index]) : /^\s*[-*]\s+/.test(lines[index]))) {
+        items.push(lines[index].trim().replace(ordered ? /^\d+\.\s+/ : /^[-*]\s+/, ''));
+        index += 1;
+      }
+      const List = ordered ? 'ol' : 'ul';
+      blocks.push(<List key={`list-${index}`} className={`my-1 space-y-0.5 ps-5 ${ordered ? 'list-decimal' : 'list-disc'}`}>
+        {items.map((item, itemIndex) => <li key={itemIndex}>{renderInline(item, `list-${index}-${itemIndex}`)}</li>)}
+      </List>);
+      continue;
+    }
+    blocks.push(<p key={`paragraph-${index}`} className="my-1">{renderInline(line, `paragraph-${index}`)}</p>);
+    index += 1;
+  }
+  return <div className="break-words">{blocks}</div>;
+}
 
 export default function FloatingAIBox({ onNavigate }: FloatingAIBoxProps) {
+  const { t, currentLang } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [inputMessage, setInputMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
+  const [error, setError] = useState('');
+  const [aiConfig, setAiConfig] = useState<AIConfig | null>(null);
+  const [messages, setMessages] = useState<Message[]>(() => createInitialMessages(currentLang));
+  const visibleMessages = useMemo(() => {
+    const localizedWelcome = createInitialMessages(currentLang)[0];
+    return messages.map((message) => message.id === 'msg-init'
+      ? { ...message, text: localizedWelcome.text, quickReplies: localizedWelcome.quickReplies }
+      : message);
+  }, [messages, currentLang]);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const windowRef = useRef<HTMLDivElement>(null);
+  const sendingRef = useRef(false);
 
-  // Vị trí dọc (khoảng cách tính từ đáy màn hình)
-  const [bottomPos, setBottomPos] = useState<number>(() => {
-    try {
-      const saved = localStorage.getItem('tlbm_ai_bottom_pos');
-      if (saved) {
-        const val = parseInt(saved, 10);
-        if (!isNaN(val) && val >= 68 && val <= window.innerHeight - 90) {
-          return val;
-        }
-      }
-    } catch {
-      // Ignore localStorage access errors
-    }
-    return 72; // Mặc định 72px trên thanh footer
-  });
-
-  const [isDragging, setIsDragging] = useState(false);
-  const dragStartYRef = useRef<number>(0);
-  const initialBottomRef = useRef<number>(72);
-  const hasMovedRef = useRef<boolean>(false);
-
-  const handlePointerDown = (e: React.PointerEvent) => {
-    if (e.button !== 0) return;
-    try {
-      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    } catch {
-      // Ignore pointer capture errors
-    }
-    dragStartYRef.current = e.clientY;
-    initialBottomRef.current = bottomPos;
-    hasMovedRef.current = false;
-    setIsDragging(true);
-  };
-
-  const handlePointerMove = (e: React.PointerEvent) => {
-    if (!isDragging) return;
-    const deltaY = dragStartYRef.current - e.clientY; // Di chuột lên thì deltaY > 0 -> bottom tăng
-    if (Math.abs(deltaY) > 4) {
-      hasMovedRef.current = true;
-    }
-    const maxBottom = Math.max(72, window.innerHeight - 90);
-    const newBottom = Math.max(72, Math.min(maxBottom, initialBottomRef.current + deltaY));
-    setBottomPos(newBottom);
-  };
-
-  const handlePointerUp = (e: React.PointerEvent) => {
-    if (!isDragging) return;
-    try {
-      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-    } catch {
-      // Ignore pointer release errors
-    }
-    setIsDragging(false);
-
-    if (hasMovedRef.current) {
-      try {
-        localStorage.setItem('tlbm_ai_bottom_pos', bottomPos.toString());
-      } catch {
-        // Ignore localStorage save errors
-      }
-    } else {
-      setIsOpen(true);
-      setIsMinimized(false);
-    }
-  };
-
-  // Cuộn xuống tin nhắn mới nhất
   useEffect(() => {
-    if (isOpen && !isMinimized) {
-      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    try {
+      localStorage.removeItem('tlbm_ai_box_pos');
+    } catch {
+      // Storage may be unavailable in private browsing contexts.
     }
-  }, [messages, isOpen, isMinimized, isTyping]);
+  }, []);
 
-  // Trả lời AI thông minh
-  const generateAIResponse = (query: string): string => {
-    const q = query.toLowerCase();
+  useEffect(() => {
+    let cancelled = false;
+    getAISettings()
+      .then((settings: AIConfig) => {
+        if (!cancelled) setAiConfig(settings);
+      })
+      .catch(() => {
+        // The widget still uses the server's configured provider when it sends a request.
+      });
+    const handleConfigUpdate = (event: Event) => {
+      const updated = (event as CustomEvent<AIConfig>).detail;
+      if (updated && !cancelled) setAiConfig((current) => ({ ...current, ...updated }));
+    };
+    window.addEventListener('tlbm_ai_config_updated', handleConfigUpdate);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('tlbm_ai_config_updated', handleConfigUpdate);
+    };
+  }, []);
 
-    if (q.includes('văn bản đến') || q.includes('tiếp nhận') || q.includes('đến')) {
-      return `**Quy Trình Tiếp Nhận Văn Bản Đến:**\n1. **Tiếp nhận & Vào sổ:** Văn thư tiếp nhận văn bản giấy hoặc điện tử, kiểm tra dấu và tính hợp lệ.\n2. **Số hóa & Phân loại:** Quét scan tài liệu PDF đính kèm, gắn số đến, phân loại độ khẩn (Thường/Khẩn/Hỏa tốc).\n3. **Trình Bút phê:** Chuyển Ban Giám Hiệu duyệt phân công đơn vị chủ trì xử lý qua hệ thống.`;
+  useEffect(() => {
+    if (isOpen && !isMinimized) chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [visibleMessages, isOpen, isMinimized, isTyping]);
+
+  const handleSendMessage = async (textToSend?: string) => {
+    const text = (textToSend ?? inputMessage).trim();
+    if (!text || sendingRef.current) return;
+    if (text.length > MAX_WIDGET_QUESTION_LENGTH) {
+      setError('aiAssistant.msg.questionTooLong');
+      return;
     }
 
-    if (q.includes('mật') || q.includes('tuyệt mật') || q.includes('bảo mật') || q.includes('hạn chế')) {
-      return `**Quy Chế Xử Lý Văn Bản Bảo Mật & Phạm Vi Hạn Chế (TLBM):**\n- Phân định phạm vi văn bản: **Công khai** hoặc **Hạn chế** (được quản lý trực tiếp trên phân hệ Văn bản đến / Văn bản đi).\n- Văn bản Hạn chế chỉ phân phối đích danh CBNV và đơn vị chủ trì có thẩm quyền được xem nội dung.\n- Hệ thống ghi vết nhật ký truy cập (Audit Log) theo tiêu chuẩn an toàn an ninh dữ liệu số.`;
-    }
-
-    if (q.includes('ký số') || q.includes('trình ký') || q.includes('phê duyệt')) {
-      return `**Quy Trình Trình Ký:**\n- Cán bộ tải PDF dự thảo chưa vào sổ hoặc chọn PDF đính kèm trên văn bản đi đã đăng ký, rồi chọn luồng duyệt.\n- Người có thẩm quyền xem tài liệu và ký theo từng cấp.\n- Sau khi duyệt PDF dự thảo, người tạo đăng ký PDF kết quả trong Văn bản đi rồi liên kết hồ sơ; hệ thống không tự cấp số hay tự ban hành văn bản.`;
-    }
-
-    if (q.includes('phân quyền') || q.includes('nhân viên') || q.includes('cbnv')) {
-      return `**Hệ Thống Phân Quyền & Hồ Sơ Cán Bộ Nhân Viên:**\n- Cấu trúc 2 cấp: Cấp 1 (Khối/Khu vực) và Cấp 2 (Đơn vị phòng ban).\n- Ma trận quyền RBAC chi tiết: Admin hệ thống, Lãnh đạo duyệt ký, Văn thư lưu trữ, Cán bộ chuyên môn.\n- Tự động che giấu năm sinh và mã hóa thông tin nhạy cảm của nhân sự.`;
-    }
-
-    return `**Trợ Lý AI TLBM (GPT-4o):**\nTôi đã ghi nhận yêu cầu của bạn về: *"${query}"*.\n\nTrong hệ thống TLBM, bạn có thể xem nhanh dữ liệu tại:\n- **Trang chủ Dashboard:** Thống kê văn bản đến/đi trong năm.\n- **Quản lý văn bản:** Danh mục phân loại và xử lý luồng công việc.\n- **Cài đặt:** Tùy chỉnh chế độ hiển thị Sáng/Tối theo sở thích.`;
-  };
-
-  const handleSendMessage = (textToSend?: string) => {
-    const text = (textToSend || inputMessage).trim();
-    if (!text) return;
-
-    const userMsg = createBoxMessage('user', text);
-
-    setMessages((prev) => [...prev, userMsg]);
+    sendingRef.current = true;
+    setError('');
+    const previousMessages = messages.filter((message) => message.id !== 'msg-init');
+    const history = previousMessages.slice(-8).map((message) => ({
+      role: message.sender === 'ai' ? 'assistant' : 'user',
+      content: message.text,
+    }));
+    setMessages((previous) => [...previous, createBoxMessage('user', text)]);
     setInputMessage('');
     setIsTyping(true);
 
-    // Giả lập độ trễ xử lý AI thông minh
-    setTimeout(() => {
-      const replyText = generateAIResponse(text);
-      const aiMsg = createBoxMessage('ai', replyText);
-      setMessages((prev) => [...prev, aiMsg]);
+    try {
+      const response = await askQuestion(text, history);
+      const answer = typeof response?.answer === 'string' && response.answer.trim()
+        ? response.answer
+        : t('floatingAI.emptyResponse');
+      const sources = Array.isArray(response?.sources) ? response.sources as Source[] : [];
+      setMessages((previous) => [...previous, createBoxMessage('ai', answer, { sources })]);
+    } catch {
+      setError('floatingAI.requestFailed');
+    } finally {
+      sendingRef.current = false;
       setIsTyping(false);
-    }, 650);
+    }
   };
 
   const handleClearHistory = () => {
-    if (confirm('Bạn có muốn làm mới cuộc trò chuyện với Trợ lý AI không?')) {
-      setMessages(INITIAL_MESSAGES);
+    if (isTyping) return;
+    if (window.confirm(t('floatingAI.clearConfirm'))) {
+      setMessages(createInitialMessages(currentLang));
+      setError('');
     }
   };
 
   const handleQuickNavigate = (pageId: ActivePageId) => {
-    if (onNavigate) {
-      onNavigate(pageId);
-    }
+    onNavigate?.(pageId);
+  };
+
+  const openFullAssistant = () => {
+    setIsOpen(false);
+    handleQuickNavigate('ai_assistant');
+  };
+
+  const modelLabel = aiConfig?.llm_model;
+  const sourceTypeLabels: Record<string, string> = {
+    vanbanden: t('floatingAI.sourceTypes.incoming'),
+    vanbandi: t('floatingAI.sourceTypes.outgoing'),
+    tailieu: t('floatingAI.sourceTypes.document'),
+    business_spec: t('floatingAI.sourceTypes.businessSpec'),
   };
 
   return (
     <>
-      {/* 1. NÚT AI ROBOT NỔI (Có thể kéo di chuyển lên xuống tự do) */}
       {!isOpen && (
-        <div
-          className="fixed right-6 sm:right-8 z-[9998] select-none"
-          style={{
-            bottom: `${bottomPos}px`,
-            transition: isDragging ? 'none' : 'bottom 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
-          }}
-        >
-          <div
-            role="button"
-            tabIndex={0}
-            className={`relative w-16 h-16 rounded-full bg-gradient-to-tr from-purple-600 via-primary to-cyan-400 p-[2.5px] shadow-xl hover:shadow-2xl shadow-primary/25 flex items-center justify-center transition-transform duration-150 active:scale-95 group touch-none select-none ${
-              isDragging ? 'cursor-grabbing scale-105' : 'cursor-grab hover:scale-110'
-            }`}
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            onPointerCancel={() => setIsDragging(false)}
-            title="Trợ Lý AI TLBM (Nhấn giữ để kéo di chuyển lên/xuống • Nhấp để mở)"
-            aria-label="Mở Trợ Lý AI TLBM"
+        <div className="fixed bottom-[72px] right-6 sm:right-8 z-[9998]">
+          <button
+            type="button"
+            className="relative w-16 h-16 rounded-full bg-gradient-to-tr from-purple-600 via-primary to-cyan-400 p-[2.5px] shadow-xl hover:shadow-2xl shadow-primary/25 cursor-pointer flex items-center justify-center transition-all duration-200 hover:scale-110 active:scale-95 group"
+            onClick={() => { setIsOpen(true); setIsMinimized(false); }}
+            title={t('floatingAI.openTitle')}
+            aria-label={t('floatingAI.openTitle')}
           >
-            {/* Vòng hào quang sáng xung quanh */}
-            {!isDragging && (
-              <div className="absolute inset-0 rounded-full bg-primary/30 animate-ping -z-10" />
-            )}
-
-            {/* Thân nút robot */}
-            <div className="w-full h-full rounded-full bg-surface-elevated flex items-center justify-center text-primary text-2xl shadow-inner group-hover:bg-primary group-hover:text-white transition-colors duration-fast pointer-events-none">
+            <div className="absolute inset-0 rounded-full bg-primary/30 animate-ping -z-10" />
+            <div className="w-full h-full rounded-full bg-surface-elevated flex items-center justify-center text-primary text-2xl shadow-inner group-hover:bg-primary group-hover:text-white transition-colors duration-fast">
               <i className="fa-solid fa-robot" />
             </div>
-
-            {/* Chấm trạng thái trực tuyến */}
-            <span className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-emerald-500 border-2 border-surface shadow-xs pointer-events-none" />
-          </div>
+            <span className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-emerald-500 border-2 border-surface" />
+          </button>
         </div>
       )}
 
-      {/* 2. CỬA SỔ HỘI THOẠI AI CHATBOX (Theo dõi độ cao của nút robot) */}
       {isOpen && (
         <div
           ref={windowRef}
-          className={`fixed right-6 z-[9999] w-[390px] max-w-[calc(100vw-32px)] rounded-2xl bg-surface-elevated/95 backdrop-blur-xl border border-subtle shadow-2xl flex flex-col overflow-hidden transition-all duration-fast animate-in fade-in slide-in-from-bottom-4 ${
-            isMinimized ? 'h-14' : 'h-[540px] max-h-[calc(100vh-120px)]'
+          className={`fixed bottom-[68px] right-6 z-[9999] w-[390px] max-w-[calc(100vw-32px)] rounded-2xl bg-surface-elevated/95 backdrop-blur-xl border border-subtle shadow-2xl flex flex-col overflow-hidden transition-all duration-fast animate-in fade-in slide-in-from-bottom-4 ${
+            isMinimized ? 'h-14' : 'h-fit max-h-[calc(100vh-120px)]'
           }`}
-          style={{
-            bottom: `${Math.max(68, Math.min(bottomPos, window.innerHeight - (isMinimized ? 70 : 560)))}px`,
-          }}
         >
-          {/* Thanh tiêu đề (Header) */}
           <div className="p-3 bg-surface border-b border-subtle flex items-center justify-between select-none">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-purple-500 to-primary text-white flex items-center justify-center text-sm relative shadow-xs">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-purple-500 to-primary text-white flex items-center justify-center text-sm relative shadow-xs shrink-0">
                 <i className="fa-solid fa-robot" />
                 <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-surface" />
               </div>
-              <div className="flex flex-col">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-bold text-text-main">Trợ Lý AI TLBM</span>
-                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-purple-subtle text-purple font-mono font-semibold">
-                    GPT-4o
-                  </span>
+              <div className="flex flex-col min-w-0">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-xs font-bold text-text-main truncate">{t('floatingAI.title')}</span>
+                  {modelLabel && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-subtle text-purple font-mono font-semibold truncate max-w-32" title={modelLabel}>
+                      {modelLabel}
+                    </span>
+                  )}
                 </div>
-                <div className="text-[10px] text-text-muted">Trợ lý hỗ trợ quy trình & nghiệp vụ</div>
+                <div className="text-[10px] text-text-muted">{t('floatingAI.subtitle')}</div>
               </div>
             </div>
 
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                className="w-7 h-7 rounded-lg text-text-muted hover:text-text-main hover:bg-surface-hover flex items-center justify-center transition-colors text-xs cursor-pointer"
-                onClick={handleClearHistory}
-                title="Làm mới đoạn chat"
-              >
+            <div className="flex items-center gap-1 shrink-0">
+              <button type="button" className="w-7 h-7 rounded-lg text-text-muted hover:text-text-main hover:bg-surface-hover flex items-center justify-center transition-colors text-xs cursor-pointer disabled:opacity-40" onClick={handleClearHistory} title={t('floatingAI.reset')} disabled={isTyping}>
                 <i className="fa-solid fa-rotate-left" />
               </button>
-
-              {/* Nút phóng to full màn hình giống YouTube: chuyển sang trang Trợ lý AI */}
-              <button
-                type="button"
-                className="w-7 h-7 rounded-lg text-text-muted hover:text-primary hover:bg-primary-subtle flex items-center justify-center transition-colors text-xs cursor-pointer group"
-                onClick={() => {
-                  setIsOpen(false);
-                  handleQuickNavigate('ai_assistant');
-                }}
-                title="Phóng to toàn màn hình (Chuyển sang trang Trợ lý AI)"
-                aria-label="Phóng to toàn màn hình"
-              >
-                <i className="fa-solid fa-expand transition-transform duration-fast group-hover:scale-110" />
+              <button type="button" className="w-7 h-7 rounded-lg text-text-muted hover:text-primary hover:bg-primary-subtle flex items-center justify-center transition-colors text-xs cursor-pointer" onClick={openFullAssistant} title={t('floatingAI.fullAssistant')} aria-label={t('floatingAI.fullAssistant')}>
+                <i className="fa-solid fa-expand" />
               </button>
-
-              <button
-                type="button"
-                className="w-7 h-7 rounded-lg text-text-muted hover:text-text-main hover:bg-surface-hover flex items-center justify-center transition-colors text-xs cursor-pointer"
-                onClick={() => setIsMinimized(!isMinimized)}
-                title={isMinimized ? 'Mở rộng hộp thoại' : 'Thu nhỏ'}
-              >
+              <button type="button" className="w-7 h-7 rounded-lg text-text-muted hover:text-text-main hover:bg-surface-hover flex items-center justify-center transition-colors text-xs cursor-pointer" onClick={() => setIsMinimized(!isMinimized)} title={isMinimized ? t('floatingAI.expand') : t('floatingAI.minimize')} aria-label={isMinimized ? t('floatingAI.expand') : t('floatingAI.minimize')}>
                 <i className={`fa-solid ${isMinimized ? 'fa-window-maximize' : 'fa-window-minimize'}`} />
               </button>
-
-              <button
-                type="button"
-                className="w-7 h-7 rounded-lg text-text-muted hover:text-danger hover:bg-danger-subtle flex items-center justify-center transition-colors text-xs cursor-pointer"
-                onClick={() => setIsOpen(false)}
-                title="Đóng về nút AI nổi góc dưới"
-              >
+              <button type="button" className="w-7 h-7 rounded-lg text-text-muted hover:text-danger hover:bg-danger-subtle flex items-center justify-center transition-colors text-xs cursor-pointer" onClick={() => setIsOpen(false)} title={t('floatingAI.close')} aria-label={t('floatingAI.close')}>
                 <i className="fa-solid fa-xmark" />
               </button>
             </div>
           </div>
 
-          {/* Thân cửa sổ chat (khi không bị thu nhỏ) */}
           {!isMinimized && (
             <>
-              <div className="flex-1 overflow-y-auto p-3.5 space-y-3 max-h-[380px]">
-                {messages.map((msg) => (
-                  <div
-                    key={msg.id}
-                    className={`flex gap-2.5 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
-                  >
-                    {msg.sender === 'ai' && (
-                      <div className="w-7 h-7 rounded-lg bg-primary-subtle text-primary flex items-center justify-center text-xs shrink-0 mt-0.5">
-                        <i className="fa-solid fa-brain" />
+              <div className="flex-none overflow-y-auto p-3.5 space-y-3 max-h-[min(55vh,24rem)]">
+                {visibleMessages.map((message) => (
+                  <div key={message.id} className={`flex gap-2.5 ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    {message.sender === 'ai' && <div className="w-7 h-7 rounded-lg bg-primary-subtle text-primary flex items-center justify-center text-xs shrink-0 mt-0.5"><i className="fa-solid fa-brain" /></div>}
+                    <div className="flex flex-col gap-1 max-w-[85%] min-w-0">
+                      <div className={`p-3 text-xs leading-relaxed ${message.sender === 'user' ? 'bg-primary text-white rounded-2xl rounded-tr-sm shadow-xs' : 'bg-surface border border-subtle text-text-main rounded-2xl rounded-tl-sm shadow-xs'}`}>
+                        <FormattedMessage text={message.text} />
                       </div>
-                    )}
-
-                    <div className="flex flex-col gap-1 max-w-[85%]">
-                      <div
-                        className={`p-3 text-xs leading-relaxed ${
-                          msg.sender === 'user'
-                            ? 'bg-primary text-white rounded-2xl rounded-tr-sm shadow-xs'
-                            : 'bg-surface border border-subtle text-text-main rounded-2xl rounded-tl-sm shadow-xs'
-                        }`}
-                      >
-                        {msg.text.split('\n').map((line, idx) => (
-                          <p key={idx} className="my-0.5">
-                            {line}
-                          </p>
-                        ))}
-                      </div>
-
-                      {/* Các nút bấm gợi ý câu hỏi nhanh (Quick Replies) */}
-                      {msg.quickReplies && msg.quickReplies.length > 0 && (
+                      {message.sources && message.sources.length > 0 && (
+                        <div className="text-[10px] text-text-muted px-1">
+                          <span className="font-semibold">{t('floatingAI.sources')}: </span>
+                          {message.sources.map((source, index) => (
+                            <span key={`${source.file_name || source.source_type || 'source'}-${index}`}>
+                              {index > 0 ? ', ' : ''}{source.file_name || sourceTypeLabels[source.source_type || ''] || t('floatingAI.documentSource')}{source.page ? `, ${t('floatingAI.page', { page: source.page })}` : ''}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {message.quickReplies && message.quickReplies.length > 0 && (
                         <div className="flex flex-col gap-1 mt-1">
-                          {msg.quickReplies.map((reply, rIdx) => (
-                            <button
-                              key={rIdx}
-                              type="button"
-                              className="w-full text-left text-[11px] py-1.5 px-2.5 rounded-lg bg-surface-hover hover:bg-primary-subtle text-text-secondary hover:text-primary border border-subtle hover:border-primary/40 transition-colors flex items-center gap-1.5 cursor-pointer"
-                              onClick={() => handleSendMessage(reply)}
-                            >
-                              <i className="fa-solid fa-bolt-lightning text-[10px] text-warning" />
-                              <span>{reply}</span>
+                          {message.quickReplies.map((reply, replyIndex) => (
+                            <button key={replyIndex} type="button" className="w-full text-left text-[11px] py-1.5 px-2.5 rounded-lg bg-surface-hover hover:bg-primary-subtle text-text-secondary hover:text-primary border border-subtle hover:border-primary/40 transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed" onClick={() => void handleSendMessage(reply)} disabled={isTyping}>
+                              <i className="fa-solid fa-bolt-lightning text-[10px] text-warning" /><span>{reply}</span>
                             </button>
                           ))}
                         </div>
                       )}
-
-                      <span className="text-[10px] text-text-muted mt-0.5">
-                        {msg.time}
-                      </span>
+                      <time className="text-[10px] text-text-muted mt-0.5" dateTime={new Date(message.createdAt).toISOString()}>
+                        {new Intl.DateTimeFormat(currentLang, { hour: '2-digit', minute: '2-digit' }).format(message.createdAt)}
+                      </time>
                     </div>
                   </div>
                 ))}
-
-                {/* Trạng thái AI đang phản hồi */}
                 {isTyping && (
                   <div className="flex gap-2.5 justify-start items-center">
-                    <div className="w-7 h-7 rounded-lg bg-primary-subtle text-primary flex items-center justify-center text-xs shrink-0">
-                      <i className="fa-solid fa-brain" />
-                    </div>
-                    <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-surface border border-subtle text-text-muted text-xs">
-                      <span className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce" />
-                      <span className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce [animation-delay:0.2s]" />
-                      <span className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce [animation-delay:0.4s]" />
+                    <div className="w-7 h-7 rounded-lg bg-primary-subtle text-primary flex items-center justify-center text-xs shrink-0"><i className="fa-solid fa-brain" /></div>
+                    <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-surface border border-subtle text-text-muted text-xs" role="status" aria-label={t('floatingAI.thinking')}>
+                      <span className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce" /><span className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce [animation-delay:0.2s]" /><span className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce [animation-delay:0.4s]" />
                     </div>
                   </div>
                 )}
-
                 <div ref={chatEndRef} />
               </div>
 
-              {/* Thanh nhập tin nhắn ở đáy */}
-              <form
-                className="p-2.5 bg-surface border-t border-subtle flex items-center gap-2"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleSendMessage();
-                }}
-              >
-                <input
-                  type="text"
-                  className="flex-1 bg-surface-elevated border border-subtle rounded-xl px-3 py-2 text-xs text-text-main placeholder:text-text-muted focus:border-primary transition-colors"
-                  placeholder="Hỏi trợ lý AI về văn bản, quy trình..."
-                  value={inputMessage}
-                  onChange={(e) => setInputMessage(e.target.value)}
-                />
-
-                {/* Nút phóng to toàn màn hình giống YouTube */}
-                <button
-                  type="button"
-                  className="w-8 h-8 rounded-lg text-text-muted hover:text-primary hover:bg-primary-subtle flex items-center justify-center text-xs transition-colors cursor-pointer group"
-                  title="Phóng to toàn màn hình (Chuyển sang trang Trợ lý AI)"
-                  aria-label="Phóng to toàn màn hình"
-                  onClick={() => {
-                    setIsOpen(false);
-                    handleQuickNavigate('ai_assistant');
-                  }}
-                >
-                  <i className="fa-solid fa-expand text-sm transition-transform duration-fast group-hover:scale-110" />
+              <form className="p-2.5 bg-surface border-t border-subtle flex items-center gap-2" onSubmit={(event) => { event.preventDefault(); void handleSendMessage(); }}>
+                <input type="text" maxLength={MAX_WIDGET_QUESTION_LENGTH} className="flex-1 min-w-0 bg-surface-elevated border border-subtle rounded-xl px-3 py-2 text-xs text-text-main placeholder:text-text-muted focus:border-primary transition-colors disabled:opacity-50" placeholder={t('floatingAI.placeholder')} value={inputMessage} onChange={(event) => setInputMessage(event.target.value)} disabled={isTyping} aria-label={t('floatingAI.placeholder')} />
+                <button type="button" className="w-8 h-8 rounded-lg text-text-muted hover:text-primary hover:bg-primary-subtle flex items-center justify-center text-xs transition-colors cursor-pointer group" title={t('floatingAI.fullAssistant')} aria-label={t('floatingAI.fullAssistant')} onClick={openFullAssistant}>
+                  <i className="fa-solid fa-expand text-sm" />
                 </button>
-
-                <button
-                  type="submit"
-                  className="w-8 h-8 rounded-lg bg-primary hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed text-white flex items-center justify-center text-xs transition-colors shadow-xs cursor-pointer"
-                  disabled={!inputMessage.trim()}
-                  title="Gửi câu hỏi"
-                >
+                <button type="submit" className="w-8 h-8 rounded-lg bg-primary hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed text-white flex items-center justify-center text-xs transition-colors shadow-xs cursor-pointer" disabled={!inputMessage.trim() || isTyping} title={t('floatingAI.send')} aria-label={t('floatingAI.send')}>
                   <i className="fa-solid fa-paper-plane" />
                 </button>
               </form>
+              {error && <div className="px-3 pb-2 text-xs text-danger bg-surface" role="alert">{t(error)}</div>}
             </>
           )}
         </div>
@@ -405,5 +405,3 @@ export default function FloatingAIBox({ onNavigate }: FloatingAIBoxProps) {
     </>
   );
 }
-
-

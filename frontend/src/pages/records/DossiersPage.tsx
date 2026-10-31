@@ -57,6 +57,7 @@ export default function DossiersPage() {
   const [searchInput, setSearchInput] = React.useState('');
   const [search, setSearch] = React.useState('');
   const [year, setYear] = React.useState('');
+  const [appliedYear, setAppliedYear] = React.useState('');
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
@@ -64,6 +65,7 @@ export default function DossiersPage() {
   const [editing, setEditing] = React.useState<Dossier | null | undefined>(undefined);
   const [deleting, setDeleting] = React.useState<Dossier | null>(null);
   const [isSaving, setIsSaving] = React.useState(false);
+  const [deleteError, setDeleteError] = React.useState<string | null>(null);
   const [saveError, setSaveError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
@@ -73,7 +75,7 @@ export default function DossiersPage() {
         if (!active) return null;
         setIsLoading(true);
         setError(null);
-        return recordsService.listDossiers({ search, year, page, pageSize: PAGE_SIZE });
+        return recordsService.listDossiers({ search, year: appliedYear, page, pageSize: PAGE_SIZE });
       })
       .then((result) => {
         if (!active || !result) return;
@@ -97,7 +99,7 @@ export default function DossiersPage() {
     return () => {
       active = false;
     };
-  }, [search, year, page, reloadKey, t]);
+  }, [search, appliedYear, page, reloadKey, t]);
 
   React.useEffect(() => {
     const timer = setTimeout(() => {
@@ -118,11 +120,10 @@ export default function DossiersPage() {
 
   const submitSearch = (event: React.FormEvent) => {
     event.preventDefault();
-    const trimmed = searchInput.trim();
-    if (search !== trimmed) {
-      setPage(1);
-      setSearch(trimmed);
-    }
+    setPage(1);
+    setSearch(searchInput.trim());
+    setAppliedYear(year);
+    setReloadKey((value) => value + 1);
   };
 
   const handleClearSearch = () => {
@@ -160,7 +161,8 @@ export default function DossiersPage() {
   };
 
   const handleDelete = async () => {
-    if (!deleting) return;
+    if (!deleting || isSaving) return;
+    setDeleteError(null);
     setIsSaving(true);
     try {
       await recordsService.deleteDossier(deleting.id);
@@ -169,8 +171,7 @@ export default function DossiersPage() {
       if (items.length === 1 && page > 1) setPage((value) => value - 1);
       else setReloadKey((value) => value + 1);
     } catch (err) {
-      setDeleting(null);
-      setError(
+      setDeleteError(
         apiErrorMessage(
           err,
           t('records.errors.deleteDossier'),
@@ -237,20 +238,14 @@ export default function DossiersPage() {
             <select
               className={`${controlClass} w-full md:w-40`}
               value={year}
-              onChange={(event) => {
-                const nextYear = event.target.value;
-                if (nextYear !== year) {
-                  setYear(nextYear);
-                  setPage(1);
-                }
-              }}
+              onChange={(event) => setYear(event.target.value)}
             >
               <option value="">{t('records.filters.allYears')}</option>
               {years.map((value) => <option key={value} value={value}>{value}</option>)}
             </select>
           </label>
           <Button type="submit" variant="secondary" icon="fa-filter">{t('records.actions.filter')}</Button>
-          {(search || year) && (
+          {(search || year || appliedYear) && (
             <Button
               type="button"
               variant="ghost"
@@ -258,6 +253,7 @@ export default function DossiersPage() {
                 setSearchInput('');
                 setSearch('');
                 setYear('');
+                setAppliedYear('');
                 setPage(1);
               }}
             >
@@ -306,7 +302,7 @@ export default function DossiersPage() {
                           <Button type="button" size="sm" variant="ghost" icon="fa-folder-open" onClick={(event) => { event.stopPropagation(); navigate(dossierDocumentTypesDestination(item)); }} aria-label={t('records.dossiers.viewDocumentTypesLabel', { name: item.ten_ho_so })}>{t('records.actions.view')}</Button>
                           <Button type="button" size="sm" variant="ghost" icon="fa-pen" onClick={(event) => { event.stopPropagation(); setSaveError(null); setEditing(item); }} aria-label={t('records.dossiers.editLabel', { name: item.ten_ho_so })} />
                           {!item.is_he_thong && (
-                            <Button type="button" size="sm" variant="ghost" icon="fa-trash" className="text-danger hover:text-danger" onClick={(event) => { event.stopPropagation(); setDeleting(item); }} aria-label={t('records.dossiers.deleteLabel', { name: item.ten_ho_so })} />
+                            <Button type="button" size="sm" variant="ghost" icon="fa-trash" className="text-danger hover:text-danger" onClick={(event) => { event.stopPropagation(); setDeleteError(null); setDeleting(item); }} aria-label={t('records.dossiers.deleteLabel', { name: item.ten_ho_so })} />
                           )}
                         </div>
                       </TableCell>
@@ -334,7 +330,8 @@ export default function DossiersPage() {
         title={t('records.dossiers.confirmDeleteTitle')}
         message={t('records.dossiers.confirmDeleteMessage', { name: deleting?.ten_ho_so ?? '' })}
         isLoading={isSaving}
-        onCancel={() => setDeleting(null)}
+        error={deleteError}
+        onCancel={() => { if (!isSaving) setDeleting(null); }}
         onConfirm={handleDelete}
       />
     </section>

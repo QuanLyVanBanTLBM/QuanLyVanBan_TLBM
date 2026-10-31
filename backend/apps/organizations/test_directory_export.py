@@ -146,7 +146,12 @@ class DirectoryExportTest(TestCase):
         self.person("a1b", self.unit_a1, self.mid)
         self.person("b1", self.unit_b1, self.boss)
         rows = body_rows(self.export())
-        self.assertEqual([row[0] for row in rows if isinstance(row[0], int)], [1, 2, 1, 2])
+        self.assertEqual(
+            [row[0] for row in self.members_of(rows, "Đơn vị A1")], [1, 2]
+        )
+        self.assertEqual(
+            [row[0] for row in self.members_of(rows, "Đơn vị B1")], [1, 2]
+        )
         self.assertEqual(self.members_of(rows, "Đơn vị A2"), [])
         self.assertEqual(rows[self.unit_row_index(rows, "Đơn vị A2") + 1][0], "KHỐI B")
 

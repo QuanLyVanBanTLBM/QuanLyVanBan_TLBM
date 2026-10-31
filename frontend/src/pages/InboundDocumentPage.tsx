@@ -573,7 +573,7 @@ export const InboundDocumentPage: React.FC = () => {
   const doDelete = async () => {
     if (!pendingDelete) return;
     try {
-      await apiClient.delete(`/api/documents/${pendingDelete.id}/`);
+      await apiClient.delete(`/api/documents/${pendingDelete.id}/?loai=DEN`);
       setPendingDelete(null);
       setAlertMsg(`Đã xóa văn bản "${pendingDelete.soHieu}" thành công.`);
       setIsAlertOpen(true);

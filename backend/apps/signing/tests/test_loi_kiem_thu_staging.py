@@ -91,7 +91,7 @@ class HanXuLyThongBaoTests(KyBase):
         SigningRequestStep.objects.filter(pk=cap.pk).update(han_xu_ly=timezone.now() + timedelta(hours=2))
         thong_bao.nhac_han()
         tb = SigningNotification.objects.get(trinh_ky_id=self.pk, loai_thong_bao="NHAC_HAN",
-                                             kenh=enums.KenhThongBao.IN_APP)
+                                             nguoi_nhan=self.ky1, kenh=enums.KenhThongBao.IN_APP)
         han = SigningRequestStep.objects.get(pk=cap.pk).han_xu_ly
         self.assertIn(f"Hạn xử lý: {timezone.localtime(han):%d/%m/%Y %H:%M}.", thong_bao.noi_dung(tb)[1])
         # Thông báo không gắn hạn (hoàn tất, hủy...) không ghi dòng hạn

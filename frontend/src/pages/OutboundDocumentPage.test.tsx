@@ -269,7 +269,7 @@ describe('OutboundDocumentPage Component (Phân hệ Văn bản Đi)', () => {
       fireEvent.click(confirmBtn);
 
       await waitFor(() => {
-        expect(mockedApiClient.delete).toHaveBeenCalledWith('/api/documents/201/');
+        expect(mockedApiClient.delete).toHaveBeenCalledWith('/api/documents/201/?loai=DI');
         expect(screen.getByText(/Đã xóa văn bản "201\/QĐ-TLBM" thành công/i)).toBeInTheDocument();
       });
     });

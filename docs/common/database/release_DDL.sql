@@ -1196,7 +1196,6 @@ CREATE TABLE signing_process_step_signer (
     chuc_vu_id BIGINT REFERENCES accounts_position (id) ON DELETE RESTRICT,
     pham_vi_chuc_vu VARCHAR(20), -- [P7] DON_VI_NGUOI_TAO | DON_VI_CO_DINH | TOAN_CO_QUAN; chỉ dùng khi cấu hình theo chức vụ
     vai_tro_ky VARCHAR(20) NOT NULL DEFAULT 'KY_CHINH',
-    chan_ky_chinh BOOLEAN NOT NULL DEFAULT true,
     thu_tu SMALLINT NOT NULL CHECK (thu_tu >= 0),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT chk_signing_process_step_signer_mot_doi_tuong CHECK (
@@ -1207,16 +1206,6 @@ CREATE TABLE signing_process_step_signer (
 
 CREATE INDEX idx_signing_process_step_signer_buoc ON signing_process_step_signer (buoc_quy_trinh_id);
 CREATE INDEX idx_signing_process_step_signer_nguoi ON signing_process_step_signer (nguoi_ky_id);
-
--- Chức vụ được phép ký thay cho từng chức vụ của người ký.
-CREATE TABLE signing_delegation_role (
-    id BIGSERIAL PRIMARY KEY,
-    chuc_vu_giao_id BIGINT NOT NULL REFERENCES accounts_position (id) ON DELETE RESTRICT,
-    chuc_vu_nhan_id BIGINT NOT NULL REFERENCES accounts_position (id) ON DELETE RESTRICT,
-    CONSTRAINT uq_signing_delegation_role UNIQUE (chuc_vu_giao_id, chuc_vu_nhan_id)
-);
-CREATE INDEX idx_signing_delegation_role_giao ON signing_delegation_role (chuc_vu_giao_id);
-CREATE INDEX idx_signing_delegation_role_nhan ON signing_delegation_role (chuc_vu_nhan_id);
 
 -- 9.4. Phiếu yêu cầu trình ký
 -- Issue #47 P0.1: Bổ sung document_type document_kind NOT NULL và index (document_type, document_id)
@@ -1317,7 +1306,7 @@ CREATE INDEX idx_signing_request_step_buoc_quy_trinh ON signing_request_step (bu
 CREATE INDEX idx_signing_request_step_luot_trinh ON signing_request_step (luot_trinh_id);
 CREATE INDEX idx_signing_request_step_hanxuly ON signing_request_step (han_xu_ly); -- Issue #47 P2.12
 
--- 9.7. Người ký thực tế trong cấp ký (Tọa độ box ký, ảnh chữ ký, ủy quyền)
+-- 9.7. Người ký thực tế trong cấp ký (Tọa độ box ký, ảnh chữ ký)
 -- Issue #47 P1.9: Cho phép NULL ở ten_chuc_vu và khoa_chong_trung_thao_tac khi tạo nháp
 CREATE TABLE signing_request_step_signer (
     id BIGSERIAL PRIMARY KEY,
@@ -1327,17 +1316,12 @@ CREATE TABLE signing_request_step_signer (
     ten_nguoi_ky VARCHAR(255) NOT NULL,
     ten_chuc_vu VARCHAR(255), -- Cho phép NULL ở bản nháp ban đầu
     vai_tro_ky VARCHAR(20) NOT NULL,
-    chan_ky_chinh BOOLEAN NOT NULL DEFAULT true,
     trang_thai VARCHAR(20) NOT NULL DEFAULT 'CHO_KY',
     thoi_diem_mo TIMESTAMPTZ,
     ngay_ky TIMESTAMPTZ,
     ngay_tu_choi TIMESTAMPTZ,
     ly_do_tu_choi TEXT NOT NULL DEFAULT '',
     chu_ky_hien_hanh_id BIGINT, -- Khóa ngoại trỏ sang signing_signature thêm sau
-    uy_quyen_tu_id BIGINT REFERENCES accounts_employee (id) ON DELETE RESTRICT,
-    chuc_vu_goc_uy_quyen_id BIGINT REFERENCES accounts_position (id) ON DELETE RESTRICT,
-    ly_do_uy_quyen TEXT NOT NULL DEFAULT '',
-    ngay_uy_quyen TIMESTAMPTZ,
     trang_ky INTEGER CHECK (trang_ky >= 0),
     toa_do_x NUMERIC(10, 4),
     toa_do_y NUMERIC(10, 4),
@@ -1345,14 +1329,11 @@ CREATE TABLE signing_request_step_signer (
     chieu_cao_khung NUMERIC(10, 4),
     khoa_chong_trung_thao_tac VARCHAR(255), -- Cho phép NULL ở bản nháp ban đầu
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT uq_signing_request_step_signer_nguoi_ky UNIQUE (buoc_ky_id, nguoi_ky_id),
-    CONSTRAINT chk_signing_signer_ly_do_uy_quyen CHECK (uy_quyen_tu_id IS NULL OR NOT (ly_do_uy_quyen = ''))
+    CONSTRAINT uq_signing_request_step_signer_nguoi_ky UNIQUE (buoc_ky_id, nguoi_ky_id)
 );
 
 CREATE INDEX idx_signing_request_step_signer_buoc ON signing_request_step_signer (buoc_ky_id);
 CREATE INDEX idx_signing_request_step_signer_nguoi ON signing_request_step_signer (nguoi_ky_id);
-CREATE INDEX idx_signing_request_step_signer_uy_quyen ON signing_request_step_signer (uy_quyen_tu_id);
-CREATE INDEX idx_signing_request_step_signer_chuc_vu_goc ON signing_request_step_signer (chuc_vu_goc_uy_quyen_id);
 
 -- 9.8. Quản lý Khóa ký số (Zero-Knowledge: Backend tuyệt đối không lưu private key)
 CREATE TABLE signing_key (
@@ -1940,6 +1921,98 @@ WHERE
         FROM organizations_donvi
     )
 ORDER BY x.vi_tri;
+
+-- Đồng bộ thông tin đơn vị từ workbook dùng chung.
+UPDATE organizations_donvi AS unit
+SET dia_chi = source.dia_chi,
+    dien_thoai = source.dien_thoai,
+    is_public = source.is_public
+FROM (
+    VALUES
+    (1, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0332897701', TRUE),
+    (2, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0337628268', FALSE),
+    (3, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0335116804', TRUE),
+    (4, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0335254343', TRUE),
+    (5, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0330840944', TRUE),
+    (6, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0335589304', TRUE),
+    (7, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0333777317', TRUE),
+    (8, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0338616310', TRUE),
+    (9, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0338272234', TRUE),
+    (10, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0336748679', TRUE),
+    (11, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0332612690', TRUE),
+    (12, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0337613811', TRUE),
+    (13, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0335845000', TRUE),
+    (14, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0339295260', TRUE),
+    (15, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0331231700', TRUE),
+    (16, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0335817976', TRUE),
+    (17, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0332803821', TRUE),
+    (18, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0331579163', TRUE),
+    (19, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0330877220', TRUE),
+    (20, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0337528305', TRUE),
+    (21, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0333104201', TRUE),
+    (22, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0337648878', TRUE),
+    (23, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0335518225', TRUE),
+    (24, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0336578765', TRUE),
+    (25, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0332217184', TRUE),
+    (26, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0332406059', TRUE),
+    (27, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0332527351', TRUE),
+    (28, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0338849285', TRUE),
+    (29, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0334301145', TRUE),
+    (30, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0339783346', TRUE),
+    (31, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0339132193', TRUE),
+    (32, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0331741959', TRUE),
+    (33, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0338366874', TRUE),
+    (34, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0330036743', TRUE),
+    (35, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0333029304', TRUE),
+    (36, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0334404034', TRUE),
+    (37, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0334791770', TRUE),
+    (38, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0332812008', TRUE),
+    (39, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0331551239', TRUE),
+    (40, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0339975722', TRUE),
+    (41, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0338944643', TRUE),
+    (42, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0339537291', TRUE),
+    (43, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0337733676', TRUE),
+    (44, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0339768433', TRUE),
+    (45, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0339487527', TRUE),
+    (46, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0338422404', TRUE),
+    (47, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0336486845', TRUE),
+    (48, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0332077952', TRUE),
+    (49, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0331857523', TRUE),
+    (50, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0332479896', TRUE),
+    (51, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0339002466', TRUE),
+    (52, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0339322357', TRUE),
+    (53, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0337482545', TRUE),
+    (54, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0330761367', TRUE),
+    (55, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0338528160', TRUE),
+    (56, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0332803540', TRUE),
+    (57, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0337945477', TRUE),
+    (58, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0339211108', TRUE),
+    (59, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0333734546', TRUE),
+    (60, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0335338652', TRUE),
+    (61, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0334722563', TRUE),
+    (62, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0332392082', TRUE),
+    (63, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0332169128', TRUE),
+    (64, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0335730757', TRUE),
+    (65, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0332084076', TRUE),
+    (66, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0331102418', TRUE),
+    (67, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0333836771', TRUE),
+    (68, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0335670136', TRUE),
+    (69, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0337375068', TRUE),
+    (70, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0330257273', TRUE),
+    (71, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0335577067', TRUE),
+    (72, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0332987240', TRUE),
+    (73, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0333695422', TRUE),
+    (74, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0331386913', TRUE),
+    (75, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0335885579', TRUE),
+    (76, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0339477344', TRUE),
+    (77, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0332213165', TRUE),
+    (78, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0330628397', TRUE),
+    (79, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0336911237', TRUE),
+    (80, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0332264815', TRUE),
+    (81, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0331765751', TRUE),
+    (82, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0331263488', TRUE)
+) AS source (stt_uu_tien, dia_chi, dien_thoai, is_public)
+WHERE unit.stt_uu_tien = source.stt_uu_tien;
 
 -- 3) Seed 25 Chức vụ chuẩn (STT 1 = cao nhất: 22 chức vụ của đặc tả, giữ "Quản trị viên",
 --    "Lãnh đạo cơ quan", "Văn thư" chèn theo cấp bậc) và Tài khoản quản trị hệ thống mẫu

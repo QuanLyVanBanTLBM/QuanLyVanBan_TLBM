@@ -132,5 +132,6 @@ class ToChucNhom7Tests(TestCase):
         self.assertIn("nguoi_ky_qt", tim("kiem toan"))  # chức danh tự do
         self.assertIn("nguoi_ky_qt", tim(self.don_vi.ten))  # đơn vị
         self.assertEqual(tim("khong-co-ai"), [])
-        r = self.c.get("/api/v1/signing/nguoi-dung/", {"q": "tran duc"}).data[0]
+        results = self.c.get("/api/v1/signing/nguoi-dung/", {"q": "tran duc"}).data
+        r = next(user for user in results if user["ten_dang_nhap"] == "nguoi_ky_qt")
         self.assertEqual((r["chuc_vu"], r["don_vi"]), (self.chuc_vu.name, self.don_vi.ten))

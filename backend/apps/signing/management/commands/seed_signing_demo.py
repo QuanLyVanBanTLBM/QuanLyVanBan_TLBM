@@ -68,18 +68,18 @@ TAI_KHOAN = {
 # mã: (tên, mô tả, cấp ký [(tên cấp, số giờ, [(username, vai trò)])], kích hoạt)
 QUY_TRINH = {
     "QT-TK-HAI-CAP": ("Duyệt tờ trình hai cấp", "Trưởng phòng duyệt, sau đó Giám đốc duyệt.", [
-        ("Trưởng phòng duyệt", 24, [("truongphong", "KY_CHINH")]),
-        ("Giám đốc duyệt", 48, [("giamdoc", "KY_CHINH")]),
+        ("Trưởng phòng duyệt", 24, ["truongphong"]),
+        ("Giám đốc duyệt", 48, ["giamdoc"]),
     ], True),
     "QT-TK-MOT-CAP": ("Duyệt một cấp", "Giám đốc phê duyệt.", [
-        ("Phê duyệt", 48, [("giamdoc", "KY_CHINH")]),
+        ("Phê duyệt", 48, ["giamdoc"]),
     ], True),
     "QT-TK-SONG-SONG": ("Lấy ý kiến song song", "Trưởng phòng và Quản trị ký song song, sau đó Giám đốc duyệt.", [
-        ("Lấy ý kiến các bộ phận", 24, [("truongphong", "KY_CHINH"), ("admin", "KY_CHINH")]),
-        ("Giám đốc duyệt", 48, [("giamdoc", "KY_CHINH")]),
+        ("Lấy ý kiến các bộ phận", 24, ["truongphong", "admin"]),
+        ("Giám đốc duyệt", 48, ["giamdoc"]),
     ], True),
     "QT-TK-NHAP": ("Quy trình đang soạn", "Quy trình nháp để thử sửa, kích hoạt, nhân bản.", [
-        ("Trưởng phòng duyệt", None, [("truongphong", "KY_CHINH")]),
+        ("Trưởng phòng duyệt", None, ["truongphong"]),
     ], False),
 }
 
@@ -261,8 +261,8 @@ class Command(BaseCommand):
                 qt = process.tao_quy_trinh(nguoi["admin"], ma_quy_trinh=ma, ten_quy_trinh=ten, mo_ta=mo_ta,
                                            pham_vi=enums.PhamViQuyTrinh.CONG_TY, cap_ky=[
                     {"cap_ky": i, "ten_cap_ky": ten_cap, "thu_tu": i, "so_gio_xu_ly": so_gio, "nguoi_ky": [
-                        {"nguoi_ky": nguoi[u], "vai_tro_ky": vai_tro, "thu_tu": j}
-                        for j, (u, vai_tro) in enumerate(ds, start=1)]}
+                        {"nguoi_ky": nguoi[u], "thu_tu": j}
+                        for j, u in enumerate(ds, start=1)]}
                     for i, (ten_cap, so_gio, ds) in enumerate(cap_ky, start=1)])
                 if kich_hoat:
                     qt = process.kich_hoat(qt, nguoi["admin"])

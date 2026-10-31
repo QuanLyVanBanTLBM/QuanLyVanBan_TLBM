@@ -41,7 +41,7 @@ class ProcessServiceTests(TestCase):
             {"cap_ky": 1, "ten_cap_ky": "Cấp 1", "thu_tu": 1,
              "nguoi_ky": [{"nguoi_ky": self.u2, "thu_tu": 1}]},
             {"cap_ky": 2, "ten_cap_ky": "Cấp 2", "thu_tu": 2,
-             "nguoi_ky": [{"chuc_vu_id": self.position.pk, "thu_tu": 1, "vai_tro_ky": enums.VaiTroKy.KY_CHINH}]},
+             "nguoi_ky": [{"chuc_vu_id": self.position.pk, "thu_tu": 1}]},
         ]
         return process_service.tao_quy_trinh(
             self.u1, ma_quy_trinh=ma, ten_quy_trinh="Quy trình", pham_vi=enums.PhamViQuyTrinh.CONG_TY, cap_ky=cap_ky,
@@ -127,40 +127,6 @@ class ProcessServiceTests(TestCase):
             process_service.kich_hoat(p, self.u1)
         self.assertEqual(ctx.exception.get_codes(), "cap_ky_khong_co_nguoi_ky")
         self.assertEqual(ctx.exception.fields, {"cap_ky_thieu_nguoi_ky": [1]})
-
-    def test_legacy_initial_signers_cannot_be_added_or_activated(self):
-        p = self.create()
-        step = p.cap_ky_set.order_by("thu_tu").first()
-        with self.assertRaises(SigningError) as ctx:
-            process_service.them_nguoi_ky(step, self.u1, thu_tu=2, nguoi_ky=self.u1,
-                                          vai_tro_ky=enums.VaiTroKy.KY_NHAY)
-        self.assertEqual(ctx.exception.get_codes(), "ky_nhay_khong_ho_tro")
-        legacy = step.nguoi_ky_set.get()
-        legacy.vai_tro_ky = enums.VaiTroKy.KY_NHAY
-        legacy.save(update_fields=["vai_tro_ky"])
-        with self.assertRaises(SigningError) as ctx:
-            process_service.kich_hoat(p, self.u1)
-        self.assertEqual(ctx.exception.get_codes(), "ky_nhay_khong_ho_tro")
-        self.assertEqual(SigningProcess.objects.get(pk=p.pk).trang_thai, "NHAP")
-        clone = process_service.nhan_ban(p, self.u1)
-        self.assertEqual(clone.cap_ky_set.order_by("thu_tu").first().nguoi_ky_set.get().vai_tro_ky, "KY_NHAY")
-        clone.cap_ky_set.order_by("thu_tu").first().nguoi_ky_set.all().delete()
-        process_service.them_nguoi_ky(clone.cap_ky_set.order_by("thu_tu").first(), self.u1, thu_tu=1, nguoi_ky=self.u2)
-        self.assertEqual(process_service.kich_hoat(clone, self.u1).trang_thai, "HOAT_DONG")
-        legacy.refresh_from_db()
-        self.assertEqual(legacy.vai_tro_ky, "KY_NHAY")
-
-    def test_inactive_legacy_level_also_requires_cleanup_before_activation(self):
-        p = self.create()
-        step = p.cap_ky_set.order_by("thu_tu").first()
-        step.dang_ap_dung = False
-        step.save(update_fields=["dang_ap_dung"])
-        signer = step.nguoi_ky_set.get()
-        signer.vai_tro_ky = enums.VaiTroKy.KY_NHAY
-        signer.save(update_fields=["vai_tro_ky"])
-        with self.assertRaises(SigningError) as ctx:
-            process_service.kich_hoat(p, self.u1)
-        self.assertEqual(ctx.exception.get_codes(), "ky_nhay_khong_ho_tro")
 
     def test_activate_then_lock_editing(self):
         p = process_service.kich_hoat(self.create(), self.u1)

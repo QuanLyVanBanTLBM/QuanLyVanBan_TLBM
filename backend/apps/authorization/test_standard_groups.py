@@ -41,6 +41,7 @@ class StandardRoleProtectionTest(TestCase):
         self.assertTrue(Group.objects.filter(pk=self.vt.pk).exists())
 
     def test_admin_group_cannot_be_deleted_even_without_members(self):
+        self.admin_group.user_set.clear()
         self.assertFalse(self.admin_group.user_set.exists())
         response = self.client.delete(f"/api/roles/{self.admin_group.id}/")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

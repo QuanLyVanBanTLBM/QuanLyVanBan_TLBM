@@ -91,7 +91,7 @@ class EmployeeBaseTestCase(APITestCase):
             username="normal_user",
             email="normal@donvi.gov.vn",
             password="NormalPassword123",
-            ho_ten="Nguyễn Văn Bình",
+            ho_ten="Nguyễn Văn Bình kiểm thử",
             ngay_sinh=date(1995, 5, 20),
             don_vi=self.don_vi_1,
             chuc_vu=self.cv_chuyen_vien,
@@ -232,11 +232,11 @@ class EmployeeCRUDAndFilterTests(EmployeeBaseTestCase):
         """Tìm kiếm CBNV theo tên, email, sđt."""
         self.client.force_authenticate(user=self.admin_user)
         # Tìm theo tên
-        res = self.client.get(f"{self.employee_list_url}?search=Bình")
+        res = self.client.get(f"{self.employee_list_url}?search=Bình kiểm thử")
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         results = res.json()["results"]
         self.assertEqual(len(results), 1)
-        self.assertEqual(results[0]["ho_ten"], "Nguyễn Văn Bình")
+        self.assertEqual(results[0]["ho_ten"], "Nguyễn Văn Bình kiểm thử")
 
         # Tìm theo SĐT
         res_phone = self.client.get(f"{self.employee_list_url}?search=0987654321")
@@ -366,8 +366,12 @@ class EmployeeCRUDAndFilterTests(EmployeeBaseTestCase):
         self.client.force_authenticate(user=self.admin_user)
         self.normal_user.trang_thai = Employee.Status.NGHI_VIEC
         self.normal_user.save()
-        res = self.client.get(f"{self.employee_list_url}?trang_thai=NGHI_VIEC")
-        self.assertEqual([item["username"] for item in res.json()["results"]], ["normal_user"])
+        res = self.client.get(f"{self.employee_list_url}?trang_thai=NGHI_VIEC&all=true")
+        expected = set(
+            User.objects.filter(trang_thai=Employee.Status.NGHI_VIEC)
+            .values_list("username", flat=True)
+        )
+        self.assertEqual({item["username"] for item in res.json()}, expected)
 
 
 class EmployeeSecurityAndPrivacyTests(EmployeeBaseTestCase):

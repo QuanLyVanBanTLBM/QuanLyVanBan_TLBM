@@ -25,8 +25,7 @@ Xây dựng phân hệ **Trình ký** gồm: tạo hồ sơ trình ký; luân ch
    - Quy trình `CONG_TY` do quản trị cấu hình; quy trình `PHONG_BAN` do lãnh đạo đơn vị đó hoặc quản trị cấu hình.
    - Các cấp mở tuần tự; trong một cấp, mọi người ký nhận cùng lúc và đều phải ký. Muốn mọi người ký cùng lúc thì cấu hình quy trình một cấp.
    - Người ký cấu hình theo tài khoản hoặc theo chức vụ. Chức vụ hiểu tương đối: trong đơn vị người tạo, trong một đơn vị cố định, hoặc cấp cơ quan. Khi gửi, chức vụ có nhiều người thì người tạo phải chọn; không có ai thì không cho gửi.
-   - Quy trình mới chỉ cấu hình **Ký chính (`KY_CHINH`)**. Không tạo hay kích hoạt cấu hình `KY_NHAY`; quy trình cũ còn ký nháy phải được nhân bản, bỏ người ký nháy và kích hoạt phiên bản mới trước khi dùng cho hồ sơ mới.
-   - Hồ sơ đã gửi và bằng chứng lịch sử giữ nguyên vai trò `KY_NHAY` và tiếp tục xử lý theo snapshot của lượt đã gửi. Không chuyển người ký nháy cũ thành người ký chính.
+   - Mọi người ký có cùng một vai trò (**Ký chính**, `KY_CHINH`).
    - Quy trình đã kích hoạt không sửa trực tiếp; thay đổi bằng nhân bản phiên bản mới.
    - Nháp chưa gửi chỉ được gửi theo phiên bản đang hoạt động. Khi phiên bản cũ đã ngừng và có phiên bản mới hơn cùng mã đang hoạt động, người tạo có thể xác nhận chuyển nháp sang phiên bản đó; hệ thống cập nhật phiên bản trên nháp và ghi nhật ký. Người tạo phải xem lại danh sách người ký và đặt lại vị trí ký trước khi gửi. Không có phiên bản cùng mã đang chạy thì nháp chưa thể gửi.
 3. **Tạo trình ký, định vị nơi ký và Lazy Stamping:**
@@ -49,12 +48,10 @@ Xây dựng phân hệ **Trình ký** gồm: tạo hồ sơ trình ký; luân ch
    - **Nhánh 2 — Lỗi lớn, chặn luồng:** `yeu_cau_sua` kèm lý do; lượt trình chuyển `YEU_CAU_SUA`, các cấp đang mở `TAM_DUNG`; mở thread trao đổi hai chiều (`signing_change_thread`). Khi thống nhất, người tạo tải bản mới, thread `DA_GIAI_QUYET`, hệ thống tạo lượt trình mới để ký lại toàn bộ. Lượt cũ giữ nguyên `YEU_CAU_SUA` làm lịch sử.
    - **Từ chối = không đồng ý ban hành** (`tu_choi`), bắt buộc lý do; hồ sơ kết thúc ở `TU_CHOI`. Muốn trình lại thì tạo hồ sơ mới (`trinh_lai`) trỏ về hồ sơ gốc (`ho_so_goc`). Giao diện phân biệt rõ "Trả lại để sửa" (nhánh 2) và "Không đồng ý ban hành".
    - Thu hồi chữ ký (`thu_hoi`) chỉ khi cấp của người ký còn mở và trước khi lượt trình hoàn thành; chữ ký cũ giữ nguyên làm bằng chứng.
-7. **Quá hạn và ủy quyền khẩn cấp** (MVP: hiển thị hạn xử lý, ký muộn có ghi nhận; ủy quyền khẩn cấp theo từng hồ sơ đã triển khai; nhắc, leo thang và ủy quyền theo thời gian thuộc backlog sau MVP, #80 mục 8):
+7. **Quá hạn** (MVP: hiển thị hạn xử lý, ký muộn có ghi nhận; nhắc, leo thang và ủy quyền theo thời gian thuộc backlog sau MVP, #80 mục 8):
    - Quá hạn không tự hủy, không tự từ chối; người ký vẫn ký muộn được và hệ thống ghi `ky_tre_han = true`, `so_giay_tre`.
    - Nhắc và leo thang: nhắc trước hạn 24 giờ, tại hạn, nhắc lặp mỗi 24 giờ khi quá hạn; quá hạn 48 giờ báo cấp trên trực tiếp của người ký và người tạo. Có báo cáo trễ hạn theo người/đơn vị.
    - **Ủy quyền theo thời gian** (căn cứ NĐ 30/2020 Điều 13: ủy quyền có thời hạn và phạm vi): người ủy quyền hoặc cấp trên khai báo trước người nhận, khoảng thời gian, phạm vi và hình thức ký (KT., TL., TUQ.); hồ sơ đến trong khoảng đó tự chuyển người nhận.
-   - **Ủy quyền khẩn cấp** (`uy_quyen`): chỉ cấp trên trực tiếp của người ký hoặc quản trị thực hiện; chức danh người nhận phải nằm trong ma trận chức danh được cấu hình cho chức danh gốc của người ký; lý do bắt buộc (`ly_do_uy_quyen`), có nhật ký; không ủy quyền cho người đã có trong cùng cấp hoặc quay lại người giao quyền ban đầu. Ma trận hiện không giới hạn theo loại hồ sơ, phạm vi đơn vị hay giá trị; chỉ xét chức danh chính của nhân sự. Giới hạn này được ghi tại [README phân hệ](README.md#8-chua-lam-va-ly-do).
-   - Thể thức ký KT./TL./TUQ. chưa được lưu hoặc render trong khối chữ ký hoàn tất; hiện chỉ ghi người giao quyền, lý do và thời điểm ủy quyền.
 8. **Ngoài phạm vi MVP (#80 mục 8):**
    - Chữ ký Ed25519 của luồng duyệt là **chữ ký điện tử nội bộ**, không gọi là chữ ký số và không có giá trị pháp lý với bên ngoài. Tệp hoàn tất mang dòng nhận diện "bản duyệt nội bộ, chưa phát hành".
    - CA, chứng thư số, `LegalSignerAdapter`, DocMDP, cấp số qua sổ văn bản đi và phát hành pháp lý không phải điều kiện hoàn tất MVP và đã gỡ khỏi roadmap triển khai của #80.
@@ -69,12 +66,11 @@ Chi tiết field, kiểu dữ liệu và ràng buộc tại [`signing-backend-pl
 | :--- | :--- | :--- |
 | `signing_process` | Quy trình mẫu có phiên bản, phạm vi và đơn vị áp dụng | `NHAP`, `HOAT_DONG`, `NGUNG` |
 | `signing_process_step` | Cấp ký trong quy trình, số giờ xử lý | — |
-| `signing_process_step_signer` | Người ký cấu hình sẵn (người ký hoặc chức vụ + phạm vi chức vụ), `vai_tro_ky`, `chan_ky_chinh` | — |
+| `signing_process_step_signer` | Người ký cấu hình sẵn (người ký hoặc chức vụ + phạm vi chức vụ), `vai_tro_ky` | — |
 | `signing_request` | Hồ sơ trình ký, vòng đời tổng; `ho_so_goc` khi trình lại | `NHAP`, `CHO_KY`, `HOAN_THANH`, `TU_CHOI`, `HUY` (3 trạng thái cuối là kết thúc) |
 | `signing_attempt` | Lượt trình bất biến, nguồn sự thật của mã băm, tệp hoàn tất | `NHAP`, `CHO_KY`, `YEU_CAU_SUA`, `HOAN_THANH`, `TU_CHOI`, `HUY` |
 | `signing_request_step` | Snapshot cấp ký của lượt trình | `CHUA_MO`, `DANG_KY`, `HOAN_THANH`, `TAM_DUNG` |
-| `signing_request_step_signer` | Snapshot người ký, tọa độ ký, ủy quyền, `hinh_thuc_ky`, `chu_ky_hien_hanh` | `CHO_KY`, `DA_KY`, `TU_CHOI`, `YEU_CAU_SUA` |
-| `signing_delegation` | Ủy quyền ký theo thời gian | `HIEU_LUC`, `DA_HUY` |
+| `signing_request_step_signer` | Snapshot người ký, tọa độ ký, `chu_ky_hien_hanh` | `CHO_KY`, `DA_KY`, `TU_CHOI`, `YEU_CAU_SUA` |
 | `signing_key` | Khóa công khai Ed25519 (không lưu private key) | `CHO_KICH_HOAT`, `HOAT_DONG`, `DA_XOAY_VONG`, `THU_HOI`, `HET_HAN` |
 | `signing_signature` | Chữ ký bất biến: `chu_ky_so`, `ghi_chu_ky`, `ky_tre_han`, snapshot ảnh chữ ký | `CHUA_XAC_MINH`, `HOP_LE`, `KHONG_HOP_LE` |
 | `signing_manifest` | Bằng chứng tổng hợp chuẩn hóa, `ma_bam_bang_chung` | `NHAP`, `DA_CHOT` |

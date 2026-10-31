@@ -146,7 +146,7 @@ def tao_quy_trinh(nguoi_tao, *, ma_quy_trinh, ten_quy_trinh, pham_vi, don_vi_ap_
     """Tạo quy trình nháp (phiên bản 1) kèm các cấp và người ký cấu hình sẵn.
 
     `cap_ky`: danh sách dict {cap_ky, ten_cap_ky, thu_tu, don_vi_id?, so_gio_xu_ly?, ghi_chu?,
-    nguoi_ky: [{nguoi_ky?, chuc_vu_id?, vai_tro_ky?, chan_ky_chinh?, thu_tu}]}.
+    nguoi_ky: [{nguoi_ky?, chuc_vu_id?, pham_vi_chuc_vu?, thu_tu}]}.
     """
     kiem_tra_pham_vi(pham_vi, don_vi_ap_dung_id)
     _kiem_tra_tham_chieu(
@@ -203,13 +203,9 @@ def them_cap_ky(process, nguoi_thuc_hien, *, cap_ky, ten_cap_ky, thu_tu, nguoi_k
 
 
 @transaction.atomic
-def them_nguoi_ky(step, nguoi_thuc_hien, *, thu_tu, nguoi_ky=None, chuc_vu_id=None, pham_vi_chuc_vu=None,
-                  vai_tro_ky=enums.VaiTroKy.KY_CHINH, chan_ky_chinh=True):
+def them_nguoi_ky(step, nguoi_thuc_hien, *, thu_tu, nguoi_ky=None, chuc_vu_id=None, pham_vi_chuc_vu=None):
     process = _khoa(step.quy_trinh_id)
     _yeu_cau_ban_nhap(process)
-    if vai_tro_ky != enums.VaiTroKy.KY_CHINH:
-        raise SigningError(code="ky_nhay_khong_ho_tro",
-                           detail="Cấu hình ký cũ không còn được hỗ trợ. Hãy bỏ cấu hình này khỏi quy trình.")
     if (nguoi_ky is None) == (chuc_vu_id is None):
         raise SigningError(
             code="nguoi_ky_hoac_chuc_vu",
@@ -231,19 +227,8 @@ def them_nguoi_ky(step, nguoi_thuc_hien, *, thu_tu, nguoi_ky=None, chuc_vu_id=No
     )
     return SigningProcessStepSigner.objects.create(
         buoc_quy_trinh=step, nguoi_ky=nguoi_ky, chuc_vu_id=chuc_vu_id, pham_vi_chuc_vu=pham_vi_chuc_vu,
-        vai_tro_ky=vai_tro_ky, chan_ky_chinh=chan_ky_chinh, thu_tu=thu_tu,
+        thu_tu=thu_tu,
     )
-
-
-def kiem_tra_khong_co_ky_nhay(process):
-    """Quy trình cũ giữ nguyên lịch sử, nhưng không dùng ký nháy cho hồ sơ mới."""
-    if SigningProcessStepSigner.objects.filter(
-        buoc_quy_trinh__quy_trinh=process, vai_tro_ky=enums.VaiTroKy.KY_NHAY,
-    ).exists():
-        raise SigningError(
-            code="ky_nhay_khong_ho_tro",
-            detail="Quy trình chứa cấu hình ký cũ không được hỗ trợ. Hãy xóa cấu hình này ở bản nháp hoặc tạo phiên bản mới.",
-        )
 
 
 def kiem_tra_truoc_khi_kich_hoat(process):
@@ -258,7 +243,6 @@ def kiem_tra_truoc_khi_kich_hoat(process):
             detail="Có cấp ký chưa có người ký.",
             fields={"cap_ky_thieu_nguoi_ky": thieu},
         )
-    kiem_tra_khong_co_ky_nhay(process)
 
 
 @transaction.atomic
@@ -374,7 +358,7 @@ def nhan_ban(process, nguoi_thuc_hien):
             SigningProcessStepSigner.objects.create(
                 buoc_quy_trinh=step_moi, nguoi_ky=nk.nguoi_ky, chuc_vu_id=nk.chuc_vu_id,
                 pham_vi_chuc_vu=nk.pham_vi_chuc_vu,
-                vai_tro_ky=nk.vai_tro_ky, chan_ky_chinh=nk.chan_ky_chinh, thu_tu=nk.thu_tu,
+                vai_tro_ky=nk.vai_tro_ky, thu_tu=nk.thu_tu,
             )
     ghi_nhat_ky(nguoi_thuc_hien, LOAI, moi.pk, "NHAN_BAN_QUY_TRINH", trang_thai_sau=moi.trang_thai,
                 du_lieu_kem_theo={"tu_quy_trinh": nguon.pk, "phien_ban": moi.phien_ban})

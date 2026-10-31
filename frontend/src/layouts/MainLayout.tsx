@@ -9,6 +9,7 @@ import AppFooter from '@components/layout/AppFooter';
 import { ActivePageId } from '@app-types/navigation';
 import { ThemeMode } from '@app-types/theme';
 import { pathToPageId, pageIdToPath } from '@lib/routes';
+import { usePermissions } from '@lib/permissions';
 
 interface MainLayoutProps {
   children?: React.ReactNode;
@@ -41,6 +42,8 @@ export default function MainLayout({
 }: MainLayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
+  const { loaded: permissionsLoaded, can } = usePermissions();
+  const canUseAI = permissionsLoaded && can('use_aiassistant');
 
   const currentActivePage = activePage || pathToPageId(location.pathname);
   const effectiveCommittedPage = committedPage || currentActivePage;
@@ -453,7 +456,7 @@ export default function MainLayout({
       )}
 
       {/* 5. Box AI Trợ Lý nổi - Tự động ẩn khi người dùng đang ở trang Trợ lý AI toàn màn hình */}
-      {currentActivePage !== 'ai_assistant' && location.pathname !== '/ai-assistant' && (
+      {canUseAI && currentActivePage !== 'ai_assistant' && location.pathname !== '/ai-assistant' && (
         <FloatingAIBox onNavigate={handleNavigate} />
       )}
     </div>

@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ApiError } from '@lib/apiClient';
 import { recordsService } from '@lib/recordsService';
 import { setLanguage } from '@i18n/translate';
 import DossiersPage from './DossiersPage';
@@ -32,6 +33,25 @@ describe('DossiersPage', () => {
   afterEach(() => {
     cleanup();
     setLanguage('vi');
+  });
+
+  it('keeps the table and confirmation open when a referenced dossier cannot be deleted', async () => {
+    vi.mocked(recordsService.listDossiers).mockResolvedValue({ items: [
+      { id: 2, so_ky_hieu: 'HS', ten_ho_so: 'Hồ sơ liên kết', is_he_thong: false },
+    ], count: 1, next: null, previous: null });
+    const reason = 'Không thể xóa hồ sơ vì vẫn còn loại văn bản, văn bản hoặc tài liệu đang tham chiếu hồ sơ này.';
+    vi.mocked(recordsService.deleteDossier).mockRejectedValue(new ApiError(409, { detail: reason }));
+    render(<MemoryRouter><DossiersPage /></MemoryRouter>);
+    fireEvent.click(await screen.findByLabelText('Xóa Hồ sơ liên kết'));
+    fireEvent.click(screen.getByRole('button', { name: 'Xóa' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(reason);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByRole('table')).toHaveTextContent('Hồ sơ liên kết');
+    expect(screen.queryByText('Không thể tải dữ liệu')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Hủy' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('table')).toHaveTextContent('Hồ sơ liên kết');
+    expect(recordsService.listDossiers).toHaveBeenCalledTimes(1);
   });
 
   it('does not offer deletion for the system dossier', async () => {

@@ -41,6 +41,22 @@ CI và host staging chạy `python manage.py test` trong `backend/` với `DB_HO
 
 CI chạy thêm `scripts/build_db.py` trên một DB riêng để kiểm chứng DDL nạp được và migration đồng bộ được.
 
+## Nạp workbook dữ liệu mẫu (tùy chọn)
+
+`import_common_sample_data` chỉ ghi dữ liệu khi có `--apply`; mặc định và `--dry-run` chỉ kiểm tra workbook, đối chiếu cấu trúc và in số dòng. Trước khi dùng `--apply`, đặt `DEMO_PASSWORD` trong môi trường của tiến trình để khởi tạo mật khẩu cho các tài khoản có trong sheet `TaiKhoanDemo`, rồi kiểm tra `DB_HOST` và `DB_NAME` đang trỏ tới DB local/dev dự định.
+
+Chạy từ thư mục gốc repo trên PowerShell:
+
+```powershell
+$securePassword = Read-Host "DEMO_PASSWORD" -AsSecureString
+$env:DEMO_PASSWORD = [System.Net.NetworkCredential]::new("", $securePassword).Password
+.\backend\.venv\Scripts\python.exe backend\manage.py import_common_sample_data --file "<đường dẫn workbook.xlsx>" --dry-run
+.\backend\.venv\Scripts\python.exe backend\manage.py import_common_sample_data --file "<đường dẫn workbook.xlsx>" --apply
+Remove-Item Env:DEMO_PASSWORD
+```
+
+Lệnh nhập theo transaction: nếu một dòng lỗi thì toàn bộ lần nhập được rollback. Lệnh này không chạy trong migration, `build_db.py` hay deploy; không dùng để thay đổi DB staging thủ công.
+
 ## Dựng lại DB staging
 
 Dữ liệu staging là dữ liệu thử nghiệm. Thực hiện trên host staging, tài khoản có quyền `CREATEDB`, trong thư mục mã nguồn đã checkout đúng release và đã kích hoạt môi trường Python của backend. Mỗi quy trình nằm trong subshell `( set -euo pipefail; ... )`: lỗi ở bước nào thì quy trình dừng tại đó, phiên SSH không bị thoát.

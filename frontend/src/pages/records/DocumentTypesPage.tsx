@@ -49,6 +49,7 @@ export default function DocumentTypesPage() {
   const [searchInput, setSearchInput] = React.useState('');
   const [search, setSearch] = React.useState('');
   const [year, setYear] = React.useState('');
+  const [appliedYear, setAppliedYear] = React.useState('');
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [reloadKey, setReloadKey] = React.useState(0);
@@ -92,8 +93,8 @@ export default function DocumentTypesPage() {
         setIsLoading(true);
         setError(null);
         return dossierId
-          ? recordsService.listDocumentTypes(dossierId, { search, year, page, pageSize: PAGE_SIZE })
-          : recordsService.listDocumentTypeCatalog({ search, year, page, pageSize: PAGE_SIZE });
+          ? recordsService.listDocumentTypes(dossierId, { search, year: appliedYear, page, pageSize: PAGE_SIZE })
+          : recordsService.listDocumentTypeCatalog({ search, year: appliedYear, page, pageSize: PAGE_SIZE });
       })
       .then((result) => {
         if (!active || !result) return;
@@ -115,7 +116,7 @@ export default function DocumentTypesPage() {
     return () => {
       active = false;
     };
-  }, [dossierId, search, year, page, reloadKey, t]);
+  }, [dossierId, search, appliedYear, page, reloadKey, t]);
 
   React.useEffect(() => {
     const timer = setTimeout(() => {
@@ -261,10 +262,10 @@ export default function DocumentTypesPage() {
           onSubmit={(event) => {
             event.preventDefault();
             const trimmed = searchInput.trim();
-            if (search !== trimmed) {
-              setPage(1);
-              setSearch(trimmed);
-            }
+            setPage(1);
+            setSearch(trimmed);
+            setAppliedYear(year);
+            setReloadKey((value) => value + 1);
           }}
         >
           <label className="relative flex-1">
@@ -291,13 +292,7 @@ export default function DocumentTypesPage() {
           <select
             className={`${controlClass} w-full md:w-40`}
             value={year}
-            onChange={(event) => {
-              const nextYear = event.target.value;
-              if (nextYear !== year) {
-                setYear(nextYear);
-                setPage(1);
-              }
-            }}
+            onChange={(event) => setYear(event.target.value)}
             aria-label={t('records.filters.year')}
           >
             <option value="">{t('records.filters.allYears')}</option>
@@ -310,7 +305,7 @@ export default function DocumentTypesPage() {
           <Button type="submit" variant="secondary" icon="fa-filter">
             {t('records.actions.filter')}
           </Button>
-          {(search || year) && (
+          {(search || year || appliedYear) && (
             <Button
               type="button"
               variant="ghost"
@@ -318,6 +313,7 @@ export default function DocumentTypesPage() {
                 setSearchInput('');
                 setSearch('');
                 setYear('');
+                setAppliedYear('');
                 setPage(1);
               }}
             >

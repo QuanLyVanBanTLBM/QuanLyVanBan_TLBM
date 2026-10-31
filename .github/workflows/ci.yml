@@ -27,7 +27,7 @@ concurrency:
 jobs:
   backend:
     name: backend
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
       DJANGO_SECRET_KEY: "ci-only-not-for-production"
@@ -134,13 +134,12 @@ jobs:
           raise SystemExit(0 if result.wasSuccessful() else 1)
           PY
 
-      - name: Database lifecycle and upgrade regressions
-        working-directory: .
-        run: python -m unittest discover -s scripts -p "test_build_db.py"
-
       - name: Install PostgreSQL 16 client tools for backup drill
         run: |
           set -euo pipefail
+          sudo install -d /etc/apt/keyrings
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/keyrings/postgresql.gpg
+          echo "deb [signed-by=/etc/apt/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update
           sudo apt-get install --yes postgresql-client-16
           CLIENT_BIN=/usr/lib/postgresql/16/bin
@@ -154,6 +153,10 @@ jobs:
             esac
           done
           echo "$CLIENT_BIN" >> "$GITHUB_PATH"
+
+      - name: Database lifecycle and upgrade regressions
+        working-directory: .
+        run: python -m unittest discover -s scripts -p "test_build_db.py"
 
       - name: PostgreSQL 16 backup/restore drill (no skips)
         working-directory: .
