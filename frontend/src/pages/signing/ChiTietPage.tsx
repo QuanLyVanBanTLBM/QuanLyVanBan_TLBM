@@ -20,7 +20,7 @@ import { useTai, useToi } from '@lib/signing/hooks';
 import { useSigningT } from '@lib/signing/i18n';
 import { sha256Hex } from '@lib/signing/khoaKy';
 import type { HoSoChiTiet } from '@lib/signing/types';
-import { soKhung, viTriCuaNguoiKy } from '@lib/signing/viTri';
+import { soKhung, viTriCuaNguoiKy, xepKhungKhongChong } from '@lib/signing/viTri';
 
 function DongThongTin({ nhan, children }: { nhan: string; children: ReactNode }) {
   return (
@@ -125,7 +125,7 @@ function ChiTietHoSo({ id }: { id: number }) {
   }
   if (!hoSo) return null;
 
-  const khung: KhungHienThi[] = (luot?.cap_ky || []).flatMap((c) => c.nguoi_ky).flatMap((n) => {
+  const khung: KhungHienThi[] = xepKhungKhongChong((luot?.cap_ky || []).flatMap((c) => c.nguoi_ky).flatMap((n) => {
     const v = viTriCuaNguoiKy(n);
     if (!v) return [];
     const da_ky = n.trang_thai === 'DA_KY' && n.chu_ky;
@@ -134,7 +134,7 @@ function ChiTietHoSo({ id }: { id: number }) {
       phu: da_ky ? dinhDangNgay(n.chu_ky.ngay_ky, lang) : t(`vaiTro.${n.vai_tro_ky}`),
       anhUrl: da_ky ? anh[n.chu_ky.id] : undefined, kieu: da_ky ? 'da_ky' : 'cho',
     } as KhungHienThi];
-  });
+  }));
   const coTraoDoi = hoSo.luot_trinh.some((l) => l.yeu_cau_sua.length > 0);
   const vanBanChon = (vanBanDi.duLieu || []).find((vb) => String(vb.id) === vanBanDinhLienKet) || null;
   const lienKetVanBan = async () => {
