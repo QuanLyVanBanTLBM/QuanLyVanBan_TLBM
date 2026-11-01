@@ -24,7 +24,7 @@ from ..storage import StorageError, get_storage
 from ..tich_hop import to_chuc
 from ..tich_hop.van_ban import kiem_tra_van_ban_trinh_ky, ma_van_ban_di_xem_duoc
 from . import process as process_service
-from . import thong_bao
+from . import quyen_ky, thong_bao
 from .audit import ghi_nhat_ky
 
 LOAI = "signing_request"
@@ -417,14 +417,15 @@ def _xac_dinh_nguoi_ky(yeu_cau, cau_hinh, chon_nguoi_ky):
         return None, {"loai": "khong_co_ung_vien", "cau_hinh": cau_hinh.pk, "chuc_vu_id": cau_hinh.chuc_vu_id}
     if len(ung_vien) == 1:
         return ung_vien[0], None
+    bi_khoa = quyen_ky.ids_dang_bi_khoa()
     da_chon = chon_nguoi_ky.get(str(cau_hinh.pk))
     for nguoi in ung_vien:
         if nguoi.pk == da_chon:
             return nguoi, None
     return None, {
         "loai": "can_chon_nguoi_ky", "cau_hinh": cau_hinh.pk,
-        "ung_vien": [{"id": u.pk, "ten": to_chuc.ten_hien_thi(u), "co_quyen_ky": co_quyen(u, KY_TRINH_KY)}
-                     for u in ung_vien],
+        "ung_vien": [{"id": u.pk, "ten": to_chuc.ten_hien_thi(u), "co_quyen_ky": co_quyen(u, KY_TRINH_KY),
+                      "bi_khoa_quyen_ky": u.pk in bi_khoa} for u in ung_vien],
     }
 
 
@@ -498,6 +499,9 @@ def tao_luot_trinh(yeu_cau, nguoi, *, chon_nguoi_ky, khoa_chong_trung, vi_tri_ky
             elif not co_quyen(tai_khoan, KY_TRINH_KY):
                 loi.append({"loai": "nguoi_ky_thieu_quyen_ky", "cau_hinh": cau_hinh.pk, "nguoi_ky": tai_khoan.pk,
                             "ten": to_chuc.ten_hien_thi(tai_khoan) or tai_khoan.get_username()})
+            elif quyen_ky.khoa_dang_hieu_luc(tai_khoan) is not None:
+                loi.append({"loai": "nguoi_ky_bi_khoa_quyen_ky", "cau_hinh": cau_hinh.pk, "nguoi_ky": tai_khoan.pk,
+                            "ten": to_chuc.ten_hien_thi(tai_khoan) or tai_khoan.get_username()})
             elif any(t.pk == tai_khoan.pk for _, t in nguoi_cap):
                 loi.append({"loai": "nguoi_ky_trung_trong_cap", "cau_hinh": cau_hinh.pk, "nguoi_ky": tai_khoan.pk})
             else:
@@ -509,6 +513,13 @@ def tao_luot_trinh(yeu_cau, nguoi, *, chon_nguoi_ky, khoa_chong_trung, vi_tri_ky
             raise SigningError(
                 code="nguoi_ky_thieu_quyen_ky",
                 detail="Có người ký không có quyền ký trình ký; chọn người khác hoặc cấp quyền trước khi gửi.",
+                fields={"nguoi_ky": loi},
+            )
+        bi_khoa_quyen = [v for v in loi if v["loai"] == "nguoi_ky_bi_khoa_quyen_ky"]
+        if bi_khoa_quyen:
+            raise SigningError(
+                code="nguoi_ky_bi_khoa_quyen_ky",
+                detail="Người này tạm thời không có quyền ký; chọn người khác hoặc liên hệ quản trị viên.",
                 fields={"nguoi_ky": loi},
             )
         can_chon = [v for v in loi if v["loai"] == "can_chon_nguoi_ky"]

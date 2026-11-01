@@ -14,6 +14,7 @@ from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status
 
@@ -57,6 +58,16 @@ def khoa_dang_hieu_luc(nguoi, thoi_diem=None):
     if khoa is None or (khoa.khoa_den is not None and khoa.khoa_den <= thoi_diem):
         return None
     return khoa
+
+
+def ids_dang_bi_khoa(thoi_diem=None):
+    """Tập id tài khoản đang bị khóa quyền ký (chưa bật lại và chưa quá hạn)."""
+    thoi_diem = thoi_diem or timezone.now()
+    return set(
+        SigningRightLock.objects.filter(bat_lai_luc__isnull=True)
+        .filter(Q(khoa_den__isnull=True) | Q(khoa_den__gt=thoi_diem))
+        .values_list("nguoi_bi_khoa_id", flat=True)
+    )
 
 
 def kiem_tra_duoc_ky(nguoi):

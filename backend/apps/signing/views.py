@@ -869,8 +869,9 @@ class NguoiKyCoQuyenView(SigningAPIView):
 
     def get(self, request):
         yeu_cau_quyen(request.user, QUAN_LY_QUY_TRINH)
-        users = get_user_model().objects.filter(is_active=True).order_by("pk")
-        return Response({"ids": [u.pk for u in users.iterator(chunk_size=500) if co_quyen(u, KY_TRINH_KY)]})
+        users = get_user_model().objects.filter(is_active=True).exclude(pk__in=quyen_ky_service.ids_dang_bi_khoa())
+        return Response({"ids": [u.pk for u in users.order_by("pk").iterator(chunk_size=500)
+                                 if co_quyen(u, KY_TRINH_KY)]})
 
 
 class CanBoTheoChucVuView(SigningAPIView):
@@ -922,6 +923,7 @@ class ToiView(SigningAPIView):
                                                      HUY_TRINH_KY, XEM_NHAT_KY, XEM_TAT_CA, QUAN_LY_QUY_TRINH)},
             "la_quan_tri": to_chuc.la_quan_tri(u), "la_lanh_dao_don_vi": to_chuc.la_lanh_dao_don_vi(u, don_vi),
             "co_anh_chu_ky": SigningUserSignature.objects.filter(nguoi_dung=u).exists(),
+            "khoa_quyen_ky": (lambda k: {"khoa_den": k.khoa_den} if k else None)(quyen_ky_service.khoa_dang_hieu_luc(u)),
         })
 
 
