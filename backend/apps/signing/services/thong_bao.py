@@ -30,6 +30,7 @@ from ..models import (
     SigningRequestStepSigner,
 )
 from ..tich_hop.to_chuc import ten_hien_thi
+from . import quyen_ky
 from ..tich_hop.van_ban import mo_ta_ho_so
 
 logger = logging.getLogger(__name__)
@@ -49,8 +50,9 @@ SO_LAN_GUI_TOI_DA = 5
 
 def _tao(yeu_cau, nguoi_nhan, loai, khoa, buoc_ky=None):
     bay_gio = timezone.now()
+    bi_khoa_quyen_ky = quyen_ky.khoa_dang_hieu_luc(nguoi_nhan, bay_gio) is not None
     for kenh in (enums.KenhThongBao.IN_APP, enums.KenhThongBao.EMAIL):
-        if kenh == enums.KenhThongBao.EMAIL and not getattr(nguoi_nhan, "email", ""):
+        if kenh == enums.KenhThongBao.EMAIL and (bi_khoa_quyen_ky or not getattr(nguoi_nhan, "email", "")):
             continue
         trong_ung_dung = kenh == enums.KenhThongBao.IN_APP
         try:
