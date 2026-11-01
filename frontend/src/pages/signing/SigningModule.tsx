@@ -5,10 +5,12 @@
 import { Component, type ErrorInfo, lazy, type ReactNode, Suspense, useEffect, useMemo, useRef } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@components/common';
-import { DangTai, KhongTimThay, LoiTai } from '@components/signing/ChungUI';
+import { DangTai, KhongTimThay, LoiTai, ThongBao } from '@components/signing/ChungUI';
 import { signingApi } from '@lib/signing/api';
 import { coQuyen, SigningContext, useTai } from '@lib/signing/hooks';
+import { dinhDangNgay } from '@lib/signing/dinhDang';
 import { useSigningT } from '@lib/signing/i18n';
+import { useTranslation } from '@i18n/translate';
 import './signing.css';
 
 const DanhSachPage = lazy(() => import('./DanhSachPage'));
@@ -16,6 +18,7 @@ const TaoHoSoPage = lazy(() => import('./TaoHoSoPage'));
 const ChiTietPage = lazy(() => import('./ChiTietPage'));
 const QuyTrinhPage = lazy(() => import('./QuyTrinhPage'));
 const KhoaPage = lazy(() => import('./KhoaPage'));
+const QuanTriKhoaPage = lazy(() => import('./QuanTriKhoaPage'));
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -56,6 +59,7 @@ class SigningErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
 export default function SigningModule() {
   const { t, loi } = useSigningT();
+  const { currentLang } = useTranslation();
   const toi = useTai(() => signingApi.toi());
   const dieuHuong = useNavigate();
   const location = useLocation();
@@ -81,6 +85,7 @@ export default function SigningModule() {
     ...(coQuyen(toi.duLieu, 'manage_signing_process') || coQuyen(toi.duLieu, 'view_trinhky')
       ? [{ den: '/approvals/quy-trinh', nhan: t('nav.quyTrinh'), icon: 'fa-diagram-project' }] : []),
     ...(coQuyen(toi.duLieu, 'sign_trinhky') ? [{ den: '/approvals/khoa', nhan: t('nav.khoaCuaToi'), icon: 'fa-key' }] : []),
+    ...(toi.duLieu?.la_quan_tri ? [{ den: '/approvals/quan-ly-khoa', nhan: t('nav.quanLyKhoa'), icon: 'fa-user-lock' }] : []),
   ];
   const tieuDeRoute = pathname === '/approvals' || pathname === '/approvals/' ? t('nav.canToiKy')
     : pathname === '/approvals/toi-gui' ? t('nav.toiGui')
@@ -88,6 +93,7 @@ export default function SigningModule() {
         : pathname === '/approvals/tao-moi' ? t('nav.taoMoi')
           : pathname === '/approvals/quy-trinh' ? t('nav.quyTrinh')
             : pathname === '/approvals/khoa' ? t('nav.khoaCuaToi')
+              : pathname === '/approvals/quan-ly-khoa' ? t('nav.quanLyKhoa')
               : pathname === '/approvals/tai-lieu' ? t('nav.taiLieu')
                 : /^\/approvals\/\d+$/.test(pathname) ? t('chiTiet.tienTrinh') : t('chung.trangKhongTonTai');
 
@@ -172,6 +178,17 @@ export default function SigningModule() {
         </div>
         {toi.dangTai && !toi.duLieu && <DangTai />}
         {toi.loi && <LoiTai thongBao={loi(toi.loi)} onThuLai={toi.tai} />}
+        {toi.duLieu?.khoa_quyen_ky && (
+          <ThongBao loai="canh_bao">
+            <p className="font-semibold">{t('khoaQuyenKy.tieuDe')}</p>
+            <p>
+              {toi.duLieu.khoa_quyen_ky.khoa_den
+                ? t('khoaQuyenKy.denHan', { han: dinhDangNgay(toi.duLieu.khoa_quyen_ky.khoa_den, currentLang) })
+                : t('khoaQuyenKy.daiHan')}{' '}
+              {t('khoaQuyenKy.lienHe')}
+            </p>
+          </ThongBao>
+        )}
         {toi.duLieu && (
           <SigningErrorBoundary fallbackMessage={t('chung.loiTai')}>
             <Suspense fallback={<DangTai />}>
@@ -182,6 +199,7 @@ export default function SigningModule() {
                 <Route path="tao-moi" element={<TaoHoSoPage />} />
                 <Route path="quy-trinh" element={<QuyTrinhPage />} />
                 <Route path="khoa" element={<KhoaPage />} />
+                <Route path="quan-ly-khoa" element={<QuanTriKhoaPage />} />
                 {/* Tab Thông báo đã bỏ: giữ đường dẫn cũ để liên kết lưu sẵn không rơi vào 404 */}
                 <Route path="thong-bao" element={<Navigate to="/approvals" replace />} />
                 <Route path="tai-lieu" element={<Navigate to="/approvals/tat-ca?che_do=tep" replace />} />

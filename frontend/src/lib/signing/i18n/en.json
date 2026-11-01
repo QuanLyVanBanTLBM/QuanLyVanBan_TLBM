@@ -7,7 +7,8 @@
     "taoMoi": "New signing request",
     "quyTrinh": "Signing workflows",
     "khoaCuaToi": "Signing key settings",
-    "taiLieu": "Request files"
+    "taiLieu": "Request files",
+    "quanLyKhoa": "Key management"
   },
   "chung": {
     "dangTai": "Loading…",
@@ -486,7 +487,17 @@
     "chua_co_bang_chung": "The request has not finished approval, so there is no evidence yet.",
     "chua_co_anh_chu_ky": "You have not set up a personal signature image. Please go to Signing key settings to upload one before signing.",
     "chua_co_khoa_ky": "Your account does not have an active signing key. Please go to Signing key settings to generate one.",
-    "pin_khong_hop_le": "Please enter a valid 8-digit signing PIN."
+    "pin_khong_hop_le": "Please enter a valid 8-digit signing PIN.",
+    "nguoi_ky_bi_khoa_quyen_ky": "This person temporarily has no signing right. Choose another person or contact an administrator.",
+    "quyen_ky_bi_khoa": "The signing right of the account is locked by an administrator. Contact an administrator.",
+    "quyen_ky_da_bi_khoa": "The signing right of the account is already locked.",
+    "quyen_ky_khong_bi_khoa": "The signing right of the account is not locked.",
+    "khong_the_khoa_chinh_minh": "You cannot lock your own signing right.",
+    "thoi_han_khoa_khong_hop_le": "Invalid lock duration.",
+    "thieu_ly_do_khoa_quyen_ky": "A reason for locking the signing right is required.",
+    "thieu_ly_do_bat_lai_quyen_ky": "A reason for restoring the signing right is required.",
+    "khong_co_khoa_de_thu_hoi": "The account has no signing key to revoke.",
+    "dung_chuc_nang_thu_hoi_cua_chu_khoa": "Use the revoke function for your own key in the signing key settings."
   },
   "nhatKy": {
     "KHAC": "Other activity",
@@ -552,5 +563,54 @@
     "ten_cap_ky": "Level name",
     "so_gio_xu_ly": "Processing hours",
     "ghi_chu_ky": "Signature note"
+  },
+  "quanTri": {
+    "tieuDe": "Signing key and signing right management",
+    "moTa": "View signing key, PIN and signing right status of accounts; temporarily lock or restore the signing right; revoke a signing key in an emergency. Every action requires a reason and is logged.",
+    "timKiem": "Search by name, username, position, unit",
+    "cotTaiKhoan": "Account",
+    "cotKhoaKy": "Signing key",
+    "cotPin": "PIN",
+    "cotQuyenKy": "Signing right",
+    "cotThaoTac": "Actions",
+    "chuaCoKhoa": "No active key",
+    "pinBinhThuong": "Normal",
+    "pinSaiLan": "{so} wrong attempts",
+    "pinKhoaTam": "Temporarily locked until {han}",
+    "pinKhoaCung": "Hard locked",
+    "chuaDatPin": "PIN not set",
+    "quyenBinhThuong": "Allowed to sign",
+    "quyenKhongCo": "No signing permission",
+    "quyenBiKhoaDen": "Locked until {han}",
+    "quyenBiKhoaVoHan": "Locked until restored",
+    "khoaQuyen": "Lock signing right",
+    "batLaiQuyen": "Restore signing right",
+    "thuHoiKhoa": "Revoke signing key",
+    "tieuDeKhoaQuyen": "Lock signing right of {ten}",
+    "tieuDeBatLai": "Restore signing right of {ten}",
+    "tieuDeThuHoi": "Revoke signing key of {ten}",
+    "moTaKhoaQuyen": "The account cannot sign and receives no signing emails until the lock expires or is restored.",
+    "moTaBatLai": "The signing right of the account is restored immediately. The restore reason is logged.",
+    "moTaThuHoi": "The active signing key is revoked and the PIN bound to it becomes invalid. The account must create a new key and set a new PIN to sign.",
+    "thoiHan": "Lock duration",
+    "thoiHan1Gio": "1 hour",
+    "thoiHan8Gio": "8 hours",
+    "thoiHan24Gio": "24 hours",
+    "thoiHanDenKhiBatLai": "Until restored",
+    "lyDo": "Reason",
+    "lyDoBatBuoc": "A reason is required.",
+    "xacNhan": "Confirm",
+    "huyBo": "Cancel",
+    "daKhoa": "Signing right of {ten} has been locked.",
+    "daBatLai": "Signing right of {ten} has been restored.",
+    "daThuHoi": "Signing key of {ten} has been revoked.",
+    "khongCoKetQua": "No matching accounts.",
+    "khongPhaiQuanTri": "Only administrators can use this function."
+  },
+  "khoaQuyenKy": {
+    "tieuDe": "Your signing right is locked by an administrator",
+    "daiHan": "You cannot sign until it is restored.",
+    "denHan": "You cannot sign until {han}.",
+    "lienHe": "Contact an administrator for assistance."
   }
 }

@@ -7,7 +7,8 @@
     "taoMoi": "Tạo hồ sơ trình ký",
     "quyTrinh": "Quy trình ký",
     "khoaCuaToi": "Cấu hình khóa ký",
-    "taiLieu": "Tệp hồ sơ"
+    "taiLieu": "Tệp hồ sơ",
+    "quanLyKhoa": "Quản lý khóa ký"
   },
   "chung": {
     "dangTai": "Đang tải…",
@@ -486,7 +487,17 @@
     "chua_co_bang_chung": "Hồ sơ chưa hoàn tất duyệt, chưa có bằng chứng.",
     "chua_co_anh_chu_ky": "Bạn chưa thiết lập ảnh chữ ký cá nhân. Vui lòng vào trang Cấu hình khóa ký để tạo hoặc tải lên ảnh chữ ký trước khi ký duyệt.",
     "chua_co_khoa_ky": "Tài khoản của bạn chưa có khóa ký nào đang hoạt động. Vui lòng vào trang Cấu hình khóa ký để tạo khóa.",
-    "pin_khong_hop_le": "Vui lòng nhập đúng mã PIN ký gồm đúng 8 chữ số."
+    "pin_khong_hop_le": "Vui lòng nhập đúng mã PIN ký gồm đúng 8 chữ số.",
+    "nguoi_ky_bi_khoa_quyen_ky": "Người này tạm thời không có quyền ký. Chọn người khác hoặc liên hệ quản trị viên.",
+    "quyen_ky_bi_khoa": "Quyền ký của tài khoản đang bị quản trị viên khóa. Liên hệ quản trị viên.",
+    "quyen_ky_da_bi_khoa": "Quyền ký của tài khoản đang bị khóa.",
+    "quyen_ky_khong_bi_khoa": "Quyền ký của tài khoản hiện không bị khóa.",
+    "khong_the_khoa_chinh_minh": "Không thể khóa quyền ký của chính mình.",
+    "thoi_han_khoa_khong_hop_le": "Thời hạn khóa không hợp lệ.",
+    "thieu_ly_do_khoa_quyen_ky": "Phải nhập lý do khóa quyền ký.",
+    "thieu_ly_do_bat_lai_quyen_ky": "Phải nhập lý do bật lại quyền ký.",
+    "khong_co_khoa_de_thu_hoi": "Tài khoản không có khóa ký nào để thu hồi.",
+    "dung_chuc_nang_thu_hoi_cua_chu_khoa": "Dùng chức năng thu hồi khóa của chính mình trong cấu hình khóa ký."
   },
   "nhatKy": {
     "KHAC": "Hoạt động khác",
@@ -552,5 +563,54 @@
     "ten_cap_ky": "Tên cấp ký",
     "so_gio_xu_ly": "Số giờ xử lý",
     "ghi_chu_ky": "Ghi chú ký"
+  },
+  "quanTri": {
+    "tieuDe": "Quản lý khóa ký và quyền ký",
+    "moTa": "Xem trạng thái khóa ký, PIN và quyền ký của tài khoản; khóa tạm thời hoặc bật lại quyền ký; thu hồi khẩn cấp khóa ký. Mọi thao tác bắt buộc nhập lý do và được ghi nhật ký.",
+    "timKiem": "Tìm theo họ tên, tên đăng nhập, chức vụ, đơn vị",
+    "cotTaiKhoan": "Tài khoản",
+    "cotKhoaKy": "Khóa ký",
+    "cotPin": "PIN",
+    "cotQuyenKy": "Quyền ký",
+    "cotThaoTac": "Thao tác",
+    "chuaCoKhoa": "Chưa có khóa hoạt động",
+    "pinBinhThuong": "Bình thường",
+    "pinSaiLan": "Sai {so} lần",
+    "pinKhoaTam": "Khóa tạm đến {han}",
+    "pinKhoaCung": "Khóa cứng",
+    "chuaDatPin": "Chưa đặt PIN",
+    "quyenBinhThuong": "Được ký",
+    "quyenKhongCo": "Không có quyền ký",
+    "quyenBiKhoaDen": "Đang bị khóa đến {han}",
+    "quyenBiKhoaVoHan": "Đang bị khóa đến khi được bật lại",
+    "khoaQuyen": "Khóa quyền ký",
+    "batLaiQuyen": "Bật lại quyền ký",
+    "thuHoiKhoa": "Thu hồi khóa ký",
+    "tieuDeKhoaQuyen": "Khóa quyền ký của {ten}",
+    "tieuDeBatLai": "Bật lại quyền ký của {ten}",
+    "tieuDeThuHoi": "Thu hồi khóa ký của {ten}",
+    "moTaKhoaQuyen": "Tài khoản không ký được và không nhận email trình ký cho đến khi hết thời hạn hoặc được bật lại.",
+    "moTaBatLai": "Quyền ký của tài khoản được khôi phục ngay. Lý do bật lại được ghi vào nhật ký.",
+    "moTaThuHoi": "Khóa ký đang hoạt động bị thu hồi và PIN gắn với khóa mất hiệu lực. Tài khoản cần tạo khóa mới và đặt PIN mới để ký.",
+    "thoiHan": "Thời hạn khóa",
+    "thoiHan1Gio": "1 giờ",
+    "thoiHan8Gio": "8 giờ",
+    "thoiHan24Gio": "24 giờ",
+    "thoiHanDenKhiBatLai": "Đến khi được bật lại",
+    "lyDo": "Lý do",
+    "lyDoBatBuoc": "Phải nhập lý do.",
+    "xacNhan": "Xác nhận",
+    "huyBo": "Hủy bỏ",
+    "daKhoa": "Đã khóa quyền ký của {ten}.",
+    "daBatLai": "Đã bật lại quyền ký của {ten}.",
+    "daThuHoi": "Đã thu hồi khóa ký của {ten}.",
+    "khongCoKetQua": "Không có tài khoản phù hợp.",
+    "khongPhaiQuanTri": "Chỉ quản trị viên được dùng chức năng này."
+  },
+  "khoaQuyenKy": {
+    "tieuDe": "Quyền ký của bạn đang bị quản trị viên khóa",
+    "daiHan": "Bạn không ký được cho đến khi được bật lại.",
+    "denHan": "Bạn không ký được đến {han}.",
+    "lienHe": "Liên hệ quản trị viên để được hỗ trợ."
   }
 }

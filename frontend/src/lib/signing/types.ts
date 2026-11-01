@@ -18,6 +18,23 @@ export interface NguoiDungHienTai {
   la_quan_tri: boolean;
   la_lanh_dao_don_vi: boolean;
   co_anh_chu_ky?: boolean;
+  /** Quyền ký đang bị quản trị viên khóa (null: không bị khóa); không kèm lý do nội bộ. */
+  khoa_quyen_ky?: { khoa_den: string | null } | null;
+}
+
+export type ThoiHanKhoaQuyenKy = '1_gio' | '8_gio' | '24_gio' | 'den_khi_bat_lai';
+
+/** Một dòng của tab quản lý khóa ký (quản trị viên). */
+export interface QuanTriNguoiDung {
+  id: number;
+  ten: string;
+  ten_dang_nhap: string;
+  chuc_vu: string | null;
+  don_vi: string | null;
+  co_quyen_ky: boolean;
+  khoa_ky: { id: number; ma_khoa: string; trang_thai: string } | null;
+  pin: { so_lan_sai: number; khoa_den: string | null; khoa_cung: boolean; dang_khoa: boolean } | null;
+  khoa_quyen_ky: { id: number; khoa_tu: string; khoa_den: string | null; ly_do: string; nguoi_khoa_id: number } | null;
 }
 
 export interface ThongTinAnhChuKyCaNhan {
