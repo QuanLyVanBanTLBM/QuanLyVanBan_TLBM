@@ -22,7 +22,7 @@ from ..errors import ConflictError, SigningError
 from ..models import SigningAttempt, SigningRequest, SigningSignature
 from ..pdf_hoan_tat import LoiTaoTep, dung_tep_hoan_tat
 from ..permissions import XEM_NHAT_KY, co_quyen
-from ..storage import StorageError, get_storage
+from ..storage import StorageError, get_storage, xoa_tep_sau_commit
 from .audit import ghi_nhat_ky
 from .bang_chung import bang_chung_cua
 from .trinh_ky import luot_hien_hanh
@@ -37,7 +37,9 @@ def _ket_thuc(luot_id, nguoi_id, *, loi="", vi_tri="", ma_bam=""):
     with transaction.atomic():
         luot = SigningAttempt.objects.select_for_update().select_related("trinh_ky").get(pk=luot_id)
         if luot.trang_thai_tep_hoan_tat != enums.TrangThaiTepHoanTat.DANG_XU_LY:
-            return luot  # lượt khác đã kết thúc trước (tệp vừa ghi bị bỏ, không thay bản đã có)
+            if vi_tri:
+                xoa_tep_sau_commit(vi_tri)  # tệp vừa ghi bị bỏ, không thay bản đã có
+            return luot  # lượt khác đã kết thúc trước
         if loi:
             luot.trang_thai_tep_hoan_tat, luot.loi_tep_hoan_tat = enums.TrangThaiTepHoanTat.LOI, loi
             hanh_dong, du_lieu = "LOI_TAO_TEP_HOAN_TAT", {"loi": loi}

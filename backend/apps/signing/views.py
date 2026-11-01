@@ -49,7 +49,7 @@ from .services import thong_bao as thong_bao_service
 from .services import tep_hoan_tat as tep_hoan_tat_service
 from .services import trinh_ky as trinh_ky_service
 from .services import yeu_cau_sua as yeu_cau_sua_service
-from .storage import StorageError, get_storage
+from .storage import THU_MUC_ANH_CA_NHAN, StorageError, get_storage, xoa_tep_sau_commit
 from .tich_hop import to_chuc
 from .tich_hop.van_ban import id_van_ban_khop, mo_ta_nhieu_ho_so, tim_van_ban_di
 
@@ -1007,7 +1007,7 @@ class AnhChuKyCaNhanView(SigningAPIView):
 
         storage = get_storage()
         try:
-            meta = storage.save_bytes(data, "anh_chu_ky_nguoi_dung", "png")
+            meta = storage.save_bytes(data, THU_MUC_ANH_CA_NHAN, "png")
         except StorageError as exc:
             raise SigningError(
                 code="loi_luu_tep",
@@ -1015,6 +1015,8 @@ class AnhChuKyCaNhanView(SigningAPIView):
             ) from exc
 
         ma_bam = crypto.sha256_hex(data)
+        vi_tri_cu = SigningUserSignature.objects.filter(nguoi_dung=request.user).values_list(
+            "vi_tri_tep", flat=True).first()
         sig, _ = SigningUserSignature.objects.update_or_create(
             nguoi_dung=request.user,
             defaults={
@@ -1023,6 +1025,8 @@ class AnhChuKyCaNhanView(SigningAPIView):
                 "dung_luong_bytes": meta.kich_thuoc,
             },
         )
+        if vi_tri_cu and vi_tri_cu != meta.vi_tri_luu_tep:
+            xoa_tep_sau_commit(vi_tri_cu)
         return Response({
             "co_anh": True,
             "ma_bam": sig.ma_bam,
@@ -1033,7 +1037,11 @@ class AnhChuKyCaNhanView(SigningAPIView):
 
     def delete(self, request):
         yeu_cau_quyen(request.user, KY_TRINH_KY)
-        SigningUserSignature.objects.filter(nguoi_dung=request.user).delete()
+        sig = SigningUserSignature.objects.filter(nguoi_dung=request.user).first()
+        if sig is not None:
+            vi_tri = sig.vi_tri_tep
+            sig.delete()
+            xoa_tep_sau_commit(vi_tri)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
