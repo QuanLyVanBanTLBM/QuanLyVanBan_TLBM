@@ -189,7 +189,8 @@ class KhoaActionView(SigningAPIView):
         if self.action == "xac-minh":
             data = XacMinhSoHuuSerializer(data=request.data)
             data.is_valid(raise_exception=True)
-            result = key_service.xac_minh_so_huu(key, request.user, data.validated_data["chu_ky_so"], ip)
+            result = key_service.xac_minh_so_huu(
+                key, request.user, data.validated_data["thach_thuc"], data.validated_data["chu_ky_so"], ip)
         elif self.action == "kich-hoat":
             result = key_service.kich_hoat(key, request.user, ip)
         elif self.action == "thu-hoi":

@@ -244,8 +244,8 @@ export const signingApi = {
   dangKyKhoa: (ma_khoa: string, khoa_cong_khai: string) =>
     apiClient.post<KhoaKy>(`${SIGNING_BASE}/khoa/`, { ma_khoa, khoa_cong_khai, ngay_hieu_luc: new Date().toISOString() }),
   thachThuc: (id: number) => apiClient.get<{ thach_thuc: string }>(`${SIGNING_BASE}/khoa/${id}/thach-thuc/`),
-  xacMinhKhoa: (id: number, chu_ky_so: string) =>
-    apiClient.post<KhoaKy>(`${SIGNING_BASE}/khoa/${id}/xac-minh/`, { chu_ky_so }),
+  xacMinhKhoa: (id: number, thach_thuc: string, chu_ky_so: string) =>
+    apiClient.post<KhoaKy>(`${SIGNING_BASE}/khoa/${id}/xac-minh/`, { thach_thuc, chu_ky_so }),
   kichHoatKhoa: (id: number) => apiClient.post<KhoaKy>(`${SIGNING_BASE}/khoa/${id}/kich-hoat/`, {}),
   /** Đổi thiết bị: khóa cũ DA_XOAY_VONG, khóa mới (đã xác minh) thành HOAT_DONG. */
   xoayVongKhoa: (id: number, khoa_moi: number) =>

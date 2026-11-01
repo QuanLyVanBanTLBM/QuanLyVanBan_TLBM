@@ -158,14 +158,16 @@ GVHD đã chốt bỏ văn bản mật hành chính. Tài liệu nội bộ hạ
 - Backend không nhận, không lưu, không log private key hoặc ciphertext chứa private key.
 - Đăng ký khóa công khai Ed25519 qua proof-of-possession:
   - Client ký challenge bằng private key; server verify rồi gán `thoi_diem_xac_minh_so_huu` (`xac-minh`). Chuyển khóa từ `CHO_KICH_HOAT` sang `HOAT_DONG` là bước riêng (`kich-hoat`), chỉ cho khóa đã xác minh sở hữu.
-  - `[FACT]` Triển khai hiện tại (MVP): challenge là chuỗi cố định gắn dấu vân tay khóa (`signing-key-ownership:<dau_van_tay>`), không TTL, không dùng một lần, chưa dùng Redis. Giới hạn: không chống phát lại chữ ký chứng minh. Mức chấp nhận cho MVP: `dau_van_tay` là unique và `xac-minh` chỉ do chủ khóa đã xác thực thực hiện.
-  - `[ĐỀ XUẤT]` Khi có Redis: server sinh challenge ngẫu nhiên, TTL 5 phút, dùng một lần (đọc và xóa nguyên tử).
+  - `[FACT]` Triển khai hiện tại: challenge là token ký bằng `SECRET_KEY` (`django.core.signing`) chứa id khóa, dấu vân tay khóa và nonce ngẫu nhiên 16 byte; hạn dùng 10 phút; client gửi lại cả `thach_thuc` lẫn `chu_ky_so` ở `xac-minh`. Server không lưu challenge nên chưa ép dùng một lần; chữ ký chỉ có giá trị với đúng khóa trong thời hạn và `xac-minh` chỉ do chủ khóa đã xác thực thực hiện. Tài khoản không hoạt động (`is_active = false`) không đăng ký, xác minh, kích hoạt khóa hay ký.
+  - `[ĐỀ XUẤT]` Khi có Redis: lưu nonce để ép dùng một lần (đọc và xóa nguyên tử).
 - Mỗi người dùng tối đa một khóa `HOAT_DONG` tại một thời điểm, không phân biệt thuật toán.
 - Xoay vòng khóa: khóa cũ chuyển `DA_XOAY_VONG`, `khoa_thay_the` trỏ khóa mới, có ghi nhật ký. Khóa cũ được giữ để xác minh chữ ký lịch sử.
 - `HET_HAN`: áp dụng khi khóa có `ngay_het_han` và thời điểm hiện tại đã qua; `ngay_het_han` rỗng nghĩa là không hết hạn. Tác vụ định kỳ chuyển trạng thái và ghi nhật ký.
 - `THU_HOI`: thu hồi thủ công, gán `ngay_thu_hoi`, có ghi nhật ký.
 
 **Bảo vệ khóa bằng PIN (thiết kế đề xuất, triển khai ở Phase 6)**
+
+> `[QUYẾT ĐỊNH]` Epic #447 đã chốt hướng mới: khóa bí mật lưu mã hóa trong CSDL (khóa mã hóa dẫn xuất từ PIN, salt và pepper ngoài CSDL), PIN 6 chữ số nhập cho từng lần ký, ký phía máy chủ, khóa sau khoảng 5 lần nhập sai. Các đoạn dưới đây mô tả triển khai hiện tại (PIN 8 chữ số, bản bọc và tệp `.tlbmkey` ở trình duyệt) và được thay thế khi các issue con của phân vùng 1 hoàn tất; mục nào mâu thuẫn với quyết định này là hiện trạng cần thay, không phải thiết kế đích.
 
 - Mục tiêu: chặn việc ký trên thiết bị đã đăng nhập mà không có chủ khóa, và chống đoán PIN offline khi bản sao private key bị lấy.
 - Private key Ed25519 sinh ở trình duyệt, được bọc bằng khóa `HKDF(master_pin, k_srv, "wrap")`. `master_pin = Argon2id(PIN, salt, tham số)`. Bản bọc chỉ nằm ở thiết bị (IndexedDB), **không bao giờ gửi lên server**.
@@ -753,7 +755,7 @@ Trả lại để sửa, đã triển khai ở lõi Phase 9 (#80):
 
 ### Pha 3 — Khóa ký, chữ ký, bằng chứng tổng hợp
 
-- Challenge/proof-of-possession (hiện tại chuỗi cố định; Redis TTL khi chuyển sang challenge ngẫu nhiên, mục 3.4), xoay vòng, thu hồi, hết hạn.
+- Challenge/proof-of-possession (ngẫu nhiên, có hạn dùng; dùng một lần khi có Redis, mục 3.4), tài khoản không hoạt động, xoay vòng, thu hồi, hết hạn.
 - Verify Ed25519 trên raw digest.
 - Lưu chữ ký bất biến (`ghi_chu_ky`, `ky_tre_han`, snapshot ảnh), con trỏ `chu_ky_hien_hanh`, bằng chứng chuẩn hóa.
 - Test: lệch mã băm, khóa không hoạt động, chữ ký sai, khóa cũ verify lịch sử, thu hồi/ký lại song song, không xóa được chữ ký/bằng chứng.
@@ -836,7 +838,7 @@ Nếu repo có chuẩn lint/type check thì bổ sung đúng lệnh của repo t
 
 - `[CHƯA XÁC MINH]` Model đơn vị, chức vụ, API lưu trữ — phụ thuộc Nhóm 7 (Phase 7).
 - `[CHƯA CHỐT]` Model người dùng của hệ thống (`accounts_employee` ở CSDL chung hay `auth.User` ở Django) và cách gán 8 quyền ở mục 8 (Phase 6).
-- `[CHƯA CHỐT]` Challenge chứng minh sở hữu khóa: chuỗi cố định (hiện tại) hay ngẫu nhiên + TTL + dùng một lần (cần Redis), mục 3.4.
+- `[CHƯA CHỐT]` Ép challenge chứng minh sở hữu khóa dùng một lần (cần Redis để lưu nonce), mục 3.4.
 - `[PHỤ THUỘC NHÓM 7]` Field `anh_chu_ky` và contract đọc ảnh chữ ký trong hồ sơ cá nhân.
 - `[CHƯA CHỐT]` Kích thước pixel chuẩn của ảnh chữ ký.
 - `[CHƯA CHỐT]` Hệ tọa độ vị trí ký: tỷ lệ % hay điểm PDF.

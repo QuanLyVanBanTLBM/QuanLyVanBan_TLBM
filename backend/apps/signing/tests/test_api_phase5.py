@@ -195,7 +195,7 @@ class KeyApiTests(ApiBase):
         client = client or self.c1
         challenge = client.get(f"{BASE}/khoa/{key_id}/thach-thuc/").data["thach_thuc"]
         signature = base64.b64encode(private.sign(challenge.encode())).decode()
-        return client.post(f"{BASE}/khoa/{key_id}/xac-minh/", {"chu_ky_so": signature}, format="json")
+        return client.post(f"{BASE}/khoa/{key_id}/xac-minh/", {"thach_thuc": challenge, "chu_ky_so": signature}, format="json")
 
     def test_full_lifecycle(self):
         private, key = self.register()
@@ -223,7 +223,7 @@ class KeyApiTests(ApiBase):
         private, key = self.register()
         self.assertEqual(len(self.c2.get(f"{BASE}/khoa/").data), 0)
         for method, path, body in [
-            ("get", "thach-thuc", None), ("post", "xac-minh", {"chu_ky_so": "x"}),
+            ("get", "thach-thuc", None), ("post", "xac-minh", {"thach_thuc": "x", "chu_ky_so": "x"}),
             ("post", "kich-hoat", None), ("post", "thu-hoi", {"ly_do": "x"}),
             ("post", "xoay-vong", {"khoa_moi": key["id"]}),
         ]:

@@ -1,3 +1,6 @@
+import secrets
+
+from django.core import signing as django_signing
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 from rest_framework import status
@@ -6,14 +9,27 @@ from .. import crypto, enums
 from ..errors import ConflictError, SigningError
 from ..models import SigningKey
 from ..tich_hop import to_chuc
+from . import quyen_ky
 from .audit import ghi_nhat_ky
 
 LOAI = "signing_key"
+SALT_THACH_THUC = "signing.key-ownership-challenge"
+HAN_THACH_THUC_GIAY = 600
 
 
 def thach_thuc_so_huu(key):
-    """Chuỗi cố định gắn với khóa; người dùng ký chuỗi này bằng khóa bí mật để chứng minh sở hữu."""
-    return f"signing-key-ownership:{key.dau_van_tay}"
+    """Challenge ngẫu nhiên theo lần, gắn với khóa và có hạn dùng; người dùng ký chuỗi này để chứng minh sở hữu."""
+    return django_signing.dumps(
+        {"k": key.pk, "f": key.dau_van_tay, "n": secrets.token_hex(16)}, salt=SALT_THACH_THUC, compress=False,
+    )
+
+
+def _thach_thuc_hop_le(key, thach_thuc):
+    try:
+        noi_dung = django_signing.loads(thach_thuc, salt=SALT_THACH_THUC, max_age=HAN_THACH_THUC_GIAY)
+    except django_signing.BadSignature:  # gồm cả SignatureExpired
+        return False
+    return noi_dung.get("k") == key.pk and noi_dung.get("f") == key.dau_van_tay
 
 
 def _chu_so_huu(key, nguoi_thuc_hien):
@@ -30,6 +46,7 @@ def _khoa(key_id):
 
 @transaction.atomic
 def dang_ky(nguoi_so_huu, *, ma_khoa, khoa_cong_khai, ngay_hieu_luc, ngay_het_han=None, ghi_chu="", dia_chi_ip=None):
+    quyen_ky.kiem_tra_tai_khoan_hoat_dong(nguoi_so_huu)
     if not crypto.is_valid_public_key(khoa_cong_khai):
         raise SigningError(code="khoa_cong_khai_khong_hop_le", detail="Khóa công khai Ed25519 không hợp lệ.")
     try:
@@ -46,12 +63,16 @@ def dang_ky(nguoi_so_huu, *, ma_khoa, khoa_cong_khai, ngay_hieu_luc, ngay_het_ha
 
 
 @transaction.atomic
-def xac_minh_so_huu(key, nguoi_thuc_hien, chu_ky_so, dia_chi_ip=None):
+def xac_minh_so_huu(key, nguoi_thuc_hien, thach_thuc, chu_ky_so, dia_chi_ip=None):
     key = _khoa(key.pk)
     _chu_so_huu(key, nguoi_thuc_hien)
+    quyen_ky.kiem_tra_tai_khoan_hoat_dong(nguoi_thuc_hien)
     if key.trang_thai != enums.TrangThaiKhoa.CHO_KICH_HOAT:
         raise ConflictError(code="khoa_khong_cho_kich_hoat", detail="Khóa không ở trạng thái chờ kích hoạt.")
-    if not crypto.verify_signature(key.khoa_cong_khai, thach_thuc_so_huu(key).encode(), chu_ky_so):
+    if not _thach_thuc_hop_le(key, thach_thuc):
+        raise SigningError(code="thach_thuc_khong_hop_le",
+                           detail="Challenge chứng minh sở hữu không hợp lệ hoặc đã hết hạn. Hãy yêu cầu challenge mới.")
+    if not crypto.verify_signature(key.khoa_cong_khai, thach_thuc.encode(), chu_ky_so):
         raise SigningError(code="chung_minh_so_huu_that_bai", detail="Chữ ký chứng minh sở hữu khóa không hợp lệ.")
     key.thoi_diem_xac_minh_so_huu = timezone.now()
     key.save(update_fields=["thoi_diem_xac_minh_so_huu"])
@@ -77,6 +98,7 @@ def _kich_hoat_khoa_da_khoa(key, dia_chi_ip, nguoi_thuc_hien, hanh_dong):
 def kich_hoat(key, nguoi_thuc_hien, dia_chi_ip=None):
     key = _khoa(key.pk)
     _chu_so_huu(key, nguoi_thuc_hien)
+    quyen_ky.kiem_tra_tai_khoan_hoat_dong(nguoi_thuc_hien)
     if SigningKey.objects.filter(
         nguoi_so_huu=key.nguoi_so_huu, trang_thai=enums.TrangThaiKhoa.HOAT_DONG
     ).exists():

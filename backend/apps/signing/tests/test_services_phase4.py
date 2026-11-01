@@ -1,4 +1,5 @@
 import base64
+from unittest import mock
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -25,7 +26,9 @@ def new_keypair():
 
 
 def sign_challenge(private, key):
-    return base64.b64encode(private.sign(key_service.thach_thuc_so_huu(key).encode())).decode()
+    """Trả (challenge, chữ ký) cho một challenge mới của khóa."""
+    challenge = key_service.thach_thuc_so_huu(key)
+    return challenge, base64.b64encode(private.sign(challenge.encode())).decode()
 
 
 class ProcessServiceTests(TestCase):
@@ -192,7 +195,7 @@ class KeyServiceTests(TestCase):
         return private, key
 
     def verify(self, private, key, user=None):
-        return key_service.xac_minh_so_huu(key, user or self.u1, sign_challenge(private, key))
+        return key_service.xac_minh_so_huu(key, user or self.u1, *sign_challenge(private, key))
 
     def test_register_computes_fingerprint_and_logs(self):
         _, key = self.register()
@@ -219,15 +222,50 @@ class KeyServiceTests(TestCase):
         _, key = self.register()
         other_private, _ = new_keypair()
         with self.assertRaises(SigningError) as ctx:
-            key_service.xac_minh_so_huu(key, self.u1, sign_challenge(other_private, key))
+            key_service.xac_minh_so_huu(key, self.u1, *sign_challenge(other_private, key))
         self.assertEqual(ctx.exception.get_codes(), "chung_minh_so_huu_that_bai")
         key.refresh_from_db()
         self.assertIsNone(key.thoi_diem_xac_minh_so_huu)
 
+    def test_challenge_is_random_per_request(self):
+        _, key = self.register()
+        self.assertNotEqual(key_service.thach_thuc_so_huu(key), key_service.thach_thuc_so_huu(key))
+
+    def test_challenge_of_other_key_rejected(self):
+        private, key = self.register()
+        _, other = self.register(ma="k2", user=self.u2)
+        challenge = key_service.thach_thuc_so_huu(other)
+        chu_ky = base64.b64encode(private.sign(challenge.encode())).decode()
+        with self.assertRaises(SigningError) as ctx:
+            key_service.xac_minh_so_huu(key, self.u1, challenge, chu_ky)
+        self.assertEqual(ctx.exception.get_codes(), "thach_thuc_khong_hop_le")
+
+    def test_tampered_or_expired_challenge_rejected(self):
+        private, key = self.register()
+        challenge, chu_ky = sign_challenge(private, key)
+        with self.assertRaises(SigningError) as ctx:
+            key_service.xac_minh_so_huu(key, self.u1, challenge + "x", chu_ky)
+        self.assertEqual(ctx.exception.get_codes(), "thach_thuc_khong_hop_le")
+        with mock.patch.object(key_service, "HAN_THACH_THUC_GIAY", -1):
+            with self.assertRaises(SigningError) as ctx:
+                key_service.xac_minh_so_huu(key, self.u1, challenge, chu_ky)
+        self.assertEqual(ctx.exception.get_codes(), "thach_thuc_khong_hop_le")
+
+    def test_inactive_account_cannot_register_or_verify(self):
+        private, key = self.register()
+        self.u1.is_active = False
+        self.u1.save(update_fields=["is_active"])
+        with self.assertRaises(SigningError) as ctx:
+            self.verify(private, key)
+        self.assertEqual(ctx.exception.get_codes(), "tai_khoan_khong_hoat_dong")
+        with self.assertRaises(SigningError) as ctx:
+            self.register(ma="k3")
+        self.assertEqual(ctx.exception.get_codes(), "tai_khoan_khong_hoat_dong")
+
     def test_only_owner_can_operate(self):
         private, key = self.register()
         for call in (
-            lambda: key_service.xac_minh_so_huu(key, self.u2, sign_challenge(private, key)),
+            lambda: key_service.xac_minh_so_huu(key, self.u2, *sign_challenge(private, key)),
             lambda: key_service.kich_hoat(key, self.u2),
             lambda: key_service.thu_hoi(key, self.u2, "ly do"),
         ):

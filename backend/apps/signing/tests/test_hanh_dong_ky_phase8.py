@@ -41,8 +41,8 @@ def khoa_hoat_dong(user, ma):
     raw = private.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
     key = key_service.dang_ky(user, ma_khoa=ma, khoa_cong_khai=base64.b64encode(raw).decode(),
                               ngay_hieu_luc=timezone.now() - timedelta(minutes=1))
-    challenge = key_service.thach_thuc_so_huu(key).encode()
-    key_service.xac_minh_so_huu(key, user, base64.b64encode(private.sign(challenge)).decode())
+    challenge = key_service.thach_thuc_so_huu(key)
+    key_service.xac_minh_so_huu(key, user, challenge, base64.b64encode(private.sign(challenge.encode())).decode())
     key_service.kich_hoat(key, user)
     key.refresh_from_db()
     return private, key

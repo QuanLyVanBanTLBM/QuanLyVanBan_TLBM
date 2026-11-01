@@ -127,6 +127,7 @@ class KhoaDangKySerializer(serializers.Serializer):
 
 
 class XacMinhSoHuuSerializer(serializers.Serializer):
+    thach_thuc = serializers.CharField()
     chu_ky_so = serializers.CharField()
 
 

@@ -149,7 +149,8 @@ class KhoaTam:
         self.khoa = keys.dang_ky(nguoi, ma_khoa=f"DLM-{nguoi.username}-{bay_gio:%Y%m%d%H%M%S%f}",
                                  khoa_cong_khai=base64.b64encode(cong_khai).decode(),
                                  ngay_hieu_luc=bay_gio - timedelta(minutes=1), ghi_chu=f"{TIEN_TO}: khóa tạm")
-        keys.xac_minh_so_huu(self.khoa, nguoi, self.ky(keys.thach_thuc_so_huu(self.khoa).encode()))
+        thach_thuc = keys.thach_thuc_so_huu(self.khoa)
+        keys.xac_minh_so_huu(self.khoa, nguoi, thach_thuc, self.ky(thach_thuc.encode()))
         cu = SigningKey.objects.filter(nguoi_so_huu=nguoi, trang_thai=enums.TrangThaiKhoa.HOAT_DONG).first()
         self.khoa = keys.xoay_vong(cu, self.khoa, nguoi) if cu else keys.kich_hoat(self.khoa, nguoi)
 
