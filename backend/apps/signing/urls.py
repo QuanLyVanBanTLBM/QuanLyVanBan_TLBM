@@ -41,6 +41,15 @@ urlpatterns = [
     path("trinh-ky/<int:pk>/trinh-lai/", views.TrinhKyActionView.as_view(action="trinh-lai"),
          name="trinh-ky-trinh-lai"),
 
+    # Quản trị khóa ký và quyền ký của tài khoản khác (#451)
+    path("quan-tri/nguoi-dung/", views.QuanTriNguoiDungView.as_view(), name="quan-tri-nguoi-dung"),
+    path("quan-tri/nguoi-dung/<int:pk>/khoa-quyen-ky/", views.QuanTriHanhDongView.as_view(action="khoa-quyen-ky"),
+         name="quan-tri-khoa-quyen-ky"),
+    path("quan-tri/nguoi-dung/<int:pk>/bat-lai-quyen-ky/", views.QuanTriHanhDongView.as_view(action="bat-lai-quyen-ky"),
+         name="quan-tri-bat-lai-quyen-ky"),
+    path("quan-tri/nguoi-dung/<int:pk>/thu-hoi-khoa/", views.QuanTriHanhDongView.as_view(action="thu-hoi-khoa"),
+         name="quan-tri-thu-hoi-khoa"),
+
     # Hành động người ký (Phase 8, #80)
     path("trinh-ky/<int:pk>/ky/", views.HanhDongKyView.as_view(action="ky"), name="trinh-ky-ky"),
     path("trinh-ky/<int:pk>/tu-choi/", views.HanhDongKyView.as_view(action="tu-choi"), name="trinh-ky-tu-choi"),

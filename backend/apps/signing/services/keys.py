@@ -5,6 +5,7 @@ from rest_framework import status
 from .. import crypto, enums
 from ..errors import ConflictError, SigningError
 from ..models import SigningKey
+from ..tich_hop import to_chuc
 from .audit import ghi_nhat_ky
 
 LOAI = "signing_key"
@@ -121,3 +122,39 @@ def thu_hoi(key, nguoi_thuc_hien, ly_do, dia_chi_ip=None):
     ghi_nhat_ky(nguoi_thuc_hien, LOAI, key.pk, "THU_HOI_KHOA", trang_thai_truoc=truoc,
                 trang_thai_sau=key.trang_thai, chi_tiet=ly_do, dia_chi_ip=dia_chi_ip)
     return key
+
+
+@transaction.atomic
+def thu_hoi_khan_cap_boi_quan_tri(nguoi_bi_thu_hoi_id, nguoi_thuc_hien, ly_do, dia_chi_ip=None):
+    """
+    Quản trị viên thu hồi khóa ký đang hoạt động hoặc chờ kích hoạt của tài khoản khác (khẩn cấp, #451).
+    PIN gắn với khóa nên mất hiệu lực cùng khóa; tài khoản tự cấp khóa mới và đặt PIN mới. Trả danh sách khóa đã thu hồi.
+    """
+    if not to_chuc.la_quan_tri(nguoi_thuc_hien):
+        raise SigningError(
+            code="khong_co_quyen", detail="Chỉ quản trị viên được thu hồi khóa ký của tài khoản khác.",
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+    if not (ly_do or "").strip():
+        raise SigningError(code="thieu_ly_do_thu_hoi", detail="Phải nhập lý do thu hồi.")
+    if nguoi_bi_thu_hoi_id == nguoi_thuc_hien.pk:
+        raise SigningError(code="dung_chuc_nang_thu_hoi_cua_chu_khoa",
+                           detail="Dùng chức năng thu hồi khóa của chính mình trong cấu hình khóa ký.")
+    khoa_can_thu_hoi = list(
+        SigningKey.objects.select_for_update().filter(
+            nguoi_so_huu_id=nguoi_bi_thu_hoi_id,
+            trang_thai__in=(enums.TrangThaiKhoa.HOAT_DONG, enums.TrangThaiKhoa.CHO_KICH_HOAT),
+        ).order_by("pk")
+    )
+    if not khoa_can_thu_hoi:
+        raise ConflictError(code="khong_co_khoa_de_thu_hoi", detail="Tài khoản không có khóa ký nào để thu hồi.")
+    thoi_diem = timezone.now()
+    for key in khoa_can_thu_hoi:
+        truoc = key.trang_thai
+        key.trang_thai = enums.TrangThaiKhoa.THU_HOI
+        key.ngay_thu_hoi = thoi_diem
+        key.save(update_fields=["trang_thai", "ngay_thu_hoi"])
+        ghi_nhat_ky(nguoi_thuc_hien, LOAI, key.pk, "QUAN_TRI_THU_HOI_KHOA",
+                    trang_thai_truoc=truoc, trang_thai_sau=key.trang_thai, chi_tiet=ly_do.strip(),
+                    du_lieu_kem_theo={"nguoi_so_huu_id": nguoi_bi_thu_hoi_id}, dia_chi_ip=dia_chi_ip)
+    return khoa_can_thu_hoi

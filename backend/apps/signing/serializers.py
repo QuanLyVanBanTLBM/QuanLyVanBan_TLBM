@@ -11,6 +11,7 @@ from .models import (
     SigningProcess, SigningProcessStep, SigningProcessStepSigner, SigningRequest, SigningRequestStep,
     SigningRequestStepSigner,
 )
+from .services import quyen_ky as quyen_ky_service
 from .tich_hop import to_chuc
 from .tich_hop.van_ban import mo_ta_ho_so
 
@@ -130,6 +131,15 @@ class XacMinhSoHuuSerializer(serializers.Serializer):
 
 
 class ThuHoiKhoaSerializer(serializers.Serializer):
+    ly_do = serializers.CharField(max_length=MAX_LY_DO)
+
+
+class KhoaQuyenKySerializer(serializers.Serializer):
+    thoi_han = serializers.ChoiceField(choices=list(quyen_ky_service.THOI_HAN_KHOA))
+    ly_do = serializers.CharField(max_length=MAX_LY_DO)
+
+
+class BatLaiQuyenKySerializer(serializers.Serializer):
     ly_do = serializers.CharField(max_length=MAX_LY_DO)
 
 
