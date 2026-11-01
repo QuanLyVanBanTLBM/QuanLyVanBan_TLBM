@@ -49,7 +49,7 @@ vi.mock('@lib/signing/pdf', () => ({
 const api = vi.mocked(signingApi);
 
 const TOI: NguoiDungHienTai = {
-  id: 7, ten: 'Trưởng phòng', don_vi_id: 1, la_quan_tri: false, la_lanh_dao_don_vi: false,
+  id: 7, ten: 'Trưởng phòng', don_vi_id: 1, la_quan_tri: false, la_lanh_dao_don_vi: false, co_anh_chu_ky: true,
   quyen: { view_trinhky: true, add_trinhky: false, sign_trinhky: true, send_trinhky: false },
 };
 
@@ -100,7 +100,6 @@ beforeEach(() => {
   api.canBoTheoChucVu.mockResolvedValue({ count: 0, results: [] });
   api.thongKe.mockResolvedValue({ tat_ca: 3, cho_ky: 1, qua_han: 1, hoan_thanh: 0, tra_lai: 1 });
   localStorage.setItem('tlbm_lang', 'vi');
-  localStorage.setItem('tlbm_user_sig_7', 'data:image/png;base64,AAAA');
   api.khoa.mockResolvedValue([KHOA_HOAT_DONG]);
 });
 
@@ -318,10 +317,10 @@ describe('Ký bằng file khóa', () => {
 });
 
 describe('Hộp thoại ký: điều kiện chữ ký hợp lệ', () => {
-  const moHopKy = () => {
+  const moHopKy = (nguoi: NguoiDungHienTai = TOI) => {
     render(
       <MemoryRouter>
-        <SigningContext.Provider value={{ toi: TOI, taiLaiToi: () => undefined }}>
+        <SigningContext.Provider value={{ toi: nguoi, taiLaiToi: () => undefined }}>
           <Routes>
             <Route path="/" element={<HanhDong hoSo={hoSo()} luot={hoSo().luot_trinh[0]} maBamTepDangXem={'a'.repeat(64)} onXong={() => undefined} />} />
             <Route path="/approvals/khoa" element={<div>TRANG_CAU_HINH_KHOA</div>} />
@@ -348,9 +347,8 @@ describe('Hộp thoại ký: điều kiện chữ ký hợp lệ', () => {
   });
 
   it('thiếu cả ảnh chữ ký và khóa ký: nêu đủ hai mục, khóa mọi ô, không gọi API ký', async () => {
-    localStorage.removeItem('tlbm_user_sig_7');
     api.khoa.mockResolvedValue([]);
-    moHopKy();
+    moHopKy({ ...TOI, co_anh_chu_ky: false });
     expect(await screen.findByText('Thiếu chữ ký')).toBeInTheDocument();
     expect(screen.getByText('Chưa có ảnh chữ ký cá nhân')).toBeInTheDocument();
     expect(screen.getByText('Chưa có khóa ký đang hoạt động')).toBeInTheDocument();
@@ -361,8 +359,7 @@ describe('Hộp thoại ký: điều kiện chữ ký hợp lệ', () => {
   });
 
   it('chỉ thiếu ảnh chữ ký', async () => {
-    localStorage.removeItem('tlbm_user_sig_7');
-    moHopKy();
+    moHopKy({ ...TOI, co_anh_chu_ky: false });
     expect(await screen.findByText('Chưa có ảnh chữ ký cá nhân')).toBeInTheDocument();
     expect(screen.queryByText('Chưa có khóa ký đang hoạt động')).not.toBeInTheDocument();
     khoaTatCa();

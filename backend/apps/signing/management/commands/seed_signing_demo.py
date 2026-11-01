@@ -27,6 +27,7 @@ khóa ký của mình ở trang Cấu hình khóa ký (file khóa + PIN). Hồ s
 """
 
 import base64
+import io
 import os
 from datetime import timedelta
 
@@ -45,11 +46,13 @@ from authorization.models import GroupInfo
 from documents.models import PhamVi, VanBanDi, VanBanDiAttachment
 from organizations.models import DonVi, KhoiKhuVuc
 from signing import enums
+from signing import crypto
 from signing.models import (
-    SigningAttempt, SigningKey, SigningProcess, SigningRequest, SigningRequestStep,
+    SigningAttempt, SigningKey, SigningProcess, SigningRequest, SigningRequestStep, SigningUserSignature,
 )
 from signing.pdf_hoan_tat import tim_phong_chu
 from signing.services import hanh_dong_ky, keys, process, thong_bao, trinh_ky, yeu_cau_sua
+from signing.storage import get_storage
 
 TIEN_TO = "Dữ liệu mẫu"
 TIEN_TO_CU = "Dữ liệu mẫu cũ"
@@ -171,6 +174,7 @@ class Command(BaseCommand):
         self.dem = 0
         self.lan_chay = f"{timezone.now():%Y%m%d%H%M%S%f}"
         nguoi = self._tai_khoan(options["dat_lai_mat_khau"], options["email_domain"].strip().lstrip("@"))
+        self._anh_chu_ky(nguoi)
         if options["reset"]:
             self._reset(nguoi)
         quy_trinh = self._quy_trinh(nguoi)
@@ -204,6 +208,23 @@ class Command(BaseCommand):
         self.stdout.write(f" [OK] --reset: {so} hồ sơ mẫu cũ đã hủy/đánh dấu cũ")
 
     # ── Tài khoản ───────────────────────────────────────────────────────────
+
+    def _anh_chu_ky(self, tai_khoan):
+        """Ký cần ảnh chữ ký cá nhân phía máy chủ (#459): tài khoản mẫu chưa có ảnh thì tạo ảnh PNG mẫu."""
+        from PIL import Image, ImageDraw
+
+        for nguoi in tai_khoan.values():
+            if SigningUserSignature.objects.filter(nguoi_dung=nguoi).exists():
+                continue
+            anh = Image.new("RGBA", (300, 150), (0, 0, 0, 0))
+            ImageDraw.Draw(anh).text((20, 60), nguoi.username, fill=(0, 0, 160, 255))
+            buf = io.BytesIO()
+            anh.save(buf, format="PNG")
+            du_lieu = buf.getvalue()
+            meta = get_storage().save_bytes(du_lieu, "anh_chu_ky_nguoi_dung", "png")
+            SigningUserSignature.objects.create(
+                nguoi_dung=nguoi, vi_tri_tep=meta.vi_tri_luu_tep, ma_bam=crypto.sha256_hex(du_lieu),
+                dung_luong_bytes=meta.kich_thuoc)
 
     def _tai_khoan(self, dat_lai, mien):
         User = get_user_model()

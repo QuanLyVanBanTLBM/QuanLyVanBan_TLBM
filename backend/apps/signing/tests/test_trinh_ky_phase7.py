@@ -25,7 +25,7 @@ from signing.services import trinh_ky as trinh_ky_service
 from signing.storage import get_storage
 from signing.tich_hop.van_ban import VanBanDi
 
-from .helpers import cap_quyen, tao_chuc_vu
+from .helpers import cap_quyen, dat_anh_chu_ky, tao_chuc_vu
 
 User = get_user_model()
 BASE = "/api/v1/signing/trinh-ky"
@@ -102,6 +102,8 @@ class TrinhKyBase(TestCase):
         cap_quyen(self.ky1, "sign_trinhky")
         cap_quyen(self.ky2, "sign_trinhky")
         cap_quyen(self.ky3, "sign_trinhky")
+        for nguoi_ky in (self.ky1, self.ky2, self.ky3):
+            dat_anh_chu_ky(nguoi_ky)
         self._van_ban_tiep = iter([10, *range(20, 60)])
         self.process = self.tao_quy_trinh()
         self.c = self.client_cua(self.tao)

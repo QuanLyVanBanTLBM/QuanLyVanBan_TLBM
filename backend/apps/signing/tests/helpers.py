@@ -58,3 +58,22 @@ def them_vao_nhom_quan_tri(user):
         group = Group.objects.get(pk=info.pk)
     user.groups.add(group)
 
+
+def dat_anh_chu_ky(user, anh=None):
+    """Gán ảnh chữ ký cá nhân phía máy chủ (signing_user_signature) cho người ký trong test; mặc định ảnh PNG mẫu."""
+    import io
+
+    from PIL import Image
+
+    from signing import crypto
+    from signing.models import SigningUserSignature
+    from signing.storage import get_storage
+
+    if anh is None:
+        buf = io.BytesIO()
+        Image.new("RGBA", (80, 30), (0, 0, 200, 255)).save(buf, format="PNG")
+        anh = buf.getvalue()
+    meta = get_storage().save_bytes(anh, "anh_chu_ky_nguoi_dung", "png")
+    SigningUserSignature.objects.update_or_create(nguoi_dung=user, defaults={
+        "vi_tri_tep": meta.vi_tri_luu_tep, "ma_bam": crypto.sha256_hex(anh), "dung_luong_bytes": meta.kich_thuoc})
+    return anh

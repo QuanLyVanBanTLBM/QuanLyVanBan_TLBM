@@ -42,10 +42,7 @@ export default function KhoaPage() {
   const [lanTaiBanBoc, setLanTaiBanBoc] = useState(0);
   const [anhChuKyTuyChinh, setAnhChuKyTuyChinh] = useState<string | null | undefined>(undefined);
   const anhChuKyServer = toi?.co_anh_chu_ky ? `/api/signing/anh-chu-ky-ca-nhan/tep/?v=${toi.id}` : null;
-  const anhChuKyLocal = toi ? localStorage.getItem(`tlbm_user_sig_${toi.id}`) : null;
-  const anhChuKy = anhChuKyTuyChinh !== undefined
-    ? anhChuKyTuyChinh
-    : (anhChuKyServer || anhChuKyLocal);
+  const anhChuKy = anhChuKyTuyChinh !== undefined ? anhChuKyTuyChinh : anhChuKyServer;
   const [tepChon, setTepChon] = useState<File | null>(null);
   const [moCrop, setMoCrop] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -71,7 +68,6 @@ export default function KhoaPage() {
     try {
       await signingApi.taiLenAnhChuKy(blob);
       setAnhChuKyTuyChinh(dataUrl);
-      if (toi) localStorage.removeItem(`tlbm_user_sig_${toi.id}`);
       taiLaiToi?.();
       setMoCrop(false);
       setTepChon(null);
@@ -89,7 +85,6 @@ export default function KhoaPage() {
     try {
       await signingApi.xoaAnhChuKy();
       setAnhChuKyTuyChinh(null);
-      if (toi) localStorage.removeItem(`tlbm_user_sig_${toi.id}`);
       taiLaiToi?.();
       setThongBao({ loai: 'thanh_cong', noi_dung: t('khoa.daXoaChuKy') });
     } catch (err) {

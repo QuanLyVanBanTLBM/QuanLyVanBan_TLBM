@@ -83,30 +83,23 @@ def don_vi_cua(nguoi_dung):
     return getattr(nguoi_dung, "don_vi_id", None)
 
 
-# ── Ảnh chữ ký cá nhân (plan mục 3.4; #80 mục D) ────────────────────────────
-# Hồ sơ cá nhân thuộc Nhóm 7 (field `anh_chu_ky`, PNG nền trong suốt, tối đa 2 MB). Trình ký chỉ đọc ảnh lúc
-# ký để chụp snapshot. Cài đặt tạm: đọc field `anh_chu_ky` (ImageField/FileField) của model người dùng nếu có;
-# chưa có field hoặc chưa tải ảnh thì trả None (tệp hoàn tất in khối chữ thay ảnh).
+# ── Ảnh chữ ký cá nhân (plan mục 3.4; #80 mục D; #424; #459) ───────────────────
+# Nguồn đọc duy nhất của Trình ký. Thứ tự ưu tiên: trường `anh_chu_ky` của hồ sơ cá nhân Nhóm 7 (ImageField hoặc
+# FileField, PNG nền trong suốt, tối đa 2 MB; chưa có thì bỏ qua), rồi ảnh trong `signing_user_signature` của Nhóm 5.
+# Cờ có ảnh, tệp preview và snapshot lúc ký đều đi qua `anh_chu_ky()` và `co_anh_chu_ky()`.
 
 ANH_CHU_KY_TOI_DA = 2 * 1024 * 1024
 CHU_KY_PNG = b"\x89PNG\r\n\x1a\n"
 
 
-def anh_chu_ky(nguoi_dung):
-    # 1. Ưu tiên đọc từ SigningUserSignature trong module Trình ký (Issue #424)
-    try:
-        from ..models import SigningUserSignature
-        from ..storage import get_storage
-        sig = SigningUserSignature.objects.filter(nguoi_dung=nguoi_dung).first()
-        if sig:
-            du_lieu = get_storage().read_bytes(sig.vi_tri_tep)
-            if len(du_lieu) <= ANH_CHU_KY_TOI_DA and du_lieu.startswith(CHU_KY_PNG):
-                return du_lieu
-            logger.warning("Ảnh chữ ký của người dùng %s không hợp lệ (dung lượng hoặc định dạng)", nguoi_dung.pk)
-    except Exception:
-        logger.exception("Không đọc được ảnh chữ ký của người dùng %s từ signing_user_signature", nguoi_dung.pk)
+def _la_png_hop_le(du_lieu, nguoi_dung):
+    if len(du_lieu) <= ANH_CHU_KY_TOI_DA and du_lieu.startswith(CHU_KY_PNG):
+        return True
+    logger.warning("Ảnh chữ ký của người dùng %s không phải PNG hoặc quá 2 MB", nguoi_dung.pk)
+    return False
 
-    # 2. Hồ sơ cá nhân thuộc Nhóm 7 (nếu có sau này)
+
+def _anh_tu_ho_so_nhom_7(nguoi_dung):
     tep = getattr(nguoi_dung, "anh_chu_ky", None)
     if not tep:
         return None
@@ -116,10 +109,35 @@ def anh_chu_ky(nguoi_dung):
     except (OSError, ValueError):
         logger.warning("Không đọc được ảnh chữ ký của người dùng %s", nguoi_dung.pk)
         return None
-    if len(du_lieu) > ANH_CHU_KY_TOI_DA or not du_lieu.startswith(CHU_KY_PNG):
-        logger.warning("Ảnh chữ ký của người dùng %s không phải PNG hoặc quá 2 MB", nguoi_dung.pk)
+    return du_lieu if _la_png_hop_le(du_lieu, nguoi_dung) else None
+
+
+def _anh_tu_trinh_ky(nguoi_dung):
+    from ..models import SigningUserSignature
+    from ..storage import get_storage
+
+    sig = SigningUserSignature.objects.filter(nguoi_dung=nguoi_dung).first()
+    if sig is None:
         return None
-    return du_lieu
+    try:
+        du_lieu = get_storage().read_bytes(sig.vi_tri_tep)
+    except Exception:  # noqa: BLE001 — lỗi lưu trữ không được làm hỏng luồng gọi
+        logger.exception("Không đọc được ảnh chữ ký của người dùng %s từ signing_user_signature", nguoi_dung.pk)
+        return None
+    return du_lieu if _la_png_hop_le(du_lieu, nguoi_dung) else None
+
+
+def anh_chu_ky(nguoi_dung):
+    """Bytes PNG ảnh chữ ký hiện hành của người dùng; None khi chưa có hoặc ảnh không đọc được/không hợp lệ."""
+    return _anh_tu_ho_so_nhom_7(nguoi_dung) or _anh_tu_trinh_ky(nguoi_dung)
+
+
+def co_anh_chu_ky(nguoi_dung):
+    """Người dùng đã có ảnh chữ ký (không đọc nội dung ảnh)."""
+    from ..models import SigningUserSignature
+
+    return bool(getattr(nguoi_dung, "anh_chu_ky", None)) or SigningUserSignature.objects.filter(
+        nguoi_dung=nguoi_dung).exists()
 
 
 def ma_nhom_cua(nguoi_dung):

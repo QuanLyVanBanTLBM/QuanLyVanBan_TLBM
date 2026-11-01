@@ -922,7 +922,7 @@ class ToiView(SigningAPIView):
             "quyen": {ma: co_quyen(u, ma) for ma in (XEM_TRINH_KY, TAO_TRINH_KY, GUI_TRINH_KY, KY_TRINH_KY,
                                                      HUY_TRINH_KY, XEM_NHAT_KY, XEM_TAT_CA, QUAN_LY_QUY_TRINH)},
             "la_quan_tri": to_chuc.la_quan_tri(u), "la_lanh_dao_don_vi": to_chuc.la_lanh_dao_don_vi(u, don_vi),
-            "co_anh_chu_ky": SigningUserSignature.objects.filter(nguoi_dung=u).exists(),
+            "co_anh_chu_ky": to_chuc.co_anh_chu_ky(u),
             "khoa_quyen_ky": (lambda k: {"khoa_den": k.khoa_den} if k else None)(quyen_ky_service.khoa_dang_hieu_luc(u)),
         })
 
@@ -1049,19 +1049,11 @@ class AnhChuKyCaNhanTepView(SigningAPIView):
     """GET /anh-chu-ky-ca-nhan/tep/: tải tệp ảnh chữ ký của người dùng hiện tại để hiển thị preview."""
 
     def get(self, request):
-        sig = SigningUserSignature.objects.filter(nguoi_dung=request.user).first()
-        if not sig:
+        data = to_chuc.anh_chu_ky(request.user)
+        if not data:
             raise SigningError(
                 code="chua_co_anh_chu_ky",
                 detail="Người dùng chưa thiết lập ảnh chữ ký.",
-                status_code=status.HTTP_404_NOT_FOUND,
-            )
-        try:
-            data = get_storage().read_bytes(sig.vi_tri_tep)
-        except StorageError:
-            raise SigningError(
-                code="khong_doc_duoc_tep",
-                detail="Không đọc được tệp ảnh chữ ký.",
                 status_code=status.HTTP_404_NOT_FOUND,
             )
         response = HttpResponse(data, content_type="image/png")

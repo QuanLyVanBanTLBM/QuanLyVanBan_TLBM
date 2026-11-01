@@ -16,23 +16,13 @@ import { khoaHoatDong, kyBangPin } from '@lib/signing/luongKhoa';
 import type { HoSoChiTiet, LuotTrinh } from '@lib/signing/types';
 import { HopThoai, OChonFileKhoa, ThongBao, TruongNhap } from './ChungUI';
 
-const docAnhChuKy = (id: number): string | null => {
-  try {
-    return localStorage.getItem(`tlbm_user_sig_${id}`);
-  } catch {
-    return null;
-  }
-};
+const URL_ANH_CHU_KY = '/api/signing/anh-chu-ky-ca-nhan/tep/';
 
-const coAnhChuKy = (toi: { id: number; co_anh_chu_ky?: boolean } | null): boolean => {
-  return Boolean(toi?.co_anh_chu_ky || (toi ? docAnhChuKy(toi.id) : null));
-};
+type NguoiKy = { id: number; co_anh_chu_ky?: boolean } | null;
 
-const layAnhChuKyUrl = (toi: { id: number; co_anh_chu_ky?: boolean } | null): string | null => {
-  if (!toi) return null;
-  if (toi.co_anh_chu_ky) return `/api/signing/anh-chu-ky-ca-nhan/tep/?v=${toi.id}`;
-  return docAnhChuKy(toi.id);
-};
+// Ảnh chữ ký chỉ lấy từ máy chủ (cờ co_anh_chu_ky của /toi/); không còn nguồn localStorage.
+const layAnhChuKyUrl = (toi: NguoiKy): string | null =>
+  toi?.co_anh_chu_ky ? `${URL_ANH_CHU_KY}?v=${toi.id}` : null;
 
 type LoaiHopThoai = 'ky' | 'sua' | 'tu_choi' | 'thu_hoi' | 'huy' | 'trinh_lai' | null;
 
@@ -202,8 +192,8 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
   const ky = () => thucHien(async () => {
     if (!toi || !luot) throw new Error('khong_co_quyen');
 
-    // 1. Kiểm tra ảnh chữ ký cá nhân (Issue #424)
-    if (!coAnhChuKy(toi)) {
+    // 1. Kiểm tra ảnh chữ ký cá nhân (máy chủ cũng kiểm lại khi ký)
+    if (!toi.co_anh_chu_ky) {
       throw new Error('chua_co_anh_chu_ky');
     }
 
@@ -222,7 +212,7 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
     // 4. Ký số bằng private key từ PIN và bản bọc (hoặc file khóa)
     const chu_ky_so = await kyBangPin(toi.id, khoa_ky, pin, luot.ma_bam_tai_lieu, fileKhoa ?? undefined);
     return signingApi.ky(hoSo.id, khoa.lay(), {
-      khoa_ky: khoa_ky.id, hash_tai_lieu: luot.ma_bam_tai_lieu, chu_ky_so, ghi_chu_ky: o1, anh_chu_ky: docAnhChuKy(toi.id) ?? undefined,
+      khoa_ky: khoa_ky.id, hash_tai_lieu: luot.ma_bam_tai_lieu, chu_ky_so, ghi_chu_ky: o1,
     });
   });
 

@@ -111,20 +111,20 @@ def _hoan_tat_neu_du(luot, cap, nguoi, thoi_diem):
     thong_bao.su_kien(yeu_cau, luot, "HOAN_THANH", nguoi)
 
 
-def _chup_anh_chu_ky(nguoi, anh_tu_trinh_duyet=None):
+def _chup_anh_chu_ky(nguoi):
     """
     Snapshot ảnh chữ ký cá nhân tại thời điểm ký (plan mục 3.2): đổi ảnh trong hồ sơ sau đó không làm đổi tệp
-    hoàn tất. Ưu tiên ảnh phía server (Nhóm 7, nếu có); chưa có thì dùng ảnh PNG trình duyệt gửi kèm yêu cầu
-    ký (đã kiểm ở serializer, #420). Chưa có ảnh hoặc không lưu được thì ký vẫn hợp lệ, tệp hoàn tất in khối chữ.
+    hoàn tất. Ảnh lấy từ máy chủ qua `to_chuc.anh_chu_ky`; chưa có ảnh thì không cho ký (#459).
     """
-    anh = to_chuc.anh_chu_ky(nguoi) or anh_tu_trinh_duyet
+    anh = to_chuc.anh_chu_ky(nguoi)
     if not anh:
-        return "", ""
+        raise SigningError(code="chua_co_anh_chu_ky", detail="Chưa có ảnh chữ ký cá nhân; tải ảnh lên trước khi ký.",
+                           fields={"anh_chu_ky": ["Chưa có ảnh chữ ký cá nhân."]})
     try:
         meta = get_storage().save_bytes(anh, THU_MUC_ANH_CHU_KY, "png")
-    except (StorageError, OSError):
+    except (StorageError, OSError) as exc:
         logger.exception("Không lưu được snapshot ảnh chữ ký của người dùng %s", nguoi.pk)
-        return "", ""
+        raise SigningError(code="loi_luu_tep", detail="Không lưu được ảnh chữ ký lúc ký.") from exc
     return meta.vi_tri_luu_tep, crypto.sha256_hex(anh)
 
 
@@ -141,8 +141,7 @@ def _kiem_tra_khoa(nguoi, khoa_ky_id, thoi_diem):
 
 
 @transaction.atomic
-def ky(yeu_cau, nguoi, *, khoa_ky, hash_tai_lieu, chu_ky_so, khoa_chong_trung, ghi_chu_ky="", dia_chi_ip=None,
-       anh_chu_ky=None):
+def ky(yeu_cau, nguoi, *, khoa_ky, hash_tai_lieu, chu_ky_so, khoa_chong_trung, ghi_chu_ky="", dia_chi_ip=None):
     if _thao_tac_lap(yeu_cau, nguoi, khoa_chong_trung):
         return SigningRequest.objects.get(pk=yeu_cau.pk)  # ký lặp cùng khóa: trả kết quả lần trước
     luot = _khoa_luot_hien_hanh(yeu_cau)
@@ -160,7 +159,7 @@ def ky(yeu_cau, nguoi, *, khoa_ky, hash_tai_lieu, chu_ky_so, khoa_chong_trung, g
                            fields={"chu_ky_so": ["Không xác minh được."]})
     cap = SigningRequestStep.objects.select_for_update().get(pk=dong.buoc_ky_id)
     tre = cap.han_xu_ly is not None and thoi_diem > cap.han_xu_ly
-    vi_tri_anh, ma_bam_anh = _chup_anh_chu_ky(nguoi, anh_chu_ky)
+    vi_tri_anh, ma_bam_anh = _chup_anh_chu_ky(nguoi)
     chu_ky = SigningSignature.objects.create(
         luot_trinh=luot, buoc_ky=dong, khoa_ky=khoa, hash_tai_lieu=hash_tai_lieu, thuat_toan=khoa.thuat_toan,
         chu_ky_so=chu_ky_so, ghi_chu_ky=ghi_chu_ky, ky_tre_han=tre,

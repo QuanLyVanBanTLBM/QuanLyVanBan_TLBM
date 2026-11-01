@@ -21,7 +21,7 @@ from signing.services import process as process_service
 from signing.services import trinh_ky as trinh_ky_service
 from signing.services import yeu_cau_sua as yeu_cau_sua_service
 
-from .helpers import cap_quyen
+from .helpers import cap_quyen, dat_anh_chu_ky
 from .test_hanh_dong_ky_phase8 import HASH, KyBase, chay_song_song, khoa_hoat_dong, ky_so, ma_loi
 from .test_trinh_ky_phase7 import BASE, PDF, VAN_BAN, tep_pdf
 
@@ -141,6 +141,8 @@ class TraSuaDongThoiTests(TransactionTestCase):
         cap_quyen(self.tao, "add_trinhky", "send_trinhky", "view_vanbandi")
         cap_quyen(self.ky1, "sign_trinhky")
         cap_quyen(self.ky2, "sign_trinhky")
+        dat_anh_chu_ky(self.ky1)
+        dat_anh_chu_ky(self.ky2)
         qt = process_service.tao_quy_trinh(self.tao, ma_quy_trinh="DT", ten_quy_trinh="DT", pham_vi="CONG_TY", cap_ky=[
             {"cap_ky": 1, "ten_cap_ky": "C", "thu_tu": 1, "nguoi_ky": [
                 {"nguoi_ky": self.ky1, "thu_tu": 1}, {"nguoi_ky": self.ky2, "thu_tu": 2}]}])

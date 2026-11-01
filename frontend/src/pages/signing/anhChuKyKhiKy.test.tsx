@@ -1,6 +1,6 @@
 /**
- * Ký duyệt gửi kèm ảnh chữ ký cá nhân (#420): ảnh đọc từ nơi lưu của trình duyệt đi cùng yêu cầu ký để
- * server chụp snapshot; thiếu ảnh thì chặn ký như trước.
+ * Ký duyệt dùng ảnh chữ ký cá nhân lưu ở máy chủ (#459): trình duyệt không gửi ảnh kèm yêu cầu ký, máy chủ tự
+ * chụp snapshot; người dùng chưa có ảnh thì chặn ký.
  */
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -22,12 +22,12 @@ const api = vi.mocked(signingApi);
 
 const TOI = {
   id: 7, ten: 'Người ký', don_vi_id: 1, la_quan_tri: false, la_lanh_dao_don_vi: false,
+  co_anh_chu_ky: true,
   quyen: { view_trinhky: true, add_trinhky: false, sign_trinhky: true, send_trinhky: false },
 } as NguoiDungHienTai;
 const KHOA = { id: 4, ma_khoa: 'TB-7-1', dau_van_tay: 'f'.repeat(64), thuat_toan: 'Ed25519',
   khoa_cong_khai: 'pub', trang_thai: 'HOAT_DONG' } as KhoaKy;
 const MA_BAM = 'a'.repeat(64);
-const ANH = 'data:image/png;base64,iVBORw0KGgo=';
 
 const hoSo = {
   id: 12, trang_thai: 'CHO_KY', van_ban: { so_hieu: '15/TTr', trich_yeu: 'Mua sắm' }, create_by: 3,
@@ -35,10 +35,10 @@ const hoSo = {
   luot_trinh: [{ id: 5, trang_thai: 'CHO_KY', ma_bam_tai_lieu: MA_BAM, cap_ky: [], yeu_cau_sua: [] }],
 } as unknown as HoSoChiTiet;
 
-const moHopKy = () => {
+const moHopKy = (nguoi: NguoiDungHienTai = TOI) => {
   render(
     <MemoryRouter>
-      <SigningContext.Provider value={{ toi: TOI, taiLaiToi: () => undefined }}>
+      <SigningContext.Provider value={{ toi: nguoi, taiLaiToi: () => undefined }}>
         <HanhDong hoSo={hoSo} luot={hoSo.luot_trinh[0]} maBamTepDangXem={MA_BAM} onXong={() => undefined} />
       </SigningContext.Provider>
     </MemoryRouter>,
@@ -49,27 +49,27 @@ const moHopKy = () => {
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.setItem('tlbm_lang', 'vi');
-  localStorage.setItem('tlbm_user_sig_7', ANH);
   api.khoa.mockResolvedValue([KHOA]);
   api.ky.mockResolvedValue(hoSo);
 });
 
-describe('Ký duyệt gửi ảnh chữ ký', () => {
-  it('gửi ảnh chữ ký đã lưu cùng yêu cầu ký', async () => {
+describe('Ký duyệt dùng ảnh chữ ký ở máy chủ', () => {
+  it('hiện ảnh từ máy chủ và không gửi ảnh kèm yêu cầu ký', async () => {
     moHopKy();
+    const anh = await screen.findByAltText('Chữ ký cá nhân');
+    expect(anh).toHaveAttribute('src', '/api/signing/anh-chu-ky-ca-nhan/tep/?v=7');
     const oPin = await screen.findByLabelText(/Nhập PIN ký/);
     await waitFor(() => expect(oPin).toBeEnabled());
     fireEvent.change(oPin, { target: { value: '48271593' } });
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /Ký duyệt/ }));
     await waitFor(() => expect(api.ky).toHaveBeenCalledTimes(1));
-    expect(api.ky.mock.calls[0][2]).toMatchObject({
-      khoa_ky: 4, hash_tai_lieu: MA_BAM, chu_ky_so: 'chu-ky-so', anh_chu_ky: ANH,
+    expect(api.ky.mock.calls[0][2]).toEqual({
+      khoa_ky: 4, hash_tai_lieu: MA_BAM, chu_ky_so: 'chu-ky-so', ghi_chu_ky: '',
     });
   });
 
   it('chưa có ảnh chữ ký: không gọi API ký', async () => {
-    localStorage.removeItem('tlbm_user_sig_7');
-    moHopKy();
+    moHopKy({ ...TOI, co_anh_chu_ky: false });
     expect(await screen.findByText('Chưa có ảnh chữ ký cá nhân')).toBeInTheDocument();
     expect(within(screen.getByRole('dialog')).getByRole('button', { name: /Ký duyệt/ })).toBeDisabled();
     expect(api.ky).not.toHaveBeenCalled();
