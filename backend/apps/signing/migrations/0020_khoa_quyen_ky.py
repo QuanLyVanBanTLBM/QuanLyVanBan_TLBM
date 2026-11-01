@@ -9,7 +9,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("signing", "0018_bo_ky_nhay_uy_quyen"),
+        ("signing", "0019_signing_user_signature"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
