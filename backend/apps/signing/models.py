@@ -542,3 +542,50 @@ class SigningKeyUnlock(models.Model):
 
     def __str__(self):
         return f"PIN của khóa {self.khoa_id} (sai {self.so_lan_sai} lần)"
+
+
+class SigningRightLock(models.Model):
+    """
+    Khóa quyền ký của tài khoản do quản trị viên đặt. Bảng trạng thái (được cập nhật khi bật lại),
+    không phải bảng bằng chứng; mọi thao tác ghi vào signing_audit_log.
+    Đang hiệu lực khi bat_lai_luc rỗng và (khoa_den rỗng hoặc chưa tới); tối đa một dòng bat_lai_luc rỗng cho mỗi tài khoản.
+    """
+
+    nguoi_bi_khoa = models.ForeignKey(User, on_delete=models.PROTECT, related_name="signing_right_locks")
+    nguoi_khoa = models.ForeignKey(User, on_delete=models.PROTECT, related_name="+")
+    ly_do_khoa = models.TextField()
+    khoa_tu = models.DateTimeField(db_default=DB_NOW, default=timezone.now)
+    khoa_den = models.DateTimeField(null=True, blank=True)  # rỗng: khóa đến khi được bật lại
+    nguoi_bat_lai = models.ForeignKey(User, null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    ly_do_bat_lai = models.TextField(blank=True, db_default="", default="")
+    bat_lai_luc = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_default=DB_NOW)
+    updated_at = models.DateTimeField(auto_now=True, db_default=DB_NOW)
+
+    class Meta:
+        db_table = "signing_right_lock"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["nguoi_bi_khoa"],
+                condition=Q(bat_lai_luc__isnull=True),
+                name="uq_signing_right_lock_dang_khoa",
+            ),
+            models.CheckConstraint(
+                condition=~Q(ly_do_khoa__regex=r"^\s*$"), name="chk_signing_right_lock_ly_do_khoa"
+            ),
+            models.CheckConstraint(
+                condition=Q(khoa_den__isnull=True) | Q(khoa_den__gt=models.F("khoa_tu")),
+                name="chk_signing_right_lock_thoi_han",
+            ),
+            models.CheckConstraint(
+                condition=(Q(bat_lai_luc__isnull=True) & Q(nguoi_bat_lai__isnull=True) & Q(ly_do_bat_lai=""))
+                | (
+                    Q(bat_lai_luc__isnull=False)
+                    & (Q(nguoi_bat_lai__isnull=True) | ~Q(ly_do_bat_lai__regex=r"^\s*$"))
+                ),
+                name="chk_signing_right_lock_bat_lai",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Khóa quyền ký của tài khoản {self.nguoi_bi_khoa_id} (đến {self.khoa_den or 'khi bật lại'})"

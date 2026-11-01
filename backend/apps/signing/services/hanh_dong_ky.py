@@ -26,7 +26,7 @@ from ..models import (
 from ..permissions import KY_TRINH_KY, co_quyen
 from ..storage import StorageError, get_storage
 from ..tich_hop import to_chuc
-from . import tep_hoan_tat, thong_bao
+from . import quyen_ky, tep_hoan_tat, thong_bao
 from .audit import ghi_nhat_ky
 from .bang_chung import chot_bang_chung
 from .trinh_ky import dung_cap_dang_mo, luot_hien_hanh, mo_cap, mo_nguoi_ky_trong_cap
@@ -70,6 +70,7 @@ def _nguoi_ky_hien_hanh(nguoi):
     if nguoi_hien_hanh is None or not co_quyen(nguoi_hien_hanh, KY_TRINH_KY):
         raise SigningError(code="khong_co_quyen", detail="Tài khoản không còn quyền ký.",
                            status_code=status.HTTP_403_FORBIDDEN)
+    quyen_ky.kiem_tra_duoc_ky(nguoi_hien_hanh)
     return nguoi_hien_hanh
 
 
