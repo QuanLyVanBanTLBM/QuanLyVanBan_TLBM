@@ -1,20 +1,11 @@
 name: DB Integration
 
-# Kiểm tra migration, schema và test trên PostgreSQL.
-# Test chạy trên PostgreSQL; test DB do Django dựng bằng migration. scripts/build_db.py được chạy để kiểm chứng DDL nạp được.
-# - pull-request: chạy trên kết quả merge của PR vào nhánh đích.
-# - all-branches: gộp thử mọi nhánh nhóm (1_* … 8_*) vào staging để phát hiện
-#   xung đột giữa các nhóm (migration, tên bảng, phụ thuộc chéo app).
+# Kiểm tra định kỳ: gộp thử mọi nhánh nhóm (1_* … 8_*) vào staging để phát hiện
+# xung đột giữa các nhóm (migration, tên bảng, phụ thuộc chéo app).
+# Gate migration/schema/test của PR và push staging nằm ở job `backend` trong ci.yml
+# (trước đây job migrate-postgres ở đây lặp lại gần như toàn bộ job đó).
 
 on:
-  pull_request:
-    branches:
-      - main
-      - staging
-      - '[1-8]_*'
-  push:
-    branches:
-      - staging
   schedule:
     - cron: '0 20 * * *'  # 03:00 giờ Việt Nam
   workflow_dispatch:
@@ -24,7 +15,7 @@ permissions:
 
 concurrency:
   group: db-integration-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: false
 
 env:
   DJANGO_SECRET_KEY: "ci-only-not-for-production"
@@ -45,165 +36,8 @@ env:
   POSTGRES_PASSWORD: postgres
 
 jobs:
-  migrate-postgres:
-    name: migrate-postgres
-    if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 40
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_DB: tlbm_ci
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          # Cluster mặc định ICU vi-VN: tlbm_ci, createdb và test DB của Django kế thừa từ template1.
-          POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=vi-VN --locale=C.UTF-8"
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    defaults:
-      run:
-        working-directory: backend
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: pip
-          cache-dependency-path: backend/requirements-linux-py312.lock
-
-      - name: Quy ước schema (changelog DDL, baseline chỉ giảm) so với nhánh đích
-        if: github.event_name == 'pull_request'
-        working-directory: .
-        env:
-          BASE_REF: ${{ github.base_ref }}
-        run: |
-          git fetch --no-tags --depth=1 origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
-          python .github/scripts/check_schema_conventions.py changelog "origin/$BASE_REF"
-          python .github/scripts/check_schema_conventions.py baseline "origin/$BASE_REF"
-
-      - name: Quy ước schema (bỏ qua khi không có nhánh đích)
-        if: github.event_name != 'pull_request'
-        run: echo "Không phải pull_request, không có nhánh đích để so changelog DDL và baseline."
-
-      - name: Install dependencies
-        run: pip install -r requirements-linux-py312.lock
-
-      - name: Provision restricted role in disposable PostgreSQL service
-        env:
-          PGPASSWORD: postgres
-        run: |
-          psql -h localhost -p 5432 -U postgres -d tlbm_ci -v ON_ERROR_STOP=1 -c "CREATE ROLE qlvb_readonly LOGIN PASSWORD 'ci-readonly-only' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT"
-
-      - name: Django system check (gồm trùng db_table giữa các model)
-        run: python manage.py check
-
-      - name: Missing migrations check
-        run: python manage.py makemigrations --check --dry-run
-
-      - name: Migrate trên PostgreSQL trống
-        run: python manage.py migrate --noinput
-
-      - name: Kiểm tra không còn migration chưa áp dụng
-        run: python manage.py migrate --noinput --check
-
-      - name: Test bộ so schema (trigger tắt, khoảng trắng trong literal, seed, dữ liệu chỉ ở migration, collation)
-        working-directory: .
-        run: python -m unittest discover -s .github/scripts -p "test_*.py"
-
-      - name: Install PostgreSQL 16 client tools for scripts/build_db.py tests
-        run: |
-          set -euo pipefail
-          sudo install -d /etc/apt/keyrings
-          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/keyrings/postgresql.gpg
-          echo "deb [signed-by=/etc/apt/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
-          sudo apt-get update
-          sudo apt-get install --yes postgresql-client-16
-          CLIENT_BIN=/usr/lib/postgresql/16/bin
-          for tool in psql pg_dump pg_restore; do
-            test -x "$CLIENT_BIN/$tool"
-            version=$("$CLIENT_BIN/$tool" --version)
-            printf '%s\n' "$version"
-            case "$version" in
-              *"(PostgreSQL) 16."*) ;;
-              *) echo "$tool must be PostgreSQL 16, got: $version" >&2; exit 1 ;;
-            esac
-          done
-          echo "$CLIENT_BIN" >> "$GITHUB_PATH"
-
-      - name: Test collation của scripts/build_db.py
-        working-directory: .
-        run: python -m unittest discover -s scripts -p "test_build_db.py"
-
-      - name: So sánh schema từ migration với DDL phát hành
-        run: |
-          PGPASSWORD="$POSTGRES_PASSWORD" createdb \
-            -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" \
-            tlbm_ddl_expected
-
-          PGPASSWORD="$POSTGRES_PASSWORD" psql \
-            -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" \
-            -d tlbm_ddl_expected -v ON_ERROR_STOP=1 -q \
-            -f ../docs/common/database/release_DDL.sql
-
-          # So theo catalog (không so văn bản pg_dump), bỏ qua khác biệt Django luôn sinh ra.
-          # Lệch đã biết nằm trong baseline; lệch mới hoặc baseline đã hết lệch đều làm job fail.
-          python ../.github/scripts/compare_schema_ddl.py \
-            "$POSTGRES_DB" tlbm_ddl_expected ../docs/common/database/schema_drift_baseline.txt
-
-      - name: Dựng DB từ release_DDL.sql (kiểm chứng script)
-        working-directory: .
-        run: python scripts/build_db.py --dbname tlbm_ddl_built --seed
-
-      - name: Smoke ENUM/trigger/function/view của DB dựng bằng script so với DB nạp DDL thô
-        working-directory: .
-        run: |
-          counts() {
-            PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER"               -d "$1" -At -F ' ' -c "
-              SELECT
-                (SELECT count(*) FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
-                  WHERE n.nspname = 'public' AND t.typtype = 'e'),
-                (SELECT count(*) FROM pg_trigger WHERE NOT tgisinternal),
-                (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-                  WHERE n.nspname = 'public'),
-                (SELECT count(*) FROM pg_views WHERE schemaname = 'public')"
-          }
-          built="$(counts tlbm_ddl_built)"
-          raw="$(counts tlbm_ddl_expected)"
-          echo "enum trigger function view"
-          echo "built: $built"
-          echo "raw:   $raw"
-          test "$built" = "$raw"
-
-      - name: Django tests trên PostgreSQL
-        run: |
-          python - <<'PY'
-          import os
-          import django
-          from django.conf import settings
-          from django.test.utils import get_runner
-
-          os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
-          django.setup()
-
-          class RequiredTestRunner(get_runner(settings)):
-              def suite_result(self, suite, result, **kwargs):
-                  if not result.testsRun or result.skipped:
-                      raise SystemExit("Django test gate requires discovered tests with zero skips")
-                  return super().suite_result(suite, result, **kwargs)
-
-          raise SystemExit(bool(RequiredTestRunner(interactive=False).run_tests([])))
-          PY
-
   all-branches:
     name: all-branches
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     services:

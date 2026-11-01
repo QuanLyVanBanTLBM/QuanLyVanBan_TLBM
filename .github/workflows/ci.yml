@@ -25,6 +25,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Đường chính: migration, schema, test Django. Giữ tên job `backend` (required check).
   backend:
     name: backend
     runs-on: ubuntu-24.04
@@ -40,6 +41,12 @@ jobs:
       DB_READONLY_USER: qlvb_readonly
       DB_READONLY_PASSWORD: ci-readonly-only
       ADMIN_PASSWORD: "ci-only-not-for-production"
+      # Biến của .github/scripts/compare_schema_ddl.py và psql.
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: '5432'
+      POSTGRES_DB: tlbm_ci
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
     services:
       postgres:
         image: postgres:16
@@ -54,15 +61,11 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-    defaults:
-      run:
-        working-directory: backend
     steps:
       - uses: actions/checkout@v4
 
       - name: Schema conventions vs PR base
         if: github.event_name == 'pull_request'
-        working-directory: .
         env:
           BASE_REF: ${{ github.base_ref }}
         run: |
@@ -77,10 +80,8 @@ jobs:
           cache-dependency-path: backend/requirements-linux-py312.lock
 
       - name: Install dependencies
+        working-directory: backend
         run: pip install -r requirements-linux-py312.lock
-
-      - name: One migration leaf per app (max_migration.txt)
-        run: python ../.github/scripts/check_max_migration.py
 
       - name: Provision restricted role in disposable PostgreSQL service
         env:
@@ -88,112 +89,63 @@ jobs:
         run: |
           psql -h localhost -p 5432 -U postgres -d tlbm_ci -v ON_ERROR_STOP=1 -c "CREATE ROLE qlvb_readonly LOGIN PASSWORD 'ci-readonly-only' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT"
 
+      - name: One migration leaf per app (max_migration.txt)
+        run: python .github/scripts/check_max_migration.py
+
       - name: Django system check
+        working-directory: backend
         run: python manage.py check
 
-      - name: Readiness endpoint regressions
-        run: python manage.py test api.test_readiness
-
-      - name: Deployment recovery regressions
-        working-directory: .
-        run: |
-          bash -n deploy/deploy.sh scripts/test_deploy.sh
-          bash scripts/test_deploy.sh
-
-      - name: Nginx config syntax (nginx 1.24, same as Ubuntu 24.04)
-        working-directory: .
-        run: |
-          docker run --rm -v "$PWD/deploy/nginx/qlvb-frontend.conf:/etc/nginx/conf.d/default.conf:ro" \
-            nginx:1.24 nginx -t
-
       - name: Missing migrations check
+        working-directory: backend
         run: python manage.py makemigrations --check --dry-run
 
+      - name: Migrate trên PostgreSQL trống
+        working-directory: backend
+        run: python manage.py migrate --noinput
+
+      - name: Kiểm tra không còn migration chưa áp dụng
+        working-directory: backend
+        run: python manage.py migrate --noinput --check
+
+      - name: Readiness endpoint regressions
+        working-directory: backend
+        run: python manage.py test api.test_readiness
+
       - name: Schema comparator and DDL policy regression tests
-        working-directory: .
-        env:
-          POSTGRES_HOST: localhost
-          POSTGRES_PORT: '5432'
-          POSTGRES_DB: tlbm_ci
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
         run: python -m unittest discover -s .github/scripts -p "test_*.py"
 
-      - name: Signing schema CHECK normalization regressions
-        working-directory: .
-        run: |
-          python - <<'PY'
-          import unittest
-
-          suite = unittest.defaultTestLoader.discover("scripts", pattern="test_compare_schema_ddl.py")
-          if suite.countTestCases() == 0:
-              raise SystemExit("signing schema CHECK regression tests were not discovered")
-          result = unittest.TextTestRunner(verbosity=2).run(suite)
-          if result.skipped:
-              raise SystemExit(f"signing schema CHECK regression tests skipped {len(result.skipped)} cases")
-          raise SystemExit(0 if result.wasSuccessful() else 1)
-          PY
-
-      - name: Install PostgreSQL 16 client tools for backup drill
-        run: |
-          set -euo pipefail
-          sudo install -d /etc/apt/keyrings
-          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/keyrings/postgresql.gpg
-          echo "deb [signed-by=/etc/apt/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
-          sudo apt-get update
-          sudo apt-get install --yes postgresql-client-16
-          CLIENT_BIN=/usr/lib/postgresql/16/bin
-          for tool in psql pg_dump pg_restore; do
-            test -x "$CLIENT_BIN/$tool"
-            version=$("$CLIENT_BIN/$tool" --version)
-            printf '%s\n' "$version"
-            case "$version" in
-              *"(PostgreSQL) 16."*) ;;
-              *) echo "$tool must be PostgreSQL 16, got: $version" >&2; exit 1 ;;
-            esac
-          done
-          echo "$CLIENT_BIN" >> "$GITHUB_PATH"
-
-      - name: Database lifecycle and upgrade regressions
-        working-directory: .
-        run: python -m unittest discover -s scripts -p "test_build_db.py"
-
-      - name: PostgreSQL 16 backup/restore drill (no skips)
-        working-directory: .
-        env:
-          QLVB_BACKUP_TEST_ENABLED: '1'
-        run: |
-          python - <<'PY'
-          import unittest
-
-          suite = unittest.defaultTestLoader.discover("scripts", pattern="test_backup_restore.py")
-          if suite.countTestCases() == 0:
-              raise SystemExit("backup/restore drill discovered no tests")
-          result = unittest.TextTestRunner(verbosity=2).run(suite)
-          if result.skipped:
-              raise SystemExit(f"backup/restore drill skipped {len(result.skipped)} tests")
-          raise SystemExit(0 if result.wasSuccessful() else 1)
-          PY
-
       - name: Dựng DB từ release_DDL.sql (kiểm chứng script)
-        working-directory: .
         run: python scripts/build_db.py --dbname tlbm_ddl_built --seed
 
       - name: Verify migration upgrade path against release DDL and baseline
-        working-directory: backend
-        env:
-          POSTGRES_HOST: localhost
-          POSTGRES_PORT: '5432'
-          POSTGRES_DB: tlbm_ci
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
         run: |
-          python manage.py migrate --noinput
           PGPASSWORD="$POSTGRES_PASSWORD" createdb -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" tlbm_ddl_expected
-          PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d tlbm_ddl_expected -v ON_ERROR_STOP=1 -q -f ../docs/common/database/release_DDL.sql
-          python ../.github/scripts/compare_schema_ddl.py "$POSTGRES_DB" tlbm_ddl_expected ../docs/common/database/schema_drift_baseline.txt
+          PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d tlbm_ddl_expected -v ON_ERROR_STOP=1 -q -f docs/common/database/release_DDL.sql
+          python .github/scripts/compare_schema_ddl.py "$POSTGRES_DB" tlbm_ddl_expected docs/common/database/schema_drift_baseline.txt
+
+      - name: Smoke ENUM/trigger/function/view của DB dựng bằng script so với DB nạp DDL thô
+        run: |
+          counts() {
+            PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" \
+              -d "$1" -At -F ' ' -c "
+              SELECT
+                (SELECT count(*) FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+                  WHERE n.nspname = 'public' AND t.typtype = 'e'),
+                (SELECT count(*) FROM pg_trigger WHERE NOT tgisinternal),
+                (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                  WHERE n.nspname = 'public'),
+                (SELECT count(*) FROM pg_views WHERE schemaname = 'public')"
+          }
+          built="$(counts tlbm_ddl_built)"
+          raw="$(counts tlbm_ddl_expected)"
+          echo "enum trigger function view"
+          echo "built: $built"
+          echo "raw:   $raw"
+          test "$built" = "$raw"
 
       - name: Django tests
+        working-directory: backend
         run: |
           python - <<'PY'
           import os
@@ -211,6 +163,126 @@ jobs:
                   return super().suite_result(suite, result, **kwargs)
 
           raise SystemExit(bool(RequiredTestRunner(interactive=False).run_tests([])))
+          PY
+
+  # Hạ tầng vận hành (deploy, nginx, build_db, backup/restore): chạy song song với `backend`.
+  backend-ops:
+    name: backend-ops
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      DJANGO_SECRET_KEY: "ci-only-not-for-production"
+      DB_ENGINE: postgresql
+      DB_HOST: localhost
+      DB_PORT: '5432'
+      DB_NAME: tlbm_ci
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_READONLY_USER: qlvb_readonly
+      DB_READONLY_PASSWORD: ci-readonly-only
+      ADMIN_PASSWORD: "ci-only-not-for-production"
+      # Biến của .github/scripts/compare_schema_ddl.py và psql.
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: '5432'
+      POSTGRES_DB: tlbm_ci
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: tlbm_ci
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=vi-VN --locale=C.UTF-8"
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements-linux-py312.lock
+
+      - name: Install dependencies
+        working-directory: backend
+        run: pip install -r requirements-linux-py312.lock
+
+      - name: Provision restricted role in disposable PostgreSQL service
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -p 5432 -U postgres -d tlbm_ci -v ON_ERROR_STOP=1 -c "CREATE ROLE qlvb_readonly LOGIN PASSWORD 'ci-readonly-only' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT"
+
+      # Runner ubuntu-24.04 thường đã có PostgreSQL 16 client; chỉ cài khi thiếu hoặc sai phiên bản.
+      - name: Ensure PostgreSQL 16 client tools
+        run: |
+          set -euo pipefail
+          CLIENT_BIN=/usr/lib/postgresql/16/bin
+          ok() {
+            for tool in psql pg_dump pg_restore; do
+              test -x "$CLIENT_BIN/$tool" || return 1
+              "$CLIENT_BIN/$tool" --version | grep -q "(PostgreSQL) 16\." || return 1
+            done
+          }
+          if ! ok; then
+            sudo install -d /etc/apt/keyrings
+            curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/keyrings/postgresql.gpg
+            echo "deb [signed-by=/etc/apt/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+            sudo apt-get update
+            sudo apt-get install --yes postgresql-client-16
+          fi
+          ok || { echo "PostgreSQL client tools must be version 16" >&2; exit 1; }
+          for tool in psql pg_dump pg_restore; do "$CLIENT_BIN/$tool" --version; done
+          echo "$CLIENT_BIN" >> "$GITHUB_PATH"
+
+      - name: Deployment recovery regressions
+        run: |
+          bash -n deploy/deploy.sh scripts/test_deploy.sh
+          bash scripts/test_deploy.sh
+
+      - name: Nginx config syntax (nginx 1.24, same as Ubuntu 24.04)
+        run: |
+          docker run --rm -v "$PWD/deploy/nginx/qlvb-frontend.conf:/etc/nginx/conf.d/default.conf:ro" \
+            nginx:1.24 nginx -t
+
+      - name: Signing schema CHECK normalization regressions
+        run: |
+          python - <<'PY'
+          import unittest
+
+          suite = unittest.defaultTestLoader.discover("scripts", pattern="test_compare_schema_ddl.py")
+          if suite.countTestCases() == 0:
+              raise SystemExit("signing schema CHECK regression tests were not discovered")
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          if result.skipped:
+              raise SystemExit(f"signing schema CHECK regression tests skipped {len(result.skipped)} cases")
+          raise SystemExit(0 if result.wasSuccessful() else 1)
+          PY
+
+      - name: Database lifecycle and upgrade regressions
+        run: python -m unittest discover -s scripts -p "test_build_db.py"
+
+      - name: PostgreSQL 16 backup/restore drill (no skips)
+        env:
+          QLVB_BACKUP_TEST_ENABLED: '1'
+        run: |
+          python - <<'PY'
+          import unittest
+
+          suite = unittest.defaultTestLoader.discover("scripts", pattern="test_backup_restore.py")
+          if suite.countTestCases() == 0:
+              raise SystemExit("backup/restore drill discovered no tests")
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          if result.skipped:
+              raise SystemExit(f"backup/restore drill skipped {len(result.skipped)} tests")
+          raise SystemExit(0 if result.wasSuccessful() else 1)
           PY
 
   frontend:
@@ -294,7 +366,7 @@ jobs:
   deploy-backend:
     name: Deploy backend to Ubuntu
     if: github.ref == 'refs/heads/staging' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    needs: [backend, frontend]
+    needs: [backend, backend-ops, frontend]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

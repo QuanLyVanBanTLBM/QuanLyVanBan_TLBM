@@ -17,7 +17,7 @@ Issue: Closes #
 - [ ] Backend Check: `python backend/manage.py check` (Pass)
 - [ ] Backend Migrations: `python backend/manage.py makemigrations --check --dry-run` (No changes detected)
 - [ ] Backend Test: `python backend/manage.py test` (Pass)
-- [ ] Đồng bộ nhánh đích: đã cập nhật nhánh `staging` mới nhất vào nhánh PR (rebase hoặc merge) và job `migrate-postgres` chạy lại xanh sau lần cập nhật cuối
+- [ ] Đồng bộ nhánh đích: đã cập nhật nhánh `staging` mới nhất vào nhánh PR (rebase hoặc merge) và job `backend` (ci.yml) chạy lại xanh sau lần cập nhật cuối
 - [ ] Thay đổi CSDL: cùng PR này sửa `release_DDL.sql`, thêm migration mới và mục `DDL_CHANGELOG.md`; không sửa migration đã có trên `staging`; bỏ qua nếu không đổi CSDL
 - [ ] Phạm vi migration: chỉ tạo/sửa migration của app thuộc nhóm; thay đổi bảng của nhóm khác đã có issue được nhóm đó xác nhận
 - [ ] i18n Key Parity: `pnpm --dir frontend run check:i18n` (Pass)
