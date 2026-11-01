@@ -3104,6 +3104,31 @@ class HieuLucPermissionTests(APITestCase):
         )
         self.assertEqual(res_vt.status_code, status.HTTP_200_OK)
 
+    def test_group_named_vanthu_without_perm_cannot_change_hieu_luc(self):
+        """Nhóm tên "Văn thư" mà chưa được gán quyền đổi hiệu lực thì bị từ chối (không ghi cứng theo tên nhóm)."""
+        from django.contrib.auth.models import Group, Permission
+        from documents.views import can_change_hieu_luc
+
+        group = Group.objects.get_or_create(name="Văn thư")[0]
+        group.permissions.set(Permission.objects.filter(codename__in=["change_vanbanden", "change_vanbandi"]))
+        user = User.objects.create_user(username="vanthu_no_hl", password="password123")
+        user.groups.add(group)
+
+        self.assertFalse(can_change_hieu_luc(user, "DEN"))
+        self.assertFalse(can_change_hieu_luc(user, "DI"))
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+        res = client.patch(
+            f"/api/documents/{self.doc_den.id}/",
+            {"hieu_luc": HieuLuc.HET_HIEU_LUC},
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("hieu_luc", res.data)
+        self.doc_den.refresh_from_db()
+        self.assertEqual(self.doc_den.hieu_luc, HieuLuc.CON_HIEU_LUC)
+
     def test_create_document_with_non_default_hieu_luc_restricted(self):
         """Người không có quyền chỉ được để giá trị mặc định CON_HIEU_LUC khi tạo văn bản."""
         client = APIClient()
