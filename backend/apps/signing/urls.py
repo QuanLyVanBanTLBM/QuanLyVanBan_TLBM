@@ -23,6 +23,10 @@ urlpatterns = [
     path("khoa/<int:pk>/thu-hoi/", views.KhoaActionView.as_view(action="thu-hoi"), name="khoa-thu-hoi"),
     path("khoa/<int:pk>/xoay-vong/", views.KhoaActionView.as_view(action="xoay-vong"), name="khoa-xoay-vong"),
 
+    # Ảnh chữ ký cá nhân (Issue #424)
+    path("anh-chu-ky-ca-nhan/", views.AnhChuKyCaNhanView.as_view(), name="anh-chu-ky-ca-nhan"),
+    path("anh-chu-ky-ca-nhan/tep/", views.AnhChuKyCaNhanTepView.as_view(), name="anh-chu-ky-ca-nhan-tep"),
+
     # PIN mở khóa ký (Phase 6)
     path("khoa/<int:pk>/dat-pin/", views.KhoaPinView.as_view(action="dat-pin"), name="khoa-dat-pin"),
     path("khoa/<int:pk>/mo-khoa-ky/", views.KhoaPinView.as_view(action="mo-khoa-ky"), name="khoa-mo-khoa-ky"),

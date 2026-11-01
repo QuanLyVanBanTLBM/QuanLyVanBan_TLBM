@@ -17,6 +17,15 @@ export interface NguoiDungHienTai {
   quyen: Record<string, boolean>;
   la_quan_tri: boolean;
   la_lanh_dao_don_vi: boolean;
+  co_anh_chu_ky?: boolean;
+}
+
+export interface ThongTinAnhChuKyCaNhan {
+  co_anh: boolean;
+  ma_bam?: string;
+  dung_luong_bytes?: number;
+  url?: string;
+  updated_at?: string;
 }
 
 /** Khung ký: tỷ lệ % theo trang, gốc góc trên-trái. Số thập phân dạng chuỗi. */

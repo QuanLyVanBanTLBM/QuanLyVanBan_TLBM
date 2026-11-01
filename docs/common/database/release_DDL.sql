@@ -1424,6 +1424,20 @@ CREATE TABLE signing_key_unlock (
 CREATE TRIGGER trg_signing_key_unlock_updated_at BEFORE UPDATE ON signing_key_unlock
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
+-- 9.8c. Quản lý ảnh chữ ký cá nhân (Nhóm 5)
+CREATE TABLE signing_user_signature (
+    id BIGSERIAL PRIMARY KEY,
+    nguoi_dung_id BIGINT NOT NULL UNIQUE REFERENCES accounts_employee (id) ON DELETE CASCADE,
+    vi_tri_tep VARCHAR(500) NOT NULL,
+    ma_bam VARCHAR(64) NOT NULL,
+    dung_luong_bytes INTEGER NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TRIGGER trg_signing_user_signature_updated_at BEFORE UPDATE ON signing_user_signature
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
 -- 9.8d. [v1] Khóa quyền ký của tài khoản do quản trị viên đặt (Nhóm 5, issue #449) — bảng trạng thái.
 -- Một tài khoản có tối đa một dòng đang hiệu lực (bat_lai_luc IS NULL). khoa_den NULL: khóa đến khi được bật lại.
 -- Dòng hết hạn (khoa_den đã qua) được đóng bằng dịch vụ khi khóa lại; nguoi_bat_lai_id NULL là hết hạn tự nhiên.

@@ -544,6 +544,28 @@ class SigningKeyUnlock(models.Model):
         return f"PIN của khóa {self.khoa_id} (sai {self.so_lan_sai} lần)"
 
 
+class SigningUserSignature(models.Model):
+    """
+    Ảnh chữ ký cá nhân (PNG) của người dùng để dán lên tệp PDF hoàn tất khi ký duyệt.
+    Mỗi người dùng có một ảnh chữ ký hiện hành.
+    """
+
+    nguoi_dung = models.OneToOneField(
+        User, on_delete=models.CASCADE, db_constraint=False, related_name="anh_chu_ky_ca_nhan"
+    )  # FK ON DELETE CASCADE tạo bằng SQL trong migration 0019 để khớp release_DDL.sql
+    vi_tri_tep = models.CharField(max_length=500)
+    ma_bam = models.CharField(max_length=64)
+    dung_luong_bytes = models.IntegerField()
+    created_at = models.DateTimeField(auto_now_add=True, db_default=DB_NOW)
+    updated_at = models.DateTimeField(auto_now=True, db_default=DB_NOW)
+
+    class Meta:
+        db_table = "signing_user_signature"
+
+    def __str__(self):
+        return f"Chữ ký của user {self.nguoi_dung_id} ({self.ma_bam[:8]})"
+
+
 class SigningRightLock(models.Model):
     """
     Khóa quyền ký của tài khoản do quản trị viên đặt. Bảng trạng thái (được cập nhật khi bật lại),
