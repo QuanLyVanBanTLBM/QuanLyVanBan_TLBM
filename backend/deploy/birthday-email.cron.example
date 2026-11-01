@@ -1,4 +1,0 @@
-# Set the scheduler timezone to Asia/Ho_Chi_Minh on the deployment host.
-# The lead must approve the daily minute/hour and deployment scheduler before
-# this line is installed. Replace paths and <minute>/<hour> with approved values.
-<minute> <hour> * * * cd /path/to/QuanLyVanBan_TLBM/backend && /path/to/venv/bin/python manage.py send_birthday_emails >> /path/to/logs/birthday-email.log 2>&1
