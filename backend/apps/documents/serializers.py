@@ -178,6 +178,8 @@ class DocumentListSerializer(serializers.Serializer):
     can_edit = serializers.SerializerMethodField()
     can_delete = serializers.SerializerMethodField()
     can_change_hieu_luc = serializers.SerializerMethodField()
+    can_view_read_log = serializers.SerializerMethodField()
+    can_send_mail_all = serializers.SerializerMethodField()
     attachment_count = serializers.SerializerMethodField()
     first_attachment_url = serializers.SerializerMethodField()
     created_at = serializers.DateTimeField(read_only=True)
@@ -268,6 +270,20 @@ class DocumentListSerializer(serializers.Serializer):
         from .views import can_change_hieu_luc
         loai = getattr(obj, "loai", None) or getattr(obj, "document_kind", "DEN")
         return can_change_hieu_luc(request.user, loai)
+
+    def get_can_view_read_log(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user or not request.user.is_authenticated:
+            return False
+        from .views import can_view_read_log
+        return can_view_read_log(request.user, obj)
+
+    def get_can_send_mail_all(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user or not request.user.is_authenticated:
+            return False
+        from .views import can_send_mail_all
+        return can_send_mail_all(request.user, "DEN")
 
     def get_pham_vi_display(self, obj):
         pv = getattr(obj, "pham_vi", "NOI_BO")
@@ -372,6 +388,8 @@ class DocumentDetailSerializer(serializers.Serializer):
     can_edit = serializers.SerializerMethodField()
     can_delete = serializers.SerializerMethodField()
     can_change_hieu_luc = serializers.SerializerMethodField()
+    can_view_read_log = serializers.SerializerMethodField()
+    can_send_mail_all = serializers.SerializerMethodField()
     nguoi_nhan_list = serializers.SerializerMethodField()
     don_vi_nhan = serializers.SerializerMethodField()
     created_at = serializers.DateTimeField(read_only=True)
@@ -480,6 +498,20 @@ class DocumentDetailSerializer(serializers.Serializer):
         loai = getattr(obj, "loai", None) or getattr(obj, "document_kind", "DEN")
         return can_change_hieu_luc(request.user, loai)
 
+    def get_can_view_read_log(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user or not request.user.is_authenticated:
+            return False
+        from .views import can_view_read_log
+        return can_view_read_log(request.user, obj)
+
+    def get_can_send_mail_all(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user or not request.user.is_authenticated:
+            return False
+        from .views import can_send_mail_all
+        return can_send_mail_all(request.user, "DI")
+
     def get_pham_vi_display(self, obj):
         pv = getattr(obj, "pham_vi", "NOI_BO")
         return "Hạn chế" if pv == "HAN_CHE" else "Nội bộ"
@@ -563,6 +595,35 @@ def _validate_hieu_luc_permission(attrs, instance=None, request=None, loai="DEN"
             )
 
 
+def _validate_send_mail_permission(attrs, instance=None, request=None, loai="DEN"):
+    """
+    Kiểm tra quyền gửi mail diện rộng toàn hệ thống (Nhóm 7 contract: send_mail_all_*):
+    - Với văn bản Mật / Hạn chế: Tuyệt đối cấm gửi mail toàn hệ thống, luôn ép về False.
+    - Với văn bản Thường (NOI_BO): Nếu gui_mail_toan_he_thong = True mà người dùng không có quyền send_mail_all_*
+      thì từ chối ValidationError.
+    """
+    pham_vi = attrs.get("pham_vi") or (getattr(instance, "pham_vi", None) if instance else PhamVi.NOI_BO)
+    if pham_vi == PhamVi.HAN_CHE or str(loai).upper() in ("MAT", "VANBANMAT"):
+        if attrs.get("gui_mail_toan_he_thong"):
+            raise serializers.ValidationError(
+                {"gui_mail_toan_he_thong": "Văn bản hạn chế / mật không được phép bật gửi mail toàn hệ thống."}
+            )
+        attrs["gui_mail_toan_he_thong"] = False
+        return
+
+    if not attrs.get("gui_mail_toan_he_thong"):
+        return
+
+    if not request or not getattr(request, "user", None) or not request.user.is_authenticated:
+        return
+
+    from .views import can_send_mail_all
+    if not can_send_mail_all(request.user, loai):
+        raise serializers.ValidationError(
+            {"gui_mail_toan_he_thong": "Bạn không có quyền gửi email thông báo toàn hệ thống."}
+        )
+
+
 class DocumentCreateUpdateSerializer(serializers.Serializer):
     """
     Serializer cho tạo mới / cập nhật văn bản (POST, PUT, PATCH).
@@ -606,6 +667,8 @@ class DocumentCreateUpdateSerializer(serializers.Serializer):
 
         # Kiểm tra quyền đổi hiệu lực (Issue Nhóm 7: change_hieu_luc_vanbanden / change_hieu_luc_vanbandi)
         _validate_hieu_luc_permission(attrs, instance=self.instance, request=self.context.get("request"), loai=loai)
+        # Kiểm tra quyền gửi mail toàn hệ thống (Issue Nhóm 7: send_mail_all_vanbanden / send_mail_all_vanbandi)
+        _validate_send_mail_permission(attrs, instance=self.instance, request=self.context.get("request"), loai=loai)
 
         # Đảm bảo thời gian ngày đến / ngày ban hành không bị full 0 (00:00:00) khi client gửi ngày dạng YYYY-MM-DD
         now = timezone.now()
@@ -933,7 +996,7 @@ class DocumentCreateUpdateSerializer(serializers.Serializer):
         loai = validated_data.pop("loai", LoaiVanBan.DEN)
         model = get_document_model(loai)
 
-        # VB hạn chế / VB Mật không gửi mail toàn trường
+        # VB hạn chế / VB Mật không gửi mail toàn hệ thống
         pham_vi = validated_data.get("pham_vi", PhamVi.NOI_BO)
         if pham_vi == PhamVi.HAN_CHE or loai == LoaiVanBan.MAT:
             validated_data["pham_vi"] = PhamVi.HAN_CHE
@@ -1140,6 +1203,7 @@ class VanBanDenSerializer(serializers.ModelSerializer):
         attrs = super().validate(attrs)
         _validate_replacement_link(attrs, self.instance)
         _validate_hieu_luc_permission(attrs, instance=self.instance, request=self.context.get("request"), loai="DEN")
+        _validate_send_mail_permission(attrs, instance=self.instance, request=self.context.get("request"), loai="DEN")
         return attrs
 
     def update(self, instance, validated_data):
@@ -1167,6 +1231,7 @@ class VanBanDiSerializer(serializers.ModelSerializer):
         attrs = super().validate(attrs)
         _validate_replacement_link(attrs, self.instance)
         _validate_hieu_luc_permission(attrs, instance=self.instance, request=self.context.get("request"), loai="DI")
+        _validate_send_mail_permission(attrs, instance=self.instance, request=self.context.get("request"), loai="DI")
         return attrs
 
     def update(self, instance, validated_data):

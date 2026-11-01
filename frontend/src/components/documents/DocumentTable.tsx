@@ -5,6 +5,7 @@ import { formatDate } from '@lib/dateUtils';
 import { authService } from '@lib/authService';
 import { useTranslation } from '@i18n/translate';
 import { useIsMobile } from '@hooks/useIsMobile';
+import { usePermissions } from '@lib/permissions';
 
 export interface DocumentTableProps {
   documents: DocumentItem[];
@@ -176,6 +177,7 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
 }) => {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
+  const { can, isSuperuser } = usePermissions();
 
   // Lấy thông tin phiên làm việc hiện tại để phân quyền hiển thị tác vụ
   const currentSession = useMemo(() => authService.getSession(), []);
@@ -217,11 +219,26 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
       userCanDelete = false;
     }
 
+    const isDi = doc.loai === 'DI' || loai === 'DI';
+    const canViewLogPerm = can(isDi ? 'view_read_log_vanbandi' : 'view_read_log_vanbanden');
+    const defaultCanViewHistory = !isDocConfidential;
+    const userCanViewHistory = doc.can_view_read_log !== undefined 
+      ? doc.can_view_read_log 
+      : (canViewLogPerm || defaultCanViewHistory);
+
+    const canViewHistory = Boolean(
+      isAdmin ||
+      isSuperuser ||
+      isCreator ||
+      userCanViewHistory
+    );
+
     return {
       canEdit: Boolean(onEdit) && userCanEdit,
       canDelete: Boolean(onDelete) && userCanDelete,
+      canViewHistory: Boolean(onViewHistory) && canViewHistory,
     };
-  }, [currentSession, isConfidential, loai, onDelete, onEdit]);
+  }, [currentSession, isConfidential, isSuperuser, can, loai, onDelete, onEdit, onViewHistory]);
 
   // Quản lý menu 3 chấm ⋮ mở trên dòng nào
   const [activeMenuId, setActiveMenuId] = useState<number | null>(null);
@@ -347,7 +364,7 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
                 const isExpired = doc.hieu_luc === 'HET_HIEU_LUC';
                 const isActiveRow = activeMenuId === doc.id;
                 const isNearBottom = documents.length >= 5 && index >= documents.length - 2 && index >= 3;
-                const { canEdit, canDelete } = getDocPermissions(doc);
+                const { canEdit, canDelete, canViewHistory } = getDocPermissions(doc);
 
                 // Tông màu hàng theo yêu cầu:
                 // - Toàn bộ hàng trắng đồng nhất, di chuột vào sáng trắng/xám nhẹ
@@ -575,17 +592,19 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
                             </button>
 
                             {/* 2. Nút Lịch sử xem */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveMenuId(null);
-                                onViewHistory(doc.id);
-                              }}
-                              className="w-full text-left px-3.5 py-2 text-sm text-main hover:bg-info-subtle hover:text-info flex items-center gap-2.5 transition-colors cursor-pointer"
-                            >
-                              <i className="fa-solid fa-clock-rotate-left text-info w-4 text-xs" />
-                              <span>{t('documents_ui.table.viewHistory') || 'Lịch sử xem'}</span>
-                            </button>
+                            {canViewHistory && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveMenuId(null);
+                                  onViewHistory(doc.id);
+                                }}
+                                className="w-full text-left px-3.5 py-2 text-sm text-main hover:bg-info-subtle hover:text-info flex items-center gap-2.5 transition-colors cursor-pointer"
+                              >
+                                <i className="fa-solid fa-clock-rotate-left text-info w-4 text-xs" />
+                                <span>{t('documents_ui.table.viewHistory') || 'Lịch sử xem'}</span>
+                              </button>
+                            )}
 
                             {/* 3. Nút Chỉnh sửa */}
                             {canEdit && (
@@ -667,7 +686,7 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
         ) : (
           documents.map((doc, index) => {
             const isExpired = doc.hieu_luc === 'HET_HIEU_LUC';
-            const { canEdit, canDelete } = getDocPermissions(doc);
+            const { canEdit, canDelete, canViewHistory } = getDocPermissions(doc);
 
             return (
               <div
@@ -823,15 +842,17 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
                   >
                     {t('documents_ui.table.viewDetail') || 'Xem'}
                   </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    icon="fa-clock-rotate-left"
-                    onClick={() => onViewHistory(doc.id)}
-                    className="!px-2 !py-1 text-xs"
-                    title={t('documents_ui.table.viewHistory') || 'Lịch sử xem'}
-                  />
+                  {canViewHistory && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      icon="fa-clock-rotate-left"
+                      onClick={() => onViewHistory(doc.id)}
+                      className="!px-2 !py-1 text-xs"
+                      title={t('documents_ui.table.viewHistory') || 'Lịch sử xem'}
+                    />
+                  )}
                   {canEdit && (
                     <Button
                       type="button"

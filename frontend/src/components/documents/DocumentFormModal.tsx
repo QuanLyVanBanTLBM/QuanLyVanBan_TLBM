@@ -344,6 +344,13 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
     can(isDi ? 'change_hieu_luc_vanbandi' : 'change_hieu_luc_vanbanden') ||
     Boolean(initDoc?.can_change_hieu_luc)
   );
+
+  // Phân quyền gửi mail toàn hệ thống (Nhóm 7 contract: send_mail_all_vanbanden / send_mail_all_vanbandi)
+  const canSendMailAll = Boolean(
+    isAdmin ||
+    can(isDi ? 'send_mail_all_vanbandi' : 'send_mail_all_vanbanden') ||
+    Boolean(initDoc?.can_send_mail_all)
+  );
   const [units, setUnits] = useState<string[]>(DEFAULT_UNITS);
   const [staff, setStaff] = useState<UserOption[]>([]);
   const [isStaffLoading, setIsStaffLoading] = useState(false);
@@ -2253,7 +2260,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
               <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center gap-2.5 text-xs text-amber-600 dark:text-amber-400">
                 <i className="fa-solid fa-shield-halved text-sm shrink-0" />
                 <span>
-                  <strong>{t('documents_ui.formModal.restrictedDocLabel') || 'Văn bản hạn chế (Mật nội bộ)'}:</strong> {t('documents_ui.formModal.restrictedNotice') || 'Bắt buộc chọn ít nhất một cán bộ nhận / xử lý. Hệ thống tự động vô hiệu hóa tính năng gửi email toàn trường và chỉ người nhận cùng người tạo mới có quyền xem.'}
+                  <strong>{t('documents_ui.formModal.restrictedDocLabel') || 'Văn bản hạn chế (Mật nội bộ)'}:</strong> {t('documents_ui.formModal.restrictedNotice') || 'Bắt buộc chọn ít nhất một cán bộ nhận / xử lý. Hệ thống tự động vô hiệu hóa tính năng gửi email toàn hệ thống và chỉ người nhận cùng người tạo mới có quyền xem.'}
                 </span>
               </div>
             )}
@@ -2618,20 +2625,32 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                   </div>
                 </label>
 
-                {/* Gửi mail (Chỉ cho Văn bản thông thường, Văn bản Hạn chế không gửi mail toàn trường) */}
+                {/* Gửi mail (Chỉ cho Văn bản thông thường, Văn bản Hạn chế không gửi mail toàn hệ thống) */}
                 {form.pham_vi !== 'HAN_CHE' ? (
-                  <label className="flex items-start gap-3 p-3 rounded-xl border border-border-subtle bg-surface hover:bg-hover/50 cursor-pointer transition-fast">
+                  <label className={`flex items-start gap-3 p-3 rounded-xl border border-border-subtle bg-surface transition-fast ${
+                    canSendMailAll ? 'hover:bg-hover/50 cursor-pointer' : 'opacity-65 cursor-not-allowed'
+                  }`}>
                     <input
                       type="checkbox"
-                      checked={form.gui_mail_toan_he_thong}
-                      onChange={e => setForm({ ...form, gui_mail_toan_he_thong: e.target.checked })}
-                      className="mt-0.5 rounded border-border-subtle text-primary focus:ring-primary"
+                      disabled={!canSendMailAll}
+                      checked={form.gui_mail_toan_he_thong && canSendMailAll}
+                      onChange={e => {
+                        if (canSendMailAll) {
+                          setForm({ ...form, gui_mail_toan_he_thong: e.target.checked });
+                        }
+                      }}
+                      className="mt-0.5 rounded border-border-subtle text-primary focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
                     />
                     <div>
-                      <span className="text-xs font-bold text-main block">{t('documents_ui.formModal.sendEmailToAll') || 'Gửi email toàn trường'}</span>
+                      <span className="text-xs font-bold text-main block">{t('documents_ui.formModal.sendEmailToAll') || 'Gửi email toàn hệ thống'}</span>
                       <span className="text-xs text-muted block leading-snug">
                         {t('documents_ui.formModal.sendEmailToAllDesc') || 'Tự động gửi thông báo văn bản mới tới hòm thư CBNV'}
                       </span>
+                      {!canSendMailAll && (
+                        <span className="text-[11px] text-amber-600 dark:text-amber-400 font-medium block mt-1">
+                          🔒 Tài khoản không có quyền gửi email diện rộng toàn hệ thống.
+                        </span>
+                      )}
                     </div>
                   </label>
                 ) : (
@@ -2644,7 +2663,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                           : (t('documents_ui.formModal.confidentialDocLabel') || 'Văn bản Mật lưu hành nội bộ')}
                       </span>
                       <span className="text-xs text-muted block leading-snug">
-                        {t('documents_ui.formModal.restrictedEmailNotice') || 'Không gửi email diện rộng toàn trường. Chỉ cán bộ nhận được chỉ định mới có quyền tiếp cận.'}
+                        {t('documents_ui.formModal.restrictedEmailNotice') || 'Không gửi email diện rộng toàn hệ thống. Chỉ cán bộ nhận được chỉ định mới có quyền tiếp cận.'}
                       </span>
                     </div>
                   </div>

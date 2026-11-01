@@ -273,6 +273,89 @@ def can_change_hieu_luc(user, loai="DEN"):
     return False
 
 
+def can_view_read_log(user, instance):
+    """
+    Kiểm tra quyền xem danh sách người đã đọc văn bản (Audit/Read Log).
+    Quyền: documents.view_read_log_vanbanden / documents.view_read_log_vanbandi.
+    - Quản trị viên (Admin) luôn có quyền xem.
+    - Người tạo ra văn bản (nguoi_tao) luôn có quyền xem tiến độ đọc của văn bản do mình tạo.
+    - Cán bộ sở hữu quyền view_read_log_* do Nhóm 7 cấp có quyền xem.
+    - Người thiếu quyền bị chặn PermissionDenied.
+    """
+    if not user or not user.is_authenticated:
+        return False
+    if is_admin_user(user):
+        return True
+    if getattr(instance, "nguoi_tao_id", None) == user.pk or getattr(instance, "nguoi_tao", None) == user:
+        return True
+
+    # Cán bộ là người nhận được chỉ định tiếp cận văn bản hạn chế / mật
+    try:
+        if hasattr(instance, "nguoi_nhan") and instance.nguoi_nhan.filter(id=user.pk).exists():
+            return True
+    except Exception:
+        pass
+
+    model_name = getattr(instance, "document_kind", None) or getattr(getattr(instance, "_meta", None), "model_name", "vanbanden")
+    perm_code = "view_read_log_vanbandi" if str(model_name).lower() in ("vanbandi", "di") else "view_read_log_vanbanden"
+
+    try:
+        if (
+            user.has_perm(f"documents.{perm_code}")
+            or user.has_perm(perm_code)
+        ):
+            return True
+        perms = getattr(user, "_user_permissions_cache", None) or set()
+        if any(perm_code in str(p) for p in perms):
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def can_send_mail_all(user, loai="DEN"):
+    """
+    Kiểm tra quyền gửi email thông báo toàn hệ thống.
+    Quyền: documents.send_mail_all_vanbanden / documents.send_mail_all_vanbandi.
+    - Quản trị viên (Admin) luôn có quyền.
+    - Nhóm Văn thư (VT) mặc định có quyền theo DDL seed.
+    - Cán bộ sở hữu quyền send_mail_all_* do Nhóm 7 cấp có quyền.
+    """
+    if not user or not user.is_authenticated:
+        return False
+    if is_admin_user(user):
+        return True
+
+    profile = getattr(user, "profile", None)
+    if profile and getattr(profile, "role", None) in ("admin", "vt", "vanthu", "van_thu"):
+        return True
+    if getattr(user, "role", None) in ("admin", "vt", "vanthu", "van_thu"):
+        return True
+
+    try:
+        user_groups = {g.name.lower() for g in user.groups.all()}
+        if any(vt in user_groups for vt in ("vt", "văn thư", "van thu", "vanthu", "admin", "quản trị")):
+            return True
+    except Exception:
+        pass
+
+    model_name = "vanbandi" if str(loai).upper() in ("DI", "VANBANDI") else "vanbanden"
+    perm_code = f"send_mail_all_{model_name}"
+
+    try:
+        if (
+            user.has_perm(f"documents.{perm_code}")
+            or user.has_perm(perm_code)
+        ):
+            return True
+        perms = getattr(user, "_user_permissions_cache", None) or set()
+        if any(perm_code in str(p) for p in perms):
+            return True
+    except Exception:
+        pass
+    return False
+
+
 def can_delete_document(user, instance):
     """Kiểm tra quyền xóa văn bản."""
     if not user or not user.is_authenticated:
@@ -661,6 +744,8 @@ class DocumentViewSet(viewsets.ViewSet):
     def viewers(self, request, pk=None):
         """GET /api/documents/{id}/viewers/"""
         instance = self._get_object_across_models(pk)
+        if not can_view_read_log(request.user, instance):
+            raise PermissionDenied("Bạn không có quyền xem nhật ký người đọc văn bản này.")
         if request.user and request.user.is_authenticated:
             log_document_view(instance, request.user)
 
@@ -992,6 +1077,8 @@ class VanBanDiViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["get"], url_path="viewers")
     def viewers(self, request, pk=None):
         instance = self.get_object()
+        if not can_view_read_log(request.user, instance):
+            raise PermissionDenied("Bạn không có quyền xem nhật ký người đọc văn bản này.")
         if request.user and request.user.is_authenticated:
             log_document_view(instance, request.user)
 
@@ -1141,6 +1228,8 @@ class VanBanMatViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["get"], url_path="viewers")
     def viewers(self, request, pk=None):
         instance = self.get_object()
+        if not can_view_read_log(request.user, instance):
+            raise PermissionDenied("Bạn không có quyền xem nhật ký người đọc văn bản này.")
         if request.user and request.user.is_authenticated:
             log_document_view(instance, request.user)
 

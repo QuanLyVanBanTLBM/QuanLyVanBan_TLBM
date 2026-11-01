@@ -325,6 +325,48 @@ class DocumentAPITests(TestCase):
         self.assertEqual(len(response.data["results"]), 1)
         self.assertEqual(response.data["results"][0]["username"], "cbnv")
 
+    def test_api_viewers_denied_for_unauthorized_user(self):
+        """User không phải người tạo, không phải Admin, không có quyền view_read_log bị từ chối 403."""
+        other_user = User.objects.create_user(username="other_cbnv_audit", password="password123")
+        other_client = APIClient()
+        other_client.force_authenticate(user=other_user)
+
+        response = other_client.get(f"/api/documents/{self.doc.id}/viewers/")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_api_viewers_allowed_with_rbac_permission(self):
+        """User có quyền view_read_log_vanbanden xem được viewers của văn bản."""
+        from django.contrib.auth.models import Permission
+        perm = Permission.objects.get(codename="view_read_log_vanbanden")
+        other_user = User.objects.create_user(username="reader_auditor_cbnv", password="password123")
+        other_user.user_permissions.add(perm)
+        other_user = User.objects.get(pk=other_user.pk)
+
+        other_client = APIClient()
+        other_client.force_authenticate(user=other_user)
+
+        response = other_client.get(f"/api/documents/{self.doc.id}/viewers/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_send_mail_all_denied_for_unauthorized_user(self):
+        """User không có quyền send_mail_all bị từ chối khi bật gui_mail_toan_he_thong = True."""
+        unauth_user = User.objects.create_user(username="no_mail_perm_cbnv", password="password123")
+        unauth_client = APIClient()
+        unauth_client.force_authenticate(user=unauth_user)
+
+        response = unauth_client.post(
+            "/api/documents/",
+            {
+                "loai": "DEN",
+                "so_hieu": "99/CV-TEST-MAIL",
+                "trich_yeu": "Test quyền gửi mail",
+                "gui_mail_toan_he_thong": True,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("gui_mail_toan_he_thong", response.data)
+
     def test_api_so_thu_tu_read_only_on_update(self):
         """PUT / PATCH không cho phép sửa so_thu_tu."""
         response = self.client.patch(

@@ -66,6 +66,8 @@ export interface DocumentItem {
   can_edit?: boolean;
   can_delete?: boolean;
   can_change_hieu_luc?: boolean;
+  can_view_read_log?: boolean;
+  can_send_mail_all?: boolean;
   attachment_count: number;
   first_attachment_url?: string | null;
   created_at: string;
