@@ -156,6 +156,7 @@ class QuyTrinhActionView(SigningAPIView):
 
 
 def _khoa_cua_toi(request):
+    key_service.chuyen_het_han(request.user)
     return SigningKey.objects.filter(nguoi_so_huu=request.user)
 
 

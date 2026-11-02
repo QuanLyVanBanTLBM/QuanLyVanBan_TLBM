@@ -15,6 +15,7 @@ from signing.errors import SigningError
 from signing.models import SigningAuditLog, SigningKey, SigningPinResetCode
 from signing.services import pin_reset
 
+from .test_hanh_dong_ky_phase8 import khoa_hoat_dong as khoa_hoat_dong_moi
 from .test_pin_phase6 import BI_MAT_KIEM_THU, khoa_hoat_dong
 
 User = get_user_model()
@@ -64,6 +65,23 @@ class DatLaiPinTests(TestCase):
         with self.assertRaises(SigningError) as ctx:
             pin_reset.xac_nhan_ma(self.u1, ma)
         self.assertEqual(ctx.exception.get_codes(), "ma_het_han_hoac_khong_co")
+
+    def test_after_reset_user_can_register_and_activate_a_new_key(self):
+        """Nối bước đặt lại PIN (thu hồi khóa hiện tại) với bước tạo khóa mới (#487)."""
+        from signing.services import keys as key_service
+
+        pin_reset.yeu_cau_ma(self.u1)
+        pin_reset.xac_nhan_ma(self.u1, ma_trong_thu())
+        self.key.refresh_from_db()
+        self.assertEqual(self.key.trang_thai, enums.TrangThaiKhoa.THU_HOI)
+        # Không còn khóa hoạt động nên kích hoạt khóa mới không vướng `da_co_khoa_hoat_dong`
+        _, khoa_moi = khoa_hoat_dong_moi(self.u1, "K-MOI-1")
+        self.assertEqual(khoa_moi.trang_thai, enums.TrangThaiKhoa.HOAT_DONG)
+        self.assertEqual(
+            SigningKey.objects.filter(nguoi_so_huu=self.u1, trang_thai=enums.TrangThaiKhoa.HOAT_DONG).count(), 1)
+        with self.assertRaises(SigningError) as ctx:  # khóa đã thu hồi không kích hoạt lại được khi đã có khóa mới
+            key_service.kich_hoat(self.key, self.u1)
+        self.assertEqual(ctx.exception.get_codes(), "da_co_khoa_hoat_dong")
 
     def test_account_without_keys_still_confirms(self):
         u2 = User.objects.create_user("u2", email="u2@example.test")

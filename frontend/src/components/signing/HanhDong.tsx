@@ -15,6 +15,7 @@ import type { BanBocKhoa } from '@lib/signing/khoaKy';
 import { khoaHoatDong, kyBangPin } from '@lib/signing/luongKhoa';
 import type { HoSoChiTiet, LuotTrinh } from '@lib/signing/types';
 import { HopThoai, OChonFileKhoa, ThongBao, TruongNhap } from './ChungUI';
+import DatLaiPinDialog from './DatLaiPinDialog';
 
 const URL_ANH_CHU_KY = '/api/signing/anh-chu-ky-ca-nhan/tep/';
 
@@ -68,6 +69,7 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
   const [o1, setO1] = useState('');
   const [o2, setO2] = useState('');
   const [pin, setPin] = useState('');
+  const [moDatLaiPin, setMoDatLaiPin] = useState(false);
   const [dangLam, setDangLam] = useState(false);
   const [thongBao, setThongBao] = useState('');
   const [fileKhoa, setFileKhoa] = useState<BanBocKhoa | null>(null);
@@ -390,6 +392,19 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
               />
             </TruongNhap>
           </div>
+          <div className="text-right">
+            <button
+              type="button"
+              className="text-xs font-semibold text-primary hover:underline"
+              disabled={dangLam}
+              onClick={() => {
+                dong();
+                setMoDatLaiPin(true);
+              }}
+            >
+              {t('khoa.quenPin')}
+            </button>
+          </div>
           {fileKhoa && <ThongBao loai="thong_tin">{t('hanhDong.daChonFile')}</ThongBao>}
 
           <TruongNhap nhan={t('hanhDong.ghiChuKy')}>
@@ -543,6 +558,14 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
         <p className="text-sm text-main">{t('hanhDong.xacNhanTrinhLai')}</p>
         {thongBao && <ThongBao>{thongBao}</ThongBao>}
       </HopThoai>
+      <DatLaiPinDialog
+        mo={moDatLaiPin}
+        onDong={() => setMoDatLaiPin(false)}
+        onXong={() => {
+          setMoDatLaiPin(false);
+          navigate('/approvals/khoa');
+        }}
+      />
     </div>
   );
 }
