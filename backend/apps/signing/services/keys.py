@@ -45,6 +45,29 @@ def _khoa(key_id):
 
 
 @transaction.atomic
+def chuyen_het_han(nguoi_so_huu, thoi_diem=None):
+    """
+    Chuyển khóa đang hoạt động đã quá `ngay_het_han` sang HET_HAN và ghi nhật ký (#488).
+
+    Chạy khi người dùng đọc hoặc dùng khóa, nên không cần tác vụ định kỳ. Idempotent: khóa đã chuyển không bị
+    ghi lại. Trả số khóa vừa chuyển.
+    """
+    thoi_diem = thoi_diem or timezone.now()
+    qua_han = SigningKey.objects.select_for_update().filter(
+        nguoi_so_huu=nguoi_so_huu, trang_thai=enums.TrangThaiKhoa.HOAT_DONG,
+        ngay_het_han__isnull=False, ngay_het_han__lte=thoi_diem,
+    )
+    so_khoa = 0
+    for key in qua_han:
+        key.trang_thai = enums.TrangThaiKhoa.HET_HAN
+        key.save(update_fields=["trang_thai"])
+        ghi_nhat_ky(nguoi_so_huu, LOAI, key.pk, "HET_HAN_KHOA", trang_thai_truoc=enums.TrangThaiKhoa.HOAT_DONG,
+                    trang_thai_sau=key.trang_thai)
+        so_khoa += 1
+    return so_khoa
+
+
+@transaction.atomic
 def dang_ky(nguoi_so_huu, *, ma_khoa, khoa_cong_khai, ngay_hieu_luc, ngay_het_han=None, ghi_chu="", dia_chi_ip=None):
     quyen_ky.kiem_tra_tai_khoan_hoat_dong(nguoi_so_huu)
     if not crypto.is_valid_public_key(khoa_cong_khai):
