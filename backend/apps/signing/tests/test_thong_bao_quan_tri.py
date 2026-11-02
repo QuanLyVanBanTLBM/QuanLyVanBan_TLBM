@@ -48,6 +48,10 @@ class ThongBaoQuanTriTests(KyBase):
         thu = mail.outbox[0]
         self.assertEqual(thu.to, ["ky1@example.test"])
         self.assertIn("Quyền ký đã được bật lại", thu.subject)
+        self.assertIn("Signing permission restored", thu.subject)
+        self.assertIn("Quản trị viên đã bật lại quyền ký", thu.body)
+        self.assertIn("An administrator has restored the signing permission", thu.body)
+        self.assertLess(thu.body.index("Xin chào"), thu.body.index("Hello"))  # tiếng Việt trước, tiếng Anh sau
         self.assertNotIn(LY_DO_NOI_BO, thu.subject + thu.body)
 
     def test_admin_revoke_notifies_owner_once_per_revocation(self):
@@ -57,6 +61,8 @@ class ThongBaoQuanTriTests(KyBase):
         self.assertEqual(len(danh_sach), 1)
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("Khóa ký bị thu hồi", mail.outbox[0].subject)
+        self.assertIn("Signing key revoked", mail.outbox[0].subject)
+        self.assertIn("An administrator has revoked the signing key", mail.outbox[0].body)
         self.assertNotIn(LY_DO_NOI_BO, mail.outbox[0].subject + mail.outbox[0].body)
 
     def test_lock_body_states_expiry_and_notification_list_handles_no_request(self):
@@ -65,9 +71,14 @@ class ThongBaoQuanTriTests(KyBase):
         tieu_de, than, ten = thong_bao_service.noi_dung(tb)
         self.assertIn("Quyền ký bị tạm khóa", tieu_de)
         self.assertIn("khóa đến", than)
+        self.assertIn("Signing permission is locked until", than)
+        self.assertIn("Signing permission temporarily locked", tieu_de)
         self.assertEqual(thong_bao_service.thao_tac(tb), ("", ""))
         response = self.client_cua(self.ky1).get("/api/v1/signing/thong-bao/")
         self.assertEqual(response.status_code, 200, response.data)
         muc = next(m for m in response.data["results"] if m["loai_thong_bao"] == "KHOA_QUYEN_KY")
         self.assertIsNone(muc["trinh_ky"])
         self.assertIsNone(muc["ten_quy_trinh"])
+
+    def test_every_admin_notification_type_has_an_english_title(self):
+        self.assertEqual(set(thong_bao_service.TEN_LOAI_EN), set(thong_bao_service.LOAI_QUAN_TRI))
