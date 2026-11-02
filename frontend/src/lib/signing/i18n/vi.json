@@ -28,6 +28,7 @@
     "hetPhien": "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.",
     "khongTimThay": "Không tìm thấy dữ liệu yêu cầu.",
     "quaNhieuYeuCau": "Thao tác quá nhanh. Vui lòng thử lại sau ít phút.",
+    "thuLaiSauLuc": "Đã chạm giới hạn thao tác. Thử lại sau {gio}.",
     "chon": "— Chọn —",
     "chonTep": "Chọn tệp",
     "chuaChonTep": "Chưa chọn tệp",

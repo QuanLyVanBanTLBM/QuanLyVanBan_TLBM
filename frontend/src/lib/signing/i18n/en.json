@@ -28,6 +28,7 @@
     "hetPhien": "Your session has expired. Please sign in again.",
     "khongTimThay": "The requested data was not found.",
     "quaNhieuYeuCau": "Too many requests. Please try again in a few minutes.",
+    "thuLaiSauLuc": "Action limit reached. Try again after {gio}.",
     "chon": "— Select —",
     "chonTep": "Choose file",
     "chuaChonTep": "No file chosen",

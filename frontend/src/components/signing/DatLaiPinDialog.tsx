@@ -5,10 +5,13 @@
 import { useEffect, useState } from 'react';
 import { Button } from '@components/common';
 import { HopThoai, ThongBao, TruongNhap } from '@components/signing/ChungUI';
-import { signingApi } from '@lib/signing/api';
+import { giayChoThuLai, signingApi } from '@lib/signing/api';
 import { dinhDangNgay, LOP_O_NHAP } from '@lib/signing/dinhDang';
 import { useSigningT } from '@lib/signing/i18n';
 import { useTranslation } from '@i18n/translate';
+
+/** Chỉ đếm ngược khi thời gian chờ ngắn; chờ dài hơn (giới hạn theo ngày) hiện thời điểm được thử lại. */
+const GIAY_DEM_NGUOC_TOI_DA = 15 * 60;
 
 export default function DatLaiPinDialog({ mo, onDong, onXong }: { mo: boolean; onDong: () => void; onXong: () => void }) {
   const { t, loi } = useSigningT();
@@ -45,6 +48,9 @@ export default function DatLaiPinDialog({ mo, onDong, onXong }: { mo: boolean; o
       setMa('');
     } catch (err) {
       setThongBao(loi(err));
+      // 429 ngắn hạn (giãn cách gửi mã): khóa nút gửi và đếm ngược; giới hạn theo ngày chỉ hiện giờ được thử lại
+      const giay = giayChoThuLai(err);
+      if (giay > 0 && giay <= GIAY_DEM_NGUOC_TOI_DA) setGiayCho(giay);
     } finally {
       setDangLam(false);
     }
@@ -87,7 +93,9 @@ export default function DatLaiPinDialog({ mo, onDong, onXong }: { mo: boolean; o
       <p className="text-sm text-secondary">{t('khoa.datLaiPinMoTa')}</p>
       {thongBao && <ThongBao loai="loi">{thongBao}</ThongBao>}
       {!hetHan ? (
-        <Button icon="fa-envelope" isLoading={dangLam} onClick={guiMa}>{t('khoa.datLaiPinGuiMa')}</Button>
+        <Button icon="fa-envelope" isLoading={dangLam} disabled={giayCho > 0} onClick={guiMa}>
+          {giayCho > 0 ? t('khoa.datLaiPinGuiLaiSau', { giay: giayCho }) : t('khoa.datLaiPinGuiMa')}
+        </Button>
       ) : (
         <div className="space-y-3">
           <ThongBao loai="thong_tin">{t('khoa.datLaiPinDaGui', { han: dinhDangNgay(hetHan, currentLang) })}</ThongBao>

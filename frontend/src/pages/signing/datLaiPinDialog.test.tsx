@@ -67,6 +67,28 @@ describe('DatLaiPinDialog', () => {
     expect(await screen.findByText(thongDiep)).toBeInTheDocument();
   });
 
+  it('locks the send button with a countdown when the server returns a short retry time (HTTP 429)', async () => {
+    const thuLai = new Date(Date.now() + 45_000).toISOString();
+    api.datLaiPinYeuCau.mockRejectedValue(
+      new ApiError(429, { code: 'gui_ma_qua_nhanh', detail: 'x', fields: { thu_lai_sau: [thuLai] } }),
+    );
+    hien();
+    fireEvent.click(screen.getByRole('button', { name: 'Gửi mã xác thực' }));
+    const nut = await screen.findByRole('button', { name: /Gửi lại sau \d+ giây/ });
+    expect(nut).toBeDisabled();
+  });
+
+  it('does not start a countdown for a long daily limit but names the retry time', async () => {
+    const thuLai = new Date(Date.now() + 5 * 3600_000).toISOString();
+    api.datLaiPinYeuCau.mockRejectedValue(
+      new ApiError(429, { code: 'gioi_han_khac', detail: 'x', fields: { thu_lai_sau: [thuLai] } }),
+    );
+    hien();
+    fireEvent.click(screen.getByRole('button', { name: 'Gửi mã xác thực' }));
+    expect(await screen.findByText(/Đã chạm giới hạn thao tác\. Thử lại sau/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Gửi mã xác thực' })).toBeEnabled();
+  });
+
   it('shows the message for a wrong code and keeps the dialog open', async () => {
     api.datLaiPinYeuCau.mockResolvedValue({ het_han: '2026-11-02T03:00:00Z', gian_cach_giay: 120 });
     api.datLaiPinXacNhan.mockRejectedValue(loiApi(400, 'ma_khong_dung'));
