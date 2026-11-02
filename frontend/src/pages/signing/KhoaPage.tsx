@@ -17,6 +17,9 @@ import { docFileKhoaTuTep, DUOI_FILE_KHOA, taiXuongFileKhoa } from '@lib/signing
 import { hoTroEd25519, kiemTraPin, layBanBoc } from '@lib/signing/khoaKy';
 import { dangKyKhoaThietBi, doiPin, khoaHoatDong, nhapFileKhoa } from '@lib/signing/luongKhoa';
 
+// Dung lượng tối đa của ảnh chữ ký PNG sau khi cắt (bằng giới hạn 2 MB của máy chủ)
+const GIOI_HAN_ANH_SAU_CAT = 2 * 1024 * 1024;
+
 function OPin({ nhan, gia_tri, onDoi }: { nhan: string; gia_tri: string; onDoi: (v: string) => void }) {
   return (
     <TruongNhap nhan={nhan}>
@@ -53,18 +56,21 @@ export default function KhoaPage() {
   const onChonTepAnh = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
-      const f = files[0];
-      if (f.size > 2 * 1024 * 1024) {
-        setThongBao({ loai: 'loi', noi_dung: t('khoa.anhQuaLon') });
-        return;
-      }
-      setTepChon(f);
+      setThongBao(null);
+      setTepChon(files[0]);
       setMoCrop(true);
     }
     e.target.value = '';
   };
 
   const onLuuAnhChuKy = async (blob: Blob, dataUrl: string) => {
+    // Giới hạn chỉ tính trên ảnh PNG sau khi cắt (khớp giới hạn của máy chủ), không tính tệp gốc
+    if (blob.size > GIOI_HAN_ANH_SAU_CAT) {
+      setMoCrop(false);
+      setTepChon(null);
+      setThongBao({ loai: 'loi', noi_dung: t('khoa.anhQuaLon') });
+      return;
+    }
     setDangLam(true);
     setThongBao(null);
     try {

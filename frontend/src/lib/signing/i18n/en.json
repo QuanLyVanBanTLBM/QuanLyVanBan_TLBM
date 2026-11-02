@@ -378,7 +378,7 @@
     "xacNhanCat": "Crop & Apply",
     "xoaChuKy": "Delete signature image",
     "chuaChonAnh": "Please select a valid image file (PNG, JPG, JPEG).",
-    "anhQuaLon": "Image file size exceeds 2 MB. Please select a smaller image.",
+    "anhQuaLon": "The cropped signature image exceeds 2 MB. Please choose another image or crop a smaller area.",
     "thuHoiKhoaHienTai": "Revoke active signing key",
     "daLuuChuKy": "Personal signature image saved.",
     "daXoaChuKy": "Personal signature image deleted.",
