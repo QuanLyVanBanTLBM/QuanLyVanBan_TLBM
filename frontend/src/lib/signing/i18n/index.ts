@@ -3,7 +3,7 @@
  * Tách riêng để không sửa tệp dịch dùng chung của các nhóm khác.
  */
 import { useTranslation } from '@i18n/translate';
-import { docLoi } from '../api';
+import { docLoi, thoiDiemThuLai } from '../api';
 import en from './en.json';
 import vi from './vi.json';
 
@@ -67,6 +67,14 @@ export function useSigningT() {
     }
     const ban_dich = ma ? tra(TU_DIEN[currentLang], `loi.${ma}`) : undefined;
     if (ban_dich) return ban_dich;
+    // HTTP 429 kèm thời điểm được thử lại: nêu giờ cụ thể theo múi giờ Việt Nam
+    const thu_lai = thoiDiemThuLai(err);
+    if (thu_lai) {
+      const gio = new Intl.DateTimeFormat(currentLang === 'en' ? 'en-GB' : 'vi-VN', {
+        timeZone: 'Asia/Ho_Chi_Minh', dateStyle: 'short', timeStyle: 'medium',
+      }).format(thu_lai);
+      return t('chung.thuLaiSauLuc', { gio });
+    }
     if (l.status === 0 && !l.code && err instanceof TypeError) return t('chung.loiMang');
     // Lỗi HTTP không kèm mã nghiệp vụ: thông báo theo mã trạng thái, không hiện chuỗi thô của máy chủ/ApiError
     if (l.status === 401) return t('chung.hetPhien');
