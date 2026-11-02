@@ -50,6 +50,12 @@ TEN_LOAI = {
     "THU_HOI_KHOA": "Khóa ký bị thu hồi",
 }
 LOAI_QUAN_TRI = ("KHOA_QUYEN_KY", "BAT_LAI_QUYEN_KY", "THU_HOI_KHOA")
+# Bản tiếng Anh của thông báo thao tác quản trị (#489): chưa có tùy chọn ngôn ngữ theo tài khoản nên thư song ngữ.
+TEN_LOAI_EN = {
+    "KHOA_QUYEN_KY": "Signing permission temporarily locked",
+    "BAT_LAI_QUYEN_KY": "Signing permission restored",
+    "THU_HOI_KHOA": "Signing key revoked",
+}
 SO_LAN_GUI_TOI_DA = 5
 
 
@@ -92,7 +98,10 @@ def quan_tri_thu_hoi_khoa(nguoi_so_huu, danh_sach_khoa):
 
 
 def noi_dung_quan_tri(tb):
-    """(tiêu đề, thân thư) cho thông báo thao tác quản trị; không nêu lý do nội bộ của quản trị viên."""
+    """
+    (tiêu đề, thân thư) song ngữ vi/en cho thông báo thao tác quản trị; không nêu lý do nội bộ của quản trị viên.
+    Tiếng Việt đứng trước, tiếng Anh sau cùng một thư.
+    """
     ten = ten_hien_thi(tb.nguoi_nhan)
     duong_dan = f"{settings.SIGNING_FRONTEND_URL.rstrip('/')}/approvals/khoa"
     if tb.loai_thong_bao == "KHOA_QUYEN_KY":
@@ -100,15 +109,25 @@ def noi_dung_quan_tri(tb):
         khoa = SigningRightLock.objects.filter(pk=int(ma)).first() if ma.isdigit() else None
         han = (f"Quyền ký bị khóa đến {dinh_dang_ngay(khoa.khoa_den)}." if khoa and khoa.khoa_den
                else "Quyền ký bị khóa cho đến khi quản trị viên bật lại.")
+        han_en = (f"Signing permission is locked until {dinh_dang_ngay(khoa.khoa_den)}." if khoa and khoa.khoa_den
+                  else "Signing permission stays locked until an administrator restores it.")
         chinh = f"Quản trị viên đã tạm khóa quyền ký của tài khoản. {han} Liên hệ quản trị viên để biết thêm."
+        chinh_en = f"An administrator has temporarily locked the signing permission of this account. {han_en} " \
+                   "Contact an administrator for details."
     elif tb.loai_thong_bao == "BAT_LAI_QUYEN_KY":
         chinh = "Quản trị viên đã bật lại quyền ký của tài khoản. Có thể tiếp tục ký duyệt."
+        chinh_en = "An administrator has restored the signing permission of this account. You can continue signing."
     else:
         chinh = ("Quản trị viên đã thu hồi khóa ký của tài khoản. Cần đăng ký khóa ký mới và đặt PIN mới "
                  "trước khi ký duyệt tiếp.")
-    tieu_de = f"[Trình ký] {TEN_LOAI[tb.loai_thong_bao]}"
+        chinh_en = ("An administrator has revoked the signing key of this account. Register a new signing key and "
+                    "set a new PIN before signing again.")
+    tieu_de = f"[Trình ký] {TEN_LOAI[tb.loai_thong_bao]} / [Signing] {TEN_LOAI_EN[tb.loai_thong_bao]}"
     than = (f"Xin chào {ten},\n\n{chinh}\n\nCấu hình khóa ký: {duong_dan}\n\n"
-            "Thư gửi tự động từ phân hệ Trình ký, vui lòng không trả lời.")
+            "Thư gửi tự động từ phân hệ Trình ký, vui lòng không trả lời.\n\n"
+            "---\n\n"
+            f"Hello {ten},\n\n{chinh_en}\n\nSigning key settings: {duong_dan}\n\n"
+            "This message was sent automatically by the Signing module; please do not reply.")
     return tieu_de, than
 
 

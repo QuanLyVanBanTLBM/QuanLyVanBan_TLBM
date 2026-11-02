@@ -163,7 +163,9 @@ class LuongKyTests(KyBase):
         SigningKey.objects.filter(pk=key.pk).update(ngay_het_han=timezone.now() - timedelta(seconds=1))
         r = self.ky(self.ky1)
         self.assertEqual((r.status_code, r.data["code"]), (400, "khoa_ky_khong_hoat_dong"))  # khóa hết hạn
-        SigningKey.objects.filter(pk=key.pk).update(ngay_het_han=None)
+        key.refresh_from_db()
+        self.assertEqual(key.trang_thai, enums.TrangThaiKhoa.HET_HAN)  # trạng thái được lưu dù thao tác bị từ chối
+        SigningKey.objects.filter(pk=key.pk).update(ngay_het_han=None, trang_thai=enums.TrangThaiKhoa.HOAT_DONG)
         key_service.thu_hoi(key, self.ky1, "Mất thiết bị")
         r = self.ky(self.ky1)
         self.assertEqual((r.status_code, r.data["code"]), (400, "khoa_ky_khong_hoat_dong"))
