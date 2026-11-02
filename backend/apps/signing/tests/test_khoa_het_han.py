@@ -12,7 +12,7 @@ from signing.services import keys as key_service
 from .test_hanh_dong_ky_phase8 import KyBase
 
 User = get_user_model()
-URL_KHOA = "/api/signing/khoa/"
+URL_KHOA = "/api/v1/signing/khoa/"
 
 
 class KhoaHetHanTests(KyBase):
