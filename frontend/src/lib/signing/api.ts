@@ -41,6 +41,24 @@ export function docLoi(err: unknown): LoiNghiepVu & { status: number } {
   return { status: 0, detail: err instanceof Error ? err.message : String(err) };
 }
 
+/**
+ * HTTP 429: thời điểm được thử lại (`fields.thu_lai_sau` ISO) do máy chủ trả; null khi không phải 429
+ * hoặc máy chủ không nêu thời điểm.
+ */
+export function thoiDiemThuLai(err: unknown): Date | null {
+  const l = docLoi(err);
+  if (l.status !== 429) return null;
+  const gia_tri = (l.fields as Record<string, unknown[]> | undefined)?.thu_lai_sau?.[0];
+  const thoi_diem = typeof gia_tri === 'string' ? new Date(gia_tri) : null;
+  return thoi_diem && !Number.isNaN(thoi_diem.getTime()) ? thoi_diem : null;
+}
+
+/** Số giây còn phải chờ theo phản hồi 429 (làm tròn lên, tối thiểu 0); 0 khi không có thông tin. */
+export function giayChoThuLai(err: unknown, bay_gio: number = Date.now()): number {
+  const thoi_diem = thoiDiemThuLai(err);
+  return thoi_diem ? Math.max(0, Math.ceil((thoi_diem.getTime() - bay_gio) / 1000)) : 0;
+}
+
 async function layBlobMotLan(duong_dan: string): Promise<Response> {
   const token = localStorage.getItem('tlbm_access_token') || localStorage.getItem('tlbm_token');
   return fetch(`${import.meta.env.VITE_API_URL || ''}${SIGNING_BASE}${duong_dan}`, {
