@@ -162,18 +162,18 @@ GVHD đã chốt bỏ văn bản mật hành chính. Tài liệu nội bộ hạ
   - `[ĐỀ XUẤT]` Khi có Redis: lưu nonce để ép dùng một lần (đọc và xóa nguyên tử).
 - Mỗi người dùng tối đa một khóa `HOAT_DONG` tại một thời điểm, không phân biệt thuật toán.
 - Xoay vòng khóa: khóa cũ chuyển `DA_XOAY_VONG`, `khoa_thay_the` trỏ khóa mới, có ghi nhật ký. Khóa cũ được giữ để xác minh chữ ký lịch sử.
-- `HET_HAN`: áp dụng khi khóa có `ngay_het_han` và thời điểm hiện tại đã qua; `ngay_het_han` rỗng nghĩa là không hết hạn. Tác vụ định kỳ chuyển trạng thái và ghi nhật ký.
+- `HET_HAN`: áp dụng khi khóa có `ngay_het_han` và thời điểm hiện tại đã qua; `ngay_het_han` rỗng nghĩa là không hết hạn. Không dùng tác vụ định kỳ: dịch vụ khóa chuyển trạng thái và ghi nhật ký `HET_HAN_KHOA` khi chủ khóa đọc danh sách khóa hoặc ký (#488), nên khóa quá hạn bị từ chối ký và trạng thái vẫn được lưu.
 - `THU_HOI`: thu hồi thủ công, gán `ngay_thu_hoi`, có ghi nhật ký.
 
 **Bảo vệ khóa bằng PIN (thiết kế đề xuất, triển khai ở Phase 6)**
 
-> `[QUYẾT ĐỊNH]` Epic #447 đã chốt hướng mới: khóa bí mật lưu mã hóa trong CSDL (khóa mã hóa dẫn xuất từ PIN, salt và pepper ngoài CSDL), PIN 6 chữ số nhập cho từng lần ký, ký phía máy chủ, khóa sau khoảng 5 lần nhập sai. Các đoạn dưới đây mô tả triển khai hiện tại (PIN 8 chữ số, bản bọc và tệp `.tlbmkey` ở trình duyệt) và được thay thế khi các issue con của phân vùng 1 hoàn tất; mục nào mâu thuẫn với quyết định này là hiện trạng cần thay, không phải thiết kế đích.
+> `[QUYẾT ĐỊNH]` Epic #447 đã chốt hướng mới: khóa bí mật lưu mã hóa trong CSDL (khóa mã hóa dẫn xuất từ PIN, salt và pepper ngoài CSDL), PIN 6 chữ số nhập cho từng lần ký, ký phía máy chủ. Người phụ trách epic đã điều chỉnh giới hạn nhập sai: tối đa 15 lần mỗi ngày, không khóa PIN lâu dài (thay cho "khóa sau khoảng 5 lần"). `[FACT]` Đã triển khai: PIN 6 chữ số, giới hạn 15 lần mỗi ngày, đặt lại PIN bằng mã email (#478), thu hồi khóa khẩn cấp và khóa quyền ký bởi quản trị viên. `[CHƯA LÀM]` Khóa bí mật mã hóa trong CSDL, pepper, Argon2 phía máy chủ và ký phía máy chủ; các mục này phụ thuộc cấu hình vận hành (#448) và quyết định thiết kế. Các đoạn bên dưới mô tả triển khai hiện tại (bản bọc và tệp `.tlbmkey` ở trình duyệt, `k_srv` ở máy chủ) và sẽ được thay khi các hạng mục trên hoàn tất.
 
 - Mục tiêu: chặn việc ký trên thiết bị đã đăng nhập mà không có chủ khóa, và chống đoán PIN offline khi bản sao private key bị lấy.
 - Private key Ed25519 sinh ở trình duyệt, được bọc bằng khóa `HKDF(master_pin, k_srv, "wrap")`. `master_pin = Argon2id(PIN, salt, tham số)`. Bản bọc chỉ nằm ở thiết bị (IndexedDB), **không bao giờ gửi lên server**.
 - Server giữ `k_srv` (mảnh bí mật theo từng khóa, mã hóa khi lưu) và hash của `verifier = HKDF(master_pin, "verify")`. Hai nhãn `verify` và `wrap` phải tách biệt để lộ DB server không suy ra được khóa bọc.
 - Mở khóa ký: client gửi `verifier` kèm phiên đăng nhập; server so khớp, đếm số lần sai rồi mới trả `k_srv`. Tối đa 15 lần nhập sai mỗi ngày (ngày theo múi giờ hệ thống), đủ 15 lần thì từ chối nhập đến hết ngày (HTTP 429, mã `pin_het_luot_trong_ngay`); nhập đúng thì bộ đếm về 0. Giới hạn chỉ chống nhập dò, không khóa khóa ký lâu dài vì ký có thể là luồng khẩn. Bộ đếm lưu ở CSDL và cập nhật dưới `select_for_update`.
-- Sự kiện nhật ký: `DAT_PIN`, `DOI_PIN`, `MO_KHOA_KY`, `PIN_SAI`, `PIN_KHOA`.
+- Sự kiện nhật ký: `DAT_PIN`, `DOI_PIN`, `MO_KHOA_KY`, `PIN_SAI`, `PIN_HET_LUOT` (đủ 15 lần sai trong ngày).
 - Tham số Argon2id: `m=64 MiB, t=3, p=1` làm mức sàn, đo trên thiết bị yếu nhất được hỗ trợ (mục tiêu 300–500 ms); lưu tham số và phiên bản cùng bản bọc để nâng cấp. Dùng Argon2id (RFC 9106), không dùng PBKDF2/bcrypt.
 - **Contract salt Argon2id (#79):**
   - Cách sinh: client sinh 16 byte ngẫu nhiên bằng CSPRNG của trình duyệt (`crypto.getRandomValues`), không suy ra từ tài khoản, khóa hay PIN.
@@ -184,7 +184,7 @@ GVHD đã chốt bỏ văn bản mật hành chính. Tài liệu nội bộ hạ
   - Lý do: dùng chung salt thì hai tài khoản cùng PIN có cùng `verifier` nên cùng `ma_bam_xac_minh_pin`, lộ việc trùng PIN khi đọc được CSDL và cho phép tính sẵn một lần cho mọi tài khoản.
 - **Bí mật máy chủ (#79):** `SIGNING_PIN_SECRET` bắt buộc khi `DEBUG = False`; dev được dùng `SECRET_KEY`. Hai lớp: `manage.py check --deploy` báo `signing.E001` (thiếu) hoặc `signing.E002` (trùng `SECRET_KEY`); lúc chạy, thao tác PIN trả 503 `chua_cau_hinh_bi_mat_pin` và ghi log lỗi nếu production thiếu biến (gunicorn không chạy system check). Không đăng ký thành check thường vì `manage.py test` luôn đặt `DEBUG = False`, sẽ chặn test của mọi nhóm.
 - Chính sách PIN: 6 chữ số (PIN 8 chữ số đặt trước đây vẫn dùng để ký đến khi đổi); chặn dãy tăng/giảm, lặp một chữ số, dạng ngày `ddmmyy`, PIN phổ biến.
-- Mất PIN: không khôi phục. Thu hồi khóa cũ, cấp khóa mới sau khi quản trị xác minh danh tính; khóa cũ giữ để xác minh chữ ký lịch sử. Đổi PIN: bọc lại private key (cần PIN cũ), không sinh khóa mới.
+- Mất PIN: không khôi phục được PIN cũ. Hai lối xử lý: chủ khóa tự đặt lại bằng mã xác thực qua email (xem dòng dưới; hộp thoại nhập PIN khi ký có liên kết "Quên PIN?", #487), hoặc quản trị viên thu hồi khẩn cấp khóa của tài khoản. Cả hai thu hồi khóa hiện tại; chủ khóa tạo khóa và PIN mới sau đó, khóa cũ giữ để xác minh chữ ký lịch sử. Đổi PIN (khi còn nhớ PIN cũ): bọc lại private key, không sinh khóa mới.
 - Đặt lại PIN tự phục vụ (#478): `POST /signing/dat-lai-pin/yeu-cau/` gửi mã 6 chữ số tới email tài khoản (băm lưu ở `signing_pin_reset_code`, hiệu lực 10 phút, hai lần gửi cách nhau tối thiểu 2 phút, lần gửi chỉ ghi nhận khi email gửi thành công); `POST /signing/dat-lai-pin/xac-nhan/` nhập đúng mã thì thu hồi khóa ký hiện tại của chính chủ (không cần quyền ký), chủ khóa tạo khóa và PIN mới ở bước sau. Sai 5 lần thì hủy mã. Nhật ký: `YEU_CAU_MA_DAT_LAI_PIN`, `MA_DAT_LAI_PIN_SAI`, `XAC_NHAN_MA_DAT_LAI_PIN`, `DAT_LAI_PIN_THU_HOI_KHOA`. `[ĐỀ XUẤT]` Khi có Redis cho MFA có thể chuyển nơi lưu mã sang Redis, giữ nguyên API.
 - Đổi PIN xoay vòng `k_srv` (Phase 6c): server sinh `k_srv` mới, trả cả `k_srv` cũ (mở bản bọc cũ) và mới (bọc lại) trong cùng response. Lý do: `k_srv` được trả ở mọi lần mở khóa; nếu không xoay vòng thì lộ `k_srv` một lần là đoán PIN offline được mãi, và đổi PIN khi nghi lộ không khôi phục được an toàn. Đã triển khai ở Phase 6c; đổi PIN thất bại không đổi `k_srv`.
 - File khóa (chốt MVP Nhóm 5, 23/10/2026): bản bọc private key (AES-GCM, khóa bọc từ PIN + salt qua Argon2id và `k_srv`) được xuất ra file `.tlbmkey` do người ký giữ; ký bằng cách tải file lên trình duyệt và nhập PIN. File chỉ đọc ở trình duyệt, không gửi lên server; vẫn cần `k_srv` (server trả sau khi xác minh PIN, có giới hạn số lần sai) nên lộ file không đủ để đoán PIN offline. Đổi PIN xoay vòng `k_srv` nên phải xuất lại file.
@@ -674,7 +674,7 @@ Trả lại để sửa, đã triển khai ở lõi Phase 9 (#80):
 - `POST /signing/khoa/{id}/thu-hoi/`
 - Phase 6a (bảo vệ khóa bằng PIN, mục 3.4). Payload dùng `xac_minh_pin` = Base64 của verifier 32 byte (không có field CSDL tương ứng; server chỉ lưu HMAC):
   - `POST /signing/khoa/{id}/dat-pin/`: `xac_minh_pin`, `tham_so_kdf` (`thuat_toan`, `m`, `t`, `p`, `phien_ban`, `salt`) → 201, trả `manh_bi_mat` (k_srv, Base64) một lần.
-  - `POST /signing/khoa/{id}/mo-khoa-ky/`: `xac_minh_pin` → 200 kèm `manh_bi_mat`; sai → 400 `pin_khong_dung`; bị khóa → 423 `pin_tam_khoa` / `pin_khoa_cung`.
+  - `POST /signing/khoa/{id}/mo-khoa-ky/`: `xac_minh_pin` → 200 kèm `manh_bi_mat`; sai → 400 `pin_khong_dung` (kèm số lần còn lại trong ngày); đủ 15 lần sai trong ngày → 429 `pin_het_luot_trong_ngay` (kèm `fields.thu_lai_sau`).
   - `POST /signing/khoa/{id}/doi-pin/`: `xac_minh_pin_cu`, `xac_minh_pin_moi`, `tham_so_kdf` (salt mới) → 200 kèm `manh_bi_mat_cu` (mở bản bọc hiện có) và `manh_bi_mat` mới để client bọc lại private key (xoay vòng `k_srv` từ Phase 6c, mục 3.4).
   - Response có `Cache-Control: no-store`.
 - Lịch sử hồ sơ trả trong `GET /signing/trinh-ky/{id}/` (`lich_su`).
@@ -720,7 +720,7 @@ Trả lại để sửa, đã triển khai ở lõi Phase 9 (#80):
 - Mốc mặc định theo mục 3.5 (trước 24h, tại hạn, nhắc lặp 24h, leo thang 48h); `cau_hinh_nhac_han` của quy trình được ưu tiên.
 - Leo thang gửi cấp trên trực tiếp của người ký và người tạo; chỉ tạo thông báo và nhật ký; không đổi trạng thái, không chặn ký muộn, không tự đổi người ký, không tự từ chối.
 - Quét bản ghi thông báo `CHO_GUI` bị sót (outbox, mục 4.1).
-- Chuyển khóa quá `ngay_het_han` sang `HET_HAN`.
+- Không cần tác vụ định kỳ cho `HET_HAN`: trạng thái được chuyển khi đọc hoặc dùng khóa (mục 3.4).
 
 ### 9.2. Quy tắc Celery
 
