@@ -179,4 +179,6 @@ def thu_hoi_khan_cap_boi_quan_tri(nguoi_bi_thu_hoi_id, nguoi_thuc_hien, ly_do, d
         ghi_nhat_ky(nguoi_thuc_hien, LOAI, key.pk, "QUAN_TRI_THU_HOI_KHOA",
                     trang_thai_truoc=truoc, trang_thai_sau=key.trang_thai, chi_tiet=ly_do.strip(),
                     du_lieu_kem_theo={"nguoi_so_huu_id": nguoi_bi_thu_hoi_id}, dia_chi_ip=dia_chi_ip)
+    from . import thong_bao  # nhập muộn: tránh vòng nhập với quyen_ky
+    thong_bao.quan_tri_thu_hoi_khoa(khoa_can_thu_hoi[0].nguoi_so_huu, khoa_can_thu_hoi)
     return khoa_can_thu_hoi

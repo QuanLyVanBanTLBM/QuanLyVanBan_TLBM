@@ -131,6 +131,10 @@ class XacMinhSoHuuSerializer(serializers.Serializer):
     chu_ky_so = serializers.CharField()
 
 
+class MaXacThucSerializer(serializers.Serializer):
+    ma = serializers.CharField(max_length=16)
+
+
 class ThuHoiKhoaSerializer(serializers.Serializer):
     ly_do = serializers.CharField(max_length=MAX_LY_DO)
 

@@ -28,6 +28,7 @@ from ..models import (
     SigningChangeThread,
     SigningNotification,
     SigningRequestStepSigner,
+    SigningRightLock,
 )
 from ..tich_hop.to_chuc import ten_hien_thi
 from . import quyen_ky
@@ -44,11 +45,16 @@ TEN_LOAI = {
     "TIN_NHAN": "Tin nhắn trao đổi",
     "NHAC_HAN": "Sắp đến hạn ký",
     "QUA_HAN": "Quá hạn ký",
+    "KHOA_QUYEN_KY": "Quyền ký bị tạm khóa",
+    "BAT_LAI_QUYEN_KY": "Quyền ký đã được bật lại",
+    "THU_HOI_KHOA": "Khóa ký bị thu hồi",
 }
+LOAI_QUAN_TRI = ("KHOA_QUYEN_KY", "BAT_LAI_QUYEN_KY", "THU_HOI_KHOA")
 SO_LAN_GUI_TOI_DA = 5
 
 
 def _tao(yeu_cau, nguoi_nhan, loai, khoa, buoc_ky=None):
+    """`yeu_cau` rỗng với thông báo thao tác quản trị trên tài khoản (không gắn hồ sơ trình ký)."""
     bay_gio = timezone.now()
     bi_khoa_quyen_ky = quyen_ky.khoa_dang_hieu_luc(nguoi_nhan, bay_gio) is not None
     for kenh in (enums.KenhThongBao.IN_APP, enums.KenhThongBao.EMAIL):
@@ -67,6 +73,43 @@ def _tao(yeu_cau, nguoi_nhan, loai, khoa, buoc_ky=None):
             continue
         if not trong_ung_dung:
             transaction.on_commit(lambda pk=tb.pk: gui_email(pk), robust=True)
+
+
+def quan_tri_khoa_quyen(khoa):
+    """Báo tài khoản bị quản trị viên tạm khóa quyền ký (chỉ kênh trong ứng dụng; email bị chặn khi đang khóa)."""
+    _tao(None, khoa.nguoi_bi_khoa, "KHOA_QUYEN_KY", f"KHOA_QUYEN_KY:{khoa.pk}")
+
+
+def quan_tri_bat_lai_quyen(khoa):
+    """Báo tài khoản được bật lại quyền ký; gọi sau khi `bat_lai_luc` đã lưu nên kênh email không còn bị chặn."""
+    _tao(None, khoa.nguoi_bi_khoa, "BAT_LAI_QUYEN_KY", f"BAT_LAI_QUYEN_KY:{khoa.pk}")
+
+
+def quan_tri_thu_hoi_khoa(nguoi_so_huu, danh_sach_khoa):
+    """Báo chủ khóa ký bị quản trị viên thu hồi khẩn cấp; một thông báo cho mỗi lần thu hồi."""
+    ma = min(k.pk for k in danh_sach_khoa)
+    _tao(None, nguoi_so_huu, "THU_HOI_KHOA", f"THU_HOI_KHOA:{ma}")
+
+
+def noi_dung_quan_tri(tb):
+    """(tiêu đề, thân thư) cho thông báo thao tác quản trị; không nêu lý do nội bộ của quản trị viên."""
+    ten = ten_hien_thi(tb.nguoi_nhan)
+    duong_dan = f"{settings.SIGNING_FRONTEND_URL.rstrip('/')}/approvals/khoa"
+    if tb.loai_thong_bao == "KHOA_QUYEN_KY":
+        ma = tb.khoa_chong_gui_trung.split(":")[1]
+        khoa = SigningRightLock.objects.filter(pk=int(ma)).first() if ma.isdigit() else None
+        han = (f"Quyền ký bị khóa đến {dinh_dang_ngay(khoa.khoa_den)}." if khoa and khoa.khoa_den
+               else "Quyền ký bị khóa cho đến khi quản trị viên bật lại.")
+        chinh = f"Quản trị viên đã tạm khóa quyền ký của tài khoản. {han} Liên hệ quản trị viên để biết thêm."
+    elif tb.loai_thong_bao == "BAT_LAI_QUYEN_KY":
+        chinh = "Quản trị viên đã bật lại quyền ký của tài khoản. Có thể tiếp tục ký duyệt."
+    else:
+        chinh = ("Quản trị viên đã thu hồi khóa ký của tài khoản. Cần đăng ký khóa ký mới và đặt PIN mới "
+                 "trước khi ký duyệt tiếp.")
+    tieu_de = f"[Trình ký] {TEN_LOAI[tb.loai_thong_bao]}"
+    than = (f"Xin chào {ten},\n\n{chinh}\n\nCấu hình khóa ký: {duong_dan}\n\n"
+            "Thư gửi tự động từ phân hệ Trình ký, vui lòng không trả lời.")
+    return tieu_de, than
 
 
 def can_ky(dong):
@@ -140,6 +183,8 @@ HANH_DONG_CUA_LOAI = {"TU_CHOI": "TU_CHOI", "HUY": "HUY_TRINH_KY", "YEU_CAU_SUA"
 
 def thao_tac(tb):
     """(tên người thao tác, lý do) của sự kiện sinh ra thông báo; ("", "") với loại không có thao tác người dùng."""
+    if tb.loai_thong_bao in LOAI_QUAN_TRI:
+        return "", ""
     if tb.loai_thong_bao == "TIN_NHAN":
         tin = None
         if tb.khoa_chong_gui_trung and tb.khoa_chong_gui_trung.startswith("TIN_NHAN:"):
@@ -189,6 +234,9 @@ def dinh_dang_ngay(thoi_diem):
 
 
 def noi_dung(tb):
+    if tb.loai_thong_bao in LOAI_QUAN_TRI:
+        tieu_de, than = noi_dung_quan_tri(tb)
+        return tieu_de, than, TEN_LOAI[tb.loai_thong_bao]
     van_ban = mo_ta_ho_so(tb.trinh_ky)
     # Một dòng: xuống dòng trong trích yếu làm email bị từ chối (BadHeaderError) ở tiêu đề
     ten_van_ban = " ".join(" — ".join(x for x in (van_ban.get("so_hieu"), van_ban.get("trich_yeu")) if x).split()) \

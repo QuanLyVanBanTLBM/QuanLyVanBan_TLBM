@@ -246,6 +246,10 @@ export const signingApi = {
   thachThuc: (id: number) => apiClient.get<{ thach_thuc: string }>(`${SIGNING_BASE}/khoa/${id}/thach-thuc/`),
   xacMinhKhoa: (id: number, thach_thuc: string, chu_ky_so: string) =>
     apiClient.post<KhoaKy>(`${SIGNING_BASE}/khoa/${id}/xac-minh/`, { thach_thuc, chu_ky_so }),
+  datLaiPinYeuCau: () =>
+    apiClient.post<{ het_han: string; gian_cach_giay: number }>(`${SIGNING_BASE}/dat-lai-pin/yeu-cau/`, {}),
+  datLaiPinXacNhan: (ma: string) =>
+    apiClient.post<{ so_khoa_thu_hoi: number }>(`${SIGNING_BASE}/dat-lai-pin/xac-nhan/`, { ma }),
   kichHoatKhoa: (id: number) => apiClient.post<KhoaKy>(`${SIGNING_BASE}/khoa/${id}/kich-hoat/`, {}),
   /** Đổi thiết bị: khóa cũ DA_XOAY_VONG, khóa mới (đã xác minh) thành HOAT_DONG. */
   xoayVongKhoa: (id: number, khoa_moi: number) =>

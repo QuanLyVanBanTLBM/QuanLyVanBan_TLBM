@@ -33,7 +33,7 @@ export interface QuanTriNguoiDung {
   don_vi: string | null;
   co_quyen_ky: boolean;
   khoa_ky: { id: number; ma_khoa: string; trang_thai: string } | null;
-  pin: { so_lan_sai: number; khoa_den: string | null; khoa_cung: boolean; dang_khoa: boolean } | null;
+  pin: { so_lan_sai: number } | null;
   khoa_quyen_ky: { id: number; khoa_tu: string; khoa_den: string | null; ly_do: string; nguoi_khoa_id: number } | null;
 }
 

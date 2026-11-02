@@ -204,8 +204,8 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
       throw new Error('chua_co_khoa_ky');
     }
 
-    // 3. Kiểm tra mã PIN 8 chữ số
-    if (!pin || pin.length !== 8) {
+    // 3. Kiểm tra mã PIN: 6 chữ số theo chính sách hiện hành, 8 chữ số với PIN đặt trước đây
+    if (!/^\d{6,8}$/.test(pin)) {
       throw new Error('pin_khong_hop_le');
     }
 
@@ -378,7 +378,7 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
                 autoComplete="off"
                 maxLength={8}
                 disabled={khoaNhap}
-                placeholder="••••••••"
+                placeholder="••••••"
                 value={pin}
                 onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
                 onKeyDown={(e) => {

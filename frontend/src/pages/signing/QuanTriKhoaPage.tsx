@@ -1,6 +1,6 @@
 /**
  * Tab quản lý khóa ký và quyền ký của tài khoản khác (quản trị viên, phân vùng 3 của #447): xem trạng thái khóa ký,
- * PIN, quyền ký; khóa tạm thời hoặc bật lại quyền ký; thu hồi khẩn cấp khóa ký. Mọi thao tác bắt buộc nhập lý do;
+ * PIN, quyền ký; khóa tạm thời hoặc bật lại quyền ký; thu hồi khẩn cấp khóa ký (đồng thời là đặt lại PIN: chủ khóa tạo khóa và PIN mới). Mọi thao tác bắt buộc nhập lý do;
  * server kiểm quyền quản trị và ghi nhật ký.
  */
 import { useEffect, useState } from 'react';
@@ -67,7 +67,7 @@ export default function QuanTriKhoaPage() {
       if (hanhDong === 'khoa') await signingApi.quanTriKhoaQuyenKy(nguoi.id, thoiHan, lyDo.trim());
       else if (hanhDong === 'bat_lai') await signingApi.quanTriBatLaiQuyenKy(nguoi.id, lyDo.trim());
       else await signingApi.quanTriThuHoiKhoa(nguoi.id, lyDo.trim());
-      const khoa = hanhDong === 'khoa' ? 'daKhoa' : hanhDong === 'bat_lai' ? 'daBatLai' : 'daThuHoi';
+      const khoa = { khoa: 'daKhoa', bat_lai: 'daBatLai', thu_hoi: 'daThuHoi' }[hanhDong];
       setThongBao({ loai: 'thanh_cong', noi_dung: t(`quanTri.${khoa}`, { ten: nguoi.ten }) });
       setDangLam(false);
       setDong(null);
@@ -84,13 +84,9 @@ export default function QuanTriKhoaPage() {
 
   if (!toi?.la_quan_tri) return <ThongBao loai="canh_bao">{t('quanTri.khongPhaiQuanTri')}</ThongBao>;
 
-  const tieuDeHop = !dong ? '' : t(
-    dong.hanhDong === 'khoa' ? 'quanTri.tieuDeKhoaQuyen' : dong.hanhDong === 'bat_lai' ? 'quanTri.tieuDeBatLai' : 'quanTri.tieuDeThuHoi',
-    { ten: dong.nguoi.ten },
-  );
-  const moTaHop = !dong ? '' : t(
-    dong.hanhDong === 'khoa' ? 'quanTri.moTaKhoaQuyen' : dong.hanhDong === 'bat_lai' ? 'quanTri.moTaBatLai' : 'quanTri.moTaThuHoi',
-  );
+  const khoaLoiHop = { khoa: 'KhoaQuyen', bat_lai: 'BatLai', thu_hoi: 'ThuHoi' } as const;
+  const tieuDeHop = !dong ? '' : t(`quanTri.tieuDe${khoaLoiHop[dong.hanhDong]}`, { ten: dong.nguoi.ten });
+  const moTaHop = !dong ? '' : t(`quanTri.moTa${khoaLoiHop[dong.hanhDong]}`);
 
   return (
     <div className="space-y-3.5">
@@ -139,12 +135,9 @@ export default function QuanTriKhoaPage() {
                     </td>
                     <td className="px-3 py-2.5">
                       {!u.pin ? <span className="text-muted">{t('quanTri.chuaDatPin')}</span>
-                        : u.pin.khoa_cung ? <Badge variant="danger" size="sm" withDot>{t('quanTri.pinKhoaCung')}</Badge>
-                          : u.pin.dang_khoa
-                            ? <Badge variant="warning" size="sm" withDot>{t('quanTri.pinKhoaTam', { han: ngayGio(u.pin.khoa_den) })}</Badge>
-                            : u.pin.so_lan_sai > 0
-                              ? <Badge variant="secondary" size="sm">{t('quanTri.pinSaiLan', { so: u.pin.so_lan_sai })}</Badge>
-                              : <span className="text-secondary">{t('quanTri.pinBinhThuong')}</span>}
+                        : u.pin.so_lan_sai > 0
+                          ? <Badge variant="secondary" size="sm">{t('quanTri.pinSaiLan', { so: u.pin.so_lan_sai })}</Badge>
+                          : <span className="text-secondary">{t('quanTri.pinBinhThuong')}</span>}
                     </td>
                     <td className="px-3 py-2.5">
                       {u.khoa_quyen_ky

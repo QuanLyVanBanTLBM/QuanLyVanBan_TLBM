@@ -277,7 +277,7 @@ describe('HanhDong', () => {
     const hop = await screen.findByRole('dialog');
     expect(hop).toHaveTextContent('Tệp đã thay đổi so với lượt trình');
     await waitFor(() => expect(screen.getByLabelText(/Nhập PIN ký/)).toBeEnabled());
-    fireEvent.change(screen.getByLabelText(/Nhập PIN ký/), { target: { value: '48273916' } });
+    fireEvent.change(screen.getByLabelText(/Nhập PIN ký/), { target: { value: '482739' } });
     await waitFor(() => expect(screen.getAllByRole('button', { name: /Ký duyệt/ }).at(-1)).toBeDisabled());
   });
 

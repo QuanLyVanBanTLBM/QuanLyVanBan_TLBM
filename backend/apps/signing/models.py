@@ -493,7 +493,8 @@ class SigningAuditLog(models.Model):
 
 
 class SigningNotification(models.Model):
-    trinh_ky = models.ForeignKey(SigningRequest, on_delete=models.CASCADE, related_name="+")
+    # Rỗng với thông báo thao tác quản trị trên tài khoản (khóa/bật lại quyền ký, thu hồi khóa)
+    trinh_ky = models.ForeignKey(SigningRequest, null=True, blank=True, on_delete=models.CASCADE, related_name="+")
     buoc_ky = models.ForeignKey(
         SigningRequestStepSigner, null=True, blank=True, on_delete=models.CASCADE, related_name="+"
     )
@@ -564,6 +565,26 @@ class SigningUserSignature(models.Model):
 
     def __str__(self):
         return f"Chữ ký của user {self.nguoi_dung_id} ({self.ma_bam[:8]})"
+
+
+class SigningPinResetCode(models.Model):
+    """
+    Mã xác thực 6 chữ số gửi qua email để chủ khóa tự đặt lại PIN (thu hồi khóa hiện tại, tạo khóa và PIN mới).
+    Chỉ lưu mã đã băm; hết hạn sau vài phút; sai quá số lần cho phép thì hủy mã.
+    """
+
+    nguoi_dung = models.ForeignKey(
+        User, on_delete=models.CASCADE, db_constraint=False, related_name="+"
+    )  # FK ON DELETE CASCADE tạo bằng SQL trong migration 0022 để khớp release_DDL.sql
+    ma_bam = models.CharField(max_length=64)
+    het_han = models.DateTimeField()
+    so_lan_sai = models.IntegerField(db_default=0, default=0)
+    da_dung_luc = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_default=DB_NOW)
+
+    class Meta:
+        db_table = "signing_pin_reset_code"
+        indexes = [models.Index(fields=["nguoi_dung", "created_at"], name="idx_signing_pin_reset_user")]
 
 
 class SigningRightLock(models.Model):

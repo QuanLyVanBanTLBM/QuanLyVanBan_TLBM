@@ -50,13 +50,13 @@ describe('QuanTriKhoaPage', () => {
     api.quanTriNguoiDung.mockResolvedValue([
       nguoi(),
       nguoi({ id: 8, ten: 'Người ký B', ten_dang_nhap: 'nguoi_ky_b', khoa_ky: null,
-        pin: { so_lan_sai: 10, khoa_den: null, khoa_cung: true, dang_khoa: false },
+        pin: { so_lan_sai: 7 },
         khoa_quyen_ky: { id: 1, khoa_tu: '2026-11-01T01:00:00Z', khoa_den: null, ly_do: 'Nghi ngờ lộ khóa', nguoi_khoa_id: 1 } }),
     ]);
     boc();
     expect(await screen.findByText('Người ký A')).toBeInTheDocument();
     expect(screen.getByText('KHOA-A')).toBeInTheDocument();
-    expect(screen.getByText('Khóa cứng')).toBeInTheDocument();
+    expect(screen.getByText('Sai 7 lần')).toBeInTheDocument();
     expect(screen.getByText('Đang bị khóa đến khi được bật lại')).toBeInTheDocument();
     expect(screen.getByText('Nghi ngờ lộ khóa')).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /Bật lại quyền ký/ })).toHaveLength(1);
@@ -92,7 +92,7 @@ describe('QuanTriKhoaPage', () => {
   it('revokes the key and shows API errors by code', async () => {
     api.quanTriThuHoiKhoa.mockRejectedValue(new ApiError(409, { code: 'khong_co_khoa_de_thu_hoi', detail: 'x' }));
     boc();
-    fireEvent.click(await screen.findByRole('button', { name: /Thu hồi khóa ký/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Thu hồi khóa & đặt lại PIN/ }));
     fireEvent.change(screen.getByLabelText(/Lý do/), { target: { value: 'Mất thiết bị' } });
     fireEvent.click(screen.getByRole('button', { name: 'Xác nhận' }));
     await waitFor(() => expect(api.quanTriThuHoiKhoa).toHaveBeenCalledWith(7, 'Mất thiết bị'));

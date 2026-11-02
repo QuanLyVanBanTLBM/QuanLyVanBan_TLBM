@@ -132,6 +132,8 @@ def khoa_quyen(nguoi_bi_khoa_id, nguoi_thuc_hien, *, ly_do, thoi_han, dia_chi_ip
                           "khoa_den": khoa.khoa_den.isoformat() if khoa.khoa_den else None},
         dia_chi_ip=dia_chi_ip,
     )
+    from . import thong_bao  # nhập muộn: thong_bao dùng quyen_ky
+    thong_bao.quan_tri_khoa_quyen(khoa)
     return khoa
 
 
@@ -155,4 +157,6 @@ def bat_lai_quyen(nguoi_bi_khoa_id, nguoi_thuc_hien, *, ly_do, dia_chi_ip=None):
         trang_thai_truoc=TRANG_THAI_DANG_KHOA, trang_thai_sau=TRANG_THAI_DA_BAT_LAI, chi_tiet=ly_do,
         du_lieu_kem_theo={"nguoi_bi_khoa_id": tai_khoan.pk}, dia_chi_ip=dia_chi_ip,
     )
+    from . import thong_bao  # nhập muộn: thong_bao dùng quyen_ky
+    thong_bao.quan_tri_bat_lai_quyen(khoa)
     return khoa

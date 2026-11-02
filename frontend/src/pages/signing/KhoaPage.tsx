@@ -8,6 +8,7 @@ import { Button, Card } from '@components/common';
 import type { KhoaKy } from '@lib/signing/types';
 import { DangTai, HopThoai, LoiTai, OChonTep, ThongBao, TrangThaiBadge, TruongNhap } from '@components/signing/ChungUI';
 import CropChuKyModal from '@components/signing/CropChuKyModal';
+import DatLaiPinDialog from '@components/signing/DatLaiPinDialog';
 import { signingApi } from '@lib/signing/api';
 import { GIOI_HAN, LOP_O_NHAP } from '@lib/signing/dinhDang';
 import { coQuyen, useTai, useToi } from '@lib/signing/hooks';
@@ -37,6 +38,7 @@ export default function KhoaPage() {
   const [lyDo, setLyDo] = useState('');
   const [loiLyDo, setLoiLyDo] = useState('');
   const [canThuHoi, setCanThuHoi] = useState<KhoaKy | null>(null);
+  const [moDatLaiPin, setMoDatLaiPin] = useState(false);
   const [dangLam, setDangLam] = useState(false);
   const [thongBao, setThongBao] = useState<{ loai: 'loi' | 'thanh_cong'; noi_dung: string } | null>(null);
   const [lanTaiBanBoc, setLanTaiBanBoc] = useState(0);
@@ -107,7 +109,7 @@ export default function KhoaPage() {
   }, [hoatDongId, toi, lanTaiBanBoc]);
 
   const loiPin = pin ? kiemTraPin(pin) : null;
-  const pinHopLe = !loiPin && pin.length === 8 && pin === pin2;
+  const pinHopLe = !loiPin && pin.length === 6 && pin === pin2;
 
   const lam = async (ham: () => Promise<unknown>, thanh_cong = t('hanhDong.thanhCong')) => {
     setDangLam(true);
@@ -141,6 +143,16 @@ export default function KhoaPage() {
   }, t('khoa.daNhapFile'));
   return (
     <div className="space-y-4">
+      <DatLaiPinDialog
+        mo={moDatLaiPin}
+        onDong={() => setMoDatLaiPin(false)}
+        onXong={() => {
+          setMoDatLaiPin(false);
+          setThongBao({ loai: 'thanh_cong', noi_dung: t('khoa.datLaiPinXong') });
+          setLanTaiBanBoc((n) => n + 1);
+          ds.tai();
+        }}
+      />
       {/* Input file ẩn để chọn ảnh chữ ký */}
       <input
         ref={fileInputRef}
@@ -169,6 +181,11 @@ export default function KhoaPage() {
                   taiXuongFileKhoa((await dangKyKhoaThietBi(toi.id, pin, ds.duLieu || [])).banBoc);
                 }, t('khoa.daTaoVaTaiFile'))}>{t('khoa.taoKhoa')}</Button>
               {hoatDong && (
+                <button type="button" className="text-sm font-medium text-primary hover:underline" onClick={() => setMoDatLaiPin(true)}>
+                  {t('khoa.quenPin')}
+                </button>
+              )}
+              {hoatDong && (
                 <TruongNhap nhan={t('khoa.nhapFile')} ghiChu={t('khoa.nhapFileGhiChu')}>
                   <OChonTep accept={`${DUOI_FILE_KHOA},application/json`} nhan={t('khoa.nhapFile')} onChon={nhapFile} />
                 </TruongNhap>
@@ -187,10 +204,15 @@ export default function KhoaPage() {
               <OPin nhan={t('khoa.pin')} gia_tri={pin} onDoi={setPin} />
               <OPin nhan={t('khoa.pinNhapLai')} gia_tri={pin2} onDoi={setPin2} />
               {loiPin && <ThongBao loai="canh_bao">{t(`loi.${loiPin}`)}</ThongBao>}
-              <Button variant="secondary" icon="fa-rotate" isLoading={dangLam} disabled={!pinHopLe || pinCu.length !== 8}
-                onClick={() => lam(async () => {
-                  taiXuongFileKhoa(await doiPin(toi.id, hoatDong, pinCu, pin));
-                }, t('khoa.daDoiPinTaiFile'))}>{t('khoa.doiPin')}</Button>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button variant="secondary" icon="fa-rotate" isLoading={dangLam} disabled={!pinHopLe || !/^\d{6,8}$/.test(pinCu)}
+                  onClick={() => lam(async () => {
+                    taiXuongFileKhoa(await doiPin(toi.id, hoatDong, pinCu, pin));
+                  }, t('khoa.daDoiPinTaiFile'))}>{t('khoa.doiPin')}</Button>
+                <button type="button" className="text-sm font-medium text-primary hover:underline" onClick={() => setMoDatLaiPin(true)}>
+                  {t('khoa.quenPin')}
+                </button>
+              </div>
             </div>
           )}
           {thongBao && <ThongBao loai={thongBao.loai}>{thongBao.noi_dung}</ThongBao>}

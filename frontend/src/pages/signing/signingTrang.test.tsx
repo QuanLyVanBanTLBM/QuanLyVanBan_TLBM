@@ -169,14 +169,14 @@ describe('KhoaPage', () => {
     boc(<KhoaPage />);
     expect(await screen.findByText('Bạn chưa có khóa ký trên thiết bị này.')).toBeInTheDocument();
     const tao = screen.getByRole('button', { name: /Tạo khóa ký cho thiết bị này/ });
-    fireEvent.change(screen.getByLabelText('PIN mới (8 chữ số)'), { target: { value: '12345678' } });
+    fireEvent.change(screen.getByLabelText('PIN mới (6 chữ số)'), { target: { value: '234567' } });
     expect(await screen.findByText(/liên tiếp|tăng|giảm/i)).toBeInTheDocument();
     expect(tao).toBeDisabled();
-    fireEvent.change(screen.getByLabelText('PIN mới (8 chữ số)'), { target: { value: '48273916' } });
-    fireEvent.change(screen.getByLabelText('Nhập lại PIN'), { target: { value: '48273917' } });
+    fireEvent.change(screen.getByLabelText('PIN mới (6 chữ số)'), { target: { value: '482739' } });
+    fireEvent.change(screen.getByLabelText('Nhập lại PIN'), { target: { value: '482738' } });
     expect(await screen.findByText('Hai lần nhập PIN không khớp.')).toBeInTheDocument();
     expect(tao).toBeDisabled();
-    fireEvent.change(screen.getByLabelText('Nhập lại PIN'), { target: { value: '48273916' } });
+    fireEvent.change(screen.getByLabelText('Nhập lại PIN'), { target: { value: '482739' } });
     await waitFor(() => expect(tao).toBeEnabled());
   });
 

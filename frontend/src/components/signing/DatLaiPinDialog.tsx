@@ -1,0 +1,111 @@
+/**
+ * Đặt lại PIN bằng mã xác thực gửi qua email (#478): quên PIN thì không mở được bản bọc khóa, nên nhập đúng mã sẽ
+ * thu hồi khóa ký hiện tại; chủ khóa tạo khóa và PIN mới ở form của trang Cấu hình khóa ký.
+ */
+import { useEffect, useState } from 'react';
+import { Button } from '@components/common';
+import { HopThoai, ThongBao, TruongNhap } from '@components/signing/ChungUI';
+import { signingApi } from '@lib/signing/api';
+import { dinhDangNgay, LOP_O_NHAP } from '@lib/signing/dinhDang';
+import { useSigningT } from '@lib/signing/i18n';
+import { useTranslation } from '@i18n/translate';
+
+export default function DatLaiPinDialog({ mo, onDong, onXong }: { mo: boolean; onDong: () => void; onXong: () => void }) {
+  const { t, loi } = useSigningT();
+  const { currentLang } = useTranslation();
+  const [hetHan, setHetHan] = useState<string | null>(null);
+  const [ma, setMa] = useState('');
+  const [giayCho, setGiayCho] = useState(0);
+  const [dangLam, setDangLam] = useState(false);
+  const [thongBao, setThongBao] = useState<string | null>(null);
+
+  // Đếm ngược giãn cách gửi lại
+  useEffect(() => {
+    if (giayCho <= 0) return;
+    const hen = setTimeout(() => setGiayCho((g) => g - 1), 1000);
+    return () => clearTimeout(hen);
+  }, [giayCho]);
+
+  const dong = () => {
+    if (dangLam) return;
+    setHetHan(null);
+    setMa('');
+    setGiayCho(0);
+    setThongBao(null);
+    onDong();
+  };
+
+  const guiMa = async () => {
+    setDangLam(true);
+    setThongBao(null);
+    try {
+      const r = await signingApi.datLaiPinYeuCau();
+      setHetHan(r.het_han);
+      setGiayCho(r.gian_cach_giay);
+      setMa('');
+    } catch (err) {
+      setThongBao(loi(err));
+    } finally {
+      setDangLam(false);
+    }
+  };
+
+  const xacNhan = async () => {
+    setDangLam(true);
+    setThongBao(null);
+    try {
+      await signingApi.datLaiPinXacNhan(ma);
+      setDangLam(false);
+      setHetHan(null);
+      setMa('');
+      setGiayCho(0);
+      onXong();
+    } catch (err) {
+      setThongBao(loi(err));
+      setDangLam(false);
+    }
+  };
+
+  return (
+    <HopThoai
+      moTieuDe={t('khoa.datLaiPinTieuDe')}
+      mo={mo}
+      onDong={dong}
+      dangXuLy={dangLam}
+      chieuRong="30rem"
+      chanDuoi={(
+        <>
+          <Button variant="secondary" onClick={dong} disabled={dangLam}>{t('chung.dong')}</Button>
+          {hetHan && (
+            <Button variant="danger" isLoading={dangLam} disabled={ma.length !== 6} onClick={xacNhan}>
+              {t('khoa.datLaiPinXacNhan')}
+            </Button>
+          )}
+        </>
+      )}
+    >
+      <p className="text-sm text-secondary">{t('khoa.datLaiPinMoTa')}</p>
+      {thongBao && <ThongBao loai="loi">{thongBao}</ThongBao>}
+      {!hetHan ? (
+        <Button icon="fa-envelope" isLoading={dangLam} onClick={guiMa}>{t('khoa.datLaiPinGuiMa')}</Button>
+      ) : (
+        <div className="space-y-3">
+          <ThongBao loai="thong_tin">{t('khoa.datLaiPinDaGui', { han: dinhDangNgay(hetHan, currentLang) })}</ThongBao>
+          <TruongNhap nhan={t('khoa.datLaiPinNhapMa')} batBuoc>
+            <input
+              className={LOP_O_NHAP}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              value={ma}
+              onChange={(e) => setMa(e.target.value.replace(/\D/g, ''))}
+            />
+          </TruongNhap>
+          <Button variant="secondary" size="sm" icon="fa-rotate" disabled={dangLam || giayCho > 0} onClick={guiMa}>
+            {giayCho > 0 ? t('khoa.datLaiPinGuiLaiSau', { giay: giayCho }) : t('khoa.datLaiPinGuiLai')}
+          </Button>
+        </div>
+      )}
+    </HopThoai>
+  );
+}
