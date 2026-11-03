@@ -15,7 +15,7 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework import status
 
-from .. import enums
+from .. import enums, tim_kiem
 from ..errors import ConflictError, SigningError
 from ..models import SigningRequest, SigningRequestStepSigner
 from ..permissions import KY_TRINH_KY, co_quyen
@@ -82,6 +82,53 @@ def _kiem_tra_thu_bac(luot, nguoi_ky, chuc_vu_moi_id):
         ]
         cap_ky.append({"thu_tu": cap.thu_tu, "nguoi_ky": nguoi_cap})
     process_service._kiem_tra_thu_bac_chuc_vu_cap_ky(cap_ky)
+
+
+def _dong_nguoi_ky_thay_duoc(yeu_cau, nguoi_ky_id):
+    """Dòng người ký hợp lệ để thay (cùng điều kiện với `thay_nguoi_ky`, không khóa dòng); None khi không có."""
+    luot = yeu_cau.luot_trinh_set.order_by("-so_luot").first()
+    if yeu_cau.trang_thai != enums.TrangThaiYeuCau.CHO_KY or luot is None \
+            or luot.trang_thai != enums.TrangThaiLuotTrinh.CHO_KY:
+        return None, None
+    dong = (SigningRequestStepSigner.objects.select_related("buoc_ky")
+            .filter(pk=nguoi_ky_id, buoc_ky__luot_trinh=luot, buoc_ky__trang_thai=enums.TrangThaiCapKy.DANG_KY,
+                    trang_thai=enums.TrangThaiNguoiKy.CHO_KY, thoi_diem_mo__isnull=False).first())
+    return luot, dong
+
+
+def ung_vien_thay(yeu_cau, nguoi_thuc_hien, nguoi_ky_id, tu_khoa="", toi_da=30):
+    """
+    Tài khoản có thể thay `nguoi_ky_id`: đang hoạt động, có quyền ký, không bị khóa quyền ký, chưa có trong cấp và
+    thỏa thứ bậc chức vụ. Tìm theo họ tên, tên đăng nhập, chức vụ, đơn vị (không phân biệt hoa thường và dấu).
+    """
+    if not duoc_thay_nguoi_ky(yeu_cau, nguoi_thuc_hien):
+        raise SigningError(code="khong_co_quyen", detail="Chỉ người tạo hoặc quản trị viên được thay người ký.",
+                           status_code=status.HTTP_403_FORBIDDEN)
+    luot, nguoi_ky = _dong_nguoi_ky_thay_duoc(yeu_cau, nguoi_ky_id)
+    if nguoi_ky is None or quyen_ky.khoa_dang_hieu_luc(nguoi_ky.nguoi_ky) is None:
+        return []
+    tu_khoa = tim_kiem.bo_dau(tu_khoa or "")
+    bi_khoa = quyen_ky.ids_dang_bi_khoa()
+    da_co = set(nguoi_ky.buoc_ky.nguoi_ky_set.values_list("nguoi_ky_id", flat=True))
+    lien_quan = [f for f in ("chuc_vu", "don_vi")
+                 if any(x.name == f for x in get_user_model()._meta.get_fields())]
+    ket_qua = []
+    for u in get_user_model().objects.filter(is_active=True).exclude(pk__in=bi_khoa | da_co) \
+            .select_related(*lien_quan).order_by("pk").iterator(chunk_size=500):
+        ten, chuc_vu, don_vi = to_chuc.ten_hien_thi(u), to_chuc.ten_chuc_vu(u), to_chuc.ten_don_vi(u)
+        if tu_khoa and tu_khoa not in tim_kiem.bo_dau(" ".join((ten, u.get_username(), chuc_vu, don_vi))):
+            continue
+        if not co_quyen(u, KY_TRINH_KY):
+            continue
+        try:
+            with transaction.atomic():
+                _kiem_tra_thu_bac(luot, nguoi_ky, getattr(u, "chuc_vu_id", None))
+        except SigningError:
+            continue
+        ket_qua.append({"id": u.pk, "ten": ten, "chuc_vu": chuc_vu or None, "don_vi": don_vi or None})
+        if len(ket_qua) >= toi_da:
+            break
+    return ket_qua
 
 
 @transaction.atomic

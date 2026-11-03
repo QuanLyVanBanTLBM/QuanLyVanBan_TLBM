@@ -502,13 +502,23 @@ class ThayNguoiKyView(SigningAPIView):
     """
     POST /trinh-ky/<pk>/thay-nguoi-ky/ {nguoi_ky_id, nguoi_ky_moi_id, ly_do}: người tạo hoặc quản trị viên thay người
     ký đang chờ có quyền ký bị khóa (#499). Chữ ký đã có giữ nguyên.
+    GET /trinh-ky/<pk>/thay-nguoi-ky/?nguoi_ky_id=&q=: tài khoản có thể thay người ký đó (tối đa 30).
     """
 
-    def post(self, request, pk):
+    @staticmethod
+    def _ho_so(request, pk):
         if to_chuc.la_quan_tri(request.user):
-            ho_so = get_object_or_404(SigningRequest, pk=pk)
-        else:
-            ho_so = _ho_so_xem_duoc(request, pk)
+            return get_object_or_404(SigningRequest, pk=pk)
+        return _ho_so_xem_duoc(request, pk)
+
+    def get(self, request, pk):
+        ho_so = self._ho_so(request, pk)
+        nguoi_ky_id = _doc_so_nguyen(request.query_params.get("nguoi_ky_id", "").strip(), "nguoi_ky_id")
+        return Response(thay_nguoi_ky_service.ung_vien_thay(
+            ho_so, request.user, nguoi_ky_id, tu_khoa_tim_kiem(request.query_params.get("q"))))
+
+    def post(self, request, pk):
+        ho_so = self._ho_so(request, pk)
         data = ThayNguoiKySerializer(data=request.data)
         data.is_valid(raise_exception=True)
         ket_qua = thay_nguoi_ky_service.thay_nguoi_ky(ho_so, request.user, dia_chi_ip=_ip(request),

@@ -157,3 +157,28 @@ class ThayNguoiKyTests(KyBase):
         self.assertEqual(co_the_thay(self.tao), {self.ky1.pk: True, self.ky2.pk: False, self.ky3.pk: False})
         self.assertEqual(co_the_thay(self.quan_tri), {self.ky1.pk: True, self.ky2.pk: False, self.ky3.pk: False})
         self.assertEqual(set(co_the_thay(self.ky2).values()), {False})
+
+    def ung_vien(self, nguoi, cu, **tham_so):
+        tham_so = {"nguoi_ky_id": self.dong(cu).pk, **tham_so}
+        return self.client_cua(User.objects.get(pk=nguoi.pk)).get(f"{BASE}/{self.pk}/{DUONG_DAN}/", tham_so)
+
+    def test_candidates_filtered_by_permission_lock_level_and_keyword(self):
+        self.khoa_quyen(self.ky1)
+        khong_quyen = User.objects.create_user("khong_quyen")
+        bi_khoa = User.objects.create_user("bi_khoa")
+        cap_quyen(bi_khoa, "sign_trinhky")
+        self.khoa_quyen(bi_khoa)
+        r = self.ung_vien(self.tao, self.ky1)
+        self.assertEqual(r.status_code, 200, r.data)
+        ids = {u["id"] for u in r.data}
+        self.assertIn(self.moi.pk, ids)
+        self.assertIn(self.ky3.pk, ids)  # cấp khác, còn quyền ký
+        self.assertFalse({self.ky1.pk, self.ky2.pk, khong_quyen.pk, bi_khoa.pk} & ids)
+        r = self.ung_vien(self.quan_tri, self.ky1, q="KY_MOI")
+        self.assertEqual([u["id"] for u in r.data], [self.moi.pk])
+
+    def test_candidates_forbidden_for_other_user_and_empty_when_not_locked(self):
+        self.assertEqual(self.ung_vien(self.la, self.ky1).status_code, 404)  # không xem được hồ sơ
+        self.assertEqual(self.ung_vien(self.ky2, self.ky1).status_code, 403)  # xem được nhưng không phải người tạo
+        self.assertEqual(self.ung_vien(self.tao, self.ky3).data, [])  # cấp chưa mở
+        self.assertEqual(self.ung_vien(self.tao, self.ky2).data, [])  # chưa bị khóa
