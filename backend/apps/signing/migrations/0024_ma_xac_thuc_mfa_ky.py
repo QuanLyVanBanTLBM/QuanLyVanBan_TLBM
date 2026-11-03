@@ -20,7 +20,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
-        ("signing", "0022_ma_dat_lai_pin"),
+        ("signing", "0023_challenge_da_dung"),
     ]
 
     operations = [

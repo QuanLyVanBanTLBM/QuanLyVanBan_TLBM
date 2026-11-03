@@ -1,4 +1,5 @@
 import base64
+from datetime import timedelta
 from unittest import mock
 
 from cryptography.hazmat.primitives import serialization
@@ -10,7 +11,7 @@ from django.utils import timezone
 from accounts.models import Position
 from signing import enums
 from signing.errors import ConflictError, SigningError
-from signing.models import SigningAuditLog, SigningKey, SigningProcess, SigningProcessStepSigner
+from signing.models import SigningAuditLog, SigningChallengeDaDung, SigningKey, SigningProcess, SigningProcessStepSigner
 from signing.services import keys as key_service
 from signing.services import process as process_service
 
@@ -250,6 +251,37 @@ class KeyServiceTests(TestCase):
             with self.assertRaises(SigningError) as ctx:
                 key_service.xac_minh_so_huu(key, self.u1, challenge, chu_ky)
         self.assertEqual(ctx.exception.get_codes(), "thach_thuc_khong_hop_le")
+
+    def test_challenge_cannot_be_reused(self):
+        private, key = self.register()
+        challenge, chu_ky = sign_challenge(private, key)
+        key_service.xac_minh_so_huu(key, self.u1, challenge, chu_ky)
+        self.assertEqual(SigningChallengeDaDung.objects.filter(nguoi_dung=self.u1).count(), 1)
+        with self.assertRaises(ConflictError) as ctx:
+            key_service.xac_minh_so_huu(key, self.u1, challenge, chu_ky)
+        self.assertEqual((ctx.exception.status_code, ctx.exception.get_codes()), (409, "thach_thuc_da_dung"))
+        self.assertEqual(SigningChallengeDaDung.objects.filter(nguoi_dung=self.u1).count(), 1)
+
+    def test_failed_proof_does_not_consume_challenge(self):
+        private, key = self.register()
+        other_private, _ = new_keypair()
+        challenge = key_service.thach_thuc_so_huu(key)
+        sai = base64.b64encode(other_private.sign(challenge.encode())).decode()
+        with self.assertRaises(SigningError):
+            key_service.xac_minh_so_huu(key, self.u1, challenge, sai)
+        self.assertFalse(SigningChallengeDaDung.objects.exists())
+        dung = base64.b64encode(private.sign(challenge.encode())).decode()
+        key_service.xac_minh_so_huu(key, self.u1, challenge, dung)
+
+    def test_expired_used_nonces_are_cleaned_on_write(self):
+        private, key = self.register()
+        cu = SigningChallengeDaDung.objects.create(
+            nguoi_dung=self.u1, nonce="cu", het_han=timezone.now() - timedelta(seconds=1))
+        con_han = SigningChallengeDaDung.objects.create(
+            nguoi_dung=self.u1, nonce="con-han", het_han=timezone.now() + timedelta(seconds=60))
+        self.verify(private, key)
+        self.assertFalse(SigningChallengeDaDung.objects.filter(pk=cu.pk).exists())
+        self.assertTrue(SigningChallengeDaDung.objects.filter(pk=con_han.pk).exists())
 
     def test_inactive_account_cannot_register_or_verify(self):
         private, key = self.register()

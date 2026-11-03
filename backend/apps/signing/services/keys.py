@@ -1,13 +1,14 @@
 import secrets
+from datetime import timedelta
 
 from django.core import signing as django_signing
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, connection, transaction
 from django.utils import timezone
 from rest_framework import status
 
 from .. import crypto, enums
 from ..errors import ConflictError, SigningError
-from ..models import SigningKey
+from ..models import SigningChallengeDaDung, SigningKey
 from ..tich_hop import to_chuc
 from . import quyen_ky
 from .audit import ghi_nhat_ky
@@ -25,11 +26,32 @@ def thach_thuc_so_huu(key):
 
 
 def _thach_thuc_hop_le(key, thach_thuc):
+    """Trả nonce của challenge nếu hợp lệ (đúng chữ ký, còn hạn, đúng khóa), ngược lại trả None."""
     try:
         noi_dung = django_signing.loads(thach_thuc, salt=SALT_THACH_THUC, max_age=HAN_THACH_THUC_GIAY)
     except django_signing.BadSignature:  # gồm cả SignatureExpired
-        return False
-    return noi_dung.get("k") == key.pk and noi_dung.get("f") == key.dau_van_tay
+        return None
+    nonce = noi_dung.get("n")
+    if noi_dung.get("k") != key.pk or noi_dung.get("f") != key.dau_van_tay or not nonce:
+        return None
+    return nonce
+
+
+def _danh_dau_da_dung(nguoi_dung, nonce):
+    """
+    Ghi nonce đã dùng. Trả True nếu đây là lần dùng đầu tiên, False nếu nonce đã được dùng trước đó.
+    INSERT ... ON CONFLICT DO NOTHING trên UNIQUE (nguoi_dung, nonce) nên hai request đồng thời chỉ một request ghi được.
+    Phải gọi trong transaction của thao tác xác minh để lỗi ở bước sau không làm mất challenge.
+    """
+    bay_gio = timezone.now()
+    SigningChallengeDaDung.objects.filter(het_han__lt=bay_gio).delete()  # xóa lười bản ghi hết hạn
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"INSERT INTO {SigningChallengeDaDung._meta.db_table} (nguoi_dung_id, nonce, het_han) "
+            "VALUES (%s, %s, %s) ON CONFLICT (nguoi_dung_id, nonce) DO NOTHING",
+            [nguoi_dung.pk, nonce, bay_gio + timedelta(seconds=HAN_THACH_THUC_GIAY)],
+        )
+        return cursor.rowcount == 1
 
 
 def _chu_so_huu(key, nguoi_thuc_hien):
@@ -92,11 +114,15 @@ def xac_minh_so_huu(key, nguoi_thuc_hien, thach_thuc, chu_ky_so, dia_chi_ip=None
     quyen_ky.kiem_tra_tai_khoan_hoat_dong(nguoi_thuc_hien)
     if key.trang_thai != enums.TrangThaiKhoa.CHO_KICH_HOAT:
         raise ConflictError(code="khoa_khong_cho_kich_hoat", detail="Khóa không ở trạng thái chờ kích hoạt.")
-    if not _thach_thuc_hop_le(key, thach_thuc):
+    nonce = _thach_thuc_hop_le(key, thach_thuc)
+    if nonce is None:
         raise SigningError(code="thach_thuc_khong_hop_le",
                            detail="Challenge chứng minh sở hữu không hợp lệ hoặc đã hết hạn. Hãy yêu cầu challenge mới.")
     if not crypto.verify_signature(key.khoa_cong_khai, thach_thuc.encode(), chu_ky_so):
         raise SigningError(code="chung_minh_so_huu_that_bai", detail="Chữ ký chứng minh sở hữu khóa không hợp lệ.")
+    if not _danh_dau_da_dung(nguoi_thuc_hien, nonce):
+        raise ConflictError(code="thach_thuc_da_dung",
+                            detail="Challenge chứng minh sở hữu đã được dùng. Hãy yêu cầu challenge mới.")
     key.thoi_diem_xac_minh_so_huu = timezone.now()
     key.save(update_fields=["thoi_diem_xac_minh_so_huu"])
     ghi_nhat_ky(nguoi_thuc_hien, LOAI, key.pk, "XAC_MINH_SO_HUU_KHOA", trang_thai_truoc=key.trang_thai,

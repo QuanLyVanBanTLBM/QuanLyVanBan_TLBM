@@ -1451,7 +1451,19 @@ CREATE TABLE signing_pin_reset_code (
 
 CREATE INDEX idx_signing_pin_reset_user ON signing_pin_reset_code (nguoi_dung_id, created_at);
 
--- 9.8c3. Mã xác thực MFA khi ký gửi qua email và phiên đã xác thực (Nhóm 5): lưu mã đã băm; dòng đã dùng gắn với access token
+-- 9.8c3. Nonce challenge chứng minh sở hữu khóa đã dùng (Nhóm 5, issue #507): mỗi challenge xác minh thành công một lần
+CREATE TABLE signing_challenge_da_dung (
+    id BIGSERIAL PRIMARY KEY,
+    nguoi_dung_id BIGINT NOT NULL REFERENCES accounts_employee (id) ON DELETE CASCADE,
+    nonce VARCHAR(64) NOT NULL,
+    het_han TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uq_signing_challenge_da_dung UNIQUE (nguoi_dung_id, nonce)
+);
+
+CREATE INDEX idx_signing_challenge_het_han ON signing_challenge_da_dung (het_han);
+
+-- 9.8c4. Mã xác thực MFA khi ký gửi qua email và phiên đã xác thực (Nhóm 5): lưu mã đã băm; dòng đã dùng gắn với access token
 CREATE TABLE signing_mfa_otp (
     id BIGSERIAL PRIMARY KEY,
     nguoi_dung_id BIGINT NOT NULL REFERENCES accounts_employee (id) ON DELETE CASCADE,
