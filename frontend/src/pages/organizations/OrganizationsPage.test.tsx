@@ -285,6 +285,7 @@ describe('OrganizationsPage Component (Issue #19)', () => {
     // Chọn Khối A: mở khóa, chỉ liệt kê đơn vị của Khối A
     fireEvent.click(screen.getByRole('button', { name: 'Tất cả các Khối/Khu vực' }));
     fireEvent.click(await screen.findByRole('option', { name: /Khối A/ }));
+    fireEvent.keyDown(document, { key: 'Escape' });
     const unitSelectOn = await screen.findByRole('button', { name: 'Tất cả đơn vị thuộc Khối' });
     await waitFor(() => expect(unitSelectOn).toBeEnabled());
     fireEvent.click(unitSelectOn);
@@ -298,9 +299,119 @@ describe('OrganizationsPage Component (Issue #19)', () => {
     // Đổi Khối: Đơn vị đã chọn bị reset
     fireEvent.click(screen.getByRole('button', { name: 'Tất cả các Khối/Khu vực' }));
     fireEvent.click(await screen.findByRole('option', { name: /Khối B/ }));
+    fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(screen.getByText('Phòng Kỹ thuật')).toBeInTheDocument());
     expect(screen.queryByText('Phòng Nhân sự')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Tất cả đơn vị thuộc Khối' })).toBeInTheDocument();
+  });
+
+  it('bấm vào Khối thì lọc theo Khối và mở luôn danh sách Đơn vị của Khối đó', async () => {
+    const unitA = { id: 1, khoi: 1, khoi_ten: 'Khối A', stt_uu_tien: 1, ten: 'Phòng Kế toán', is_public: true };
+    const unitB = { id: 2, khoi: 1, khoi_ten: 'Khối A', stt_uu_tien: 2, ten: 'Phòng Nhân sự', is_public: true };
+    const unitC = { id: 3, khoi: 2, khoi_ten: 'Khối B', stt_uu_tien: 3, ten: 'Phòng Kỹ thuật', is_public: true };
+    mockedApiClient.mockImplementation(async (endpoint: string) => {
+      if (endpoint.includes('/regions/')) {
+        return [
+          { id: 1, ten: 'Khối A', don_vi_count: 2 },
+          { id: 2, ten: 'Khối B', don_vi_count: 1 },
+          { id: 3, ten: 'Khối Trống', don_vi_count: 0 },
+        ];
+      }
+      if (endpoint.includes('/units/') && endpoint.includes('all=true')) return [unitA, unitB, unitC];
+      if (endpoint.includes('/units/')) {
+        const rows = endpoint.includes('region_id=1')
+          ? [unitA, unitB]
+          : endpoint.includes('region_id=2')
+            ? [unitC]
+            : endpoint.includes('region_id=3')
+              ? []
+              : [unitA, unitB, unitC];
+        return { count: rows.length, next: null, previous: null, results: rows };
+      }
+      return [];
+    });
+
+    render(
+      <MemoryRouter>
+        <OrganizationsPage />
+      </MemoryRouter>
+    );
+    await waitFor(() => expect(screen.getByText('Phòng Kỹ thuật')).toBeInTheDocument());
+
+    // Bấm (không rê chuột) vào Khối A: bảng lọc theo Khối A, dropdown vẫn mở và hiện Đơn vị của Khối A
+    fireEvent.click(screen.getByRole('button', { name: 'Tất cả các Khối/Khu vực' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Khối A' }));
+    await waitFor(() => expect(document.querySelector('tbody')!.textContent).not.toContain('Phòng Kỹ thuật'));
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+    expect(screen.getAllByRole('option', { name: 'Phòng Kế toán' }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('option', { name: 'Phòng Nhân sự' }).length).toBeGreaterThan(0);
+    expect(screen.queryAllByRole('option', { name: 'Phòng Kỹ thuật' })).toHaveLength(0);
+
+    // Bấm tiếp một Đơn vị trong danh sách vừa mở: lọc thẳng theo Đơn vị và đóng dropdown
+    const unitOptions = screen.getAllByRole('option', { name: 'Phòng Nhân sự' });
+    fireEvent.click(unitOptions[unitOptions.length - 1]);
+    await waitFor(() => expect(document.querySelector('tbody')!.textContent).not.toContain('Phòng Kế toán'));
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+
+    // Khối không có Đơn vị: bấm vào là chọn Khối và đóng dropdown
+    fireEvent.click(screen.getByRole('button', { name: 'Tất cả các Khối/Khu vực' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Khối Trống' }));
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    await waitFor(() => expect(document.querySelector('tbody')!.textContent).not.toContain('Phòng Nhân sự'));
+  });
+
+  it('màn hình nhỏ: rê chuột không mở danh sách Đơn vị, chỉ bấm vào Khối mới mở', async () => {
+    const unitA = { id: 1, khoi: 1, khoi_ten: 'Khối A', stt_uu_tien: 1, ten: 'Phòng Kế toán', is_public: true };
+    const unitC = { id: 3, khoi: 2, khoi_ten: 'Khối B', stt_uu_tien: 3, ten: 'Phòng Kỹ thuật', is_public: true };
+    mockedApiClient.mockImplementation(async (endpoint: string) => {
+      if (endpoint.includes('/regions/')) {
+        return [
+          { id: 1, ten: 'Khối A', don_vi_count: 1 },
+          { id: 2, ten: 'Khối B', don_vi_count: 1 },
+        ];
+      }
+      if (endpoint.includes('/units/') && endpoint.includes('all=true')) return [unitA, unitC];
+      if (endpoint.includes('/units/')) {
+        const rows = endpoint.includes('region_id=2') ? [unitC] : [unitA, unitC];
+        return { count: rows.length, next: null, previous: null, results: rows };
+      }
+      return [];
+    });
+    const original = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    })) as typeof window.matchMedia;
+    try {
+      render(
+        <MemoryRouter>
+          <OrganizationsPage />
+        </MemoryRouter>
+      );
+      await waitFor(() => expect(screen.getByText('Phòng Kỹ thuật')).toBeInTheDocument());
+
+      fireEvent.click(screen.getByRole('button', { name: 'Tất cả các Khối/Khu vực' }));
+      const regionA = await screen.findByRole('option', { name: 'Khối A' });
+      // Rê chuột qua Khối A: không mở danh sách (không đẩy các dòng bên dưới xuống)
+      fireEvent.mouseEnter(regionA.parentElement!.parentElement!);
+      expect(screen.queryAllByRole('option', { name: 'Phòng Kế toán' })).toHaveLength(0);
+
+      // Bấm Khối B: mở danh sách Đơn vị của Khối B ngay dưới Khối B
+      fireEvent.click(screen.getByRole('option', { name: 'Khối B' }));
+      expect(screen.getAllByRole('option', { name: 'Phòng Kỹ thuật' }).length).toBeGreaterThan(0);
+      // Chuột rời danh sách: danh sách vẫn mở để còn bấm được Đơn vị
+      fireEvent.mouseLeave(screen.getByRole('listbox'));
+      await new Promise((r) => setTimeout(r, 250));
+      expect(screen.getAllByRole('option', { name: 'Phòng Kỹ thuật' }).length).toBeGreaterThan(0);
+    } finally {
+      window.matchMedia = original;
+    }
   });
 
   it('rê chuột vào Khối thì hiện Đơn vị của Khối, bấm Đơn vị thì lọc thẳng theo Đơn vị', async () => {

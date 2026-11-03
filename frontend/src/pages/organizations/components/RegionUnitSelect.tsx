@@ -15,7 +15,8 @@ interface RegionUnitSelectProps {
 }
 
 // Dropdown Khối (cấp 1): rê chuột vào một Khối thì hiện danh sách Đơn vị (cấp 2) của Khối đó,
-// bấm vào Khối để lọc theo Khối, bấm vào Đơn vị để lọc thẳng theo Đơn vị.
+// bấm vào Khối để lọc theo Khối và mở luôn danh sách Đơn vị của Khối đó (dropdown chưa đóng),
+// bấm vào Đơn vị để lọc thẳng theo Đơn vị. Khối không có Đơn vị thì bấm vào là chọn và đóng.
 // Màn hình cảm ứng không có hover nên mỗi Khối có thêm nút mũi tên để mở/đóng danh sách Đơn vị.
 // Màn hình lớn: danh sách Đơn vị vẽ ra ngoài khung cuộn của danh sách Khối (portal + vị trí cố định) để không bị cắt.
 export const RegionUnitSelect: React.FC<RegionUnitSelectProps> = ({
@@ -65,9 +66,14 @@ export const RegionUnitSelect: React.FC<RegionUnitSelectProps> = ({
 
   useEffect(() => () => window.clearTimeout(leaveTimer.current), []);
 
+  // Màn hình nhỏ: danh sách Đơn vị mở ngay dưới Khối nên chỉ mở/đóng khi bấm. Nếu mở theo hover,
+  // rê chuột qua một Khối làm các dòng bên dưới bị đẩy xuống và cú bấm rơi nhầm vào dòng khác.
+  const isWideScreen = () => typeof window.matchMedia !== 'function' || window.matchMedia('(min-width: 768px)').matches;
+
   // Rê chuột từ Khối sang danh sách Đơn vị phải đi qua khoảng hở nên chờ một chút trước khi đóng
   const keepOpen = () => window.clearTimeout(leaveTimer.current);
   const closeSoon = () => {
+    if (!isWideScreen()) return;
     window.clearTimeout(leaveTimer.current);
     leaveTimer.current = window.setTimeout(() => setExpandedId(''), 180);
   };
@@ -142,7 +148,7 @@ export const RegionUnitSelect: React.FC<RegionUnitSelectProps> = ({
             }}
             onMouseEnter={() => {
               keepOpen();
-              setExpandedId('');
+              if (isWideScreen()) setExpandedId('');
             }}
             className={`px-3 py-2 text-sm rounded-lg cursor-pointer select-none transition-colors ${
               regionId === '' ? 'bg-primary/15 text-primary font-semibold' : 'text-main hover:bg-surface-hover hover:text-primary'
@@ -156,7 +162,10 @@ export const RegionUnitSelect: React.FC<RegionUnitSelectProps> = ({
               const children = unitsOf(id);
               const expanded = expandedId === id && children.length > 0;
               return (
-                <div key={reg.id} className="relative" onMouseEnter={(e) => expandRegion(id, e.currentTarget)}>
+                <div key={reg.id} data-region-row className="relative" onMouseEnter={(e) => {
+                    if (isWideScreen()) expandRegion(id, e.currentTarget);
+                  }}
+                >
                   <div
                     className={`flex items-center justify-between rounded-lg transition-colors ${
                       regionId === id ? 'bg-primary/15 text-primary font-semibold' : 'text-main hover:bg-surface-hover hover:text-primary'
@@ -165,9 +174,14 @@ export const RegionUnitSelect: React.FC<RegionUnitSelectProps> = ({
                     <div
                       role="option"
                       aria-selected={regionId === id}
-                      onClick={() => {
+                      onClick={(e) => {
                         onSelectRegion(id);
-                        close();
+                        const row = e.currentTarget.closest<HTMLElement>('[data-region-row]');
+                        if (children.length > 0 && row) {
+                          expandRegion(id, row);
+                          // Màn hình nhỏ: cuộn để danh sách Đơn vị vừa mở hiện ra (Khối ở cuối danh sách thì Đơn vị bị khuất)
+                          if (!isWideScreen()) window.requestAnimationFrame(() => row.scrollIntoView?.({ block: 'nearest' }));
+                        } else close();
                       }}
                       className="flex-1 min-w-0 px-3 py-2 text-sm cursor-pointer select-none truncate"
                     >
@@ -178,7 +192,11 @@ export const RegionUnitSelect: React.FC<RegionUnitSelectProps> = ({
                         type="button"
                         aria-label={`${unitsLabel}: ${reg.ten}`}
                         aria-expanded={expanded}
-                        onClick={() => setExpandedId(expanded ? '' : id)}
+                        onClick={(e) => {
+                          const row = e.currentTarget.closest<HTMLElement>('[data-region-row]');
+                          if (expanded || !row) setExpandedId('');
+                          else expandRegion(id, row);
+                        }}
                         className="px-3 py-2 text-muted hover:text-primary cursor-pointer"
                       >
                         <i className={`fa-solid fa-chevron-right text-[11px] transition-transform ${expanded ? 'rotate-90 md:rotate-0' : ''}`} />
