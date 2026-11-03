@@ -6,7 +6,7 @@
 import apiClient, { ApiError } from '@lib/apiClient';
 import { resolveDocumentApiUrl } from '@lib/routes';
 import type {
-  BangChung, BoLocHoSo, BoLocTaiLieu, CanBo, CanBoChucVu, ChucVu, DonViApDungHoSo, DonViLuaChon, TepTaiLieu, ThongKeHoSo, HoSo, HoSoChiTiet, KhoaKy, LoiNghiepVu, NguoiDungHienTai, QuanTriNguoiDung, QuyTrinh, ThoiHanKhoaQuyenKy, ThongTinAnhChuKyCaNhan,
+  BangChung, BoLocHoSo, BoLocTaiLieu, CanBo, CanBoChucVu, ChucVu, DonViApDungHoSo, DonViLuaChon, TepTaiLieu, ThongKeHoSo, UngVienThayNguoiKy, HoSo, HoSoChiTiet, KhoaKy, LoiNghiepVu, NguoiDungHienTai, QuanTriNguoiDung, QuyTrinh, ThoiHanKhoaQuyenKy, ThongTinAnhChuKyCaNhan,
   ThamSoKdf, TinNhan, TrangKetQua, TraoDoi, VanBanDi, VanBanDiTepDinhKem, ViTriKy,
 } from './types';
 
@@ -111,6 +111,13 @@ export const signingApi = {
     apiClient.post<HoSoChiTiet>(`${SIGNING_BASE}/trinh-ky/${id}/gui/`, { chon_nguoi_ky, vi_tri_ky }, tieuDe(khoa)),
   huy: (id: number, khoa: string, ly_do: string) =>
     apiClient.post<HoSoChiTiet>(`${SIGNING_BASE}/trinh-ky/${id}/huy/`, { ly_do }, tieuDe(khoa)),
+  /** Tài khoản có thể thay người ký `nguoiKyId`: đã lọc theo quyền ký, khóa quyền ký, cấp và thứ bậc chức vụ. */
+  ungVienThayNguoiKy: (id: number, nguoiKyId: number, q: string) =>
+    apiClient.get<UngVienThayNguoiKy[]>(
+      `${SIGNING_BASE}/trinh-ky/${id}/thay-nguoi-ky/?nguoi_ky_id=${nguoiKyId}&q=${encodeURIComponent(q)}`),
+  /** Người tạo hoặc quản trị viên thay người ký đang chờ có quyền ký bị khóa; bắt buộc lý do. */
+  thayNguoiKy: (id: number, body: { nguoi_ky_id: number; nguoi_ky_moi_id: number; ly_do: string }) =>
+    apiClient.post<HoSoChiTiet>(`${SIGNING_BASE}/trinh-ky/${id}/thay-nguoi-ky/`, body),
   trinhLai: (id: number, khoa: string) =>
     apiClient.post<HoSoChiTiet>(`${SIGNING_BASE}/trinh-ky/${id}/trinh-lai/`, {}, tieuDe(khoa)),
 

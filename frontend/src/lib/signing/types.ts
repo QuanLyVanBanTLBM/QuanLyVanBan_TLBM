@@ -119,6 +119,16 @@ export interface NguoiKyLuot {
   chieu_rong_khung: string | null;
   chieu_cao_khung: string | null;
   chu_ky: ChuKyTomTat | null;
+  /** Máy chủ chỉ trả true cho người tạo hoặc quản trị viên khi người ký đang chờ có quyền ký bị khóa. */
+  co_the_thay?: boolean;
+}
+
+/** Tài khoản có thể thay một người ký (GET /trinh-ky/<id>/thay-nguoi-ky/). */
+export interface UngVienThayNguoiKy {
+  id: number;
+  ten: string;
+  chuc_vu: string | null;
+  don_vi: string | null;
 }
 
 export interface CapLuot {

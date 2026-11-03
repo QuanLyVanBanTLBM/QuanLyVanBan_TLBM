@@ -10,6 +10,7 @@ import { DangTai, HopThoai, KhongTimThay, LoiTai, ThongBao, TrangThaiHoSo } from
 import HanhDong from '@components/signing/HanhDong';
 import KetQuaPanel from '@components/signing/KetQuaPanel';
 import SuaNhapDialog from '@components/signing/SuaNhapDialog';
+import ThayNguoiKyDialog from '@components/signing/ThayNguoiKyDialog';
 import TaiLieuPanel from '@components/signing/TaiLieuPanel';
 import TienTrinh from '@components/signing/TienTrinh';
 import TraoDoiPanel from '@components/signing/TraoDoiPanel';
@@ -50,6 +51,7 @@ function ChiTietHoSo({ id }: { id: number }) {
   const [tepTai, setTepTai] = useState<{ khoa: string; buf: ArrayBuffer | null; maBam: string | null; loi: unknown } | null>(null);
   const [anh, setAnh] = useState<Record<number, string>>({});
   const [dangSua, setDangSua] = useState(false);
+  const [dangThayNguoiKy, setDangThayNguoiKy] = useState(false);
   const [qVanBan, setQVanBan] = useState('');
   const [qVanBanTim, setQVanBanTim] = useState('');
   const [vanBanDinhLienKet, setVanBanDinhLienKet] = useState('');
@@ -135,6 +137,7 @@ function ChiTietHoSo({ id }: { id: number }) {
       anhUrl: da_ky ? anh[n.chu_ky.id] : undefined, kieu: da_ky ? 'da_ky' : 'cho',
     } as KhungHienThi];
   }));
+  const nguoiKyThayDuoc = (luot?.cap_ky ?? []).flatMap((c) => c.nguoi_ky).filter((n) => n.co_the_thay);
   const coTraoDoi = hoSo.luot_trinh.some((l) => l.yeu_cau_sua.length > 0);
   const vanBanChon = (vanBanDi.duLieu || []).find((vb) => String(vb.id) === vanBanDinhLienKet) || null;
   const lienKetVanBan = async () => {
@@ -167,6 +170,11 @@ function ChiTietHoSo({ id }: { id: number }) {
           <div className="text-base font-semibold text-main break-words">{moTaVanBan(hoSo.van_ban, t)}</div>
           {hoSo.trang_thai === 'NHAP' && toi?.id === hoSo.create_by && (
             <Button size="sm" variant="secondary" icon="fa-pen" onClick={() => setDangSua(true)}>{t('chiTiet.suaHoSo')}</Button>
+          )}
+          {nguoiKyThayDuoc.length > 0 && (
+            <Button size="sm" variant="secondary" icon="fa-user-pen" onClick={() => setDangThayNguoiKy(true)}>
+              {t('thayNguoiKy.nut')}
+            </Button>
           )}
           <HanhDong hoSo={hoSo} luot={luot} maBamTepDangXem={maBam} onXong={capNhat} />
           {hoSo.trang_thai === 'TU_CHOI' && hoSo.ly_do_tu_choi && (
@@ -293,6 +301,10 @@ function ChiTietHoSo({ id }: { id: number }) {
           </ol>
         </Card>
       </div>
+      {dangThayNguoiKy && nguoiKyThayDuoc.length > 0 && (
+        <ThayNguoiKyDialog hoSo={hoSo} nguoiKyThayDuoc={nguoiKyThayDuoc} onDong={() => setDangThayNguoiKy(false)}
+          onXong={(moi) => { setDangThayNguoiKy(false); capNhat(moi); }} />
+      )}
       {dangSua && <SuaNhapDialog hoSo={hoSo} onDong={() => setDangSua(false)} onXong={(moi) => { setDangSua(false); capNhat(moi); }} />}
       <HopThoai moTieuDe={t('chiTiet.lienKetVanBanDi')} mo={moXacNhanLienKet}
         onDong={() => setMoXacNhanLienKet(false)} dangXuLy={dangLienKet}
