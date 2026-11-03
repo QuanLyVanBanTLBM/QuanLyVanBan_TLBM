@@ -26,7 +26,7 @@ from ..models import (
 from ..permissions import KY_TRINH_KY, co_quyen
 from ..storage import StorageError, get_storage
 from ..tich_hop import to_chuc
-from . import keys, quyen_ky, tep_hoan_tat, thong_bao
+from . import keys, mfa_ky, quyen_ky, tep_hoan_tat, thong_bao
 from .audit import ghi_nhat_ky
 from .bang_chung import chot_bang_chung
 from .trinh_ky import dung_cap_dang_mo, luot_hien_hanh, mo_cap, mo_nguoi_ky_trong_cap
@@ -140,7 +140,9 @@ def _kiem_tra_khoa(nguoi, khoa_ky_id, thoi_diem):
     return khoa
 
 
-def ky(yeu_cau, nguoi, **kwargs):
+def ky(yeu_cau, nguoi, *, phien_mfa=None, **kwargs):
+    # Cờ MFA bật thì phiên (access token) phải đã xác thực mã email; kiểm trước mọi thao tác ghi (#509).
+    mfa_ky.kiem_tra_da_xac_thuc(nguoi, phien_mfa)
     # Chuyển HET_HAN ở transaction riêng để trạng thái vẫn được lưu khi bước ký bị từ chối (#488).
     keys.chuyen_het_han(nguoi)
     return _ky(yeu_cau, nguoi, **kwargs)
