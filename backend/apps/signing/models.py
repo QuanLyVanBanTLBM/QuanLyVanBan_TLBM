@@ -587,6 +587,25 @@ class SigningPinResetCode(models.Model):
         indexes = [models.Index(fields=["nguoi_dung", "created_at"], name="idx_signing_pin_reset_user")]
 
 
+class SigningChallengeDaDung(models.Model):
+    """
+    Nonce của challenge chứng minh sở hữu khóa đã được dùng (#507). UNIQUE (nguoi_dung, nonce) bảo đảm mỗi challenge
+    chỉ xác minh thành công một lần kể cả khi hai request chạy đồng thời. Bản ghi hết hạn được xóa khi ghi bản ghi mới.
+    """
+
+    nguoi_dung = models.ForeignKey(
+        User, on_delete=models.CASCADE, db_constraint=False, related_name="+"
+    )  # FK ON DELETE CASCADE tạo bằng SQL trong migration 0023 để khớp release_DDL.sql
+    nonce = models.CharField(max_length=64)
+    het_han = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True, db_default=DB_NOW)
+
+    class Meta:
+        db_table = "signing_challenge_da_dung"
+        constraints = [models.UniqueConstraint(fields=["nguoi_dung", "nonce"], name="uq_signing_challenge_da_dung")]
+        indexes = [models.Index(fields=["het_han"], name="idx_signing_challenge_het_han")]
+
+
 class SigningRightLock(models.Model):
     """
     Khóa quyền ký của tài khoản do quản trị viên đặt. Bảng trạng thái (được cập nhật khi bật lại),

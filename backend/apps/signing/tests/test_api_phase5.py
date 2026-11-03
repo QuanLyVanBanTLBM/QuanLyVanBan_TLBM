@@ -207,6 +207,14 @@ class KeyApiTests(ApiBase):
         r = self.c1.post(f"{BASE}/khoa/{key['id']}/thu-hoi/", {"ly_do": "Mất thiết bị"}, format="json")
         self.assertEqual((r.status_code, r.data["trang_thai"]), (200, "THU_HOI"))
 
+    def test_replayed_challenge_rejected(self):
+        private, key = self.register()
+        challenge = self.c1.get(f"{BASE}/khoa/{key['id']}/thach-thuc/").data["thach_thuc"]
+        payload = {"thach_thuc": challenge, "chu_ky_so": base64.b64encode(private.sign(challenge.encode())).decode()}
+        self.assertEqual(self.c1.post(f"{BASE}/khoa/{key['id']}/xac-minh/", payload, format="json").status_code, 200)
+        response = self.c1.post(f"{BASE}/khoa/{key['id']}/xac-minh/", payload, format="json")
+        self.assertEqual((response.status_code, response.data["code"]), (409, "thach_thuc_da_dung"))
+
     def test_bad_proof_rejected(self):
         _, key = self.register()
         other, _ = new_keypair()
