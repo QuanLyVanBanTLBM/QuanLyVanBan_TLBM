@@ -57,6 +57,9 @@ export function useSigningT() {
     // PIN sai: server trả số lần thử còn lại trước khi khóa (fields.so_lan_con_lai)
     const con_lai = ma === 'pin_khong_dung' ? (l.fields as Record<string, unknown[]> | undefined)?.so_lan_con_lai?.[0] : undefined;
     if (typeof con_lai === 'number') return t('loi.pin_khong_dung_con_lai', { so: con_lai });
+    // Mã MFA khi ký sai: nêu số lần thử còn lại trước khi mã bị hủy (fields.so_lan_con_lai)
+    const mfa_con_lai = ma === 'mfa_ma_sai' ? (l.fields as Record<string, unknown[]> | undefined)?.so_lan_con_lai?.[0] : undefined;
+    if (typeof mfa_con_lai === 'number') return t('loi.mfa_ma_sai_con_lai', { so: mfa_con_lai });
     // Dữ liệu không hợp lệ: nêu trường và lý do đầu tiên để người dùng biết sửa chỗ nào
     if (ma === 'du_lieu_khong_hop_le') {
       const dau = thongDiepDauTien(l.fields);

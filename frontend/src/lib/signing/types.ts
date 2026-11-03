@@ -20,6 +20,8 @@ export interface NguoiDungHienTai {
   co_anh_chu_ky?: boolean;
   /** Quyền ký đang bị quản trị viên khóa (null: không bị khóa); không kèm lý do nội bộ. */
   khoa_quyen_ky?: { khoa_den: string | null } | null;
+  /** MFA qua email khi ký (#509): `bat` theo cấu hình máy chủ; `da_xac_thuc` theo access token hiện tại. */
+  mfa_ky?: { bat: boolean; da_xac_thuc: boolean; het_han: string | null };
 }
 
 export type ThoiHanKhoaQuyenKy = '1_gio' | '8_gio' | '24_gio' | 'den_khi_bat_lai';

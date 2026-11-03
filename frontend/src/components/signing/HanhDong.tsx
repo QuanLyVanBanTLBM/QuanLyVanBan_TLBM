@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@components/common';
-import { signingApi } from '@lib/signing/api';
+import { docLoi, signingApi } from '@lib/signing/api';
 import { GIOI_HAN, LOP_O_NHAP, moTaVanBan } from '@lib/signing/dinhDang';
 import { coQuyen, useKhoaChongTrung, useToi } from '@lib/signing/hooks';
 import { useSigningT } from '@lib/signing/i18n';
@@ -16,6 +16,7 @@ import { khoaHoatDong, kyBangPin } from '@lib/signing/luongKhoa';
 import type { HoSoChiTiet, LuotTrinh } from '@lib/signing/types';
 import { HopThoai, OChonFileKhoa, ThongBao, TruongNhap } from './ChungUI';
 import DatLaiPinDialog from './DatLaiPinDialog';
+import MfaKyBuoc from './MfaKyBuoc';
 
 const URL_ANH_CHU_KY = '/api/signing/anh-chu-ky-ca-nhan/tep/';
 
@@ -62,7 +63,7 @@ function NutXacNhan({
 
 export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props) {
   const { t, loi } = useSigningT();
-  const { toi } = useToi();
+  const { toi, taiLaiToi } = useToi();
   const navigate = useNavigate();
   const khoa = useKhoaChongTrung();
   const [mo, setMo] = useState<LoaiHopThoai>(null);
@@ -88,7 +89,9 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
   const thieuAnh = !anhChuKy;
   const thieuKhoa = !dangKiem && !loiKiem && !ketQuaKiem.coKhoa;
   const hienThieu = !dangKiem && !loiKiem && (thieuAnh || thieuKhoa);
-  const khoaNhap = dangKiem || Boolean(loiKiem) || thieuAnh || thieuKhoa;
+  // MFA qua email (#510): máy chủ bật cờ và access token hiện tại chưa xác thực thì phải nhập mã trước khi ký.
+  const canMfa = Boolean(toi?.mfa_ky?.bat && !toi.mfa_ky.da_xac_thuc);
+  const khoaNhap = dangKiem || Boolean(loiKiem) || thieuAnh || thieuKhoa || canMfa;
 
   useEffect(() => {
     if (mo !== 'ky' || !toi) return undefined;
@@ -185,6 +188,8 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
       return kq;
     } catch (err) {
       setThongBao(loi(err));
+      // Token đã đổi (làm mới/đăng nhập lại) nên phiên mất xác thực: tải lại trạng thái để hiện bước nhập mã
+      if (docLoi(err).code === 'mfa_chua_xac_thuc') taiLaiToi();
       return null;
     } finally {
       setDangLam(false);
@@ -355,6 +360,7 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
 
           <div className={coFileTrenManHinh ? "space-y-4 opacity-30 transition-opacity pointer-events-none" : "space-y-4 transition-opacity"}>
             {!maBamKhop && <ThongBao>{t('loi.ma_bam_khong_khop')}</ThongBao>}
+            {canMfa && !dangKiem && !loiKiem && !hienThieu && <MfaKyBuoc onXacThuc={taiLaiToi} />}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 items-start">
             <TruongNhap nhan={t('hanhDong.fileKhoa')} batBuoc>

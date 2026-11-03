@@ -275,6 +275,11 @@ export const signingApi = {
     apiClient.post<{ het_han: string; gian_cach_giay: number }>(`${SIGNING_BASE}/dat-lai-pin/yeu-cau/`, {}),
   datLaiPinXacNhan: (ma: string) =>
     apiClient.post<{ so_khoa_thu_hoi: number }>(`${SIGNING_BASE}/dat-lai-pin/xac-nhan/`, { ma }),
+  /** MFA khi ký (#509): gửi mã 6 chữ số tới email; `gian_cach_giay` là thời gian tối thiểu giữa hai lần gửi. */
+  mfaKyYeuCau: () =>
+    apiClient.post<{ het_han: string; gian_cach_giay: number }>(`${SIGNING_BASE}/mfa/yeu-cau/`, {}),
+  mfaKyXacMinh: (ma: string) =>
+    apiClient.post<{ da_xac_thuc: boolean; het_han: string }>(`${SIGNING_BASE}/mfa/xac-minh/`, { ma }),
   kichHoatKhoa: (id: number) => apiClient.post<KhoaKy>(`${SIGNING_BASE}/khoa/${id}/kich-hoat/`, {}),
   /** Đổi thiết bị: khóa cũ DA_XOAY_VONG, khóa mới (đã xác minh) thành HOAT_DONG. */
   xoayVongKhoa: (id: number, khoa_moi: number) =>
