@@ -12,6 +12,7 @@ from .models import (
     SigningRequestStepSigner,
 )
 from .services import quyen_ky as quyen_ky_service
+from .services import thay_nguoi_ky as thay_nguoi_ky_service
 from .tich_hop import to_chuc
 from .tich_hop.van_ban import mo_ta_ho_so
 
@@ -287,14 +288,27 @@ class TrinhLaiSerializer(serializers.Serializer):
     han_chot = serializers.DateTimeField(required=False, allow_null=True)
 
 
+class ThayNguoiKySerializer(serializers.Serializer):
+    nguoi_ky_id = serializers.IntegerField(min_value=1)
+    nguoi_ky_moi_id = serializers.IntegerField(min_value=1)
+    ly_do = serializers.CharField(max_length=MAX_LY_DO)
+
+
 class NguoiKyLuotSerializer(serializers.ModelSerializer):
     chu_ky = serializers.SerializerMethodField()
+    co_the_thay = serializers.SerializerMethodField()
 
     class Meta:
         model = SigningRequestStepSigner
         fields = ["id", "nguoi_ky", "ten_nguoi_ky", "ten_chuc_vu", "vai_tro_ky", "trang_thai",
                   "thoi_diem_mo", "ngay_ky", "ngay_tu_choi", "ly_do_tu_choi", "trang_ky", "toa_do_x", "toa_do_y", "chieu_rong_khung",
-                  "chieu_cao_khung", "chu_ky"]
+                  "chieu_cao_khung", "chu_ky", "co_the_thay"]
+
+    def get_co_the_thay(self, obj):
+        """Người dùng hiện tại được thay người ký này: người ký đang chờ ở cấp đang ký, quyền ký bị khóa. Chỉ báo cho
+        người tạo hoặc quản trị viên; người khác luôn nhận False để không lộ trạng thái khóa."""
+        ids = self.context.get("nguoi_ky_thay_duoc")
+        return bool(ids) and obj.pk in ids
 
     def get_chu_ky(self, obj):
         """Chữ ký hiện hành (ghi chú, trễ hạn, kết quả xác minh, có ảnh snapshot); không trả nội dung chữ ký."""
@@ -442,7 +456,11 @@ class TrinhKyChiTietSerializer(TrinhKySerializer):
 
     def get_luot_trinh(self, obj):
         luot = obj.luot_trinh_set.order_by("-so_luot").prefetch_related("cap_ky_set__nguoi_ky_set")
-        return LuotTrinhSerializer(luot, many=True, context=self.context).data
+        context = dict(self.context)
+        request = context.get("request")
+        if request is not None:
+            context["nguoi_ky_thay_duoc"] = thay_nguoi_ky_service.ids_thay_duoc(obj, request.user)
+        return LuotTrinhSerializer(luot, many=True, context=context).data
 
     def get_lich_su(self, obj):
         return NhatKyTrinhKySerializer(SigningAuditLog.objects.filter(trinh_ky=obj).select_related("nguoi_thuc_hien")

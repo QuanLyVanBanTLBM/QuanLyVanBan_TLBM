@@ -35,7 +35,7 @@ from .serializers import (
     KhoaDangKySerializer,
     KhoaQuyenKySerializer, KhoaSerializer, KySerializer, LienKetVanBanDiSerializer, MoKhoaKySerializer, QuyTrinhInputSerializer,
     MaXacThucSerializer, QuyTrinhSerializer, ThuHoiKhoaSerializer, TrinhKyChiTietSerializer, TrinhKySerializer, TrinhKySuaSerializer,
-    TrinhKyTaoSerializer, TrinhLaiSerializer,
+    ThayNguoiKySerializer, TrinhKyTaoSerializer, TrinhLaiSerializer,
     TinNhanInputSerializer, TinNhanSerializer, TuChoiSerializer, XacMinhSoHuuSerializer,
     XoayVongSerializer, YeuCauSuaSerializer, YeuCauSuaThreadSerializer,
 )
@@ -45,6 +45,7 @@ from .services import keys as key_service
 from .services import pin as pin_service
 from .services import pin_reset as pin_reset_service
 from .services import quyen_ky as quyen_ky_service
+from .services import thay_nguoi_ky as thay_nguoi_ky_service
 from .services import process as process_service
 from .services import thong_bao as thong_bao_service
 from .services import tep_hoan_tat as tep_hoan_tat_service
@@ -495,6 +496,24 @@ class TrinhKyActionView(SigningAPIView):
                                                  han_chot=data.validated_data.get("han_chot"))
             code = status.HTTP_201_CREATED
         return Response(_du_lieu_chi_tiet_trinh_ky(ket_qua, request), status=code)
+
+
+class ThayNguoiKyView(SigningAPIView):
+    """
+    POST /trinh-ky/<pk>/thay-nguoi-ky/ {nguoi_ky_id, nguoi_ky_moi_id, ly_do}: người tạo hoặc quản trị viên thay người
+    ký đang chờ có quyền ký bị khóa (#499). Chữ ký đã có giữ nguyên.
+    """
+
+    def post(self, request, pk):
+        if to_chuc.la_quan_tri(request.user):
+            ho_so = get_object_or_404(SigningRequest, pk=pk)
+        else:
+            ho_so = _ho_so_xem_duoc(request, pk)
+        data = ThayNguoiKySerializer(data=request.data)
+        data.is_valid(raise_exception=True)
+        ket_qua = thay_nguoi_ky_service.thay_nguoi_ky(ho_so, request.user, dia_chi_ip=_ip(request),
+                                                      **data.validated_data)
+        return Response(_du_lieu_chi_tiet_trinh_ky(ket_qua, request))
 
 
 class TrinhKyTepView(SigningAPIView):
