@@ -4,6 +4,7 @@ Mỗi PR sửa `release_DDL.sql` thêm một mục ở đầu danh sách (mới 
 
 | Ngày | PR | Đối tượng thay đổi | Lý do |
 |---|---|---|---|
+| 2026-11-03 | issue #509 | Thêm bảng `signing_mfa_otp` và chỉ mục `idx_signing_mfa_otp_user`, `idx_signing_mfa_otp_phien`; migration `signing/0024_ma_xac_thuc_mfa_ky` | Lưu mã xác thực MFA (đã băm) gửi qua email khi ký và phiên access token đã xác thực, thay kho Redis theo phương án mức bảo mật bình thường của phân vùng 2 #447 |
 | 2026-11-03 | issue #507 | Thêm bảng `signing_challenge_da_dung` (người dùng, nonce, hạn), ràng buộc `uq_signing_challenge_da_dung` và chỉ mục `idx_signing_challenge_het_han`; migration `signing/0023_challenge_da_dung` | Ép challenge chứng minh sở hữu khóa ký chỉ dùng một lần bằng PostgreSQL, không phụ thuộc Redis |
 | 2026-11-02 | issue #478 | Thêm bảng `signing_pin_reset_code` và chỉ mục `idx_signing_pin_reset_user`; migration `signing/0022_ma_dat_lai_pin` | Lưu mã xác thực (đã băm) gửi qua email để chủ khóa tự đặt lại PIN khi quên |
 | 2026-11-02 | issue #467 | `signing_notification.trinh_ky_id` bỏ NOT NULL; migration `signing/0021_thong_bao_khong_gan_ho_so` | Thông báo thao tác quản trị trên tài khoản (khóa/bật lại quyền ký, thu hồi khóa ký) không gắn với hồ sơ trình ký |

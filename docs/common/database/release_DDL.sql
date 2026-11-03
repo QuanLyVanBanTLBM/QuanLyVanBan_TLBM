@@ -1463,6 +1463,23 @@ CREATE TABLE signing_challenge_da_dung (
 
 CREATE INDEX idx_signing_challenge_het_han ON signing_challenge_da_dung (het_han);
 
+-- 9.8c4. Mã xác thực MFA khi ký gửi qua email và phiên đã xác thực (Nhóm 5): lưu mã đã băm; dòng đã dùng gắn với access token
+CREATE TABLE signing_mfa_otp (
+    id BIGSERIAL PRIMARY KEY,
+    nguoi_dung_id BIGINT NOT NULL REFERENCES accounts_employee (id) ON DELETE CASCADE,
+    muc_dich VARCHAR(20) NOT NULL DEFAULT 'KY',
+    ma_bam VARCHAR(64) NOT NULL,
+    het_han TIMESTAMPTZ NOT NULL,
+    so_lan_sai INTEGER NOT NULL DEFAULT 0,
+    da_dung_luc TIMESTAMPTZ,
+    phien_jti VARCHAR(64),
+    phien_het_han TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_signing_mfa_otp_user ON signing_mfa_otp (nguoi_dung_id, muc_dich, created_at);
+CREATE INDEX idx_signing_mfa_otp_phien ON signing_mfa_otp (nguoi_dung_id, phien_jti);
+
 -- 9.8d. [v1] Khóa quyền ký của tài khoản do quản trị viên đặt (Nhóm 5, issue #449) — bảng trạng thái.
 -- Một tài khoản có tối đa một dòng đang hiệu lực (bat_lai_luc IS NULL). khoa_den NULL: khóa đến khi được bật lại.
 -- Dòng hết hạn (khoa_den đã qua) được đóng bằng dịch vụ khi khóa lại; nguoi_bat_lai_id NULL là hết hạn tự nhiên.

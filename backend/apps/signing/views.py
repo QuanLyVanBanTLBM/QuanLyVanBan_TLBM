@@ -42,6 +42,7 @@ from .serializers import (
 from .services import bang_chung as bang_chung_service
 from .services import hanh_dong_ky as hanh_dong_service
 from .services import keys as key_service
+from .services import mfa_ky as mfa_ky_service
 from .services import pin as pin_service
 from .services import pin_reset as pin_reset_service
 from .services import quyen_ky as quyen_ky_service
@@ -195,6 +196,27 @@ class DatLaiPinXacNhanView(SigningAPIView):
         data.is_valid(raise_exception=True)
         so_khoa = pin_reset_service.xac_nhan_ma(request.user, data.validated_data["ma"], dia_chi_ip=_ip(request))
         return Response({"so_khoa_thu_hoi": so_khoa})
+
+
+class MfaKyYeuCauView(SigningAPIView):
+    """POST /mfa/yeu-cau/: gửi mã xác thực ký 6 chữ số tới email của tài khoản (cần quyền ký; cờ MFA phải bật)."""
+
+    def post(self, request):
+        yeu_cau_quyen(request.user, KY_TRINH_KY)
+        het_han = mfa_ky_service.yeu_cau_ma(request.user, dia_chi_ip=_ip(request))
+        return Response({"het_han": het_han, "gian_cach_giay": int(mfa_ky_service.GIAN_CACH_GUI.total_seconds())})
+
+
+class MfaKyXacMinhView(SigningAPIView):
+    """POST /mfa/xac-minh/ {ma}: mã đúng thì access token hiện tại được xác thực để ký đến khi token hết hạn."""
+
+    def post(self, request):
+        yeu_cau_quyen(request.user, KY_TRINH_KY)
+        data = MaXacThucSerializer(data=request.data)
+        data.is_valid(raise_exception=True)
+        het_han = mfa_ky_service.xac_minh_ma(
+            request.user, data.validated_data["ma"], mfa_ky_service.phien_tu_request(request), dia_chi_ip=_ip(request))
+        return Response({"da_xac_thuc": True, "het_han": het_han})
 
 
 class KhoaActionView(SigningAPIView):
@@ -570,6 +592,7 @@ class HanhDongKyView(SigningAPIView):
             data = KySerializer(data=request.data)
             data.is_valid(raise_exception=True)
             ket_qua = hanh_dong_service.ky(ho_so, request.user, khoa_chong_trung=khoa, dia_chi_ip=ip,
+                                           phien_mfa=mfa_ky_service.phien_tu_request(request),
                                            **data.validated_data)
         elif self.action == "tu-choi":
             data = TuChoiSerializer(data=request.data)
@@ -973,6 +996,7 @@ class ToiView(SigningAPIView):
                                                      HUY_TRINH_KY, XEM_NHAT_KY, XEM_TAT_CA, QUAN_LY_QUY_TRINH)},
             "la_quan_tri": to_chuc.la_quan_tri(u), "la_lanh_dao_don_vi": to_chuc.la_lanh_dao_don_vi(u, don_vi),
             "co_anh_chu_ky": to_chuc.co_anh_chu_ky(u),
+            "mfa_ky": mfa_ky_service.trang_thai(u, mfa_ky_service.phien_tu_request(request)),
             "khoa_quyen_ky": (lambda k: {"khoa_den": k.khoa_den} if k else None)(quyen_ky_service.khoa_dang_hieu_luc(u)),
         })
 

@@ -606,6 +606,33 @@ class SigningChallengeDaDung(models.Model):
         indexes = [models.Index(fields=["het_han"], name="idx_signing_challenge_het_han")]
 
 
+class SigningMfaOtp(models.Model):
+    """
+    Mã xác thực MFA (6 chữ số) gửi qua email trước khi ký, và phiên đã xác thực (issue #509, phân vùng 2 của #447).
+    Chỉ lưu mã đã băm (HMAC). Nhập đúng mã thì `da_dung_luc` được đặt và dòng gắn với access token hiện tại
+    (`phien_jti`, `phien_het_han` = hạn của token): ký chỉ được nhận khi tồn tại dòng như vậy còn hiệu lực.
+    """
+
+    nguoi_dung = models.ForeignKey(
+        User, on_delete=models.CASCADE, db_constraint=False, related_name="+"
+    )  # FK ON DELETE CASCADE tạo bằng SQL trong migration 0024 để khớp release_DDL.sql
+    muc_dich = models.CharField(max_length=20, db_default="KY", default="KY")
+    ma_bam = models.CharField(max_length=64)
+    het_han = models.DateTimeField()
+    so_lan_sai = models.IntegerField(db_default=0, default=0)
+    da_dung_luc = models.DateTimeField(null=True, blank=True)
+    phien_jti = models.CharField(max_length=64, null=True, blank=True)
+    phien_het_han = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_default=DB_NOW)
+
+    class Meta:
+        db_table = "signing_mfa_otp"
+        indexes = [
+            models.Index(fields=["nguoi_dung", "muc_dich", "created_at"], name="idx_signing_mfa_otp_user"),
+            models.Index(fields=["nguoi_dung", "phien_jti"], name="idx_signing_mfa_otp_phien"),
+        ]
+
+
 class SigningRightLock(models.Model):
     """
     Khóa quyền ký của tài khoản do quản trị viên đặt. Bảng trạng thái (được cập nhật khi bật lại),

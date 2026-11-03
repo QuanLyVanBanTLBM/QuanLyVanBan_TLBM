@@ -19,6 +19,9 @@ urlpatterns = [
     path("khoa/", views.KhoaListCreateView.as_view(), name="khoa-list"),
     path("dat-lai-pin/yeu-cau/", views.DatLaiPinYeuCauView.as_view(), name="dat-lai-pin-yeu-cau"),
     path("dat-lai-pin/xac-nhan/", views.DatLaiPinXacNhanView.as_view(), name="dat-lai-pin-xac-nhan"),
+    # MFA qua email khi ký (#509), bật bằng SIGNING_MFA_EMAIL_ENABLED
+    path("mfa/yeu-cau/", views.MfaKyYeuCauView.as_view(), name="mfa-ky-yeu-cau"),
+    path("mfa/xac-minh/", views.MfaKyXacMinhView.as_view(), name="mfa-ky-xac-minh"),
     path("khoa/<int:pk>/thach-thuc/", views.KhoaThachThucView.as_view(), name="khoa-thach-thuc"),
     path("khoa/<int:pk>/xac-minh/", views.KhoaActionView.as_view(action="xac-minh"), name="khoa-xac-minh"),
     path("khoa/<int:pk>/kich-hoat/", views.KhoaActionView.as_view(action="kich-hoat"), name="khoa-kich-hoat"),
