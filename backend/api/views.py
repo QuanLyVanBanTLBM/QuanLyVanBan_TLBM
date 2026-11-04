@@ -138,14 +138,22 @@ def chat(request):
 
         # Employee identity is supplied by host auth or resolved through trusted username mapping
         employee_id = resolve_employee_id(request)
+        language = payload.get("language")
+        if not language or not isinstance(language, str):
+            accept_lang = request.headers.get("Accept-Language", "")
+            language = "en" if "en" in accept_lang.lower() else "vi"
+        else:
+            language = "en" if language.lower().startswith("en") else "vi"
+
         result = ask_document(
             question.strip(), history=safe_history,
             category=category if isinstance(category, str) else None,
             user=request.user,
             employee_id=employee_id,
             filename=filename,
+            language=language,
         )
-        return JsonResponse({"question": question.strip(), "category": category or None, "filename": filename or None, **result})
+        return JsonResponse({"question": question.strip(), "category": category or None, "filename": filename or None, "language": language, **result})
     except SqlDocumentAccessError:
         logger.exception("AI SQL source failed for user_id=%s", request.user.pk)
         return _error("Không thể truy cập nguồn dữ liệu AI lúc này.", 503)

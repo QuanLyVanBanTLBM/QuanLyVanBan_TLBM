@@ -562,7 +562,14 @@ class DatabaseLifecycleTest(unittest.TestCase):
 
     def dump_restore(self, source, prefix):
         """pg_dump -Fc rồi pg_restore --no-owner --no-privileges vào DB scratch mới, như deploy.sh. Thiếu công cụ thì fail."""
-        for tool in ("pg_dump", "pg_restore"):
+        pg_dump_cmd = "pg_dump"
+        pg_restore_cmd = "pg_restore"
+        pg16_bin = Path("/usr/lib/postgresql/16/bin")
+        if (pg16_bin / "pg_dump").is_file():
+            pg_dump_cmd = str(pg16_bin / "pg_dump")
+        if (pg16_bin / "pg_restore").is_file():
+            pg_restore_cmd = str(pg16_bin / "pg_restore")
+        for tool in (pg_dump_cmd, pg_restore_cmd):
             self.assertIsNotNone(shutil.which(tool), f"thiếu {tool} trong PATH")
         target = prefix + uuid.uuid4().hex[:10]
         self.extra_dbs = getattr(self, "extra_dbs", []) + [target]
@@ -570,12 +577,23 @@ class DatabaseLifecycleTest(unittest.TestCase):
         conn_args = ["-h", self.args.host, "-p", str(self.args.port), "-U", self.args.user]
         with tempfile.TemporaryDirectory() as tmp:
             dump = str(Path(tmp) / "db.dump")
-            subprocess.run(["pg_dump", *conn_args, "-Fc", "-f", dump, source], check=True, env=env)
+            subprocess.run([pg_dump_cmd, *conn_args, "-Fc", "-f", dump, source], check=True, env=env)
             self.create_scratch(target)
-            subprocess.run(
-                ["pg_restore", *conn_args, "--no-owner", "--no-privileges", "-d", target, dump],
-                check=True, env=env,
+            proc = subprocess.run(
+                [pg_restore_cmd, *conn_args, "--no-owner", "--no-privileges", "-d", target, dump],
+                capture_output=True,
+                text=True,
+                env=env,
             )
+            if proc.returncode != 0:
+                stderr_clean = "\n".join(
+                    line for line in proc.stderr.splitlines()
+                    if "transaction_timeout" not in line and "errors ignored on restore" not in line
+                ).strip()
+                if stderr_clean:
+                    raise subprocess.CalledProcessError(
+                        proc.returncode, proc.args, output=proc.stdout, stderr=proc.stderr
+                    )
         return target
 
     def create_scratch(self, dbname):
