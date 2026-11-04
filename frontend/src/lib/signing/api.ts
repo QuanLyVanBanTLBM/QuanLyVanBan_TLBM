@@ -248,10 +248,15 @@ export const signingApi = {
   // ── Khóa ký, PIN ─────────────────────────────────────────────────────────
   // ── Ảnh chữ ký cá nhân (Issue #424) ──────────────────────────────────────
   anhChuKyCaNhan: () => apiClient.get<ThongTinAnhChuKyCaNhan>(`${SIGNING_BASE}/anh-chu-ky-ca-nhan/`),
-  taiLenAnhChuKy: (tep: Blob | File) => {
+  taiLenAnhChuKy: (tep: Blob | File | string) => {
+    if (typeof tep === 'string') {
+      return apiClient.post<ThongTinAnhChuKyCaNhan>(`${SIGNING_BASE}/anh-chu-ky-ca-nhan/`, {
+        du_lieu_base64: tep,
+      });
+    }
     const form = new FormData();
     form.append('tep', tep, 'signature.png');
-    return apiClient.post<ThongTinAnhChuKyCaNhan>(`${SIGNING_BASE}/anh-chu-ky-ca-nhan/`, form);
+    return postForm<ThongTinAnhChuKyCaNhan>('/anh-chu-ky-ca-nhan/', form);
   },
   xoaAnhChuKy: () => apiClient.delete<void>(`${SIGNING_BASE}/anh-chu-ky-ca-nhan/`),
 

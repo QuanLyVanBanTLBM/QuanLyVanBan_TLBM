@@ -91,3 +91,50 @@ describe('thoiDiemThuLai / giayChoThuLai (HTTP 429)', () => {
     expect(thoiDiemThuLai(new Error('x'))).toBeNull();
   });
 });
+
+describe('signingApi.taiLenAnhChuKy', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it('gửi FormData chứa tệp signature.png khi truyền Blob', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(phanHoi(200, {
+      co_anh: true,
+      ma_bam: 'hash123',
+      dung_luong_bytes: 10,
+      url: '/api/signing/anh-chu-ky-ca-nhan/tep/',
+    }));
+
+    const blob = new Blob(['png-bytes'], { type: 'image/png' });
+    const res = await signingApi.taiLenAnhChuKy(blob);
+
+    expect(res.co_anh).toBe(true);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    const [url, init] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/api/v1/signing/anh-chu-ky-ca-nhan/');
+    expect(init.method).toBe('POST');
+    expect(init.body).toBeInstanceOf(FormData);
+    const fd = init.body as FormData;
+    expect(fd.get('tep')).toBeTruthy();
+  });
+
+  it('gửi JSON chứa du_lieu_base64 khi truyền chuỗi Base64', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(phanHoi(200, {
+      co_anh: true,
+      ma_bam: 'hash456',
+      dung_luong_bytes: 20,
+      url: '/api/signing/anh-chu-ky-ca-nhan/tep/',
+    }));
+
+    const base64Str = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+    const res = await signingApi.taiLenAnhChuKy(base64Str);
+
+    expect(res.co_anh).toBe(true);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    const [url, init] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/api/v1/signing/anh-chu-ky-ca-nhan/');
+    expect(init.method).toBe('POST');
+    expect(init.body).toBe(JSON.stringify({ du_lieu_base64: base64Str }));
+  });
+});

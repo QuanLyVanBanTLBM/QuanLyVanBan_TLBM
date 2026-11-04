@@ -155,3 +155,50 @@ describe('downloadBlob', () => {
     expect(capturedFilename).toBe('tailieu_goc.pdf');
   });
 });
+
+describe('apiClient HTTP methods & FormData body serialization', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    setLanguage('vi');
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('apiClient.post với FormData giữ nguyên FormData và không gắn Content-Type application/json', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const fd = new FormData();
+    fd.append('tep', new Blob(['test-png']), 'sig.png');
+
+    await apiClient.post('/api/signing/anh-chu-ky-ca-nhan/', fd);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.body).toBe(fd);
+    const headers = init.headers as Headers;
+    expect(headers.has('Content-Type')).toBe(false);
+  });
+
+  it('apiClient.post với plain object chuyển thành JSON và gắn Content-Type application/json', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 1 }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await apiClient.post('/api/test/', { name: 'demo' });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.body).toBe(JSON.stringify({ name: 'demo' }));
+    const headers = init.headers as Headers;
+    expect(headers.get('Content-Type')).toBe('application/json');
+  });
+});
