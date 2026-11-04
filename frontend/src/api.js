@@ -19,10 +19,12 @@ export async function getUploadProgress(jobId) {
   return apiClient(apiPath(`/upload/progress/${encodeURIComponent(jobId)}`));
 }
 
-export async function askQuestion(question, history = [], category = null, filename = null) {
+export async function askQuestion(question, history = [], category = null, filename = null, language = null) {
   const payload = { question, history };
   if (category) payload.category = category;
   if (filename) payload.filename = filename;
+  const lang = language || (typeof window !== "undefined" ? localStorage.getItem("tlbm_lang") : null) || "vi";
+  payload.language = lang;
   return apiClient.post(apiPath("/chat"), payload);
 }
 

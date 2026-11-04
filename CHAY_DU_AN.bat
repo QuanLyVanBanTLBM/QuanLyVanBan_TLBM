@@ -10,15 +10,25 @@ echo.
 
 :: 1. Kiem tra Python
 echo [1/3] Kiem tra Python...
-python --version >nul 2>nul
-if %errorlevel% neq 0 (
-    echo [LOI] Khong tim thay Python trong bien moi truong PATH!
-    pause
-    exit /b 1
+set "PY_EXE=python"
+if exist "%~dp0backend\.venv\Scripts\python.exe" (
+    set "PY_EXE=%~dp0backend\.venv\Scripts\python.exe"
+) else (
+    py -3.11 --version >nul 2>nul
+    if not errorlevel 1 (
+        set "PY_EXE=py -3.11"
+    ) else (
+        python --version >nul 2>nul
+        if errorlevel 1 (
+            echo [LOI] Khong tim thay Python trong bien moi truong PATH!
+            pause
+            exit /b 1
+        )
+    )
 )
 
-:: 2. Kiem tra Node.js
-echo [2/3] Kiem tra Node.js...
+:: 2. Kiem tra Node.js / pnpm
+echo [2/3] Kiem tra Node.js va pnpm...
 node --version >nul 2>nul
 if %errorlevel% neq 0 (
     echo [LOI] Khong tim thay Node.js trong bien moi truong PATH!
@@ -26,13 +36,20 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-:: 3. Khoi dong Backend va Frontend
-echo [3/3] Dang khoi dong Backend va Frontend tren PostgreSQL local...
+:: 3. Khoi dong PostgreSQL, Backend va Frontend
+echo [3/3] Dang khoi dong PostgreSQL, Backend va Frontend tren PostgreSQL local...
 echo.
+
+netstat -ano | findstr ":55432 " | findstr "LISTENING" >nul 2>nul
+if %errorlevel% neq 0 (
+    echo   * Dang bat PostgreSQL local port 55432...
+    start /b "" "C:\Program Files\PostgreSQL\18\bin\pg_ctl.exe" -D "%~dp0data\pgdata" -l "%~dp0data\pgdata\logfile.log" -o "-p 55432" start >nul 2>nul
+    timeout /t 2 /nobreak >nul 2>nul
+)
 
 echo   * Dang bat Backend Django tai http://127.0.0.1:8000 ...
 pushd "%~dp0backend"
-start "QLVB - Backend [Django :8000]" cmd /k "chcp 65001 >nul & title QLVB - Backend [Django :8000] & python manage.py runserver 127.0.0.1:8000"
+start "QLVB - Backend [Django :8000]" cmd /k "chcp 65001 >nul & title QLVB - Backend [Django :8000] & call ""%PY_EXE%"" manage.py runserver 127.0.0.1:8000"
 popd
 
 echo   * Dang bat Frontend React tai http://localhost:5173 ...

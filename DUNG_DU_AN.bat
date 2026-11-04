@@ -19,6 +19,9 @@ for /f "tokens=5" %%a in ('netstat -aon ^| findstr /C:":5173 " ^| findstr "LISTE
     taskkill /F /PID %%a >nul 2>nul
 )
 
+echo Dang dung PostgreSQL local port 55432...
+"C:\Program Files\PostgreSQL\18\bin\pg_ctl.exe" -D "%~dp0data\pgdata" stop >nul 2>nul
+
 echo.
 echo ===============================================================================
 echo [THANH CONG] Da tat cac tien trinh Backend va Frontend!

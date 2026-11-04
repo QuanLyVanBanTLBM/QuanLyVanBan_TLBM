@@ -11,26 +11,34 @@ Write-Host ""
 
 # 1. Kiem tra Python
 Write-Host "[1/3] Kiem tra Python..." -ForegroundColor Gray
-$pythonCheck = Get-Command python -ErrorAction SilentlyContinue
-if (-not $pythonCheck) {
-    Write-Host "[LOI] Khong tim thay Python trong bien moi truong PATH!" -ForegroundColor Red
+$pythonExe = if (Test-Path "$projectRoot\backend\.venv\Scripts\python.exe") {
+    "$projectRoot\backend\.venv\Scripts\python.exe"
+} else {
+    $pyCheck = Get-Command py -ErrorAction SilentlyContinue
+    if ($pyCheck) { "py -3.11" } else { "python" }
+}
+
+# 2. Kiem tra npm / pnpm
+Write-Host "[2/3] Kiem tra Node / pnpm..." -ForegroundColor Gray
+$nodeCheck = Get-Command node -ErrorAction SilentlyContinue
+if (-not $nodeCheck) {
+    Write-Host "[LOI] Khong tim thay Node.js trong bien moi truong PATH!" -ForegroundColor Red
     Pause
     exit 1
 }
 
-# 2. Kiem tra npm
-Write-Host "[2/3] Kiem tra Node / npm..." -ForegroundColor Gray
-$npmCheck = Get-Command npm -ErrorAction SilentlyContinue
-if (-not $npmCheck) {
-    Write-Host "[LOI] Khong tim thay npm trong bien moi truong PATH!" -ForegroundColor Red
-    Pause
-    exit 1
+# 3. Khoi dong PostgreSQL, Backend va Frontend
+Write-Host "[3/3] Dang khoi dong PostgreSQL, Backend va Frontend tren PostgreSQL local..." -ForegroundColor Green
+
+$portCheck = netstat -ano | Select-String ":55432 " | Select-String "LISTENING"
+if (-not $portCheck) {
+    Write-Host "  * Dang bat PostgreSQL local port 55432..." -ForegroundColor Cyan
+    Start-Process "C:\Program Files\PostgreSQL\18\bin\pg_ctl.exe" -ArgumentList "-D", "`"$projectRoot\data\pgdata`"", "-l", "`"$projectRoot\data\pgdata\logfile.log`"", "-o", "-p 55432", "start" -WindowStyle Hidden
+    Start-Sleep -Seconds 2
 }
 
-# 3. Khoi dong Backend va Frontend
-Write-Host "[3/3] Dang khoi dong Backend va Frontend tren PostgreSQL local..." -ForegroundColor Green
 Write-Host "  * Dang bat Backend Django tai http://127.0.0.1:8000 ..." -ForegroundColor Cyan
-Start-Process cmd.exe -ArgumentList "/k", "chcp 65001 >nul & cd /d `"$projectRoot\backend`" & python manage.py runserver 127.0.0.1:8000"
+Start-Process cmd.exe -ArgumentList "/k", "chcp 65001 >nul & cd /d `"$projectRoot\backend`" & `"$pythonExe`" manage.py runserver 127.0.0.1:8000"
 
 Write-Host "  * Dang bat Frontend React tai http://localhost:5173 ..." -ForegroundColor Cyan
 Start-Process cmd.exe -ArgumentList "/k", "chcp 65001 >nul & cd /d `"$projectRoot\frontend`" & pnpm dev"
