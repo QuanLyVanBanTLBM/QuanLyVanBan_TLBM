@@ -401,15 +401,6 @@ function ThemNguoiKyCap({
                   : t('quyTrinh.gioiHanThuBacSau', { ten: gioiHanThuBac.sau?.name ?? '' })}
           </p>
         )}
-        {chon && (
-          <div className="basis-full">
-            <CanBoChucVu
-              chucVuId={chon.id}
-              donViId={donViTim(phamVi)}
-              theoNguoiTrinh={phamVi === 'DON_VI_NGUOI_TAO' && donViTim(phamVi) == null}
-            />
-          </div>
-        )}
       </div>
 
       {/* 2. Chọn cán bộ đích danh từ danh bạ CBNV (lọc theo chức danh đang chọn; chưa lọc thì cần gõ tìm kiếm) */}
