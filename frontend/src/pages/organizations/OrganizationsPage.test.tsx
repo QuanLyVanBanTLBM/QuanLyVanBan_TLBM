@@ -310,6 +310,44 @@ describe('OrganizationsPage Component (Issue #19)', () => {
     expect(screen.getByRole('button', { name: 'Tất cả đơn vị thuộc Khối' })).toBeInTheDocument();
   });
 
+  it('đã chọn một Đơn vị thì Xuất danh bạ gửi unit_id, file chỉ gồm Đơn vị đó', async () => {
+    const unitA = { id: 1, khoi: 1, khoi_ten: 'Khối A', stt_uu_tien: 1, ten: 'Phòng Kế toán', is_public: true };
+    const unitB = { id: 2, khoi: 1, khoi_ten: 'Khối A', stt_uu_tien: 2, ten: 'Phòng Nhân sự', is_public: true };
+    mockedApiClient.mockImplementation(async (endpoint: string) => {
+      if (endpoint.includes('/auth/me/permissions/')) return { is_superuser: false, permissions: ['view_donvi', 'export_donvi'] };
+      if (endpoint.includes('/regions/')) return [{ id: 1, ten: 'Khối A', don_vi_count: 2 }];
+      if (endpoint.includes('/units/') && endpoint.includes('all=true')) return [unitA, unitB];
+      if (endpoint.includes('/units/')) return { count: 2, next: null, previous: null, results: [unitA, unitB] };
+      return [];
+    });
+
+    render(
+      <MemoryRouter>
+        <OrganizationsPage />
+      </MemoryRouter>
+    );
+    openUnitsTab();
+    await waitFor(() => expect(screen.getByText('Phòng Kế toán')).toBeInTheDocument());
+
+    // Chưa chọn Đơn vị: không gửi unit_id
+    fireEvent.click(await screen.findByRole('button', { name: /Xuất danh bạ/i }));
+    await waitFor(() => expect(apiClientModule.downloadBlob).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(apiClientModule.downloadBlob).mock.calls[0][0]).not.toContain('unit_id=');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tất cả các Khối/Khu vực' }));
+    fireEvent.click(await screen.findByRole('option', { name: /Khối A/ }));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Tất cả đơn vị thuộc Khối' }));
+    fireEvent.click(await screen.findByRole('option', { name: /Phòng Nhân sự/ }));
+    await waitFor(() => expect(document.querySelector('tbody')!.textContent).not.toContain('Phòng Kế toán'));
+
+    fireEvent.click(screen.getByRole('button', { name: /Xuất danh bạ/i }));
+    await waitFor(() => expect(apiClientModule.downloadBlob).toHaveBeenCalledTimes(2));
+    const endpoint = vi.mocked(apiClientModule.downloadBlob).mock.calls[1][0];
+    expect(endpoint).toContain('region_id=1');
+    expect(endpoint).toContain('unit_id=2');
+  });
+
   it('bấm vào Khối thì lọc theo Khối và mở luôn danh sách Đơn vị của Khối đó', async () => {
     const unitA = { id: 1, khoi: 1, khoi_ten: 'Khối A', stt_uu_tien: 1, ten: 'Phòng Kế toán', is_public: true };
     const unitB = { id: 2, khoi: 1, khoi_ten: 'Khối A', stt_uu_tien: 2, ten: 'Phòng Nhân sự', is_public: true };

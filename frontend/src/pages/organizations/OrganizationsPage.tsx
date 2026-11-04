@@ -316,6 +316,8 @@ export default function OrganizationsPage() {
       const params = new URLSearchParams();
       params.append('lang', currentLang);
       if (selectedRegionId) params.append('region_id', selectedRegionId);
+      // Đã chọn một Đơn vị thì file chỉ gồm Đơn vị đó, khớp với bảng đang hiển thị
+      if (selectedUnitId) params.append('unit_id', selectedUnitId);
       if (searchQuery.trim()) params.append('search', searchQuery.trim());
 
       await downloadBlob(

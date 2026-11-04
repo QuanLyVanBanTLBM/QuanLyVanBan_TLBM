@@ -565,3 +565,35 @@ class UnitAllParamAndInternalVisibilityTest(TestCase):
             self.assertEqual(client.get(f"/api/organizations/units/{self.internal.id}/").status_code, status.HTTP_200_OK)
             exported = export_unit_names(client.get(f"/api/organizations/units/export/?{self.in_region}").content)
             self.assertIn("ĐƠN VỊ NỘI BỘ", exported)
+
+    def test_export_selected_unit_only(self):
+        """Chọn một Đơn vị trên bảng thì file xuất chỉ có Đơn vị đó (?unit_id=), không phải cả Khối."""
+        picked = DonVi.objects.get(ten="Đơn vị công khai 3")
+        response = self.viewer.get(f"/api/organizations/units/export/?{self.in_region}&unit_id={picked.id}")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(export_unit_names(response.content), ["ĐƠN VỊ CÔNG KHAI 3"])
+        # Ô tìm kiếm vẫn áp dụng cùng Đơn vị đã chọn, giống bảng trên giao diện.
+        empty = self.viewer.get(f"/api/organizations/units/export/?unit_id={picked.id}&search=không khớp")
+        self.assertEqual(export_unit_names(empty.content), [])
+        other = KhoiKhuVuc.objects.create(ten="Khối khác")
+        outside = self.viewer.get(f"/api/organizations/units/export/?region_id={other.id}&unit_id={picked.id}")
+        self.assertEqual(export_unit_names(outside.content), [])
+
+    def test_export_unit_id_invalid_or_not_visible(self):
+        cases = (
+            (self.viewer, "abc", status.HTTP_400_BAD_REQUEST),
+            (self.viewer, "9223372036854775808", status.HTTP_400_BAD_REQUEST),
+            (self.viewer, "987654321", status.HTTP_404_NOT_FOUND),
+            # Đơn vị nội bộ: người không có quyền xem không xuất được, quản trị xuất được.
+            (self.viewer, str(self.internal.id), status.HTTP_404_NOT_FOUND),
+            (self.manager, str(self.internal.id), status.HTTP_200_OK),
+            (self.root, str(self.internal.id), status.HTTP_200_OK),
+        )
+        for client, unit_id, expected in cases:
+            with self.subTest(unit_id=unit_id, expected=expected):
+                response = client.get(f"/api/organizations/units/export/?unit_id={unit_id}")
+                self.assertEqual(response.status_code, expected)
+                if expected != status.HTTP_200_OK:
+                    self.assertEqual(response.data["key"], "organizations.messages.unitNotFound")
+                else:
+                    self.assertEqual(export_unit_names(response.content), ["ĐƠN VỊ NỘI BỘ"])
