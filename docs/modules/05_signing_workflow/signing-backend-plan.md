@@ -705,7 +705,6 @@ Trả lại để sửa, đã triển khai ở lõi Phase 9 (#80):
   - `manage_signing_process`
   - `send_trinhky`
   - `sign_trinhky`
-  - `delegate_trinhky`
   - `cancel_trinhky`
   - `view_signing_audit`
 - Ánh xạ từ tên trong bản nháp cũ: `xem_trinh_ky` → `view_trinhky`, `tao_trinh_ky` → `add_trinhky`, `quan_ly_quy_trinh_ky` → `manage_signing_process`, `gui_trinh_ky` → `send_trinhky`, `ky_trinh_ky` → `sign_trinhky`, `uy_quyen_trinh_ky` → `delegate_trinhky`, `huy_trinh_ky` → `cancel_trinhky`, `xem_nhat_ky_trinh_ky` → `view_signing_audit`.

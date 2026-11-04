@@ -67,8 +67,8 @@ DDL/RBAC (Nhóm 7):
 | Ban Giám đốc (BGD) | xem, tạo, gửi, ký, hủy thay, xem nhật ký mọi hồ sơ |
 | Quản trị (ADMIN) | toàn quyền, quản lý quy trình công ty |
 
-Codename: `view_trinhky`, `add_trinhky`, `send_trinhky`, `sign_trinhky`, `delegate_trinhky`, `cancel_trinhky`,
-`manage_signing_process`, `view_signing_audit`. Quyền `delegate_trinhky` còn trong dữ liệu phân quyền nhưng Trình ký không còn dùng.
+Codename: `view_trinhky`, `add_trinhky`, `send_trinhky`, `sign_trinhky`, `cancel_trinhky`,
+`manage_signing_process`, `view_signing_audit`. Quyền `delegate_trinhky` đã gỡ cùng ủy quyền ký (#519).
 
 ## 3. Cấu trúc thư mục chính
 
@@ -181,6 +181,7 @@ bản đầy đủ ở `du-lieu-mau-va-tinh-trang-nghiep-vu.md` mục 5.2):
 | `SIGNING_FRONTEND_URL` | Địa chỉ giao diện dùng trong liên kết email |
 | `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USE_TLS`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD` | SMTP chung của dự án (Django 6.1 `MAILERS`); `EMAIL_HOST` trống thì email in ra console |
 | `DEFAULT_FROM_EMAIL` | Địa chỉ người gửi, bắt buộc khi gửi SMTP, ví dụ `Hệ thống QLVB <qlvb@baohiembaolong.vn>`. Để trống thì mọi thư lỗi `Invalid address ''`; `manage.py check` báo `signing.W003` |
+| `SIGNING_MFA_EMAIL_ENABLED` | Bật MFA qua email khi ký (`true`/`1`); mặc định tắt. Điều kiện bật: `EMAIL_HOST`, `DEFAULT_FROM_EMAIL`, `SIGNING_PIN_SECRET` và tài khoản ký có email. Cờ bật mà email chưa cấu hình thì API trả 503 `mfa_email_khong_kha_dung` |
 | `ADMIN_PASSWORD` | Mật khẩu `admin` khi khởi tạo bằng `seed_db` / `scripts/build_db.py --seed` |
 | `DEMO_PASSWORD` | Mật khẩu tài khoản mẫu của `seed_signing_demo` |
 
@@ -232,6 +233,31 @@ không nạp được.
    `<username>@<miền>` cho tài khoản mẫu chưa có email). Không có email thì thông báo chỉ ghi vào outbox, không gửi email.
 4. Email lỗi được ghi `THAT_BAI` kèm lý do trong `signing_notification`; sửa cấu hình xong chạy
    `python manage.py gui_thong_bao_trinh_ky` để gửi lại.
+
+### 5.3. Lịch chạy lệnh quản lý và việc thủ công trên máy chủ staging
+
+Workflow `.github/workflows/signing-scheduler.yml` (cùng cơ chế SSH và khóa `.deploy.lock` với `birthday-email.yml`) chạy:
+
+| Lệnh | Lịch | Tác dụng |
+|---|---|---|
+| `manage.py nhac_han_trinh_ky` | mỗi giờ (phút 15) | Tạo thông báo nhắc hạn, quá hạn; chạy lặp không gửi trùng |
+| `manage.py gui_thong_bao_trinh_ky` | mỗi 10 phút | Gửi lại thông báo còn `CHO_GUI` hoặc `THAT_BAI` trong `signing_notification` |
+
+Lịch của GitHub Actions chạy theo cơ chế best-effort, có thể trễ vài phút. Nhật ký lệnh: `/srv/qlvb/signing-scheduler.log` (quyền 0600). Không cần Redis, Celery hay worker: MFA, challenge, đặt lại PIN lưu bằng PostgreSQL, và các tác vụ hiện hành chạy đồng bộ trong request hoặc qua hai lệnh trên.
+
+Việc phải làm trực tiếp trên máy chủ (người quản trị máy chủ, quyền SSH):
+
+| # | Việc | Lệnh kiểm tra |
+|---|---|---|
+| 1 | Đặt `SIGNING_PIN_SECRET` (chuỗi ngẫu nhiên, ví dụ `openssl rand -hex 32`) trong `/etc/qlvb/backend.env` | `python manage.py check --deploy` không báo `signing.E001` |
+| 2 | Đặt `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USE_TLS`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `DEFAULT_FROM_EMAIL` | `check --deploy` không báo `signing.W002`, `signing.W003`; gửi thử một thông báo và kiểm tra hộp thư |
+| 3 | Đặt `SIGNING_FRONTEND_URL` là URL giao diện staging | Liên kết trong email không trỏ về `localhost` |
+| 4 | Đặt `SIGNING_DOCUMENT_ROOT` (thư mục ngoài mã nguồn, user `qlvb` ghi được) | `check --deploy` không báo `signing.E003` |
+| 5 | Cài phông có dấu (`fonts-dejavu-core`, `fonts-noto-core`) hoặc đặt `SIGNING_PDF_FONT` | `check --deploy` không báo `signing.W001` |
+| 6 | Khi mục 1-3 xong, đặt `SIGNING_MFA_EMAIL_ENABLED=true` và khởi động lại dịch vụ backend | Ký thử: yêu cầu mã, nhận email, ký thành công |
+| 7 | Sau khi workflow `Signing scheduler` chạy | `tail /srv/qlvb/signing-scheduler.log`; run trong tab Actions ở trạng thái `success` |
+
+Quyền của tệp `/etc/qlvb/backend.env` là 0600 hoặc 0640, thuộc user dịch vụ backend.
 
 ## 6. Cách chạy
 

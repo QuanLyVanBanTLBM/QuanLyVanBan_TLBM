@@ -1,4 +1,12 @@
 -- =====================================================================
+-- GỠ QUYỀN delegate_trinhky (Nhóm 5; đánh dấu [GDLG] tại vị trí)
+-- Căn cứ: ủy quyền ký đã bỏ ở #374, #383; quyền không còn tính năng nào sử dụng (issue #519).
+--   Bỏ quyền delegate_trinhky khỏi seed auth_permission và khỏi danh sách quyền nhóm TP và BGD;
+--   ADMIN nhận quyền qua CROSS JOIN nên giảm theo. Migration authorization 0015_remove_delegate_trinhky
+--   xóa quyền và các lượt gán trên DB đã seed từ trước.
+-- Quy mô sau [GDLG] (cộng sau [VTQ]): 81 -> 80 quyền thao tác; 201 -> 198 lượt phân quyền (TP -1, BGD -1, ADMIN -1).
+-- =====================================================================
+-- =====================================================================
 -- THAY ĐỔI QUYỀN NHÓM VĂN THƯ (Nhóm 7; đánh dấu [VTQ] tại vị trí)
 -- Căn cứ: quyết định nhóm trưởng (02-03/11/2026): Văn thư chỉ xem, thêm, import văn bản đến/đi, xuất Excel văn bản đến,
 --   đổi hiệu lực qua change_hieu_luc_*; không sửa, xóa văn bản của người khác; giữ các quyền chung của CBNV.
@@ -2322,7 +2330,7 @@ SET
     ma_nhom_quyen = EXCLUDED.ma_nhom_quyen;
 
 -- ---------------------------------------------------------------------
--- 5) Seed 81 Quyền thao tác chi tiết (auth_permission)
+-- 5) Seed 80 Quyền thao tác chi tiết (auth_permission)
 -- ---------------------------------------------------------------------
 INSERT INTO
     auth_permission (name, codename, module_ten)
@@ -2612,11 +2620,6 @@ VALUES
         'Trình ký'
     ),
     (
-        'Ủy quyền ký số',
-        'delegate_trinhky',
-        'Trình ký'
-    ),
-    (
         'Hủy yêu cầu trình ký',
         'cancel_trinhky',
         'Trình ký'
@@ -2790,7 +2793,6 @@ WHERE
         'add_trinhky',
         'sign_trinhky',
         'send_trinhky',
-        'delegate_trinhky',
         'cancel_trinhky',
         'view_signing_audit',
         'view_all_trinhky',
@@ -2830,7 +2832,6 @@ WHERE
         'add_trinhky',
         'sign_trinhky',
         'send_trinhky',
-        'delegate_trinhky',
         'cancel_trinhky',
         'manage_signing_process', -- [P7] lãnh đạo đơn vị quản lý quy trình PHONG_BAN
         'view_congviec',

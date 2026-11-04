@@ -167,7 +167,6 @@ Văn bản mật đã bỏ khỏi DDL base (PR #81). Bốn quyền `*_vanbanmat`
 | `sign_trinhky` | Ký (đúng lượt trong sơ đồ) |
 | `manage_signing_process` | Quản lý quy trình trình ký |
 | `send_trinhky` | Gửi trình ký / Nộp lại lượt trình |
-| `delegate_trinhky` | Ủy quyền ký số |
 | `cancel_trinhky` | Hủy yêu cầu trình ký |
 | `view_signing_audit` | Xem nhật ký kiểm toán trình ký |
 
