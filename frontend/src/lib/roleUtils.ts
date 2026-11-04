@@ -76,3 +76,20 @@ export function formatUserName(name?: string, lang: SupportedLanguage = 'vi'): s
   }
   return name;
 }
+
+// Tên nhóm quyền chuẩn (auth_group, không đổi tên được) theo ngôn ngữ; nhóm tự tạo giữ nguyên tên.
+const GROUP_NAME_EN: Record<string, string> = {
+  'văn thư': 'Document Clerk',
+  'chuyên viên': 'Specialist',
+  'trưởng phòng': 'Department Head',
+  'ban giám đốc': 'Board of Directors',
+  'quản trị hệ thống': 'System Administrator',
+  'trợ lý ban giám đốc': 'Board Assistant',
+  'kiểm toán': 'Audit',
+};
+
+export function formatGroupName(name?: string, lang: SupportedLanguage = 'vi'): string {
+  if (!name) return '';
+  if (lang !== 'en') return name;
+  return GROUP_NAME_EN[name.trim().toLowerCase()] || name;
+}

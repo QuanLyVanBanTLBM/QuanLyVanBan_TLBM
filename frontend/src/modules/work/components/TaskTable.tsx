@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from '@i18n/translate';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { TaskListItem } from '../types/task';
 import { isoToDisplay } from './DateInput';
@@ -25,17 +26,17 @@ interface TaskTableProps {
   onUnapprove: (task: TaskListItem) => void;
 }
 
-const COLUMNS: { label: string; width?: string }[] = [
-  { label: 'TT', width: '40px' },
-  { label: 'Nội dung công việc', width: '188px' },
-  { label: 'Người giao', width: '124px' },
-  { label: 'Yêu cầu xử lý', width: '178px' },
-  { label: 'Người thực hiện', width: '150px' },
-  { label: 'Ngày giao', width: '86px' },
-  { label: 'Hạn xử lý', width: '86px' },
-  { label: 'Trạng thái', width: '116px' },
-  { label: 'Tác vụ', width: '120px' },
-];
+const COLUMN_KEYS = [
+  { key: 'work.table.colIndex', width: '40px' },
+  { key: 'work.table.colTitle', width: '188px' },
+  { key: 'work.table.colCreator', width: '124px' },
+  { key: 'work.table.colRequirement', width: '178px' },
+  { key: 'work.table.colAssignees', width: '150px' },
+  { key: 'work.table.colCreatedDate', width: '86px' },
+  { key: 'work.table.colDueDate', width: '86px' },
+  { key: 'work.table.colStatus', width: '116px' },
+  { key: 'work.table.colActions', width: '120px' },
+] as const;
 
 const cellStyle: React.CSSProperties = {
   padding: '10px 8px',
@@ -79,33 +80,37 @@ function TaskGridTable({
   onApprove,
   onUnapprove,
 }: TaskTableProps) {
+  const { t } = useTranslation();
   return (
     <div style={{ overflowX: 'auto', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
       <table style={{ width: '100%', minWidth: '960px', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
         <colgroup>
-          {COLUMNS.map((column) => (
-            <col key={column.label} style={{ width: column.width }} />
+          {COLUMN_KEYS.map((column) => (
+            <col key={column.key} style={{ width: column.width }} />
           ))}
         </colgroup>
         <thead>
           <tr style={{ background: 'var(--bg-surface-hover)' }}>
-            {COLUMNS.map((column) => (
-              <th
-                key={column.label}
-                scope="col"
-                style={{
-                  padding: '10px 8px',
-                  textAlign: column.label === 'TT' ? 'center' : 'left',
-                  fontSize: '0.78rem',
-                  fontWeight: 700,
-                  color: 'var(--text-secondary)',
-                  borderBottom: '1px solid var(--border-subtle)',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {column.label}
-              </th>
-            ))}
+            {COLUMN_KEYS.map((column) => {
+              const label = t(column.key);
+              return (
+                <th
+                  key={column.key}
+                  scope="col"
+                  style={{
+                    padding: '10px 8px',
+                    textAlign: column.key === 'work.table.colIndex' ? 'center' : 'left',
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                    color: 'var(--text-secondary)',
+                    borderBottom: '1px solid var(--border-subtle)',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {label}
+                </th>
+              );
+            })}
           </tr>
         </thead>
         <tbody style={{ opacity: busy ? 0.55 : 1, transition: 'opacity var(--transition-fast)' }}>
@@ -124,7 +129,7 @@ function TaskGridTable({
                   <button
                     type="button"
                     onClick={() => onOpenTask(task)}
-                    title="Xem chi tiết công việc"
+                    title={t('work.table.viewDetail')}
                     style={{
                       ...clampStyle,
                       padding: 0,
@@ -143,7 +148,7 @@ function TaskGridTable({
                   </button>
                   {hidden && (
                     <span
-                      title="Chỉ người tạo và quản trị viên nhìn thấy công việc này"
+                      title={t('work.common.hiddenTooltip')}
                       style={{
                         display: 'inline-flex',
                         alignItems: 'center',
@@ -158,7 +163,7 @@ function TaskGridTable({
                       }}
                     >
                       <i className="fa-solid fa-eye-slash" />
-                      Đang ẩn
+                      {t('work.common.hidden')}
                     </span>
                   )}
                 </td>
@@ -218,6 +223,7 @@ function TaskCardList({
   onApprove,
   onUnapprove,
 }: TaskTableProps) {
+  const { t } = useTranslation();
   return (
     <ul
       style={{
@@ -266,7 +272,7 @@ function TaskCardList({
             <button
               type="button"
               onClick={() => onOpenTask(task)}
-              title="Xem chi tiết công việc"
+              title={t('work.table.viewDetail')}
               style={{
                 padding: 0,
                 border: 'none',
@@ -286,7 +292,7 @@ function TaskCardList({
 
             {hidden && (
               <span
-                title="Chỉ người tạo và quản trị viên nhìn thấy công việc này"
+                title={t('work.common.hiddenTooltip')}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -301,7 +307,7 @@ function TaskCardList({
                 }}
               >
                 <i className="fa-solid fa-eye-slash" />
-                Đang ẩn
+                {t('work.common.hidden')}
               </span>
             )}
 
@@ -315,7 +321,7 @@ function TaskCardList({
                 color: 'var(--text-main)',
               }}
             >
-              <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Người giao:</span>
+              <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{t('work.table.cardCreator')}</span>
               <span>
                 <span style={{ fontWeight: 600 }}>{task.creator.fullName}</span>
                 {employeeMeta(task.creator) && (
@@ -323,21 +329,21 @@ function TaskCardList({
                 )}
               </span>
 
-              <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Thực hiện:</span>
+              <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{t('work.table.cardAssignees')}</span>
               <span>
                 <TaskAssigneeCell host={task.host} participants={task.participants} />
               </span>
 
-              <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Ngày giao:</span>
+              <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{t('work.table.cardCreatedDate')}</span>
               <span>{isoToDisplay(task.createdDate)}</span>
 
-              <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Hạn xử lý:</span>
+              <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{t('work.table.cardDueDate')}</span>
               <span>{isoToDisplay(task.dueDate)}</span>
             </div>
 
             {task.requirement && (
               <div style={metaRow}>
-                <span style={{ fontWeight: 600 }}>Yêu cầu:</span>
+                <span style={{ fontWeight: 600 }}>{t('work.table.cardRequirement')}</span>
                 <span style={{ ...clampStyle, color: 'var(--text-secondary)' }}>{task.requirement}</span>
               </div>
             )}

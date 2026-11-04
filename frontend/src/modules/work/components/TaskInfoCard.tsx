@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from '@i18n/translate';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { Employee } from '../types/employee';
 import { TaskDetail } from '../types/task';
@@ -38,16 +39,21 @@ function PersonMeta({ person }: { person: Employee }) {
 }
 
 function DeadlineHint({ task }: { task: TaskDetail }) {
-  // Công việc đã duyệt thì không cần nhắc hạn nữa.
+  const { t } = useTranslation();
   if (task.status === 'HOAN_THANH') return null;
   const days = daysUntil(task.dueDate);
-  const text = days > 0 ? `còn ${days} ngày` : days === 0 ? 'hạn là hôm nay' : `quá hạn ${-days} ngày`;
+  const text = days > 0
+    ? t('work.infoCard.deadlineDaysLeft', { days: String(days) })
+    : days === 0
+      ? t('work.infoCard.deadlineToday')
+      : t('work.infoCard.deadlineOverdue', { days: String(-days) });
   const color =
     days < 0 ? 'var(--color-danger)' : days <= 2 ? 'var(--color-warning-text)' : 'var(--text-secondary)';
   return <span style={{ marginLeft: '8px', fontSize: '0.8rem', fontWeight: 700, color }}>({text})</span>;
 }
 
 export default function TaskInfoCard({ task, onError }: TaskInfoCardProps) {
+  const { t } = useTranslation();
   const isMobile = useIsMobile();
   return (
     <section
@@ -61,7 +67,7 @@ export default function TaskInfoCard({ task, onError }: TaskInfoCardProps) {
     >
       <h2 style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-main)', marginBottom: '16px' }}>
         <i className="fa-solid fa-file-lines" style={{ color: 'var(--color-primary)', marginRight: '8px' }} />
-        Nội dung công việc
+        {t('work.infoCard.heading')}
       </h2>
 
       <div
@@ -72,19 +78,19 @@ export default function TaskInfoCard({ task, onError }: TaskInfoCardProps) {
         }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <Item label="Nội dung công việc">{task.title}</Item>
-          <Item label="Ngày tạo công việc">{isoToDisplay(task.createdDate)}</Item>
-          <Item label="Người tạo và giao công việc">
+          <Item label={t('work.infoCard.labelTitle')}>{task.title}</Item>
+          <Item label={t('work.infoCard.labelCreatedDate')}>{isoToDisplay(task.createdDate)}</Item>
+          <Item label={t('work.infoCard.labelCreator')}>
             {task.creator.fullName}
             <PersonMeta person={task.creator} />
           </Item>
-          <Item label="Tệp tin đính kèm">
+          <Item label={t('work.infoCard.labelAttachments')}>
             <TaskAttachmentList files={task.attachments} onError={onError} compact />
           </Item>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <Item label="Cán bộ chủ trì giải quyết">
+          <Item label={t('work.infoCard.labelHost')}>
             {task.host ? (
               <>
                 {task.host.fullName}
@@ -94,11 +100,11 @@ export default function TaskInfoCard({ task, onError }: TaskInfoCardProps) {
               '—'
             )}
           </Item>
-          <Item label="Thời hạn xử lý">
+          <Item label={t('work.infoCard.labelDueDate')}>
             {isoToDisplay(task.dueDate)}
             <DeadlineHint task={task} />
           </Item>
-          <Item label="Yêu cầu xử lý">{task.requirement}</Item>
+          <Item label={t('work.infoCard.labelRequirement')}>{task.requirement}</Item>
         </div>
       </div>
     </section>

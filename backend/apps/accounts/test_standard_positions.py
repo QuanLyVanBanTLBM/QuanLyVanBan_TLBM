@@ -73,24 +73,29 @@ class MigratedDatabaseTest(TestCase):
 
 class StandardPositionMigrationTest(TestCase):
     def setUp(self):
-        # Dựng lại DB cũ: "Quản trị viên" (STT 1, tài khoản admin đang dùng) và 6 chức vụ cũ khác của seed_db
-        # (STT 2-7) cùng hai chức vụ người dùng tự thêm.
-        Position.objects.exclude(name=ADMIN_POSITION).delete()
-        Position.objects.filter(name=ADMIN_POSITION).update(display_order=1)
+        # Dùng danh mục mẫu có sẵn; không xóa chức vụ đang được nhân viên mẫu tham chiếu.
         unit = DonVi.objects.create(khoi=KhoiKhuVuc.objects.create(ten="Khối chức vụ"), stt_uu_tien=(DonVi.objects.aggregate(m=Max("stt_uu_tien"))["m"] or 0) + 1, ten="Đơn vị chức vụ")
         old = ["Trưởng phòng", "Phó phòng", "Chuyên viên", "Nhân viên", "Văn thư", "Lãnh đạo cơ quan"]
         self.old = {ADMIN_POSITION: Position.objects.get(name=ADMIN_POSITION)}
-        self.old.update({name: Position.objects.create(display_order=index, name=name) for index, name in enumerate(old, start=2)})
-        self.custom = Position.objects.create(display_order=8, name="Cộng tác viên")
-        self.custom_two = Position.objects.create(display_order=9, name="Thực tập sinh")
+        self.old.update({name: Position.objects.get(name=name) for name in old})
+        next_order = Position.get_next_display_order()
+        self.custom = Position.objects.create(display_order=next_order, name="Cộng tác viên")
+        self.custom_two = Position.objects.create(display_order=next_order + 1, name="Thực tập sinh")
         User = get_user_model()
         self.clerk = User.objects.create_user(username="vt_old", password="x", don_vi=unit, chuc_vu=self.old["Văn thư"])
         self.leader = User.objects.create_user(username="ld_old", password="x", don_vi=unit, chuc_vu=self.old["Lãnh đạo cơ quan"])
         self.helper = User.objects.create_user(username="ctv_old", password="x", don_vi=unit, chuc_vu=self.custom)
 
-    def test_old_database_gets_25_standard_positions_in_order(self):
+    def test_missing_standard_position_is_added_without_deleting_legacy_row(self):
+        legacy_position = self.old["Trưởng phòng"]
+        legacy_position.name = "Trưởng phòng cũ"
+        legacy_position.save(update_fields=["name"])
+
         run_migration()
         self.assertEqual(ordered_names()[:25], STANDARD_POSITIONS)
+        legacy_position.refresh_from_db()
+        self.assertEqual(legacy_position.name, "Trưởng phòng cũ")
+        self.assertGreater(legacy_position.display_order, 25)
 
     def test_nothing_is_deleted_and_staff_keep_their_position_rows(self):
         ids_before = set(Position.objects.values_list("id", flat=True))

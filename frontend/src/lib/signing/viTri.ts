@@ -33,3 +33,33 @@ export function viTriCuaNguoiKy(n: NguoiKyLuot): ViTriKy | null {
     chieu_rong_khung: n.chieu_rong_khung, chieu_cao_khung: n.chieu_cao_khung,
   };
 }
+
+interface KhungSo {
+  trang: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+const KHOANG_CACH_KHUNG = 1;
+const giaoNhau = (a: KhungSo, b: KhungSo) =>
+  a.trang === b.trang && a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+/**
+ * Chỉ để hiển thị: khung của các người ký khác nhau trên cùng trang không được đè nhau. Khung xếp trước (theo thứ
+ * tự đưa vào, tức thứ tự cấp ký) giữ nguyên vị trí; khung sau bị đẩy xuống dưới (hoặc lên trên khi hết chỗ) tới chỗ
+ * trống gần nhất (kề mép một khung đã xếp). Không còn chỗ trống thì giữ vị trí lưu. Vị trí lưu trong hồ sơ không bị thay đổi.
+ */
+export function xepKhungKhongChong<T extends KhungSo>(khung: T[]): T[] {
+  const daXep: T[] = [];
+  khung.forEach((k) => {
+    const dsUngVien = [k.y];
+    daXep.filter((p) => p.trang === k.trang).forEach((p) => {
+      dsUngVien.push(p.y + p.h + KHOANG_CACH_KHUNG, p.y - k.h - KHOANG_CACH_KHUNG);
+    });
+    const y = dsUngVien.find((c) => c >= 0 && c + k.h <= 100 && !daXep.some((p) => giaoNhau({ ...k, y: c }, p)));
+    daXep.push(y === undefined || y === k.y ? k : { ...k, y: Math.round(y * 100) / 100 });
+  });
+  return daXep;
+}

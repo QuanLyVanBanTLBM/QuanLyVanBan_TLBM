@@ -17,6 +17,8 @@ export interface ResourceTableProps {
   onViewDetail: (item: ResourceItem) => void;
   onEdit?: (item: ResourceItem) => void;
   onDelete?: (item: ResourceItem) => void;
+  canEdit?: (item: ResourceItem) => boolean;
+  canDelete?: (item: ResourceItem) => boolean;
   onDownloadFile?: (item: ResourceItem, fileName?: string, filePath?: string) => void;
   onPageSizeChange?: (size: number) => void;
   onClearFilters?: () => void;
@@ -36,6 +38,8 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
   onViewDetail,
   onEdit,
   onDelete,
+  canEdit,
+  canDelete,
   onPageSizeChange,
   onClearFilters,
   onDrillDown,
@@ -542,6 +546,9 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
             ) : (
               // Danh sách dòng tài liệu
               items.map((item) => {
+                const itemCanEdit = Boolean(onEdit && (canEdit ? canEdit(item) : true));
+                const itemCanDelete = Boolean(onDelete && (canDelete ? canDelete(item) : true));
+
                 // TÍNH TOÁN HIỆU LỰC THỰC TẾ THEO THỜI GIAN
                 const validity = computeEffectiveStatus(
                   item.hieu_luc,
@@ -698,18 +705,18 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
                           )}
 
                           {/* Phân cách trước nhóm chỉnh sửa/xóa */}
-                          {(onEdit || onDelete) && (
+                          {(itemCanEdit || itemCanDelete) && (
                             <div className="my-1 border-t border-border-subtle" />
                           )}
 
                           {/* Mục 3: Chỉnh sửa */}
-                          {onEdit && (
+                          {itemCanEdit && (
                             <button
                               type="button"
                               onClick={() => {
                                 setActiveMenuId(null);
                                 setMenuPos(null);
-                                onEdit(item);
+                                onEdit?.(item);
                               }}
                               className="w-full px-3 py-2 text-xs text-left text-main hover:bg-surface-elevated flex items-center gap-2 transition-colors cursor-pointer"
                               aria-label={t('resourceManagement.edit')}
@@ -720,13 +727,13 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
                           )}
 
                           {/* Mục 4: Xóa tài liệu */}
-                          {onDelete && (
+                          {itemCanDelete && (
                             <button
                               type="button"
                               onClick={() => {
                                 setActiveMenuId(null);
                                 setMenuPos(null);
-                                onDelete(item);
+                                onDelete?.(item);
                               }}
                               className="w-full px-3 py-2 text-xs text-left text-danger hover:bg-danger-subtle flex items-center gap-2 transition-colors cursor-pointer font-medium"
                               aria-label={t('resourceManagement.delete')}

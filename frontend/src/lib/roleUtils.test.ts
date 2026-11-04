@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatRoleTitle, formatUserName } from './roleUtils';
+import { formatGroupName, formatRoleTitle, formatUserName } from './roleUtils';
 
 describe('roleUtils', () => {
   describe('formatRoleTitle', () => {
@@ -32,6 +32,20 @@ describe('roleUtils', () => {
     it('preserves other user names', () => {
       expect(formatUserName('Nguyễn Văn A', 'en')).toBe('Nguyễn Văn A');
       expect(formatUserName('Châu Tuấn Kiệt', 'en')).toBe('Châu Tuấn Kiệt');
+    });
+  });
+
+  describe('formatGroupName', () => {
+    it('translates standard group names when lang is en', () => {
+      expect(formatGroupName('Văn thư', 'en')).toBe('Document Clerk');
+      expect(formatGroupName('Quản trị hệ thống', 'en')).toBe('System Administrator');
+      expect(formatGroupName('Trợ lý Ban Giám đốc', 'en')).toBe('Board Assistant');
+    });
+
+    it('keeps the stored name for vi and for custom groups', () => {
+      expect(formatGroupName('Văn thư', 'vi')).toBe('Văn thư');
+      expect(formatGroupName('Nhóm tự tạo', 'en')).toBe('Nhóm tự tạo');
+      expect(formatGroupName(undefined, 'en')).toBe('');
     });
   });
 });

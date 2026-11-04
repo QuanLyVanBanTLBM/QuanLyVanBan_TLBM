@@ -180,7 +180,8 @@ def _walk_tree(root: Path) -> list[dict[str, object]]:
     entries: list[dict[str, object]] = []
 
     def raise_walk_error(exc: OSError) -> None:
-        raise BackupError("a required data directory or file is unreadable.") from exc
+        target = getattr(exc, "filename", None) or str(exc)
+        raise BackupError(f"a required data directory or file is unreadable: {target}") from exc
 
     for current, directories, filenames in os.walk(root, topdown=True, followlinks=False, onerror=raise_walk_error):
         directories.sort()

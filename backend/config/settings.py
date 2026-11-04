@@ -350,14 +350,19 @@ SIMPLE_JWT = {
     "USER_ID_CLAIM": "user_id",
 }
 # ─────────────────────────────────────────────────
-# Bảo Long Insurance (Alpaca) Authentication Config
+# Bảo Long Insurance (Alpaca / BHBL) Authentication Config
 # ─────────────────────────────────────────────────
 ALPACA_SECRET_KEY = os.getenv("ALPACA_SECRET_KEY", "")
 ALPACA_CHECK_AUTH_URL = os.getenv(
     "ALPACA_CHECK_AUTH_URL",
-    "https://phase2-sit-api.alpaca.vn/auth-command/public/user/check-auth-user",
+    "https://api2.bhbl.vn/auth-command/public/user/check-auth-user",
 )
 ALPACA_CHECK_USER_URL = os.getenv(
     "ALPACA_CHECK_USER_URL",
-    "https://phase2-sit-api.alpaca.vn/auth-command/public/user/check-user-exist",
+    "https://api2.bhbl.vn/auth-command/public/user/check-user-exist",
 )
+ALPACA_GET_USER_INFO_URL = os.getenv(
+    "ALPACA_GET_USER_INFO_URL",
+    "https://api2.bhbl.vn/auth-command/public/user/get-info-user",
+)
+ALPACA_BEARER_AUTH_KEY = os.getenv("ALPACA_BEARER_AUTH_KEY", "")

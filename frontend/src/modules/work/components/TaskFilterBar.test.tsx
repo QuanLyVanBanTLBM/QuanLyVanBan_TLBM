@@ -70,13 +70,13 @@ describe('TaskFilterBar — tìm kiếm tự động (debounce)', () => {
     expect(onSearch).toHaveBeenCalledWith(expect.objectContaining({ search: 'ngay' }));
   });
 
-  it('chỉ đổi trạng thái (không gõ tìm kiếm) thì không auto-fire', () => {
+  it('chọn trạng thái thì tự lọc ngay lập tức', () => {
     const { onSearch } = renderBar();
     const statusSelect = screen.getByLabelText('Tình trạng');
 
     fireEvent.change(statusSelect, { target: { value: 'QUA_HAN' } });
-    act(() => vi.advanceTimersByTime(1000));
 
-    expect(onSearch).not.toHaveBeenCalled();
+    expect(onSearch).toHaveBeenCalledTimes(1);
+    expect(onSearch).toHaveBeenCalledWith(expect.objectContaining({ status: 'QUA_HAN' }));
   });
 });

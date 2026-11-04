@@ -1,5 +1,7 @@
 /* eslint-disable react-refresh/only-export-components -- file này export kèm vài hàm tiện ích dùng chung; quy ước module chỉ có 4 thư mục api/components/pages/types nên không tách utils riêng. */
 import React, { useRef, useState } from 'react';
+import { useTranslation } from '@i18n/translate';
+import { t } from '@i18n/translate';
 import WorkAlert from './WorkAlert';
 
 /**
@@ -36,13 +38,13 @@ export function fileIconClass(fileName: string): string {
 export function validateWorkFile(file: File): string | null {
   const extension = fileExtension(file.name);
   if (!ALLOWED_EXTENSIONS.includes(extension)) {
-    return `File "${file.name}" không đúng định dạng. Hãy chọn file PDF, DOC/DOCX, JPG, JPEG hoặc PNG.`;
+    return t('work.filePicker.invalidExtension', { fileName: file.name });
   }
   if (file.size >= MAX_FILE_SIZE_MB * 1024 * 1024) {
-    return `File "${file.name}" nặng ${formatFileSize(file.size)}, vượt giới hạn. Hãy chọn file dưới ${MAX_FILE_SIZE_MB} MB hoặc nén file trước khi tải lên.`;
+    return t('work.filePicker.tooLarge', { fileName: file.name, size: formatFileSize(file.size), max: String(MAX_FILE_SIZE_MB) });
   }
   if (file.size === 0) {
-    return `File "${file.name}" đang trống. Hãy kiểm tra lại file trên máy rồi chọn lại.`;
+    return t('work.filePicker.emptyFile', { fileName: file.name });
   }
   return null;
 }
@@ -62,8 +64,10 @@ export default function FilePicker({
   disabled = false,
   label,
   hint,
-  buttonLabel = 'Chọn file',
+  buttonLabel,
 }: FilePickerProps) {
+  const { t: tr } = useTranslation();
+  const resolvedButtonLabel = buttonLabel ?? tr('work.filePicker.selectFile');
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
 
@@ -81,7 +85,7 @@ export default function FilePicker({
       }
       const isDuplicate = files.some((item) => item.name === file.name && item.size === file.size);
       if (isDuplicate) {
-        rejected.push(`File "${file.name}" đã có trong danh sách. Hãy đổi tên file nếu đây là file khác.`);
+        rejected.push(tr('work.filePicker.duplicate', { fileName: file.name }));
         return;
       }
       accepted.push(file);
@@ -136,10 +140,10 @@ export default function FilePicker({
           }}
         >
           <i className="fa-solid fa-paperclip" />
-          {buttonLabel}
+          {resolvedButtonLabel}
         </button>
         <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
-          {hint || `PDF, DOC/DOCX, JPG, JPEG, PNG · mỗi file dưới ${MAX_FILE_SIZE_MB} MB`}
+          {hint || tr('work.filePicker.hint', { max: String(MAX_FILE_SIZE_MB) })}
         </span>
       </div>
 
@@ -188,8 +192,8 @@ export default function FilePicker({
                 type="button"
                 onClick={() => removeAt(index)}
                 disabled={disabled}
-                aria-label={`Bỏ file ${file.name}`}
-                title="Bỏ file này khỏi danh sách"
+                aria-label={tr('work.filePicker.removeFileLabel', { fileName: file.name })}
+                title={tr('work.filePicker.removeFile')}
                 style={{
                   background: 'transparent',
                   border: 'none',

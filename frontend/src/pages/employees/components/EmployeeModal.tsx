@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useTranslation } from '@i18n/translate';
+import { formatGroupName } from '@lib/roleUtils';
 import { Employee, Position, GroupSimple, EmployeeCreatePayload, EmployeeUpdatePayload, EmployeeStatus } from '@app-types/employee';
 import { Unit } from '@app-types/organization';
 import { Button } from '@components/common/Button';
@@ -17,8 +18,49 @@ interface EmployeeModalProps {
   groups: GroupSimple[];
   isLoading?: boolean;
   isAdmin?: boolean;
-  onChangePassword?: (employeeId: number, newPassword: string, confirmPassword: string) => Promise<void>;
+  onChangePassword?: (
+    employeeId: number,
+    newPassword: string,
+    confirmPassword: string,
+    reasonCode: string,
+    reasonDetail?: string
+  ) => Promise<void>;
 }
+
+const PASSWORD_ERROR_FALLBACKS: Record<string, { vi: string; en: string }> = {
+  'employees.validation.passwordRequired': {
+    vi: 'Vui lòng nhập và xác nhận mật khẩu mới.',
+    en: 'Enter and confirm the new password.',
+  },
+  'employees.validation.passwordReasonRequired': {
+    vi: 'Vui lòng chọn lý do đặt lại mật khẩu.',
+    en: 'Select a reason for resetting the password.',
+  },
+  'employees.validation.passwordReasonInvalid': {
+    vi: 'Lý do đặt lại mật khẩu không hợp lệ.',
+    en: 'The password reset reason is invalid.',
+  },
+  'employees.validation.passwordReasonDetailRequired': {
+    vi: 'Vui lòng nhập chi tiết lý do khi chọn “Khác”.',
+    en: 'Enter reason details when selecting “Other”.',
+  },
+  'employees.validation.passwordReasonDetailTooLong': {
+    vi: 'Chi tiết lý do không được vượt quá 500 ký tự.',
+    en: 'Reason details cannot exceed 500 characters.',
+  },
+  'employees.messages.passwordMismatch': {
+    vi: 'Mật khẩu mới và xác nhận mật khẩu không khớp.',
+    en: 'The new password and confirmation do not match.',
+  },
+  'employees.messages.passwordNotAccepted': {
+    vi: 'Mật khẩu chưa đạt yêu cầu bảo mật của hệ thống.',
+    en: 'The password does not meet the system security requirements.',
+  },
+  'employees.messages.passwordChangeError': {
+    vi: 'Không thể đổi mật khẩu. Vui lòng kiểm tra thông tin và thử lại.',
+    en: 'Could not change the password. Check the information and try again.',
+  },
+};
 
 export const EmployeeModal: React.FC<EmployeeModalProps> = ({
   isOpen,
@@ -32,7 +74,7 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
   isAdmin = false,
   onChangePassword,
 }) => {
-  const { t } = useTranslation();
+  const { t, currentLang } = useTranslation();
   const formRef = useRef<HTMLFormElement>(null);
   const birthdayDateInputRef = useRef<HTMLInputElement>(null);
   const birthdayDateButtonRef = useRef<HTMLButtonElement>(null);
@@ -122,11 +164,37 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
   const [isPasswordFormOpen, setIsPasswordFormOpen] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [passwordResetReason, setPasswordResetReason] = useState('');
+  const [passwordResetReasonDetail, setPasswordResetReasonDetail] = useState('');
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [showInitialPassword, setShowInitialPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false);
+
+  const getPasswordErrorText = (key: string): string => {
+    const translated = t(key);
+    if (translated !== key) return translated;
+    const fallback = PASSWORD_ERROR_FALLBACKS[key];
+    return fallback?.[currentLang] ?? PASSWORD_ERROR_FALLBACKS['employees.messages.passwordChangeError'][currentLang];
+  };
+
+  const resolvePasswordError = (rawError: string): string => {
+    const normalized = rawError.trim();
+    const knownKey = Object.keys(PASSWORD_ERROR_FALLBACKS).find(
+      (key) => normalized === key || normalized.includes(key)
+    );
+    if (knownKey) return getPasswordErrorText(knownKey);
+
+    const translated = t(normalized);
+    if (translated !== normalized) return translated;
+
+    // Không để lộ khóa dịch/mã máy chủ hoặc trace kỹ thuật khi chưa có mapping.
+    if (!normalized || /^[a-zA-Z][a-zA-Z0-9_.:-]*$/.test(normalized) || /traceback|stack trace|exception/i.test(normalized)) {
+      return getPasswordErrorText('employees.messages.passwordChangeError');
+    }
+    return normalized.length <= 300 ? normalized : getPasswordErrorText('employees.messages.passwordChangeError');
+  };
 
   const handleAddAssignment = () => {
     const usedUnitIds = new Set([
@@ -211,32 +279,52 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
     if (!initialData || !isAdmin || !onChangePassword) return;
     setPasswordError(null);
     if (!newPassword || !confirmNewPassword) {
-      setPasswordError(t('employees.validation.passwordRequired'));
+      setPasswordError(getPasswordErrorText('employees.validation.passwordRequired'));
+      return;
+    }
+    if (!passwordResetReason) {
+      setPasswordError(getPasswordErrorText('employees.validation.passwordReasonRequired'));
+      return;
+    }
+    if (passwordResetReason === 'OTHER' && !passwordResetReasonDetail.trim()) {
+      setPasswordError(getPasswordErrorText('employees.validation.passwordReasonDetailRequired'));
       return;
     }
     if (newPassword !== confirmNewPassword) {
-      setPasswordError(t('employees.messages.passwordMismatch'));
+      setPasswordError(getPasswordErrorText('employees.messages.passwordMismatch'));
       return;
     }
 
     setIsChangingPassword(true);
     try {
-      await onChangePassword(initialData.id, newPassword, confirmNewPassword);
+      await onChangePassword(
+        initialData.id,
+        newPassword,
+        confirmNewPassword,
+        passwordResetReason,
+        passwordResetReason === 'OTHER' ? passwordResetReasonDetail.trim() : undefined
+      );
       setNewPassword('');
       setConfirmNewPassword('');
+      setPasswordResetReason('');
+      setPasswordResetReasonDetail('');
       setIsPasswordFormOpen(false);
     } catch (error: unknown) {
       let rawError: unknown;
       if (error instanceof ApiError) {
         rawError = error.data?.detail || error.data?.error || error.data?.message;
+        const newPasswordErrors = error.data?.new_password;
+        if (!rawError && Array.isArray(newPasswordErrors) && newPasswordErrors.length > 0) {
+          rawError = 'employees.messages.passwordNotAccepted';
+        }
         if (!rawError && error.data && typeof error.data === 'object') {
           const firstValue = Object.values(error.data).find((value) => value !== undefined);
           rawError = Array.isArray(firstValue) ? firstValue[0] : firstValue;
         }
       }
       const message = typeof rawError === 'string'
-        ? resolveErrorMessage(rawError)
-        : t('employees.messages.passwordChangeError');
+        ? resolvePasswordError(rawError)
+        : getPasswordErrorText('employees.messages.passwordChangeError');
       setPasswordError(message);
     } finally {
       setIsChangingPassword(false);
@@ -564,8 +652,15 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                     variant="secondary"
                     size="sm"
                     onClick={() => {
-                      setIsPasswordFormOpen((open) => !open);
+                      const nextOpen = !isPasswordFormOpen;
+                      setIsPasswordFormOpen(nextOpen);
                       setPasswordError(null);
+                      if (!nextOpen) {
+                        setNewPassword('');
+                        setConfirmNewPassword('');
+                        setPasswordResetReason('');
+                        setPasswordResetReasonDetail('');
+                      }
                     }}
                   >
                     {isPasswordFormOpen ? t('employees.actions.cancel') : t('employees.actions.changePassword')}
@@ -573,6 +668,45 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                 </div>
                 {isPasswordFormOpen && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="md:col-span-2">
+                      <Select
+                        label={t('employees.passwordChange.reason')}
+                        name="password-reset-reason"
+                        value={passwordResetReason}
+                        required
+                        onChange={(reason) => {
+                          setPasswordResetReason(reason);
+                          if (reason !== 'OTHER') setPasswordResetReasonDetail('');
+                          setPasswordError(null);
+                        }}
+                        placeholder={t('employees.passwordChange.reasonPlaceholder')}
+                        ariaLabel={t('employees.passwordChange.reason')}
+                        searchable={false}
+                        options={[
+                          { value: 'FORGOT_PASSWORD', label: t('employees.passwordChange.reasonForgotPassword') },
+                          { value: 'COMPROMISED', label: t('employees.passwordChange.reasonCompromised') },
+                          { value: 'LOST_ACCESS', label: t('employees.passwordChange.reasonLostAccess') },
+                          { value: 'OTHER', label: t('employees.passwordChange.reasonOther') },
+                        ]}
+                      />
+                    </div>
+                    {passwordResetReason === 'OTHER' && (
+                      <label className="block text-sm font-medium text-secondary md:col-span-2">
+                        {t('employees.passwordChange.reasonDetail')}
+                        <textarea
+                          required
+                          maxLength={500}
+                          value={passwordResetReasonDetail}
+                          onChange={(event) => {
+                            setPasswordResetReasonDetail(event.target.value);
+                            setPasswordError(null);
+                          }}
+                          placeholder={t('employees.passwordChange.reasonDetailPlaceholder')}
+                          rows={2}
+                          className="mt-1 w-full px-3 py-2 text-sm bg-surface border border-border rounded-lg text-main focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                        />
+                      </label>
+                    )}
                     <label className="block text-sm font-medium text-secondary">
                       {t('employees.passwordChange.newPassword')}
                       <span className="relative mt-1 block">
@@ -1020,7 +1154,7 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                           onChange={() => handleGroupToggle(group.id)}
                           className="h-3.5 w-3.5 rounded border-border text-primary focus:ring-primary cursor-pointer disabled:cursor-not-allowed"
                         />
-                        <span>{group.name}</span>
+                        <span>{formatGroupName(group.name, currentLang)}</span>
                       </label>
                     );
                   })}

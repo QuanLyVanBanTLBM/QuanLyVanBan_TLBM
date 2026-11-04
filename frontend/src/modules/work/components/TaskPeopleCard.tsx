@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from '@i18n/translate';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { Employee } from '../types/employee';
 import { TaskDetail } from '../types/task';
@@ -22,17 +23,18 @@ interface FlowStep {
 }
 
 export default function TaskPeopleCard({ task, currentUserId }: TaskPeopleCardProps) {
+  const { t } = useTranslation();
   const isMobile = useIsMobile();
   const steps: FlowStep[] = [
-    { label: 'Lãnh đạo giao việc', icon: 'fa-solid fa-user-tie', color: 'var(--color-purple)', people: [task.creator] },
-    { label: 'Chỉ đạo - Theo dõi', icon: 'fa-solid fa-eye', color: 'var(--color-info)', people: task.directors },
+    { label: t('work.peopleCard.stepCreator'), icon: 'fa-solid fa-user-tie', color: 'var(--color-purple)', people: [task.creator] },
+    { label: t('work.peopleCard.stepDirectors'), icon: 'fa-solid fa-eye', color: 'var(--color-info)', people: task.directors },
     {
-      label: 'Chủ trì xử lý',
+      label: t('work.peopleCard.stepHost'),
       icon: 'fa-solid fa-user-check',
       color: 'var(--color-primary)',
       people: task.host ? [task.host] : [],
     },
-    { label: 'Phối hợp giải quyết', icon: 'fa-solid fa-users', color: 'var(--color-success)', people: task.participants },
+    { label: t('work.peopleCard.stepParticipants'), icon: 'fa-solid fa-users', color: 'var(--color-success)', people: task.participants },
   ];
 
   return (
@@ -47,7 +49,7 @@ export default function TaskPeopleCard({ task, currentUserId }: TaskPeopleCardPr
     >
       <h2 style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-main)', marginBottom: '16px' }}>
         <i className="fa-solid fa-sitemap" style={{ color: 'var(--color-primary)', marginRight: '8px' }} />
-        Luồng xử lý
+        {t('work.peopleCard.heading')}
       </h2>
 
       <ol style={{ listStyle: 'none', position: 'relative' }}>
@@ -92,7 +94,7 @@ export default function TaskPeopleCard({ task, currentUserId }: TaskPeopleCardPr
               <div style={{ fontSize: '0.8rem', fontWeight: 700, color: step.color, lineHeight: '32px' }}>{step.label}</div>
 
               {step.people.length === 0 ? (
-                <div style={{ fontSize: '0.84rem', color: 'var(--text-muted)' }}>Chưa có</div>
+                <div style={{ fontSize: '0.84rem', color: 'var(--text-muted)' }}>{t('work.common.none')}</div>
               ) : (
                 <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   {step.people.map((person) => (
@@ -114,7 +116,7 @@ export default function TaskPeopleCard({ task, currentUserId }: TaskPeopleCardPr
                             fontWeight: 700,
                           }}
                         >
-                          Bạn
+                          {t('work.common.you')}
                         </span>
                       )}
                     </li>

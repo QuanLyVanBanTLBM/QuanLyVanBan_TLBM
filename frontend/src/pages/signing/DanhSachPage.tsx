@@ -5,11 +5,12 @@
  * Hộp rỗng và chưa lọc thì không hiện khối lọc.
  * Danh sách phân trang phía server (10 hồ sơ mỗi trang); đổi bộ lọc thì về trang 1 (mỗi hộp là một route riêng).
  */
-import { useCallback, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useCallback, useState, type MouseEvent } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import TaiLieuPage from './TaiLieuPage';
 import { Card } from '@components/common';
 import BoLocHoSo from '@components/signing/BoLocHoSo';
+import ChiTietNhanh from '@components/signing/ChiTietNhanh';
 import { BoLocKhung } from '@components/signing/BoLocTrinhKy';
 import { DangTai, LoiTai, Rong, TrangThaiHoSo } from '@components/signing/ChungUI';
 import { PhanTrang } from '@components/signing/PhanTrang';
@@ -17,12 +18,11 @@ import { docLoi, SO_HO_SO_MOI_TRANG, signingApi } from '@lib/signing/api';
 import { dinhDangNgay, moTaVanBan } from '@lib/signing/dinhDang';
 import { useTai } from '@lib/signing/hooks';
 import { useSigningT } from '@lib/signing/i18n';
-import type { BoLocHoSo as BoLocHoSoState } from '@lib/signing/types';
+import type { BoLocHoSo as BoLocHoSoState, HoSo } from '@lib/signing/types';
 
 type Hop = 'can_toi_ky' | 'toi_gui' | 'tat_ca';
 
 export default function DanhSachPage({ hop }: { hop: Hop }) {
-  const navigate = useNavigate();
   const { t, loi, lang } = useSigningT();
   const [searchParams, setSearchParams] = useSearchParams();
   const cheDo = hop === 'tat_ca' && searchParams.get('che_do') === 'tep' ? 'tep' : 'ho_so';
@@ -35,6 +35,17 @@ export default function DanhSachPage({ hop }: { hop: Hop }) {
       params.delete('che_do');
     }
     setSearchParams(params);
+  };
+
+  const [dangXem, setDangXem] = useState<HoSo | null>(null);
+  // Bấm thường mở hộp thoại; Ctrl/Cmd/Shift/Alt hoặc chuột giữa giữ hành vi liên kết (mở tab mới). Đưa tiêu điểm về
+  // liên kết của hàng trước khi mở để đóng hộp thoại trả tiêu điểm đúng chỗ.
+  const moNhanh = (e: MouseEvent<HTMLElement>, h: HoSo, daLaLienKet = false) => {
+    if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || e.button !== 0) return;
+    if (!daLaLienKet && (e.target as HTMLElement).closest('a')) return;
+    e.preventDefault();
+    (e.currentTarget.querySelector('a') ?? e.currentTarget).focus();
+    setDangXem(h);
   };
 
   const [loc, setLoc] = useState<BoLocHoSoState>({});
@@ -113,8 +124,8 @@ export default function DanhSachPage({ hop }: { hop: Hop }) {
           <div className="p-3 lg:hidden">
             <ul className="space-y-2" aria-label={t('danhSach.vanBan')}>
               {hoSo.map((h) => (
-                <li key={h.id} onClick={() => navigate(`/approvals/${h.id}`, { state: { hop } })} className="rounded-lg border border-border-subtle p-3 hover:bg-surface-hover transition-colors cursor-pointer group">
-                  <Link to={`/approvals/${h.id}`} state={{ hop }} title={moTaVanBan(h.van_ban, t)}
+                <li key={h.id} onClick={(e) => moNhanh(e, h)} className="rounded-lg border border-border-subtle p-3 hover:bg-surface-hover transition-colors cursor-pointer group">
+                  <Link to={`/approvals/${h.id}`} state={{ hop }} title={moTaVanBan(h.van_ban, t)} onClick={(e) => moNhanh(e, h, true)}
                     className="block font-semibold text-main group-hover:text-primary transition-colors break-words line-clamp-3">
                     {moTaVanBan(h.van_ban, t)}
                     {h.van_ban_id == null && <span className="ml-2 rounded-full bg-info-subtle px-2 py-0.5 text-xs text-info">{t('danhSach.taiLieuDocLap')}</span>}
@@ -160,9 +171,9 @@ export default function DanhSachPage({ hop }: { hop: Hop }) {
               </thead>
               <tbody className="divide-y divide-border-subtle">
                 {hoSo.map((h) => (
-                  <tr key={h.id} onClick={() => navigate(`/approvals/${h.id}`, { state: { hop } })} className="hover:bg-surface-hover transition-colors cursor-pointer group">
+                  <tr key={h.id} onClick={(e) => moNhanh(e, h)} className="hover:bg-surface-hover transition-colors cursor-pointer group">
                     <td className="px-3.5 py-2.5 truncate">
-                      <Link to={`/approvals/${h.id}`} state={{ hop }} className="font-semibold text-main group-hover:text-primary transition-colors flex items-center gap-1.5 text-base truncate" title={moTaVanBan(h.van_ban, t)}>
+                      <Link to={`/approvals/${h.id}`} state={{ hop }} onClick={(e) => moNhanh(e, h, true)} className="font-semibold text-main group-hover:text-primary transition-colors flex items-center gap-1.5 text-base truncate" title={moTaVanBan(h.van_ban, t)}>
                         <i className="fa-solid fa-file-contract text-primary text-sm shrink-0" aria-hidden="true" />
                         <span className="truncate">{moTaVanBan(h.van_ban, t)}</span>
                         {h.van_ban_id == null && <span className="shrink-0 rounded-full bg-info-subtle px-2 py-0.5 text-xs text-info font-medium">{t('danhSach.taiLieuDocLap')}</span>}
@@ -213,6 +224,7 @@ export default function DanhSachPage({ hop }: { hop: Hop }) {
       </Card>
         </>
       )}
+      {dangXem && <ChiTietNhanh hoSo={dangXem} hop={hop} onDong={() => setDangXem(null)} />}
     </div>
   );
 }

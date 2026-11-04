@@ -1,4 +1,56 @@
 -- =====================================================================
+-- THÊM QUYỀN XEM VÀ XỬ LÝ VĂN BẢN HẾT HIỆU LỰC (Nhóm 7; đánh dấu [XHHL] tại vị trí)
+-- Căn cứ: nghiệp vụ văn bản đến/đi (góp ý Nhóm 2): văn bản hết hiệu lực (cả NOI_BO lẫn HAN_CHE) chỉ tài khoản được
+--   phân quyền mới xem được; người tạo, người nhận, đơn vị nhận không có quyền thì không thấy, quyền
+--   view_vanbanden/view_vanbandi không đủ; chỉ tài khoản được phân quyền xử lý mới sửa, xóa được văn bản hết hiệu lực.
+--   Thêm 4 quyền: view_het_hieu_luc_vanbanden, view_het_hieu_luc_vanbandi (gán ADMIN qua CROSS JOIN sẵn có và VT);
+--   manage_het_hieu_luc_vanbanden, manage_het_hieu_luc_vanbandi (gán ADMIN qua CROSS JOIN sẵn có).
+--   Migration authorization 0016_het_hieu_luc_permissions bổ sung cho DB đã seed từ trước.
+-- Quy mô sau [XHHL] (cộng sau [GDLG]): 80 -> 84 quyền thao tác; thêm 6 lượt phân quyền (ADMIN 4, VT 2): 198 -> 204;
+--   nhóm VT 30 -> 32 quyền.
+-- =====================================================================
+-- =====================================================================
+-- GỠ QUYỀN delegate_trinhky (Nhóm 5; đánh dấu [GDLG] tại vị trí)
+-- Căn cứ: ủy quyền ký đã bỏ ở #374, #383; quyền không còn tính năng nào sử dụng (issue #519).
+--   Bỏ quyền delegate_trinhky khỏi seed auth_permission và khỏi danh sách quyền nhóm TP và BGD;
+--   ADMIN nhận quyền qua CROSS JOIN nên giảm theo. Migration authorization 0015_remove_delegate_trinhky
+--   xóa quyền và các lượt gán trên DB đã seed từ trước.
+-- Quy mô sau [GDLG] (cộng sau [VTQ]): 81 -> 80 quyền thao tác; 201 -> 198 lượt phân quyền (TP -1, BGD -1, ADMIN -1).
+-- =====================================================================
+-- =====================================================================
+-- THAY ĐỔI QUYỀN NHÓM VĂN THƯ (Nhóm 7; đánh dấu [VTQ] tại vị trí)
+-- Căn cứ: quyết định nhóm trưởng (02-03/11/2026): Văn thư chỉ xem, thêm, import văn bản đến/đi, xuất Excel văn bản đến,
+--   đổi hiệu lực qua change_hieu_luc_*; không sửa, xóa văn bản của người khác; giữ các quyền chung của CBNV.
+--   Bỏ khỏi nhóm VT 13 lượt: change_vanbanden, delete_vanbanden, send_mail_all_vanbanden, change_vanbandi,
+--   delete_vanbandi, export_vanbandi, send_mail_all_vanbandi, add_hoso, change_hoso, toggle_status_hoso,
+--   manage_documents_hoso, add_tailieu, change_tailieu.
+--   Migration authorization 0014_van_thu_permissions đặt lại nhóm VT đúng 30 quyền trên DB đã seed từ trước.
+-- Quy mô sau [VTQ] (cộng sau [XTKY]): giữ 81 quyền thao tác; 214 -> 201 lượt phân quyền; nhóm VT 43 -> 30 quyền.
+-- =====================================================================
+-- =====================================================================
+-- THAY ĐỔI QUYỀN XEM TẤT CẢ HỒ SƠ TRÌNH KÝ (Nhóm 5; đánh dấu [XTKY] tại vị trí)
+-- Căn cứ: yêu cầu nghiệp vụ: Văn thư xem toàn bộ hồ sơ trình ký như Ban Giám đốc và Quản trị hệ thống,
+--   không mở nhật ký kiểm toán (view_signing_audit).
+--   Thêm quyền view_all_trinhky (nhóm Trình ký); gán cho nhóm ADMIN (CROSS JOIN sẵn có), BGD và VT: thêm 3 lượt phân quyền.
+--   Migration authorization 0013_add_view_all_trinhky_permission bổ sung cho DB đã seed từ trước.
+-- Quy mô sau [XTKY] (cộng sau [EXDV]): 80 -> 81 quyền thao tác; 211 -> 214 lượt phân quyền.
+-- =====================================================================
+-- =====================================================================
+-- THAY ĐỔI CẤP QUYỀN XUẤT DANH BẠ PHÒNG BAN CHO TRƯỞNG PHÒNG VÀ BAN GIÁM ĐỐC (Nhóm 7; đánh dấu [EXDV] tại vị trí)
+-- Căn cứ: quyết định nhóm trưởng (30/10/2026): xuất danh bạ do admin, Tổng giám đốc và các chức vụ cao cấp thực hiện,
+--   cùng mức với export_cbnv (TP, BGD, ADMIN).
+--   Gán export_donvi cho nhóm TP và BGD (ADMIN đã có qua CROSS JOIN): thêm 2 lượt phân quyền.
+--   Migration authorization 0012_grant_export_donvi_tp_bgd bổ sung cho DB đã seed từ trước.
+-- Quy mô sau [EXDV] (cộng sau [HLVB]): giữ 80 quyền thao tác; 209 -> 211 lượt phân quyền.
+-- =====================================================================
+-- =====================================================================
+-- THAY ĐỔI QUYỀN ĐỔI HIỆU LỰC VĂN BẢN ĐẾN/ĐI (Nhóm 7; đánh dấu [HLVB] tại vị trí)
+-- Căn cứ: nghiệp vụ văn bản đến/đi (đổi hiệu lực văn bản là thao tác riêng, không gộp vào change_vanbanden/change_vanbandi).
+--   Thêm 2 quyền: change_hieu_luc_vanbanden, change_hieu_luc_vanbandi; gán cho nhóm ADMIN (CROSS JOIN sẵn có) và VT.
+--   Migration authorization 0011_change_hieu_luc_permissions bổ sung cho DB đã seed từ trước.
+-- Quy mô sau [HLVB] (cộng sau [RLOG]): 78 -> 80 quyền thao tác; thêm 4 lượt phân quyền (ADMIN 2, VT 2): 205 -> 209.
+-- =====================================================================
+-- =====================================================================
 -- THAY ĐỔI BỎ QUYỀN XEM NHẬT KÝ XEM VĂN BẢN KHỎI VĂN THƯ VÀ TRƯỞNG PHÒNG (Nhóm 7; đánh dấu [RLOG] tại vị trí)
 -- Căn cứ: quyết định nhóm trưởng (15-16/10/2026): nhật ký xem văn bản đến/đi chỉ ADMIN và BGD xem được.
 --   Bỏ view_read_log_vanbanden, view_read_log_vanbandi khỏi nhóm VT (2 lượt) và view_read_log_vanbanden khỏi nhóm TP (1 lượt).
@@ -446,6 +498,29 @@ CREATE TABLE accounts_employee_import_job (
 );
 
 CREATE INDEX idx_employee_import_status ON accounts_employee_import_job (status, created_at);
+
+-- Nhật ký đặt lại mật khẩu CBNV do quản trị viên thực hiện; không lưu mật khẩu/hash.
+CREATE TABLE accounts_password_reset_audit (
+    id BIGSERIAL PRIMARY KEY,
+    actor_id BIGINT REFERENCES accounts_employee (id),
+    target_id BIGINT REFERENCES accounts_employee (id),
+    actor_username VARCHAR(150) NOT NULL,
+    target_username VARCHAR(150) NOT NULL,
+    reason_code VARCHAR(32) NOT NULL,
+    reason_detail VARCHAR(500),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT chk_pwd_reset_reason_code
+        CHECK (reason_code IN ('FORGOT_PASSWORD', 'COMPROMISED', 'LOST_ACCESS', 'OTHER')),
+    CONSTRAINT chk_pwd_reset_reason_detail
+        CHECK (
+            (reason_code = 'OTHER' AND reason_detail IS NOT NULL)
+            OR (reason_code <> 'OTHER' AND reason_detail IS NULL)
+        )
+);
+
+CREATE INDEX idx_pwd_reset_target_time ON accounts_password_reset_audit (target_id, created_at);
+
+CREATE INDEX idx_pwd_reset_actor_time ON accounts_password_reset_audit (actor_id, created_at);
 
 -- Ghi chú: spec mới (tab "Đvị, phòngban") không có trường "Trưởng đơn vị"
 -- trên organizations_donvi -> không tạo cột manager_id.
@@ -1196,7 +1271,6 @@ CREATE TABLE signing_process_step_signer (
     chuc_vu_id BIGINT REFERENCES accounts_position (id) ON DELETE RESTRICT,
     pham_vi_chuc_vu VARCHAR(20), -- [P7] DON_VI_NGUOI_TAO | DON_VI_CO_DINH | TOAN_CO_QUAN; chỉ dùng khi cấu hình theo chức vụ
     vai_tro_ky VARCHAR(20) NOT NULL DEFAULT 'KY_CHINH',
-    chan_ky_chinh BOOLEAN NOT NULL DEFAULT true,
     thu_tu SMALLINT NOT NULL CHECK (thu_tu >= 0),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT chk_signing_process_step_signer_mot_doi_tuong CHECK (
@@ -1207,16 +1281,6 @@ CREATE TABLE signing_process_step_signer (
 
 CREATE INDEX idx_signing_process_step_signer_buoc ON signing_process_step_signer (buoc_quy_trinh_id);
 CREATE INDEX idx_signing_process_step_signer_nguoi ON signing_process_step_signer (nguoi_ky_id);
-
--- Chức vụ được phép ký thay cho từng chức vụ của người ký.
-CREATE TABLE signing_delegation_role (
-    id BIGSERIAL PRIMARY KEY,
-    chuc_vu_giao_id BIGINT NOT NULL REFERENCES accounts_position (id) ON DELETE RESTRICT,
-    chuc_vu_nhan_id BIGINT NOT NULL REFERENCES accounts_position (id) ON DELETE RESTRICT,
-    CONSTRAINT uq_signing_delegation_role UNIQUE (chuc_vu_giao_id, chuc_vu_nhan_id)
-);
-CREATE INDEX idx_signing_delegation_role_giao ON signing_delegation_role (chuc_vu_giao_id);
-CREATE INDEX idx_signing_delegation_role_nhan ON signing_delegation_role (chuc_vu_nhan_id);
 
 -- 9.4. Phiếu yêu cầu trình ký
 -- Issue #47 P0.1: Bổ sung document_type document_kind NOT NULL và index (document_type, document_id)
@@ -1317,7 +1381,7 @@ CREATE INDEX idx_signing_request_step_buoc_quy_trinh ON signing_request_step (bu
 CREATE INDEX idx_signing_request_step_luot_trinh ON signing_request_step (luot_trinh_id);
 CREATE INDEX idx_signing_request_step_hanxuly ON signing_request_step (han_xu_ly); -- Issue #47 P2.12
 
--- 9.7. Người ký thực tế trong cấp ký (Tọa độ box ký, ảnh chữ ký, ủy quyền)
+-- 9.7. Người ký thực tế trong cấp ký (Tọa độ box ký, ảnh chữ ký)
 -- Issue #47 P1.9: Cho phép NULL ở ten_chuc_vu và khoa_chong_trung_thao_tac khi tạo nháp
 CREATE TABLE signing_request_step_signer (
     id BIGSERIAL PRIMARY KEY,
@@ -1327,17 +1391,12 @@ CREATE TABLE signing_request_step_signer (
     ten_nguoi_ky VARCHAR(255) NOT NULL,
     ten_chuc_vu VARCHAR(255), -- Cho phép NULL ở bản nháp ban đầu
     vai_tro_ky VARCHAR(20) NOT NULL,
-    chan_ky_chinh BOOLEAN NOT NULL DEFAULT true,
     trang_thai VARCHAR(20) NOT NULL DEFAULT 'CHO_KY',
     thoi_diem_mo TIMESTAMPTZ,
     ngay_ky TIMESTAMPTZ,
     ngay_tu_choi TIMESTAMPTZ,
     ly_do_tu_choi TEXT NOT NULL DEFAULT '',
     chu_ky_hien_hanh_id BIGINT, -- Khóa ngoại trỏ sang signing_signature thêm sau
-    uy_quyen_tu_id BIGINT REFERENCES accounts_employee (id) ON DELETE RESTRICT,
-    chuc_vu_goc_uy_quyen_id BIGINT REFERENCES accounts_position (id) ON DELETE RESTRICT,
-    ly_do_uy_quyen TEXT NOT NULL DEFAULT '',
-    ngay_uy_quyen TIMESTAMPTZ,
     trang_ky INTEGER CHECK (trang_ky >= 0),
     toa_do_x NUMERIC(10, 4),
     toa_do_y NUMERIC(10, 4),
@@ -1345,14 +1404,11 @@ CREATE TABLE signing_request_step_signer (
     chieu_cao_khung NUMERIC(10, 4),
     khoa_chong_trung_thao_tac VARCHAR(255), -- Cho phép NULL ở bản nháp ban đầu
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT uq_signing_request_step_signer_nguoi_ky UNIQUE (buoc_ky_id, nguoi_ky_id),
-    CONSTRAINT chk_signing_signer_ly_do_uy_quyen CHECK (uy_quyen_tu_id IS NULL OR NOT (ly_do_uy_quyen = ''))
+    CONSTRAINT uq_signing_request_step_signer_nguoi_ky UNIQUE (buoc_ky_id, nguoi_ky_id)
 );
 
 CREATE INDEX idx_signing_request_step_signer_buoc ON signing_request_step_signer (buoc_ky_id);
 CREATE INDEX idx_signing_request_step_signer_nguoi ON signing_request_step_signer (nguoi_ky_id);
-CREATE INDEX idx_signing_request_step_signer_uy_quyen ON signing_request_step_signer (uy_quyen_tu_id);
-CREATE INDEX idx_signing_request_step_signer_chuc_vu_goc ON signing_request_step_signer (chuc_vu_goc_uy_quyen_id);
 
 -- 9.8. Quản lý Khóa ký số (Zero-Knowledge: Backend tuyệt đối không lưu private key)
 CREATE TABLE signing_key (
@@ -1395,6 +1451,92 @@ CREATE TABLE signing_key_unlock (
 );
 
 CREATE TRIGGER trg_signing_key_unlock_updated_at BEFORE UPDATE ON signing_key_unlock
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- 9.8c. Quản lý ảnh chữ ký cá nhân (Nhóm 5)
+CREATE TABLE signing_user_signature (
+    id BIGSERIAL PRIMARY KEY,
+    nguoi_dung_id BIGINT NOT NULL UNIQUE REFERENCES accounts_employee (id) ON DELETE CASCADE,
+    vi_tri_tep VARCHAR(500) NOT NULL,
+    ma_bam VARCHAR(64) NOT NULL,
+    dung_luong_bytes INTEGER NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TRIGGER trg_signing_user_signature_updated_at BEFORE UPDATE ON signing_user_signature
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- 9.8c2. Mã xác thực đặt lại PIN gửi qua email (Nhóm 5): lưu mã đã băm, một mã còn hiệu lực cho mỗi lần yêu cầu
+CREATE TABLE signing_pin_reset_code (
+    id BIGSERIAL PRIMARY KEY,
+    nguoi_dung_id BIGINT NOT NULL REFERENCES accounts_employee (id) ON DELETE CASCADE,
+    ma_bam VARCHAR(64) NOT NULL,
+    het_han TIMESTAMPTZ NOT NULL,
+    so_lan_sai INTEGER NOT NULL DEFAULT 0,
+    da_dung_luc TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_signing_pin_reset_user ON signing_pin_reset_code (nguoi_dung_id, created_at);
+
+-- 9.8c3. Nonce challenge chứng minh sở hữu khóa đã dùng (Nhóm 5, issue #507): mỗi challenge xác minh thành công một lần
+CREATE TABLE signing_challenge_da_dung (
+    id BIGSERIAL PRIMARY KEY,
+    nguoi_dung_id BIGINT NOT NULL REFERENCES accounts_employee (id) ON DELETE CASCADE,
+    nonce VARCHAR(64) NOT NULL,
+    het_han TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uq_signing_challenge_da_dung UNIQUE (nguoi_dung_id, nonce)
+);
+
+CREATE INDEX idx_signing_challenge_het_han ON signing_challenge_da_dung (het_han);
+
+-- 9.8c4. Mã xác thực MFA khi ký gửi qua email và phiên đã xác thực (Nhóm 5): lưu mã đã băm; dòng đã dùng gắn với access token
+CREATE TABLE signing_mfa_otp (
+    id BIGSERIAL PRIMARY KEY,
+    nguoi_dung_id BIGINT NOT NULL REFERENCES accounts_employee (id) ON DELETE CASCADE,
+    muc_dich VARCHAR(20) NOT NULL DEFAULT 'KY',
+    ma_bam VARCHAR(64) NOT NULL,
+    het_han TIMESTAMPTZ NOT NULL,
+    so_lan_sai INTEGER NOT NULL DEFAULT 0,
+    da_dung_luc TIMESTAMPTZ,
+    phien_jti VARCHAR(64),
+    phien_het_han TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_signing_mfa_otp_user ON signing_mfa_otp (nguoi_dung_id, muc_dich, created_at);
+CREATE INDEX idx_signing_mfa_otp_phien ON signing_mfa_otp (nguoi_dung_id, phien_jti);
+
+-- 9.8d. [v1] Khóa quyền ký của tài khoản do quản trị viên đặt (Nhóm 5, issue #449) — bảng trạng thái.
+-- Một tài khoản có tối đa một dòng đang hiệu lực (bat_lai_luc IS NULL). khoa_den NULL: khóa đến khi được bật lại.
+-- Dòng hết hạn (khoa_den đã qua) được đóng bằng dịch vụ khi khóa lại; nguoi_bat_lai_id NULL là hết hạn tự nhiên.
+CREATE TABLE signing_right_lock (
+    id BIGSERIAL PRIMARY KEY,
+    nguoi_bi_khoa_id BIGINT NOT NULL REFERENCES accounts_employee (id) ON DELETE RESTRICT,
+    nguoi_khoa_id BIGINT NOT NULL REFERENCES accounts_employee (id) ON DELETE RESTRICT,
+    ly_do_khoa TEXT NOT NULL,
+    khoa_tu TIMESTAMPTZ NOT NULL DEFAULT now(),
+    khoa_den TIMESTAMPTZ,
+    nguoi_bat_lai_id BIGINT REFERENCES accounts_employee (id) ON DELETE RESTRICT,
+    ly_do_bat_lai TEXT NOT NULL DEFAULT '',
+    bat_lai_luc TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT chk_signing_right_lock_ly_do_khoa CHECK (NOT (ly_do_khoa ~ '^\s*$')),
+    CONSTRAINT chk_signing_right_lock_thoi_han CHECK (khoa_den IS NULL OR khoa_den > khoa_tu),
+    CONSTRAINT chk_signing_right_lock_bat_lai CHECK (
+        (bat_lai_luc IS NULL AND nguoi_bat_lai_id IS NULL AND ly_do_bat_lai = '')
+        OR (bat_lai_luc IS NOT NULL AND (nguoi_bat_lai_id IS NULL OR NOT (ly_do_bat_lai ~ '^\s*$')))
+    )
+);
+
+CREATE UNIQUE INDEX uq_signing_right_lock_dang_khoa ON signing_right_lock (nguoi_bi_khoa_id) WHERE (bat_lai_luc IS NULL);
+CREATE INDEX idx_signing_right_lock_nguoi_khoa ON signing_right_lock (nguoi_khoa_id);
+CREATE INDEX idx_signing_right_lock_nguoi_bat_lai ON signing_right_lock (nguoi_bat_lai_id);
+
+CREATE TRIGGER trg_signing_right_lock_updated_at BEFORE UPDATE ON signing_right_lock
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- 9.9. Chữ ký số điện tử (Bảo toàn bằng chứng pháp lý — Bất biến không thể sửa/xóa)
@@ -1586,7 +1728,7 @@ CREATE TRIGGER trg_signing_audit_log_immutable
 -- 9.14. Thông báo trình ký (Outbox nhắc việc & gửi lại)
 CREATE TABLE signing_notification (
     id BIGSERIAL PRIMARY KEY,
-    trinh_ky_id BIGINT NOT NULL REFERENCES signing_request (id) ON DELETE CASCADE,
+    trinh_ky_id BIGINT REFERENCES signing_request (id) ON DELETE CASCADE,
     buoc_ky_id BIGINT REFERENCES signing_request_step_signer (id) ON DELETE CASCADE,
     nguoi_nhan_id BIGINT NOT NULL REFERENCES accounts_employee (id) ON DELETE RESTRICT,
     kenh VARCHAR(20) NOT NULL,
@@ -1941,6 +2083,98 @@ WHERE
     )
 ORDER BY x.vi_tri;
 
+-- Đồng bộ thông tin đơn vị từ workbook dùng chung.
+UPDATE organizations_donvi AS unit
+SET dia_chi = source.dia_chi,
+    dien_thoai = source.dien_thoai,
+    is_public = source.is_public
+FROM (
+    VALUES
+    (1, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0332897701', TRUE),
+    (2, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0337628268', FALSE),
+    (3, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0335116804', TRUE),
+    (4, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0335254343', TRUE),
+    (5, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0330840944', TRUE),
+    (6, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0335589304', TRUE),
+    (7, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0333777317', TRUE),
+    (8, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0338616310', TRUE),
+    (9, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0338272234', TRUE),
+    (10, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0336748679', TRUE),
+    (11, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0332612690', TRUE),
+    (12, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0337613811', TRUE),
+    (13, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0335845000', TRUE),
+    (14, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0339295260', TRUE),
+    (15, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0331231700', TRUE),
+    (16, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0335817976', TRUE),
+    (17, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0332803821', TRUE),
+    (18, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0331579163', TRUE),
+    (19, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0330877220', TRUE),
+    (20, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0337528305', TRUE),
+    (21, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0333104201', TRUE),
+    (22, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0337648878', TRUE),
+    (23, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0335518225', TRUE),
+    (24, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0336578765', TRUE),
+    (25, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0332217184', TRUE),
+    (26, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0332406059', TRUE),
+    (27, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0332527351', TRUE),
+    (28, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0338849285', TRUE),
+    (29, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0334301145', TRUE),
+    (30, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0339783346', TRUE),
+    (31, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0339132193', TRUE),
+    (32, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0331741959', TRUE),
+    (33, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0338366874', TRUE),
+    (34, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0330036743', TRUE),
+    (35, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0333029304', TRUE),
+    (36, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0334404034', TRUE),
+    (37, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0334791770', TRUE),
+    (38, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0332812008', TRUE),
+    (39, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0331551239', TRUE),
+    (40, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0339975722', TRUE),
+    (41, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0338944643', TRUE),
+    (42, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0339537291', TRUE),
+    (43, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0337733676', TRUE),
+    (44, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0339768433', TRUE),
+    (45, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0339487527', TRUE),
+    (46, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0338422404', TRUE),
+    (47, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0336486845', TRUE),
+    (48, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0332077952', TRUE),
+    (49, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0331857523', TRUE),
+    (50, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0332479896', TRUE),
+    (51, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0339002466', TRUE),
+    (52, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0339322357', TRUE),
+    (53, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0337482545', TRUE),
+    (54, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0330761367', TRUE),
+    (55, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0338528160', TRUE),
+    (56, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0332803540', TRUE),
+    (57, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0337945477', TRUE),
+    (58, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0339211108', TRUE),
+    (59, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0333734546', TRUE),
+    (60, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0335338652', TRUE),
+    (61, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0334722563', TRUE),
+    (62, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0332392082', TRUE),
+    (63, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0332169128', TRUE),
+    (64, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0335730757', TRUE),
+    (65, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0332084076', TRUE),
+    (66, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0331102418', TRUE),
+    (67, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0333836771', TRUE),
+    (68, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0335670136', TRUE),
+    (69, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0337375068', TRUE),
+    (70, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0330257273', TRUE),
+    (71, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0335577067', TRUE),
+    (72, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0332987240', TRUE),
+    (73, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0333695422', TRUE),
+    (74, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0331386913', TRUE),
+    (75, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0335885579', TRUE),
+    (76, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0339477344', TRUE),
+    (77, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0332213165', TRUE),
+    (78, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0330628397', TRUE),
+    (79, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0336911237', TRUE),
+    (80, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0332264815', TRUE),
+    (81, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0331765751', TRUE),
+    (82, '12 Trịnh Đình Thảo, Phường Tân Phú, Thành phố Hồ Chí Minh', '0331263488', TRUE)
+) AS source (stt_uu_tien, dia_chi, dien_thoai, is_public)
+WHERE unit.stt_uu_tien = source.stt_uu_tien;
+
 -- 3) Seed 25 Chức vụ chuẩn (STT 1 = cao nhất: 22 chức vụ của đặc tả, giữ "Quản trị viên",
 --    "Lãnh đạo cơ quan", "Văn thư" chèn theo cấp bậc) và Tài khoản quản trị hệ thống mẫu
 --    (Idempotent, không hard-code ID)
@@ -2107,7 +2341,7 @@ SET
     ma_nhom_quyen = EXCLUDED.ma_nhom_quyen;
 
 -- ---------------------------------------------------------------------
--- 5) Seed 81 Quyền thao tác chi tiết (auth_permission)
+-- 5) Seed 80 Quyền thao tác chi tiết (auth_permission)
 -- ---------------------------------------------------------------------
 INSERT INTO
     auth_permission (name, codename, module_ten)
@@ -2267,6 +2501,22 @@ VALUES
         'send_mail_all_vanbanden',
         'Văn bản đến'
     ),
+    (
+        'Đổi hiệu lực văn bản đến',
+        'change_hieu_luc_vanbanden',
+        'Văn bản đến'
+    ),
+    -- [XHHL]
+    (
+        'Xem văn bản đến hết hiệu lực',
+        'view_het_hieu_luc_vanbanden',
+        'Văn bản đến'
+    ),
+    (
+        'Xử lý (sửa, xóa) văn bản đến hết hiệu lực',
+        'manage_het_hieu_luc_vanbanden',
+        'Văn bản đến'
+    ),
     -- Văn bản đi (Nhóm 2)
     (
         'Xem danh sách/chi tiết văn bản đi',
@@ -2306,6 +2556,22 @@ VALUES
     (
         'Gửi mail toàn hệ thống (văn bản đi)',
         'send_mail_all_vanbandi',
+        'Văn bản đi'
+    ),
+    (
+        'Đổi hiệu lực văn bản đi',
+        'change_hieu_luc_vanbandi',
+        'Văn bản đi'
+    ),
+    -- [XHHL]
+    (
+        'Xem văn bản đi hết hiệu lực',
+        'view_het_hieu_luc_vanbandi',
+        'Văn bản đi'
+    ),
+    (
+        'Xử lý (sửa, xóa) văn bản đi hết hiệu lực',
+        'manage_het_hieu_luc_vanbandi',
         'Văn bản đi'
     ),
     -- Hồ sơ lưu trữ (Nhóm 3)
@@ -2387,11 +2653,6 @@ VALUES
         'Trình ký'
     ),
     (
-        'Ủy quyền ký số',
-        'delegate_trinhky',
-        'Trình ký'
-    ),
-    (
         'Hủy yêu cầu trình ký',
         'cancel_trinhky',
         'Trình ký'
@@ -2399,6 +2660,11 @@ VALUES
     (
         'Xem nhật ký kiểm toán trình ký',
         'view_signing_audit',
+        'Trình ký'
+    ),
+    (
+        'Xem tất cả hồ sơ trình ký',
+        'view_all_trinhky',
         'Trình ký'
     ),
     -- Quản lý Công việc (Nhóm 6)
@@ -2544,6 +2810,7 @@ WHERE
     g.ma_nhom_quyen = 'BGD'
     AND p.codename IN (
         'view_donvi',
+        'export_donvi',
         'view_chucvu',
         'view_loaitailieubieumau',
         'view_list_cbnv',
@@ -2559,9 +2826,9 @@ WHERE
         'add_trinhky',
         'sign_trinhky',
         'send_trinhky',
-        'delegate_trinhky',
         'cancel_trinhky',
         'view_signing_audit',
+        'view_all_trinhky',
         'view_congviec',
         'view_all_congviec',
         'view_dept_congviec',
@@ -2584,6 +2851,7 @@ WHERE
     g.ma_nhom_quyen = 'TP'
     AND p.codename IN (
         'view_donvi',
+        'export_donvi',
         'view_chucvu',
         'view_loaitailieubieumau',
         'view_list_cbnv',
@@ -2597,7 +2865,6 @@ WHERE
         'add_trinhky',
         'sign_trinhky',
         'send_trinhky',
-        'delegate_trinhky',
         'cancel_trinhky',
         'manage_signing_process', -- [P7] lãnh đạo đơn vị quản lý quy trình PHONG_BAN
         'view_congviec',
@@ -2645,7 +2912,9 @@ WHERE
         'use_aiassistant'
     ) ON CONFLICT (group_id, permission_id) DO NOTHING;
 
--- Nhóm VT (Văn thư): Nghiệp vụ văn thư lưu trữ, văn bản đến/đi, quản lý hồ sơ, tài liệu biểu mẫu
+-- [VTQ] Nhóm VT (Văn thư): xem, thêm, import văn bản đến/đi, xuất Excel văn bản đến, đổi hiệu lực;
+-- [XHHL] xem văn bản đến/đi hết hiệu lực;
+--   không sửa/xóa văn bản đến/đi, không gửi mail toàn hệ thống; xem hồ sơ, tài liệu biểu mẫu; quyền chung của CBNV
 INSERT INTO
     auth_group_permissions (group_id, permission_id)
 SELECT g.id, p.id
@@ -2660,29 +2929,21 @@ WHERE
         'change_self_cbnv',
         'view_vanbanden',
         'add_vanbanden',
-        'change_vanbanden',
-        'delete_vanbanden',
         'import_vanbanden',
         'export_vanbanden',
-        'send_mail_all_vanbanden',
+        'change_hieu_luc_vanbanden',
+        'view_het_hieu_luc_vanbanden',
         'view_vanbandi',
         'add_vanbandi',
-        'change_vanbandi',
-        'delete_vanbandi',
         'import_vanbandi',
-        'export_vanbandi',
-        'send_mail_all_vanbandi',
+        'change_hieu_luc_vanbandi',
+        'view_het_hieu_luc_vanbandi',
         'view_hoso',
-        'add_hoso',
-        'change_hoso',
-        'manage_documents_hoso',
-        'toggle_status_hoso',
         'view_tailieu',
-        'add_tailieu',
-        'change_tailieu',
         'view_trinhky',
         'send_trinhky',
         'add_trinhky',
+        'view_all_trinhky',
         'view_congviec',
         'view_dept_congviec',
         'add_congviec',

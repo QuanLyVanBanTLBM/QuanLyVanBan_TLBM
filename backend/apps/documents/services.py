@@ -12,6 +12,7 @@ Bao gồm:
 
 import io
 import math
+import os
 import re
 import unicodedata
 from datetime import date, datetime
@@ -987,6 +988,7 @@ def import_from_excel(file_obj, loai: str, user, pham_vi: str = None, attachment
 
     # Lập bản đồ tra cứu file đính kèm tải lên theo tên file (case-insensitive & NFC-normalized)
     uploaded_files_map = {}
+    uploaded_stems_map = {}
     if attachments:
         for att in attachments:
             att_name = getattr(att, "name", "")
@@ -996,6 +998,24 @@ def import_from_excel(file_obj, loai: str, user, pham_vi: str = None, attachment
                 key_raw = str(att_name).strip().lower()
                 if key_raw not in uploaded_files_map:
                     uploaded_files_map[key_raw] = att
+
+                # Tương thích định dạng Office phổ biến (.doc <-> .docx, .xls <-> .xlsx, .ppt <-> .pptx)
+                stem, ext = os.path.splitext(key_clean)
+                if ext == ".docx":
+                    uploaded_files_map.setdefault(f"{stem}.doc", att)
+                elif ext == ".doc":
+                    uploaded_files_map.setdefault(f"{stem}.docx", att)
+                elif ext == ".xlsx":
+                    uploaded_files_map.setdefault(f"{stem}.xls", att)
+                elif ext == ".xls":
+                    uploaded_files_map.setdefault(f"{stem}.xlsx", att)
+                elif ext == ".pptx":
+                    uploaded_files_map.setdefault(f"{stem}.ppt", att)
+                elif ext == ".ppt":
+                    uploaded_files_map.setdefault(f"{stem}.pptx", att)
+
+                if stem and stem not in uploaded_stems_map:
+                    uploaded_stems_map[stem] = att
 
     wb = load_workbook(file_obj, read_only=True, data_only=True)
     ws = wb.active
@@ -1299,10 +1319,15 @@ def import_from_excel(file_obj, loai: str, user, pham_vi: str = None, attachment
 
                     for fn in file_names:
                         clean_fn = _clean_attachment_name(fn)
+                        fn_stem, _ = os.path.splitext(clean_fn)
+
                         # 6.1. Ưu tiên 1: Tệp được người dùng kéo thả tải lên trực tiếp trong request import
                         matched_up_file = (
                             uploaded_files_map.get(clean_fn)
                             or uploaded_files_map.get(fn.strip().lower())
+                            or (uploaded_files_map.get(f"{clean_fn}x") if clean_fn.endswith((".doc", ".xls", ".ppt")) else None)
+                            or (uploaded_files_map.get(clean_fn[:-1]) if clean_fn.endswith((".docx", ".xlsx", ".pptx")) else None)
+                            or (uploaded_stems_map.get(fn_stem) if fn_stem else None)
                         )
                         if matched_up_file:
                             up_file = matched_up_file
@@ -1311,9 +1336,15 @@ def import_from_excel(file_obj, loai: str, user, pham_vi: str = None, attachment
                                     up_file.seek(0)
                             except Exception:
                                 pass
+
+                            att_real_name = getattr(up_file, "name", "") or fn.strip()
+                            final_name = fn.strip()
+                            if att_real_name and os.path.splitext(att_real_name)[1].lower() != os.path.splitext(fn.strip())[1].lower():
+                                final_name = att_real_name
+
                             AttachmentModel.objects.create(
                                 document=created_doc,
-                                name=fn.strip(),
+                                name=final_name,
                                 file=up_file,
                                 file_size=getattr(up_file, "size", 0),
                                 nguoi_tao=user if user and user.is_authenticated else None,
@@ -1332,7 +1363,10 @@ def import_from_excel(file_obj, loai: str, user, pham_vi: str = None, attachment
                                 if not found_candidates and clean_fn:
                                     found_candidates = [
                                         cand for cand in flex_dir.glob("**/*")
-                                        if cand.is_file() and _clean_attachment_name(cand.name) == clean_fn
+                                        if cand.is_file() and (
+                                            _clean_attachment_name(cand.name) == clean_fn
+                                            or (fn_stem and os.path.splitext(_clean_attachment_name(cand.name))[0] == fn_stem)
+                                        )
                                     ]
                                 if found_candidates:
                                     disk_file = found_candidates[0]
@@ -1340,9 +1374,14 @@ def import_from_excel(file_obj, loai: str, user, pham_vi: str = None, attachment
                                     db_path = f"oldfile/{rel_sub}"
 
                         if disk_file.exists() and disk_file.is_file():
+                            att_disk_name = disk_file.name
+                            final_disk_name = fn.strip()
+                            if os.path.splitext(att_disk_name)[1].lower() != os.path.splitext(fn.strip())[1].lower():
+                                final_disk_name = att_disk_name
+
                             AttachmentModel.objects.create(
                                 document=created_doc,
-                                name=fn.strip(),
+                                name=final_disk_name,
                                 path=db_path,
                                 nguoi_tao=user if user and user.is_authenticated else None,
                             )

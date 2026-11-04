@@ -20,7 +20,7 @@ class DashboardTests(KyBase):
         self.assertEqual(APIClient().get(URL).status_code, 401)
 
     def test_counts_only_dossiers_waiting_for_the_user(self):
-        d = self.data(self.ky1)  # ký nháy cấp 1 đang mở
+        d = self.data(self.ky1)  # cấp 1 đang mở
         self.assertEqual(d["so_cho_ky"], 1)
         self.assertEqual(d["gan_day"][0]["id"], self.pk)
         self.assertTrue(d["gan_day"][0]["can_toi_ky"])

@@ -4,6 +4,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import RolesPage from './RolesPage';
 import * as apiClientModule from '@lib/apiClient';
 import { resetPermissionsCache } from '@lib/permissions';
+import { setLanguage } from '@i18n/translate';
 
 vi.mock('@lib/apiClient', async () => {
   const actual = await vi.importActual<typeof apiClientModule>('@lib/apiClient');
@@ -296,5 +297,19 @@ describe('RolesPage (Issue #21)', () => {
     expect(
       await screen.findByText('Không thể xóa vì nhóm quyền này vẫn đang được gán cho một hoặc nhiều người dùng.'),
     ).toBeInTheDocument();
+  });
+
+  it('shows standard group names in English when EN is on and keeps custom group names', async () => {
+    mockApi();
+    setLanguage('en');
+    try {
+      renderPage();
+      expect(await screen.findByRole('button', { name: 'Document Clerk' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'System Administrator' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Nhóm tự tạo' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Văn thư' })).not.toBeInTheDocument();
+    } finally {
+      setLanguage('vi');
+    }
   });
 });

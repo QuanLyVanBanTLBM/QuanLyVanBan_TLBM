@@ -1,4 +1,5 @@
 import React from 'react';
+import { t, useTranslation } from '@i18n/translate';
 import { FROZEN_STATUSES, ParticipantRole, TaskDetail } from '../types/task';
 import { isoDateTimeToDisplay } from './DateInput';
 
@@ -19,12 +20,13 @@ interface TaskApprovalBarProps {
 
 function waitingReason(task: TaskDetail): string {
   if (FROZEN_STATUSES.includes(task.status)) {
-    return 'Công việc đã hết hạn khi chưa có file kết quả nên đã bị khóa, không duyệt được.';
+    return t('work.approval.waitingFrozen');
   }
-  return 'Nút Duyệt sẽ hiện khi người chủ trì hoặc cán bộ tham gia gửi ý kiến kèm file kết quả.';
+  return t('work.approval.waitingEvidence');
 }
 
 export default function TaskApprovalBar({ task, busy, onApprove, onUnapprove }: TaskApprovalBarProps) {
+  const { t } = useTranslation();
   const { canApprove, canUnapprove } = task.permissions;
   const isApprover = task.myRoles.some((role) => APPROVER_ROLES.includes(role));
 
@@ -47,10 +49,10 @@ export default function TaskApprovalBar({ task, busy, onApprove, onUnapprove }: 
 
   let description = waitingReason(task);
   if (canApprove) {
-    description = 'Đã có file kết quả. Hãy xem các ý kiến kèm file ở trên trước khi duyệt hoàn thành.';
+    description = t('work.approval.readyToApprove');
   } else if (canUnapprove) {
-    const who = task.approvedBy ? ` bởi ${task.approvedBy.fullName}` : '';
-    description = `Đã duyệt hoàn thành lúc ${isoDateTimeToDisplay(task.approvedAt)}${who}. Hủy duyệt sẽ đưa công việc về Chờ duyệt.`;
+    const who = task.approvedBy ? t('work.approval.approvedBy', { name: task.approvedBy.fullName }) : '';
+    description = t('work.approval.alreadyApproved', { time: isoDateTimeToDisplay(task.approvedAt), by: who });
   }
 
   return (
@@ -80,7 +82,7 @@ export default function TaskApprovalBar({ task, busy, onApprove, onUnapprove }: 
           style={buttonStyle('var(--color-success)', 'var(--color-success-subtle)', 'var(--color-success-border)')}
         >
           <i className="fa-solid fa-check-double" />
-          Duyệt hoàn thành
+          {t('work.approval.approveButton')}
         </button>
       )}
       {canUnapprove && (
@@ -91,7 +93,7 @@ export default function TaskApprovalBar({ task, busy, onApprove, onUnapprove }: 
           style={buttonStyle('var(--color-warning-text)', 'var(--color-warning-subtle)', 'var(--color-warning-border)')}
         >
           <i className="fa-solid fa-rotate-left" />
-          Hủy duyệt
+          {t('work.approval.unapproveButton')}
         </button>
       )}
     </section>

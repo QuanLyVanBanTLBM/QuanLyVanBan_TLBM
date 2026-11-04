@@ -1,4 +1,6 @@
 import base64
+from datetime import timedelta
+from unittest import mock
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -9,7 +11,7 @@ from django.utils import timezone
 from accounts.models import Position
 from signing import enums
 from signing.errors import ConflictError, SigningError
-from signing.models import SigningAuditLog, SigningKey, SigningProcess, SigningProcessStepSigner
+from signing.models import SigningAuditLog, SigningChallengeDaDung, SigningKey, SigningProcess, SigningProcessStepSigner
 from signing.services import keys as key_service
 from signing.services import process as process_service
 
@@ -25,7 +27,9 @@ def new_keypair():
 
 
 def sign_challenge(private, key):
-    return base64.b64encode(private.sign(key_service.thach_thuc_so_huu(key).encode())).decode()
+    """Trả (challenge, chữ ký) cho một challenge mới của khóa."""
+    challenge = key_service.thach_thuc_so_huu(key)
+    return challenge, base64.b64encode(private.sign(challenge.encode())).decode()
 
 
 class ProcessServiceTests(TestCase):
@@ -41,7 +45,7 @@ class ProcessServiceTests(TestCase):
             {"cap_ky": 1, "ten_cap_ky": "Cấp 1", "thu_tu": 1,
              "nguoi_ky": [{"nguoi_ky": self.u2, "thu_tu": 1}]},
             {"cap_ky": 2, "ten_cap_ky": "Cấp 2", "thu_tu": 2,
-             "nguoi_ky": [{"chuc_vu_id": self.position.pk, "thu_tu": 1, "vai_tro_ky": enums.VaiTroKy.KY_CHINH}]},
+             "nguoi_ky": [{"chuc_vu_id": self.position.pk, "thu_tu": 1}]},
         ]
         return process_service.tao_quy_trinh(
             self.u1, ma_quy_trinh=ma, ten_quy_trinh="Quy trình", pham_vi=enums.PhamViQuyTrinh.CONG_TY, cap_ky=cap_ky,
@@ -128,40 +132,6 @@ class ProcessServiceTests(TestCase):
         self.assertEqual(ctx.exception.get_codes(), "cap_ky_khong_co_nguoi_ky")
         self.assertEqual(ctx.exception.fields, {"cap_ky_thieu_nguoi_ky": [1]})
 
-    def test_legacy_initial_signers_cannot_be_added_or_activated(self):
-        p = self.create()
-        step = p.cap_ky_set.order_by("thu_tu").first()
-        with self.assertRaises(SigningError) as ctx:
-            process_service.them_nguoi_ky(step, self.u1, thu_tu=2, nguoi_ky=self.u1,
-                                          vai_tro_ky=enums.VaiTroKy.KY_NHAY)
-        self.assertEqual(ctx.exception.get_codes(), "ky_nhay_khong_ho_tro")
-        legacy = step.nguoi_ky_set.get()
-        legacy.vai_tro_ky = enums.VaiTroKy.KY_NHAY
-        legacy.save(update_fields=["vai_tro_ky"])
-        with self.assertRaises(SigningError) as ctx:
-            process_service.kich_hoat(p, self.u1)
-        self.assertEqual(ctx.exception.get_codes(), "ky_nhay_khong_ho_tro")
-        self.assertEqual(SigningProcess.objects.get(pk=p.pk).trang_thai, "NHAP")
-        clone = process_service.nhan_ban(p, self.u1)
-        self.assertEqual(clone.cap_ky_set.order_by("thu_tu").first().nguoi_ky_set.get().vai_tro_ky, "KY_NHAY")
-        clone.cap_ky_set.order_by("thu_tu").first().nguoi_ky_set.all().delete()
-        process_service.them_nguoi_ky(clone.cap_ky_set.order_by("thu_tu").first(), self.u1, thu_tu=1, nguoi_ky=self.u2)
-        self.assertEqual(process_service.kich_hoat(clone, self.u1).trang_thai, "HOAT_DONG")
-        legacy.refresh_from_db()
-        self.assertEqual(legacy.vai_tro_ky, "KY_NHAY")
-
-    def test_inactive_legacy_level_also_requires_cleanup_before_activation(self):
-        p = self.create()
-        step = p.cap_ky_set.order_by("thu_tu").first()
-        step.dang_ap_dung = False
-        step.save(update_fields=["dang_ap_dung"])
-        signer = step.nguoi_ky_set.get()
-        signer.vai_tro_ky = enums.VaiTroKy.KY_NHAY
-        signer.save(update_fields=["vai_tro_ky"])
-        with self.assertRaises(SigningError) as ctx:
-            process_service.kich_hoat(p, self.u1)
-        self.assertEqual(ctx.exception.get_codes(), "ky_nhay_khong_ho_tro")
-
     def test_activate_then_lock_editing(self):
         p = process_service.kich_hoat(self.create(), self.u1)
         self.assertEqual(p.trang_thai, enums.TrangThaiQuyTrinh.HOAT_DONG)
@@ -226,7 +196,7 @@ class KeyServiceTests(TestCase):
         return private, key
 
     def verify(self, private, key, user=None):
-        return key_service.xac_minh_so_huu(key, user or self.u1, sign_challenge(private, key))
+        return key_service.xac_minh_so_huu(key, user or self.u1, *sign_challenge(private, key))
 
     def test_register_computes_fingerprint_and_logs(self):
         _, key = self.register()
@@ -253,15 +223,81 @@ class KeyServiceTests(TestCase):
         _, key = self.register()
         other_private, _ = new_keypair()
         with self.assertRaises(SigningError) as ctx:
-            key_service.xac_minh_so_huu(key, self.u1, sign_challenge(other_private, key))
+            key_service.xac_minh_so_huu(key, self.u1, *sign_challenge(other_private, key))
         self.assertEqual(ctx.exception.get_codes(), "chung_minh_so_huu_that_bai")
         key.refresh_from_db()
         self.assertIsNone(key.thoi_diem_xac_minh_so_huu)
 
+    def test_challenge_is_random_per_request(self):
+        _, key = self.register()
+        self.assertNotEqual(key_service.thach_thuc_so_huu(key), key_service.thach_thuc_so_huu(key))
+
+    def test_challenge_of_other_key_rejected(self):
+        private, key = self.register()
+        _, other = self.register(ma="k2", user=self.u2)
+        challenge = key_service.thach_thuc_so_huu(other)
+        chu_ky = base64.b64encode(private.sign(challenge.encode())).decode()
+        with self.assertRaises(SigningError) as ctx:
+            key_service.xac_minh_so_huu(key, self.u1, challenge, chu_ky)
+        self.assertEqual(ctx.exception.get_codes(), "thach_thuc_khong_hop_le")
+
+    def test_tampered_or_expired_challenge_rejected(self):
+        private, key = self.register()
+        challenge, chu_ky = sign_challenge(private, key)
+        with self.assertRaises(SigningError) as ctx:
+            key_service.xac_minh_so_huu(key, self.u1, challenge + "x", chu_ky)
+        self.assertEqual(ctx.exception.get_codes(), "thach_thuc_khong_hop_le")
+        with mock.patch.object(key_service, "HAN_THACH_THUC_GIAY", -1):
+            with self.assertRaises(SigningError) as ctx:
+                key_service.xac_minh_so_huu(key, self.u1, challenge, chu_ky)
+        self.assertEqual(ctx.exception.get_codes(), "thach_thuc_khong_hop_le")
+
+    def test_challenge_cannot_be_reused(self):
+        private, key = self.register()
+        challenge, chu_ky = sign_challenge(private, key)
+        key_service.xac_minh_so_huu(key, self.u1, challenge, chu_ky)
+        self.assertEqual(SigningChallengeDaDung.objects.filter(nguoi_dung=self.u1).count(), 1)
+        with self.assertRaises(ConflictError) as ctx:
+            key_service.xac_minh_so_huu(key, self.u1, challenge, chu_ky)
+        self.assertEqual((ctx.exception.status_code, ctx.exception.get_codes()), (409, "thach_thuc_da_dung"))
+        self.assertEqual(SigningChallengeDaDung.objects.filter(nguoi_dung=self.u1).count(), 1)
+
+    def test_failed_proof_does_not_consume_challenge(self):
+        private, key = self.register()
+        other_private, _ = new_keypair()
+        challenge = key_service.thach_thuc_so_huu(key)
+        sai = base64.b64encode(other_private.sign(challenge.encode())).decode()
+        with self.assertRaises(SigningError):
+            key_service.xac_minh_so_huu(key, self.u1, challenge, sai)
+        self.assertFalse(SigningChallengeDaDung.objects.exists())
+        dung = base64.b64encode(private.sign(challenge.encode())).decode()
+        key_service.xac_minh_so_huu(key, self.u1, challenge, dung)
+
+    def test_expired_used_nonces_are_cleaned_on_write(self):
+        private, key = self.register()
+        cu = SigningChallengeDaDung.objects.create(
+            nguoi_dung=self.u1, nonce="cu", het_han=timezone.now() - timedelta(seconds=1))
+        con_han = SigningChallengeDaDung.objects.create(
+            nguoi_dung=self.u1, nonce="con-han", het_han=timezone.now() + timedelta(seconds=60))
+        self.verify(private, key)
+        self.assertFalse(SigningChallengeDaDung.objects.filter(pk=cu.pk).exists())
+        self.assertTrue(SigningChallengeDaDung.objects.filter(pk=con_han.pk).exists())
+
+    def test_inactive_account_cannot_register_or_verify(self):
+        private, key = self.register()
+        self.u1.is_active = False
+        self.u1.save(update_fields=["is_active"])
+        with self.assertRaises(SigningError) as ctx:
+            self.verify(private, key)
+        self.assertEqual(ctx.exception.get_codes(), "tai_khoan_khong_hoat_dong")
+        with self.assertRaises(SigningError) as ctx:
+            self.register(ma="k3")
+        self.assertEqual(ctx.exception.get_codes(), "tai_khoan_khong_hoat_dong")
+
     def test_only_owner_can_operate(self):
         private, key = self.register()
         for call in (
-            lambda: key_service.xac_minh_so_huu(key, self.u2, sign_challenge(private, key)),
+            lambda: key_service.xac_minh_so_huu(key, self.u2, *sign_challenge(private, key)),
             lambda: key_service.kich_hoat(key, self.u2),
             lambda: key_service.thu_hoi(key, self.u2, "ly do"),
         ):

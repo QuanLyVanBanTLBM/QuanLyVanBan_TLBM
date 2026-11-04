@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from '@i18n/translate';
 import { toMessage } from '../api/client';
 import { unapproveTask } from '../api/taskActions';
 import { deleteTask, listTasks } from '../api/tasks';
@@ -50,6 +51,7 @@ interface TaskListPageProps {
 }
 
 export default function TaskListPage({ onOpenTask }: TaskListPageProps) {
+  const { t } = useTranslation();
   const isMobile = useIsMobile();
   const [state, setState] = useState<ListState>(readState);
   const [data, setData] = useState<Paginated<TaskListItem> | null>(null);
@@ -125,10 +127,10 @@ export default function TaskListPage({ onOpenTask }: TaskListPageProps) {
     try {
       if (pending.type === 'delete') {
         await deleteTask(pending.task.id);
-        setNotice(`Đã xóa công việc "${pending.task.title}".`);
+        setNotice(t('work.taskList.deletedNotice', { title: pending.task.title }));
       } else {
         await unapproveTask(pending.task.id);
-        setNotice(`Đã hủy duyệt công việc "${pending.task.title}". Công việc quay về trạng thái Chờ duyệt.`);
+        setNotice(t('work.taskList.unapprovedNotice', { title: pending.task.title }));
       }
       setActionError('');
       reload();
@@ -162,10 +164,10 @@ export default function TaskListPage({ onOpenTask }: TaskListPageProps) {
       >
         <div>
           <h1 style={{ fontSize: isMobile ? '1.15rem' : '1.3rem', fontWeight: 800, color: 'var(--text-main)' }}>
-            Danh sách nội dung công việc
+            {t('work.taskList.title')}
           </h1>
           <p style={{ marginTop: '4px', fontSize: '0.86rem', color: 'var(--text-secondary)' }}>
-            Công việc bạn đã giao hoặc đang tham gia xử lý. Bấm vào nội dung công việc để xem chi tiết.
+            {t('work.taskList.subtitle')}
           </p>
         </div>
 
@@ -203,11 +205,11 @@ export default function TaskListPage({ onOpenTask }: TaskListPageProps) {
       >
         {loading && !data ? (
           <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-            <i className="fa-solid fa-circle-notch fa-spin" /> Đang tải danh sách công việc...
+            <i className="fa-solid fa-circle-notch fa-spin" /> {t('work.taskList.loadingList')}
           </div>
         ) : !data && error ? (
           <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-            <p style={{ fontWeight: 600, color: 'var(--text-main)' }}>Chưa tải được danh sách công việc.</p>
+            <p style={{ fontWeight: 600, color: 'var(--text-main)' }}>{t('work.taskList.loadError')}</p>
             <button
               type="button"
               onClick={reload}
@@ -222,19 +224,19 @@ export default function TaskListPage({ onOpenTask }: TaskListPageProps) {
                 cursor: 'pointer',
               }}
             >
-              <i className="fa-solid fa-rotate-right" /> Thử lại
+              <i className="fa-solid fa-rotate-right" /> {t('work.common.retry')}
             </button>
           </div>
         ) : tasks.length === 0 && !loading ? (
           <div style={{ padding: '40px 16px', textAlign: 'center', color: 'var(--text-secondary)' }}>
             <i className="fa-regular fa-folder-open" style={{ fontSize: '1.8rem', color: 'var(--text-muted)' }} />
             <p style={{ marginTop: '10px', fontWeight: 600, color: 'var(--text-main)' }}>
-              {hasFilter ? 'Không có công việc nào khớp bộ lọc.' : 'Chưa có công việc nào.'}
+              {hasFilter ? t('work.taskList.emptyFiltered') : t('work.taskList.emptyAll')}
             </p>
             <p style={{ marginTop: '4px', fontSize: '0.84rem' }}>
               {hasFilter
-                ? 'Hãy đổi điều kiện lọc, hoặc bấm "Xóa bộ lọc" để xem tất cả công việc.'
-                : 'Bấm "Thêm công việc mới" để giao công việc đầu tiên.'}
+                ? t('work.taskList.emptyFilteredHint')
+                : t('work.taskList.emptyAllHint')}
             </p>
           </div>
         ) : (
@@ -272,10 +274,10 @@ export default function TaskListPage({ onOpenTask }: TaskListPageProps) {
           setForm({ open: false, taskId: null });
           setActionError('');
           if (mode === 'create') {
-            setNotice(`Đã thêm công việc "${task.title}".`);
+            setNotice(t('work.taskList.createdNotice', { title: task.title }));
             setState((previous) => ({ ...previous, page: 1 }));
           } else {
-            setNotice(`Đã lưu thay đổi của công việc "${task.title}".`);
+            setNotice(t('work.taskList.updatedNotice', { title: task.title }));
           }
           reload();
         }}
@@ -285,20 +287,12 @@ export default function TaskListPage({ onOpenTask }: TaskListPageProps) {
         open={pending !== null}
         danger={pending?.type === 'delete'}
         loading={pendingBusy}
-        title={pending?.type === 'delete' ? 'Xóa công việc' : 'Hủy duyệt công việc'}
-        confirmLabel={pending?.type === 'delete' ? 'Xóa công việc' : 'Hủy duyệt'}
+        title={pending?.type === 'delete' ? t('work.taskList.confirmDeleteTitle') : t('work.taskList.confirmUnapproveTitle')}
+        confirmLabel={pending?.type === 'delete' ? t('work.taskList.confirmDeleteLabel') : t('work.taskList.confirmUnapproveLabel')}
         message={
-          pending?.type === 'delete' ? (
-            <>
-              Bạn có chắc muốn xóa công việc <strong style={{ color: 'var(--text-main)' }}>"{pending.task.title}"</strong>?
-              Toàn bộ file đính kèm, file bằng chứng và ý kiến sẽ bị xóa theo. Thao tác này không hoàn tác được.
-            </>
-          ) : (
-            <>
-              Hủy duyệt công việc <strong style={{ color: 'var(--text-main)' }}>"{pending?.task.title}"</strong>?
-              Công việc sẽ quay về trạng thái Chờ duyệt, người chủ trì hoặc người chỉ đạo có thể duyệt lại sau.
-            </>
-          )
+          pending?.type === 'delete'
+            ? t('work.taskList.confirmDeleteMessage', { title: pending.task.title })
+            : t('work.taskList.confirmUnapproveMessage', { title: pending?.task.title ?? '' })
         }
         onCancel={() => setPending(null)}
         onConfirm={handleConfirm}

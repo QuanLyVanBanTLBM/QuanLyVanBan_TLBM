@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from '@i18n/translate';
 import { TASK_STATUS_LABELS, TaskStatus } from '../types/task';
 import './TaskStatusBadge.css';
 
@@ -54,8 +55,9 @@ interface TaskStatusBadgeProps {
 }
 
 export default function TaskStatusBadge({ status, label, size = 'md' }: TaskStatusBadgeProps) {
+  const { t } = useTranslation();
   const style = STATUS_STYLES[status] || STATUS_STYLES.CHO_XU_LY;
-  const text = label || TASK_STATUS_LABELS[status] || status;
+  const text = label || t(`work.status.${status}`) || TASK_STATUS_LABELS[status] || status;
 
   return (
     <span

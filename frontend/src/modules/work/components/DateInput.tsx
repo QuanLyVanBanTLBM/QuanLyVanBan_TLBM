@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components -- file này export kèm vài hàm tiện ích dùng chung; quy ước module chỉ có 4 thư mục api/components/pages/types nên không tách utils riêng. */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from '@i18n/translate';
 import './DateInput.css';
 
 /**
@@ -12,7 +13,7 @@ import './DateInput.css';
  * chỉ phần hiển thị mới là dd/mm/yyyy.
  */
 
-const WEEKDAYS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+const WEEKDAY_KEYS = ['weekdayMo', 'weekdayTu', 'weekdayWe', 'weekdayTh', 'weekdayFr', 'weekdaySa', 'weekdaySu'] as const;
 
 function pad(value: number): string {
   return String(value).padStart(2, '0');
@@ -103,11 +104,12 @@ export default function DateInput({
   min,
   max,
   disabled = false,
-  placeholder = 'dd/mm/yyyy',
+  placeholder,
   invalid = false,
   id,
   ariaLabel,
 }: DateInputProps) {
+  const { t } = useTranslation();
   const [text, setText] = useState(() => isoToDisplay(value));
   const [open, setOpen] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -172,9 +174,9 @@ export default function DateInput({
   };
 
   const outOfRangeMessage = (): string => {
-    if (min && max) return `Ngày phải nằm trong khoảng ${isoToDisplay(min)} đến ${isoToDisplay(max)}.`;
-    if (min) return `Ngày phải từ ${isoToDisplay(min)} trở đi.`;
-    return `Ngày không được sau ${isoToDisplay(max || '')}.`;
+    if (min && max) return t('work.dateInput.rangeMinMax', { min: isoToDisplay(min), max: isoToDisplay(max) });
+    if (min) return t('work.dateInput.rangeMin', { min: isoToDisplay(min) });
+    return t('work.dateInput.rangeMax', { max: isoToDisplay(max || '') });
   };
 
   const handleTextChange = (raw: string) => {
@@ -192,7 +194,7 @@ export default function DateInput({
     const iso = displayToIso(masked);
     if (!iso) {
       // Không âm thầm giữ ngày cũ: người dùng phải thấy đúng cái mình đang nhập.
-      setHint(`Ngày ${masked} không có thật. Hãy nhập lại theo dạng ngày/tháng/năm, ví dụ 25/12/2026.`);
+      setHint(t('work.dateInput.invalidDate', { date: masked }));
       emit('');
       return;
     }
@@ -207,7 +209,7 @@ export default function DateInput({
     setFocused(false);
     const digitCount = text.replace(/\D/g, '').length;
     if (digitCount > 0 && digitCount < 8) {
-      setHint('Ngày chưa nhập đủ. Hãy nhập đủ ngày, tháng và năm theo dạng dd/mm/yyyy.');
+      setHint(t('work.dateInput.incompleteDate'));
     }
   };
 
@@ -275,9 +277,9 @@ export default function DateInput({
           className="work-date-input-field"
           inputMode="numeric"
           autoComplete="off"
-          aria-label={ariaLabel || 'Ngày theo định dạng ngày/tháng/năm'}
+          aria-label={ariaLabel || t('work.dateInput.ariaLabel')}
           value={text}
-          placeholder={placeholder}
+          placeholder={placeholder || t('work.dateInput.placeholder')}
           disabled={disabled}
           onChange={(event) => handleTextChange(event.target.value)}
           onFocus={() => setFocused(true)}
@@ -298,7 +300,7 @@ export default function DateInput({
           type="button"
           onClick={openCalendar}
           disabled={disabled}
-          aria-label="Mở lịch chọn ngày"
+          aria-label={t('work.dateInput.openCalendar')}
           style={{
             background: 'transparent',
             border: 'none',
@@ -324,8 +326,11 @@ export default function DateInput({
             position: 'absolute',
             top: 'calc(100% + 6px)',
             left: 0,
+            right: 0,
             zIndex: 30,
             width: '280px',
+            maxWidth: 'calc(100vw - 32px)',
+            boxSizing: 'border-box',
             padding: '12px',
             borderRadius: 'var(--radius-md)',
             border: '1px solid var(--border-subtle)',
@@ -335,21 +340,21 @@ export default function DateInput({
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
             <div style={{ display: 'flex', gap: '4px' }}>
-              <button type="button" style={navButtonStyle} onClick={() => shiftMonth(-12)} aria-label="Năm trước">
+              <button type="button" style={navButtonStyle} onClick={() => shiftMonth(-12)} aria-label={t('work.dateInput.prevYear')}>
                 <i className="fa-solid fa-angles-left" />
               </button>
-              <button type="button" style={navButtonStyle} onClick={() => shiftMonth(-1)} aria-label="Tháng trước">
+              <button type="button" style={navButtonStyle} onClick={() => shiftMonth(-1)} aria-label={t('work.dateInput.prevMonth')}>
                 <i className="fa-solid fa-angle-left" />
               </button>
             </div>
             <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text-main)' }}>
-              Tháng {viewMonth + 1}, {viewYear}
+              {t('work.dateInput.monthYear', { month: String(viewMonth + 1), year: String(viewYear) })}
             </div>
             <div style={{ display: 'flex', gap: '4px' }}>
-              <button type="button" style={navButtonStyle} onClick={() => shiftMonth(1)} aria-label="Tháng sau">
+              <button type="button" style={navButtonStyle} onClick={() => shiftMonth(1)} aria-label={t('work.dateInput.nextMonth')}>
                 <i className="fa-solid fa-angle-right" />
               </button>
-              <button type="button" style={navButtonStyle} onClick={() => shiftMonth(12)} aria-label="Năm sau">
+              <button type="button" style={navButtonStyle} onClick={() => shiftMonth(12)} aria-label={t('work.dateInput.nextYear')}>
                 <i className="fa-solid fa-angles-right" />
               </button>
             </div>
@@ -364,9 +369,9 @@ export default function DateInput({
               marginBottom: '4px',
             }}
           >
-            {WEEKDAYS.map((label) => (
+            {WEEKDAY_KEYS.map((key) => (
               <div
-                key={label}
+                key={key}
                 style={{
                   textAlign: 'center',
                   fontSize: '0.7rem',
@@ -375,7 +380,7 @@ export default function DateInput({
                   padding: '2px 0',
                 }}
               >
-                {label}
+                {t(`work.dateInput.${key}`)}
               </div>
             ))}
           </div>
@@ -390,7 +395,7 @@ export default function DateInput({
                   key={item.iso}
                   type="button"
                   disabled={disabledDay}
-                  title={disabledDay ? 'Ngày này nằm ngoài khoảng cho phép' : undefined}
+                  title={disabledDay ? t('work.dateInput.outOfRangeDay') : undefined}
                   onClick={() => {
                     emit(item.iso);
                     setText(isoToDisplay(item.iso));
@@ -445,7 +450,7 @@ export default function DateInput({
                 padding: 0,
               }}
             >
-              Hôm nay
+              {t('work.dateInput.today')}
             </button>
             <button
               type="button"
@@ -465,7 +470,7 @@ export default function DateInput({
                 padding: 0,
               }}
             >
-              Xóa ngày
+              {t('work.dateInput.clearDate')}
             </button>
           </div>
         </div>

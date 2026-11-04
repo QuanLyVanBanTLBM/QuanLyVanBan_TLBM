@@ -7,7 +7,7 @@ export type TrangThaiLuot = 'CHO_KY' | 'YEU_CAU_SUA' | 'HOAN_THANH' | 'TU_CHOI' 
 export type TrangThaiCap = 'CHUA_MO' | 'DANG_KY' | 'TAM_DUNG' | 'HOAN_THANH';
 export type TrangThaiNguoiKy = 'CHO_KY' | 'DA_KY' | 'TU_CHOI' | 'YEU_CAU_SUA';
 export type TrangThaiTepHoanTat = 'DANG_XU_LY' | 'LOI' | 'THANH_CONG' | null;
-export type VaiTroKy = 'KY_NHAY' | 'KY_CHINH';
+export type VaiTroKy = 'KY_CHINH';
 export type PhamViQuyTrinh = 'CONG_TY' | 'PHONG_BAN';
 
 export interface NguoiDungHienTai {
@@ -17,6 +17,34 @@ export interface NguoiDungHienTai {
   quyen: Record<string, boolean>;
   la_quan_tri: boolean;
   la_lanh_dao_don_vi: boolean;
+  co_anh_chu_ky?: boolean;
+  /** Quyền ký đang bị quản trị viên khóa (null: không bị khóa); không kèm lý do nội bộ. */
+  khoa_quyen_ky?: { khoa_den: string | null } | null;
+  /** MFA qua email khi ký (#509): `bat` theo cấu hình máy chủ; `da_xac_thuc` theo access token hiện tại. */
+  mfa_ky?: { bat: boolean; da_xac_thuc: boolean; het_han: string | null };
+}
+
+export type ThoiHanKhoaQuyenKy = '1_gio' | '8_gio' | '24_gio' | 'den_khi_bat_lai';
+
+/** Một dòng của tab quản lý khóa ký (quản trị viên). */
+export interface QuanTriNguoiDung {
+  id: number;
+  ten: string;
+  ten_dang_nhap: string;
+  chuc_vu: string | null;
+  don_vi: string | null;
+  co_quyen_ky: boolean;
+  khoa_ky: { id: number; ma_khoa: string; trang_thai: string } | null;
+  pin: { so_lan_sai: number } | null;
+  khoa_quyen_ky: { id: number; khoa_tu: string; khoa_den: string | null; ly_do: string; nguoi_khoa_id: number } | null;
+}
+
+export interface ThongTinAnhChuKyCaNhan {
+  co_anh: boolean;
+  ma_bam?: string;
+  dung_luong_bytes?: number;
+  url?: string;
+  updated_at?: string;
 }
 
 /** Khung ký: tỷ lệ % theo trang, gốc góc trên-trái. Số thập phân dạng chuỗi. */
@@ -37,7 +65,6 @@ export interface NguoiKyCauHinh {
   ten_chuc_vu: string | null;
   pham_vi_chuc_vu: string | null;
   vai_tro_ky: VaiTroKy;
-  chan_ky_chinh: boolean;
   thu_tu: number;
 }
 
@@ -82,23 +109,28 @@ export interface NguoiKyLuot {
   ten_nguoi_ky: string;
   ten_chuc_vu: string | null;
   vai_tro_ky: VaiTroKy;
-  chan_ky_chinh: boolean;
   trang_thai: TrangThaiNguoiKy;
   /** Backend policy projection for the current user; missing means not eligible. */
   thoi_diem_mo: string | null;
   ngay_ky: string | null;
   ngay_tu_choi: string | null;
   ly_do_tu_choi: string;
-  uy_quyen_tu: number | null;
-  ten_nguoi_uy_quyen: string | null;
-  ly_do_uy_quyen: string;
-  ngay_uy_quyen: string | null;
   trang_ky: number | null;
   toa_do_x: string | null;
   toa_do_y: string | null;
   chieu_rong_khung: string | null;
   chieu_cao_khung: string | null;
   chu_ky: ChuKyTomTat | null;
+  /** Máy chủ chỉ trả true cho người tạo hoặc quản trị viên khi người ký đang chờ có quyền ký bị khóa. */
+  co_the_thay?: boolean;
+}
+
+/** Tài khoản có thể thay một người ký (GET /trinh-ky/<id>/thay-nguoi-ky/). */
+export interface UngVienThayNguoiKy {
+  id: number;
+  ten: string;
+  chuc_vu: string | null;
+  don_vi: string | null;
 }
 
 export interface CapLuot {

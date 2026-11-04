@@ -218,5 +218,7 @@ pnpm manage send_birthday_emails --date=YYYY-MM-DD
 
 `--allow-locmem` chỉ dành cho kiểm thử. Kết quả gửi được ghi trong `birthdays_birthdayemaillog`; hiện API nhật ký chỉ cho superuser xem cho đến khi DDL bổ sung quyền riêng.
 
-Để chạy định kỳ trên Linux, dùng `deploy/birthday-email.cron.example`, thay đường dẫn, phút và giờ theo lịch đã được nhóm chốt; đặt timezone của scheduler thành `Asia/Ho_Chi_Minh`. Trên Windows, tạo tác vụ hằng ngày trong Task Scheduler: chương trình là Python của môi trường ảo, tham số là `manage.py send_birthday_emails`, thư mục bắt đầu là `backend`. Tài khoản chạy tác vụ phải nhận được các biến SMTP từ môi trường hoặc secret store.
+Trên môi trường deploy `/srv/qlvb`, workflow `.github/workflows/birthday-email.yml` chạy lệnh gửi hằng ngày lúc 08:00 theo giờ Việt Nam (01:00 UTC). Workflow dùng các GitHub Actions secrets `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_PRIVATE_KEY` và `DEPLOY_KNOWN_HOSTS` đã dùng cho deploy, chờ khóa deploy trước khi chạy bản release hiện tại, rồi nạp cấu hình từ `/etc/qlvb/backend.env`. Đầu ra chi tiết được ghi vào `/srv/qlvb/birthday-email.log` với quyền chỉ chủ sở hữu đọc; log Actions chỉ ghi trạng thái chung để tránh lộ dữ liệu nhân viên. Nhật ký theo từng người vẫn được lưu trong `birthdays_birthdayemaillog`.
+
+Workflow lịch chạy trên nhánh mặc định của repository. Nếu tác vụ thất bại, kiểm tra log riêng trên máy chủ và nhật ký email trong ứng dụng; xác nhận máy chủ có SMTP qua `EMAIL_HOST` và `DEFAULT_FROM_EMAIL`.
 

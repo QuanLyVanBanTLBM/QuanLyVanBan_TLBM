@@ -11,7 +11,7 @@ from django.test.utils import CaptureQueriesContext
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from accounts.models import Employee, Position
+from accounts.models import Employee, EmployeeAssignment, Position
 from organizations.directory_export import BLOCK_COLOR, HEADER_FILL, HEADER_ROW
 from organizations.models import DonVi, KhoiKhuVuc
 
@@ -146,9 +146,62 @@ class DirectoryExportTest(TestCase):
         self.person("a1b", self.unit_a1, self.mid)
         self.person("b1", self.unit_b1, self.boss)
         rows = body_rows(self.export())
-        self.assertEqual([row[0] for row in rows if isinstance(row[0], int)], [1, 2, 1, 2])
+        self.assertEqual(
+            [row[0] for row in self.members_of(rows, "Đơn vị A1")], [1, 2]
+        )
+        self.assertEqual(
+            [row[0] for row in self.members_of(rows, "Đơn vị B1")], [1, 2]
+        )
         self.assertEqual(self.members_of(rows, "Đơn vị A2"), [])
         self.assertEqual(rows[self.unit_row_index(rows, "Đơn vị A2") + 1][0], "KHỐI B")
+
+    def assign(self, person, unit, position, chuc_danh=""):
+        return EmployeeAssignment.objects.create(employee=person, don_vi=unit, chuc_vu=position, chuc_danh=chuc_danh)
+
+    def test_concurrent_roles_are_listed_in_every_unit_with_that_role(self):
+        a = self.person("anh_a", self.unit_a1, self.boss, ho_ten="Anh A")
+        self.assign(a, self.unit_a2, self.mid, "Trưởng phòng kiêm nhiệm")
+        self.assign(a, self.unit_b1, self.low)
+        rows = body_rows(self.export())
+        in_a1 = self.members_of(rows, "Đơn vị A1")
+        in_a2 = self.members_of(rows, "Đơn vị A2")
+        in_b1 = self.members_of(rows, "Đơn vị B1")
+        self.assertEqual([(m[1], m[2]) for m in in_a1], [("Anh A", "Giám đốc thử")])
+        self.assertEqual([(m[1], m[2], m[3]) for m in in_a2], [("Anh A", "Trưởng phòng thử", "Trưởng phòng kiêm nhiệm")])
+        self.assertEqual([(m[1], m[2]) for m in in_b1], [("Anh A", "Nhân viên thử"), ("exporter", "Cộng tác viên thử")])
+        self.assertEqual(sum(1 for row in rows if row[1] == "Anh A"), 3)
+
+    def test_concurrent_rows_follow_position_order_with_primary_staff(self):
+        self.person("tp", self.unit_a2, self.mid, ho_ten="Trưởng phòng")
+        self.person("nv", self.unit_a2, self.low, ho_ten="Nhân viên")
+        guest = self.person("khach", self.unit_a1, self.low, ho_ten="Người kiêm nhiệm")
+        self.assign(guest, self.unit_a2, self.boss)
+        rows = body_rows(self.export())
+        self.assertEqual(
+            [m[1] for m in self.members_of(rows, "Đơn vị A2")], ["Người kiêm nhiệm", "Trưởng phòng", "Nhân viên"]
+        )
+        self.assertEqual([m[0] for m in self.members_of(rows, "Đơn vị A2")], [1, 2, 3])
+
+    def test_assignment_identical_to_primary_role_is_listed_once(self):
+        a = self.person("anh_a", self.unit_a1, self.boss, ho_ten="Anh A")
+        self.assign(a, self.unit_a1, self.boss)
+        self.assign(a, self.unit_a1, self.mid)
+        members = self.members_of(body_rows(self.export()), "Đơn vị A1")
+        self.assertEqual([(m[1], m[2]) for m in members], [("Anh A", "Giám đốc thử"), ("Anh A", "Trưởng phòng thử")])
+
+    def test_assignments_respect_resigned_internal_and_system_admin_rules(self):
+        gone = self.person("gone", self.unit_a1, self.boss, trang_thai=Employee.Status.NGHI_VIEC, ho_ten="Đã nghỉ")
+        hidden = self.person("hidden", self.unit_a1, self.boss, is_public=False, ho_ten="Người nội bộ")
+        root = User.objects.create_superuser(
+            username="sysadmin", password="x", email="sysadmin@example.com", ho_ten="Quản trị hệ thống",
+            don_vi=self.unit_a1, chuc_vu=self.boss,
+        )
+        for person in (gone, hidden, root):
+            self.assign(person, self.unit_a2, self.mid)
+        plain = [m[1] for m in self.members_of(body_rows(self.export()), "Đơn vị A2")]
+        self.assertEqual(plain, [])
+        full = self.make_user("full", "view_donvi", "export_donvi", "view_full_cbnv")
+        self.assertEqual([m[1] for m in self.members_of(body_rows(self.export(full)), "Đơn vị A2")], ["Người nội bộ"])
 
     def test_resigned_staff_are_never_exported(self):
         self.person("gone", self.unit_a1, self.boss, trang_thai=Employee.Status.NGHI_VIEC, ho_ten="Đã nghỉ")
@@ -204,6 +257,7 @@ class DirectoryExportTest(TestCase):
             unit = DonVi.objects.create(khoi=self.block_a, stt_uu_tien=self.priority + 100 + index, ten=f"Đơn vị mới {index}")
             self.person(f"head{index}", unit, self.mid)
             self.person(f"staff{index}", unit, self.low)
+            self.assign(self.person(f"conc{index}", self.unit_a1, self.low), unit, self.boss)
         with CaptureQueriesContext(connection) as many:
             client.get(URL)
         self.assertEqual(len(many), len(few))

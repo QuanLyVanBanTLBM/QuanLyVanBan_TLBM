@@ -118,14 +118,24 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     let list: string[];
     if (availableFolders && availableFolders.length > 0) {
       list = [...availableFolders];
+    } else if (recordDossiers && recordDossiers.length > 0) {
+      list = recordDossiers.map((d) => d.ten_ho_so);
     } else {
       list = Object.keys(FOLDER_TO_DOC_TYPES_MAP);
     }
     if (currentFolderName && !list.includes(currentFolderName)) {
       list = [...list, currentFolderName];
     }
+
+    // Luôn ưu tiên đưa "Hồ sơ chung" lên vị trí đầu tiên
+    const hscIdx = list.findIndex((f) => f.trim().toLowerCase() === 'hồ sơ chung');
+    if (hscIdx > 0) {
+      const [hsc] = list.splice(hscIdx, 1);
+      list.unshift(hsc);
+    }
+
     return list;
-  }, [availableFolders, currentFolderName]);
+  }, [availableFolders, recordDossiers, currentFolderName]);
 
   // Lọc Loại văn bản tương ứng theo Danh mục hồ sơ được chọn
   const filteredDocTypeOptions = React.useMemo(() => {
@@ -206,8 +216,14 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   // Options cho Select Danh mục Hồ sơ
   const dossierSelectOptions: SelectOption[] = React.useMemo(() => [
     { value: '', label: t('documents_ui.filter.allDossiers') || 'Tất cả danh mục hồ sơ' },
-    ...folderOptions.map((folder) => ({ value: folder, label: folder })),
-  ], [folderOptions, t]);
+    ...folderOptions.map((folder) => {
+      const matched = recordDossiers?.find(
+        (d) => d.ten_ho_so.trim().toLowerCase() === folder.trim().toLowerCase()
+      );
+      const label = matched?.so_ky_hieu ? `[${matched.so_ky_hieu}] ${folder}` : folder;
+      return { value: folder, label };
+    }),
+  ], [folderOptions, recordDossiers, t]);
 
   // Options cho Select Loại văn bản
   const docTypeSelectOptions: SelectOption[] = React.useMemo(() => [

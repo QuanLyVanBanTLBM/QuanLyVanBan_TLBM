@@ -41,6 +41,22 @@ CI và host staging chạy `python manage.py test` trong `backend/` với `DB_HO
 
 CI chạy thêm `scripts/build_db.py` trên một DB riêng để kiểm chứng DDL nạp được và migration đồng bộ được.
 
+## Nạp workbook dữ liệu mẫu (tùy chọn)
+
+`import_common_sample_data` chỉ ghi dữ liệu khi có `--apply`; mặc định và `--dry-run` chỉ kiểm tra workbook, đối chiếu cấu trúc và in số dòng. Trước khi dùng `--apply`, đặt `DEMO_PASSWORD` trong môi trường của tiến trình để khởi tạo mật khẩu cho các tài khoản có trong sheet `TaiKhoanDemo`, rồi kiểm tra `DB_HOST` và `DB_NAME` đang trỏ tới DB local/dev dự định.
+
+Chạy từ thư mục gốc repo trên PowerShell:
+
+```powershell
+$securePassword = Read-Host "DEMO_PASSWORD" -AsSecureString
+$env:DEMO_PASSWORD = [System.Net.NetworkCredential]::new("", $securePassword).Password
+.\backend\.venv\Scripts\python.exe backend\manage.py import_common_sample_data --file "<đường dẫn workbook.xlsx>" --dry-run
+.\backend\.venv\Scripts\python.exe backend\manage.py import_common_sample_data --file "<đường dẫn workbook.xlsx>" --apply
+Remove-Item Env:DEMO_PASSWORD
+```
+
+Lệnh nhập theo transaction: nếu một dòng lỗi thì toàn bộ lần nhập được rollback. Lệnh này không chạy trong migration, `build_db.py` hay deploy; không dùng để thay đổi DB staging thủ công.
+
 ## Dựng lại DB staging
 
 Dữ liệu staging là dữ liệu thử nghiệm. Thực hiện trên host staging, tài khoản có quyền `CREATEDB`, trong thư mục mã nguồn đã checkout đúng release và đã kích hoạt môi trường Python của backend. Mỗi quy trình nằm trong subshell `( set -euo pipefail; ... )`: lỗi ở bước nào thì quy trình dừng tại đó, phiên SSH không bị thoát.
@@ -198,7 +214,7 @@ Dùng khi `DB_MODE=rebuild` lỗi từ bước 6 trở đi. `<dump>` là đườ
 
 ## Đường vào staging và nginx
 
-Đường vào duy nhất: `http://quanlyvanban.duckdns.org:8088`. Router NAT cổng 8088 về host; nginx nghe `8088` (IPv4 và IPv6), phục vụ SPA từ `/var/www/qlvb` và chuyển `/api/` tới Gunicorn `127.0.0.1:8001`. Không có tunnel hay site nginx thứ hai.
+Đường vào duy nhất: `http://staging-quanlyvanban.bhbl.vn:8088`. Router NAT cổng 8088 về host; nginx nghe `8088` (IPv4 và IPv6), phục vụ SPA từ `/var/www/qlvb` và chuyển `/api/` tới Gunicorn `127.0.0.1:8001`. Tên miền cũ `quanlyvanban.duckdns.org` và IP host được điều hướng HTTP 301 về đường vào này. Không có tunnel hay site nginx thứ hai.
 
 Nguồn duy nhất của cấu hình là `deploy/nginx/qlvb-frontend.conf`; không sửa tay `/etc/nginx` trên host. Thay đổi cấu hình đi qua PR, CI kiểm cú pháp bằng `nginx -t` (image `nginx:1.24`, cùng phiên bản Ubuntu 24.04), deploy cài vào `/etc/nginx/sites-available/qlvb-frontend`.
 
@@ -229,7 +245,7 @@ ssh -L 8088:127.0.0.1:8088 qlvb-staging
 
 rồi mở `http://127.0.0.1:8088/admin/`. Đăng nhập admin dùng session và CSRF cookie qua HTTP, nên cần `DJANGO_ALLOWED_HOSTS` có `127.0.0.1`, `DJANGO_CSRF_TRUSTED_ORIGINS` có `http://127.0.0.1:8088`, và trình duyệt chấp nhận cookie `Secure` trên `http://127.0.0.1` khi `DJANGO_SECURE_COOKIES` bật.
 
-Biến môi trường backend tương ứng với đường vào HTTP (`/etc/qlvb/backend.env`): `DJANGO_ALLOWED_HOSTS` gồm `quanlyvanban.duckdns.org`, IP host và `127.0.0.1`; `DJANGO_CSRF_TRUSTED_ORIGINS` gồm `http://quanlyvanban.duckdns.org:8088` và `http://127.0.0.1:8088`; `DJANGO_SECURE_SSL_REDIRECT=False` (không có HTTPS, bật sẽ chuyển hướng tới địa chỉ không phục vụ).
+Biến môi trường backend tương ứng với đường vào HTTP (`/etc/qlvb/backend.env`): `DJANGO_ALLOWED_HOSTS` gồm `staging-quanlyvanban.bhbl.vn`, `quanlyvanban.duckdns.org`, IP host và `127.0.0.1`; `DJANGO_CSRF_TRUSTED_ORIGINS` gồm `http://staging-quanlyvanban.bhbl.vn:8088` và `http://127.0.0.1:8088`; `DJANGO_SECURE_SSL_REDIRECT=False` (không có HTTPS, bật sẽ chuyển hướng tới địa chỉ không phục vụ).
 
 ## Dọn instance PostgreSQL thừa trên host staging
 

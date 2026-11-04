@@ -8,7 +8,7 @@ Thông báo người trong luồng trình ký (bảng `signing_notification`, ki
   `gui_thong_bao_trinh_ky` gửi lại các bản ghi `CHO_GUI`/`THAT_BAI`. Sau này chuyển sang task Celery chỉ nhận id.
 - Sự kiện: người ký được mở (`CAN_KY`); hồ sơ hoàn tất (`HOAN_THANH`), không đồng ý (`TU_CHOI`), trả lại để
   sửa (`YEU_CAU_SUA`), bị hủy (`HUY`: người ký đã được mở trên lượt hiện hành và người tạo khi quản trị hủy
-  thay); ủy quyền ký (`UY_QUYEN`); tin nhắn trao đổi khi trả sửa (`TIN_NHAN`); nhắc hạn (`NHAC_HAN`, `QUA_HAN`,
+  thay); tin nhắn trao đổi khi trả sửa (`TIN_NHAN`); nhắc hạn (`NHAC_HAN`, `QUA_HAN`,
   lệnh `nhac_han_trinh_ky`). Người thực hiện thao tác không tự nhận thông báo của mình.
 """
 
@@ -28,8 +28,10 @@ from ..models import (
     SigningChangeThread,
     SigningNotification,
     SigningRequestStepSigner,
+    SigningRightLock,
 )
 from ..tich_hop.to_chuc import ten_hien_thi
+from . import quyen_ky
 from ..tich_hop.van_ban import mo_ta_ho_so
 
 logger = logging.getLogger(__name__)
@@ -40,18 +42,29 @@ TEN_LOAI = {
     "TU_CHOI": "Không đồng ý ban hành",
     "YEU_CAU_SUA": "Trả lại để sửa",
     "HUY": "Hồ sơ đã hủy",
-    "UY_QUYEN": "Ủy quyền ký",
     "TIN_NHAN": "Tin nhắn trao đổi",
     "NHAC_HAN": "Sắp đến hạn ký",
     "QUA_HAN": "Quá hạn ký",
+    "KHOA_QUYEN_KY": "Quyền ký bị tạm khóa",
+    "BAT_LAI_QUYEN_KY": "Quyền ký đã được bật lại",
+    "THU_HOI_KHOA": "Khóa ký bị thu hồi",
+}
+LOAI_QUAN_TRI = ("KHOA_QUYEN_KY", "BAT_LAI_QUYEN_KY", "THU_HOI_KHOA")
+# Bản tiếng Anh của thông báo thao tác quản trị (#489): chưa có tùy chọn ngôn ngữ theo tài khoản nên thư song ngữ.
+TEN_LOAI_EN = {
+    "KHOA_QUYEN_KY": "Signing permission temporarily locked",
+    "BAT_LAI_QUYEN_KY": "Signing permission restored",
+    "THU_HOI_KHOA": "Signing key revoked",
 }
 SO_LAN_GUI_TOI_DA = 5
 
 
 def _tao(yeu_cau, nguoi_nhan, loai, khoa, buoc_ky=None):
+    """`yeu_cau` rỗng với thông báo thao tác quản trị trên tài khoản (không gắn hồ sơ trình ký)."""
     bay_gio = timezone.now()
+    bi_khoa_quyen_ky = quyen_ky.khoa_dang_hieu_luc(nguoi_nhan, bay_gio) is not None
     for kenh in (enums.KenhThongBao.IN_APP, enums.KenhThongBao.EMAIL):
-        if kenh == enums.KenhThongBao.EMAIL and not getattr(nguoi_nhan, "email", ""):
+        if kenh == enums.KenhThongBao.EMAIL and (bi_khoa_quyen_ky or not getattr(nguoi_nhan, "email", "")):
             continue
         trong_ung_dung = kenh == enums.KenhThongBao.IN_APP
         try:
@@ -66,6 +79,56 @@ def _tao(yeu_cau, nguoi_nhan, loai, khoa, buoc_ky=None):
             continue
         if not trong_ung_dung:
             transaction.on_commit(lambda pk=tb.pk: gui_email(pk), robust=True)
+
+
+def quan_tri_khoa_quyen(khoa):
+    """Báo tài khoản bị quản trị viên tạm khóa quyền ký (chỉ kênh trong ứng dụng; email bị chặn khi đang khóa)."""
+    _tao(None, khoa.nguoi_bi_khoa, "KHOA_QUYEN_KY", f"KHOA_QUYEN_KY:{khoa.pk}")
+
+
+def quan_tri_bat_lai_quyen(khoa):
+    """Báo tài khoản được bật lại quyền ký; gọi sau khi `bat_lai_luc` đã lưu nên kênh email không còn bị chặn."""
+    _tao(None, khoa.nguoi_bi_khoa, "BAT_LAI_QUYEN_KY", f"BAT_LAI_QUYEN_KY:{khoa.pk}")
+
+
+def quan_tri_thu_hoi_khoa(nguoi_so_huu, danh_sach_khoa):
+    """Báo chủ khóa ký bị quản trị viên thu hồi khẩn cấp; một thông báo cho mỗi lần thu hồi."""
+    ma = min(k.pk for k in danh_sach_khoa)
+    _tao(None, nguoi_so_huu, "THU_HOI_KHOA", f"THU_HOI_KHOA:{ma}")
+
+
+def noi_dung_quan_tri(tb):
+    """
+    (tiêu đề, thân thư) song ngữ vi/en cho thông báo thao tác quản trị; không nêu lý do nội bộ của quản trị viên.
+    Tiếng Việt đứng trước, tiếng Anh sau cùng một thư.
+    """
+    ten = ten_hien_thi(tb.nguoi_nhan)
+    duong_dan = f"{settings.SIGNING_FRONTEND_URL.rstrip('/')}/approvals/khoa"
+    if tb.loai_thong_bao == "KHOA_QUYEN_KY":
+        ma = tb.khoa_chong_gui_trung.split(":")[1]
+        khoa = SigningRightLock.objects.filter(pk=int(ma)).first() if ma.isdigit() else None
+        han = (f"Quyền ký bị khóa đến {dinh_dang_ngay(khoa.khoa_den)}." if khoa and khoa.khoa_den
+               else "Quyền ký bị khóa cho đến khi quản trị viên bật lại.")
+        han_en = (f"Signing permission is locked until {dinh_dang_ngay(khoa.khoa_den)}." if khoa and khoa.khoa_den
+                  else "Signing permission stays locked until an administrator restores it.")
+        chinh = f"Quản trị viên đã tạm khóa quyền ký của tài khoản. {han} Liên hệ quản trị viên để biết thêm."
+        chinh_en = f"An administrator has temporarily locked the signing permission of this account. {han_en} " \
+                   "Contact an administrator for details."
+    elif tb.loai_thong_bao == "BAT_LAI_QUYEN_KY":
+        chinh = "Quản trị viên đã bật lại quyền ký của tài khoản. Có thể tiếp tục ký duyệt."
+        chinh_en = "An administrator has restored the signing permission of this account. You can continue signing."
+    else:
+        chinh = ("Quản trị viên đã thu hồi khóa ký của tài khoản. Cần đăng ký khóa ký mới và đặt PIN mới "
+                 "trước khi ký duyệt tiếp.")
+        chinh_en = ("An administrator has revoked the signing key of this account. Register a new signing key and "
+                    "set a new PIN before signing again.")
+    tieu_de = f"[Trình ký] {TEN_LOAI[tb.loai_thong_bao]} / [Signing] {TEN_LOAI_EN[tb.loai_thong_bao]}"
+    than = (f"Xin chào {ten},\n\n{chinh}\n\nCấu hình khóa ký: {duong_dan}\n\n"
+            "Thư gửi tự động từ phân hệ Trình ký, vui lòng không trả lời.\n\n"
+            "---\n\n"
+            f"Hello {ten},\n\n{chinh_en}\n\nSigning key settings: {duong_dan}\n\n"
+            "This message was sent automatically by the Signing module; please do not reply.")
+    return tieu_de, than
 
 
 def can_ky(dong):
@@ -134,12 +197,13 @@ def nhac_han(bay_gio=None):
 
 
 # Loại thông báo -> hành động nhật ký sinh ra nó (để lấy người thao tác và lý do)
-HANH_DONG_CUA_LOAI = {"TU_CHOI": "TU_CHOI", "HUY": "HUY_TRINH_KY", "YEU_CAU_SUA": "YEU_CAU_SUA",
-                      "UY_QUYEN": "UY_QUYEN_KY"}
+HANH_DONG_CUA_LOAI = {"TU_CHOI": "TU_CHOI", "HUY": "HUY_TRINH_KY", "YEU_CAU_SUA": "YEU_CAU_SUA"}
 
 
 def thao_tac(tb):
     """(tên người thao tác, lý do) của sự kiện sinh ra thông báo; ("", "") với loại không có thao tác người dùng."""
+    if tb.loai_thong_bao in LOAI_QUAN_TRI:
+        return "", ""
     if tb.loai_thong_bao == "TIN_NHAN":
         tin = None
         if tb.khoa_chong_gui_trung and tb.khoa_chong_gui_trung.startswith("TIN_NHAN:"):
@@ -189,6 +253,9 @@ def dinh_dang_ngay(thoi_diem):
 
 
 def noi_dung(tb):
+    if tb.loai_thong_bao in LOAI_QUAN_TRI:
+        tieu_de, than = noi_dung_quan_tri(tb)
+        return tieu_de, than, TEN_LOAI[tb.loai_thong_bao]
     van_ban = mo_ta_ho_so(tb.trinh_ky)
     # Một dòng: xuống dòng trong trích yếu làm email bị từ chối (BadHeaderError) ở tiêu đề
     ten_van_ban = " ".join(" — ".join(x for x in (van_ban.get("so_hieu"), van_ban.get("trich_yeu")) if x).split()) \

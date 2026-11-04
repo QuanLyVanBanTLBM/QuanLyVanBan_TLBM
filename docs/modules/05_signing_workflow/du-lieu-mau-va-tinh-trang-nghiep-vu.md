@@ -1,10 +1,6 @@
 # Dữ liệu mẫu và tình trạng nghiệp vụ Trình ký (Nhóm 5)
 
-> **Phạm vi (issue #356):** chức năng "Ủy quyền ký" và màn hình "Cấu hình người được ký thay" đã bỏ khỏi module Trình ký
-> (không còn nút, hộp thoại, endpoint tạo ủy quyền hoặc cấu hình ký thay). Schema giữ nguyên (`signing_delegation_role`,
-> các cột `uy_quyen_tu`, `chuc_vu_goc_uy_quyen`, `ly_do_uy_quyen`, `ngay_uy_quyen`). Hồ sơ đang chờ ký có dòng người ký
-> được ủy quyền từ trước vẫn ký được: bước ký còn kiểm tra chức danh người nhận theo `signing_delegation_role`, giao
-> diện còn hiện nhãn "Ký thay". Các mô tả về ủy quyền ký bên dưới là lịch sử thiết kế, không còn là chức năng đang có.
+> **Phạm vi:** mọi người ký trong một cấp có cùng một vai trò (ký chính). Ký nháy, ủy quyền ký và ký thay chưa có.
 
 Cập nhật 23/10/2026, nhánh `feat/5-hoan-thien-nghiep-vu`. Đối chiếu với [`signing-backend-plan.md`](signing-backend-plan.md). Tổng quan module: [`README.md`](README.md).
 
@@ -15,7 +11,7 @@ Cập nhật 23/10/2026, nhánh `feat/5-hoan-thien-nghiep-vu`. Đối chiếu v�
 | 1 | Quy trình mẫu: tạo nháp, sửa, xóa nháp, kích hoạt, ngừng, nhân bản phiên bản; phạm vi công ty/phòng ban | Xong | Xong | `QuyTrinhPage`, `/quy-trinh/` |
 | 2 | Tạo hồ sơ nháp (văn bản đi, quy trình, PDF, hạn chót), sửa nháp | Xong | Xong | |
 | 3 | Trình ký: khóa tệp và mã băm, chọn người ký theo chức vụ, đặt vị trí ký | Xong | Xong | |
-| 4 | Ký chính tuần tự theo cấp, song song trong cấp; giữ lượt ký nháy đã gửi trước đây | Xong | Xong | |
+| 4 | Ký tuần tự theo cấp, song song trong cấp | Xong | Xong | |
 | 5 | Khóa ký Ed25519 + PIN 8 số (Argon2id + salt, `k_srv`), proof-of-possession, xoay vòng, thu hồi, đổi PIN | Xong | Xong | |
 | 6 | Xuất private key đã mã hóa ra file khóa; ký bằng tải file khóa + nhập PIN | Chưa có (chỉ lưu IndexedDB) | Xong | `lib/signing/fileKhoa.ts`, mục 3 |
 | 7 | Không đồng ý ban hành (từ chối, kết thúc hồ sơ) | Xong | Xong | |
@@ -25,10 +21,9 @@ Cập nhật 23/10/2026, nhánh `feat/5-hoan-thien-nghiep-vu`. Đối chiếu v�
 | 11 | Thu hồi chữ ký khi cấp còn mở | Xong | Xong | |
 | 12 | Hoàn tất: bằng chứng tổng hợp, PDF hoàn tất, xác minh lại | Xong | Xong | |
 | 13 | Lịch sử / nhật ký hồ sơ | Dở | Xong | Thêm tên người thực hiện |
-| 14 | Thông báo qua email + outbox (gửi lại khi lỗi: `gui_thong_bao_trinh_ky`); không còn trang xem trong ứng dụng | Dở | Xong | Thêm loại `UY_QUYEN`, `TIN_NHAN`, `NHAC_HAN`, `QUA_HAN`; tab Thông báo đã bỏ (#355) |
-| 15 | Ủy quyền ký khẩn cấp từng hồ sơ (`delegate_trinhky`) | Chưa có | Đã bỏ khỏi phạm vi (#356) | Không còn endpoint tạo ủy quyền; mục 4 |
+| 14 | Thông báo qua email + outbox (gửi lại khi lỗi: `gui_thong_bao_trinh_ky`); không còn trang xem trong ứng dụng | Dở | Xong | Thêm loại `TIN_NHAN`, `NHAC_HAN`, `QUA_HAN`; tab Thông báo đã bỏ (#355) |
 | 16 | Nhắc hạn, quá hạn | Chưa có | Xong (MVP) | Lệnh `nhac_han_trinh_ky`; chưa leo thang cấp trên |
-| 17 | Ủy quyền theo thời gian (`signing_delegation`), thể thức `hinh_thuc_ky` (KT./TL./TUQ.) | Chưa có | Chưa có | DDL chưa có bảng/cột; cần PR đổi schema riêng |
+| 17 | Ký nháy, ủy quyền ký, thể thức ký thay (KT./TL./TUQ.) | Chưa có | Chưa có | Cần chốt chính sách nghiệp vụ và PR đổi schema riêng |
 | 18 | Leo thang quá hạn cho cấp trên trực tiếp | Chưa có | Chưa có | Nhóm 7 chưa có dữ liệu cấp trên trực tiếp |
 
 ## 2. Phân quyền theo vai trò (nhóm quyền chuẩn của DDL)
@@ -54,18 +49,7 @@ Server kiểm quyền ở từng API; giao diện chỉ ẩn/hiện thao tác.
 - File khóa chỉ đọc trong trình duyệt, không gửi lên máy chủ. Đổi PIN xoay vòng `k_srv` nên file cũ không còn mở
   được; trang tự tải file mới. Có thể nhập file khóa vào thiết bị khác ở cùng trang.
 
-## 4. Ủy quyền ký khẩn cấp (đã bỏ chức năng tạo, issue #356)
-
-Chỉ còn xử lý dữ liệu ủy quyền tạo từ trước: người nhận ký được hồ sơ đang `CHO_KY` nếu còn giữ chức danh được phép trong `signing_delegation_role`; người giao vẫn xem được hồ sơ. Mô tả dưới đây là quy tắc cũ khi tạo ủy quyền.
-
-- Người thực hiện: có `delegate_trinhky` và là quản trị, Ban Giám đốc, hoặc Trưởng phòng cùng đơn vị với người ký.
-  Người ký không tự ủy quyền.
-- Áp dụng cho người ký đang chờ ký (cấp đang mở hoặc chưa mở) của lượt hiện hành. Người nhận phải đang hoạt động, có
-  `sign_trinhky`, chưa có trong cùng cấp. Lý do bắt buộc.
-- Ghi `uy_quyen_tu`, `ly_do_uy_quyen`, `ngay_uy_quyen`; nhật ký `UY_QUYEN_KY`; thông báo cho người nhận và người
-  giao. Người giao vẫn xem được hồ sơ.
-
-## 5. Lệnh dữ liệu mẫu `seed_signing_demo`
+## 4. Lệnh dữ liệu mẫu `seed_signing_demo`
 
 Tên lệnh theo đề xuất trong [`danh-gia-plan-va-tich-hop.md`](danh-gia-plan-va-tich-hop.md) (`seed_signing_demo` trong
 `management/commands`). Đường dẫn này không bị `.gitignore` bỏ qua (`git check-ignore` không khớp; `.gitignore` chỉ bỏ
@@ -76,7 +60,7 @@ trong mã nguồn (trái AGENTS.md mục 6) và sinh khóa bí mật Ed25519 t�
 
 Lệnh tự đủ trên DB vừa `migrate`: đơn vị, chức vụ, nhóm quyền chuẩn có sẵn từ migration; thiếu đơn vị thì tạo.
 
-### 5.1. Dữ liệu tạo ra
+### 4.1. Dữ liệu tạo ra
 
 - **Tài khoản**: `admin` (Quản trị), `vanthu` (Văn thư, tạo và trình), `chuyenvien` (Chuyên viên, soạn nháp),
   `truongphong` (Trưởng phòng, ký cấp 1), `giamdoc` (Giám đốc, ký cấp 2). Gán đơn vị "Ban công nghệ thông tin"
@@ -97,12 +81,12 @@ Lệnh tự đủ trên DB vừa `migrate`: đơn vị, chức vụ, nhóm quy�
 | M07 | Đã sửa, lượt 2 đang ký cấp 2 | giamdoc |
 | M08 | Đã hủy | — |
 | M09 | Quá hạn ở cấp 1 | truongphong |
-| M10 | Hai người ký song song, một người đã ký, một người chờ ký (không còn ví dụ ủy quyền) | truongphong |
+| M10 | Hai người ký song song, một người đã ký, một người chờ ký  | truongphong |
 
-Lịch sử và thông báo (`CAN_KY`, `HOAN_THANH`, `TU_CHOI`, `YEU_CAU_SUA`, `HUY`, `UY_QUYEN`, `TIN_NHAN`, `NHAC_HAN`,
+Lịch sử và thông báo (`CAN_KY`, `HOAN_THANH`, `TU_CHOI`, `YEU_CAU_SUA`, `HUY`, `TIN_NHAN`, `NHAC_HAN`,
 `QUA_HAN`) sinh từ chính các thao tác trên vì lệnh gọi service nghiệp vụ, không ghi bảng trực tiếp.
 
-### 5.2. Mật khẩu và khóa ký
+### 4.2. Mật khẩu và khóa ký
 
 - Mật khẩu tài khoản mẫu đọc từ biến môi trường `DEMO_PASSWORD`; không ghi trong mã nguồn. Tài khoản chưa có mà
   thiếu biến thì lệnh dừng. Tài khoản đã có giữ mật khẩu, trừ khi chạy với `--dat-lai-mat-khau`. Tài khoản `admin`
@@ -118,7 +102,7 @@ Lịch sử và thông báo (`CAN_KY`, `HOAN_THANH`, `TU_CHOI`, `YEU_CAU_SUA`, `
 - `--email-domain <miền>`: gán email `<username>@<miền>` cho tài khoản mẫu chưa có email. Cần tùy chọn này thì tài
   khoản mẫu mới có email và thông báo mới có kênh email; không có thì thông báo chỉ ghi vào outbox, không có email.
 
-### 5.3. Mật khẩu chung của tài khoản demo
+### 4.3. Mật khẩu chung của tài khoản demo
 
 - Cả 5 tài khoản demo (`admin`, `vanthu`, `chuyenvien`, `truongphong`, `giamdoc`) dùng chung **mật khẩu demo của
   lớp**: đặt `ADMIN_PASSWORD` và `DEMO_PASSWORD` cùng một giá trị trong `.env`. Không ghi giá trị mật khẩu vào repo.
@@ -133,7 +117,7 @@ Lịch sử và thông báo (`CAN_KY`, `HOAN_THANH`, `TU_CHOI`, `YEU_CAU_SUA`, `
 
   rồi chạy `pnpm manage seed_signing_demo --email-domain <miền email>`.
 
-### 5.4. Thử gửi mail thật
+### 4.4. Thử gửi mail thật
 
 - Ghi vào `backend/.env`: `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USE_TLS`, `EMAIL_HOST_USER`,
   `EMAIL_HOST_PASSWORD=<mật khẩu SMTP>`, `DEFAULT_FROM_EMAIL="Hệ thống QLVB <qlvb@baohiembaolong.vn>"`;
@@ -143,7 +127,7 @@ Lịch sử và thông báo (`CAN_KY`, `HOAN_THANH`, `TU_CHOI`, `YEU_CAU_SUA`, `
 - Chạy `seed_signing_demo --email-domain <miền>` để tài khoản mẫu có email. Email lỗi ghi `THAT_BAI`; sửa cấu hình
   rồi chạy `gui_thong_bao_trinh_ky` để gửi lại.
 
-### 5.5. Chạy local
+### 4.5. Chạy local
 
 ```bash
 pnpm db:setup                                   # hoặc: python scripts/build_db.py --seed
@@ -156,7 +140,7 @@ python manage.py gui_thong_bao_trinh_ky          # gửi lại email lỗi (ch�
 
 Cần `SIGNING_DOCUMENT_ROOT` (thư mục lưu tệp PDF) như khi chạy ứng dụng.
 
-### 5.6. Chạy trên máy chủ staging
+### 4.6. Chạy trên máy chủ staging
 
 Deploy staging (`deploy/deploy.sh`, CI) chỉ nâng cấp DB bằng migration, không có bước chạy lệnh dữ liệu mẫu, và
 `deploy/` thuộc phần vận hành chung nên PR tính năng không sửa. Sau khi PR vào `staging` được merge và job deploy
@@ -172,18 +156,17 @@ DEMO_PASSWORD='<mật khẩu demo của lớp>' /srv/qlvb/current/venv/bin/pytho
 Nếu `backend.env` đã có `DEMO_PASSWORD` thì bỏ phần gán biến trước lệnh. Lệnh chạy lại an toàn. Nên đặt lịch
 `nhac_han_trinh_ky` và `gui_thong_bao_trinh_ky` (ví dụ mỗi 15 phút) bằng cron/systemd timer trên máy chủ.
 
-## 6. Dữ liệu cho Dashboard (Nhóm 1)
+## 5. Dữ liệu cho Dashboard (Nhóm 1)
 
-### 6.1. Selector (gọi trong backend)
+### 5.1. Selector (gọi trong backend)
 
 `signing.selectors.tong_quan_dashboard(user, gioi_han=5)` trả cùng cấu trúc với API dưới đây. Dashboard gọi selector
 này, không truy vấn bảng `signing_*` trực tiếp (AGENTS.md mục 6).
 
-### 6.2. API
+### 5.2. API
 
 `GET /api/v1/signing/dashboard/` — yêu cầu đăng nhập (JWT `Authorization: Bearer <token>`), không tham số; chưa đăng
-nhập trả 401. Chỉ dữ liệu của người đang đăng nhập (người tạo hoặc người có tên trong luồng ký, kể cả người
-nhận/giao ủy quyền); quyền kiểm toán không mở rộng danh sách này.
+nhập trả 401. Chỉ dữ liệu của người đang đăng nhập (người tạo hoặc người có tên trong luồng ký); quyền kiểm toán không mở rộng danh sách này.
 
 | Trường | Ý nghĩa |
 |---|---|
@@ -255,10 +238,10 @@ Response thật của tài khoản `truongphong` sau khi chạy `seed_signing_de
 Tài khoản nên đăng nhập để thấy dữ liệu: `truongphong` (2 hồ sơ chờ ký), `giamdoc` (3 hồ sơ chờ ký), `vanthu`
 (người trình, có đủ trạng thái), `admin`.
 
-## 7. Lệnh quản trị của phân hệ
+## 6. Lệnh quản trị của phân hệ
 
 | Lệnh | Mục đích |
 |---|---|
-| `seed_signing_demo` | Dữ liệu mẫu (mục 5) |
+| `seed_signing_demo` | Dữ liệu mẫu (mục 4) |
 | `nhac_han_trinh_ky` | Thông báo `NHAC_HAN` khi còn dưới 24 giờ tới hạn cấp; `QUA_HAN` mỗi ngày quá hạn (người ký và người tạo) |
 | `gui_thong_bao_trinh_ky` | Gửi lại email `CHO_GUI`/`THAT_BAI` (tối đa 5 lần) |

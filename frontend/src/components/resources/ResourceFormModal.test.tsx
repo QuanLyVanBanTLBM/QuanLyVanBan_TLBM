@@ -105,4 +105,39 @@ describe('ResourceFormModal Component', () => {
     // Danh sách loại tài liệu tương ứng cũng chuyển sang Loại 2
     expect(screen.getByText('Loại 2')).toBeInTheDocument();
   });
+
+  it('automatically sets expiration date to today when user selects Expired status in Edit Mode', () => {
+    const editItem: ResourceItem = {
+      id: 5,
+      dm_tai_lieu: 1,
+      loai_tai_lieu: [1],
+      tieu_de: 'Tài liệu đang sửa',
+      ngay_dang: '2026-01-01',
+      hieu_luc: 'CON_HIEU_LUC',
+      ngay_het_hieu_luc: null,
+      file_dinh_kem: '/media/test.pdf',
+      hien_thi: 'TAT_CA',
+    };
+
+    render(
+      <ResourceFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+        initialData={editItem}
+        categories={mockCategories}
+        types={mockTypes}
+      />
+    );
+
+    const expDateInput = document.getElementById('field-ngay_het_hieu_luc') as HTMLInputElement;
+    expect(expDateInput.value).toBe('');
+
+    // Bấm nút Hết hiệu lực
+    const expiredBtn = screen.getByRole('button', { name: /^Hết hiệu lực$/i });
+    fireEvent.click(expiredBtn);
+
+    // Ô ngày hết hiệu lực được tự động điền ngày hôm nay
+    expect(expDateInput.value).toBeTruthy();
+  });
 });

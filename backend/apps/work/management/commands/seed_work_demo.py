@@ -39,10 +39,9 @@ from work.models import (
 )
 
 LEADER_USERNAME = "test_truongnhom6"
-LEADER_EMAIL = "phantahuuduc@gmail.com"
+LEADER_EMAIL = "test_truongnhom6@work-demo.test"
 
-# Nhân viên test. Email thường dùng miền @test.local để KHÔNG lỡ gửi ra ngoài;
-# RIÊNG leader gắn email thật (chỉ tài khoản này mới dùng test gửi mail thật khi được duyệt).
+# Nhân viên test dùng email thuộc miền .test để không gửi thư tới địa chỉ thật.
 EMPLOYEES = [
     {"username": LEADER_USERNAME, "ho_ten": "Phan Tạ Hữu Đức", "email": LEADER_EMAIL, "pos": 0, "dv": 0},
     {"username": "test_cbnv_1", "ho_ten": "Lê Văn An", "email": "an@test.local", "pos": 1, "dv": 1},

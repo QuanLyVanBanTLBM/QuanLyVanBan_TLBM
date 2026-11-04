@@ -76,6 +76,7 @@
     "noMatchDesc": "Please try another keyword or clear filters to view all documents.",
     "expiredBannerReplaced": "This document has expired and is superseded by:",
     "expiredBannerNormal": "This document is currently expired and no longer effective.",
+    "expiredBannerWithDate": "This document is currently expired and no longer effective (as of {{date}}).",
     "partialBanner": "This document is currently partially effective.",
     "viewReplacement": "→ View superseding document",
     "detailTitle": "Document & Template Details",

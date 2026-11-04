@@ -4,7 +4,7 @@ import { ResourceItem, ResourceAttachment } from '@app-types/resource';
 import { Badge } from '@components/common/Badge';
 import { Button } from '@components/common/Button';
 import { useTranslation } from '@i18n/translate';
-import { computeEffectiveStatus } from '@lib/resourceValidity';
+import { computeEffectiveStatus, getTodayLocalDateString } from '@lib/resourceValidity';
 import { apiClientBlob, downloadBlob } from '@lib/apiClient';
 import { FilePreviewModal } from './FilePreviewModal';
 
@@ -209,6 +209,10 @@ export const ResourceDetailModal: React.FC<ResourceDetailModalProps> = ({
   };
 
   const validity = computeEffectiveStatus(item.hieu_luc, item.ngay_het_hieu_luc, item.link_thay_the);
+  const effectiveExpirationDate =
+    item.ngay_het_hieu_luc ||
+    validity.expirationDate ||
+    (validity.isExpired ? (item.ngay_dang || getTodayLocalDateString()) : null);
 
   // Render Badge trạng thái hiệu lực
   const renderStatusBadge = () => {
@@ -337,7 +341,13 @@ export const ResourceDetailModal: React.FC<ResourceDetailModalProps> = ({
           {validity.status === 'HET_HIEU_LUC' && (
             <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-700 dark:text-rose-400 text-xs sm:text-sm flex items-center gap-2.5">
               <i className="fa-solid fa-circle-xmark text-base shrink-0" />
-              <span>{t('resourceManagement.expiredBannerNormal')}</span>
+              <span>
+                {effectiveExpirationDate
+                  ? t('resourceManagement.expiredBannerWithDate', {
+                      date: formatDate(effectiveExpirationDate),
+                    })
+                  : t('resourceManagement.expiredBannerNormal')}
+              </span>
             </div>
           )}
 
@@ -395,11 +405,11 @@ export const ResourceDetailModal: React.FC<ResourceDetailModalProps> = ({
               </div>
 
               {/* Ngày hết hiệu lực */}
-              {item.ngay_het_hieu_luc && (
+              {(item.ngay_het_hieu_luc || validity.isExpired) && (
                 <div>
                   <span className="text-xs text-muted block mb-0.5">{t('resourceManagement.fieldExpirationDate')}</span>
                   <span className={`font-medium ${validity.isExpired ? 'text-danger' : 'text-blue-600 dark:text-blue-400'}`}>
-                    {formatDate(item.ngay_het_hieu_luc)}
+                    {formatDate(effectiveExpirationDate || item.ngay_het_hieu_luc)}
                   </span>
                 </div>
               )}

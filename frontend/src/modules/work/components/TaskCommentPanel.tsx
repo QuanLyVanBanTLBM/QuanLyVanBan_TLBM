@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { t as tModule, useTranslation } from '@i18n/translate';
 import { Attachment, FROZEN_STATUSES, TaskComment, TaskDetail } from '../types/task';
 import { isoDateTimeToDisplay } from './DateInput';
 import FilePicker from './FilePicker';
@@ -23,12 +24,12 @@ interface TaskCommentPanelProps {
 
 function lockedReason(task: TaskDetail): string {
   if (FROZEN_STATUSES.includes(task.status)) {
-    return 'Công việc đã bị khóa nên không ghi thêm ý kiến được.';
+    return tModule('work.comments.lockedFrozen');
   }
   if (!task.myRoles.length) {
-    return 'Bạn không phải người liên quan đến công việc này nên chỉ được xem, không ghi ý kiến được.';
+    return tModule('work.comments.lockedNoRole');
   }
-  return 'Bạn không ghi ý kiến được ở thời điểm này. Hãy tải lại trang để xem trạng thái mới nhất.';
+  return tModule('work.comments.lockedGeneric');
 }
 
 function initials(name: string): string {
@@ -45,6 +46,7 @@ export default function TaskCommentPanel({
   onDeleteFile,
   onError,
 }: TaskCommentPanelProps) {
+  const { t } = useTranslation();
   const canComment = Boolean(task.permissions.canComment);
   const canAttach = Boolean(task.permissions.canSubmitEvidence);
   const [composing, setComposing] = useState(false);
@@ -63,8 +65,8 @@ export default function TaskCommentPanel({
     if (!content.trim() && !files.length) {
       setFormError(
         canAttach
-          ? 'Ý kiến đang trống. Hãy nhập nội dung hoặc đính kèm file kết quả trước khi gửi.'
-          : 'Ý kiến đang trống. Hãy nhập nội dung trước khi gửi.',
+          ? t('work.comments.emptyErrorWithAttach')
+          : t('work.comments.emptyError'),
       );
       return;
     }
@@ -110,7 +112,7 @@ export default function TaskCommentPanel({
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
         <h2 style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-main)' }}>
           <i className="fa-solid fa-comments" style={{ color: 'var(--color-primary)', marginRight: '8px' }} />
-          Ý kiến xử lý ({comments.length})
+          {t('work.comments.heading', { count: String(comments.length) })}
         </h2>
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           {canComment && (
@@ -121,12 +123,12 @@ export default function TaskCommentPanel({
               aria-expanded={composing}
             >
               <i className={composing ? 'fa-solid fa-chevron-up' : 'fa-solid fa-pen-to-square'} />
-              Ý kiến xử lý
+              {t('work.comments.addComment')}
             </button>
           )}
           <button type="button" onClick={onBack} style={topButton(false)}>
             <i className="fa-solid fa-arrow-left" />
-            Quay lại
+            {t('work.common.back')}
           </button>
         </div>
       </div>
@@ -146,7 +148,7 @@ export default function TaskCommentPanel({
           }}
         >
           <label htmlFor="work-comment-content" style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-main)' }}>
-            Nội dung ý kiến
+            {t('work.comments.labelContent')}
           </label>
           <textarea
             id="work-comment-content"
@@ -158,8 +160,8 @@ export default function TaskCommentPanel({
             }}
             placeholder={
               canAttach
-                ? 'Báo cáo tiến độ, hoặc mô tả kết quả rồi đính kèm file kết quả bên dưới...'
-                : 'Nhập ý kiến chỉ đạo, góp ý...'
+                ? t('work.comments.placeholderWithAttach')
+                : t('work.comments.placeholderNoAttach')
             }
             style={{
               width: '100%',
@@ -185,21 +187,21 @@ export default function TaskCommentPanel({
                 setFormError('');
               }}
               disabled={sending}
-              label="Đính kèm file kết quả (không bắt buộc)"
-              buttonLabel="Chọn file kết quả"
+              label={t('work.comments.attachLabel')}
+              buttonLabel={t('work.comments.attachButton')}
             />
           ) : (
             <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
               {task.status === 'HOAN_THANH' && task.myRoles.some((role) => role === 'CHU_TRI' || role === 'THAM_GIA')
-                ? 'Công việc đã được duyệt hoàn thành nên không đính kèm thêm file kết quả được. Nếu cần bổ sung, hãy đề nghị người có quyền duyệt hủy duyệt trước.'
-                : 'Chỉ người chủ trì và cán bộ tham gia mới đính kèm được file kết quả.'}
+                ? t('work.comments.noAttachApproved')
+                : t('work.comments.noAttachRole')}
             </div>
           )}
 
           {canAttach && files.length > 0 && task.status !== 'CHO_DUYET' && (
             <WorkAlert
               variant="info"
-              message="Gửi ý kiến kèm file kết quả sẽ chuyển công việc sang trạng thái Chờ duyệt."
+              message={t('work.comments.willChangeToPending')}
             />
           )}
 
@@ -207,7 +209,7 @@ export default function TaskCommentPanel({
 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
-              <i className="fa-solid fa-lock" /> Ý kiến đã gửi không thể sửa hoặc xóa.
+              <i className="fa-solid fa-lock" /> {t('work.comments.immutableWarning')}
             </span>
             <div style={{ display: 'flex', gap: '8px' }}>
               <button
@@ -219,11 +221,11 @@ export default function TaskCommentPanel({
                 }}
                 style={topButton(false)}
               >
-                Hủy
+                {t('work.common.cancel')}
               </button>
               <button type="button" disabled={sending} onClick={handleSend} style={{ ...topButton(true), opacity: sending ? 0.7 : 1 }}>
                 <i className={sending ? 'fa-solid fa-circle-notch fa-spin' : 'fa-solid fa-paper-plane'} />
-                {sending ? 'Đang gửi...' : 'Gửi ý kiến'}
+                {sending ? t('work.common.sending') : t('work.comments.sendButton')}
               </button>
             </div>
           </div>
@@ -232,12 +234,12 @@ export default function TaskCommentPanel({
 
       {loading && !comments.length ? (
         <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.86rem' }}>
-          <i className="fa-solid fa-circle-notch fa-spin" /> Đang tải ý kiến...
+          <i className="fa-solid fa-circle-notch fa-spin" /> {t('work.comments.loadingComments')}
         </div>
       ) : comments.length === 0 ? (
         <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.86rem' }}>
-          Chưa có ý kiến nào.
-          {canAttach && ' Khi làm xong, bấm "Ý kiến xử lý" để gửi kết quả kèm file.'}
+          {t('work.comments.emptyComments')}
+          {canAttach && t('work.comments.emptyCommentsHint')}
         </div>
       ) : (
         <ol style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -276,7 +278,7 @@ export default function TaskCommentPanel({
                     {comment.author.fullName}
                   </span>
                   <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
-                    Gửi lúc: {isoDateTimeToDisplay(comment.createdAt)}
+                    {t('work.comments.sentAt', { time: isoDateTimeToDisplay(comment.createdAt) })}
                   </span>
                   {comment.attachments.length > 0 && (
                     <span
@@ -290,7 +292,7 @@ export default function TaskCommentPanel({
                         fontWeight: 700,
                       }}
                     >
-                      Kèm file kết quả
+                      {t('work.comments.withEvidence')}
                     </span>
                   )}
                 </div>

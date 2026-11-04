@@ -11,10 +11,20 @@ import AlertModal from '@components/common/AlertModal';
 import ConfirmModal from '@components/common/ConfirmModal';
 import { Button } from '@components/common/Button';
 import apiClient from '@lib/apiClient';
+import { authService } from '@lib/authService';
+import { usePermissions } from '@lib/permissions';
 import { useTranslation } from '@i18n/translate';
 
 export const ConfidentialDocumentPage: React.FC = () => {
   const { t } = useTranslation();
+  const { can, isSuperuser } = usePermissions();
+  const currentSession = useMemo(() => authService.getSession(), []);
+  const isAdmin = Boolean(isSuperuser || currentSession?.role === 'admin' || currentSession?.username === 'admin');
+
+  const canAdd = Boolean(isAdmin || can('add_vanbanden') || can('add_vanbandi'));
+  const canImport = Boolean(isAdmin || can('import_vanbanden') || can('import_vanbandi'));
+  const canExport = Boolean(isAdmin || can('export_vanbanden') || can('export_vanbandi'));
+
   const [searchParams, setSearchParams] = useSearchParams();
   const loaiVanBanParam = searchParams.get('loai_van_ban');
   const phamViParam = searchParams.get('pham_vi');
@@ -561,38 +571,44 @@ export const ConfidentialDocumentPage: React.FC = () => {
 
         {/* Các nút hành động chính (Thêm mới, Nhập Excel, Xuất Excel, Làm mới) */}
         <div className="flex items-center gap-2 flex-wrap">
-          <Button
-            type="button"
-            variant="primary"
-            size="sm"
-            icon="fa-plus"
-            onClick={handleOpenCreate}
-            title={t('documents_incoming_page.addBtn') || 'Thêm văn bản mật mới'}
-          >
-            {t('documents_incoming_page.addBtn') || 'Thêm mới'}
-          </Button>
+          {canAdd && (
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              icon="fa-plus"
+              onClick={handleOpenCreate}
+              title={t('documents_incoming_page.addBtn') || 'Thêm văn bản mật mới'}
+            >
+              {t('documents_incoming_page.addBtn') || 'Thêm mới'}
+            </Button>
+          )}
 
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            icon="fa-file-excel"
-            onClick={() => setIsImportOpen(true)}
-            title={t('documents_ui.actions.importExcelTitle') || 'Nhập danh sách văn bản mật từ tệp Excel'}
-          >
-            {t('documents_ui.actions.importExcel') || 'Import Excel'}
-          </Button>
+          {canImport && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              icon="fa-file-excel"
+              onClick={() => setIsImportOpen(true)}
+              title={t('documents_ui.actions.importExcelTitle') || 'Nhập danh sách văn bản mật từ tệp Excel'}
+            >
+              {t('documents_ui.actions.importExcel') || 'Import Excel'}
+            </Button>
+          )}
 
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            icon="fa-file-export"
-            onClick={handleExportExcel}
-            title={t('documents_ui.actions.exportExcelTitle') || 'Xuất dữ liệu văn bản mật ra file Excel'}
-          >
-            {t('documents_ui.actions.exportExcel') || 'Xuất Excel'}
-          </Button>
+          {canExport && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              icon="fa-file-export"
+              onClick={handleExportExcel}
+              title={t('documents_ui.actions.exportExcelTitle') || 'Xuất dữ liệu văn bản mật ra file Excel'}
+            >
+              {t('documents_ui.actions.exportExcel') || 'Xuất Excel'}
+            </Button>
+          )}
 
           <Button
             type="button"

@@ -11,6 +11,7 @@ import {
 import { Button } from '@components/common/Button';
 import { useTranslation } from '@i18n/translate';
 import { authService } from '@lib/authService';
+import { usePermissions } from '@lib/permissions';
 import { formatDate } from '@lib/dateUtils';
 import { ConfirmationModal } from './ConfirmationModal';
 import { apiClientBlob, downloadBlob } from '@lib/apiClient';
@@ -140,7 +141,17 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
   const isEditMode = Boolean(initialData);
 
   const currentSession = authService.getSession();
-  const isAdmin = currentSession?.role === 'admin' || currentSession?.username === 'admin';
+  const isSessionAdmin = currentSession?.role === 'admin' || currentSession?.username === 'admin';
+  const { can, isSuperuser } = usePermissions();
+  const canAdd = isSuperuser || isSessionAdmin || can('add_tailieu');
+  const canEdit = isSuperuser || isSessionAdmin || can('change_tailieu') || Boolean(
+    initialData && (
+      (currentSession?.fullName && initialData.nguoi_tao_name === currentSession.fullName) ||
+      (currentSession?.username && initialData.nguoi_tao_name === currentSession.username)
+    )
+  );
+  const canSubmit = isEditMode ? canEdit : canAdd;
+
   const defaultAuthor =
     currentSession?.fullName ||
     currentSession?.username ||
@@ -257,7 +268,11 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
             noi_ban_hanh: initialData.noi_ban_hanh || '',
             nguoi_tao_name: initialData.nguoi_tao_name || defaultAuthor,
             hieu_luc: initialData.hieu_luc || 'CON_HIEU_LUC',
-            ngay_het_hieu_luc: initialData.ngay_het_hieu_luc || '',
+            ngay_het_hieu_luc:
+              initialData.ngay_het_hieu_luc ||
+              (initialData.hieu_luc === 'HET_HIEU_LUC' || initialData.hieu_luc === 'HET_VA_THAY_THE'
+                ? getTodayLocalDateString()
+                : ''),
             link_thay_the: initialData.link_thay_the || '',
             ghi_chu: initialData.ghi_chu || '',
             hien_thi: initialData.hien_thi || 'TAT_CA',
@@ -712,7 +727,10 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
     data.append('ghi_chu', formData.ghi_chu.trim());
 
     const isReplaced = formData.hieu_luc === 'HET_VA_THAY_THE';
-    const effectiveExpDate = formData.ngay_het_hieu_luc || '';
+    const isExpiredStatus = formData.hieu_luc === 'HET_HIEU_LUC' || isReplaced;
+    const effectiveExpDate = (isExpiredStatus && !formData.ngay_het_hieu_luc)
+      ? getTodayLocalDateString()
+      : (formData.ngay_het_hieu_luc || '');
     const effectiveReplLink = isReplaced ? (formData.link_thay_the?.trim() || '') : '';
 
     data.append('ngay_het_hieu_luc', effectiveExpDate);
@@ -1148,6 +1166,10 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
                           setFormData((prev) => ({
                             ...prev,
                             hieu_luc: st.value as HieuLucType,
+                            ngay_het_hieu_luc:
+                              (st.value === 'HET_HIEU_LUC' || st.value === 'HET_VA_THAY_THE') && !prev.ngay_het_hieu_luc
+                                ? getTodayLocalDateString()
+                                : prev.ngay_het_hieu_luc,
                             link_thay_the: st.value === 'HET_VA_THAY_THE' ? prev.link_thay_the : '',
                           }));
                         }}
@@ -1553,8 +1575,8 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
             icon={isLoading ? 'fa-spinner fa-spin' : 'fa-check'}
             onClick={handleSubmit}
             isLoading={isLoading}
-            disabled={isLoading || categories.length === 0 || (!isAdmin && !isEditMode)}
-            title={!isAdmin && !isEditMode ? t('resourceManagement.adminOnlyAddDocument') : undefined}
+            disabled={isLoading || categories.length === 0 || !canSubmit}
+            title={!canSubmit ? t('roles.messages.permissionDenied') : undefined}
             className="text-xs shadow-sm"
           >
             {isEditMode ? t('resourceManagement.saveChanges') : t('resourceManagement.save')}

@@ -15,7 +15,14 @@ from django.db.models import Q
 from rest_framework import serializers
 
 from organizations.models import DonVi
-from .models import MAX_DISPLAY_ORDER, Employee, EmployeeAssignment, Position, vietnam_phone_regex
+from .models import (
+    MAX_DISPLAY_ORDER,
+    Employee,
+    EmployeeAssignment,
+    EmployeePasswordResetAudit,
+    Position,
+    vietnam_phone_regex,
+)
 
 
 def validate_employee_birthday(value: date) -> date:
@@ -60,6 +67,24 @@ class ChangePasswordSerializer(serializers.Serializer):
 class EmployeeAdminPasswordChangeSerializer(serializers.Serializer):
     """Xác thực mật khẩu mới do admin đặt cho một hồ sơ CBNV."""
 
+    reason_code = serializers.ChoiceField(
+        choices=EmployeePasswordResetAudit.Reason.choices,
+        error_messages={
+            "required": "employees.validation.passwordReasonRequired",
+            "blank": "employees.validation.passwordReasonRequired",
+            "invalid_choice": "employees.validation.passwordReasonInvalid",
+        },
+    )
+    reason_detail = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        trim_whitespace=True,
+        max_length=500,
+        error_messages={
+            "max_length": "employees.validation.passwordReasonDetailTooLong",
+        },
+    )
     new_password = serializers.CharField(
         required=True,
         write_only=True,
@@ -80,6 +105,15 @@ class EmployeeAdminPasswordChangeSerializer(serializers.Serializer):
     def validate(self, attrs):
         if attrs["new_password"] != attrs["confirm_password"]:
             raise serializers.ValidationError("employees.messages.passwordMismatch")
+        reason_detail = (attrs.get("reason_detail") or "").strip()
+        if attrs["reason_code"] == EmployeePasswordResetAudit.Reason.OTHER:
+            if not reason_detail:
+                raise serializers.ValidationError(
+                    {"reason_detail": "employees.validation.passwordReasonDetailRequired"}
+                )
+            attrs["reason_detail"] = reason_detail
+        else:
+            attrs["reason_detail"] = None
         try:
             validate_password(attrs["new_password"], user=self.context.get("employee"))
         except DjangoValidationError:
@@ -292,8 +326,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
 # Bảng ánh xạ mã nhóm quyền mặc định theo chức vụ do nhóm trưởng chốt (Issue #24 / PR #211):
 # Tra nhóm theo mã ma_nhom_quyen qua authorization.GroupInfo, không tra theo tên nhóm.
 POSITION_DEFAULT_GROUP_CODES = {
-    # Quản trị hệ thống (ADMIN)
-    "Quản trị viên": ["ADMIN"],
+    # Quản trị viên không tự nhận nhóm nào: nhóm ADMIN chỉ do tài khoản ADMIN hoặc superuser gán thủ công.
     # Ban Giám đốc (BGD)
     "Chủ tịch HĐQT": ["BGD"],
     "Phó Chủ tịch HĐQT": ["BGD"],
@@ -325,6 +358,35 @@ POSITION_DEFAULT_GROUP_CODES = {
     # CV + Kiểm toán (KT)
     "Kiểm toán viên": ["CV", "KT"],
 }
+
+
+ADMIN_GROUP_CODE = "ADMIN"
+
+
+def _admin_group_ids():
+    from authorization.models import GroupInfo
+
+    return set(GroupInfo.objects.filter(ma_nhom_quyen=ADMIN_GROUP_CODE).values_list("id", flat=True))
+
+
+def requester_can_grant_admin(request):
+    """Chỉ superuser hoặc thành viên nhóm ADMIN mới được gán hoặc gỡ nhóm Quản trị hệ thống."""
+    user = getattr(request, "user", None)
+    if not user or not user.is_authenticated:
+        return False
+    if user.is_superuser:
+        return True
+    return user.groups.filter(id__in=_admin_group_ids()).exists()
+
+
+def check_admin_group_assignment(request, requested_groups, current_group_ids=()):
+    """Từ chối khi người không phải ADMIN làm thay đổi việc CBNV thuộc nhóm ADMIN."""
+    admin_ids = _admin_group_ids()
+    if not admin_ids or requester_can_grant_admin(request):
+        return
+    requested_ids = {group.id for group in requested_groups}
+    if (requested_ids & admin_ids) != (set(current_group_ids) & admin_ids):
+        raise serializers.ValidationError("employees.messages.adminGroupForbidden")
 
 
 def get_default_groups_for_position(position):
@@ -416,6 +478,10 @@ class EmployeeCreateSerializer(serializers.Serializer):
             "incorrect_type": "employees.messages.invalidFilterParam",
         },
     )
+    def validate_nhom_quyen_ids(self, value):
+        check_admin_group_assignment(self.context.get("request"), value)
+        return value
+
     trang_thai = serializers.ChoiceField(
         choices=Employee.Status.choices,
         default=Employee.Status.LAM_VIEC,
@@ -622,6 +688,11 @@ class EmployeeUpdateSerializer(serializers.Serializer):
             "incorrect_type": "employees.messages.invalidFilterParam",
         },
     )
+    def validate_nhom_quyen_ids(self, value):
+        current = self.instance.groups.values_list("id", flat=True) if self.instance else ()
+        check_admin_group_assignment(self.context.get("request"), value, current)
+        return value
+
     trang_thai = serializers.ChoiceField(
         choices=Employee.Status.choices,
         required=False,

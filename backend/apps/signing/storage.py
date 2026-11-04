@@ -1,3 +1,4 @@
+import logging
 import os
 import uuid
 from abc import ABC, abstractmethod
@@ -5,11 +6,17 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
+
+logger = logging.getLogger(__name__)
 
 
 class StorageError(Exception):
     """Vị trí lưu không hợp lệ hoặc tệp không đọc được."""
+
+
+THU_MUC_ANH_CA_NHAN = "anh_chu_ky_nguoi_dung"
 
 
 @dataclass(frozen=True)
@@ -30,6 +37,14 @@ class DocumentStorageAdapter(ABC):
     @abstractmethod
     def save_bytes(self, data: bytes, thu_muc: str, duoi_tep: str) -> StoredFileMeta:
         """Ghi tệp mới, không bao giờ ghi đè; trả vị trí lưu tương đối."""
+
+    @abstractmethod
+    def delete(self, vi_tri_luu_tep: str) -> bool:
+        """Xóa tệp; trả True nếu đã xóa, False nếu tệp không còn. Vị trí không hợp lệ thì ném StorageError."""
+
+    @abstractmethod
+    def list_files(self, thu_muc: str) -> list[tuple[str, float]]:
+        """Liệt kê (vị trí lưu, thời điểm sửa cuối dạng epoch) của tệp dưới `thu_muc`."""
 
 
 class FilesystemStorageAdapter(DocumentStorageAdapter):
@@ -77,6 +92,43 @@ class FilesystemStorageAdapter(DocumentStorageAdapter):
         return StoredFileMeta(vi_tri, len(data))
 
 
+    def _vi_tri_an_toan(self, vi_tri_luu_tep: str) -> Path:
+        if not vi_tri_luu_tep or os.path.isabs(vi_tri_luu_tep):
+            raise StorageError("Vị trí lưu tệp phải là đường dẫn tương đối.")
+        path = (self.root / vi_tri_luu_tep).resolve()
+        if path == self.root or not path.is_relative_to(self.root):
+            raise StorageError("Vị trí lưu tệp nằm ngoài thư mục gốc.")
+        return path
+
+    def delete(self, vi_tri_luu_tep: str) -> bool:
+        path = self._vi_tri_an_toan(vi_tri_luu_tep)
+        if not path.is_file():
+            return False
+        path.unlink()
+        return True
+
+    def list_files(self, thu_muc: str) -> list[tuple[str, float]]:
+        goc = self._vi_tri_an_toan(thu_muc)
+        if not goc.is_dir():
+            return []
+        return [(p.relative_to(self.root).as_posix(), p.stat().st_mtime)
+                for p in goc.rglob("*") if p.is_file() and not p.name.endswith(".tmp")]
+
+
 def get_storage() -> DocumentStorageAdapter:
     """Adapter lưu trữ mặc định của phân hệ; thay bằng adapter khác (S3, ...) mà không đổi nghiệp vụ."""
     return FilesystemStorageAdapter()
+
+
+def xoa_tep_sau_commit(vi_tri_luu_tep: str) -> None:
+    """Xóa tệp sau khi transaction hiện tại commit (không có transaction thì xóa ngay).
+
+    Lỗi xóa chỉ ghi log: tệp còn sót được lệnh `don_tep_mo_coi` dọn sau.
+    """
+    def _xoa():
+        try:
+            get_storage().delete(vi_tri_luu_tep)
+        except (StorageError, OSError):
+            logger.warning("Không xóa được tệp %s", vi_tri_luu_tep, exc_info=True)
+
+    transaction.on_commit(_xoa, robust=True)

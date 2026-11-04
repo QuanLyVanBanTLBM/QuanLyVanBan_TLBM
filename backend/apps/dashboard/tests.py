@@ -18,6 +18,21 @@ class DashboardAPITests(TestCase):
         self.client = APIClient()
         self.today = timezone.localdate()
         self.tomorrow = self.today + timedelta(days=1)
+        UserModel = get_user_model()
+        self.baseline_today_birthday_ids = set(
+            UserModel.objects.filter(
+                is_active=True,
+                ngay_sinh__month=self.today.month,
+                ngay_sinh__day=self.today.day,
+            ).values_list("pk", flat=True)
+        )
+        self.baseline_tomorrow_birthday_ids = set(
+            UserModel.objects.filter(
+                is_active=True,
+                ngay_sinh__month=self.tomorrow.month,
+                ngay_sinh__day=self.tomorrow.day,
+            ).values_list("pk", flat=True)
+        )
 
         khoi = KhoiKhuVuc.objects.create(ten="Khối Hỗ trợ")
         latest_stt = DonVi.objects.order_by("-stt_uu_tien").values_list("stt_uu_tien", flat=True).first() or 0
@@ -359,7 +374,12 @@ class DashboardOverviewPayloadTests(DashboardAPITests):
         today_label = self.today.strftime("%d/%m") + " (Hôm nay)"
         tomorrow_label = self.tomorrow.strftime("%d/%m") + " (Ngày mai)"
         birthdays = {row["id"]: row for row in data["birthdays"]}
-        self.assertEqual(set(birthdays), {self.staff_user.pk, self.admin_user.pk, no_name.pk})
+        self.assertEqual(
+            set(birthdays),
+            self.baseline_today_birthday_ids
+            | self.baseline_tomorrow_birthday_ids
+            | {self.staff_user.pk, self.admin_user.pk, no_name.pk},
+        )
         self.assertEqual(birthdays[self.staff_user.pk], {
             "id": self.staff_user.pk,
             "name": "Cán Bộ Nhân Viên",
@@ -378,16 +398,23 @@ class DashboardOverviewPayloadTests(DashboardAPITests):
         self.assertEqual(birthdays[no_name.pk]["department"], no_name.don_vi.ten)
         self.assertEqual(birthdays[no_name.pk]["birthdate"], tomorrow_label)
         self.assertFalse(birthdays[no_name.pk]["isToday"])
-        self.assertEqual(data["birthdays"][0]["id"], self.staff_user.pk)
-        self.assertEqual(data["birthdays_by_day"]["today"], [
-            {"full_name": "Cán Bộ Nhân Viên", "department": "Phòng Hành chính", "position": "Chuyên viên văn thư"},
-        ])
-        self.assertEqual(
-            sorted(data["birthdays_by_day"]["tomorrow"], key=lambda row: row["full_name"]),
-            [
-                {"full_name": "Quản Trị Viên", "department": "Phòng Hành chính", "position": "Chuyên viên văn thư"},
-                {"full_name": "no_name_birthday", "department": no_name.don_vi.ten, "position": no_name.chuc_vu.name},
-            ],
+        self.assertTrue(birthdays[self.staff_user.pk]["isToday"])
+        self.assertIn(
+            {
+                "full_name": "Cán Bộ Nhân Viên",
+                "department": "Phòng Hành chính",
+                "position": "Chuyên viên văn thư",
+            },
+            data["birthdays_by_day"]["today"],
+        )
+        tomorrow_birthdays = data["birthdays_by_day"]["tomorrow"]
+        self.assertIn(
+            {"full_name": "Quản Trị Viên", "department": "Phòng Hành chính", "position": "Chuyên viên văn thư"},
+            tomorrow_birthdays,
+        )
+        self.assertIn(
+            {"full_name": "no_name_birthday", "department": no_name.don_vi.ten, "position": no_name.chuc_vu.name},
+            tomorrow_birthdays,
         )
         self.assertEqual(data["meetingRooms"], [])
         self.assertEqual(data["today_meetings"], [])

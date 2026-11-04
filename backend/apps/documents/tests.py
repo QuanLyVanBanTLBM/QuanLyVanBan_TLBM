@@ -325,6 +325,48 @@ class DocumentAPITests(TestCase):
         self.assertEqual(len(response.data["results"]), 1)
         self.assertEqual(response.data["results"][0]["username"], "cbnv")
 
+    def test_api_viewers_denied_for_unauthorized_user(self):
+        """User không phải người tạo, không phải Admin, không có quyền view_read_log bị từ chối 403."""
+        other_user = User.objects.create_user(username="other_cbnv_audit", password="password123")
+        other_client = APIClient()
+        other_client.force_authenticate(user=other_user)
+
+        response = other_client.get(f"/api/documents/{self.doc.id}/viewers/")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_api_viewers_allowed_with_rbac_permission(self):
+        """User có quyền view_read_log_vanbanden xem được viewers của văn bản."""
+        from django.contrib.auth.models import Permission
+        perm = Permission.objects.get(codename="view_read_log_vanbanden")
+        other_user = User.objects.create_user(username="reader_auditor_cbnv", password="password123")
+        other_user.user_permissions.add(perm)
+        other_user = User.objects.get(pk=other_user.pk)
+
+        other_client = APIClient()
+        other_client.force_authenticate(user=other_user)
+
+        response = other_client.get(f"/api/documents/{self.doc.id}/viewers/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_send_mail_all_denied_for_unauthorized_user(self):
+        """User không có quyền send_mail_all bị từ chối khi bật gui_mail_toan_he_thong = True."""
+        unauth_user = User.objects.create_user(username="no_mail_perm_cbnv", password="password123")
+        unauth_client = APIClient()
+        unauth_client.force_authenticate(user=unauth_user)
+
+        response = unauth_client.post(
+            "/api/documents/",
+            {
+                "loai": "DEN",
+                "so_hieu": "99/CV-TEST-MAIL",
+                "trich_yeu": "Test quyền gửi mail",
+                "gui_mail_toan_he_thong": True,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("gui_mail_toan_he_thong", response.data)
+
     def test_api_so_thu_tu_read_only_on_update(self):
         """PUT / PATCH không cho phép sửa so_thu_tu."""
         response = self.client.patch(
@@ -344,13 +386,22 @@ class DocumentAPITests(TestCase):
         self.assertIn("application/vnd.openxmlformats-officedocument", response["Content-Type"])
 
     def test_api_excel_export(self):
-        """GET /api/documents/export/?loai=DEN xuất file Excel theo bộ lọc."""
+        """GET /api/documents/export/?loai=DEN xuất file Excel theo bộ lọc (khi có quyền)."""
+        self.user.is_staff = True
+        self.user.save()
         response = self.client.get("/api/documents/export/?loai=DEN")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn("application/vnd.openxmlformats-officedocument", response["Content-Type"])
 
+    def test_api_excel_export_without_permission_denied(self):
+        """GET /api/documents/export/?loai=DEN trả về 403 nếu không có quyền export."""
+        self.user.is_staff = False
+        self.user.save()
+        response = self.client.get("/api/documents/export/?loai=DEN")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
     def test_api_excel_import(self):
-        """POST /api/documents/import/ nhận file Excel và import."""
+        """POST /api/documents/import/ nhận file Excel và import (khi có quyền)."""
         self.user.is_staff = True
         self.user.save()
         template_stream = generate_excel_template("DEN")
@@ -366,6 +417,23 @@ class DocumentAPITests(TestCase):
             format="multipart",
         )
         self.assertIn(response.status_code, [status.HTTP_200_OK, status.HTTP_201_CREATED, status.HTTP_400_BAD_REQUEST])
+
+    def test_api_excel_import_without_permission_denied(self):
+        """POST /api/documents/import/ trả về 403 nếu không có quyền import."""
+        self.user.is_staff = False
+        self.user.save()
+        template_stream = generate_excel_template("DEN")
+        excel_file = SimpleUploadedFile(
+            "import_test.xlsx",
+            template_stream.read(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response = self.client.post(
+            "/api/documents/import/",
+            {"file": excel_file, "loai": "DEN"},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_attachment_upload_path_by_document_type(self):
         """Kiểm tra file đính kèm được tự động phân vào folder: den, di theo phân loại: thuong, han_che."""
@@ -2838,6 +2906,37 @@ class ExcelAttachmentAndOldfileTests(APITestCase):
         self.assertIn("CV_Di_1 .pdf", att_names)
         self.assertIn("CV_Di_2.docx", att_names)
 
+    def test_import_excel_with_smart_extension_matching(self):
+        """Khớp thông minh định dạng tệp: Excel ghi .doc nhưng tệp tải lên là .docx (hoặc không ghi đuôi) vẫn nhận đủ."""
+        from documents.services import import_from_excel
+        from openpyxl import Workbook
+        import io
+
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["Số, ký hiệu VB", "Ngày ban hành", "Trích yếu nội dung", "Hiệu lực", "Phạm vi", "Tệp đính kèm"])
+        # Cột tệp ghi: 1 file pdf, 1 file .doc (nhưng thực tế là .docx), 1 file không đuôi (nhưng thực tế là .xlsx)
+        ws.append(["202/DI-SMART", "25/10/2026", "VB test smart extension", "CON_HIEU_LUC", "Nội bộ", "HoaDon_test.pdf; QNA.doc; BangLuong"])
+
+        excel_bio = io.BytesIO()
+        wb.save(excel_bio)
+        excel_bio.seek(0)
+
+        f1 = SimpleUploadedFile("HoaDon_test.pdf", b"%PDF-1.4 sample", content_type="application/pdf")
+        f2 = SimpleUploadedFile("QNA.docx", b"docx sample content", content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        f3 = SimpleUploadedFile("BangLuong.png", b"\x89PNG\r\n\x1a\n sample", content_type="image/png")
+
+        res = import_from_excel(excel_bio, "DI", self.user, pham_vi="NOI_BO", attachments=[f1, f2, f3])
+        self.assertEqual(res["created"], 1)
+        self.assertEqual(len(res["errors"]), 0)
+
+        doc = VanBanDi.objects.get(so_hieu="202/DI-SMART")
+        self.assertEqual(doc.attachments.count(), 3)
+        att_names = set(doc.attachments.values_list("name", flat=True))
+        self.assertIn("HoaDon_test.pdf", att_names)
+        self.assertIn("QNA.docx", att_names)
+        self.assertIn("BangLuong.png", att_names)
+
     def test_delete_outbound_document_with_same_id_as_inbound_restricted(self):
         """Xóa Văn bản Đi khi tồn tại Văn bản Đến Hạn chế có cùng ID: gọi với ?loai=DI xóa đúng Văn bản Đi."""
         self.user.is_superuser = True
@@ -3004,6 +3103,31 @@ class HieuLucPermissionTests(APITestCase):
             format="json",
         )
         self.assertEqual(res_vt.status_code, status.HTTP_200_OK)
+
+    def test_group_named_vanthu_without_perm_cannot_change_hieu_luc(self):
+        """Nhóm tên "Văn thư" mà chưa được gán quyền đổi hiệu lực thì bị từ chối (không ghi cứng theo tên nhóm)."""
+        from django.contrib.auth.models import Group, Permission
+        from documents.views import can_change_hieu_luc
+
+        group = Group.objects.get_or_create(name="Văn thư")[0]
+        group.permissions.set(Permission.objects.filter(codename__in=["change_vanbanden", "change_vanbandi"]))
+        user = User.objects.create_user(username="vanthu_no_hl", password="password123")
+        user.groups.add(group)
+
+        self.assertFalse(can_change_hieu_luc(user, "DEN"))
+        self.assertFalse(can_change_hieu_luc(user, "DI"))
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+        res = client.patch(
+            f"/api/documents/{self.doc_den.id}/",
+            {"hieu_luc": HieuLuc.HET_HIEU_LUC},
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("hieu_luc", res.data)
+        self.doc_den.refresh_from_db()
+        self.assertEqual(self.doc_den.hieu_luc, HieuLuc.CON_HIEU_LUC)
 
     def test_create_document_with_non_default_hieu_luc_restricted(self):
         """Người không có quyền chỉ được để giá trị mặc định CON_HIEU_LUC khi tạo văn bản."""

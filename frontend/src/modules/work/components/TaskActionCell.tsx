@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from '@i18n/translate';
 import { TaskListItem } from '../types/task';
 
 /**
@@ -105,11 +106,12 @@ export default function TaskActionCell({
   onApprove,
   onUnapprove,
 }: TaskActionCellProps) {
+  const { t } = useTranslation();
   const { canEdit, canDelete, canApprove, canUnapprove } = task.permissions;
 
   if (!canEdit && !canDelete && !canApprove && !canUnapprove) {
     return (
-      <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }} title="Bạn chỉ có quyền xem công việc này">
+      <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }} title={t('work.actions.viewOnly')}>
         —
       </span>
     );
@@ -120,7 +122,7 @@ export default function TaskActionCell({
       {canEdit && (
         <IconButton
           icon="fa-solid fa-pen"
-          label="Sửa công việc"
+          label={t('work.actions.edit')}
           color="var(--color-primary)"
           disabled={disabled}
           onClick={() => onEdit(task)}
@@ -129,7 +131,7 @@ export default function TaskActionCell({
       {canDelete && (
         <IconButton
           icon="fa-solid fa-trash"
-          label="Xóa công việc"
+          label={t('work.actions.delete')}
           color="var(--color-danger)"
           disabled={disabled}
           onClick={() => onDelete(task)}
@@ -137,7 +139,7 @@ export default function TaskActionCell({
       )}
       {canApprove && (
         <TextButton
-          label="Duyệt"
+          label={t('work.actions.approve')}
           icon="fa-solid fa-check"
           variant="primary"
           disabled={disabled}
@@ -146,7 +148,7 @@ export default function TaskActionCell({
       )}
       {canUnapprove && (
         <TextButton
-          label="Hủy duyệt"
+          label={t('work.actions.unapprove')}
           icon="fa-solid fa-rotate-left"
           variant="warning"
           disabled={disabled}

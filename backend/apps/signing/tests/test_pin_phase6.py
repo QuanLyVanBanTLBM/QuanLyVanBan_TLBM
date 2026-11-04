@@ -6,6 +6,7 @@ import base64
 import os
 import threading
 import unittest
+from unittest import mock
 from datetime import timedelta
 
 from cryptography.exceptions import InvalidTag
@@ -51,8 +52,9 @@ def khoa_hoat_dong(user, ma="K1", kich_hoat=True):
     raw = private.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
     key = key_service.dang_ky(user, ma_khoa=ma, khoa_cong_khai=base64.b64encode(raw).decode(),
                               ngay_hieu_luc=timezone.now())
-    chu_ky = base64.b64encode(private.sign(key_service.thach_thuc_so_huu(key).encode())).decode()
-    key_service.xac_minh_so_huu(key, user, chu_ky)
+    thach_thuc = key_service.thach_thuc_so_huu(key)
+    chu_ky = base64.b64encode(private.sign(thach_thuc.encode())).decode()
+    key_service.xac_minh_so_huu(key, user, thach_thuc, chu_ky)
     if kich_hoat:
         key_service.kich_hoat(key, user)
     key.refresh_from_db()
@@ -142,42 +144,52 @@ class MoKhoaKyTests(PinBase):
     def test_wrong_pin_counts_and_success_resets(self):
         loi = self.sai(3)
         self.assertEqual(loi.get_codes(), "pin_khong_dung")
-        self.assertEqual(loi.fields["so_lan_con_lai"], [2])
+        self.assertEqual(loi.fields["so_lan_con_lai"], [12])
         self.assertEqual(self.unlock.so_lan_sai, 3)
         pin_service.mo_khoa_ky(self.key, self.u1, self.pin)
         self.unlock.refresh_from_db()
         self.assertEqual(self.unlock.so_lan_sai, 0)
         self.assertEqual(hanh_dong(self.key).count("PIN_SAI"), 3)
 
-    def test_five_wrong_locks_fifteen_minutes(self):
-        loi = self.sai(5)
-        self.assertEqual((loi.get_codes(), loi.status_code), ("pin_tam_khoa", 423))
-        con_lai = self.unlock.khoa_den - timezone.now()
-        self.assertTrue(timedelta(minutes=14) < con_lai <= timedelta(minutes=15))
-        # Đang khóa: PIN đúng cũng bị chặn và không làm tăng bộ đếm
-        with self.assertRaises(SigningError) as ctx:
-            pin_service.mo_khoa_ky(self.key, self.u1, self.pin)
-        self.assertEqual(ctx.exception.get_codes(), "pin_tam_khoa")
+    def test_fifteen_wrong_per_day_then_rate_limited_with_429(self):
+        loi = self.sai(14)
+        self.assertEqual((loi.get_codes(), loi.fields["so_lan_con_lai"]), ("pin_khong_dung", [1]))
+        loi = self.sai(1)
+        self.assertEqual(loi.get_codes(), "pin_khong_dung")
+        self.assertEqual(self.unlock.so_lan_sai, 15)
+        self.assertEqual(hanh_dong(self.key).count("PIN_SAI"), 15)
+        self.assertEqual(hanh_dong(self.key).count("PIN_HET_LUOT"), 1)
+        # Hết lượt: kể cả PIN đúng cũng bị chặn, không tăng bộ đếm
+        for pin in (self.pin, xac_minh()):
+            with self.assertRaises(SigningError) as ctx:
+                pin_service.mo_khoa_ky(self.key, self.u1, pin)
+            self.assertEqual((ctx.exception.get_codes(), ctx.exception.status_code), ("pin_het_luot_trong_ngay", 429))
         self.unlock.refresh_from_db()
-        self.assertEqual(self.unlock.so_lan_sai, 5)
-        self.assertIn("PIN_KHOA", hanh_dong(self.key))
-        # Hết thời gian khóa: PIN đúng mở được và đặt lại bộ đếm
-        SigningKeyUnlock.objects.filter(pk=self.unlock.pk).update(khoa_den=timezone.now() - timedelta(seconds=1))
+        self.assertEqual(self.unlock.so_lan_sai, 15)
+
+    def test_counter_resets_on_correct_pin(self):
+        self.sai(14)
         _, manh = pin_service.mo_khoa_ky(self.key, self.u1, self.pin)
         self.assertEqual(manh, self.k_srv)
-
-    def test_ten_wrong_hard_lock(self):
-        self.sai(5)
-        SigningKeyUnlock.objects.filter(pk=self.unlock.pk).update(khoa_den=timezone.now() - timedelta(seconds=1))
-        loi = self.sai(4)
+        self.unlock.refresh_from_db()
+        self.assertEqual(self.unlock.so_lan_sai, 0)
+        loi = self.sai(14)
         self.assertEqual(loi.fields["so_lan_con_lai"], [1])
-        loi = self.sai(1)
-        self.assertEqual((loi.get_codes(), loi.status_code), ("pin_khoa_cung", 423))
-        self.assertEqual(self.unlock.so_lan_sai, 10)
-        with self.assertRaises(SigningError) as ctx:
-            pin_service.mo_khoa_ky(self.key, self.u1, self.pin)
-        self.assertEqual(ctx.exception.get_codes(), "pin_khoa_cung")
-        self.assertEqual(hanh_dong(self.key).count("PIN_KHOA"), 2)
+
+    def test_limit_resets_next_day(self):
+        self.sai(15)
+        # Trigger cập nhật `updated_at` ở DB nên giả lập sang ngày mới bằng đồng hồ của dịch vụ
+        ngay_mai = timezone.now() + timedelta(days=1, minutes=1)
+        with mock.patch.object(pin_service.timezone, "now", return_value=ngay_mai):
+            _, manh = pin_service.mo_khoa_ky(self.key, self.u1, self.pin)
+        self.assertEqual(manh, self.k_srv)
+        self.unlock.refresh_from_db()
+        self.assertEqual(self.unlock.so_lan_sai, 0)
+
+    def test_legacy_lock_columns_are_ignored(self):
+        SigningKeyUnlock.objects.filter(pk=self.unlock.pk).update(khoa_den=timezone.now() + timedelta(hours=1))
+        _, manh = pin_service.mo_khoa_ky(self.key, self.u1, self.pin)
+        self.assertEqual(manh, self.k_srv)
 
     def test_only_active_key_and_owner(self):
         with self.assertRaises(SigningError) as ctx:
@@ -289,12 +301,14 @@ class PinApiTests(PinBase):
         self.assertTrue(r.data[0]["da_dat_pin"])
         self.assertNotIn("ma_bam_xac_minh_pin", r.content.decode())
 
-    def test_wrong_and_locked_responses(self):
+    def test_wrong_and_rate_limited_responses(self):
         r = self.c1.post(f"{BASE}/khoa/{self.key.pk}/mo-khoa-ky/", {"xac_minh_pin": xac_minh()}, format="json")
         self.assertEqual((r.status_code, r.data["code"]), (400, "pin_khong_dung"))
-        for _ in range(4):
+        for _ in range(14):
             r = self.c1.post(f"{BASE}/khoa/{self.key.pk}/mo-khoa-ky/", {"xac_minh_pin": xac_minh()}, format="json")
-        self.assertEqual((r.status_code, r.data["code"]), (423, "pin_tam_khoa"))
+        self.assertEqual((r.status_code, r.data["code"]), (400, "pin_khong_dung"))
+        r = self.c1.post(f"{BASE}/khoa/{self.key.pk}/mo-khoa-ky/", {"xac_minh_pin": self.pin}, format="json")
+        self.assertEqual((r.status_code, r.data["code"]), (429, "pin_het_luot_trong_ngay"))
 
     def test_set_and_change_pin_endpoints(self):
         key2 = khoa_hoat_dong(self.u2, ma="K2")

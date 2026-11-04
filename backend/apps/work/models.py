@@ -3,7 +3,7 @@ from pathlib import Path
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
-from django.db.models import Case, CharField, Exists, F, OuterRef, Q, Value, When
+from django.db.models import Case, CharField, Exists, F, IntegerField, OuterRef, Q, Value, When
 from django.utils import timezone
 
 from document_storage import build_dated_path, get_document_storage
@@ -207,6 +207,53 @@ class TaskQuerySet(models.QuerySet):
                 When(first_opened_at__isnull=False, then=Value(TaskStatus.DANG_XU_LY)),
                 default=Value(TaskStatus.CHO_XU_LY),
                 output_field=CharField(),
+            )
+        )
+
+    def with_priority_for(self, user):
+        """
+        Gắn cột `priority_bucket` (1 = cao nhất) để đưa việc đang CHỜ CHÍNH USER HÀNH ĐỘNG
+        lên đầu danh sách. CHỈ SẮP XẾP, không lọc, không ẩn việc nào.
+
+        YÊU CẦU: gọi SAU .with_status() vì cần cột annotate `status`.
+
+        Bậc ưu tiên (cao → thấp):
+          1. User là chủ trì/tham gia, việc còn phải làm (Chờ xử lý hoặc Đang xử lý).
+          2. User là chỉ đạo/chủ trì, việc đang Chờ duyệt (chờ chính user duyệt minh chứng).
+          3. User là chủ trì/tham gia, việc đã trễ (Quá hạn hoặc Chưa hoàn thành).
+          4. Các việc còn lại user có quyền xem.
+        Trong cùng một bậc: sắp theo due_date tăng dần (do view order_by đảm nhận).
+        """
+        if user is None or not user.is_authenticated:
+            return self.annotate(priority_bucket=Value(4, output_field=IntegerField()))
+
+        def role_exists(role):
+            return Exists(
+                TaskParticipant.objects.filter(task=OuterRef("pk"), user=user, role=role)
+            )
+
+        return self.annotate(
+            _is_host=role_exists(ParticipantRole.CHU_TRI),
+            _is_part=role_exists(ParticipantRole.THAM_GIA),
+            _is_dir=role_exists(ParticipantRole.CHI_DAO),
+        ).annotate(
+            priority_bucket=Case(
+                When(
+                    (Q(_is_host=True) | Q(_is_part=True))
+                    & Q(status__in=[TaskStatus.CHO_XU_LY, TaskStatus.DANG_XU_LY]),
+                    then=Value(1),
+                ),
+                When(
+                    (Q(_is_dir=True) | Q(_is_host=True)) & Q(status=TaskStatus.CHO_DUYET),
+                    then=Value(2),
+                ),
+                When(
+                    (Q(_is_host=True) | Q(_is_part=True))
+                    & Q(status__in=[TaskStatus.QUA_HAN, TaskStatus.CHUA_HOAN_THANH]),
+                    then=Value(3),
+                ),
+                default=Value(4),
+                output_field=IntegerField(),
             )
         )
 

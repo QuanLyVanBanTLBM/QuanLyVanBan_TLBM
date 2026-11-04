@@ -10,17 +10,6 @@ User = settings.AUTH_USER_MODEL
 DB_NOW = models.Func(function="now", output_field=models.DateTimeField())
 
 
-class SigningDelegationRole(models.Model):
-    """Chức danh được phép nhận ủy quyền từ một chức danh ký."""
-
-    chuc_vu_giao = models.ForeignKey("accounts.Position", on_delete=models.PROTECT, related_name="+")
-    chuc_vu_nhan = models.ForeignKey("accounts.Position", on_delete=models.PROTECT, related_name="+")
-
-    class Meta:
-        db_table = "signing_delegation_role"
-        constraints = [models.UniqueConstraint(fields=["chuc_vu_giao", "chuc_vu_nhan"], name="uq_signing_delegation_role")]
-
-
 def sha256_or_null(field):
     """CHECK: giá trị rỗng (NULL) hoặc SHA-256 hex 64 ký tự thường."""
     return Q(**{f"{field}__isnull": True}) | Q(**{f"{field}__regex": r"^[0-9a-f]{64}$"})
@@ -150,7 +139,6 @@ class SigningProcessStepSigner(models.Model):
     # Chỉ dùng khi cấu hình theo chức vụ; rỗng khi cấu hình theo tài khoản (#80 Phase 7)
     pham_vi_chuc_vu = models.CharField(max_length=20, choices=enums.PhamViChucVu.choices, null=True, blank=True)
     vai_tro_ky = models.CharField(max_length=20, choices=enums.VaiTroKy.choices, db_default="KY_CHINH", default=enums.VaiTroKy.KY_CHINH)
-    chan_ky_chinh = models.BooleanField(db_default=True, default=True)
     thu_tu = models.PositiveSmallIntegerField()
     created_at = models.DateTimeField(auto_now_add=True, db_default=DB_NOW)
 
@@ -299,7 +287,6 @@ class SigningRequestStepSigner(models.Model):
     ten_nguoi_ky = models.CharField(max_length=255)
     ten_chuc_vu = models.CharField(max_length=255, null=True, blank=True)
     vai_tro_ky = models.CharField(max_length=20, choices=enums.VaiTroKy.choices)
-    chan_ky_chinh = models.BooleanField(db_default=True, default=True)
     trang_thai = models.CharField(
         max_length=20, choices=enums.TrangThaiNguoiKy.choices, db_default="CHO_KY", default=enums.TrangThaiNguoiKy.CHO_KY
     )
@@ -311,12 +298,6 @@ class SigningRequestStepSigner(models.Model):
     chu_ky_hien_hanh = models.ForeignKey(
         "SigningSignature", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
-    uy_quyen_tu = models.ForeignKey(User, null=True, blank=True, on_delete=models.PROTECT, related_name="+")
-    chuc_vu_goc_uy_quyen = models.ForeignKey(
-        "accounts.Position", null=True, blank=True, on_delete=models.PROTECT, related_name="+"
-    )
-    ly_do_uy_quyen = models.TextField(blank=True, db_default="", default="")
-    ngay_uy_quyen = models.DateTimeField(null=True, blank=True)
     trang_ky = models.PositiveIntegerField(null=True, blank=True)
     toa_do_x = models.DecimalField(max_digits=10, decimal_places=4, null=True, blank=True)
     toa_do_y = models.DecimalField(max_digits=10, decimal_places=4, null=True, blank=True)
@@ -329,10 +310,6 @@ class SigningRequestStepSigner(models.Model):
         db_table = "signing_request_step_signer"
         constraints = [
             models.UniqueConstraint(fields=["buoc_ky", "nguoi_ky"], name="uq_signing_request_step_signer_nguoi_ky"),
-            models.CheckConstraint(
-                condition=Q(uy_quyen_tu__isnull=True) | ~Q(ly_do_uy_quyen=""),
-                name="chk_signing_signer_ly_do_uy_quyen",
-            ),
         ]
 
 
@@ -516,7 +493,8 @@ class SigningAuditLog(models.Model):
 
 
 class SigningNotification(models.Model):
-    trinh_ky = models.ForeignKey(SigningRequest, on_delete=models.CASCADE, related_name="+")
+    # Rỗng với thông báo thao tác quản trị trên tài khoản (khóa/bật lại quyền ký, thu hồi khóa)
+    trinh_ky = models.ForeignKey(SigningRequest, null=True, blank=True, on_delete=models.CASCADE, related_name="+")
     buoc_ky = models.ForeignKey(
         SigningRequestStepSigner, null=True, blank=True, on_delete=models.CASCADE, related_name="+"
     )
@@ -565,3 +543,138 @@ class SigningKeyUnlock(models.Model):
 
     def __str__(self):
         return f"PIN của khóa {self.khoa_id} (sai {self.so_lan_sai} lần)"
+
+
+class SigningUserSignature(models.Model):
+    """
+    Ảnh chữ ký cá nhân (PNG) của người dùng để dán lên tệp PDF hoàn tất khi ký duyệt.
+    Mỗi người dùng có một ảnh chữ ký hiện hành.
+    """
+
+    nguoi_dung = models.OneToOneField(
+        User, on_delete=models.CASCADE, db_constraint=False, related_name="anh_chu_ky_ca_nhan"
+    )  # FK ON DELETE CASCADE tạo bằng SQL trong migration 0019 để khớp release_DDL.sql
+    vi_tri_tep = models.CharField(max_length=500)
+    ma_bam = models.CharField(max_length=64)
+    dung_luong_bytes = models.IntegerField()
+    created_at = models.DateTimeField(auto_now_add=True, db_default=DB_NOW)
+    updated_at = models.DateTimeField(auto_now=True, db_default=DB_NOW)
+
+    class Meta:
+        db_table = "signing_user_signature"
+
+    def __str__(self):
+        return f"Chữ ký của user {self.nguoi_dung_id} ({self.ma_bam[:8]})"
+
+
+class SigningPinResetCode(models.Model):
+    """
+    Mã xác thực 6 chữ số gửi qua email để chủ khóa tự đặt lại PIN (thu hồi khóa hiện tại, tạo khóa và PIN mới).
+    Chỉ lưu mã đã băm; hết hạn sau vài phút; sai quá số lần cho phép thì hủy mã.
+    """
+
+    nguoi_dung = models.ForeignKey(
+        User, on_delete=models.CASCADE, db_constraint=False, related_name="+"
+    )  # FK ON DELETE CASCADE tạo bằng SQL trong migration 0022 để khớp release_DDL.sql
+    ma_bam = models.CharField(max_length=64)
+    het_han = models.DateTimeField()
+    so_lan_sai = models.IntegerField(db_default=0, default=0)
+    da_dung_luc = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_default=DB_NOW)
+
+    class Meta:
+        db_table = "signing_pin_reset_code"
+        indexes = [models.Index(fields=["nguoi_dung", "created_at"], name="idx_signing_pin_reset_user")]
+
+
+class SigningChallengeDaDung(models.Model):
+    """
+    Nonce của challenge chứng minh sở hữu khóa đã được dùng (#507). UNIQUE (nguoi_dung, nonce) bảo đảm mỗi challenge
+    chỉ xác minh thành công một lần kể cả khi hai request chạy đồng thời. Bản ghi hết hạn được xóa khi ghi bản ghi mới.
+    """
+
+    nguoi_dung = models.ForeignKey(
+        User, on_delete=models.CASCADE, db_constraint=False, related_name="+"
+    )  # FK ON DELETE CASCADE tạo bằng SQL trong migration 0023 để khớp release_DDL.sql
+    nonce = models.CharField(max_length=64)
+    het_han = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True, db_default=DB_NOW)
+
+    class Meta:
+        db_table = "signing_challenge_da_dung"
+        constraints = [models.UniqueConstraint(fields=["nguoi_dung", "nonce"], name="uq_signing_challenge_da_dung")]
+        indexes = [models.Index(fields=["het_han"], name="idx_signing_challenge_het_han")]
+
+
+class SigningMfaOtp(models.Model):
+    """
+    Mã xác thực MFA (6 chữ số) gửi qua email trước khi ký, và phiên đã xác thực (issue #509, phân vùng 2 của #447).
+    Chỉ lưu mã đã băm (HMAC). Nhập đúng mã thì `da_dung_luc` được đặt và dòng gắn với access token hiện tại
+    (`phien_jti`, `phien_het_han` = hạn của token): ký chỉ được nhận khi tồn tại dòng như vậy còn hiệu lực.
+    """
+
+    nguoi_dung = models.ForeignKey(
+        User, on_delete=models.CASCADE, db_constraint=False, related_name="+"
+    )  # FK ON DELETE CASCADE tạo bằng SQL trong migration 0024 để khớp release_DDL.sql
+    muc_dich = models.CharField(max_length=20, db_default="KY", default="KY")
+    ma_bam = models.CharField(max_length=64)
+    het_han = models.DateTimeField()
+    so_lan_sai = models.IntegerField(db_default=0, default=0)
+    da_dung_luc = models.DateTimeField(null=True, blank=True)
+    phien_jti = models.CharField(max_length=64, null=True, blank=True)
+    phien_het_han = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_default=DB_NOW)
+
+    class Meta:
+        db_table = "signing_mfa_otp"
+        indexes = [
+            models.Index(fields=["nguoi_dung", "muc_dich", "created_at"], name="idx_signing_mfa_otp_user"),
+            models.Index(fields=["nguoi_dung", "phien_jti"], name="idx_signing_mfa_otp_phien"),
+        ]
+
+
+class SigningRightLock(models.Model):
+    """
+    Khóa quyền ký của tài khoản do quản trị viên đặt. Bảng trạng thái (được cập nhật khi bật lại),
+    không phải bảng bằng chứng; mọi thao tác ghi vào signing_audit_log.
+    Đang hiệu lực khi bat_lai_luc rỗng và (khoa_den rỗng hoặc chưa tới); tối đa một dòng bat_lai_luc rỗng cho mỗi tài khoản.
+    """
+
+    nguoi_bi_khoa = models.ForeignKey(User, on_delete=models.PROTECT, related_name="signing_right_locks")
+    nguoi_khoa = models.ForeignKey(User, on_delete=models.PROTECT, related_name="+")
+    ly_do_khoa = models.TextField()
+    khoa_tu = models.DateTimeField(db_default=DB_NOW, default=timezone.now)
+    khoa_den = models.DateTimeField(null=True, blank=True)  # rỗng: khóa đến khi được bật lại
+    nguoi_bat_lai = models.ForeignKey(User, null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    ly_do_bat_lai = models.TextField(blank=True, db_default="", default="")
+    bat_lai_luc = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_default=DB_NOW)
+    updated_at = models.DateTimeField(auto_now=True, db_default=DB_NOW)
+
+    class Meta:
+        db_table = "signing_right_lock"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["nguoi_bi_khoa"],
+                condition=Q(bat_lai_luc__isnull=True),
+                name="uq_signing_right_lock_dang_khoa",
+            ),
+            models.CheckConstraint(
+                condition=~Q(ly_do_khoa__regex=r"^\s*$"), name="chk_signing_right_lock_ly_do_khoa"
+            ),
+            models.CheckConstraint(
+                condition=Q(khoa_den__isnull=True) | Q(khoa_den__gt=models.F("khoa_tu")),
+                name="chk_signing_right_lock_thoi_han",
+            ),
+            models.CheckConstraint(
+                condition=(Q(bat_lai_luc__isnull=True) & Q(nguoi_bat_lai__isnull=True) & Q(ly_do_bat_lai=""))
+                | (
+                    Q(bat_lai_luc__isnull=False)
+                    & (Q(nguoi_bat_lai__isnull=True) | ~Q(ly_do_bat_lai__regex=r"^\s*$"))
+                ),
+                name="chk_signing_right_lock_bat_lai",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Khóa quyền ký của tài khoản {self.nguoi_bi_khoa_id} (đến {self.khoa_den or 'khi bật lại'})"

@@ -190,6 +190,11 @@ class TaiLieuChiTietSerializer(serializers.ModelSerializer):
         elif hieu_luc in ('CON_HIEU_LUC_1_PHAN', 'HET_HIEU_LUC'):
             attrs['link_thay_the'] = ''
 
+        if hieu_luc in ('HET_HIEU_LUC', 'HET_VA_THAY_THE') and not attrs.get('ngay_het_hieu_luc'):
+            if not (self.instance and self.instance.ngay_het_hieu_luc):
+                from django.utils import timezone
+                attrs['ngay_het_hieu_luc'] = timezone.localdate()
+
         # Kiểm tra tính hợp lệ và dung lượng (<= 20MB) của các tệp đính kèm trong request.FILES
         request = self.context.get('request')
         if request and hasattr(request, 'FILES') and hasattr(request.FILES, 'getlist'):
@@ -254,6 +259,10 @@ class TaiLieuChiTietSerializer(serializers.ModelSerializer):
             validated_data['link_thay_the'] = ''
         elif hieu_luc in ('CON_HIEU_LUC_1_PHAN', 'HET_HIEU_LUC'):
             validated_data['link_thay_the'] = ''
+
+        if hieu_luc in ('HET_HIEU_LUC', 'HET_VA_THAY_THE') and not validated_data.get('ngay_het_hieu_luc') and not instance.ngay_het_hieu_luc:
+            from django.utils import timezone
+            validated_data['ngay_het_hieu_luc'] = timezone.localdate()
 
         for attr, value in validated_data.items():
             setattr(instance, attr, value)

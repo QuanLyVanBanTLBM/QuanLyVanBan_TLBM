@@ -1,6 +1,6 @@
 /** Tiện ích hiển thị dùng chung của phân hệ Trình ký. */
 import type { HamDich } from './i18n';
-import type { LoaiTepTaiLieu, NguoiKyCauHinh } from './types';
+import type { LoaiTepTaiLieu, NguoiKyCauHinh, NhatKy } from './types';
 
 export const LOP_O_NHAP =
   'w-full rounded-xl border border-border-subtle bg-surface px-3.5 py-2 text-sm text-main placeholder:text-muted ' +
@@ -117,4 +117,21 @@ export function trangThaiNguoiKy(luot: string, nguoi: string, da_mo: boolean): s
 export function tenNguoiKyCauHinh(n: Pick<NguoiKyCauHinh, 'ten_nguoi_ky' | 'ten_chuc_vu'>, t: HamDich): string {
   if (n.ten_nguoi_ky) return n.ten_nguoi_ky;
   return n.ten_chuc_vu ? t('quyTrinh.theoChucVu', { ten: n.ten_chuc_vu }) : t('tao.theoChucVu');
+}
+
+/** Phần chi tiết hiển thị kèm một mục lịch sử hồ sơ (rỗng khi hành động không có chi tiết cần hiện). */
+export function chiTietNhatKy(e: NhatKy, t: HamDich): string {
+  if (!e.chi_tiet || e.hanh_dong === 'THEM_CAP_KY' || e.hanh_dong === 'MO_CAP_KY') return '';
+  if (e.hanh_dong === 'LOI_TAO_TEP_HOAN_TAT') return loiTepHoanTatHienThi(e.chi_tiet, t);
+  if (e.hanh_dong === 'LIEN_KET_VAN_BAN_DI') {
+    const soHieu = e.chi_tiet.match(/^#\d+\s*·\s*(.+)$/)?.[1];
+    return soHieu ? t('chiTiet.soHieuVanBanLienKet', { soHieu }) : '';
+  }
+  if (e.hanh_dong === 'NGUNG_QUY_TRINH') {
+    const phienBan = e.chi_tiet.match(/^Thay bằng phiên bản (\d+)$/)?.[1];
+    return phienBan ? t('chiTiet.quyTrinhThayThe', { so: Number(phienBan) }) : '';
+  }
+  return ['KY', 'TU_CHOI', 'YEU_CAU_SUA', 'HUY_TRINH_KY', 'THAY_NGUOI_KY'].includes(e.hanh_dong)
+    ? e.chi_tiet
+    : '';
 }

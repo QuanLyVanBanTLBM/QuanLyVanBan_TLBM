@@ -5,6 +5,8 @@ Quy tắc (chốt 15-18/10/2026, điều chỉnh 24/10/2026):
 - Dưới mỗi đơn vị liệt kê mọi CBNV đang làm việc của đơn vị, chức vụ lớn trước (display_order nhỏ trước),
   bằng nhau thì id nhỏ trước. Đơn vị không có ai chỉ có dòng đơn vị.
 - Tài khoản quản trị hệ thống (is_superuser) không phải CBNV của đơn vị nên không được liệt kê.
+- Người kiêm nhiệm (accounts_employee_assignment) được liệt kê thêm ở mỗi đơn vị kiêm nhiệm với chức vụ
+  kiêm nhiệm; đơn vị và chức vụ chính vẫn giữ nguyên. Cùng một người, đơn vị, chức vụ chỉ xuất một dòng.
 - CBNV Nội bộ (is_public = False) chỉ xuất khi người xuất có view_full_cbnv hoặc là superuser.
 - Ô văn bản bắt đầu bằng "=" luôn ghi dạng chuỗi để Excel không hiểu là công thức.
 """
@@ -15,7 +17,7 @@ from django.utils import timezone
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from accounts.models import Employee
+from accounts.models import Employee, EmployeeAssignment
 
 COLUMN_WIDTHS = [7, 30, 26, 44, 16, 34]
 COLUMN_COUNT = len(COLUMN_WIDTHS)
@@ -46,22 +48,48 @@ def can_export_internal_people(user) -> bool:
     return bool(user.is_superuser or user.has_perm("view_full_cbnv"))
 
 
+class Member:
+    """Một dòng người trong đơn vị: đơn vị chính (Employee) hoặc đơn vị kiêm nhiệm (EmployeeAssignment)."""
+
+    def __init__(self, employee, position, title):
+        self.employee = employee
+        self.position = position
+        self.title = title
+
+    @property
+    def sort_key(self):
+        order = self.position.display_order if self.position else float("inf")
+        return (order, self.employee.id)
+
+
 def find_unit_members(unit_ids, include_internal_people):
-    """Trả về {don_vi_id: [Employee, ...]} CBNV từng đơn vị theo thứ tự chức vụ, một truy vấn cho mọi đơn vị."""
-    employees = (
-        Employee.objects.filter(
-            don_vi_id__in=unit_ids,
-            trang_thai=Employee.Status.LAM_VIEC,
-            is_superuser=False,
-        )
-        .select_related("chuc_vu")
-        .order_by("don_vi_id", "chuc_vu__display_order", "id")
-    )
+    """Trả về {don_vi_id: [Member, ...]} CBNV từng đơn vị theo thứ tự chức vụ (đơn vị chính và kiêm nhiệm).
+
+    Hai truy vấn cho mọi đơn vị, không phụ thuộc số đơn vị.
+    """
+    employee_filter = {"trang_thai": Employee.Status.LAM_VIEC, "is_superuser": False}
     if not include_internal_people:
-        employees = employees.filter(is_public=True)
+        employee_filter["is_public"] = True
+    primary = Employee.objects.filter(don_vi_id__in=unit_ids, **employee_filter).select_related("chuc_vu")
+    concurrent = EmployeeAssignment.objects.filter(
+        don_vi_id__in=unit_ids, **{f"employee__{key}": value for key, value in employee_filter.items()}
+    ).select_related("employee", "chuc_vu")
+
     members = {}
-    for employee in employees:
-        members.setdefault(employee.don_vi_id, []).append(employee)
+    seen = set()
+    for employee in primary:
+        members.setdefault(employee.don_vi_id, []).append(Member(employee, employee.chuc_vu, employee.chuc_danh))
+        seen.add((employee.id, employee.don_vi_id, employee.chuc_vu_id))
+    for assignment in concurrent:
+        key = (assignment.employee_id, assignment.don_vi_id, assignment.chuc_vu_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        members.setdefault(assignment.don_vi_id, []).append(
+            Member(assignment.employee, assignment.chuc_vu, assignment.chuc_danh)
+        )
+    for rows in members.values():
+        rows.sort(key=lambda member: member.sort_key)
     return members
 
 
@@ -142,11 +170,11 @@ def build_directory_workbook(units, user, i18n):
         for number, member in enumerate(members.get(unit.id, []), start=1):
             values = [
                 number,
-                member.ho_ten,
-                member.chuc_vu.name if member.chuc_vu else "",
-                member.chuc_danh or "",
-                member.sdt or "",
-                member.email or "",
+                member.employee.ho_ten,
+                member.position.name if member.position else "",
+                member.title or "",
+                member.employee.sdt or "",
+                member.employee.email or "",
             ]
             for col, value in enumerate(values, start=1):
                 cell = ws.cell(row=row, column=col)

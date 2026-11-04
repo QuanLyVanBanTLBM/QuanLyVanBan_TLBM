@@ -4,8 +4,10 @@ Bảo vệ khóa ký bằng PIN — signing-backend-plan.md mục 3.4 (Phase 6).
 Luồng:
 - dat_pin: lưu HMAC(verifier) + tham số KDF, sinh k_srv (mã hóa khi lưu), trả k_srv một lần
   để client bọc private key bằng HKDF(master_pin, k_srv, "wrap").
-- mo_khoa_ky: so verifier; đúng thì trả k_srv, sai thì đếm. Sai 5 lần khóa 15 phút,
-  sai 10 lần khóa cứng (quản trị mở lại sau khi xác minh danh tính).
+- mo_khoa_ky: so verifier; đúng thì trả k_srv và đưa bộ đếm về 0, sai thì đếm và ghi `PIN_SAI`. Tối đa 15 lần nhập
+  sai mỗi ngày (ngày theo múi giờ hệ thống); đủ 15 lần thì từ chối mọi lần nhập đến hết ngày (HTTP 429). Giới hạn
+  chỉ để chống nhập dò, không khóa khóa ký lâu dài; quên PIN thì quản trị viên thu hồi khóa để chủ khóa tạo khóa và
+  PIN mới. Ngày của lần sai gần nhất lấy từ `updated_at` của bản ghi (chỉ các thao tác PIN cập nhật bản ghi này).
 - doi_pin: cần verifier cũ (tính vào bộ đếm); xoay vòng k_srv (Phase 6c): trả k_srv cũ để client mở
   bản bọc hiện có và k_srv mới để bọc lại; k_srv cũ không còn lấy được từ server sau đó.
 
@@ -30,9 +32,7 @@ from .keys import _chu_so_huu
 logger = logging.getLogger(__name__)
 
 LOAI = "signing_key"
-NGUONG_KHOA_TAM = 5
-THOI_GIAN_KHOA_TAM = timedelta(minutes=15)
-NGUONG_KHOA_CUNG = 10
+SO_LAN_SAI_TOI_DA_MOI_NGAY = 15
 
 # Mức sàn Argon2id theo plan: m = 64 MiB (tính bằng KiB), t = 3, p = 1
 KDF_THUAT_TOAN = "argon2id"
@@ -130,21 +130,19 @@ def kiem_tra_tham_so_kdf(tham_so):
 # ── Lỗi khóa PIN ────────────────────────────────────────────────────────────
 
 
-def _loi_khoa_cung():
+def _loi_het_luot(het_ngay):
     return SigningError(
-        code="pin_khoa_cung",
-        detail="PIN đã bị khóa do nhập sai quá nhiều lần. Liên hệ quản trị viên để xác minh danh tính.",
-        status_code=status.HTTP_423_LOCKED,
+        code="pin_het_luot_trong_ngay",
+        detail=(f"Đã nhập sai PIN {SO_LAN_SAI_TOI_DA_MOI_NGAY} lần trong ngày; thử lại sau "
+                f"{timezone.localtime(het_ngay):%d/%m/%Y %H:%M} hoặc liên hệ quản trị viên."),
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        fields={"thu_lai_sau": [het_ngay.isoformat()]},
     )
 
 
-def _loi_khoa_tam(khoa_den):
-    return SigningError(
-        code="pin_tam_khoa",
-        detail=f"PIN đang bị khóa tạm đến {timezone.localtime(khoa_den):%d/%m/%Y %H:%M:%S}.",
-        status_code=status.HTTP_423_LOCKED,
-        fields={"khoa_den": [khoa_den.isoformat()]},
-    )
+def _dau_ngay_ke_tiep(bay_gio):
+    dia_phuong = timezone.localtime(bay_gio)
+    return (dia_phuong + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
 
 
 def _khoa_ky_va_pin(key, nguoi_thuc_hien):
@@ -165,41 +163,31 @@ def _xac_minh(key, nguoi_thuc_hien, xac_minh_pin, field, trang_thai_cho_phep, kh
         if key.trang_thai not in trang_thai_cho_phep:
             raise ConflictError(code="khoa_khong_dung_trang_thai",
                                 detail="Khóa ký không ở trạng thái cho phép thao tác này.")
-        now = timezone.now()
-        if unlock.so_lan_sai >= NGUONG_KHOA_CUNG:
-            raise _loi_khoa_cung()
-        if unlock.khoa_den and unlock.khoa_den > now:
-            raise _loi_khoa_tam(unlock.khoa_den)
+        bay_gio = timezone.now()
+        if unlock.so_lan_sai and timezone.localdate(unlock.updated_at) < timezone.localdate(bay_gio):
+            unlock.so_lan_sai = 0  # sang ngày mới: đếm lại từ đầu
+            unlock.save(update_fields=["so_lan_sai", "updated_at"])
+        if unlock.so_lan_sai >= SO_LAN_SAI_TOI_DA_MOI_NGAY:
+            raise _loi_het_luot(_dau_ngay_ke_tiep(bay_gio))
 
         if crypto.verify_pin_verifier(raw, _khoa_mac(), unlock.ma_bam_xac_minh_pin):
-            unlock.so_lan_sai = 0
-            unlock.khoa_den = None
-            unlock.save(update_fields=["so_lan_sai", "khoa_den", "updated_at"])
+            if unlock.so_lan_sai:
+                unlock.so_lan_sai = 0
+                unlock.save(update_fields=["so_lan_sai", "updated_at"])
             return khi_dung(key, unlock)
 
         unlock.so_lan_sai += 1
         ghi_nhat_ky(nguoi_thuc_hien, LOAI, key.pk, "PIN_SAI",
                     du_lieu_kem_theo={"so_lan_sai": unlock.so_lan_sai}, dia_chi_ip=dia_chi_ip)
-        if unlock.so_lan_sai >= NGUONG_KHOA_CUNG:
-            ghi_nhat_ky(nguoi_thuc_hien, LOAI, key.pk, "PIN_KHOA",
-                        du_lieu_kem_theo={"loai": "khoa_cung", "so_lan_sai": unlock.so_lan_sai},
-                        dia_chi_ip=dia_chi_ip)
-            loi = _loi_khoa_cung()
-        elif unlock.so_lan_sai == NGUONG_KHOA_TAM:
-            unlock.khoa_den = now + THOI_GIAN_KHOA_TAM
-            ghi_nhat_ky(nguoi_thuc_hien, LOAI, key.pk, "PIN_KHOA",
-                        du_lieu_kem_theo={"loai": "khoa_tam", "so_lan_sai": unlock.so_lan_sai,
-                                          "khoa_den": unlock.khoa_den.isoformat()},
-                        dia_chi_ip=dia_chi_ip)
-            loi = _loi_khoa_tam(unlock.khoa_den)
-        else:
-            nguong = NGUONG_KHOA_TAM if unlock.so_lan_sai < NGUONG_KHOA_TAM else NGUONG_KHOA_CUNG
-            loi = SigningError(
-                code="pin_khong_dung",
-                detail=f"PIN không đúng. Còn {nguong - unlock.so_lan_sai} lần thử trước khi bị khóa.",
-                fields={"so_lan_con_lai": [nguong - unlock.so_lan_sai]},
-            )
-        unlock.save(update_fields=["so_lan_sai", "khoa_den", "updated_at"])
+        unlock.save(update_fields=["so_lan_sai", "updated_at"])
+        if unlock.so_lan_sai >= SO_LAN_SAI_TOI_DA_MOI_NGAY:
+            ghi_nhat_ky(nguoi_thuc_hien, LOAI, key.pk, "PIN_HET_LUOT",
+                        du_lieu_kem_theo={"so_lan_sai": unlock.so_lan_sai}, dia_chi_ip=dia_chi_ip)
+        con_lai = max(SO_LAN_SAI_TOI_DA_MOI_NGAY - unlock.so_lan_sai, 0)
+        loi = SigningError(
+            code="pin_khong_dung", detail=f"PIN không đúng. Còn {con_lai} lần thử trong ngày.",
+            fields={"so_lan_con_lai": [con_lai]},
+        )
     # Ném lỗi sau khi transaction đã commit bộ đếm
     raise loi
 
@@ -285,3 +273,4 @@ def doi_pin(key, nguoi_thuc_hien, xac_minh_pin_cu, xac_minh_pin_moi, tham_so_kdf
 
     return _xac_minh(key, nguoi_thuc_hien, xac_minh_pin_cu, "xac_minh_pin_cu", TRANG_THAI_DAT_PIN,
                      khi_dung, dia_chi_ip)
+

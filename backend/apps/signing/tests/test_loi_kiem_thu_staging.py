@@ -91,7 +91,7 @@ class HanXuLyThongBaoTests(KyBase):
         SigningRequestStep.objects.filter(pk=cap.pk).update(han_xu_ly=timezone.now() + timedelta(hours=2))
         thong_bao.nhac_han()
         tb = SigningNotification.objects.get(trinh_ky_id=self.pk, loai_thong_bao="NHAC_HAN",
-                                             kenh=enums.KenhThongBao.IN_APP)
+                                             nguoi_nhan=self.ky1, kenh=enums.KenhThongBao.IN_APP)
         han = SigningRequestStep.objects.get(pk=cap.pk).han_xu_ly
         self.assertIn(f"Hạn xử lý: {timezone.localtime(han):%d/%m/%Y %H:%M}.", thong_bao.noi_dung(tb)[1])
         # Thông báo không gắn hạn (hoàn tất, hủy...) không ghi dòng hạn
@@ -224,3 +224,39 @@ class RaSoatGiaoDienTests(TrinhKyBase):
         r = self.client_cua(self.ky1).get("/api/v1/signing/thong-bao/")
         self.assertTrue(r.data["results"])
         self.assertTrue(all(x["created_at"].endswith("+07:00") for x in r.data["results"]))
+
+
+class ThamSoSoNguyenTests(TrinhKyBase):
+    """Tham số số nguyên chỉ nhận chữ số ASCII 0-9 trong giới hạn bigint; sai trả 400 thay vì lỗi 500."""
+
+    SAI = ("٣", "١٢٣", "１２３", "9223372036854775808", "9" * 40, "9" * 4301)
+
+    def kiem_tra_400(self, url, ten):
+        for gia_tri in self.SAI:
+            with self.subTest(tham_so=ten, gia_tri=gia_tri):
+                r = self.c.get(url, {ten: gia_tri})
+                self.assertEqual((r.status_code, r.data["code"]), (400, "tham_so_khong_hop_le"), r.data)
+
+    def test_loc_danh_sach_ho_so(self):
+        self.kiem_tra_400(f"{BASE}/", "quy_trinh")
+        self.kiem_tra_400(f"{BASE}/", "don_vi_ap_dung")
+
+    def test_tim_kiem_ma_ho_so_khong_loi(self):
+        for gia_tri in ("#٣", "#" + "9" * 40, "#" + "9" * 4301, "#9223372036854775808"):
+            with self.subTest(q=gia_tri):
+                r = self.c.get(f"{BASE}/", {"hop": "toi_gui", "q": gia_tri})
+                self.assertEqual(r.status_code, 200, r.data)
+
+    def test_tep_theo_luot(self):
+        pk = self.tao_nhap().data["id"]
+        self.kiem_tra_400(f"{BASE}/{pk}/tep/", "luot")
+
+    def test_can_bo_theo_chuc_vu(self):
+        from .helpers import cap_quyen
+        cap_quyen(self.tao, "view_trinhky")
+        url = "/api/v1/signing/can-bo-theo-chuc-vu/"
+        self.kiem_tra_400(url, "chuc_vu")
+        for gia_tri in self.SAI:
+            with self.subTest(tham_so="don_vi", gia_tri=gia_tri):
+                r = self.c.get(url, {"chuc_vu": "1", "don_vi": gia_tri})
+                self.assertEqual((r.status_code, r.data["code"]), (400, "tham_so_khong_hop_le"), r.data)

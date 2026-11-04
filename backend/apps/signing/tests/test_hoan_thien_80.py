@@ -137,8 +137,7 @@ class ViTriKyTests(TrinhKyBase):
         self.assertEqual((nk["trang_ky"], nk["toa_do_y"]), (2, "75.0000"))
 
 
-@mock.patch("signing.tich_hop.to_chuc.anh_chu_ky",
-            side_effect=lambda u: anh_png() if u.username != "phap_che" else None)  # phap_che chưa có ảnh
+@mock.patch("signing.tich_hop.to_chuc.anh_chu_ky", side_effect=lambda u: anh_png())
 class AnhChuKyTests(HoanTatBase):
     """Snapshot ảnh chữ ký lúc ký; tệp hoàn tất dán ảnh (hoặc khối chữ) vào đúng khung (#80 mục D)."""
 
@@ -166,7 +165,8 @@ class AnhChuKyTests(HoanTatBase):
             self.assertEqual(self.ky_tep(self.ky3).status_code, 200)
         ck1 = SigningSignature.objects.get(buoc_ky__nguoi_ky=self.ky1)
         self.assertTrue(ck1.vi_tri_anh_chu_ky.startswith("anh_chu_ky/"))
-        self.assertEqual(SigningSignature.objects.get(buoc_ky__nguoi_ky=self.ky2).vi_tri_anh_chu_ky, "")  # chưa có ảnh
+        ck2 = SigningSignature.objects.get(buoc_ky__nguoi_ky=self.ky2)
+        self.assertTrue(ck2.vi_tri_anh_chu_ky.startswith("anh_chu_ky/"))  # người ký nào cũng có snapshot
         r = self.c.get(f"{BASE}/{self.pk}/anh-chu-ky/{ck1.pk}/")
         self.assertEqual((r.status_code, r["Content-Type"], r.content), (200, "image/png", anh_png()))
         self.assertEqual(self.client_cua(self.la).get(f"{BASE}/{self.pk}/anh-chu-ky/{ck1.pk}/").status_code, 404)
@@ -178,13 +178,13 @@ class AnhChuKyTests(HoanTatBase):
         self.assertEqual(nk[0]["vi_tri"], {"trang_ky": 1, "toa_do_x": "55.0000", "toa_do_y": "70.0000",
                                            "chieu_rong_khung": "35.0000", "chieu_cao_khung": "15.0000"})
         self.assertEqual(nk[0]["chu_ky"]["ma_bam_anh_chu_ky"], ck1.ma_bam_anh_chu_ky)
-        self.assertIsNone(nk[1]["chu_ky"]["ma_bam_anh_chu_ky"])
+        self.assertEqual(nk[1]["chu_ky"]["ma_bam_anh_chu_ky"], ck2.ma_bam_anh_chu_ky)
 
         pdf = PdfReader(io.BytesIO(self.c.get(f"{BASE}/{self.pk}/tep-hoan-tat/").content))
         self.assertEqual(len(pdf.pages), 3)  # 2 trang gốc + trang phê duyệt
         trang1, trang2 = pdf.pages[0].extract_text(), pdf.pages[1].extract_text()
         self.assertIn("ke_toan", trang1)  # chú thích dưới ảnh chữ ký
-        self.assertIn("phap_che", trang1)  # khối chữ khi chưa có ảnh
+        self.assertIn("phap_che", trang1)
         self.assertIn("giam_doc", trang2)
         self.assertNotIn("giam_doc", trang1)
         self.assertIn("/XObject", str(pdf.pages[0]["/Resources"]))  # ảnh đã dán

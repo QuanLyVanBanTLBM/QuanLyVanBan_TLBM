@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from '@i18n/translate';
 import WorkModal from './WorkModal';
 
 /** Hộp thoại xác nhận trước các thao tác khó hoàn tác: xóa công việc, xóa file, hủy duyệt. */
@@ -20,13 +21,16 @@ export default function ConfirmDialog({
   open,
   title,
   message,
-  confirmLabel = 'Xác nhận',
-  cancelLabel = 'Hủy',
+  confirmLabel,
+  cancelLabel,
   danger = false,
   loading = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  const { t } = useTranslation();
+  const resolvedConfirmLabel = confirmLabel || t('work.common.confirm');
+  const resolvedCancelLabel = cancelLabel || t('work.common.cancel');
   return (
     <WorkModal
       open={open}
@@ -53,7 +57,7 @@ export default function ConfirmDialog({
               opacity: loading ? 0.6 : 1,
             }}
           >
-            {cancelLabel}
+            {resolvedCancelLabel}
           </button>
           <button
             type="button"
@@ -75,7 +79,7 @@ export default function ConfirmDialog({
             }}
           >
             {loading && <i className="fa-solid fa-circle-notch fa-spin" />}
-            {loading ? 'Đang xử lý...' : confirmLabel}
+            {loading ? t('work.common.processing') : resolvedConfirmLabel}
           </button>
         </>
       }

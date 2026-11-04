@@ -49,7 +49,7 @@ class ProcessApiTests(ApiBase):
                 {"cap_ky": 1, "ten_cap_ky": "Trưởng phòng", "thu_tu": 1,
                  "nguoi_ky": [{"nguoi_ky": self.u2.pk, "thu_tu": 1}]},
                 {"cap_ky": 2, "ten_cap_ky": "Giám đốc", "thu_tu": 2,
-                 "nguoi_ky": [{"chuc_vu_id": self.position.pk, "thu_tu": 1, "vai_tro_ky": "KY_CHINH", "chan_ky_chinh": False}]},
+                 "nguoi_ky": [{"chuc_vu_id": self.position.pk, "thu_tu": 1}]},
             ],
         }
         data.update(kw)
@@ -76,25 +76,6 @@ class ProcessApiTests(ApiBase):
         })
         self.assertEqual([c["thu_tu"] for c in body["cap_ky"]], [1, 2])
         self.assertEqual(body["cap_ky"][1]["nguoi_ky"][0]["vai_tro_ky"], "KY_CHINH")
-        self.assertFalse(body["cap_ky"][1]["nguoi_ky"][0]["chan_ky_chinh"])
-
-    def test_new_process_rejects_initial_signer(self):
-        data = self.payload()
-        data["cap_ky"][1]["nguoi_ky"][0]["vai_tro_ky"] = "KY_NHAY"
-        response = self.c1.post(f"{BASE}/quy-trinh/", data, format="json")
-        self.assertEqual((response.status_code, response.data["code"]), (400, "ky_nhay_khong_ho_tro"))
-        self.assertFalse(SigningProcess.objects.filter(ma_quy_trinh="QT1").exists())
-
-    def test_rejecting_initial_signer_during_edit_preserves_original_draft(self):
-        original = self.create()
-        data = self.payload()
-        data["ten_quy_trinh"] = "Tên thay đổi"
-        data["cap_ky"][1]["nguoi_ky"][0]["vai_tro_ky"] = "KY_NHAY"
-        response = self.c1.put(f"{BASE}/quy-trinh/{original['id']}/", data, format="json")
-        self.assertEqual((response.status_code, response.data["code"]), (400, "ky_nhay_khong_ho_tro"))
-        after = self.c1.get(f"{BASE}/quy-trinh/{original['id']}/").data
-        self.assertEqual(after["ten_quy_trinh"], original["ten_quy_trinh"])
-        self.assertEqual(after["cap_ky"], original["cap_ky"])
 
     def test_validation_errors_grouped_by_field(self):
         response = self.c1.post(f"{BASE}/quy-trinh/", {"ten_quy_trinh": "x", "pham_vi": "SAI"}, format="json")
@@ -214,7 +195,7 @@ class KeyApiTests(ApiBase):
         client = client or self.c1
         challenge = client.get(f"{BASE}/khoa/{key_id}/thach-thuc/").data["thach_thuc"]
         signature = base64.b64encode(private.sign(challenge.encode())).decode()
-        return client.post(f"{BASE}/khoa/{key_id}/xac-minh/", {"chu_ky_so": signature}, format="json")
+        return client.post(f"{BASE}/khoa/{key_id}/xac-minh/", {"thach_thuc": challenge, "chu_ky_so": signature}, format="json")
 
     def test_full_lifecycle(self):
         private, key = self.register()
@@ -225,6 +206,14 @@ class KeyApiTests(ApiBase):
         self.assertEqual((r.status_code, r.data["trang_thai"]), (200, "HOAT_DONG"))
         r = self.c1.post(f"{BASE}/khoa/{key['id']}/thu-hoi/", {"ly_do": "Mất thiết bị"}, format="json")
         self.assertEqual((r.status_code, r.data["trang_thai"]), (200, "THU_HOI"))
+
+    def test_replayed_challenge_rejected(self):
+        private, key = self.register()
+        challenge = self.c1.get(f"{BASE}/khoa/{key['id']}/thach-thuc/").data["thach_thuc"]
+        payload = {"thach_thuc": challenge, "chu_ky_so": base64.b64encode(private.sign(challenge.encode())).decode()}
+        self.assertEqual(self.c1.post(f"{BASE}/khoa/{key['id']}/xac-minh/", payload, format="json").status_code, 200)
+        response = self.c1.post(f"{BASE}/khoa/{key['id']}/xac-minh/", payload, format="json")
+        self.assertEqual((response.status_code, response.data["code"]), (409, "thach_thuc_da_dung"))
 
     def test_bad_proof_rejected(self):
         _, key = self.register()
@@ -242,7 +231,7 @@ class KeyApiTests(ApiBase):
         private, key = self.register()
         self.assertEqual(len(self.c2.get(f"{BASE}/khoa/").data), 0)
         for method, path, body in [
-            ("get", "thach-thuc", None), ("post", "xac-minh", {"chu_ky_so": "x"}),
+            ("get", "thach-thuc", None), ("post", "xac-minh", {"thach_thuc": "x", "chu_ky_so": "x"}),
             ("post", "kich-hoat", None), ("post", "thu-hoi", {"ly_do": "x"}),
             ("post", "xoay-vong", {"khoa_moi": key["id"]}),
         ]:

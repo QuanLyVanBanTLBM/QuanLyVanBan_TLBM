@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from '@i18n/translate';
 
 /** Thanh phân trang cuối bảng. Không tự gọi API, chỉ báo lên trang cha trang/số dòng mới. */
 
@@ -23,6 +24,7 @@ export default function TaskPagination({
   onPageChange,
   onPageSizeChange,
 }: TaskPaginationProps) {
+  const { t } = useTranslation();
   const safeTotal = Math.max(totalPages, 1);
   const canPrevious = !disabled && page > 1;
   const canNext = !disabled && page < safeTotal;
@@ -56,10 +58,10 @@ export default function TaskPagination({
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
         <span>
-          Hiển thị {from}–{to} / {count} công việc
+          {t('work.pagination.showing', { from: String(from), to: String(to), count: String(count) })}
         </span>
         <span style={{ color: 'var(--border-subtle)' }}>|</span>
-        <label htmlFor="work-page-size">Số dòng mỗi trang</label>
+        <label htmlFor="work-page-size">{t('work.pagination.rowsPerPage')}</label>
         <select
           id="work-page-size"
           value={pageSize}
@@ -91,10 +93,10 @@ export default function TaskPagination({
           style={buttonStyle(canPrevious)}
         >
           <i className="fa-solid fa-angle-left" />
-          Trang trước
+          {t('work.pagination.prevPage')}
         </button>
         <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-main)', whiteSpace: 'nowrap' }}>
-          Trang {Math.min(page, safeTotal)} / {safeTotal}
+          {t('work.pagination.pageOf', { page: String(Math.min(page, safeTotal)), total: String(safeTotal) })}
         </span>
         <button
           type="button"
@@ -102,7 +104,7 @@ export default function TaskPagination({
           onClick={() => onPageChange(page + 1)}
           style={buttonStyle(canNext)}
         >
-          Trang sau
+          {t('work.pagination.nextPage')}
           <i className="fa-solid fa-angle-right" />
         </button>
       </div>

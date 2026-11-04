@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@components/common';
-import { signingApi } from '@lib/signing/api';
+import { docLoi, signingApi } from '@lib/signing/api';
 import { GIOI_HAN, LOP_O_NHAP, moTaVanBan } from '@lib/signing/dinhDang';
 import { coQuyen, useKhoaChongTrung, useToi } from '@lib/signing/hooks';
 import { useSigningT } from '@lib/signing/i18n';
@@ -15,6 +15,16 @@ import type { BanBocKhoa } from '@lib/signing/khoaKy';
 import { khoaHoatDong, kyBangPin } from '@lib/signing/luongKhoa';
 import type { HoSoChiTiet, LuotTrinh } from '@lib/signing/types';
 import { HopThoai, OChonFileKhoa, ThongBao, TruongNhap } from './ChungUI';
+import DatLaiPinDialog from './DatLaiPinDialog';
+import MfaKyBuoc from './MfaKyBuoc';
+
+const URL_ANH_CHU_KY = '/api/signing/anh-chu-ky-ca-nhan/tep/';
+
+type NguoiKy = { id: number; co_anh_chu_ky?: boolean } | null;
+
+// Ảnh chữ ký chỉ lấy từ máy chủ (cờ co_anh_chu_ky của /toi/); không còn nguồn localStorage.
+const layAnhChuKyUrl = (toi: NguoiKy): string | null =>
+  toi?.co_anh_chu_ky ? `${URL_ANH_CHU_KY}?v=${toi.id}` : null;
 
 type LoaiHopThoai = 'ky' | 'sua' | 'tu_choi' | 'thu_hoi' | 'huy' | 'trinh_lai' | null;
 
@@ -53,13 +63,14 @@ function NutXacNhan({
 
 export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props) {
   const { t, loi } = useSigningT();
-  const { toi } = useToi();
+  const { toi, taiLaiToi } = useToi();
   const navigate = useNavigate();
   const khoa = useKhoaChongTrung();
   const [mo, setMo] = useState<LoaiHopThoai>(null);
   const [o1, setO1] = useState('');
   const [o2, setO2] = useState('');
   const [pin, setPin] = useState('');
+  const [moDatLaiPin, setMoDatLaiPin] = useState(false);
   const [dangLam, setDangLam] = useState(false);
   const [thongBao, setThongBao] = useState('');
   const [fileKhoa, setFileKhoa] = useState<BanBocKhoa | null>(null);
@@ -67,10 +78,40 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
   const [coFileTrenManHinh, setCoFileTrenManHinh] = useState(false);
   const [vaoPhamViModal, setVaoPhamViModal] = useState(false);
   const modalDragCountRef = useRef(0);
+  // Điều kiện ký: ảnh chữ ký cá nhân (trình duyệt) và khóa ký hoạt động (máy chủ). Kiểm lại mỗi lần mở hộp thoại ký.
+  const [lanKiem, setLanKiem] = useState(0);
+  const [ketQuaKiem, setKetQuaKiem] = useState<{ khoa: string; coKhoa: boolean; loi: unknown } | null>(null);
+  const canhBaoThieuRef = useRef<HTMLDivElement>(null);
+  const khoaKiem = `${toi?.id ?? ''}#${lanKiem}`;
+  const dangKiem = !ketQuaKiem || ketQuaKiem.khoa !== khoaKiem;
+  const loiKiem = !dangKiem ? ketQuaKiem.loi : null;
+  const anhChuKy = layAnhChuKyUrl(toi);
+  const thieuAnh = !anhChuKy;
+  const thieuKhoa = !dangKiem && !loiKiem && !ketQuaKiem.coKhoa;
+  const hienThieu = !dangKiem && !loiKiem && (thieuAnh || thieuKhoa);
+  // MFA qua email (#510): máy chủ bật cờ và access token hiện tại chưa xác thực thì phải nhập mã trước khi ký.
+  const canMfa = Boolean(toi?.mfa_ky?.bat && !toi.mfa_ky.da_xac_thuc);
+  const khoaNhap = dangKiem || Boolean(loiKiem) || thieuAnh || thieuKhoa || canMfa;
+
+  useEffect(() => {
+    if (mo !== 'ky' || !toi) return undefined;
+    let huy = false;
+    signingApi.khoa().then(
+      (ds) => !huy && setKetQuaKiem({ khoa: khoaKiem, coKhoa: Boolean(khoaHoatDong(ds)), loi: null }),
+      (err) => !huy && setKetQuaKiem({ khoa: khoaKiem, coKhoa: false, loi: err ?? new Error('loi_mang') }),
+    );
+    return () => {
+      huy = true;
+    };
+  }, [mo, toi, khoaKiem]);
+
+  useEffect(() => {
+    if (hienThieu) canhBaoThieuRef.current?.querySelector('button')?.focus();
+  }, [hienThieu]);
 
   // Lắng nghe thao tác kéo tệp trên toàn màn hình để modal phản ứng hứng file
   useEffect(() => {
-    if (mo !== 'ky') return undefined;
+    if (mo !== 'ky' || khoaNhap) return undefined;
 
     let dragCount = 0;
 
@@ -113,7 +154,7 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
       window.removeEventListener('dragover', onWindowDragOver);
       window.removeEventListener('drop', onWindowDrop);
     };
-  }, [mo]);
+  }, [mo, khoaNhap]);
   const tenVanBan = moTaVanBan(hoSo.van_ban, t);
 
   const laNguoiTao = toi?.id === hoSo.create_by;
@@ -147,6 +188,8 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
       return kq;
     } catch (err) {
       setThongBao(loi(err));
+      // Token đã đổi (làm mới/đăng nhập lại) nên phiên mất xác thực: tải lại trạng thái để hiện bước nhập mã
+      if (docLoi(err).code === 'mfa_chua_xac_thuc') taiLaiToi();
       return null;
     } finally {
       setDangLam(false);
@@ -156,9 +199,8 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
   const ky = () => thucHien(async () => {
     if (!toi || !luot) throw new Error('khong_co_quyen');
 
-    // 1. Kiểm tra ảnh chữ ký cá nhân
-    const anhChuKy = localStorage.getItem(`tlbm_user_sig_${toi.id}`);
-    if (!anhChuKy) {
+    // 1. Kiểm tra ảnh chữ ký cá nhân (máy chủ cũng kiểm lại khi ký)
+    if (!toi.co_anh_chu_ky) {
       throw new Error('chua_co_anh_chu_ky');
     }
 
@@ -169,8 +211,8 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
       throw new Error('chua_co_khoa_ky');
     }
 
-    // 3. Kiểm tra mã PIN 8 chữ số
-    if (!pin || pin.length !== 8) {
+    // 3. Kiểm tra mã PIN: 6 chữ số theo chính sách hiện hành, 8 chữ số với PIN đặt trước đây
+    if (!/^\d{6,8}$/.test(pin)) {
       throw new Error('pin_khong_hop_le');
     }
 
@@ -182,7 +224,10 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
   });
 
   const nut = (loai: LoaiHopThoai, nhan: string, icon: string, variant: 'primary' | 'secondary' | 'danger' | 'outline' = 'secondary') => (
-    <Button size="sm" variant={variant} icon={icon} onClick={() => setMo(loai)}>{nhan}</Button>
+    <Button size="sm" variant={variant} icon={icon} onClick={() => {
+      if (loai === 'ky') setLanKiem((n) => n + 1);
+      setMo(loai);
+    }}>{nhan}</Button>
   );
 
 
@@ -216,15 +261,55 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
             : 'border border-border-subtle shadow-xl'
         }`}
         chanDuoi={
+          <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center">
+            <div ref={canhBaoThieuRef} className="min-w-0 flex-1 text-xs" role={dangKiem || loiKiem || hienThieu ? 'status' : undefined}>
+              {dangKiem && (
+                <span className="flex items-center gap-1.5 text-secondary">
+                  <i className="fa-solid fa-spinner fa-spin" aria-hidden="true" />{t('hanhDong.dangKiemDieuKien')}
+                </span>
+              )}
+              {Boolean(loiKiem) && (
+                <span className="flex flex-wrap items-center gap-x-2 text-danger">
+                  <span className="flex items-center gap-1.5">
+                    <i className="fa-solid fa-circle-exclamation" aria-hidden="true" />{loi(loiKiem)}
+                  </span>
+                  <button type="button" className="font-semibold text-primary hover:underline"
+                    onClick={() => setLanKiem((n) => n + 1)}>{t('chung.thuLai')}</button>
+                </span>
+              )}
+              {hienThieu && (
+                <span className="flex flex-wrap items-center gap-x-2 text-warning-text">
+                  <span className="flex items-start gap-1.5">
+                    <i className="fa-solid fa-triangle-exclamation mt-0.5" aria-hidden="true" />
+                    <span>
+                      <span className="font-semibold">{t('hanhDong.thieuChuKyTieuDe')}</span>
+                      {': '}
+                      {thieuAnh && <span>{t('hanhDong.thieuAnhChuKy')}</span>}
+                      {thieuAnh && thieuKhoa && '; '}
+                      {thieuKhoa && <span>{t('hanhDong.thieuKhoaKy')}</span>}
+                    </span>
+                  </span>
+                  <button type="button" className="font-semibold text-primary hover:underline" onClick={() => {
+                    dong();
+                    navigate('/approvals/khoa');
+                  }}>
+                    {t('hanhDong.diToiCauHinh', { muc: t('nav.khoaCuaToi') })}
+                  </button>
+                </span>
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-2.5">
           <NutXacNhan
             onXacNhan={ky}
             nhan={t('hanhDong.kyDuyet')}
             variant="primary"
-            disabled={!maBamKhop}
+            disabled={!maBamKhop || khoaNhap}
             dangLam={dangLam}
             onDong={dong}
             nhanHuy={t('chung.huyBo')}
           />
+            </div>
+          </div>
         }
       >
         <div
@@ -232,12 +317,14 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
           onDragEnter={(e) => {
             e.preventDefault();
             e.stopPropagation();
+            if (khoaNhap) return;
             modalDragCountRef.current++;
             if (modalDragCountRef.current === 1) setVaoPhamViModal(true);
           }}
           onDragOver={(e) => {
             e.preventDefault();
             e.stopPropagation();
+            if (khoaNhap) return;
             if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
             if (!vaoPhamViModal) setVaoPhamViModal(true);
           }}
@@ -256,6 +343,7 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
             modalDragCountRef.current = 0;
             setCoFileTrenManHinh(false);
             setVaoPhamViModal(false);
+            if (khoaNhap) return;
             const tep = e.dataTransfer.files?.[0];
             if (tep) {
               setFileKhoa(null);
@@ -272,6 +360,7 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
 
           <div className={coFileTrenManHinh ? "space-y-4 opacity-30 transition-opacity pointer-events-none" : "space-y-4 transition-opacity"}>
             {!maBamKhop && <ThongBao>{t('loi.ma_bam_khong_khop')}</ThongBao>}
+            {canMfa && !dangKiem && !loiKiem && !hienThieu && <MfaKyBuoc onXacThuc={taiLaiToi} />}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 items-start">
             <TruongNhap nhan={t('hanhDong.fileKhoa')} batBuoc>
@@ -279,6 +368,7 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
                 accept={`${DUOI_FILE_KHOA},application/json`}
                 nhan={t('hanhDong.fileKhoa')}
                 tepDaChon={fileKhoaRaw}
+                disabled={khoaNhap}
                 onChon={(tep) => {
                   setFileKhoa(null);
                   setFileKhoaRaw(tep ?? null);
@@ -295,7 +385,8 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
                 inputMode="numeric"
                 autoComplete="off"
                 maxLength={8}
-                placeholder="••••••••"
+                disabled={khoaNhap}
+                placeholder="••••••"
                 value={pin}
                 onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
                 onKeyDown={(e) => {
@@ -307,12 +398,26 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
               />
             </TruongNhap>
           </div>
+          <div className="text-right">
+            <button
+              type="button"
+              className="text-xs font-semibold text-primary hover:underline"
+              disabled={dangLam}
+              onClick={() => {
+                dong();
+                setMoDatLaiPin(true);
+              }}
+            >
+              {t('khoa.quenPin')}
+            </button>
+          </div>
           {fileKhoa && <ThongBao loai="thong_tin">{t('hanhDong.daChonFile')}</ThongBao>}
 
           <TruongNhap nhan={t('hanhDong.ghiChuKy')}>
             <input
               className={LOP_O_NHAP}
               maxLength={GIOI_HAN.ghiChu}
+              disabled={khoaNhap}
               value={o1}
               onChange={(e) => setO1(e.target.value)}
               placeholder={t('hanhDong.ghiChuKy')}
@@ -320,9 +425,7 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
           </TruongNhap>
 
           {/* Hiển thị ảnh chữ ký cá nhân áp dụng nếu đã có */}
-          {toi && (() => {
-            const anh = localStorage.getItem(`tlbm_user_sig_${toi.id}`);
-            return anh ? (
+          {anhChuKy && (
               <div className="flex items-center justify-between p-3 rounded-lg border border-border-subtle bg-surface-subtle">
                 <span className="text-xs text-secondary font-medium">{t('hanhDong.anhChuKySeDung')}</span>
                 <div
@@ -333,11 +436,10 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
                     backgroundSize: '8px 8px',
                   }}
                 >
-                  <img src={anh} alt="Chữ ký cá nhân" className="h-8 max-w-[120px] object-contain" />
+                  <img src={anhChuKy} alt="Chữ ký cá nhân" className="h-8 max-w-[120px] object-contain" />
                 </div>
               </div>
-            ) : null;
-          })()}
+            )}
 
           {dangLam && <ThongBao loai="thong_tin">{t('hanhDong.dangKy')}</ThongBao>}
           {thongBao && <ThongBao>{thongBao}</ThongBao>}
@@ -462,6 +564,14 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
         <p className="text-sm text-main">{t('hanhDong.xacNhanTrinhLai')}</p>
         {thongBao && <ThongBao>{thongBao}</ThongBao>}
       </HopThoai>
+      <DatLaiPinDialog
+        mo={moDatLaiPin}
+        onDong={() => setMoDatLaiPin(false)}
+        onXong={() => {
+          setMoDatLaiPin(false);
+          navigate('/approvals/khoa');
+        }}
+      />
     </div>
   );
 }

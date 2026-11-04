@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useTranslation } from '@i18n/translate';
 import { employeeLabel, employeeMeta, useEmployeeSearch } from './EmployeeSelect';
 
 /** Ô chọn nhiều cán bộ, hiển thị dạng thẻ. Dùng cho Chỉ đạo - Theo dõi và Cán bộ tham gia. */
@@ -18,9 +19,11 @@ export default function EmployeeMultiSelect({
   onChange,
   excludeIds = [],
   disabled = false,
-  placeholder = 'Chọn cán bộ',
+  placeholder,
   invalid = false,
 }: EmployeeMultiSelectProps) {
+  const { t } = useTranslation();
+  const resolvedPlaceholder = placeholder ?? t('work.employees.selectPlaceholder');
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const { keyword, setKeyword, options, cache, loading, error } = useEmployeeSearch(open);
@@ -73,7 +76,7 @@ export default function EmployeeMultiSelect({
         }}
       >
         {value.length === 0 && (
-          <span style={{ fontSize: '0.88rem', color: 'var(--text-muted)' }}>{placeholder}</span>
+          <span style={{ fontSize: '0.88rem', color: 'var(--text-muted)' }}>{resolvedPlaceholder}</span>
         )}
 
         {value.map((employeeId) => {
@@ -95,12 +98,12 @@ export default function EmployeeMultiSelect({
                 fontWeight: 600,
               }}
             >
-              {employee ? employee.fullName : `Cán bộ #${employeeId}`}
+              {employee ? employee.fullName : t('work.common.employeeId', { id: String(employeeId) })}
               {!disabled && (
                 <span
                   role="button"
                   tabIndex={-1}
-                  aria-label="Bỏ cán bộ này"
+                  aria-label={t('work.employees.removeEmployee')}
                   onClick={(event) => {
                     event.stopPropagation();
                     onChange(value.filter((item) => item !== employeeId));
@@ -139,7 +142,7 @@ export default function EmployeeMultiSelect({
             type="text"
             autoFocus
             value={keyword}
-            placeholder="Tìm theo tên cán bộ"
+            placeholder={t('work.employees.searchPlaceholder')}
             onChange={(event) => setKeyword(event.target.value)}
             style={{
               width: '100%',
@@ -156,14 +159,14 @@ export default function EmployeeMultiSelect({
 
           <div style={{ maxHeight: '220px', overflowY: 'auto', marginTop: '8px' }}>
             {loading && (
-              <div style={{ padding: '10px', fontSize: '0.82rem', color: 'var(--text-muted)' }}>Đang tải...</div>
+              <div style={{ padding: '10px', fontSize: '0.82rem', color: 'var(--text-muted)' }}>{t('work.common.loading')}</div>
             )}
             {!loading && error && (
               <div style={{ padding: '10px', fontSize: '0.82rem', color: 'var(--color-danger)' }}>{error}</div>
             )}
             {!loading && !error && visibleOptions.length === 0 && (
               <div style={{ padding: '10px', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                Không tìm thấy cán bộ phù hợp. Hãy thử từ khóa khác hoặc xóa bớt chữ trong ô tìm.
+                {t('work.employees.noResults')}
               </div>
             )}
             {!loading &&
@@ -216,7 +219,7 @@ export default function EmployeeMultiSelect({
               color: 'var(--text-muted)',
             }}
           >
-            Đã chọn {value.length} cán bộ. Bấm vào tên để bỏ chọn.
+            {t('work.employees.selectedCount', { count: String(value.length) })}
           </div>
         </div>
       )}

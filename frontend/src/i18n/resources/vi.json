@@ -76,6 +76,7 @@
     "noMatchDesc": "Vui lòng thử từ khóa khác hoặc xóa bộ lọc để xem toàn bộ tài liệu.",
     "expiredBannerReplaced": "Văn bản này đã hết hiệu lực và được thay thế bởi:",
     "expiredBannerNormal": "Văn bản này hiện đã hết hiệu lực thi hành.",
+    "expiredBannerWithDate": "Văn bản này hiện đã hết hiệu lực thi hành (kể từ ngày {{date}}).",
     "partialBanner": "Văn bản này hiện chỉ còn hiệu lực một phần.",
     "viewReplacement": "→ Xem văn bản thay thế",
     "detailTitle": "Chi Tiết Tài Liệu & Biểu Mẫu",

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { useTranslation } from '@i18n/translate';
+import { formatGroupName } from '@lib/roleUtils';
 import { Employee } from '@app-types/employee';
 import { Button } from '@components/common/Button';
 import { Badge } from '@components/common/Badge';
@@ -19,7 +20,7 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
   onEdit,
   returnFocusRef,
 }) => {
-  const { t } = useTranslation();
+  const { t, currentLang } = useTranslation();
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const onCloseRef = useRef(onClose);
@@ -293,7 +294,7 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
                     className="px-2.5 py-1 text-xs font-medium rounded-md bg-primary-subtle text-primary border border-primary-border"
                   >
                     <i className="fa-solid fa-shield-halved mr-1.5" />
-                    {group.name}
+                    {formatGroupName(group.name, currentLang)}
                   </span>
                 ))}
               </div>

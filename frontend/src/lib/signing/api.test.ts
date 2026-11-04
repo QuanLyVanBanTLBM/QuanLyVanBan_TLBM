@@ -4,7 +4,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@lib/apiClient';
-import { signingApi } from './api';
+import { giayChoThuLai, signingApi, thoiDiemThuLai } from './api';
 
 function phanHoi(status: number, body: unknown): Response {
   return {
@@ -51,5 +51,90 @@ describe('signingApi.danhBaCanBo', () => {
     const ds = await signingApi.danhBaCanBo();
     expect(ds).toHaveLength(1);
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('signingApi.nguoiKyCoQuyen', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it('trả danh sách id tài khoản có quyền ký từ API signing', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(phanHoi(200, { ids: [3, 5] }));
+
+    await expect(signingApi.nguoiKyCoQuyen()).resolves.toEqual([3, 5]);
+    expect(String((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0])).toContain('/api/v1/signing/nguoi-ky-co-quyen/');
+  });
+});
+
+describe('thoiDiemThuLai / giayChoThuLai (HTTP 429)', () => {
+  const loi429 = (fields?: Record<string, unknown>) => new ApiError(429, { code: 'x', detail: 'x', fields });
+
+  it('đọc thời điểm thử lại từ fields.thu_lai_sau và tính số giây còn lại', () => {
+    const bay_gio = Date.parse('2026-11-02T10:00:00Z');
+    const err = loi429({ thu_lai_sau: ['2026-11-02T10:02:00Z'] });
+    expect(thoiDiemThuLai(err)?.toISOString()).toBe('2026-11-02T10:02:00.000Z');
+    expect(giayChoThuLai(err, bay_gio)).toBe(120);
+  });
+
+  it('trả 0 khi thời điểm đã qua, thiếu hoặc sai định dạng', () => {
+    const bay_gio = Date.parse('2026-11-02T10:00:00Z');
+    expect(giayChoThuLai(loi429({ thu_lai_sau: ['2026-11-02T09:00:00Z'] }), bay_gio)).toBe(0);
+    expect(giayChoThuLai(loi429(), bay_gio)).toBe(0);
+    expect(thoiDiemThuLai(loi429({ thu_lai_sau: ['khong-phai-ngay'] }))).toBeNull();
+  });
+
+  it('bỏ qua phản hồi không phải 429', () => {
+    const err = new ApiError(400, { code: 'x', detail: 'x', fields: { thu_lai_sau: ['2099-01-01T00:00:00Z'] } });
+    expect(thoiDiemThuLai(err)).toBeNull();
+    expect(thoiDiemThuLai(new Error('x'))).toBeNull();
+  });
+});
+
+describe('signingApi.taiLenAnhChuKy', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it('gửi FormData chứa tệp signature.png khi truyền Blob', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(phanHoi(200, {
+      co_anh: true,
+      ma_bam: 'hash123',
+      dung_luong_bytes: 10,
+      url: '/api/signing/anh-chu-ky-ca-nhan/tep/',
+    }));
+
+    const blob = new Blob(['png-bytes'], { type: 'image/png' });
+    const res = await signingApi.taiLenAnhChuKy(blob);
+
+    expect(res.co_anh).toBe(true);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    const [url, init] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/api/v1/signing/anh-chu-ky-ca-nhan/');
+    expect(init.method).toBe('POST');
+    expect(init.body).toBeInstanceOf(FormData);
+    const fd = init.body as FormData;
+    expect(fd.get('tep')).toBeTruthy();
+  });
+
+  it('gửi JSON chứa du_lieu_base64 khi truyền chuỗi Base64', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(phanHoi(200, {
+      co_anh: true,
+      ma_bam: 'hash456',
+      dung_luong_bytes: 20,
+      url: '/api/signing/anh-chu-ky-ca-nhan/tep/',
+    }));
+
+    const base64Str = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+    const res = await signingApi.taiLenAnhChuKy(base64Str);
+
+    expect(res.co_anh).toBe(true);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    const [url, init] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/api/v1/signing/anh-chu-ky-ca-nhan/');
+    expect(init.method).toBe('POST');
+    expect(init.body).toBe(JSON.stringify({ du_lieu_base64: base64Str }));
   });
 });

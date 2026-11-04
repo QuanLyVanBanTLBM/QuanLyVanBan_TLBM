@@ -68,16 +68,14 @@ class DuLieuMauTests(TestCase):
         self.assertEqual(trinh_ky.luot_hien_hanh(self.ho_so("M06")).trang_thai, "YEU_CAU_SUA")
         self.assertEqual(trinh_ky.luot_hien_hanh(self.ho_so("M07")).so_luot, 2)
         self.assertEqual(SigningRequest.objects.filter(ho_so_goc=self.ho_so("M05"), trang_thai="NHAP").count(), 1)
-        # Hoàn tất có tệp hoàn tất; dữ liệu mẫu không còn hồ sơ ủy quyền ký
+        # Hoàn tất có tệp hoàn tất
         self.assertEqual(trinh_ky.luot_hien_hanh(self.ho_so("M04")).trang_thai_tep_hoan_tat, "THANH_CONG")
-        self.assertFalse(SigningRequestStepSigner.objects.filter(uy_quyen_tu__isnull=False).exists())
         # Người dùng thấy hồ sơ ở hộp "cần tôi ký"
         giamdoc, truongphong = User.objects.get(username="giamdoc"), User.objects.get(username="truongphong")
         self.assertIn(self.ho_so("M03"), trinh_ky.dang_cho_toi_ky(giamdoc))
         self.assertIn(self.ho_so("M10"), trinh_ky.dang_cho_toi_ky(truongphong))
         self.assertIn(self.ho_so("M02"), trinh_ky.dang_cho_toi_ky(truongphong))
         # Lịch sử và thông báo tương ứng
-        self.assertFalse(SigningAuditLog.objects.filter(hanh_dong="UY_QUYEN_KY").exists())
         loai = set(SigningNotification.objects.values_list("loai_thong_bao", flat=True))
         self.assertTrue({"CAN_KY", "HOAN_THANH", "TU_CHOI", "YEU_CAU_SUA", "HUY", "TIN_NHAN",
                          "QUA_HAN"} <= loai, loai)

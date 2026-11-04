@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from '@i18n/translate';
+import { formatGroupName } from '@lib/roleUtils';
 import { apiClient } from '@lib/apiClient';
 import { usePermissions } from '@lib/permissions';
 import { Role, Permission, PaginatedResponse } from '@app-types/authorization';
@@ -10,7 +11,7 @@ import { PermissionMatrix } from './components/PermissionMatrix';
 import { filterPermissions } from './components/permissionFilter';
 
 export default function RolesPage() {
-  const { t } = useTranslation();
+  const { t, currentLang } = useTranslation();
   // Chỉ ẩn/hiện thao tác cho gọn giao diện; backend vẫn kiểm quyền thật (view/add/change/delete_nhomquyen).
   const { can } = usePermissions();
   const canAdd = can('add_nhomquyen');
@@ -340,7 +341,7 @@ export default function RolesPage() {
                     }`}
                   >
                     <i className={`fa-solid fa-users-gear ${selectedRoleId === role.id ? 'text-white' : 'text-primary'}`} />
-                    {role.name}
+                    {formatGroupName(role.name, currentLang)}
                   </button>
                 ))
               )}

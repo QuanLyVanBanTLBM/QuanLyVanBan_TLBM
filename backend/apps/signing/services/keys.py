@@ -1,18 +1,57 @@
-from django.db import IntegrityError, transaction
+import secrets
+from datetime import timedelta
+
+from django.core import signing as django_signing
+from django.db import IntegrityError, connection, transaction
 from django.utils import timezone
 from rest_framework import status
 
 from .. import crypto, enums
 from ..errors import ConflictError, SigningError
-from ..models import SigningKey
+from ..models import SigningChallengeDaDung, SigningKey
+from ..tich_hop import to_chuc
+from . import quyen_ky
 from .audit import ghi_nhat_ky
 
 LOAI = "signing_key"
+SALT_THACH_THUC = "signing.key-ownership-challenge"
+HAN_THACH_THUC_GIAY = 600
 
 
 def thach_thuc_so_huu(key):
-    """Chuỗi cố định gắn với khóa; người dùng ký chuỗi này bằng khóa bí mật để chứng minh sở hữu."""
-    return f"signing-key-ownership:{key.dau_van_tay}"
+    """Challenge ngẫu nhiên theo lần, gắn với khóa và có hạn dùng; người dùng ký chuỗi này để chứng minh sở hữu."""
+    return django_signing.dumps(
+        {"k": key.pk, "f": key.dau_van_tay, "n": secrets.token_hex(16)}, salt=SALT_THACH_THUC, compress=False,
+    )
+
+
+def _thach_thuc_hop_le(key, thach_thuc):
+    """Trả nonce của challenge nếu hợp lệ (đúng chữ ký, còn hạn, đúng khóa), ngược lại trả None."""
+    try:
+        noi_dung = django_signing.loads(thach_thuc, salt=SALT_THACH_THUC, max_age=HAN_THACH_THUC_GIAY)
+    except django_signing.BadSignature:  # gồm cả SignatureExpired
+        return None
+    nonce = noi_dung.get("n")
+    if noi_dung.get("k") != key.pk or noi_dung.get("f") != key.dau_van_tay or not nonce:
+        return None
+    return nonce
+
+
+def _danh_dau_da_dung(nguoi_dung, nonce):
+    """
+    Ghi nonce đã dùng. Trả True nếu đây là lần dùng đầu tiên, False nếu nonce đã được dùng trước đó.
+    INSERT ... ON CONFLICT DO NOTHING trên UNIQUE (nguoi_dung, nonce) nên hai request đồng thời chỉ một request ghi được.
+    Phải gọi trong transaction của thao tác xác minh để lỗi ở bước sau không làm mất challenge.
+    """
+    bay_gio = timezone.now()
+    SigningChallengeDaDung.objects.filter(het_han__lt=bay_gio).delete()  # xóa lười bản ghi hết hạn
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"INSERT INTO {SigningChallengeDaDung._meta.db_table} (nguoi_dung_id, nonce, het_han) "
+            "VALUES (%s, %s, %s) ON CONFLICT (nguoi_dung_id, nonce) DO NOTHING",
+            [nguoi_dung.pk, nonce, bay_gio + timedelta(seconds=HAN_THACH_THUC_GIAY)],
+        )
+        return cursor.rowcount == 1
 
 
 def _chu_so_huu(key, nguoi_thuc_hien):
@@ -28,7 +67,31 @@ def _khoa(key_id):
 
 
 @transaction.atomic
+def chuyen_het_han(nguoi_so_huu, thoi_diem=None):
+    """
+    Chuyển khóa đang hoạt động đã quá `ngay_het_han` sang HET_HAN và ghi nhật ký (#488).
+
+    Chạy khi người dùng đọc hoặc dùng khóa, nên không cần tác vụ định kỳ. Idempotent: khóa đã chuyển không bị
+    ghi lại. Trả số khóa vừa chuyển.
+    """
+    thoi_diem = thoi_diem or timezone.now()
+    qua_han = SigningKey.objects.select_for_update().filter(
+        nguoi_so_huu=nguoi_so_huu, trang_thai=enums.TrangThaiKhoa.HOAT_DONG,
+        ngay_het_han__isnull=False, ngay_het_han__lte=thoi_diem,
+    )
+    so_khoa = 0
+    for key in qua_han:
+        key.trang_thai = enums.TrangThaiKhoa.HET_HAN
+        key.save(update_fields=["trang_thai"])
+        ghi_nhat_ky(nguoi_so_huu, LOAI, key.pk, "HET_HAN_KHOA", trang_thai_truoc=enums.TrangThaiKhoa.HOAT_DONG,
+                    trang_thai_sau=key.trang_thai)
+        so_khoa += 1
+    return so_khoa
+
+
+@transaction.atomic
 def dang_ky(nguoi_so_huu, *, ma_khoa, khoa_cong_khai, ngay_hieu_luc, ngay_het_han=None, ghi_chu="", dia_chi_ip=None):
+    quyen_ky.kiem_tra_tai_khoan_hoat_dong(nguoi_so_huu)
     if not crypto.is_valid_public_key(khoa_cong_khai):
         raise SigningError(code="khoa_cong_khai_khong_hop_le", detail="Khóa công khai Ed25519 không hợp lệ.")
     try:
@@ -45,13 +108,21 @@ def dang_ky(nguoi_so_huu, *, ma_khoa, khoa_cong_khai, ngay_hieu_luc, ngay_het_ha
 
 
 @transaction.atomic
-def xac_minh_so_huu(key, nguoi_thuc_hien, chu_ky_so, dia_chi_ip=None):
+def xac_minh_so_huu(key, nguoi_thuc_hien, thach_thuc, chu_ky_so, dia_chi_ip=None):
     key = _khoa(key.pk)
     _chu_so_huu(key, nguoi_thuc_hien)
+    quyen_ky.kiem_tra_tai_khoan_hoat_dong(nguoi_thuc_hien)
     if key.trang_thai != enums.TrangThaiKhoa.CHO_KICH_HOAT:
         raise ConflictError(code="khoa_khong_cho_kich_hoat", detail="Khóa không ở trạng thái chờ kích hoạt.")
-    if not crypto.verify_signature(key.khoa_cong_khai, thach_thuc_so_huu(key).encode(), chu_ky_so):
+    nonce = _thach_thuc_hop_le(key, thach_thuc)
+    if nonce is None:
+        raise SigningError(code="thach_thuc_khong_hop_le",
+                           detail="Challenge chứng minh sở hữu không hợp lệ hoặc đã hết hạn. Hãy yêu cầu challenge mới.")
+    if not crypto.verify_signature(key.khoa_cong_khai, thach_thuc.encode(), chu_ky_so):
         raise SigningError(code="chung_minh_so_huu_that_bai", detail="Chữ ký chứng minh sở hữu khóa không hợp lệ.")
+    if not _danh_dau_da_dung(nguoi_thuc_hien, nonce):
+        raise ConflictError(code="thach_thuc_da_dung",
+                            detail="Challenge chứng minh sở hữu đã được dùng. Hãy yêu cầu challenge mới.")
     key.thoi_diem_xac_minh_so_huu = timezone.now()
     key.save(update_fields=["thoi_diem_xac_minh_so_huu"])
     ghi_nhat_ky(nguoi_thuc_hien, LOAI, key.pk, "XAC_MINH_SO_HUU_KHOA", trang_thai_truoc=key.trang_thai,
@@ -76,6 +147,7 @@ def _kich_hoat_khoa_da_khoa(key, dia_chi_ip, nguoi_thuc_hien, hanh_dong):
 def kich_hoat(key, nguoi_thuc_hien, dia_chi_ip=None):
     key = _khoa(key.pk)
     _chu_so_huu(key, nguoi_thuc_hien)
+    quyen_ky.kiem_tra_tai_khoan_hoat_dong(nguoi_thuc_hien)
     if SigningKey.objects.filter(
         nguoi_so_huu=key.nguoi_so_huu, trang_thai=enums.TrangThaiKhoa.HOAT_DONG
     ).exists():
@@ -121,3 +193,41 @@ def thu_hoi(key, nguoi_thuc_hien, ly_do, dia_chi_ip=None):
     ghi_nhat_ky(nguoi_thuc_hien, LOAI, key.pk, "THU_HOI_KHOA", trang_thai_truoc=truoc,
                 trang_thai_sau=key.trang_thai, chi_tiet=ly_do, dia_chi_ip=dia_chi_ip)
     return key
+
+
+@transaction.atomic
+def thu_hoi_khan_cap_boi_quan_tri(nguoi_bi_thu_hoi_id, nguoi_thuc_hien, ly_do, dia_chi_ip=None):
+    """
+    Quản trị viên thu hồi khóa ký đang hoạt động hoặc chờ kích hoạt của tài khoản khác (khẩn cấp, #451).
+    PIN gắn với khóa nên mất hiệu lực cùng khóa; tài khoản tự cấp khóa mới và đặt PIN mới. Trả danh sách khóa đã thu hồi.
+    """
+    if not to_chuc.la_quan_tri(nguoi_thuc_hien):
+        raise SigningError(
+            code="khong_co_quyen", detail="Chỉ quản trị viên được thu hồi khóa ký của tài khoản khác.",
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+    if not (ly_do or "").strip():
+        raise SigningError(code="thieu_ly_do_thu_hoi", detail="Phải nhập lý do thu hồi.")
+    if nguoi_bi_thu_hoi_id == nguoi_thuc_hien.pk:
+        raise SigningError(code="dung_chuc_nang_thu_hoi_cua_chu_khoa",
+                           detail="Dùng chức năng thu hồi khóa của chính mình trong cấu hình khóa ký.")
+    khoa_can_thu_hoi = list(
+        SigningKey.objects.select_for_update().filter(
+            nguoi_so_huu_id=nguoi_bi_thu_hoi_id,
+            trang_thai__in=(enums.TrangThaiKhoa.HOAT_DONG, enums.TrangThaiKhoa.CHO_KICH_HOAT),
+        ).order_by("pk")
+    )
+    if not khoa_can_thu_hoi:
+        raise ConflictError(code="khong_co_khoa_de_thu_hoi", detail="Tài khoản không có khóa ký nào để thu hồi.")
+    thoi_diem = timezone.now()
+    for key in khoa_can_thu_hoi:
+        truoc = key.trang_thai
+        key.trang_thai = enums.TrangThaiKhoa.THU_HOI
+        key.ngay_thu_hoi = thoi_diem
+        key.save(update_fields=["trang_thai", "ngay_thu_hoi"])
+        ghi_nhat_ky(nguoi_thuc_hien, LOAI, key.pk, "QUAN_TRI_THU_HOI_KHOA",
+                    trang_thai_truoc=truoc, trang_thai_sau=key.trang_thai, chi_tiet=ly_do.strip(),
+                    du_lieu_kem_theo={"nguoi_so_huu_id": nguoi_bi_thu_hoi_id}, dia_chi_ip=dia_chi_ip)
+    from . import thong_bao  # nhập muộn: tránh vòng nhập với quyen_ky
+    thong_bao.quan_tri_thu_hoi_khoa(khoa_can_thu_hoi[0].nguoi_so_huu, khoa_can_thu_hoi)
+    return khoa_can_thu_hoi

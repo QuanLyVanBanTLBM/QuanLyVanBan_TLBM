@@ -11,6 +11,8 @@ import ConfirmModal from '@components/common/ConfirmModal';
 import AlertModal from '@components/common/AlertModal';
 import { Button } from '@components/common/Button';
 import apiClient from '@lib/apiClient';
+import { authService } from '@lib/authService';
+import { usePermissions } from '@lib/permissions';
 import { useTranslation } from '@i18n/translate';
 
 const extractDocType = (doc: DocumentItem): string | null => {
@@ -32,6 +34,14 @@ const extractDocType = (doc: DocumentItem): string | null => {
 
 export const InboundDocumentPage: React.FC = () => {
   const { t } = useTranslation();
+  const { can, isSuperuser } = usePermissions();
+  const currentSession = useMemo(() => authService.getSession(), []);
+  const isAdmin = Boolean(isSuperuser || currentSession?.role === 'admin' || currentSession?.username === 'admin');
+
+  const canAdd = Boolean(isAdmin || can('add_vanbanden'));
+  const canImport = Boolean(isAdmin || can('import_vanbanden'));
+  const canExport = Boolean(isAdmin || can('export_vanbanden'));
+
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
@@ -332,12 +342,27 @@ export const InboundDocumentPage: React.FC = () => {
         }
       });
 
-      // Gộp danh mục hồ sơ: kết hợp hồ sơ từ Nhóm 3 (app records) và hồ sơ thực tế trong văn bản
-      const combinedFoldersSet = new Set<string>([...recordsFolders, ...extractedFolders]);
+      // Gộp danh mục hồ sơ: giữ nguyên thứ tự chuẩn theo ID / mức ưu tiên của Nhóm 3 (Hồ sơ chung lên đầu)
+      // Bất kỳ hồ sơ nào do người dùng nhập tay cho đối tác ngoài danh mục của Nhóm 3 sẽ được nối tiếp phía sau
+      const extraFolders = Array.from(extractedFolders).filter(
+        (f) => !recordsFolders.some((rf) => rf.trim().toLowerCase() === f.trim().toLowerCase())
+      ).sort((a, b) => a.localeCompare(b, 'vi'));
+
+      const combinedOrderedFolders = [...recordsFolders, ...extraFolders];
+
+      // Đảm bảo "Hồ sơ chung" (nếu có) luôn luôn đứng vị trí đầu tiên
+      const hscIndex = combinedOrderedFolders.findIndex(
+        (f) => f.trim().toLowerCase() === 'hồ sơ chung'
+      );
+      if (hscIndex > 0) {
+        const [hsc] = combinedOrderedFolders.splice(hscIndex, 1);
+        combinedOrderedFolders.unshift(hsc);
+      }
+
       const serializableFolderMap: Record<string, string[]> = {};
 
       // Xây dựng bản đồ ánh xạ Hồ sơ -> Loại văn bản kết hợp
-      combinedFoldersSet.forEach((folder) => {
+      combinedOrderedFolders.forEach((folder) => {
         const fromRecords = recordsFolderTypeMap[folder] ? Array.from(recordsFolderTypeMap[folder]) : [];
         const fromDocuments = folderTypeMapping[folder] ? Array.from(folderTypeMapping[folder]) : [];
         const combinedTypes = Array.from(new Set([...fromRecords, ...fromDocuments])).sort((a, b) => a.localeCompare(b, 'vi'));
@@ -346,7 +371,7 @@ export const InboundDocumentPage: React.FC = () => {
         }
       });
 
-      // Nếu có hồ sơ trong folderTypeMapping chưa có trong combinedFoldersSet
+      // Nếu có hồ sơ trong folderTypeMapping chưa có trong combinedOrderedFolders
       Object.entries(folderTypeMapping).forEach(([folder, typeSet]) => {
         if (!serializableFolderMap[folder]) {
           serializableFolderMap[folder] = Array.from(typeSet).sort((a, b) => a.localeCompare(b, 'vi'));
@@ -354,7 +379,7 @@ export const InboundDocumentPage: React.FC = () => {
       });
 
       setAvailableDocTypes(Array.from(extractedTypes).sort((a, b) => a.localeCompare(b, 'vi')));
-      setAvailableFolders(Array.from(combinedFoldersSet).sort((a, b) => a.localeCompare(b, 'vi')));
+      setAvailableFolders(combinedOrderedFolders);
       setFolderDocTypesMap(serializableFolderMap);
     } catch {
       // Giữ nguyên trạng thái hiện tại nếu lỗi
@@ -716,132 +741,138 @@ export const InboundDocumentPage: React.FC = () => {
 
         {/* Các nút hành động chính (Thêm mới, Nhập Excel, Xuất Excel, Làm mới) */}
         <div className="flex items-center gap-2 flex-wrap">
-          <Button
-            type="button"
-            variant="primary"
-            size="sm"
-            icon="fa-plus"
-            onClick={handleOpenCreate}
-            title={t('documents_incoming_page.addBtn') || 'Thêm mới'}
-          >
-            {t('documents_incoming_page.addBtn') || 'Thêm mới'}
-          </Button>
+          {canAdd && (
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              icon="fa-plus"
+              onClick={handleOpenCreate}
+              title={t('documents_incoming_page.addBtn') || 'Thêm mới'}
+            >
+              {t('documents_incoming_page.addBtn') || 'Thêm mới'}
+            </Button>
+          )}
 
           {/* Dropdown Import Excel */}
-          <div className="relative" ref={importMenuRef}>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              icon="fa-file-excel"
-              onClick={() => {
-                setImportMenuOpen((prev) => !prev);
-                setExportMenuOpen(false);
-              }}
-              className={`transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 ${importMenuOpen ? 'border-primary/50 shadow-xs bg-surface-elevated' : ''}`}
-              title={t('documents_ui.actions.importExcelTitle') || 'Nhập danh sách từ tệp Excel'}
-            >
-              <span>{t('documents_ui.actions.importExcel') || 'Import Excel'}</span>
-              <i className={`fa-solid fa-chevron-down text-[10px] ml-1 text-secondary transition-transform duration-200 ${importMenuOpen ? 'rotate-180' : ''}`} />
-            </Button>
+          {canImport && (
+            <div className="relative" ref={importMenuRef}>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                icon="fa-file-excel"
+                onClick={() => {
+                  setImportMenuOpen((prev) => !prev);
+                  setExportMenuOpen(false);
+                }}
+                className={`transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 ${importMenuOpen ? 'border-primary/50 shadow-xs bg-surface-elevated' : ''}`}
+                title={t('documents_ui.actions.importExcelTitle') || 'Nhập danh sách từ tệp Excel'}
+              >
+                <span>{t('documents_ui.actions.importExcel') || 'Import Excel'}</span>
+                <i className={`fa-solid fa-chevron-down text-[10px] ml-1 text-secondary transition-transform duration-200 ${importMenuOpen ? 'rotate-180' : ''}`} />
+              </Button>
 
-            {importMenuOpen && (
-              <div className="absolute left-0 sm:right-0 sm:left-auto top-full mt-2 w-56 p-1.5 bg-surface/95 backdrop-blur-md border border-border-subtle rounded-2xl shadow-xl z-50 animate-in fade-in zoom-in-95 duration-150 space-y-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setImportMenuOpen(false);
-                    setImportPhamVi('NOI_BO');
-                    setIsImportOpen(true);
-                  }}
-                  className="group w-full text-left px-3 py-2.5 text-xs font-semibold text-main hover:text-primary rounded-xl transition-all duration-150 hover:-translate-y-[1px] hover:shadow-md hover:bg-white dark:hover:bg-slate-800 border border-transparent hover:border-slate-200/80 dark:hover:border-slate-700/80 flex items-center gap-2.5 cursor-pointer"
-                >
-                  <span className="w-6 h-6 rounded-lg bg-surface-elevated group-hover:bg-primary/10 flex items-center justify-center transition-colors">
-                    <i className="fa-regular fa-file-lines text-secondary group-hover:text-primary text-xs transition-colors" />
-                  </span>
-                  <span>{t('documents_ui.actions.importInternal') || 'Nhập văn bản thường'}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setImportMenuOpen(false);
-                    setImportPhamVi('HAN_CHE');
-                    setIsImportOpen(true);
-                  }}
-                  className="group w-full text-left px-3 py-2.5 text-xs font-semibold text-main hover:text-primary rounded-xl transition-all duration-150 hover:-translate-y-[1px] hover:shadow-md hover:bg-white dark:hover:bg-slate-800 border border-transparent hover:border-slate-200/80 dark:hover:border-slate-700/80 flex items-center gap-2.5 cursor-pointer"
-                >
-                  <span className="w-6 h-6 rounded-lg bg-surface-elevated group-hover:bg-primary/10 flex items-center justify-center transition-colors">
-                    <i className="fa-solid fa-shield-halved text-secondary group-hover:text-primary text-xs transition-colors" />
-                  </span>
-                  <span>{t('documents_ui.actions.importRestricted') || 'Nhập văn bản hạn chế'}</span>
-                </button>
-              </div>
-            )}
-          </div>
+              {importMenuOpen && (
+                <div className="absolute left-0 sm:right-0 sm:left-auto top-full mt-2 w-56 p-1.5 bg-surface/95 backdrop-blur-md border border-border-subtle rounded-2xl shadow-xl z-50 animate-in fade-in zoom-in-95 duration-150 space-y-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setImportMenuOpen(false);
+                      setImportPhamVi('NOI_BO');
+                      setIsImportOpen(true);
+                    }}
+                    className="group w-full text-left px-3 py-2.5 text-xs font-semibold text-main hover:text-primary rounded-xl transition-all duration-150 hover:-translate-y-[1px] hover:shadow-md hover:bg-white dark:hover:bg-slate-800 border border-transparent hover:border-slate-200/80 dark:hover:border-slate-700/80 flex items-center gap-2.5 cursor-pointer"
+                  >
+                    <span className="w-6 h-6 rounded-lg bg-surface-elevated group-hover:bg-primary/10 flex items-center justify-center transition-colors">
+                      <i className="fa-regular fa-file-lines text-secondary group-hover:text-primary text-xs transition-colors" />
+                    </span>
+                    <span>{t('documents_ui.actions.importInternal') || 'Nhập văn bản thường'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setImportMenuOpen(false);
+                      setImportPhamVi('HAN_CHE');
+                      setIsImportOpen(true);
+                    }}
+                    className="group w-full text-left px-3 py-2.5 text-xs font-semibold text-main hover:text-primary rounded-xl transition-all duration-150 hover:-translate-y-[1px] hover:shadow-md hover:bg-white dark:hover:bg-slate-800 border border-transparent hover:border-slate-200/80 dark:hover:border-slate-700/80 flex items-center gap-2.5 cursor-pointer"
+                  >
+                    <span className="w-6 h-6 rounded-lg bg-surface-elevated group-hover:bg-primary/10 flex items-center justify-center transition-colors">
+                      <i className="fa-solid fa-shield-halved text-secondary group-hover:text-primary text-xs transition-colors" />
+                    </span>
+                    <span>{t('documents_ui.actions.importRestricted') || 'Nhập văn bản hạn chế'}</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Dropdown Xuất Excel */}
-          <div className="relative" ref={exportMenuRef}>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              icon="fa-file-export"
-              onClick={() => {
-                setExportMenuOpen((prev) => !prev);
-                setImportMenuOpen(false);
-              }}
-              className={`transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 ${exportMenuOpen ? 'border-primary/50 shadow-xs bg-surface-elevated' : ''}`}
-              title={t('documents_ui.actions.exportExcelTitle') || 'Xuất dữ liệu ra file Excel'}
-            >
-              <span>{t('documents_ui.actions.exportExcel') || 'Xuất Excel'}</span>
-              <i className={`fa-solid fa-chevron-down text-[10px] ml-1 text-secondary transition-transform duration-200 ${exportMenuOpen ? 'rotate-180' : ''}`} />
-            </Button>
+          {canExport && (
+            <div className="relative" ref={exportMenuRef}>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                icon="fa-file-export"
+                onClick={() => {
+                  setExportMenuOpen((prev) => !prev);
+                  setImportMenuOpen(false);
+                }}
+                className={`transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 ${exportMenuOpen ? 'border-primary/50 shadow-xs bg-surface-elevated' : ''}`}
+                title={t('documents_ui.actions.exportExcelTitle') || 'Xuất dữ liệu ra file Excel'}
+              >
+                <span>{t('documents_ui.actions.exportExcel') || 'Xuất Excel'}</span>
+                <i className={`fa-solid fa-chevron-down text-[10px] ml-1 text-secondary transition-transform duration-200 ${exportMenuOpen ? 'rotate-180' : ''}`} />
+              </Button>
 
-            {exportMenuOpen && (
-              <div className="absolute left-0 sm:right-0 sm:left-auto top-full mt-2 w-56 p-1.5 bg-surface/95 backdrop-blur-md border border-border-subtle rounded-2xl shadow-xl z-50 animate-in fade-in zoom-in-95 duration-150 space-y-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setExportMenuOpen(false);
-                    handleExportExcel('NOI_BO');
-                  }}
-                  className="group w-full text-left px-3 py-2.5 text-xs font-semibold text-main hover:text-primary rounded-xl transition-all duration-150 hover:-translate-y-[1px] hover:shadow-md hover:bg-white dark:hover:bg-slate-800 border border-transparent hover:border-slate-200/80 dark:hover:border-slate-700/80 flex items-center gap-2.5 cursor-pointer"
-                >
-                  <span className="w-6 h-6 rounded-lg bg-surface-elevated group-hover:bg-primary/10 flex items-center justify-center transition-colors">
-                    <i className="fa-regular fa-file-lines text-secondary group-hover:text-primary text-xs transition-colors" />
-                  </span>
-                  <span>{t('documents_ui.actions.exportInternal') || 'Xuất văn bản thường'}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setExportMenuOpen(false);
-                    handleExportExcel('HAN_CHE');
-                  }}
-                  className="group w-full text-left px-3 py-2.5 text-xs font-semibold text-main hover:text-primary rounded-xl transition-all duration-150 hover:-translate-y-[1px] hover:shadow-md hover:bg-white dark:hover:bg-slate-800 border border-transparent hover:border-slate-200/80 dark:hover:border-slate-700/80 flex items-center gap-2.5 cursor-pointer"
-                >
-                  <span className="w-6 h-6 rounded-lg bg-surface-elevated group-hover:bg-primary/10 flex items-center justify-center transition-colors">
-                    <i className="fa-solid fa-shield-halved text-secondary group-hover:text-primary text-xs transition-colors" />
-                  </span>
-                  <span>{t('documents_ui.actions.exportRestricted') || 'Xuất văn bản hạn chế'}</span>
-                </button>
-                <div className="h-px bg-border-subtle my-1 mx-2" />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setExportMenuOpen(false);
-                    handleExportExcel('ALL');
-                  }}
-                  className="group w-full text-left px-3 py-2.5 text-xs font-semibold text-main hover:text-primary rounded-xl transition-all duration-150 hover:-translate-y-[1px] hover:shadow-md hover:bg-white dark:hover:bg-slate-800 border border-transparent hover:border-slate-200/80 dark:hover:border-slate-700/80 flex items-center gap-2.5 cursor-pointer"
-                >
-                  <span className="w-6 h-6 rounded-lg bg-surface-elevated group-hover:bg-primary/10 flex items-center justify-center transition-colors">
-                    <i className="fa-solid fa-layer-group text-secondary group-hover:text-primary text-xs transition-colors" />
-                  </span>
-                  <span>{t('documents_ui.actions.exportAll') || 'Xuất tất cả văn bản'}</span>
-                </button>
-              </div>
-            )}
-          </div>
+              {exportMenuOpen && (
+                <div className="absolute left-0 sm:right-0 sm:left-auto top-full mt-2 w-56 p-1.5 bg-surface/95 backdrop-blur-md border border-border-subtle rounded-2xl shadow-xl z-50 animate-in fade-in zoom-in-95 duration-150 space-y-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExportMenuOpen(false);
+                      handleExportExcel('NOI_BO');
+                    }}
+                    className="group w-full text-left px-3 py-2.5 text-xs font-semibold text-main hover:text-primary rounded-xl transition-all duration-150 hover:-translate-y-[1px] hover:shadow-md hover:bg-white dark:hover:bg-slate-800 border border-transparent hover:border-slate-200/80 dark:hover:border-slate-700/80 flex items-center gap-2.5 cursor-pointer"
+                  >
+                    <span className="w-6 h-6 rounded-lg bg-surface-elevated group-hover:bg-primary/10 flex items-center justify-center transition-colors">
+                      <i className="fa-regular fa-file-lines text-secondary group-hover:text-primary text-xs transition-colors" />
+                    </span>
+                    <span>{t('documents_ui.actions.exportInternal') || 'Xuất văn bản thường'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExportMenuOpen(false);
+                      handleExportExcel('HAN_CHE');
+                    }}
+                    className="group w-full text-left px-3 py-2.5 text-xs font-semibold text-main hover:text-primary rounded-xl transition-all duration-150 hover:-translate-y-[1px] hover:shadow-md hover:bg-white dark:hover:bg-slate-800 border border-transparent hover:border-slate-200/80 dark:hover:border-slate-700/80 flex items-center gap-2.5 cursor-pointer"
+                  >
+                    <span className="w-6 h-6 rounded-lg bg-surface-elevated group-hover:bg-primary/10 flex items-center justify-center transition-colors">
+                      <i className="fa-solid fa-shield-halved text-secondary group-hover:text-primary text-xs transition-colors" />
+                    </span>
+                    <span>{t('documents_ui.actions.exportRestricted') || 'Xuất văn bản hạn chế'}</span>
+                  </button>
+                  <div className="h-px bg-border-subtle my-1 mx-2" />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExportMenuOpen(false);
+                      handleExportExcel('ALL');
+                    }}
+                    className="group w-full text-left px-3 py-2.5 text-xs font-semibold text-main hover:text-primary rounded-xl transition-all duration-150 hover:-translate-y-[1px] hover:shadow-md hover:bg-white dark:hover:bg-slate-800 border border-transparent hover:border-slate-200/80 dark:hover:border-slate-700/80 flex items-center gap-2.5 cursor-pointer"
+                  >
+                    <span className="w-6 h-6 rounded-lg bg-surface-elevated group-hover:bg-primary/10 flex items-center justify-center transition-colors">
+                      <i className="fa-solid fa-layer-group text-secondary group-hover:text-primary text-xs transition-colors" />
+                    </span>
+                    <span>{t('documents_ui.actions.exportAll') || 'Xuất tất cả văn bản'}</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           <Button
             type="button"

@@ -37,7 +37,7 @@ UNG_VIEN_PHONG_CHU = [
     ("/Library/Fonts/Arial.ttf", "/Library/Fonts/Arial Bold.ttf"),
 ]
 
-VAI_TRO = {"KY_NHAY": "Ký nháy", "KY_CHINH": "Ký chính"}
+VAI_TRO = {"KY_CHINH": "Ký chính"}
 
 
 class LoiTaoTep(Exception):

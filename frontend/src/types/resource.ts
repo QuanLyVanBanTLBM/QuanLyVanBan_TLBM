@@ -18,6 +18,7 @@ export interface ResourceItem {
   file_dinh_kem: string;
   hien_thi: HienThiType;
   don_vi_id?: number;
+  nguoi_tao?: number;
   nguoi_tao_name?: string;
   attachments?: ResourceAttachment[];
 }

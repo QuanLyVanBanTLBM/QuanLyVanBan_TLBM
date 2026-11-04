@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from '@i18n/translate';
 import { toMessage } from '../api/client';
 import { downloadAttachment } from '../api/taskActions';
 import { Attachment } from '../types/task';
@@ -19,15 +20,17 @@ interface TaskAttachmentListProps {
 
 export default function TaskAttachmentList({
   files,
-  emptyText = 'Không có tệp đính kèm.',
+  emptyText,
   onDelete,
   onError,
   compact = false,
 }: TaskAttachmentListProps) {
+  const { t } = useTranslation();
+  const resolvedEmptyText = emptyText || t('work.attachments.empty');
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
 
   if (!files.length) {
-    return <div style={{ fontSize: '0.84rem', color: 'var(--text-muted)' }}>{emptyText}</div>;
+    return <div style={{ fontSize: '0.84rem', color: 'var(--text-muted)' }}>{resolvedEmptyText}</div>;
   }
 
   const handleDownload = async (file: Attachment) => {
@@ -60,7 +63,7 @@ export default function TaskAttachmentList({
             <button
               type="button"
               onClick={() => handleDownload(file)}
-              title="Tải file về máy"
+              title={t('work.attachments.download')}
               style={{
                 flex: 1,
                 minWidth: 0,
@@ -87,8 +90,8 @@ export default function TaskAttachmentList({
               type="button"
               onClick={() => handleDownload(file)}
               disabled={downloadingId === file.id}
-              aria-label={`Tải ${file.fileName}`}
-              title="Tải file về máy"
+              aria-label={t('work.attachments.downloadLabel', { fileName: file.fileName })}
+              title={t('work.attachments.download')}
               style={{
                 border: 'none',
                 background: 'transparent',
@@ -103,8 +106,8 @@ export default function TaskAttachmentList({
               <button
                 type="button"
                 onClick={() => onDelete(file)}
-                aria-label={`Xóa ${file.fileName}`}
-                title="Xóa file này (ý kiến vẫn được giữ lại)"
+                aria-label={t('work.attachments.downloadLabel', { fileName: file.fileName })}
+                title={t('work.attachments.deleteFile')}
                 style={{
                   border: 'none',
                   background: 'transparent',

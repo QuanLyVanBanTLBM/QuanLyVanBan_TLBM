@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from '@i18n/translate';
 
 /** Khung thông báo dùng chung: báo lỗi, cảnh báo, thành công hoặc thông tin hướng dẫn. */
 
@@ -41,6 +42,7 @@ interface WorkAlertProps {
 }
 
 export default function WorkAlert({ variant = 'info', title, message, children, onClose }: WorkAlertProps) {
+  const { t } = useTranslation();
   const style = VARIANT_STYLES[variant];
 
   return (
@@ -67,7 +69,7 @@ export default function WorkAlert({ variant = 'info', title, message, children, 
         <button
           type="button"
           onClick={onClose}
-          aria-label="Đóng thông báo"
+          aria-label={t('work.common.closeNotification')}
           style={{
             background: 'transparent',
             border: 'none',

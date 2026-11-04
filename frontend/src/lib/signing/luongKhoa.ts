@@ -25,7 +25,7 @@ export async function dangKyKhoaThietBi(
   const ma_khoa = `TB-${userId}-${Date.now()}`;
   const khoa = await signingApi.dangKyKhoa(ma_khoa, cap.khoaCongKhai);
   const { thach_thuc } = await signingApi.thachThuc(khoa.id);
-  await signingApi.xacMinhKhoa(khoa.id, await kyBytes(cap.privatePkcs8, new TextEncoder().encode(thach_thuc)));
+  await signingApi.xacMinhKhoa(khoa.id, thach_thuc, await kyBytes(cap.privatePkcs8, new TextEncoder().encode(thach_thuc)));
 
   const tham_so = taoThamSoKdf();
   const pin_dx = await danXuatPin(pin, tham_so);

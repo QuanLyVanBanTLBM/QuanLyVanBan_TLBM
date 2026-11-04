@@ -646,10 +646,12 @@ export default function EmployeesPage() {
         groups={groups}
         isLoading={isSubmitting}
         isAdmin={isSuperuser}
-        onChangePassword={async (employeeId, newPassword, confirmPassword) => {
+        onChangePassword={async (employeeId, newPassword, confirmPassword, reasonCode, reasonDetail) => {
           await apiClient.post(`/api/accounts/employees/${employeeId}/change-password/`, {
             new_password: newPassword,
             confirm_password: confirmPassword,
+            reason_code: reasonCode,
+            reason_detail: reasonDetail,
           });
           showToast(t('employees.messages.passwordChangeSuccess'));
         }}

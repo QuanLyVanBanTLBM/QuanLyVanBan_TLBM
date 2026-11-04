@@ -78,6 +78,29 @@ describe('ResourceDetailModal Component', () => {
     expect(screen.getByText(/Văn bản này hiện đã hết hiệu lực thi hành/i)).toBeInTheDocument();
   });
 
+  it('renders expired banner with fallback date and displays Expiration Date row even when ngay_het_hieu_luc is not set', () => {
+    const expiredDocWithoutExpDate: ResourceItem = {
+      ...baseDoc,
+      hieu_luc: 'HET_HIEU_LUC',
+      ngay_dang: '2026-05-15',
+      ngay_het_hieu_luc: null,
+    };
+
+    render(
+      <ResourceDetailModal
+        isOpen={true}
+        onClose={vi.fn()}
+        item={expiredDocWithoutExpDate}
+      />
+    );
+
+    // Banner hiển thị ngày hết hiệu lực
+    expect(screen.getByText(/Văn bản này hiện đã hết hiệu lực thi hành/i)).toBeInTheDocument();
+    // Grid thông tin chung luôn hiển thị nhãn Ngày hết hiệu lực
+    expect(screen.getByText('Ngày hết hiệu lực')).toBeInTheDocument();
+    expect(screen.getAllByText('15/05/2026').length).toBeGreaterThan(0);
+  });
+
   it('opens PDF or image attachment in a new tab when clicking preview', async () => {
     const docWithPdf: ResourceItem = {
       ...baseDoc,

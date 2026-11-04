@@ -5,6 +5,22 @@ import { MemoryRouter } from 'react-router-dom';
 import ConfidentialDocumentPage from './ConfidentialDocumentPage';
 import * as apiClientModule from '@lib/apiClient';
 import { DocumentItem } from '@app-types/document';
+import { resetPermissionsCache } from '@lib/permissions';
+
+const ALL_DOC_PERMS = [
+  'view_vanbanden',
+  'add_vanbanden',
+  'change_vanbanden',
+  'delete_vanbanden',
+  'import_vanbanden',
+  'export_vanbanden',
+  'view_vanbandi',
+  'add_vanbandi',
+  'change_vanbandi',
+  'delete_vanbandi',
+  'import_vanbandi',
+  'export_vanbandi',
+];
 
 vi.mock('@lib/apiClient', async () => {
   const actual = await vi.importActual<typeof apiClientModule>('@lib/apiClient');
@@ -66,8 +82,15 @@ const mockConfidentialDocuments: DocumentItem[] = [
 describe('ConfidentialDocumentPage Component (Phân hệ Văn bản Mật)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetPermissionsCache();
 
-    mockedApiClient.get.mockImplementation(async (url: string) => {
+    const handleCall = async (url: string) => {
+      if (url.includes('/auth/me/permissions/')) {
+        return {
+          is_superuser: false,
+          permissions: ALL_DOC_PERMS,
+        };
+      }
       if (url.includes('/api/documents/years/')) {
         return [2026, 2025];
       }
@@ -101,7 +124,10 @@ describe('ConfidentialDocumentPage Component (Phân hệ Văn bản Mật)', () 
         return [];
       }
       return { count: 0, results: [] };
-    });
+    };
+
+    mockedApiClient.mockImplementation(handleCall as unknown as typeof apiClientModule.apiClient);
+    mockedApiClient.get.mockImplementation(handleCall);
   });
 
   it('renders header, security notice banner, and document table', async () => {
@@ -182,7 +208,7 @@ describe('ConfidentialDocumentPage Component (Phân hệ Văn bản Mật)', () 
       </MemoryRouter>
     );
 
-    const addBtn = screen.getByRole('button', { name: /Thêm mới/i });
+    const addBtn = await screen.findByRole('button', { name: /Thêm mới/i });
     fireEvent.click(addBtn);
 
     await waitFor(() => {
@@ -197,7 +223,7 @@ describe('ConfidentialDocumentPage Component (Phân hệ Văn bản Mật)', () 
       </MemoryRouter>
     );
 
-    const importBtn = screen.getByRole('button', { name: /(Import Excel|Nhập Excel)/i });
+    const importBtn = await screen.findByRole('button', { name: /(Import Excel|Nhập Excel)/i });
     fireEvent.click(importBtn);
 
     await waitFor(() => {

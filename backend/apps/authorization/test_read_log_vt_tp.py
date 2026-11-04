@@ -34,8 +34,8 @@ class ReadLogPermissionTest(TestCase):
         for codename in READ_LOG:
             self.assertNotIn(codename, GROUP_PERMISSIONS["Văn thư"])
             self.assertNotIn(codename, GROUP_PERMISSIONS["Trưởng phòng"])
-        self.assertEqual(len(GROUP_PERMISSIONS["Văn thư"]), 40)
-        self.assertEqual(len(GROUP_PERMISSIONS["Trưởng phòng"]), 27)
+        self.assertEqual(len(GROUP_PERMISSIONS["Văn thư"]), 27)
+        self.assertEqual(len(GROUP_PERMISSIONS["Trưởng phòng"]), 26)
 
     def test_seed_keeps_read_log_for_bgd_admin_tlbgd_kt(self):
         for codename in READ_LOG:

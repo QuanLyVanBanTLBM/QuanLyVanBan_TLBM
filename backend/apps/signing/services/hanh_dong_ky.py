@@ -1,11 +1,10 @@
 """
 Hành động người ký — Phase 8 (#80; plan mục 3.2, 3.4 "Chữ ký", 5.3, 6.2).
 
-- ky: ký Ed25519 trên raw bytes của SHA-256 tệp đã khóa ở lượt trình; mở ký chính khi ký nháy chặn đã
-  ký đủ, đóng cấp khi mọi người ký trong cấp đã ký, mở cấp sau hoặc hoàn thành lượt trình và hồ sơ.
+- ky: ký Ed25519 trên raw bytes của SHA-256 tệp đã khóa ở lượt trình; đóng cấp khi mọi người ký trong cấp
+  đã ký, mở cấp sau hoặc hoàn thành lượt trình và hồ sơ.
 - tu_choi: "không đồng ý ban hành", bắt buộc lý do; lượt trình và hồ sơ TU_CHOI (kết thúc).
-- thu_hoi: khi cấp của người ký còn mở và lượt chưa hoàn thành; ký nháy chặn không thu hồi được khi
-  ký chính cùng cấp đã ký; ký chính đã mở nhưng chưa ký thì bị khóa lại.
+- thu_hoi: khi cấp của người ký còn mở và lượt chưa hoàn thành.
 
 Mọi hành động trên một lượt trình khóa dòng lượt trình trước (select_for_update) nên các thao tác đồng
 thời (ký – ký, ký – từ chối, ký – hủy) được xử lý tuần tự; chỉ một kết quả hợp lệ. Chống thao tác lặp
@@ -27,7 +26,7 @@ from ..models import (
 from ..permissions import KY_TRINH_KY, co_quyen
 from ..storage import StorageError, get_storage
 from ..tich_hop import to_chuc
-from . import tep_hoan_tat, thong_bao, uy_quyen
+from . import keys, mfa_ky, quyen_ky, tep_hoan_tat, thong_bao
 from .audit import ghi_nhat_ky
 from .bang_chung import chot_bang_chung
 from .trinh_ky import dung_cap_dang_mo, luot_hien_hanh, mo_cap, mo_nguoi_ky_trong_cap
@@ -71,6 +70,7 @@ def _nguoi_ky_hien_hanh(nguoi):
     if nguoi_hien_hanh is None or not co_quyen(nguoi_hien_hanh, KY_TRINH_KY):
         raise SigningError(code="khong_co_quyen", detail="Tài khoản không còn quyền ký.",
                            status_code=status.HTTP_403_FORBIDDEN)
+    quyen_ky.kiem_tra_duoc_ky(nguoi_hien_hanh)
     return nguoi_hien_hanh
 
 
@@ -86,7 +86,7 @@ def _hoan_tat_neu_du(luot, cap, nguoi, thoi_diem):
     """Đóng cấp khi mọi người ký trong cấp đã ký; mở cấp sau hoặc hoàn thành lượt trình và hồ sơ."""
     con_cho = cap.nguoi_ky_set.exclude(trang_thai=enums.TrangThaiNguoiKy.DA_KY).exists()
     if con_cho:
-        mo_nguoi_ky_trong_cap(cap, thoi_diem)  # ký nháy chặn vừa ký đủ thì mở ký chính
+        mo_nguoi_ky_trong_cap(cap, thoi_diem)
         return
     cap.trang_thai = enums.TrangThaiCapKy.HOAN_THANH
     cap.thoi_diem_hoan_thanh = thoi_diem
@@ -114,16 +114,17 @@ def _hoan_tat_neu_du(luot, cap, nguoi, thoi_diem):
 def _chup_anh_chu_ky(nguoi):
     """
     Snapshot ảnh chữ ký cá nhân tại thời điểm ký (plan mục 3.2): đổi ảnh trong hồ sơ sau đó không làm đổi tệp
-    hoàn tất. Chưa có ảnh (Nhóm 7 chưa cung cấp) hoặc không lưu được thì ký vẫn hợp lệ, tệp hoàn tất in khối chữ.
+    hoàn tất. Ảnh lấy từ máy chủ qua `to_chuc.anh_chu_ky`; chưa có ảnh thì không cho ký (#459).
     """
     anh = to_chuc.anh_chu_ky(nguoi)
     if not anh:
-        return "", ""
+        raise SigningError(code="chua_co_anh_chu_ky", detail="Chưa có ảnh chữ ký cá nhân; tải ảnh lên trước khi ký.",
+                           fields={"anh_chu_ky": ["Chưa có ảnh chữ ký cá nhân."]})
     try:
         meta = get_storage().save_bytes(anh, THU_MUC_ANH_CHU_KY, "png")
-    except (StorageError, OSError):
+    except (StorageError, OSError) as exc:
         logger.exception("Không lưu được snapshot ảnh chữ ký của người dùng %s", nguoi.pk)
-        return "", ""
+        raise SigningError(code="loi_luu_tep", detail="Không lưu được ảnh chữ ký lúc ký.") from exc
     return meta.vi_tri_luu_tep, crypto.sha256_hex(anh)
 
 
@@ -139,8 +140,16 @@ def _kiem_tra_khoa(nguoi, khoa_ky_id, thoi_diem):
     return khoa
 
 
+def ky(yeu_cau, nguoi, *, phien_mfa=None, **kwargs):
+    # Cờ MFA bật thì phiên (access token) phải đã xác thực mã email; kiểm trước mọi thao tác ghi (#509).
+    mfa_ky.kiem_tra_da_xac_thuc(nguoi, phien_mfa)
+    # Chuyển HET_HAN ở transaction riêng để trạng thái vẫn được lưu khi bước ký bị từ chối (#488).
+    keys.chuyen_het_han(nguoi)
+    return _ky(yeu_cau, nguoi, **kwargs)
+
+
 @transaction.atomic
-def ky(yeu_cau, nguoi, *, khoa_ky, hash_tai_lieu, chu_ky_so, khoa_chong_trung, ghi_chu_ky="", dia_chi_ip=None):
+def _ky(yeu_cau, nguoi, *, khoa_ky, hash_tai_lieu, chu_ky_so, khoa_chong_trung, ghi_chu_ky="", dia_chi_ip=None):
     if _thao_tac_lap(yeu_cau, nguoi, khoa_chong_trung):
         return SigningRequest.objects.get(pk=yeu_cau.pk)  # ký lặp cùng khóa: trả kết quả lần trước
     luot = _khoa_luot_hien_hanh(yeu_cau)
@@ -148,7 +157,6 @@ def ky(yeu_cau, nguoi, *, khoa_ky, hash_tai_lieu, chu_ky_so, khoa_chong_trung, g
         return SigningRequest.objects.get(pk=yeu_cau.pk)
     dong = _dong_cua_toi(luot, nguoi)
     nguoi = _nguoi_ky_hien_hanh(nguoi)
-    uy_quyen.kiem_tra_tham_quyen_ky(dong, nguoi)
     thoi_diem = timezone.now()
     khoa = _kiem_tra_khoa(nguoi, khoa_ky, thoi_diem)
     if hash_tai_lieu != luot.ma_bam_tai_lieu:
@@ -230,29 +238,13 @@ def thu_hoi(yeu_cau, nguoi, *, khoa_chong_trung, dia_chi_ip=None):
     if dong.buoc_ky.trang_thai != enums.TrangThaiCapKy.DANG_KY:
         raise ConflictError(code="cap_da_dong_khong_thu_hoi",
                             detail="Cấp ký đã đóng và luồng đã sang cấp sau; muốn sửa hãy trả lại để sửa.")
-    cap = SigningRequestStep.objects.select_for_update().get(pk=dong.buoc_ky_id)
-    nguoi_cap = list(cap.nguoi_ky_set.select_for_update())
-    if dong.vai_tro_ky == enums.VaiTroKy.KY_NHAY and dong.chan_ky_chinh and any(
-        n.vai_tro_ky == enums.VaiTroKy.KY_CHINH and n.trang_thai == enums.TrangThaiNguoiKy.DA_KY for n in nguoi_cap
-    ):
-        raise ConflictError(code="ky_chinh_da_ky",
-                            detail="Không thể thu hồi vì cấp ký chính đã ký sau cấu hình ký cũ này.")
+    SigningRequestStep.objects.select_for_update().get(pk=dong.buoc_ky_id)
     chu_ky_cu = dong.chu_ky_hien_hanh_id
     dong.trang_thai = enums.TrangThaiNguoiKy.CHO_KY
     dong.ngay_ky = None
     dong.chu_ky_hien_hanh = None
     dong.khoa_chong_trung_thao_tac = khoa_chong_trung
     dong.save(update_fields=["trang_thai", "ngay_ky", "chu_ky_hien_hanh", "khoa_chong_trung_thao_tac"])
-    if dong.vai_tro_ky == enums.VaiTroKy.KY_NHAY and dong.chan_ky_chinh:
-        # Ký nháy chặn quay về chờ ký: khóa lại ký chính đã mở mà chưa ký (plan LUONG-08)
-        for n in nguoi_cap:
-            if (
-                n.vai_tro_ky == enums.VaiTroKy.KY_CHINH
-                and n.trang_thai == enums.TrangThaiNguoiKy.CHO_KY
-                and n.thoi_diem_mo is not None
-            ):
-                n.thoi_diem_mo = None
-                n.save(update_fields=["thoi_diem_mo"])
     ghi_nhat_ky(nguoi, LOAI, dong.pk, "THU_HOI_CHU_KY", trinh_ky=yeu_cau, luot_trinh=luot, buoc_ky=dong,
                 trang_thai_truoc=enums.TrangThaiNguoiKy.DA_KY, trang_thai_sau=dong.trang_thai,
                 dia_chi_ip=dia_chi_ip, du_lieu_kem_theo={"chu_ky_thu_hoi": chu_ky_cu})

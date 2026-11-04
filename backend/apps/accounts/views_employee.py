@@ -23,7 +23,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import Employee, EmployeeAssignment, EmployeeImportJob
+from .models import Employee, EmployeeAssignment, EmployeeImportJob, EmployeePasswordResetAudit
 from .serializers import (
     GroupSimpleSerializer,
     EmployeeSerializer,
@@ -72,7 +72,7 @@ def _save_employee_import_upload(upload, job_id):
     file_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         try:
-            file_path.parent.chmod(0o700)
+            file_path.parent.chmod(0o755)
         except OSError:
             # Windows applies ACLs; production uses the owning service account on a private path.
             pass
@@ -80,7 +80,7 @@ def _save_employee_import_upload(upload, job_id):
             for chunk in upload.chunks():
                 destination.write(chunk)
         try:
-            file_path.chmod(0o600)
+            file_path.chmod(0o644)
         except OSError:
             pass
         return relative_path
@@ -517,8 +517,17 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             context={"employee": employee},
         )
         serializer.is_valid(raise_exception=True)
-        employee.set_password(serializer.validated_data["new_password"])
-        employee.save(update_fields=["password"])
+        with transaction.atomic():
+            employee.set_password(serializer.validated_data["new_password"])
+            employee.save(update_fields=["password"])
+            EmployeePasswordResetAudit.objects.create(
+                actor=request.user,
+                target=employee,
+                actor_username=request.user.get_username(),
+                target_username=employee.get_username(),
+                reason_code=serializer.validated_data["reason_code"],
+                reason_detail=serializer.validated_data["reason_detail"],
+            )
         return Response(
             {"detail": "employees.messages.passwordChangeSuccess"},
             status=status.HTTP_200_OK,

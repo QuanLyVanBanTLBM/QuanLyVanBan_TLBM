@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from '@i18n/translate';
 import { useIsMobile } from '../hooks/useIsMobile';
 
 /**
@@ -43,6 +44,7 @@ export default function WorkModal({
   closeOnOverlayClick = false,
   busy = false,
 }: WorkModalProps) {
+  const { t } = useTranslation();
   const isMobile = useIsMobile();
 
   useEffect(() => {
@@ -124,7 +126,7 @@ export default function WorkModal({
             type="button"
             onClick={onClose}
             disabled={busy}
-            aria-label="Đóng"
+            aria-label={t('work.common.close')}
             style={{
               background: 'transparent',
               border: 'none',

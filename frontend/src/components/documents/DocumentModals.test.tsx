@@ -269,7 +269,7 @@ describe('DocumentFormModal', () => {
 
     // Toggles
     expect(screen.getByText('Hiển thị trên hệ thống')).toBeInTheDocument();
-    expect(screen.getByText('Gửi email toàn trường')).toBeInTheDocument();
+    expect(screen.getByText('Gửi email toàn hệ thống')).toBeInTheDocument();
 
     await waitFor(() => {
       expect(screen.getByText('-- Chọn đơn vị nhận --')).toBeInTheDocument();

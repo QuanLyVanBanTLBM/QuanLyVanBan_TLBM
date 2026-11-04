@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { t as tModule, useTranslation } from '@i18n/translate';
 import { toMessage } from '../api/client';
 import { getMe } from '../api/employees';
 import { approveTask, createComment, deleteEvidence, listComments, openTask, unapproveTask } from '../api/taskActions';
@@ -31,29 +32,20 @@ type PendingAction = { type: 'approve' } | { type: 'unapprove' } | { type: 'dele
 function statusNotice(task: TaskDetail): { variant: WorkAlertVariant; message: string } {
   switch (task.status) {
     case 'CHO_XU_LY':
-      return { variant: 'info', message: 'Người thực hiện chưa mở công việc này.' };
+      return { variant: 'info', message: tModule('work.taskDetail.statusNotice.CHO_XU_LY') };
     case 'DANG_XU_LY':
-      return {
-        variant: 'info',
-        message: 'Đang xử lý. Khi làm xong, người chủ trì hoặc cán bộ tham gia gửi ý kiến kèm file kết quả để chuyển sang Chờ duyệt.',
-      };
+      return { variant: 'info', message: tModule('work.taskDetail.statusNotice.DANG_XU_LY') };
     case 'CHO_DUYET':
-      return {
-        variant: 'warning',
-        message: 'Đã có file kết quả, đang chờ người tạo, người chủ trì hoặc người chỉ đạo duyệt.',
-      };
+      return { variant: 'warning', message: tModule('work.taskDetail.statusNotice.CHO_DUYET') };
     case 'HOAN_THANH':
-      return { variant: 'success', message: 'Công việc đã được duyệt hoàn thành.' };
+      return { variant: 'success', message: tModule('work.taskDetail.statusNotice.HOAN_THANH') };
     default:
-      return {
-        variant: 'danger',
-        message:
-          'Công việc đã hết hạn khi chưa có file kết quả nên đã bị khóa: không ghi ý kiến, không nộp kết quả, không sửa được. Nếu vẫn cần thực hiện, hãy đề nghị người tạo giao công việc mới.',
-      };
+      return { variant: 'danger', message: tModule('work.taskDetail.statusNotice.frozen') };
   }
 }
 
 export default function TaskDetailPage({ taskId, onBack }: TaskDetailPageProps) {
+  const { t } = useTranslation();
   const isMobile = useIsMobile();
   const [task, setTask] = useState<TaskDetail | null>(null);
   const [comments, setComments] = useState<TaskComment[]>([]);
@@ -114,11 +106,11 @@ export default function TaskDetailPage({ taskId, onBack }: TaskDetailPageProps) 
       const detail = await refresh();
       setActionError('');
       if (files.length && before !== 'CHO_DUYET' && detail.status === 'CHO_DUYET') {
-        setNotice(`Đã gửi ý kiến kèm ${files.length} file kết quả. Công việc chuyển sang Chờ duyệt.`);
+        setNotice(t('work.comments.sentWithFilesChangedNotice', { count: String(files.length) }));
       } else if (files.length) {
-        setNotice(`Đã gửi ý kiến kèm ${files.length} file kết quả.`);
+        setNotice(t('work.comments.sentWithFilesNotice', { count: String(files.length) }));
       } else {
-        setNotice('Đã gửi ý kiến.');
+        setNotice(t('work.comments.sentNotice'));
       }
       return null;
     } catch (cause) {
@@ -134,13 +126,13 @@ export default function TaskDetailPage({ taskId, onBack }: TaskDetailPageProps) 
     try {
       if (pending.type === 'approve') {
         await approveTask(taskId);
-        setNotice('Đã duyệt hoàn thành công việc.');
+        setNotice(t('work.taskDetail.approvedNotice'));
       } else if (pending.type === 'unapprove') {
         await unapproveTask(taskId);
-        setNotice('Đã hủy duyệt. Công việc quay về trạng thái Chờ duyệt.');
+        setNotice(t('work.taskDetail.unapprovedNotice'));
       } else {
         await deleteEvidence(taskId, pending.file.id);
-        setNotice(`Đã xóa file "${pending.file.fileName}". Ý kiến chứa file vẫn được giữ lại.`);
+        setNotice(t('work.taskDetail.deletedFileNotice', { fileName: pending.file.fileName }));
       }
       setActionError('');
     } catch (cause) {
@@ -155,7 +147,7 @@ export default function TaskDetailPage({ taskId, onBack }: TaskDetailPageProps) 
   if (!loaded) {
     return (
       <div style={{ padding: '48px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-        <i className="fa-solid fa-circle-notch fa-spin" /> Đang tải chi tiết công việc...
+        <i className="fa-solid fa-circle-notch fa-spin" /> {t('work.taskDetail.loadingDetail')}
       </div>
     );
   }
@@ -163,7 +155,7 @@ export default function TaskDetailPage({ taskId, onBack }: TaskDetailPageProps) 
   if (!task) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-        <WorkAlert variant="danger" title="Không mở được công việc" message={loadError} />
+        <WorkAlert variant="danger" title={t('work.taskDetail.loadError')} message={loadError} />
         <div>
           <button
             type="button"
@@ -182,7 +174,7 @@ export default function TaskDetailPage({ taskId, onBack }: TaskDetailPageProps) 
             }}
           >
             <i className="fa-solid fa-arrow-left" />
-            Quay lại danh sách
+            {t('work.common.backToList')}
           </button>
         </div>
       </div>
@@ -204,8 +196,8 @@ export default function TaskDetailPage({ taskId, onBack }: TaskDetailPageProps) 
         <button
           type="button"
           onClick={onBack}
-          aria-label="Quay lại danh sách"
-          title="Quay lại danh sách"
+          aria-label={t('work.common.backToList')}
+          title={t('work.common.backToList')}
           style={{
             width: '36px',
             height: '36px',
@@ -218,7 +210,7 @@ export default function TaskDetailPage({ taskId, onBack }: TaskDetailPageProps) 
         >
           <i className="fa-solid fa-arrow-left" />
         </button>
-        <h1 style={{ fontSize: isMobile ? '1.05rem' : '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>Chi tiết xử lý công việc</h1>
+        <h1 style={{ fontSize: isMobile ? '1.05rem' : '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>{t('work.taskDetail.pageTitle')}</h1>
         <TaskStatusBadge status={task.status} label={task.statusLabel} />
         {!task.isPublic && (
           <span
@@ -235,7 +227,7 @@ export default function TaskDetailPage({ taskId, onBack }: TaskDetailPageProps) 
             }}
           >
             <i className="fa-solid fa-eye-slash" />
-            Đang ẩn
+            {t('work.common.hidden')}
           </span>
         )}
       </div>
@@ -276,21 +268,25 @@ export default function TaskDetailPage({ taskId, onBack }: TaskDetailPageProps) 
         danger={pending?.type === 'deleteFile'}
         title={
           pending?.type === 'approve'
-            ? 'Duyệt hoàn thành công việc'
+            ? t('work.taskDetail.confirmApproveTitle')
             : pending?.type === 'unapprove'
-              ? 'Hủy duyệt công việc'
-              : 'Xóa file kết quả'
+              ? t('work.taskDetail.confirmUnapproveTitle')
+              : t('work.taskDetail.confirmDeleteFileTitle')
         }
         confirmLabel={
-          pending?.type === 'approve' ? 'Duyệt hoàn thành' : pending?.type === 'unapprove' ? 'Hủy duyệt' : 'Xóa file'
+          pending?.type === 'approve'
+            ? t('work.taskDetail.confirmApproveLabel')
+            : pending?.type === 'unapprove'
+              ? t('work.taskDetail.confirmUnapproveLabel')
+              : t('work.taskDetail.confirmDeleteFileLabel')
         }
         message={
           pending?.type === 'approve'
-            ? 'Xác nhận công việc đã hoàn thành? Sau khi duyệt, người thực hiện không nộp thêm hay xóa file kết quả được, trừ khi hủy duyệt.'
+            ? t('work.taskDetail.confirmApproveMessage')
             : pending?.type === 'unapprove'
-              ? 'Hủy duyệt sẽ đưa công việc về trạng thái Chờ duyệt để người thực hiện bổ sung kết quả. Có thể duyệt lại sau.'
+              ? t('work.taskDetail.confirmUnapproveMessage')
               : pending?.type === 'deleteFile'
-                ? `Xóa file "${pending.file.fileName}"? Ý kiến chứa file vẫn được giữ lại. Thao tác này không hoàn tác được.`
+                ? t('work.taskDetail.confirmDeleteFileMessage', { fileName: pending.file.fileName })
                 : ''
         }
         onCancel={() => setPending(null)}

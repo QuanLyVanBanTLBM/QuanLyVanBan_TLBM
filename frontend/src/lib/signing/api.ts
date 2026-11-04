@@ -6,7 +6,7 @@
 import apiClient, { ApiError } from '@lib/apiClient';
 import { resolveDocumentApiUrl } from '@lib/routes';
 import type {
-  BangChung, BoLocHoSo, BoLocTaiLieu, CanBo, CanBoChucVu, ChucVu, DonViApDungHoSo, DonViLuaChon, TepTaiLieu, ThongKeHoSo, HoSo, HoSoChiTiet, KhoaKy, LoiNghiepVu, NguoiDungHienTai, QuyTrinh,
+  BangChung, BoLocHoSo, BoLocTaiLieu, CanBo, CanBoChucVu, ChucVu, DonViApDungHoSo, DonViLuaChon, TepTaiLieu, ThongKeHoSo, UngVienThayNguoiKy, HoSo, HoSoChiTiet, KhoaKy, LoiNghiepVu, NguoiDungHienTai, QuanTriNguoiDung, QuyTrinh, ThoiHanKhoaQuyenKy, ThongTinAnhChuKyCaNhan,
   ThamSoKdf, TinNhan, TrangKetQua, TraoDoi, VanBanDi, VanBanDiTepDinhKem, ViTriKy,
 } from './types';
 
@@ -39,6 +39,24 @@ export function docLoi(err: unknown): LoiNghiepVu & { status: number } {
     return { status: err.status, code: data.code, detail: data.detail || err.message, fields: data.fields };
   }
   return { status: 0, detail: err instanceof Error ? err.message : String(err) };
+}
+
+/**
+ * HTTP 429: thời điểm được thử lại (`fields.thu_lai_sau` ISO) do máy chủ trả; null khi không phải 429
+ * hoặc máy chủ không nêu thời điểm.
+ */
+export function thoiDiemThuLai(err: unknown): Date | null {
+  const l = docLoi(err);
+  if (l.status !== 429) return null;
+  const gia_tri = (l.fields as Record<string, unknown[]> | undefined)?.thu_lai_sau?.[0];
+  const thoi_diem = typeof gia_tri === 'string' ? new Date(gia_tri) : null;
+  return thoi_diem && !Number.isNaN(thoi_diem.getTime()) ? thoi_diem : null;
+}
+
+/** Số giây còn phải chờ theo phản hồi 429 (làm tròn lên, tối thiểu 0); 0 khi không có thông tin. */
+export function giayChoThuLai(err: unknown, bay_gio: number = Date.now()): number {
+  const thoi_diem = thoiDiemThuLai(err);
+  return thoi_diem ? Math.max(0, Math.ceil((thoi_diem.getTime() - bay_gio) / 1000)) : 0;
 }
 
 async function layBlobMotLan(duong_dan: string): Promise<Response> {
@@ -93,6 +111,13 @@ export const signingApi = {
     apiClient.post<HoSoChiTiet>(`${SIGNING_BASE}/trinh-ky/${id}/gui/`, { chon_nguoi_ky, vi_tri_ky }, tieuDe(khoa)),
   huy: (id: number, khoa: string, ly_do: string) =>
     apiClient.post<HoSoChiTiet>(`${SIGNING_BASE}/trinh-ky/${id}/huy/`, { ly_do }, tieuDe(khoa)),
+  /** Tài khoản có thể thay người ký `nguoiKyId`: đã lọc theo quyền ký, khóa quyền ký, cấp và thứ bậc chức vụ. */
+  ungVienThayNguoiKy: (id: number, nguoiKyId: number, q: string) =>
+    apiClient.get<UngVienThayNguoiKy[]>(
+      `${SIGNING_BASE}/trinh-ky/${id}/thay-nguoi-ky/?nguoi_ky_id=${nguoiKyId}&q=${encodeURIComponent(q)}`),
+  /** Người tạo hoặc quản trị viên thay người ký đang chờ có quyền ký bị khóa; bắt buộc lý do. */
+  thayNguoiKy: (id: number, body: { nguoi_ky_id: number; nguoi_ky_moi_id: number; ly_do: string }) =>
+    apiClient.post<HoSoChiTiet>(`${SIGNING_BASE}/trinh-ky/${id}/thay-nguoi-ky/`, body),
   trinhLai: (id: number, khoa: string) =>
     apiClient.post<HoSoChiTiet>(`${SIGNING_BASE}/trinh-ky/${id}/trinh-lai/`, {}, tieuDe(khoa)),
 
@@ -142,6 +167,9 @@ export const signingApi = {
    * phạm vi khác (không phải toàn bộ CBNV), tự chuyển sang khi thiếu quyền sẽ hiện một danh sách ngắn hơn mà
    * người dùng tưởng là toàn bộ cán bộ nhân viên. Lỗi 403 được báo thật để người dùng biết cần cấp quyền.
    */
+  /** Id tài khoản đang hoạt động có quyền ký (`sign_trinhky`); cần quyền quản lý quy trình. */
+  nguoiKyCoQuyen: () => apiClient.get<{ ids: number[] }>('/api/v1/signing/nguoi-ky-co-quyen/').then((r) => r.ids),
+
   danhBaCanBo: () =>
     apiClient
       .get<CanBo[] | { results?: CanBo[] }>('/api/accounts/employees/?all=true')
@@ -218,12 +246,45 @@ export const signingApi = {
   timVanBanDi: (q: string) => apiClient.get<VanBanDi[]>(`${SIGNING_BASE}/van-ban-di/?q=${encodeURIComponent(q)}`),
 
   // ── Khóa ký, PIN ─────────────────────────────────────────────────────────
+  // ── Ảnh chữ ký cá nhân (Issue #424) ──────────────────────────────────────
+  anhChuKyCaNhan: () => apiClient.get<ThongTinAnhChuKyCaNhan>(`${SIGNING_BASE}/anh-chu-ky-ca-nhan/`),
+  taiLenAnhChuKy: (tep: Blob | File | string) => {
+    if (typeof tep === 'string') {
+      return apiClient.post<ThongTinAnhChuKyCaNhan>(`${SIGNING_BASE}/anh-chu-ky-ca-nhan/`, {
+        du_lieu_base64: tep,
+      });
+    }
+    const form = new FormData();
+    form.append('tep', tep, 'signature.png');
+    return postForm<ThongTinAnhChuKyCaNhan>('/anh-chu-ky-ca-nhan/', form);
+  },
+  xoaAnhChuKy: () => apiClient.delete<void>(`${SIGNING_BASE}/anh-chu-ky-ca-nhan/`),
+
+  // ── Quản trị khóa ký và quyền ký của tài khoản khác (quản trị viên) ──────────
+  quanTriNguoiDung: (q = '') =>
+    apiClient.get<QuanTriNguoiDung[]>(`${SIGNING_BASE}/quan-tri/nguoi-dung/?${new URLSearchParams({ q })}`),
+  quanTriKhoaQuyenKy: (id: number, thoi_han: ThoiHanKhoaQuyenKy, ly_do: string) =>
+    apiClient.post<QuanTriNguoiDung>(`${SIGNING_BASE}/quan-tri/nguoi-dung/${id}/khoa-quyen-ky/`, { thoi_han, ly_do }),
+  quanTriBatLaiQuyenKy: (id: number, ly_do: string) =>
+    apiClient.post<QuanTriNguoiDung>(`${SIGNING_BASE}/quan-tri/nguoi-dung/${id}/bat-lai-quyen-ky/`, { ly_do }),
+  quanTriThuHoiKhoa: (id: number, ly_do: string) =>
+    apiClient.post<QuanTriNguoiDung>(`${SIGNING_BASE}/quan-tri/nguoi-dung/${id}/thu-hoi-khoa/`, { ly_do }),
+
   khoa: () => apiClient.get<KhoaKy[]>(`${SIGNING_BASE}/khoa/`),
   dangKyKhoa: (ma_khoa: string, khoa_cong_khai: string) =>
     apiClient.post<KhoaKy>(`${SIGNING_BASE}/khoa/`, { ma_khoa, khoa_cong_khai, ngay_hieu_luc: new Date().toISOString() }),
   thachThuc: (id: number) => apiClient.get<{ thach_thuc: string }>(`${SIGNING_BASE}/khoa/${id}/thach-thuc/`),
-  xacMinhKhoa: (id: number, chu_ky_so: string) =>
-    apiClient.post<KhoaKy>(`${SIGNING_BASE}/khoa/${id}/xac-minh/`, { chu_ky_so }),
+  xacMinhKhoa: (id: number, thach_thuc: string, chu_ky_so: string) =>
+    apiClient.post<KhoaKy>(`${SIGNING_BASE}/khoa/${id}/xac-minh/`, { thach_thuc, chu_ky_so }),
+  datLaiPinYeuCau: () =>
+    apiClient.post<{ het_han: string; gian_cach_giay: number }>(`${SIGNING_BASE}/dat-lai-pin/yeu-cau/`, {}),
+  datLaiPinXacNhan: (ma: string) =>
+    apiClient.post<{ so_khoa_thu_hoi: number }>(`${SIGNING_BASE}/dat-lai-pin/xac-nhan/`, { ma }),
+  /** MFA khi ký (#509): gửi mã 6 chữ số tới email; `gian_cach_giay` là thời gian tối thiểu giữa hai lần gửi. */
+  mfaKyYeuCau: () =>
+    apiClient.post<{ het_han: string; gian_cach_giay: number }>(`${SIGNING_BASE}/mfa/yeu-cau/`, {}),
+  mfaKyXacMinh: (ma: string) =>
+    apiClient.post<{ da_xac_thuc: boolean; het_han: string }>(`${SIGNING_BASE}/mfa/xac-minh/`, { ma }),
   kichHoatKhoa: (id: number) => apiClient.post<KhoaKy>(`${SIGNING_BASE}/khoa/${id}/kich-hoat/`, {}),
   /** Đổi thiết bị: khóa cũ DA_XOAY_VONG, khóa mới (đã xác minh) thành HOAT_DONG. */
   xoayVongKhoa: (id: number, khoa_moi: number) =>

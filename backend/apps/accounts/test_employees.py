@@ -28,7 +28,13 @@ from rest_framework import status
 from rest_framework.test import APIClient, APITestCase
 
 from organizations.models import KhoiKhuVuc, DonVi
-from accounts.models import Employee, EmployeeImportJob, Position, EmployeeAssignment
+from accounts.models import (
+    Employee,
+    EmployeeImportJob,
+    EmployeePasswordResetAudit,
+    Position,
+    EmployeeAssignment,
+)
 from accounts.excel_cbnv import import_cbnv_from_excel
 from accounts.views_employee import _run_employee_import_job
 
@@ -91,7 +97,7 @@ class EmployeeBaseTestCase(APITestCase):
             username="normal_user",
             email="normal@donvi.gov.vn",
             password="NormalPassword123",
-            ho_ten="Nguyễn Văn Bình",
+            ho_ten="Nguyễn Văn Bình kiểm thử",
             ngay_sinh=date(1995, 5, 20),
             don_vi=self.don_vi_1,
             chuc_vu=self.cv_chuyen_vien,
@@ -232,11 +238,11 @@ class EmployeeCRUDAndFilterTests(EmployeeBaseTestCase):
         """Tìm kiếm CBNV theo tên, email, sđt."""
         self.client.force_authenticate(user=self.admin_user)
         # Tìm theo tên
-        res = self.client.get(f"{self.employee_list_url}?search=Bình")
+        res = self.client.get(f"{self.employee_list_url}?search=Bình kiểm thử")
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         results = res.json()["results"]
         self.assertEqual(len(results), 1)
-        self.assertEqual(results[0]["ho_ten"], "Nguyễn Văn Bình")
+        self.assertEqual(results[0]["ho_ten"], "Nguyễn Văn Bình kiểm thử")
 
         # Tìm theo SĐT
         res_phone = self.client.get(f"{self.employee_list_url}?search=0987654321")
@@ -366,8 +372,12 @@ class EmployeeCRUDAndFilterTests(EmployeeBaseTestCase):
         self.client.force_authenticate(user=self.admin_user)
         self.normal_user.trang_thai = Employee.Status.NGHI_VIEC
         self.normal_user.save()
-        res = self.client.get(f"{self.employee_list_url}?trang_thai=NGHI_VIEC")
-        self.assertEqual([item["username"] for item in res.json()["results"]], ["normal_user"])
+        res = self.client.get(f"{self.employee_list_url}?trang_thai=NGHI_VIEC&all=true")
+        expected = set(
+            User.objects.filter(trang_thai=Employee.Status.NGHI_VIEC)
+            .values_list("username", flat=True)
+        )
+        self.assertEqual({item["username"] for item in res.json()}, expected)
 
 
 class EmployeeSecurityAndPrivacyTests(EmployeeBaseTestCase):
@@ -1186,6 +1196,12 @@ class EmployeePermissionSecurityTests(EmployeeBaseTestCase):
         """Password reset chỉ dành cho admin; RBAC change_full không đủ quyền."""
         url = f"{self.employee_list_url}{self.normal_user.id}/change-password/"
         new_password = "Secure-Reset-Password-42!"
+        valid_payload = {
+            "new_password": new_password,
+            "confirm_password": new_password,
+            "reason_code": EmployeePasswordResetAudit.Reason.OTHER,
+            "reason_detail": "Yêu cầu hỗ trợ đã xác minh",
+        }
         self.normal_user.user_permissions.add(self.perm_change_full)
 
         self.client.force_authenticate(user=self.normal_user)
@@ -1201,21 +1217,65 @@ class EmployeePermissionSecurityTests(EmployeeBaseTestCase):
         self.client.force_authenticate(user=self.admin_user)
         mismatch = self.client.post(
             url,
-            {"new_password": new_password, "confirm_password": "Different-Password-43!"},
+            {
+                **valid_payload,
+                "confirm_password": "Different-Password-43!",
+            },
             format="json",
         )
         self.assertEqual(mismatch.status_code, status.HTTP_400_BAD_REQUEST)
         self.normal_user.refresh_from_db()
         self.assertTrue(self.normal_user.check_password("NormalPassword123"))
+        self.assertFalse(EmployeePasswordResetAudit.objects.exists())
+
+        missing_reason = self.client.post(
+            url,
+            {
+                "new_password": new_password,
+                "confirm_password": new_password,
+            },
+            format="json",
+        )
+        self.assertEqual(missing_reason.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(EmployeePasswordResetAudit.objects.exists())
+
+        missing_other_detail = self.client.post(
+            url,
+            {
+                **valid_payload,
+                "reason_detail": "   ",
+            },
+            format="json",
+        )
+        self.assertEqual(missing_other_detail.status_code, status.HTTP_400_BAD_REQUEST)
+        self.normal_user.refresh_from_db()
+        self.assertTrue(self.normal_user.check_password("NormalPassword123"))
+        self.assertFalse(EmployeePasswordResetAudit.objects.exists())
 
         changed = self.client.post(
             url,
-            {"new_password": new_password, "confirm_password": new_password},
+            valid_payload,
             format="json",
         )
         self.assertEqual(changed.status_code, status.HTTP_200_OK)
         self.normal_user.refresh_from_db()
         self.assertTrue(self.normal_user.check_password(new_password))
+        audit = EmployeePasswordResetAudit.objects.get()
+        self.assertEqual(audit.actor_id, self.admin_user.id)
+        self.assertEqual(audit.target_id, self.normal_user.id)
+        self.assertEqual(audit.actor_username, self.admin_user.username)
+        self.assertEqual(audit.target_username, self.normal_user.username)
+        self.assertEqual(audit.reason_code, EmployeePasswordResetAudit.Reason.OTHER)
+        self.assertEqual(audit.reason_detail, "Yêu cầu hỗ trợ đã xác minh")
+        self.assertIsNotNone(audit.created_at)
+        self.assertFalse(hasattr(audit, "password"))
+        self.assertNotIn(new_password, str(audit.__dict__))
+        self.assertNotIn(self.normal_user.password, str(audit.__dict__))
+
+        User.objects.filter(pk=self.normal_user.pk).delete()
+        audit.refresh_from_db()
+        self.assertIsNone(audit.target_id)
+        self.assertEqual(audit.target_username, "normal_user")
 
     def test_change_self_cannot_escalate_privileges_or_modify_admin_fields(self):
         """
@@ -2093,11 +2153,10 @@ class EmployeeDefaultGroupAssignmentTests(EmployeeBaseTestCase):
         self.assertEqual(assigned_codes, {"CV", "TLBGD"})
 
     def test_single_group_positions_auto_assign(self):
-        """Các chức vụ gán 1 nhóm quyền: Quản trị viên -> ADMIN, Tổng Giám đốc -> BGD, Trưởng phòng -> TP, Chuyên viên -> CV, Văn thư -> VT."""
+        """Các chức vụ gán 1 nhóm quyền: Tổng Giám đốc -> BGD, Trưởng phòng -> TP, Chuyên viên -> CV, Văn thư -> VT."""
         from authorization.models import GroupInfo
 
         cases = [
-            ("Quản trị viên", "ADMIN"),
             ("Tổng Giám đốc", "BGD"),
             ("Chủ tịch HĐQT", "BGD"),
             ("Giám đốc Khối", "TP"),
@@ -2185,17 +2244,132 @@ class EmployeeDefaultGroupAssignmentTests(EmployeeBaseTestCase):
 
     def test_group_not_exist_in_db_skips_without_500(self):
         """Nhóm trong bảng ánh xạ chưa tồn tại trong DB thì bỏ qua, không trả lỗi 500."""
-        # Xóa nhóm ADMIN khỏi auth_group
+        # Xóa nhóm BGD khỏi auth_group
         with connection.cursor() as cursor:
-            cursor.execute("DELETE FROM auth_group WHERE ma_nhom_quyen = 'ADMIN'")
+            cursor.execute("DELETE FROM auth_group WHERE ma_nhom_quyen = 'BGD'")
 
-        pos = self._create_position("Quản trị viên")
-        emp = self._post_employee("Nguyễn Admin Test", "admin_skip_500@donvi.gov.vn", pos)
+        pos = self._create_position("Tổng Giám đốc")
+        emp = self._post_employee("Nguyễn Bgd Test", "bgd_skip_500@donvi.gov.vn", pos)
         self.assertEqual(emp.groups.count(), 0)
 
         pos_custom = self._create_position("Chức vụ Chưa Định Nghĩa")
         emp_custom = self._post_employee("Nguyễn Tự Do", "custom_pos@donvi.gov.vn", pos_custom)
         self.assertEqual(emp_custom.groups.count(), 0)
+
+    def test_quan_tri_vien_position_does_not_auto_assign_admin(self):
+        """Chức vụ Quản trị viên không tự nhận nhóm ADMIN, kể cả khi người tạo là superuser."""
+        pos = self._create_position("Quản trị viên")
+        emp = self._post_employee("Nguyễn Quản Trị", "qtv_no_auto@donvi.gov.vn", pos)
+        self.assertEqual(emp.groups.count(), 0)
+
+    def _manager_client(self, codename="change_full_cbnv"):
+        from rest_framework.test import APIClient
+
+        manager = User.objects.create_user(
+            username=f"mgr_{codename}",
+            email=f"mgr_{codename}@donvi.gov.vn",
+            password="ManagerPassword123",
+            ho_ten="Trưởng Phòng Quản Lý",
+            ngay_sinh=date(1985, 1, 1),
+            don_vi=self.don_vi_1,
+            chuc_vu=self.cv_truong_phong,
+        )
+        manager.user_permissions.add(*Permission.objects.filter(codename__in=[codename, "add_cbnv"]))
+        client = APIClient()
+        client.force_authenticate(user=manager)
+        return manager, client
+
+    def _create_payload(self, email, pos, group_ids):
+        return {
+            "ho_ten": "Người Mới",
+            "email": email,
+            "ngay_sinh": "1990-01-01",
+            "don_vi_id": self.don_vi_1.id,
+            "chuc_vu_id": pos.id,
+            "nhom_quyen_ids": group_ids,
+        }
+
+    def test_non_admin_cannot_grant_admin_group_on_create(self):
+        admin_group = Group.objects.get(name="Quản trị hệ thống")
+        cv_group = Group.objects.get(name="Chuyên viên")
+        pos = self._create_position("Chuyên viên")
+        _, client = self._manager_client()
+
+        denied = client.post(self.employee_list_url, self._create_payload("deny_admin@donvi.gov.vn", pos, [admin_group.id]), format="json")
+        self.assertEqual(denied.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("employees.messages.adminGroupForbidden", str(denied.data))
+        self.assertFalse(User.objects.filter(email="deny_admin@donvi.gov.vn").exists())
+
+        allowed = client.post(self.employee_list_url, self._create_payload("allow_cv@donvi.gov.vn", pos, [cv_group.id]), format="json")
+        self.assertEqual(allowed.status_code, status.HTTP_201_CREATED)
+
+    def test_admin_group_member_and_superuser_can_grant_admin_group(self):
+        admin_group = Group.objects.get(name="Quản trị hệ thống")
+        pos = self._create_position("Chuyên viên")
+
+        superuser_emp = self._post_employee("Do Superuser", "by_super@donvi.gov.vn", pos, nhom_quyen_ids=[admin_group.id])
+        self.assertTrue(superuser_emp.groups.filter(pk=admin_group.pk).exists())
+
+        admin_member, client = self._manager_client()
+        admin_member.groups.add(admin_group)
+        response = client.post(self.employee_list_url, self._create_payload("by_member@donvi.gov.vn", pos, [admin_group.id]), format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_non_admin_cannot_add_or_remove_admin_group_on_update(self):
+        """Người không phải ADMIN/superuser không đổi được thành viên nhóm ADMIN khi sửa CBNV.
+
+        Từ khi chỉ superuser được sửa CBNV khác, view trả 403 trước; serializer vẫn chặn riêng
+        như lớp bảo vệ thứ hai nên được kiểm thử trực tiếp.
+        """
+        from rest_framework.test import APIRequestFactory
+
+        from accounts.serializers import EmployeeUpdateSerializer
+
+        admin_group = Group.objects.get(name="Quản trị hệ thống")
+        cv_group = Group.objects.get(name="Chuyên viên")
+        pos = self._create_position("Chuyên viên")
+        target = self._post_employee("Mục Tiêu", "target_update@donvi.gov.vn", pos, nhom_quyen_ids=[cv_group.id])
+        url = f"{self.employee_list_url}{target.id}/"
+        manager, client = self._manager_client()
+
+        add = client.patch(url, {"nhom_quyen_ids": [cv_group.id, admin_group.id]}, format="json")
+        self.assertEqual(add.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(target.groups.filter(pk=admin_group.pk).exists())
+
+        request = APIRequestFactory().patch(url)
+        request.user = manager
+        serializer = EmployeeUpdateSerializer(
+            target, data={"nhom_quyen_ids": [cv_group.id, admin_group.id]}, partial=True, context={"request": request}
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("nhom_quyen_ids", serializer.errors)
+
+        target.groups.add(admin_group)
+        serializer = EmployeeUpdateSerializer(
+            target, data={"nhom_quyen_ids": [cv_group.id]}, partial=True, context={"request": request}
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("nhom_quyen_ids", serializer.errors)
+
+        serializer = EmployeeUpdateSerializer(
+            target, data={"nhom_quyen_ids": [admin_group.id, self.group_van_thu.id]}, partial=True, context={"request": request}
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
+    def test_superuser_can_add_admin_group_on_update(self):
+        admin_group = Group.objects.get(name="Quản trị hệ thống")
+        cv_group = Group.objects.get(name="Chuyên viên")
+        pos = self._create_position("Chuyên viên")
+        target = self._post_employee("Mục Tiêu Hai", "target_update2@donvi.gov.vn", pos, nhom_quyen_ids=[cv_group.id])
+
+        response = self.client.patch(
+            f"{self.employee_list_url}{target.id}/",
+            {"nhom_quyen_ids": [cv_group.id, admin_group.id]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(target.groups.filter(pk=admin_group.pk).exists())
 
     def test_manual_group_selection_does_not_auto_assign(self):
         """Có chọn nhóm quyền thủ công thì không tự gán theo chức vụ."""

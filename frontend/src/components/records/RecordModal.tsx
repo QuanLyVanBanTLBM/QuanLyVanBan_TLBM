@@ -103,6 +103,14 @@ function RecordModalForm(props: RecordModalProps) {
       setValidation(t('records.modal.validation.dossierRequired'));
       return;
     }
+    if (mode === 'dossier' && !code.trim()) {
+      setValidation(t('records.modal.validation.referenceRequired'));
+      return;
+    }
+    if (mode === 'dossier' && priority && (!Number.isInteger(Number(priority)) || Number(priority) < 1)) {
+      setValidation(t('records.modal.validation.priorityPositive'));
+      return;
+    }
     if (!name.trim()) {
       setValidation(
         t(
@@ -111,14 +119,6 @@ function RecordModalForm(props: RecordModalProps) {
             : 'records.modal.validation.documentTypeNameRequired'
         )
       );
-      return;
-    }
-    if (mode === 'dossier' && !code.trim()) {
-      setValidation(t('records.modal.validation.referenceRequired'));
-      return;
-    }
-    if (mode === 'dossier' && priority && (!Number.isInteger(Number(priority)) || Number(priority) < 1)) {
-      setValidation(t('records.modal.validation.priorityPositive'));
       return;
     }
 

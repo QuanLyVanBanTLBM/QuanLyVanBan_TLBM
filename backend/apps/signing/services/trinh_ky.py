@@ -3,7 +3,7 @@ Hồ sơ trình ký, lượt trình và snapshot người ký — Phase 7 (#80; 
 
 Vòng đời yêu cầu: NHAP -> CHO_KY (gui) -> HOAN_THANH | TU_CHOI | HUY; NHAP -> HUY.
 TU_CHOI là kết thúc; trình lại tạo yêu cầu mới có `ho_so_goc` trỏ về yêu cầu bị từ chối.
-Cấp ký mở tuần tự theo `thu_tu`; người trong cùng cấp ký song song (ký chính chờ ký nháy chặn).
+Cấp ký mở tuần tự theo `thu_tu`; người trong cùng cấp ký song song.
 """
 
 import io
@@ -19,12 +19,12 @@ from ..errors import ConflictError, SigningError
 from ..models import (
     SigningAttempt, SigningAuditLog, SigningProcess, SigningRequest, SigningRequestStep, SigningRequestStepSigner,
 )
-from ..permissions import HUY_TRINH_KY, XEM_NHAT_KY, co_quyen
+from ..permissions import HUY_TRINH_KY, KY_TRINH_KY, XEM_NHAT_KY, XEM_TAT_CA, co_quyen
 from ..storage import StorageError, get_storage
 from ..tich_hop import to_chuc
-from ..tich_hop.van_ban import kiem_tra_van_ban_trinh_ky
+from ..tich_hop.van_ban import kiem_tra_van_ban_trinh_ky, ma_van_ban_di_xem_duoc
 from . import process as process_service
-from . import thong_bao
+from . import quyen_ky, thong_bao
 from .audit import ghi_nhat_ky
 
 LOAI = "signing_request"
@@ -165,7 +165,6 @@ def _kiem_tra_quy_trinh(quy_trinh, nguoi_tao):
     if not SigningProcess.objects.filter(pk=quy_trinh.pk).filter(process_service.dung_duoc(nguoi_tao)).exists():
         raise _loi("quy_trinh_khong_ap_dung", "Chỉ chọn quy trình công ty hoặc quy trình phòng ban của đơn vị mình.",
                    status.HTTP_403_FORBIDDEN, quy_trinh=["Quy trình không áp dụng cho đơn vị của người trình."])
-    process_service.kiem_tra_khong_co_ky_nhay(quy_trinh)
 
 
 # ── Phạm vi xem ─────────────────────────────────────────────────────────────
@@ -173,16 +172,18 @@ def _kiem_tra_quy_trinh(quy_trinh, nguoi_tao):
 
 def trinh_ky_xem_duoc(nguoi):
     """
-    Người tạo, người ký của bất kỳ lượt trình nào (kể cả người nhận và người giao ủy quyền), người có quyền
-    xem nhật ký trình ký (kiểm toán) xem được hồ sơ. Không mở quyền xem chỉ vì tên tab.
+    Người tạo, người ký của bất kỳ lượt trình nào, người có quyền xem nhật ký trình ký (kiểm toán) xem được hồ sơ.
+    Người có quyền xem tất cả hồ sơ trình ký (`view_all_trinhky`) xem được mọi hồ sơ nháp (chưa gắn văn bản)
+    và hồ sơ gắn văn bản đi mà họ xem được theo quy tắc của module Văn bản (`van_ban_xem_duoc`), nên hồ sơ của
+    văn bản hạn chế không bị lộ. Quyền này chỉ mở việc xem, không mở ký, hủy, trả lại hay sửa.
     """
     queryset = SigningRequest.objects.select_related("quy_trinh", "create_by")
     if co_quyen(nguoi, XEM_NHAT_KY):
         return queryset
-    return queryset.filter(
-        Q(create_by=nguoi) | Q(luot_trinh_set__cap_ky_set__nguoi_ky_set__nguoi_ky=nguoi)
-        | Q(luot_trinh_set__cap_ky_set__nguoi_ky_set__uy_quyen_tu=nguoi)
-    ).distinct()
+    dieu_kien = Q(create_by=nguoi) | Q(luot_trinh_set__cap_ky_set__nguoi_ky_set__nguoi_ky=nguoi)
+    if co_quyen(nguoi, XEM_TAT_CA):
+        dieu_kien |= Q(van_ban_id__isnull=True) | Q(van_ban_id__in=ma_van_ban_di_xem_duoc(nguoi))
+    return queryset.filter(dieu_kien).distinct()
 
 
 def dang_cho_toi_ky(nguoi):
@@ -416,13 +417,15 @@ def _xac_dinh_nguoi_ky(yeu_cau, cau_hinh, chon_nguoi_ky):
         return None, {"loai": "khong_co_ung_vien", "cau_hinh": cau_hinh.pk, "chuc_vu_id": cau_hinh.chuc_vu_id}
     if len(ung_vien) == 1:
         return ung_vien[0], None
+    bi_khoa = quyen_ky.ids_dang_bi_khoa()
     da_chon = chon_nguoi_ky.get(str(cau_hinh.pk))
     for nguoi in ung_vien:
         if nguoi.pk == da_chon:
             return nguoi, None
     return None, {
         "loai": "can_chon_nguoi_ky", "cau_hinh": cau_hinh.pk,
-        "ung_vien": [{"id": u.pk, "ten": to_chuc.ten_hien_thi(u)} for u in ung_vien],
+        "ung_vien": [{"id": u.pk, "ten": to_chuc.ten_hien_thi(u), "co_quyen_ky": co_quyen(u, KY_TRINH_KY),
+                      "bi_khoa_quyen_ky": u.pk in bi_khoa} for u in ung_vien],
     }
 
 
@@ -440,20 +443,10 @@ def _han_xu_ly(cap, thoi_diem_mo, han_chot, so_cap_chua_mo):
 
 
 def mo_nguoi_ky_trong_cap(cap, thoi_diem):
-    """
-    Mở người ký trong cấp đang ký. Ký nháy mở ngay; ký chính chỉ mở khi mọi người ký nháy có
-    `chan_ky_chinh` đã ký (plan mục 3.2). Trả danh sách người ký vừa được mở.
-    """
-    nguoi_ky = list(cap.nguoi_ky_set.select_for_update().order_by("pk"))
-    con_chan = any(
-        n.vai_tro_ky == enums.VaiTroKy.KY_NHAY and n.chan_ky_chinh and n.trang_thai != enums.TrangThaiNguoiKy.DA_KY
-        for n in nguoi_ky
-    )
+    """Mở mọi người ký còn chờ trong cấp đang ký. Trả danh sách người ký vừa được mở."""
     vua_mo = []
-    for n in nguoi_ky:
+    for n in cap.nguoi_ky_set.select_for_update().order_by("pk"):
         if n.thoi_diem_mo is not None or n.trang_thai != enums.TrangThaiNguoiKy.CHO_KY:
-            continue
-        if n.vai_tro_ky == enums.VaiTroKy.KY_CHINH and con_chan:
             continue
         n.thoi_diem_mo = thoi_diem
         n.save(update_fields=["thoi_diem_mo"])
@@ -503,12 +496,32 @@ def tao_luot_trinh(yeu_cau, nguoi, *, chon_nguoi_ky, khoa_chong_trung, vi_tri_ky
             tai_khoan, van_de = _xac_dinh_nguoi_ky(yeu_cau, cau_hinh, chon_nguoi_ky)
             if van_de:
                 loi.append(van_de)
+            elif not co_quyen(tai_khoan, KY_TRINH_KY):
+                loi.append({"loai": "nguoi_ky_thieu_quyen_ky", "cau_hinh": cau_hinh.pk, "nguoi_ky": tai_khoan.pk,
+                            "ten": to_chuc.ten_hien_thi(tai_khoan) or tai_khoan.get_username()})
+            elif quyen_ky.khoa_dang_hieu_luc(tai_khoan) is not None:
+                loi.append({"loai": "nguoi_ky_bi_khoa_quyen_ky", "cau_hinh": cau_hinh.pk, "nguoi_ky": tai_khoan.pk,
+                            "ten": to_chuc.ten_hien_thi(tai_khoan) or tai_khoan.get_username()})
             elif any(t.pk == tai_khoan.pk for _, t in nguoi_cap):
                 loi.append({"loai": "nguoi_ky_trung_trong_cap", "cau_hinh": cau_hinh.pk, "nguoi_ky": tai_khoan.pk})
             else:
                 nguoi_cap.append((cau_hinh, tai_khoan))
         xac_dinh.append((cap, nguoi_cap))
     if loi:
+        thieu_quyen = [v for v in loi if v["loai"] == "nguoi_ky_thieu_quyen_ky"]
+        if thieu_quyen:
+            raise SigningError(
+                code="nguoi_ky_thieu_quyen_ky",
+                detail="Có người ký không có quyền ký trình ký; chọn người khác hoặc cấp quyền trước khi gửi.",
+                fields={"nguoi_ky": loi},
+            )
+        bi_khoa_quyen = [v for v in loi if v["loai"] == "nguoi_ky_bi_khoa_quyen_ky"]
+        if bi_khoa_quyen:
+            raise SigningError(
+                code="nguoi_ky_bi_khoa_quyen_ky",
+                detail="Người này tạm thời không có quyền ký; chọn người khác hoặc liên hệ quản trị viên.",
+                fields={"nguoi_ky": loi},
+            )
         can_chon = [v for v in loi if v["loai"] == "can_chon_nguoi_ky"]
         raise SigningError(
             code="can_chon_nguoi_ky" if len(can_chon) == len(loi) else "khong_xac_dinh_duoc_nguoi_ky",
@@ -536,7 +549,7 @@ def tao_luot_trinh(yeu_cau, nguoi, *, chon_nguoi_ky, khoa_chong_trung, vi_tri_ky
                 chuc_vu_id=cau_hinh.chuc_vu_id or getattr(tai_khoan, "chuc_vu_id", None),
                 ten_nguoi_ky=to_chuc.ten_hien_thi(tai_khoan) or tai_khoan.get_username(),
                 ten_chuc_vu=to_chuc.ten_chuc_vu(tai_khoan) or None,
-                vai_tro_ky=cau_hinh.vai_tro_ky, chan_ky_chinh=cau_hinh.chan_ky_chinh,
+                vai_tro_ky=cau_hinh.vai_tro_ky,
                 **vi_tri_ky.get(str(cau_hinh.pk), {}),
             )
     return luot, cap_dau

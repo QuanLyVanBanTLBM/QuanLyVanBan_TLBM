@@ -77,6 +77,8 @@ class MeetingRoomAPITestCase(APITestCase):
 
     def setUp(self):
         ensure_permissions_seeded()
+        self.baseline_public_room_count = MeetingRoom.objects.filter(is_public=True).count()
+        self.baseline_private_room_count = MeetingRoom.objects.filter(is_public=False).count()
         # Admin user (có mọi quyền)
         self.admin_user = User.objects.create_superuser(
             username="admin_user",
@@ -106,20 +108,20 @@ class MeetingRoomAPITestCase(APITestCase):
 
         # Tạo sẵn một số phòng họp mẫu
         self.room1 = MeetingRoom.objects.create(
-            name="Phòng Hội trường A",
-            location="Tầng 1, Tòa Hành chính",
+            name="Phòng Hội trường A kiểm thử",
+            location="Tầng 1, Tòa Hành chính kiểm thử",
             capacity=100,
-            amenities="Hệ thống âm thanh hội nghị, 2 máy chiếu, 4 micro",
+            amenities="Hệ thống âm thanh hội nghị kiểm thử, 2 máy chiếu, 4 micro",
             is_public=True,
-            ghi_chu="Dành cho hội nghị lớn",
+            ghi_chu="Dành cho hội nghị lớn kiểm thử",
         )
         self.room2 = MeetingRoom.objects.create(
-            name="Phòng Họp B",
-            location="Tầng 2, Tòa Kỹ thuật",
+            name="Phòng Họp B kiểm thử",
+            location="Tầng 2, Tòa Kỹ thuật kiểm thử",
             capacity=15,
-            amenities="Tivi 75 inch, bảng viết kính",
+            amenities="Tivi 75 inch kiểm thử, bảng viết kính",
             is_public=False,
-            ghi_chu="Đang sửa điều hòa",
+            ghi_chu="Đang sửa điều hòa kiểm thử",
         )
 
     def test_unauthenticated_access_denied(self):
@@ -134,14 +136,16 @@ class MeetingRoomAPITestCase(APITestCase):
         response = self.client.get("/api/meeting-rooms/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn("count", response.data)
-        self.assertEqual(response.data["count"], 1)
-        self.assertEqual(response.data["results"][0]["name"], "Phòng Hội trường A")
+        self.assertEqual(response.data["count"], self.baseline_public_room_count + 1)
+        self.assertIn(self.room1.id, [room["id"] for room in response.data["results"]])
 
         # Quản lý có quyền change_phonghop thấy cả phòng nội bộ
         self.client.force_authenticate(user=self.manager_user)
         res_mgr = self.client.get("/api/meeting-rooms/")
         self.assertEqual(res_mgr.status_code, status.HTTP_200_OK)
-        self.assertEqual(res_mgr.data["count"], 2)
+        self.assertEqual(
+            res_mgr.data["count"], self.baseline_public_room_count + self.baseline_private_room_count + 2
+        )
 
     def test_list_rooms_all_unpaginated(self):
         """Tham số all=true trả về danh sách thuần không phân trang."""
@@ -149,7 +153,10 @@ class MeetingRoomAPITestCase(APITestCase):
         response = self.client.get("/api/meeting-rooms/?all=true")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIsInstance(response.data, list)
-        self.assertEqual(len(response.data), 2)
+        self.assertEqual(
+            len(response.data),
+            self.baseline_public_room_count + self.baseline_private_room_count + 2,
+        )
 
     def test_user_without_view_schedule_permission_denied(self):
         """Tài khoản đăng nhập nhưng không có view_schedule_phonghop bị 403."""
@@ -167,7 +174,7 @@ class MeetingRoomAPITestCase(APITestCase):
         self.client.force_authenticate(user=self.regular_user)
         response = self.client.get(f"/api/meeting-rooms/{self.room1.id}/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["name"], "Phòng Hội trường A")
+        self.assertEqual(response.data["name"], "Phòng Hội trường A kiểm thử")
         self.assertEqual(response.data["capacity"], 100)
 
     def test_search_rooms(self):
@@ -175,17 +182,17 @@ class MeetingRoomAPITestCase(APITestCase):
         self.client.force_authenticate(user=self.manager_user)
 
         # Tìm theo tên
-        res1 = self.client.get("/api/meeting-rooms/?search=Hội trường")
+        res1 = self.client.get("/api/meeting-rooms/?search=Hội trường A kiểm thử")
         self.assertEqual(res1.data["count"], 1)
-        self.assertEqual(res1.data["results"][0]["name"], "Phòng Hội trường A")
+        self.assertEqual(res1.data["results"][0]["name"], "Phòng Hội trường A kiểm thử")
 
         # Tìm theo vị trí
-        res2 = self.client.get("/api/meeting-rooms/?search=Kỹ thuật")
+        res2 = self.client.get("/api/meeting-rooms/?search=Kỹ thuật kiểm thử")
         self.assertEqual(res2.data["count"], 1)
-        self.assertEqual(res2.data["results"][0]["name"], "Phòng Họp B")
+        self.assertEqual(res2.data["results"][0]["name"], "Phòng Họp B kiểm thử")
 
         # Tìm theo thiết bị
-        res3 = self.client.get("/api/meeting-rooms/?search=máy chiếu")
+        res3 = self.client.get("/api/meeting-rooms/?search=âm thanh hội nghị kiểm thử")
         self.assertEqual(res3.data["count"], 1)
 
     def test_filter_by_is_public(self):
@@ -193,12 +200,12 @@ class MeetingRoomAPITestCase(APITestCase):
         # Manager thấy cả 2
         self.client.force_authenticate(user=self.manager_user)
         res_public = self.client.get("/api/meeting-rooms/?is_public=true")
-        self.assertEqual(res_public.data["count"], 1)
-        self.assertEqual(res_public.data["results"][0]["name"], "Phòng Hội trường A")
+        self.assertEqual(res_public.data["count"], self.baseline_public_room_count + 1)
+        self.assertIn(self.room1.id, [room["id"] for room in res_public.data["results"]])
 
         res_hidden = self.client.get("/api/meeting-rooms/?is_public=false")
-        self.assertEqual(res_hidden.data["count"], 1)
-        self.assertEqual(res_hidden.data["results"][0]["name"], "Phòng Họp B")
+        self.assertEqual(res_hidden.data["count"], self.baseline_private_room_count + 1)
+        self.assertIn(self.room2.id, [room["id"] for room in res_hidden.data["results"]])
 
         # Regular user không bao giờ thấy phòng is_public=false
         self.client.force_authenticate(user=self.regular_user)
@@ -246,7 +253,7 @@ class MeetingRoomAPITestCase(APITestCase):
         """Trùng tên phòng họp (kể cả khác hoa thường) phải báo lỗi 400."""
         self.client.force_authenticate(user=self.admin_user)
         payload = {
-            "name": "phòng hội trường a",  # self.room1 đã có "Phòng Hội trường A"
+            "name": "phòng hội trường a kiểm thử",  # self.room1 đã có tên này, khác hoa thường
             "capacity": 50,
         }
         response = self.client.post("/api/meeting-rooms/", payload)

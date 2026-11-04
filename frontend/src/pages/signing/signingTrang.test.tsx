@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import KetQuaPanel from '@components/signing/KetQuaPanel';
 import XemPdf from '@components/signing/XemPdf';
 import TraoDoiPanel from '@components/signing/TraoDoiPanel';
+import { ApiError } from '@lib/apiClient';
 import { signingApi } from '@lib/signing/api';
 import { SigningContext } from '@lib/signing/hooks';
 import type { HoSoChiTiet, KhoaKy, LuotTrinh, NguoiDungHienTai, QuyTrinh } from '@lib/signing/types';
@@ -135,7 +136,7 @@ describe('Buoc2 định vị khung ký', () => {
     pham_vi: 'CONG_TY', don_vi_ap_dung_id: null, ten_don_vi_ap_dung: null, so_ho_so: 0,
     cap_ky: [{
       id: 10, cap_ky: 1, ten_cap_ky: 'Phê duyệt', bat_buoc: true, loai_ky: 'KY_DUYET',
-      nguoi_ky: [{ id: 101, ten_nguoi_ky: 'Nguyễn Văn A', vai_tro_ky: 'KY_CHINH', nguoi_ky: 1, chuc_vu: null, loai_nguoi_ky: 'CAN_BO', chan_ky_chinh: true }],
+      nguoi_ky: [{ id: 101, ten_nguoi_ky: 'Nguyễn Văn A', vai_tro_ky: 'KY_CHINH', nguoi_ky: 1, chuc_vu: null, loai_nguoi_ky: 'CAN_BO' }],
     }],
   };
   const HO_SO_GIA_LAP = {
@@ -168,15 +169,27 @@ describe('KhoaPage', () => {
     boc(<KhoaPage />);
     expect(await screen.findByText('Bạn chưa có khóa ký trên thiết bị này.')).toBeInTheDocument();
     const tao = screen.getByRole('button', { name: /Tạo khóa ký cho thiết bị này/ });
-    fireEvent.change(screen.getByLabelText('PIN mới (8 chữ số)'), { target: { value: '12345678' } });
+    fireEvent.change(screen.getByLabelText('PIN mới (6 chữ số)'), { target: { value: '234567' } });
     expect(await screen.findByText(/liên tiếp|tăng|giảm/i)).toBeInTheDocument();
     expect(tao).toBeDisabled();
-    fireEvent.change(screen.getByLabelText('PIN mới (8 chữ số)'), { target: { value: '48273916' } });
-    fireEvent.change(screen.getByLabelText('Nhập lại PIN'), { target: { value: '48273917' } });
+    fireEvent.change(screen.getByLabelText('PIN mới (6 chữ số)'), { target: { value: '482739' } });
+    fireEvent.change(screen.getByLabelText('Nhập lại PIN'), { target: { value: '482738' } });
     expect(await screen.findByText('Hai lần nhập PIN không khớp.')).toBeInTheDocument();
     expect(tao).toBeDisabled();
-    fireEvent.change(screen.getByLabelText('Nhập lại PIN'), { target: { value: '48273916' } });
+    fireEvent.change(screen.getByLabelText('Nhập lại PIN'), { target: { value: '482739' } });
     await waitFor(() => expect(tao).toBeEnabled());
+  });
+
+  it.each([
+    [500, { detail: 'Internal Server Error' }, 'Máy chủ gặp sự cố. Vui lòng thử lại sau.'],
+    [429, { detail: 'Request was throttled.' }, 'Thao tác quá nhanh. Vui lòng thử lại sau ít phút.'],
+    [404, { detail: 'Not found.' }, 'Không tìm thấy dữ liệu yêu cầu.'],
+    [403, { detail: 'You do not have permission.' }, 'Bạn không có quyền thực hiện thao tác này.'],
+  ])('tải khóa lỗi HTTP %i: hiện thông báo theo mã trạng thái, không hiện chuỗi thô của máy chủ', async (status, data, mong_doi) => {
+    api.khoa.mockRejectedValue(new ApiError(status, data));
+    boc(<KhoaPage />);
+    expect(await screen.findByText(mong_doi)).toBeInTheDocument();
+    expect(screen.queryByText(data.detail)).not.toBeInTheDocument();
   });
 
   it('khóa đang hoạt động thuộc thiết bị khác: cho nhập file khóa vào thiết bị này', async () => {

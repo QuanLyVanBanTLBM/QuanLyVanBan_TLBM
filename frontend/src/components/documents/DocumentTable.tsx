@@ -5,6 +5,7 @@ import { formatDate } from '@lib/dateUtils';
 import { authService } from '@lib/authService';
 import { useTranslation } from '@i18n/translate';
 import { useIsMobile } from '@hooks/useIsMobile';
+import { usePermissions } from '@lib/permissions';
 
 export interface DocumentTableProps {
   documents: DocumentItem[];
@@ -151,32 +152,13 @@ const renderReplacementBadgeGroup = (
 };
 
 /**
- * Định dạng mốc thời gian hiển thị (Đi / Đến / Lưu).
- * Nếu trường ngày có giờ là 00:00:00 (do nhập bằng input date không kèm giờ)
- * và có fallbackDateStr (created_at), hệ thống sẽ mượn giờ:phút:giây từ created_at
- * để bảo đảm không hiển thị "00:00:00" cho người dùng.
+ * Định dạng mốc thời gian hiển thị (Đi / Đến).
+ * Chỉ giữ lại Ngày / Tháng / Năm (dd/MM/yyyy) theo đúng chuẩn hành chính,
+ * không hiển thị giờ:phút:giây để giao diện bảng và thẻ card gọn gàng, tránh chật bảng.
  */
 const formatDocumentEventTime = (primaryDateStr?: string | null, fallbackDateStr?: string | null): string => {
   if (!primaryDateStr && !fallbackDateStr) return '—';
-  const targetStr = primaryDateStr || fallbackDateStr!;
-  const d = new Date(targetStr);
-  if (isNaN(d.getTime())) return '—';
-
-  if (d.getHours() === 0 && d.getMinutes() === 0 && d.getSeconds() === 0 && fallbackDateStr) {
-    const fallbackD = new Date(fallbackDateStr);
-    if (!isNaN(fallbackD.getTime()) && (fallbackD.getHours() !== 0 || fallbackD.getMinutes() !== 0 || fallbackD.getSeconds() !== 0)) {
-      d.setHours(fallbackD.getHours(), fallbackD.getMinutes(), fallbackD.getSeconds());
-    }
-  }
-
-  const hours = String(d.getHours()).padStart(2, '0');
-  const minutes = String(d.getMinutes()).padStart(2, '0');
-  const seconds = String(d.getSeconds()).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const year = d.getFullYear();
-
-  return `${hours}:${minutes}:${seconds} ${day}/${month}/${year}`;
+  return formatDate(primaryDateStr || fallbackDateStr);
 };
 
 export const DocumentTable: React.FC<DocumentTableProps> = ({
@@ -195,14 +177,16 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
 }) => {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
+  const { can, isSuperuser } = usePermissions();
 
   // Lấy thông tin phiên làm việc hiện tại để phân quyền hiển thị tác vụ
   const currentSession = useMemo(() => authService.getSession(), []);
 
   // Helper tính quyền sửa và xóa trên từng văn bản
   const getDocPermissions = useCallback((doc: DocumentItem) => {
-    const isExpired = doc.hieu_luc === 'HET_HIEU_LUC';
-    const isDocConfidential = isConfidential || doc.pham_vi === 'HAN_CHE' || doc.loai === 'MAT' || loai === 'MAT';
+    const isExpired = doc.hieu_luc === 'HET_HIEU_LUC' || doc.hieu_luc === 'HET_VA_THAY_THE';
+    const isMat = isConfidential || doc.loai === 'MAT' || loai === 'MAT';
+    const isDocConfidential = isMat || doc.pham_vi === 'HAN_CHE';
     const isAdmin =
       currentSession?.role === 'admin' ||
       currentSession?.username === 'admin';
@@ -231,16 +215,32 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
     let userCanEdit = doc.can_edit !== undefined ? doc.can_edit : defaultCanEdit;
     let userCanDelete = doc.can_delete !== undefined ? doc.can_delete : defaultCanDelete;
 
-    if (isDocConfidential && !isAdmin) {
+    // Văn bản đến/đi hết hiệu lực (cả HAN_CHE): sửa, xóa theo quyền manage_het_hieu_luc_* do backend trả về.
+    if (isDocConfidential && !isAdmin && !(isExpired && !isMat)) {
       userCanEdit = false;
       userCanDelete = false;
     }
 
+    const isDi = doc.loai === 'DI' || loai === 'DI';
+    const canViewLogPerm = can(isDi ? 'view_read_log_vanbandi' : 'view_read_log_vanbanden');
+    const defaultCanViewHistory = !isDocConfidential;
+    const userCanViewHistory = doc.can_view_read_log !== undefined 
+      ? doc.can_view_read_log 
+      : (canViewLogPerm || defaultCanViewHistory);
+
+    const canViewHistory = Boolean(
+      isAdmin ||
+      isSuperuser ||
+      isCreator ||
+      userCanViewHistory
+    );
+
     return {
       canEdit: Boolean(onEdit) && userCanEdit,
       canDelete: Boolean(onDelete) && userCanDelete,
+      canViewHistory: Boolean(onViewHistory) && canViewHistory,
     };
-  }, [currentSession, isConfidential, loai, onDelete, onEdit]);
+  }, [currentSession, isConfidential, isSuperuser, can, loai, onDelete, onEdit, onViewHistory]);
 
   // Quản lý menu 3 chấm ⋮ mở trên dòng nào
   const [activeMenuId, setActiveMenuId] = useState<number | null>(null);
@@ -366,7 +366,7 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
                 const isExpired = doc.hieu_luc === 'HET_HIEU_LUC';
                 const isActiveRow = activeMenuId === doc.id;
                 const isNearBottom = documents.length >= 5 && index >= documents.length - 2 && index >= 3;
-                const { canEdit, canDelete } = getDocPermissions(doc);
+                const { canEdit, canDelete, canViewHistory } = getDocPermissions(doc);
 
                 // Tông màu hàng theo yêu cầu:
                 // - Toàn bộ hàng trắng đồng nhất, di chuột vào sáng trắng/xám nhẹ
@@ -594,17 +594,19 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
                             </button>
 
                             {/* 2. Nút Lịch sử xem */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveMenuId(null);
-                                onViewHistory(doc.id);
-                              }}
-                              className="w-full text-left px-3.5 py-2 text-sm text-main hover:bg-info-subtle hover:text-info flex items-center gap-2.5 transition-colors cursor-pointer"
-                            >
-                              <i className="fa-solid fa-clock-rotate-left text-info w-4 text-xs" />
-                              <span>{t('documents_ui.table.viewHistory') || 'Lịch sử xem'}</span>
-                            </button>
+                            {canViewHistory && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveMenuId(null);
+                                  onViewHistory(doc.id);
+                                }}
+                                className="w-full text-left px-3.5 py-2 text-sm text-main hover:bg-info-subtle hover:text-info flex items-center gap-2.5 transition-colors cursor-pointer"
+                              >
+                                <i className="fa-solid fa-clock-rotate-left text-info w-4 text-xs" />
+                                <span>{t('documents_ui.table.viewHistory') || 'Lịch sử xem'}</span>
+                              </button>
+                            )}
 
                             {/* 3. Nút Chỉnh sửa */}
                             {canEdit && (
@@ -686,7 +688,7 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
         ) : (
           documents.map((doc, index) => {
             const isExpired = doc.hieu_luc === 'HET_HIEU_LUC';
-            const { canEdit, canDelete } = getDocPermissions(doc);
+            const { canEdit, canDelete, canViewHistory } = getDocPermissions(doc);
 
             return (
               <div
@@ -842,15 +844,17 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
                   >
                     {t('documents_ui.table.viewDetail') || 'Xem'}
                   </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    icon="fa-clock-rotate-left"
-                    onClick={() => onViewHistory(doc.id)}
-                    className="!px-2 !py-1 text-xs"
-                    title={t('documents_ui.table.viewHistory') || 'Lịch sử xem'}
-                  />
+                  {canViewHistory && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      icon="fa-clock-rotate-left"
+                      onClick={() => onViewHistory(doc.id)}
+                      className="!px-2 !py-1 text-xs"
+                      title={t('documents_ui.table.viewHistory') || 'Lịch sử xem'}
+                    />
+                  )}
                   {canEdit && (
                     <Button
                       type="button"

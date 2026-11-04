@@ -98,11 +98,11 @@ class PositionListTests(PositionBaseTestCase):
     def setUp(self):
         super().setUp()
         self.first_fixture_order = self.next_order()
-        Position.objects.create(display_order=self.first_fixture_order + 2, name="Chuyên viên")
-        Position.objects.create(display_order=self.first_fixture_order, name="Tổng Giám đốc")
-        Position.objects.create(display_order=self.first_fixture_order + 1, name="Trưởng phòng")
+        Position.objects.create(display_order=self.first_fixture_order + 2, name="Chuyên viên kiểm thử")
+        Position.objects.create(display_order=self.first_fixture_order, name="Tổng Giám đốc kiểm thử")
+        Position.objects.create(display_order=self.first_fixture_order + 1, name="Trưởng phòng kiểm thử")
         Position.objects.create(
-            display_order=self.first_fixture_order + 3, name="Cộng tác viên", is_public=False
+            display_order=self.first_fixture_order + 3, name="Cộng tác viên kiểm thử", is_public=False
         )
 
     def test_unauthenticated_401(self):
@@ -114,45 +114,55 @@ class PositionListTests(PositionBaseTestCase):
         self.assertEqual(res.json()["detail"], "positions.messages.permissionDenied")
 
     def test_list_sorted_by_stt_with_issue_field_names(self):
-        res = self.client_for["pos_manager"].get(LIST_URL)
+        res = self.client_for["pos_manager"].get(LIST_URL, {"all": "true"})
         self.assertEqual(res.status_code, status.HTTP_200_OK)
-        body = res.json()
-        fixture_names = {"Tổng Giám đốc", "Trưởng phòng", "Chuyên viên", "Cộng tác viên"}
-        results = [p for p in body["results"] if p["name"] in fixture_names]
+        results = [
+            p for p in res.json()
+            if p["name"].endswith(" kiểm thử") and p["name"] in {
+                "Tổng Giám đốc kiểm thử", "Trưởng phòng kiểm thử",
+                "Chuyên viên kiểm thử", "Cộng tác viên kiểm thử",
+            }
+        ]
         self.assertEqual(
             [p["display_order"] for p in results],
             list(range(self.first_fixture_order, self.first_fixture_order + 4)),
         )
-        self.assertEqual(results[0]["name"], "Tổng Giám đốc")
+        self.assertEqual(results[0]["name"], "Tổng Giám đốc kiểm thử")
         self.assertEqual(set(results[0]), {"id", "display_order", "name", "is_public", "note"})
 
     def test_internal_position_hidden_from_non_admin(self):
-        res = self.client_for["pos_viewer"].get(LIST_URL)
-        names = [p["name"] for p in res.json()["results"]]
-        self.assertNotIn("Cộng tác viên", names)
-        self.assertEqual(res.json()["count"], self.baseline_public_count + 3)
+        res = self.client_for["pos_viewer"].get(LIST_URL, {"all": "true"})
+        names = [p["name"] for p in res.json()]
+        self.assertNotIn("Cộng tác viên kiểm thử", names)
+        self.assertEqual(len(res.json()), self.baseline_public_count + 3)
 
     def test_internal_position_visible_to_admin_and_flagged(self):
         for username in ("pos_manager", "pos_root"):
-            res = self.client_for[username].get(LIST_URL)
-            internal = [p for p in res.json()["results"] if p["name"] == "Cộng tác viên"]
+            res = self.client_for[username].get(LIST_URL, {"all": "true"})
+            internal = [p for p in res.json() if p["name"] == "Cộng tác viên kiểm thử"]
             self.assertEqual(len(internal), 1)
             self.assertFalse(internal[0]["is_public"])
 
     def test_search_by_name_case_insensitive(self):
-        res = self.client_for["pos_manager"].get(LIST_URL, {"search": "trưởng"})
-        self.assertEqual([p["name"] for p in res.json()["results"]], ["Trưởng phòng"])
+        res = self.client_for["pos_manager"].get(
+            LIST_URL, {"search": "trưởng phòng kiểm thử"}
+        )
+        self.assertEqual([p["name"] for p in res.json()["results"]], ["Trưởng phòng kiểm thử"])
 
     def test_search_no_match_returns_empty(self):
         res = self.client_for["pos_manager"].get(LIST_URL, {"search": "khong-ton-tai"})
         self.assertEqual(res.json()["count"], 0)
 
     def test_pagination(self):
-        for i in range(10, 25):
-            Position.objects.create(display_order=i, name=f"Chức vụ {i}")
+        first_order = self.next_order()
+        for offset in range(15):
+            Position.objects.create(
+                display_order=first_order + offset,
+                name=f"Chức vụ kiểm thử {offset}",
+            )
         page1 = self.client_for["pos_manager"].get(LIST_URL, {"page": 1}).json()
         page2 = self.client_for["pos_manager"].get(LIST_URL, {"page": 2}).json()
-        self.assertEqual(page1["count"], 20)
+        self.assertEqual(page1["count"], Position.objects.count())
         self.assertEqual(len(page1["results"]), 10)
         self.assertEqual(len(page2["results"]), 10)
         self.assertIsNotNone(page1["next"])
@@ -163,7 +173,7 @@ class PositionListTests(PositionBaseTestCase):
         self.assertEqual(len(res.json()), self.baseline_position_count + 4)
 
     def test_detail_hidden_for_non_admin_404(self):
-        internal = Position.objects.get(name="Cộng tác viên")
+        internal = Position.objects.get(name="Cộng tác viên kiểm thử")
         self.assertEqual(self.client_for["pos_viewer"].get(detail_url(internal.pk)).status_code, 404)
         self.assertEqual(self.client_for["pos_manager"].get(detail_url(internal.pk)).status_code, 200)
 
@@ -192,18 +202,18 @@ class PositionWriteTests(PositionBaseTestCase):
     def test_create_with_explicit_stt_and_fields(self):
         display_order = self.next_order(5)
         res = self.post(
-            {"display_order": display_order, "name": "Giám đốc", "is_public": False, "note": "Ghi chú"}
+            {"display_order": display_order, "name": "Giám đốc kiểm thử", "is_public": False, "note": "Ghi chú"}
         )
         self.assertEqual(res.status_code, status.HTTP_201_CREATED)
         obj = Position.objects.get(pk=res.json()["id"])
         self.assertEqual(
             (obj.display_order, obj.name, obj.is_public, obj.note),
-            (display_order, "Giám đốc", False, "Ghi chú"),
+            (display_order, "Giám đốc kiểm thử", False, "Ghi chú"),
         )
 
     def test_create_trims_name_and_collapses_spaces(self):
-        res = self.post({"name": "   Phó   phòng  "})
-        self.assertEqual(res.json()["name"], "Phó phòng")
+        res = self.post({"name": "   Phó   phòng kiểm thử  "})
+        self.assertEqual(res.json()["name"], "Phó phòng kiểm thử")
 
     def test_create_whitespace_only_name_rejected(self):
         res = self.post({"name": "     "})
@@ -220,8 +230,10 @@ class PositionWriteTests(PositionBaseTestCase):
         self.assertEqual(res.json()["name"], ["positions.messages.nameTooLong"])
 
     def test_create_duplicate_name_after_trim_and_case_rejected(self):
-        Position.objects.create(display_order=self.next_order(), name="Trưởng phòng")
-        for variant in ("trưởng phòng", "  TRƯỞNG PHÒNG  ", "Trưởng   phòng"):
+        Position.objects.create(display_order=self.next_order(), name="Trưởng phòng kiểm thử")
+        for variant in (
+            "trưởng phòng kiểm thử", "  TRƯỞNG PHÒNG KIỂM THỬ  ", "Trưởng   phòng kiểm thử"
+        ):
             res = self.post({"name": variant})
             self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST, variant)
             self.assertEqual(res.json()["name"], ["positions.messages.nameExists"])
@@ -388,17 +400,17 @@ class PositionImportTests(PositionBaseTestCase):
         res = self.do_import(
             make_xlsx(
                 [
-                    [first_order, "Tổng Giám đốc", "Có", "Cấp cao nhất"],
-                    [first_order + 1, "Trưởng phòng", "Không", ""],
-                    [None, "Chuyên viên", None, None],
+                    [first_order, "Tổng Giám đốc import kiểm thử", "Có", "Cấp cao nhất"],
+                    [first_order + 1, "Trưởng phòng import kiểm thử", "Không", ""],
+                    [None, "Chuyên viên import kiểm thử", None, None],
                 ]
             )
         )
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         self.assertEqual(res.json(), {"total": 3, "imported": 3, "failed": 0, "errors": []})
-        self.assertEqual(Position.objects.get(name="Trưởng phòng").is_public, False)
-        self.assertEqual(Position.objects.get(name="Tổng Giám đốc").note, "Cấp cao nhất")
-        self.assertEqual(Position.objects.get(name="Chuyên viên").display_order, first_order + 2)
+        self.assertEqual(Position.objects.get(name="Trưởng phòng import kiểm thử").is_public, False)
+        self.assertEqual(Position.objects.get(name="Tổng Giám đốc import kiểm thử").note, "Cấp cao nhất")
+        self.assertEqual(Position.objects.get(name="Chuyên viên import kiểm thử").display_order, first_order + 2)
 
     def test_import_blank_stt_avoids_explicit_stt_later_in_file(self):
         first_order = self.next_order()
@@ -463,9 +475,17 @@ class PositionImportTests(PositionBaseTestCase):
         self.assertEqual(body["imported"], 0)
 
     def test_import_accepts_float_and_text_stt(self):
-        res = self.do_import(make_xlsx([[3.0, "Số thực", "Có", ""], ["4", "Số chữ", "Có", ""]]))
+        first_order = self.next_order()
+        res = self.do_import(
+            make_xlsx([
+                [float(first_order), "Số thực kiểm thử", "Có", ""],
+                [str(first_order + 1), "Số chữ kiểm thử", "Có", ""],
+            ])
+        )
         self.assertEqual(res.json()["imported"], 2)
-        self.assertEqual(Position.objects.get(name="Số chữ").display_order, 4)
+        self.assertEqual(
+            Position.objects.get(name="Số chữ kiểm thử").display_order, first_order + 1
+        )
 
     def test_import_skips_blank_rows_but_keeps_row_numbers(self):
         res = self.do_import(make_xlsx([[None, None, None, None], [None, "", "Có", ""], [None, "Sau dòng trống", "Có", ""]]))
@@ -518,7 +538,9 @@ class PositionImportTests(PositionBaseTestCase):
         self.assertEqual(self.others().count(), 0)
 
     def test_import_note_is_trimmed_and_name_collapsed(self):
-        res = self.do_import(make_xlsx([[None, "  Phó   Giám  đốc ", "Có", "  ghi chú  "]]))
+        res = self.do_import(
+            make_xlsx([[None, "  Phó   Giám  đốc kiểm thử ", "Có", "  ghi chú  "]])
+        )
         self.assertEqual(res.json()["imported"], 1)
-        obj = Position.objects.get(name="Phó Giám đốc")
+        obj = Position.objects.get(name="Phó Giám đốc kiểm thử")
         self.assertEqual(obj.note, "ghi chú")

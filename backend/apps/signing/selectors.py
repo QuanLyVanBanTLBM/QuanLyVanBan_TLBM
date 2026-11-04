@@ -25,11 +25,10 @@ NHAN_TRANG_THAI = {
 
 
 def ho_so_lien_quan(nguoi):
-    """Hồ sơ người dùng tạo hoặc có tên trong luồng ký (kể cả người nhận/giao ủy quyền); không mở rộng theo quyền
+    """Hồ sơ người dùng tạo hoặc có tên trong luồng ký ; không mở rộng theo quyền
     kiểm toán để Dashboard chỉ hiện việc của chính người đó."""
     return SigningRequest.objects.filter(
         Q(create_by=nguoi) | Q(luot_trinh_set__cap_ky_set__nguoi_ky_set__nguoi_ky=nguoi)
-        | Q(luot_trinh_set__cap_ky_set__nguoi_ky_set__uy_quyen_tu=nguoi)
     ).distinct()
 
 

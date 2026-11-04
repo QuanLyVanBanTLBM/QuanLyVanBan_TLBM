@@ -169,9 +169,16 @@ export const MeetingDetailModal: React.FC<MeetingDetailModalProps> = ({
                 <i className="fa-solid fa-user-tie mr-1.5 text-muted" />
                 {t('meetings.modalDetail.organizerInfo')}:
               </span>
-              <strong className="text-main font-semibold">
-                {booking.organizer_detail?.ho_ten || booking.organizer_detail?.username || t('meetings.table.staffFallback')}
-              </strong>
+              <div className="text-right">
+                <strong className="text-main font-semibold block">
+                  {booking.organizer_detail?.ho_ten || booking.organizer_detail?.username || t('meetings.table.staffFallback')}
+                </strong>
+                {booking.organizer_detail?.chuc_vu_ten && (
+                  <span className="text-xs text-secondary font-medium block">
+                    {booking.organizer_detail.chuc_vu_ten}
+                  </span>
+                )}
+              </div>
             </div>
 
             {(booking.department_name || booking.organizer_detail?.don_vi_ten) && (

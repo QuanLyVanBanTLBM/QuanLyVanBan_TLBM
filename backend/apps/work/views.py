@@ -2,7 +2,7 @@ import datetime
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from django.db.models import Case, Exists, F, IntegerField, OuterRef, Prefetch, Q, Value, When
+from django.db.models import Exists, F, OuterRef, Prefetch, Q
 from django.http import FileResponse, Http404
 from django.utils import timezone
 from rest_framework import mixins, status, viewsets
@@ -163,21 +163,16 @@ class TaskViewSet(
                 "approved_by__don_vi",
             )
             .prefetch_related(participants)
-            # Thứ tự mặc định 3 tầng (yêu cầu GVHD):
-            # 1. Nhóm "Chờ xử lý" lên đầu (các trạng thái khác xuống dưới).
-            # 2. Trong mỗi nhóm: hạn xử lý gần nhất lên trước (asc).
+            # Thứ tự mặc định ưu tiên theo CHÍNH NGƯỜI ĐANG XEM (chỉ sắp xếp, không lọc):
+            # 1. priority_bucket: việc đang chờ user hành động lên đầu (xem with_priority_for).
+            # 2. Trong mỗi bậc: hạn xử lý gần nhất lên trước (asc).
             # 3. Việc không có hạn xuống cuối (nulls_last) — hiện due_date NOT NULL nên là
             #    phòng thủ, chỉ có tác dụng nếu sau này cho phép việc không hạn.
             # Tie-break cuối cùng là -id (luôn unique) để phân trang ổn định tuyệt đối,
             # không để 2 record cùng due_date + cùng timestamp nhảy trang.
-            .annotate(
-                _cho_xu_ly_first=Case(
-                    When(status=TaskStatus.CHO_XU_LY, then=Value(0)),
-                    default=Value(1),
-                    output_field=IntegerField(),
-                )
-            )
-            .order_by("_cho_xu_ly_first", F("due_date").asc(nulls_last=True), "-created_at", "-id")
+            # Khi request có ?ordering=... thì OrderingFilter override thứ tự này.
+            .with_priority_for(self.request.user)
+            .order_by("priority_bucket", F("due_date").asc(nulls_last=True), "-created_at", "-id")
         )
         if self.action != "list":
             attachments = Prefetch(

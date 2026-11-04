@@ -191,6 +191,104 @@ describe('EmployeesPage Component (Issue #24)', () => {
     });
   });
 
+  it('requires a password reset reason and sends it with an admin reset request', async () => {
+    render(
+      <MemoryRouter>
+        <EmployeesPage />
+      </MemoryRouter>
+    );
+
+    await screen.findByText('Nguyễn Văn Bình');
+    fireEvent.click((await screen.findAllByTitle('Chỉnh sửa'))[0]);
+    await screen.findByText('Chỉnh Sửa Hồ Sơ Nhân Viên');
+    fireEvent.click(screen.getByRole('button', { name: 'Đổi mật khẩu' }));
+
+    fireEvent.change(screen.getByLabelText('Mật khẩu mới'), {
+      target: { value: 'Secure-Reset-Password-42!' },
+    });
+    fireEvent.change(screen.getByLabelText('Xác nhận mật khẩu mới'), {
+      target: { value: 'Secure-Reset-Password-42!' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu mật khẩu mới' }));
+
+    expect(await screen.findByText('Vui lòng chọn lý do đặt lại mật khẩu.')).toBeInTheDocument();
+    expect(mockedApiClient.post).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Lý do đặt lại mật khẩu' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Quên mật khẩu' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu mật khẩu mới' }));
+
+    await waitFor(() => {
+      expect(mockedApiClient.post).toHaveBeenCalledWith(
+        '/api/accounts/employees/1/change-password/',
+        {
+          new_password: 'Secure-Reset-Password-42!',
+          confirm_password: 'Secure-Reset-Password-42!',
+          reason_code: 'FORGOT_PASSWORD',
+          reason_detail: undefined,
+        },
+      );
+    });
+  });
+
+  it('shows a translated message for a password-policy error returned by the API', async () => {
+    mockedApiClient.post.mockRejectedValueOnce(
+      new apiClientModule.ApiError(400, { detail: 'employees.messages.passwordNotAccepted' }),
+    );
+
+    render(
+      <MemoryRouter>
+        <EmployeesPage />
+      </MemoryRouter>
+    );
+
+    await screen.findByText('Nguyễn Văn Bình');
+    fireEvent.click((await screen.findAllByTitle('Chỉnh sửa'))[0]);
+    await screen.findByText('Chỉnh Sửa Hồ Sơ Nhân Viên');
+    fireEvent.click(screen.getByRole('button', { name: 'Đổi mật khẩu' }));
+    fireEvent.change(screen.getByLabelText('Mật khẩu mới'), {
+      target: { value: 'Secure-Reset-Password-42!' },
+    });
+    fireEvent.change(screen.getByLabelText('Xác nhận mật khẩu mới'), {
+      target: { value: 'Secure-Reset-Password-42!' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Lý do đặt lại mật khẩu' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Quên mật khẩu' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu mật khẩu mới' }));
+
+    expect(await screen.findByText('Mật khẩu chưa đạt yêu cầu bảo mật của hệ thống.')).toBeInTheDocument();
+    expect(screen.queryByText('employees.messages.passwordNotAccepted')).not.toBeInTheDocument();
+  });
+
+  it('uses a localized fallback instead of showing an unknown backend error code', async () => {
+    mockedApiClient.post.mockRejectedValueOnce(
+      new apiClientModule.ApiError(500, { detail: 'accounts.password_reset_internal_error' }),
+    );
+
+    render(
+      <MemoryRouter>
+        <EmployeesPage />
+      </MemoryRouter>
+    );
+
+    await screen.findByText('Nguyễn Văn Bình');
+    fireEvent.click((await screen.findAllByTitle('Chỉnh sửa'))[0]);
+    await screen.findByText('Chỉnh Sửa Hồ Sơ Nhân Viên');
+    fireEvent.click(screen.getByRole('button', { name: 'Đổi mật khẩu' }));
+    fireEvent.change(screen.getByLabelText('Mật khẩu mới'), {
+      target: { value: 'Secure-Reset-Password-42!' },
+    });
+    fireEvent.change(screen.getByLabelText('Xác nhận mật khẩu mới'), {
+      target: { value: 'Secure-Reset-Password-42!' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Lý do đặt lại mật khẩu' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Quên mật khẩu' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu mật khẩu mới' }));
+
+    expect(await screen.findByText('Không thể đổi mật khẩu. Vui lòng thử lại.')).toBeInTheDocument();
+    expect(screen.queryByText('accounts.password_reset_internal_error')).not.toBeInTheDocument();
+  });
+
   it('requires an explicit position instead of defaulting a new employee to the first position', async () => {
     const { container } = render(
       <MemoryRouter>

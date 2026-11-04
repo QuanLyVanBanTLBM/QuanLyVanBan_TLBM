@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components -- file này export kèm vài hàm tiện ích dùng chung; quy ước module chỉ có 4 thư mục api/components/pages/types nên không tách utils riêng. */
 import React, { useEffect, useRef, useState } from 'react';
+import { useTranslation } from '@i18n/translate';
 import { listEmployees } from '../api/employees';
 import { toMessage } from '../api/client';
 import { Employee } from '../types/employee';
@@ -84,10 +85,12 @@ export default function EmployeeSelect({
   onChange,
   excludeIds = [],
   disabled = false,
-  placeholder = 'Chọn cán bộ',
+  placeholder,
   invalid = false,
   allowClear = true,
 }: EmployeeSelectProps) {
+  const { t } = useTranslation();
+  const resolvedPlaceholder = placeholder ?? t('work.employees.selectPlaceholder');
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const { keyword, setKeyword, options, cache, loading, error } = useEmployeeSearch(open);
@@ -131,13 +134,13 @@ export default function EmployeeSelect({
         }}
       >
         <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {selected ? employeeLabel(selected) : value !== null ? `Cán bộ #${value}` : placeholder}
+          {selected ? employeeLabel(selected) : value !== null ? t('work.common.employeeId', { id: String(value) }) : resolvedPlaceholder}
         </span>
         {allowClear && value !== null && !disabled && (
           <span
             role="button"
             tabIndex={-1}
-            aria-label="Bỏ chọn"
+            aria-label={t('work.employees.deselect')}
             onClick={(event) => {
               event.stopPropagation();
               onChange(null);
@@ -169,7 +172,7 @@ export default function EmployeeSelect({
             type="text"
             autoFocus
             value={keyword}
-            placeholder="Tìm theo tên cán bộ"
+            placeholder={t('work.employees.searchPlaceholder')}
             onChange={(event) => setKeyword(event.target.value)}
             style={{
               width: '100%',
@@ -186,14 +189,14 @@ export default function EmployeeSelect({
 
           <div style={{ maxHeight: '220px', overflowY: 'auto', marginTop: '8px' }}>
             {loading && (
-              <div style={{ padding: '10px', fontSize: '0.82rem', color: 'var(--text-muted)' }}>Đang tải...</div>
+              <div style={{ padding: '10px', fontSize: '0.82rem', color: 'var(--text-muted)' }}>{t('work.common.loading')}</div>
             )}
             {!loading && error && (
               <div style={{ padding: '10px', fontSize: '0.82rem', color: 'var(--color-danger)' }}>{error}</div>
             )}
             {!loading && !error && visibleOptions.length === 0 && (
               <div style={{ padding: '10px', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                Không tìm thấy cán bộ phù hợp. Hãy thử từ khóa khác hoặc xóa bớt chữ trong ô tìm.
+                {t('work.employees.noResults')}
               </div>
             )}
             {!loading &&

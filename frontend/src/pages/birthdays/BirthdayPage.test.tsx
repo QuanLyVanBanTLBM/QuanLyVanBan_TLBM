@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { apiClient } from '@lib/apiClient';
+import { ApiError, apiClient } from '@lib/apiClient';
 import { setLanguage } from '@i18n/translate';
 import BirthdayPage, { type CalendarApiResponse, type DayApiResponse } from './BirthdayPage';
 
@@ -66,6 +66,20 @@ describe('BirthdayPage', () => {
     expect(screen.getByText('Ngày sinh nhật: 12/5')).toBeInTheDocument();
     expect(screen.getByTitle('1 cán bộ nhân viên có sinh nhật')).toBeInTheDocument();
     expect(screen.queryByText(/Gửi thiệp|Gửi email tự động/)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['vi', 'Bạn không có quyền thực hiện thao tác này.'],
+    ['en', 'You do not have permission to perform this action.'],
+  ] as const)('translates permission errors in both birthday panels (%s)', async (language, message) => {
+    setLanguage(language);
+    vi.spyOn(apiClient, 'get').mockRejectedValue(
+      new ApiError(403, { detail: 'roles.messages.permissionDenied' })
+    );
+    render(<BirthdayPage />);
+
+    expect(await screen.findAllByText(message)).toHaveLength(2);
+    expect(screen.queryByText('roles.messages.permissionDenied')).not.toBeInTheDocument();
   });
 
   it('distinguishes an empty day from a failed day request and retries', async () => {
