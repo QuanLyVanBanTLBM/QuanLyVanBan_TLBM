@@ -1,0 +1,43 @@
+# Báo cáo Kiểm thử Toàn diện Nhóm 8 (AI Assistant & Chatbox)
+
+- **Người thực hiện kiểm thử**: Nhóm 5 (Senior QA/QC)
+- **Đối tượng kiểm thử**: Module Nhóm 8 (AI Assistant, Kho tài liệu, Cài đặt AI & Widget Chatbox)
+- **Môi trường kiểm thử**: 
+  - Frontend: React + Vite (`http://127.0.0.1:5173/ai-assistant`)
+  - Backend: Django REST Framework (`http://127.0.0.1:8001/api/ai/`)
+  - Cơ sở dữ liệu: PostgreSQL 16 (ICU `vi-VN`)
+  - Trình duyệt: Chromium 1920x1080
+- **Tiêu chuẩn kiểm thử**:
+  - Mỗi bug có đúng 01 ảnh chụp màn hình riêng biệt.
+  - Trên mỗi ảnh chỉ sử dụng duy nhất mũi tên đỏ (kiểu Lightshot) trỏ chính xác vào vị trí phát sinh lỗi.
+  - Định dạng bảng chuẩn khớp với Google Sheets: `Trang` | `Name` | `Describe` | `Link image` | `Người test` | `Priority` | `Status`.
+
+---
+
+## Bảng Tổng hợp 15 Bug (Khớp Google Sheets)
+
+| STT | Trang | Name (Tên lỗi) | Describe (Mô tả chi tiết) | Link ảnh chụp (Mũi tên đỏ) | Người test | Priority | Status |
+|:---:|:---|:---|:---|:---|:---:|:---:|:---:|
+| 1 | Trợ lý AI | Lỗi API chat bị chặn 403 do thiếu CSDL chỉ đọc | Khi gửi câu hỏi tra cứu quy trình/văn bản, API `/api/ai/chat` trả về HTTP 403 do thiếu biến môi trường `DB_READONLY_USER`; giao diện in nguyên chuỗi JSON kỹ thuật thô vào bong bóng chat thay vì thông báo thân thiện. | [bug_01_chat_error_403.png](file:///d:/QuanLyVanBan_TLBM/docs/qa/nhom_8/bug_01_chat_error_403.png) | Nhóm 5 | High | New |
+| 2 | Trợ lý AI | Cấu hình tên mô hình Gemini ảo không tồn tại (`gemini-3.8-flash`) | Cả frontend và backend cấu hình mặc định model `gemini-3.8-flash`. Đây là tên model không tồn tại trên Google Gemini API (chuẩn: `gemini-1.5-flash`, `gemini-2.0-flash`), khiến gọi API thực tế bị 404/Fail. | [bug_02_model_gemini_fake.png](file:///d:/QuanLyVanBan_TLBM/docs/qa/nhom_8/bug_02_model_gemini_fake.png) | Nhóm 5 | High | New |
+| 3 | Trợ lý AI | Giao diện chọn tiếng Anh (EN) nhưng lời chào vẫn 100% tiếng Việt | Khi người dùng chuyển ngôn ngữ sang tiếng Anh (EN), lời chào `"Xin chào Quý Cán bộ!"` và thông điệp giới thiệu trợ lý AI vẫn giữ nguyên 100% tiếng Việt, vi phạm tiêu chuẩn đa ngôn ngữ i18n. | [bug_03_i18n_greeting_vietnamese.png](file:///d:/QuanLyVanBan_TLBM/docs/qa/nhom_8/bug_03_i18n_greeting_vietnamese.png) | Nhóm 5 | Medium | New |
+| 4 | Trợ lý AI | Chip câu hỏi gợi ý sai quy chuẩn kỹ thuật ký số ("Token PKI") | Thẻ gợi ý câu hỏi mẫu chứa `"Hướng dẫn ký số điện tử token PKI?"`. Hệ thống chỉ sử dụng ký số điện tử nội bộ Ed25519 (Khóa ký & PIN, 2FA OTP), không sử dụng thiết bị phần cứng USB Token PKI. | [bug_04_chip_token_pki_wrong_spec.png](file:///d:/QuanLyVanBan_TLBM/docs/qa/nhom_8/bug_04_chip_token_pki_wrong_spec.png) | Nhóm 5 | Medium | New |
+| 5 | Trợ lý AI | Lỗi dính chữ trong Cài đặt AI (`Google GeminiKhuyên dùng`) | Trong modal Cài đặt AI, nhãn `"Google Gemini"` và badge `"Khuyên dùng"` bị dính liền thành `Google GeminiKhuyên dùng` do thiếu khoảng cách margin giữa text và thẻ badge. | [bug_05_settings_glued_gemini.png](file:///d:/QuanLyVanBan_TLBM/docs/qa/nhom_8/bug_05_settings_glued_gemini.png) | Nhóm 5 | Medium | New |
+| 6 | Trợ lý AI | Lỗi dính chữ tên provider và model OpenAI (`OpenAIGPT-4o`) | Trong modal Cài đặt AI, tên nhà cung cấp OpenAI và tên mô hình GPT-4o bị dính liền thành `OpenAIGPT-4o / GPT-4o-mini` gây lỗi căn chỉnh giao diện. | [bug_06_settings_glued_openai.png](file:///d:/QuanLyVanBan_TLBM/docs/qa/nhom_8/bug_06_settings_glued_openai.png) | Nhóm 5 | Medium | New |
+| 7 | Trợ lý AI | Dropdown Cài đặt AI chứa model ảo `gemini-3.8-flash` | Trong dropdown chọn mô hình LLM hiển thị `gemini-3.8-flash (Khuyên dùng - Nhanh & Mới nhất)`. Người dùng chọn model này sẽ khiến gọi API Gemini thất bại hoàn toàn. | [bug_07_settings_dropdown_fake_gemini_38.png](file:///d:/QuanLyVanBan_TLBM/docs/qa/nhom_8/bug_07_settings_dropdown_fake_gemini_38.png) | Nhóm 5 | High | New |
+| 8 | Trợ lý AI | Lỗi tràn viền và cắt cụt text ô Mô hình Vector Embedding | Trong modal Cài đặt AI, ô chọn Mô hình Vector Embedding bị tràn viền phải, text `models/gemini-embedding-0...` bị cắt xén không đọc được đầy đủ. | [bug_08_settings_embedding_text_overflow.png](file:///d:/QuanLyVanBan_TLBM/docs/qa/nhom_8/bug_08_settings_embedding_text_overflow.png) | Nhóm 5 | Medium | New |
+| 9 | Trợ lý AI | Header modal Cài đặt AI dùng màu tím cứng vi phạm Design Tokens | Header modal dùng màu tím cứng (`#4338ca`) không theo hệ thống biến màu Design Tokens chung (`var(--color-brand-...)`), vi phạm quy tắc CSS tokens và không hỗ trợ theme Dark/Light. | [bug_09_settings_header_color_token_violation.png](file:///d:/QuanLyVanBan_TLBM/docs/qa/nhom_8/bug_09_settings_header_color_token_violation.png) | Nhóm 5 | Medium | New |
+| 10 | Trợ lý AI | Kho tài liệu hiển thị cây thư mục mẫu giả định (`folder1`, `item1.docx`) | Tab Kho tài liệu hiển thị cây thư mục mẫu hardcode gồm `folder1`, `folder2`, `item1.docx`, `item2.docx` thay vì hiển thị danh mục và tên tài liệu thực tế của hệ thống. | [bug_10_kho_tai_lieu_mock_data_tree.png](file:///d:/QuanLyVanBan_TLBM/docs/qa/nhom_8/bug_10_kho_tai_lieu_mock_data_tree.png) | Nhóm 5 | Medium | New |
+| 11 | Trợ lý AI | Nút "Xóa toàn bộ kho tài liệu" nguy hiểm, thiếu bảo vệ xác nhận | Nút Xóa toàn bộ kho tài liệu (`DELETE /api/ai/documents`) xóa sạch toàn bộ vector DB và file tệp nhưng thiếu xác nhận gõ chữ "DELETE" và chưa ẩn với tài khoản người dùng thường. | [bug_11_kho_tai_lieu_dangerous_delete_all.png](file:///d:/QuanLyVanBan_TLBM/docs/qa/nhom_8/bug_11_kho_tai_lieu_dangerous_delete_all.png) | Nhóm 5 | High | New |
+| 12 | Trợ lý AI | Biểu tượng AI tròn xanh nằm đè lên thanh Menu điều hướng bên trái | Icon AI tròn xanh cố định ở góc dưới bên trái màn hình (y ≈ 760px) nằm đè lên thanh navbar điều hướng chính, gây che khuất các menu phía dưới và cản trở thao tác click. | [bug_12_floating_robot_overlap_navbar.png](file:///d:/QuanLyVanBan_TLBM/docs/qa/nhom_8/bug_12_floating_robot_overlap_navbar.png) | Nhóm 5 | Medium | New |
+| 13 | Trang chủ / Widget AI | Floating AI Box dùng dữ liệu mock (`setTimeout`), ngắt kết nối backend | Widget `FloatingAIBox.tsx` không gọi API backend mà dùng hàm mock `setTimeout` tự tạo câu trả lời tĩnh; trả lời sai quy chuẩn kỹ thuật khi mô tả dùng "USB Token / Cloud HSM". | [bug_13_floating_ai_mock_timeout_response.png](file:///d:/QuanLyVanBan_TLBM/docs/qa/nhom_8/bug_13_floating_ai_mock_timeout_response.png) | Nhóm 5 | High | New |
+| 14 | Trang chủ / Widget AI | Xung đột mô hình giữa Trang chính (Gemini) và Widget nổi (GPT-4o) | Trang Trợ lý AI cấu hình chạy Google Gemini nhưng Widget nổi ở góc màn hình lại gắn badge cứng `GPT-4o` và xưng danh `Trợ Lý AI TLBM (GPT-4o)`, gây mâu thuẫn hệ thống. | [bug_14_floating_ai_badge_gpt4o_inconsistent.png](file:///d:/QuanLyVanBan_TLBM/docs/qa/nhom_8/bug_14_floating_ai_badge_gpt4o_inconsistent.png) | Nhóm 5 | Medium | New |
+| 15 | Trang chủ / Widget AI | Floating AI Box không parse Markdown, in thô dấu sao (`**`) | Tin nhắn trong Floating AI Box hiển thị thô các ký tự markdown như `**Xin chào Quý Cán bộ!**`, `**Trợ Lý AI TLBM (GPT-4o)**` thay vì định dạng in đậm do thiếu bộ render markdown. | [bug_15_floating_ai_raw_markdown_asterisks.png](file:///d:/QuanLyVanBan_TLBM/docs/qa/nhom_8/bug_15_floating_ai_raw_markdown_asterisks.png) | Nhóm 5 | Medium | New |
+
+---
+
+## Hướng dẫn dán vào Google Sheet
+1. Mở trang tính: `https://docs.google.com/spreadsheets/d/1c0CWs8eZLGPO1iAiYW7EXU0gaXgGQQ5crmwvlzg6Pmw/edit#gid=1183388800` (Tab: **Bug Nhóm 8**).
+2. Mở file [danh_sach_bug_google_sheets.tsv](file:///d:/QuanLyVanBan_TLBM/docs/qa/nhom_8/danh_sach_bug_google_sheets.tsv).
+3. Chọn toàn bộ nội dung (Ctrl+A), sao chép (Ctrl+C).
+4. Click chuột vào ô **A3** trên Google Sheet rồi ấn **Ctrl+V**. Toàn bộ 15 dòng dữ liệu sẽ tự động điền chuẩn xác vào từng cột từ A đến H.
