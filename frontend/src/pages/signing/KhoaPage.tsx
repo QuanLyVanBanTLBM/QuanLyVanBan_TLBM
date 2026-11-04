@@ -44,6 +44,7 @@ export default function KhoaPage() {
   const [moDatLaiPin, setMoDatLaiPin] = useState(false);
   const [dangLam, setDangLam] = useState(false);
   const [thongBao, setThongBao] = useState<{ loai: 'loi' | 'thanh_cong'; noi_dung: string } | null>(null);
+  const [thongBaoChuKy, setThongBaoChuKy] = useState<{ loai: 'loi' | 'thanh_cong'; noi_dung: string } | null>(null);
   const [lanTaiBanBoc, setLanTaiBanBoc] = useState(0);
   const [anhChuKyTuyChinh, setAnhChuKyTuyChinh] = useState<string | null | undefined>(undefined);
   const anhChuKyServer = toi?.co_anh_chu_ky ? `/api/signing/anh-chu-ky-ca-nhan/tep/?v=${toi.id}` : null;
@@ -57,6 +58,7 @@ export default function KhoaPage() {
     const files = e.target.files;
     if (files && files.length > 0) {
       setThongBao(null);
+      setThongBaoChuKy(null);
       setTepChon(files[0]);
       setMoCrop(true);
     }
@@ -68,20 +70,28 @@ export default function KhoaPage() {
     if (blob.size > GIOI_HAN_ANH_SAU_CAT) {
       setMoCrop(false);
       setTepChon(null);
-      setThongBao({ loai: 'loi', noi_dung: t('khoa.anhQuaLon') });
+      setThongBaoChuKy({ loai: 'loi', noi_dung: t('khoa.anhQuaLon') });
       return;
     }
     setDangLam(true);
-    setThongBao(null);
+    setThongBaoChuKy(null);
     try {
-      await signingApi.taiLenAnhChuKy(blob);
+      try {
+        await signingApi.taiLenAnhChuKy(blob);
+      } catch (uploadErr) {
+        if (dataUrl) {
+          await signingApi.taiLenAnhChuKy(dataUrl);
+        } else {
+          throw uploadErr;
+        }
+      }
       setAnhChuKyTuyChinh(dataUrl);
       taiLaiToi?.();
       setMoCrop(false);
       setTepChon(null);
-      setThongBao({ loai: 'thanh_cong', noi_dung: t('khoa.daLuuChuKy') });
+      setThongBaoChuKy({ loai: 'thanh_cong', noi_dung: t('khoa.daLuuChuKy') });
     } catch (err) {
-      setThongBao({ loai: 'loi', noi_dung: loi(err) });
+      setThongBaoChuKy({ loai: 'loi', noi_dung: loi(err) });
     } finally {
       setDangLam(false);
     }
@@ -89,14 +99,14 @@ export default function KhoaPage() {
 
   const onXoaAnhChuKy = async () => {
     setDangLam(true);
-    setThongBao(null);
+    setThongBaoChuKy(null);
     try {
       await signingApi.xoaAnhChuKy();
       setAnhChuKyTuyChinh(null);
       taiLaiToi?.();
-      setThongBao({ loai: 'thanh_cong', noi_dung: t('khoa.daXoaChuKy') });
+      setThongBaoChuKy({ loai: 'thanh_cong', noi_dung: t('khoa.daXoaChuKy') });
     } catch (err) {
-      setThongBao({ loai: 'loi', noi_dung: loi(err) });
+      setThongBaoChuKy({ loai: 'loi', noi_dung: loi(err) });
     } finally {
       setDangLam(false);
     }
@@ -235,6 +245,7 @@ export default function KhoaPage() {
             )}
           </div>
           <p className="text-sm text-secondary">{t('khoa.chuKyCaNhanGhiChu')}</p>
+          {thongBaoChuKy && <ThongBao loai={thongBaoChuKy.loai}>{thongBaoChuKy.noi_dung}</ThongBao>}
 
           {anhChuKy ? (
             <div className="space-y-3">

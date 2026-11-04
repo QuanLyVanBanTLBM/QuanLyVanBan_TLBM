@@ -79,4 +79,15 @@ describe('KhoaPage: giới hạn dung lượng ảnh chữ ký', () => {
     expect(api.taiLenAnhChuKy).not.toHaveBeenCalled();
     expect(screen.queryByRole('dialog', { name: 'hop-cat' })).not.toBeInTheDocument();
   });
+
+  it('ảnh sau khi cắt nếu tải dạng Blob lỗi thì tự động fallback sang Base64', async () => {
+    await moTrang();
+    chonTep(1024);
+    api.taiLenAnhChuKy.mockRejectedValueOnce(new Error('Network error on multipart'));
+    api.taiLenAnhChuKy.mockResolvedValueOnce({} as never);
+    fireEvent.click(await screen.findByRole('button', { name: 'luu-nho' }));
+    await waitFor(() => expect(api.taiLenAnhChuKy).toHaveBeenCalledTimes(2));
+    expect(api.taiLenAnhChuKy).toHaveBeenLastCalledWith('data:image/png;base64,AA');
+    expect(await screen.findByText(/Đã lưu ảnh chữ ký cá nhân/)).toBeInTheDocument();
+  });
 });
