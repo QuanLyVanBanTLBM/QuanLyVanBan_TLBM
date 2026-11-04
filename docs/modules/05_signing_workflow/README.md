@@ -67,8 +67,8 @@ DDL/RBAC (Nhóm 7):
 | Ban Giám đốc (BGD) | xem, tạo, gửi, ký, hủy thay, xem nhật ký mọi hồ sơ |
 | Quản trị (ADMIN) | toàn quyền, quản lý quy trình công ty |
 
-Codename: `view_trinhky`, `add_trinhky`, `send_trinhky`, `sign_trinhky`, `delegate_trinhky`, `cancel_trinhky`,
-`manage_signing_process`, `view_signing_audit`. Quyền `delegate_trinhky` còn trong dữ liệu phân quyền nhưng Trình ký không còn dùng.
+Codename: `view_trinhky`, `add_trinhky`, `send_trinhky`, `sign_trinhky`, `cancel_trinhky`,
+`manage_signing_process`, `view_signing_audit`. Quyền `delegate_trinhky` đã gỡ cùng ủy quyền ký (#519).
 
 ## 3. Cấu trúc thư mục chính
 

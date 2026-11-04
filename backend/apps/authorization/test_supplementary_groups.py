@@ -34,7 +34,7 @@ class SupplementaryGroupsTest(TestCase):
 
     def test_groups_do_not_grant_leadership_actions(self):
         granted = codenames_of("TLBGD") | codenames_of("KT")
-        for codename in ("sign_trinhky", "cancel_trinhky", "delegate_trinhky", "manage_signing_process",
+        for codename in ("sign_trinhky", "cancel_trinhky", "manage_signing_process",
                          "approve_congviec"):
             self.assertNotIn(codename, granted)
 
