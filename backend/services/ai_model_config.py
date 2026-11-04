@@ -18,6 +18,6 @@ MODEL_CONFIG = {
             "gpt-4o",
         ),
         "default_llm": "gpt-6-luna",
-        "embed_model": "text-embedding-3-small",
+        "embed_model": "text-embedding-3-large",
     },
 }

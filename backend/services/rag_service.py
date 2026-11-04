@@ -132,13 +132,25 @@ def setup_llamaindex():
                 print(f"[TEST LOCAL] Fallback Gemini cho model {LLM_MODEL}")
                 return
             raise RuntimeError("OPENAI_API_KEY is not configured")
+        import llama_index.llms.openai.utils as openai_utils
+        import tiktoken.model
+        if LLM_MODEL not in openai_utils.ALL_AVAILABLE_MODELS:
+            openai_utils.ALL_AVAILABLE_MODELS[LLM_MODEL] = 128000
+            openai_utils.CHAT_MODELS[LLM_MODEL] = 128000
+            try:
+                tiktoken.model.MODEL_TO_ENCODING[LLM_MODEL] = "o200k_base"
+            except Exception:
+                pass
+
         from llama_index.embeddings.openai import OpenAIEmbedding
         from llama_index.llms.openai import OpenAI
 
-        Settings.embed_model = OpenAIEmbedding(model_name=EMBED_MODEL)
-        Settings.llm = OpenAI(model=LLM_MODEL, request_timeout=180.0)
+        embed_model_name = EMBED_MODEL if "text-embedding" in EMBED_MODEL else "text-embedding-3-large"
+        Settings.embed_model = OpenAIEmbedding(model_name=embed_model_name, api_key=openai_key)
+        temp = 1.0 if ("luna" in LLM_MODEL or LLM_MODEL.startswith(("o1", "o3", "o4"))) else 0.1
+        Settings.llm = OpenAI(model=LLM_MODEL, temperature=temp, request_timeout=180.0, api_key=openai_key)
         print(f"✅ OpenAI LLM: {LLM_MODEL}")
-        print(f"✅ OpenAI Embed: {EMBED_MODEL}")
+        print(f"✅ OpenAI Embed: {embed_model_name}")
     elif provider == "gemini":
         if not GEMINI_API_KEY.strip():
             raise RuntimeError("GEMINI_API_KEY is not configured")
