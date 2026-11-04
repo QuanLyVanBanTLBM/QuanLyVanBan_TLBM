@@ -137,10 +137,7 @@ def region_detail_view(request, pk):
             )
         try:
             region.delete()
-            return Response(
-                {"detail": "organizations.messages.deleteSuccess", "key": "organizations.messages.deleteSuccess"},
-                status=status.HTTP_204_NO_CONTENT,
-            )
+            return Response(status=status.HTTP_204_NO_CONTENT)
         except ProtectedError:
             return Response(
                 {"detail": "organizations.messages.protectedError", "key": "organizations.messages.protectedError"},
@@ -238,10 +235,7 @@ def unit_detail_view(request, pk):
             )
         except IntegrityError:  # DB dựng từ DDL chặn bằng ON DELETE RESTRICT
             return in_use
-        return Response(
-            {"detail": "organizations.messages.deleteSuccess", "key": "organizations.messages.deleteSuccess"},
-            status=status.HTTP_204_NO_CONTENT,
-        )
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 @api_view(["GET"])

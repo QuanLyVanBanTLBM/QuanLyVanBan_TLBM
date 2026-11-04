@@ -4,13 +4,14 @@ from unittest.mock import patch
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from django.test import TestCase
-from rest_framework.test import APIClient
+from rest_framework.test import APIClient, APIRequestFactory, force_authenticate
 from rest_framework import status
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 
 from organizations.directory_export import HEADER_ROW
 from organizations.models import KhoiKhuVuc, DonVi
+from organizations.views import region_detail_view, unit_detail_view
 
 
 def next_unit_priority():
@@ -456,6 +457,29 @@ class OrganizationPermissionAPITest(TestCase):
         self.assertEqual(unit.status_code, status.HTTP_201_CREATED)
         self.assertEqual(self.admin.delete(f"/api/organizations/units/{unit.data['id']}/").status_code, status.HTTP_204_NO_CONTENT)
         self.assertEqual(self.admin.delete(f"/api/organizations/regions/{region_id}/").status_code, status.HTTP_204_NO_CONTENT)
+
+    def delete_rendered(self, view, path, pk):
+        """Gọi view trực tiếp và render như server: test client của Django tự bỏ body của 204 nên không thấy lỗi."""
+        request = APIRequestFactory().delete(path)
+        force_authenticate(request, user=get_user_model().objects.get(username="org_admin"))
+        response = view(request, pk=pk)
+        response.render()
+        return response
+
+    def test_unit_delete_returns_204_without_body(self):
+        """204 kèm body làm proxy dev của Vite báo Parse Error, giao diện báo xóa lỗi dù DB đã xóa."""
+        unit = DonVi.objects.create(khoi=self.region, stt_uu_tien=next_unit_priority(), ten="Đơn vị Xóa")
+        res = self.delete_rendered(unit_detail_view, f"/api/organizations/units/{unit.id}/", unit.id)
+        self.assertEqual(res.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(res.content, b"")
+        self.assertFalse(DonVi.objects.filter(pk=unit.id).exists())
+
+    def test_region_delete_returns_204_without_body(self):
+        region = KhoiKhuVuc.objects.create(ten="Khối Xóa")
+        res = self.delete_rendered(region_detail_view, f"/api/organizations/regions/{region.id}/", region.id)
+        self.assertEqual(res.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(res.content, b"")
+        self.assertFalse(KhoiKhuVuc.objects.filter(pk=region.id).exists())
 
     def test_permissions_are_independent(self):
         only_add = APIClient()
