@@ -221,9 +221,18 @@ def birthday_email_logs_api(request):
 
     if month_raw:
         try:
-            logs = logs.filter(sent_date__month=int(month_raw))
+            month = int(month_raw)
         except ValueError:
-            pass
+            return Response(
+                {"success": False, "error": "Tham số tháng phải là số nguyên."},
+                status=400,
+            )
+        if month < 1 or month > 12:
+            return Response(
+                {"success": False, "error": "Tháng không hợp lệ (1-12)."},
+                status=400,
+            )
+        logs = logs.filter(sent_date__month=month)
 
     if year_raw:
         try:

@@ -200,6 +200,56 @@ class BirthdaySystemTests(TestCase):
         self.assertEqual(first.json()["employees"][0]["id"], high.id)
         self.assertEqual(second.json()["employees"][0]["id"], low.id)
 
+    def test_calendar_and_day_apis_validate_month_and_day_ranges(self):
+        """Tháng phải từ 1–12, ngày phải hợp lệ theo từng tháng và năm nhuận."""
+        self.client.force_authenticate(user=self.emp_staff)
+
+        invalid_calendar_month = self.client.get(
+            reverse("birthdays:calendar"), {"month": 13, "year": 2026}
+        )
+        self.assertEqual(invalid_calendar_month.status_code, status.HTTP_400_BAD_REQUEST)
+
+        invalid_day_month = self.client.get(
+            reverse("birthdays:day_birthdays"),
+            {"month": 13, "day": 1, "year": 2026},
+        )
+        self.assertEqual(invalid_day_month.status_code, status.HTTP_400_BAD_REQUEST)
+
+        url = reverse("birthdays:day_birthdays")
+        valid_days = (
+            {"month": 1, "day": 31, "year": 2026},
+            {"month": 2, "day": 28, "year": 2025},
+            {"month": 2, "day": 29, "year": 2024},
+        )
+        for params in valid_days:
+            with self.subTest(params=params):
+                response = self.client.get(url, params)
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        invalid_days = (
+            {"month": 4, "day": 31, "year": 2026},
+            {"month": 2, "day": 29, "year": 2025},
+        )
+        for params in invalid_days:
+            with self.subTest(params=params):
+                response = self.client.get(url, params)
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_birthday_email_logs_api_rejects_invalid_month(self):
+        """Nhật ký phải từ chối tháng ngoài 1–12 và tham số tháng không phải số."""
+        self.client.force_authenticate(user=self.emp_admin)
+        url = reverse("birthdays:logs")
+
+        for month in ("0", "13"):
+            with self.subTest(month=month):
+                response = self.client.get(url, {"month": month, "year": 2026})
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                self.assertEqual(response.json()["error"], "Tháng không hợp lệ (1-12).")
+
+        non_numeric_month = self.client.get(url, {"month": "invalid", "year": 2026})
+        self.assertEqual(non_numeric_month.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(non_numeric_month.json()["error"], "Tham số tháng phải là số nguyên.")
+
     def test_birthday_email_logs_api(self):
         """API nhật ký chỉ cho superuser xem và chuẩn hóa trang_thai không phân biệt hoa thường."""
         log = BirthdayEmailLog.objects.create(
@@ -224,6 +274,10 @@ class BirthdaySystemTests(TestCase):
         self.assertEqual(data["total"], 1)
         self.assertEqual(data["logs"][0]["employee_name"], self.emp_staff.ho_ten)
         self.assertEqual(data["logs"][0]["trang_thai"], BirthdayEmailStatus.SUCCESS)
+
+        valid_month_filter = self.client.get(url, {"month": 5, "year": 2026})
+        self.assertEqual(valid_month_filter.status_code, status.HTTP_200_OK)
+        self.assertEqual(valid_month_filter.json()["total"], 1)
 
         lowercase_status = self.client.get(url, {"trang_thai": "success"})
         self.assertEqual(lowercase_status.status_code, status.HTTP_200_OK)
