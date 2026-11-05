@@ -89,6 +89,7 @@
       "filterUnitSelectRegionFirst": "Select a Block first",
       "exportExcel": "Export directory",
       "exporting": "Exporting...",
+      "exportRegion": "Export this region's directory",
       "save": "Save Changes",
       "create": "Create",
       "cancel": "Cancel",
