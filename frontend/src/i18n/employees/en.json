@@ -28,7 +28,9 @@
       "close": "Close",
       "exportExcel": "Export Excel",
       "exporting": "Exporting...",
-      "changePassword": "Change Password"
+      "changePassword": "Change Password",
+      "editUsername": "Edit username",
+      "cancelUsernameEdit": "Cancel username editing"
     },
     "table": {
       "employee": "Employee",
@@ -96,7 +98,7 @@
       "passwordAuto": "Leave blank to generate a secure random 10-character password.",
       "statusNotice": "Note: Changing to 'Resigned' automatically deactivates the login account.",
       "birthdayFormat": "Format: DD/MM/YYYY (Example: 15/06/2003)",
-      "birthdayMaskedTooltip": "Birth year is masked for privacy (requires view_sensitive_cbnv permission)",
+      "birthdayMaskedTooltip": "Other employees' birth years are hidden to protect personal information.",
       "masked": "Masked",
       "groupsHidden": "Permission groups hidden due to privacy policy.",
       "selfEditNotice": "You are updating your own profile. Only contact info and birthday can be edited; organizational attributes are managed by Administrators."
@@ -192,6 +194,7 @@
       "removeFile": "Remove selected file"
     },
     "validation": {
+      "usernameRequired": "Username cannot be empty.",
       "nameRequired": "Employee full name is required.",
       "emailRequired": "Email address is required.",
       "birthdayRequired": "Birthday is required.",

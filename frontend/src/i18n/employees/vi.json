@@ -28,7 +28,9 @@
       "close": "Đóng",
       "exportExcel": "Xuất Excel",
       "exporting": "Đang xuất tệp...",
-      "changePassword": "Đổi mật khẩu"
+      "changePassword": "Đổi mật khẩu",
+      "editUsername": "Chỉnh sửa tên đăng nhập",
+      "cancelUsernameEdit": "Hủy chỉnh sửa tên đăng nhập"
     },
     "table": {
       "employee": "Cán bộ nhân viên",
@@ -96,7 +98,7 @@
       "passwordAuto": "Để trống hệ thống sẽ sinh mật khẩu an toàn ngẫu nhiên 10 ký tự.",
       "statusNotice": "Lưu ý: Chuyển sang 'Nghỉ việc' sẽ tự động vô hiệu hóa tài khoản đăng nhập.",
       "birthdayFormat": "Định dạng: DD/MM/YYYY (Ví dụ: 15/06/2003)",
-      "birthdayMaskedTooltip": "Năm sinh được che bảo mật (yêu cầu quyền view_sensitive_cbnv để xem đầy đủ)",
+      "birthdayMaskedTooltip": "Năm sinh của người khác được ẩn để bảo vệ thông tin cá nhân.",
       "masked": "Đã che năm",
       "groupsHidden": "Danh sách nhóm quyền bị ẩn theo quyền riêng tư bảo mật.",
       "selfEditNotice": "Bạn đang cập nhật hồ sơ của chính mình. Chỉ có thể chỉnh sửa thông tin liên hệ và ngày sinh; các thông tin tổ chức do Quản trị viên quản lý."
@@ -192,6 +194,7 @@
       "removeFile": "Xóa tệp đã chọn"
     },
     "validation": {
+      "usernameRequired": "Tên đăng nhập không được để trống.",
       "nameRequired": "Họ và tên nhân viên không được để trống.",
       "emailRequired": "Địa chỉ email không được để trống.",
       "birthdayRequired": "Vui lòng chọn ngày sinh cho nhân viên.",

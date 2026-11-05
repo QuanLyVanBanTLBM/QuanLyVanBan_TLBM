@@ -398,8 +398,8 @@ class EmployeeSecurityAndPrivacyTests(EmployeeBaseTestCase):
         self.assertFalse(data["has_sensitive_permission"])
         self.assertEqual(data["nhom_quyen"], [])
 
-    def test_birthday_full_for_user_with_sensitive_perm(self):
-        """User có quyền view_full_cbnv: xem được ngày sinh đầy đủ DD/MM/YYYY và nhóm quyền."""
+    def test_birthday_masked_for_user_with_sensitive_perm(self):
+        """Quyền xem nhóm nhạy cảm không cho phép xem năm sinh người khác."""
         self.client.force_authenticate(user=self.sensitive_user)
         # Gán nhóm quyền cho normal_profile
         self.normal_user.groups.add(self.group_van_thu)
@@ -409,24 +409,23 @@ class EmployeeSecurityAndPrivacyTests(EmployeeBaseTestCase):
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         data = res.json()
 
-        # Ngày sinh gốc 1995-05-20 -> trả về đúng 20/05/1995 và ngay_sinh_iso là 1995-05-20
-        self.assertEqual(data["ngay_sinh"], "20/05/1995")
-        self.assertEqual(data.get("ngay_sinh_iso"), "1995-05-20")
-        self.assertFalse(data["is_birthday_masked"])
+        self.assertEqual(data["ngay_sinh"], "20/05/----")
+        self.assertIsNone(data.get("ngay_sinh_iso"))
+        self.assertTrue(data["is_birthday_masked"])
         self.assertTrue(data["has_sensitive_permission"])
         self.assertEqual(len(data["nhom_quyen"]), 1)
         self.assertEqual(data["nhom_quyen"][0]["name"], "Văn thư")
 
-    def test_superuser_has_sensitive_perm_by_default(self):
-        """Superuser luôn có toàn quyền xem ngày sinh đầy đủ."""
+    def test_superuser_cannot_view_other_employee_birth_year(self):
+        """Superuser vẫn chỉ xem được ngày sinh đầy đủ của chính mình."""
         self.client.force_authenticate(user=self.admin_user)
         detail_url = f"{self.employee_list_url}{self.normal_user.id}/"
         res = self.client.get(detail_url)
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         data = res.json()
-        self.assertEqual(data["ngay_sinh"], "20/05/1995")
-        self.assertEqual(data.get("ngay_sinh_iso"), "1995-05-20")
-        self.assertFalse(data["is_birthday_masked"])
+        self.assertEqual(data["ngay_sinh"], "20/05/----")
+        self.assertIsNone(data.get("ngay_sinh_iso"))
+        self.assertTrue(data["is_birthday_masked"])
 
     def test_owner_sees_unmasked_birthday(self):
         """Chủ tài khoản (dù không có quyền view_full_cbnv) luôn xem được ngày sinh đầy đủ của chính mình."""
@@ -1419,10 +1418,11 @@ class EmployeePermissionSecurityTests(EmployeeBaseTestCase):
         self.assertEqual(res_birth.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(res_birth.data["detail"], "employees.messages.invalidOrdering")
 
-        # 3. User có view_full_cbnv ordering ngay_sinh -> 200 OK
+        # 3. Không ai được sắp xếp theo năm sinh để tránh suy luận thông tin cá nhân
         self.client.force_authenticate(user=self.sensitive_user)
         res_birth_ok = self.client.get(f"{self.employee_list_url}?ordering=-ngay_sinh")
-        self.assertEqual(res_birth_ok.status_code, status.HTTP_200_OK)
+        self.assertEqual(res_birth_ok.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(res_birth_ok.data["detail"], "employees.messages.invalidOrdering")
 
         # 4. Filter id không phải số nguyên -> 400 Bad Request (thay vì 500)
         res_filter_err = self.client.get(f"{self.employee_list_url}?don_vi_id=abc")
