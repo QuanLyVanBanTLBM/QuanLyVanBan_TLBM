@@ -1,4 +1,13 @@
 -- =====================================================================
+-- THÊM QUYỀN THÊM VĂN BẢN HẠN CHẾ (Nhóm 7; đánh dấu [TVHC] tại vị trí)
+-- Căn cứ: đề xuất Nhóm 2: thêm văn bản đến/đi phạm vi Hạn chế (pham_vi = 'HAN_CHE') cần quyền riêng;
+--   quyền add_vanbanden/add_vanbandi không đủ (tạo trực tiếp và import Excel).
+--   Thêm 2 quyền: add_han_che_vanbanden, add_han_che_vanbandi (gán ADMIN qua CROSS JOIN sẵn có và VT).
+--   Migration authorization 0017_them_van_ban_han_che_permissions bổ sung cho DB đã seed từ trước.
+-- Quy mô sau [TVHC] (cộng sau [XHHL]): 84 -> 86 quyền thao tác; thêm 4 lượt phân quyền (ADMIN 2, VT 2): 204 -> 208;
+--   nhóm VT 32 -> 34 quyền.
+-- =====================================================================
+-- =====================================================================
 -- THÊM QUYỀN XEM VÀ XỬ LÝ VĂN BẢN HẾT HIỆU LỰC (Nhóm 7; đánh dấu [XHHL] tại vị trí)
 -- Căn cứ: nghiệp vụ văn bản đến/đi (góp ý Nhóm 2): văn bản hết hiệu lực (cả NOI_BO lẫn HAN_CHE) chỉ tài khoản được
 --   phân quyền mới xem được; người tạo, người nhận, đơn vị nhận không có quyền thì không thấy, quyền
@@ -2519,6 +2528,12 @@ VALUES
         'manage_het_hieu_luc_vanbanden',
         'Văn bản đến'
     ),
+    -- [TVHC]
+    (
+        'Thêm văn bản đến hạn chế',
+        'add_han_che_vanbanden',
+        'Văn bản đến'
+    ),
     -- Văn bản đi (Nhóm 2)
     (
         'Xem danh sách/chi tiết văn bản đi',
@@ -2574,6 +2589,12 @@ VALUES
     (
         'Xử lý (sửa, xóa) văn bản đi hết hiệu lực',
         'manage_het_hieu_luc_vanbandi',
+        'Văn bản đi'
+    ),
+    -- [TVHC]
+    (
+        'Thêm văn bản đi hạn chế',
+        'add_han_che_vanbandi',
         'Văn bản đi'
     ),
     -- Hồ sơ lưu trữ (Nhóm 3)
@@ -2915,7 +2936,7 @@ WHERE
     ) ON CONFLICT (group_id, permission_id) DO NOTHING;
 
 -- [VTQ] Nhóm VT (Văn thư): xem, thêm, import văn bản đến/đi, xuất Excel văn bản đến, đổi hiệu lực;
--- [XHHL] xem văn bản đến/đi hết hiệu lực;
+-- [XHHL] xem văn bản đến/đi hết hiệu lực; [TVHC] thêm văn bản đến/đi hạn chế;
 --   không sửa/xóa văn bản đến/đi, không gửi mail toàn hệ thống; xem hồ sơ, tài liệu biểu mẫu; quyền chung của CBNV
 INSERT INTO
     auth_group_permissions (group_id, permission_id)
@@ -2935,11 +2956,13 @@ WHERE
         'export_vanbanden',
         'change_hieu_luc_vanbanden',
         'view_het_hieu_luc_vanbanden',
+        'add_han_che_vanbanden',
         'view_vanbandi',
         'add_vanbandi',
         'import_vanbandi',
         'change_hieu_luc_vanbandi',
         'view_het_hieu_luc_vanbandi',
+        'add_han_che_vanbandi',
         'view_hoso',
         'view_tailieu',
         'view_trinhky',

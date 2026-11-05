@@ -68,6 +68,13 @@ def co_quyen_xem_het_hieu_luc(user, model_name="vanbanden"):
     return _co_quyen(user, f"view_het_hieu_luc_{model_name}")
 
 
+def co_quyen_them_han_che(user, model_name="vanbanden"):
+    """Quyền thêm (tạo, import) văn bản hạn chế: Quản trị viên hoặc add_han_che_vanbanden/vanbandi."""
+    if is_admin_user(user):
+        return True
+    return _co_quyen(user, f"add_han_che_{model_name}")
+
+
 def van_ban_xem_duoc(user, loai="DEN"):
     """
     Quy tắc xem văn bản chuẩn:
