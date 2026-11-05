@@ -21,7 +21,7 @@ def sha256_or_null(field):
 
 
 class SigningKey(models.Model):
-    """Khóa công khai Ed25519 của người dùng. Backend không lưu khóa bí mật."""
+    """Định danh và public key Ed25519; private key mã hóa nằm trong SigningKeyUnlock."""
 
     nguoi_so_huu = models.ForeignKey(User, on_delete=models.PROTECT, related_name="signing_keys")
     ma_khoa = models.CharField(max_length=100, unique=True)
@@ -523,15 +523,16 @@ class SigningNotification(models.Model):
 
 class SigningKeyUnlock(models.Model):
     """
-    Trạng thái mở khóa ký bằng PIN của một khóa ký. Bảng trạng thái (được cập nhật),
-    không phải bảng bằng chứng; mọi sự kiện ghi vào signing_audit_log.
-    Không lưu PIN, không lưu khóa bí mật hay bản bọc khóa bí mật.
+    Bản ghi khóa ký được mã hóa để backend giải mã trong bộ nhớ khi ký.
+    Lưu verifier Argon2id của PIN và ciphertext AES-GCM; ciphertext được mã hóa bằng khóa dẫn xuất
+    từ SIGNING_KEY_PEPPER, độc lập với PIN để email recovery thay PIN mà giữ nguyên khóa.
+    Đây là trạng thái có thể cập nhật, không phải bằng chứng; sự kiện ghi vào signing_audit_log.
     """
 
     khoa = models.OneToOneField(SigningKey, on_delete=models.PROTECT, related_name="mo_khoa_pin")
-    ma_bam_xac_minh_pin = models.TextField()  # HMAC của verifier, không lưu PIN
-    manh_bi_mat_ma_hoa = models.TextField()  # k_srv mã hóa khi lưu; không log
-    tham_so_kdf = models.JSONField()  # thuật toán, m, t, p, phiên bản
+    ma_bam_xac_minh_pin = models.TextField()  # Argon2id verifier, không lưu PIN
+    khoa_bi_mat_ma_hoa = models.TextField()  # AES-256-GCM PKCS#8; tuyệt đối không log/serialize
+    tham_so_kdf = models.JSONField()  # salt và tham số Argon2id dùng để xác minh PIN
     so_lan_sai = models.PositiveIntegerField(db_default=0, default=0)
     khoa_den = models.DateTimeField(null=True, blank=True)  # rỗng: không bị khóa tạm
     created_at = models.DateTimeField(auto_now_add=True, db_default=DB_NOW)
@@ -569,13 +570,16 @@ class SigningUserSignature(models.Model):
 
 class SigningPinResetCode(models.Model):
     """
-    Mã xác thực 6 chữ số gửi qua email để chủ khóa tự đặt lại PIN (thu hồi khóa hiện tại, tạo khóa và PIN mới).
+    Mã xác thực 6 chữ số gửi qua email để chủ khóa đặt PIN mới cho cùng khóa ký đang hoạt động.
     Chỉ lưu mã đã băm; hết hạn sau vài phút; sai quá số lần cho phép thì hủy mã.
     """
 
     nguoi_dung = models.ForeignKey(
         User, on_delete=models.CASCADE, db_constraint=False, related_name="+"
     )  # FK ON DELETE CASCADE tạo bằng SQL trong migration 0022 để khớp release_DDL.sql
+    khoa = models.ForeignKey(
+        SigningKey, on_delete=models.PROTECT, db_constraint=False, null=True, blank=True, related_name="+",
+    )  # Khóa đang hoạt động tại thời điểm gửi mã; NULL chỉ dành cho mã cũ đã hết hạn.
     ma_bam = models.CharField(max_length=64)
     het_han = models.DateTimeField()
     so_lan_sai = models.IntegerField(db_default=0, default=0)

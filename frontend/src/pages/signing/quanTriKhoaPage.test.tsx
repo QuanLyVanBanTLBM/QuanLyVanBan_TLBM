@@ -92,7 +92,7 @@ describe('QuanTriKhoaPage', () => {
   it('revokes the key and shows API errors by code', async () => {
     api.quanTriThuHoiKhoa.mockRejectedValue(new ApiError(409, { code: 'khong_co_khoa_de_thu_hoi', detail: 'x' }));
     boc();
-    fireEvent.click(await screen.findByRole('button', { name: /Thu hồi khóa & đặt lại PIN/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Thu hồi khóa ký/ }));
     fireEvent.change(screen.getByLabelText(/Lý do/), { target: { value: 'Mất thiết bị' } });
     fireEvent.click(screen.getByRole('button', { name: 'Xác nhận' }));
     await waitFor(() => expect(api.quanTriThuHoiKhoa).toHaveBeenCalledWith(7, 'Mất thiết bị'));

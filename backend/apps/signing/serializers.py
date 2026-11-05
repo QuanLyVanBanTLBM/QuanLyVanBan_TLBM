@@ -136,6 +136,11 @@ class MaXacThucSerializer(serializers.Serializer):
     ma = serializers.CharField(max_length=16)
 
 
+class DatLaiPinXacNhanSerializer(serializers.Serializer):
+    ma = serializers.RegexField(r"^\d{6}$")
+    pin_moi = serializers.RegexField(r"^\d{6}$")
+
+
 class ThuHoiKhoaSerializer(serializers.Serializer):
     ly_do = serializers.CharField(max_length=MAX_LY_DO)
 
@@ -167,22 +172,18 @@ class KhoaSerializer(serializers.ModelSerializer):
         return SigningKeyUnlock.objects.filter(khoa=obj).exists()
 
 
-# ── PIN mở khóa ký (Phase 6) ─────────────────────────────────────────────────
-# xac_minh_pin = Base64 của verifier 32 byte do client dẫn xuất; server không nhận PIN.
+# ── Bảo vệ private key ký ở máy chủ (#447 partition 1) ───────────────────────
 
 
 class DatPinSerializer(serializers.Serializer):
-    xac_minh_pin = serializers.CharField()
+    pin = serializers.RegexField(r"^\d{6}$")
+    khoa_bi_mat_pkcs8 = serializers.CharField(max_length=128)
     tham_so_kdf = serializers.JSONField()
 
 
-class MoKhoaKySerializer(serializers.Serializer):
-    xac_minh_pin = serializers.CharField()
-
-
 class DoiPinSerializer(serializers.Serializer):
-    xac_minh_pin_cu = serializers.CharField()
-    xac_minh_pin_moi = serializers.CharField()
+    pin_cu = serializers.RegexField(r"^\d{6}$")
+    pin_moi = serializers.RegexField(r"^\d{6}$")
     tham_so_kdf = serializers.JSONField()
 
 
@@ -473,7 +474,7 @@ class TrinhKyChiTietSerializer(TrinhKySerializer):
 class KySerializer(serializers.Serializer):
     khoa_ky = serializers.IntegerField(min_value=1)
     hash_tai_lieu = serializers.RegexField(r"^[0-9a-f]{64}$")
-    chu_ky_so = serializers.CharField(max_length=200)  # Ed25519 Base64 là 88 ký tự
+    pin = serializers.RegexField(r"^\d{6}$")
     ghi_chu_ky = serializers.CharField(max_length=MAX_GHI_CHU, required=False, allow_blank=True, default="")
 
 

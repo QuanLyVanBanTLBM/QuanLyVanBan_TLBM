@@ -305,14 +305,23 @@ describe('Danh sách: trạng thái trả lại, quá hạn', () => {
   });
 });
 
-describe('Ký bằng file khóa', () => {
-  it('hộp thoại ký có ô tải file khóa và báo lỗi khi file sai định dạng', async () => {
+describe('Ký bằng private key phía máy chủ', () => {
+  it('không cần tải file khóa lên trình duyệt và gửi đúng PIN 6 chữ số để ký', async () => {
     boc(<HanhDong hoSo={hoSo()} luot={hoSo().luot_trinh[0]} maBamTepDangXem={'a'.repeat(64)} onXong={() => undefined} />);
     fireEvent.click(screen.getByRole('button', { name: /Ký duyệt/ }));
-    const o = await screen.findByLabelText(/File khóa ký/);
-    await waitFor(() => expect(o).toBeEnabled());
-    fireEvent.change(o, { target: { files: [new File(['khong phai json'], 'sai.tlbmkey')] } });
-    expect(await screen.findByText('File khóa không đúng định dạng.')).toBeInTheDocument();
+    const oPin = await screen.findByLabelText(/Nhập PIN ký/);
+    await waitFor(() => expect(oPin).toBeEnabled());
+    expect(screen.queryByLabelText(/file khóa ký/i)).not.toBeInTheDocument();
+    fireEvent.change(oPin, { target: { value: '48271593' } });
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /Ký duyệt/ }));
+    expect(await screen.findByText('Vui lòng nhập mã PIN ký gồm đúng 6 chữ số.')).toBeInTheDocument();
+    expect(api.ky).not.toHaveBeenCalled();
+    fireEvent.change(oPin, { target: { value: '482739' } });
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /Ký duyệt/ }));
+    await waitFor(() => expect(api.ky).toHaveBeenCalledTimes(1));
+    expect(api.ky.mock.calls[0][2]).toEqual({
+      khoa_ky: 4, hash_tai_lieu: 'a'.repeat(64), pin: '482739', ghi_chu_ky: '',
+    });
   });
 });
 
@@ -332,7 +341,6 @@ describe('Hộp thoại ký: điều kiện chữ ký hợp lệ', () => {
   };
   const nutKy = () => within(screen.getByRole('dialog')).getByRole('button', { name: /Ký duyệt/ });
   const khoaTatCa = () => {
-    expect(screen.getByLabelText(/File khóa ký/)).toBeDisabled();
     expect(screen.getByLabelText(/Nhập PIN ký/)).toBeDisabled();
     expect(screen.getByPlaceholderText('Ghi chú kèm chữ ký')).toBeDisabled();
     expect(nutKy()).toBeDisabled();
@@ -393,7 +401,7 @@ describe('Hộp thoại ký: điều kiện chữ ký hợp lệ', () => {
   it('đủ điều kiện: mở khóa các ô và nút Ký duyệt', async () => {
     moHopKy();
     await waitFor(() => expect(screen.getByLabelText(/Nhập PIN ký/)).toBeEnabled());
-    expect(screen.getByLabelText(/File khóa ký/)).toBeEnabled();
+    expect(screen.queryByLabelText(/file khóa ký/i)).not.toBeInTheDocument();
     expect(screen.getByPlaceholderText('Ghi chú kèm chữ ký')).toBeEnabled();
     expect(nutKy()).toBeEnabled();
     expect(screen.queryByText('Thiếu chữ ký')).not.toBeInTheDocument();

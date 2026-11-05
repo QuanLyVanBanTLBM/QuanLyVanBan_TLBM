@@ -315,10 +315,13 @@ REST_FRAMEWORK = {
 # ─────────────────────────────────────────────────
 SIGNING_DOCUMENT_ROOT = os.environ.get("SIGNING_DOCUMENT_ROOT", "")
 
-# Trình ký — bí mật máy chủ để băm mã xác minh PIN và mã hóa k_srv (plan mục 3.4).
-# Bắt buộc đặt riêng trên Staging/Production; để trống thì dùng SECRET_KEY (chỉ cho môi trường dev).
-# Đổi giá trị này làm mọi PIN đã đặt mất hiệu lực (người dùng phải đặt lại).
+# Trình ký — SIGNING_PIN_SECRET tiếp tục dùng để HMAC mã đặt lại PIN qua email.
+# Bí mật này bắt buộc riêng trên Staging/Production; chức năng mới không dùng nó làm pepper mã hóa khóa.
 SIGNING_PIN_SECRET = os.environ.get("SIGNING_PIN_SECRET", "")
+
+# Pepper riêng để dẫn xuất khóa AES từ salt và xác minh PIN (#447 partition 1); mã hóa độc lập PIN.
+# Bắt buộc giữ ổn định trong môi trường; thay đổi pepper làm khóa đang lưu không thể giải mã.
+SIGNING_KEY_PEPPER = os.environ.get("SIGNING_KEY_PEPPER", "")
 
 # Trình ký — phông chữ có dấu tiếng Việt để in tệp PDF hoàn tất (Phase 10). Để trống thì tự dò phông hệ thống
 # (DejaVu Sans, Noto Sans, Liberation Sans, Arial); không có phông nào thì tạo tệp báo lỗi `thieu_phong_chu`.

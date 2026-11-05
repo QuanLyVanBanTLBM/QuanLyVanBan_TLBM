@@ -1,11 +1,12 @@
 import base64
+import os
 from datetime import timedelta
 from unittest import mock
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from accounts.models import Position
@@ -13,6 +14,7 @@ from signing import enums
 from signing.errors import ConflictError, SigningError
 from signing.models import SigningAuditLog, SigningChallengeDaDung, SigningKey, SigningProcess, SigningProcessStepSigner
 from signing.services import keys as key_service
+from signing.services import pin as pin_service
 from signing.services import process as process_service
 
 from .helpers import tao_chuc_vu
@@ -184,6 +186,7 @@ class ProcessServiceTests(TestCase):
         self.assertEqual(process_service.nhan_ban(p, self.u2).phien_ban, 3)
 
 
+@override_settings(SIGNING_PIN_SECRET="test-only-pin-secret", SIGNING_KEY_PEPPER="pepper-test")
 class KeyServiceTests(TestCase):
     def setUp(self):
         self.u1 = User.objects.create_user("u1")
@@ -196,7 +199,20 @@ class KeyServiceTests(TestCase):
         return private, key
 
     def verify(self, private, key, user=None):
-        return key_service.xac_minh_so_huu(key, user or self.u1, *sign_challenge(private, key))
+        user = user or self.u1
+        result = key_service.xac_minh_so_huu(key, user, *sign_challenge(private, key))
+        private_pkcs8 = private.private_bytes(
+            serialization.Encoding.DER,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+        tham_so = {
+            "thuat_toan": pin_service.KDF_THUAT_TOAN,
+            **pin_service.KDF_SAN,
+            "salt": base64.b64encode(os.urandom(pin_service.KDF_SALT_BYTES)).decode("ascii"),
+        }
+        pin_service.dat_pin(key, user, "123456", base64.b64encode(private_pkcs8).decode("ascii"), tham_so)
+        return result
 
     def test_register_computes_fingerprint_and_logs(self):
         _, key = self.register()

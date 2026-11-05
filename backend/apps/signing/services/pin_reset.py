@@ -1,10 +1,11 @@
 """
 Đặt lại PIN bằng mã xác thực gửi qua email (issue #478, phân vùng 1 của #447).
 
-PIN là khóa bọc khóa bí mật nên quên PIN thì không mở được bản bọc: đặt lại PIN đi cùng cấp khóa mới.
+Private key được mã hóa độc lập PIN bằng SIGNING_KEY_PEPPER; xác thực email chỉ thay verifier PIN
+và bộ đếm sai, không thu hồi khóa, đổi public key hoặc ghi lại ciphertext.
 - `yeu_cau_ma`: gửi mã 6 chữ số tới email tài khoản; mã lưu dạng băm (`signing_pin_reset_code`), hiệu lực 10 phút,
   hai lần gửi cách nhau tối thiểu 2 phút. Lần gửi chỉ được ghi nhận khi email gửi thành công.
-- `xac_nhan_ma`: nhập đúng mã thì thu hồi khóa ký hiện tại của chính chủ; chủ khóa tạo khóa và PIN mới ở bước sau.
+- `xac_nhan_ma`: nhập đúng mã và PIN mới; chỉ cập nhật verifier của khóa đang hoạt động.
   Sai 5 lần thì hủy mã (mã 6 chữ số cần giới hạn riêng để không bị dò trong thời gian hiệu lực).
 Không giới hạn thao tác nhập PIN khi ký ở đây; xem `pin.py`.
 """
@@ -24,8 +25,8 @@ from django.utils import timezone
 from rest_framework import status
 
 from .. import crypto, enums
-from ..errors import SigningError
-from ..models import SigningKey, SigningPinResetCode
+from ..errors import ConflictError, SigningError
+from ..models import SigningKey, SigningKeyUnlock, SigningPinResetCode
 from ..tich_hop.to_chuc import ten_hien_thi
 from . import pin as pin_service
 from . import quyen_ky, thong_bao
@@ -56,12 +57,12 @@ def _gui_email(tai_khoan, ma):
     than = (
         f"Xin chào {ten},\n\n"
         f"Mã xác thực đặt lại PIN ký: {ma}\n"
-        f"Mã có hiệu lực {phut} phút. Nhập đúng mã sẽ thu hồi khóa ký hiện tại để bạn tạo khóa và PIN mới. "
+        f"Mã có hiệu lực {phut} phút. Nhập mã cùng PIN mới để giữ nguyên khóa ký hiện tại. "
         "Nếu bạn không yêu cầu, hãy bỏ qua thư này và báo quản trị viên.\n\n"
         f"Hello {ten},\n\n"
         f"Your signing PIN reset code: {ma}\n"
-        f"The code is valid for {phut} minutes. Entering it revokes your current signing key so you can create "
-        "a new key and PIN. If you did not request it, ignore this email and tell an administrator.\n\n"
+        f"The code is valid for {phut} minutes. Enter it with a new PIN to keep your current signing key. "
+        "If you did not request it, ignore this email and tell an administrator.\n\n"
         "Thư gửi tự động từ phân hệ Trình ký / Automated email from the signing module."
     )
     thu = mail.EmailMessage("[Trình ký] Mã đặt lại PIN / PIN reset code", than, None, [tai_khoan.email])
@@ -78,6 +79,15 @@ def yeu_cau_ma(nguoi, dia_chi_ip=None):
                 code="tai_khoan_chua_co_email",
                 detail="Tài khoản chưa cập nhật email công vụ để nhận mã xác thực. Liên hệ quản trị viên.",
             )
+        key = (SigningKey.objects.select_for_update().filter(
+            nguoi_so_huu=tai_khoan,
+            trang_thai=enums.TrangThaiKhoa.HOAT_DONG,
+        ).order_by("pk").first())
+        if key is None or not SigningKeyUnlock.objects.filter(khoa=key).exists():
+            raise ConflictError(
+                code="pin_chua_dat",
+                detail="Tài khoản không có khóa ký hoạt động đã đặt PIN để khôi phục.",
+            )
         bay_gio = timezone.now()
         gan_nhat = SigningPinResetCode.objects.filter(nguoi_dung=tai_khoan).order_by("-created_at", "-pk").first()
         if gan_nhat and bay_gio - gan_nhat.created_at < GIAN_CACH_GUI:
@@ -92,7 +102,9 @@ def yeu_cau_ma(nguoi, dia_chi_ip=None):
             nguoi_dung=tai_khoan, da_dung_luc__isnull=True, het_han__gt=bay_gio
         ).update(het_han=bay_gio)  # chỉ mã mới nhất còn hiệu lực
         ma = f"{secrets.randbelow(10**6):06d}"
-        ban_ghi = SigningPinResetCode.objects.create(nguoi_dung=tai_khoan, ma_bam=_bam(ma), het_han=bay_gio + HAN_MA)
+        ban_ghi = SigningPinResetCode.objects.create(
+            nguoi_dung=tai_khoan, khoa=key, ma_bam=_bam(ma), het_han=bay_gio + HAN_MA,
+        )
         try:
             _gui_email(tai_khoan, ma)
         except Exception as exc:  # SMTP/cấu hình: hoàn tác để không đặt giãn cách khi chưa gửi được
@@ -106,11 +118,12 @@ def yeu_cau_ma(nguoi, dia_chi_ip=None):
     return ban_ghi.het_han
 
 
-def xac_nhan_ma(nguoi, ma, dia_chi_ip=None):
-    """Kiểm mã; đúng thì thu hồi khóa ký hiện tại của chính chủ. Trả số khóa đã thu hồi."""
+def xac_nhan_ma(nguoi, ma, pin_moi, dia_chi_ip=None):
+    """Kiểm mã và thay verifier PIN cho khóa đang hoạt động; không đổi khóa/ciphertext."""
     ma = (ma or "").strip()
     if not MA_HOP_LE.match(ma):  # sai định dạng không tính vào số lần sai
         raise SigningError(code="ma_khong_hop_le", detail="Mã xác thực gồm đúng 6 chữ số.")
+    pin_moi = pin_service.kiem_tra_pin(pin_moi, "pin_moi")
     loi = None
     with transaction.atomic():
         tai_khoan = _khoa_tai_khoan(nguoi)
@@ -125,23 +138,50 @@ def xac_nhan_ma(nguoi, ma, dia_chi_ip=None):
                 detail="Không có mã còn hiệu lực. Hãy yêu cầu gửi mã mới.",
             )
         if hmac.compare_digest(ban_ghi.ma_bam, _bam(ma)):
+            key = (SigningKey.objects.select_for_update()
+                   .filter(pk=ban_ghi.khoa_id, nguoi_so_huu=tai_khoan,
+                           trang_thai=enums.TrangThaiKhoa.HOAT_DONG)
+                   .order_by("pk").first())
+            if key is None:
+                raise ConflictError(
+                    code="khoa_khong_dung_trang_thai",
+                    detail="Không còn khóa ký hoạt động để khôi phục PIN.",
+                )
+            unlock = SigningKeyUnlock.objects.select_for_update().filter(khoa=key).first()
+            if unlock is None:
+                raise ConflictError(code="pin_chua_dat", detail="Khóa ký hiện tại chưa có verifier PIN.")
+            try:
+                tham_so = pin_service.kiem_tra_tham_so_kdf(unlock.tham_so_kdf)
+            except SigningError as exc:
+                raise SigningError(
+                    code="khoa_bi_mat_khong_doc_duoc",
+                    detail="Cấu hình khóa ký trong CSDL không hợp lệ.",
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                ) from exc
+            pepper = pin_service._pepper_khoa_ky()
+            try:
+                private_key = pin_service._giai_ma_khoa(key, unlock, tham_so, pepper)
+            except SigningError as exc:
+                if exc.get_codes() != "khoa_bi_mat_khong_khop":
+                    raise
+                private_key = None
+            if private_key is None:
+                raise ConflictError(
+                    code="khoa_bi_mat_khong_doc_duoc",
+                    detail=("Không thể xác minh khóa ký hiện tại nên chưa đặt lại PIN. "
+                            "Khóa và PIN hiện tại chưa thay đổi; hãy liên hệ quản trị hệ thống."),
+                )
+            unlock.ma_bam_xac_minh_pin = pin_service.bam_pin(pin_moi, tham_so, pepper)
+            unlock.so_lan_sai = 0
+            unlock.khoa_den = None
+            unlock.save(update_fields=["ma_bam_xac_minh_pin", "so_lan_sai", "khoa_den", "updated_at"])
             ban_ghi.da_dung_luc = bay_gio
             ban_ghi.save(update_fields=["da_dung_luc"])
-            khoa_thu_hoi = list(SigningKey.objects.select_for_update().filter(
-                nguoi_so_huu=tai_khoan,
-                trang_thai__in=(enums.TrangThaiKhoa.HOAT_DONG, enums.TrangThaiKhoa.CHO_KICH_HOAT),
-            ).order_by("pk"))
-            for key in khoa_thu_hoi:
-                truoc = key.trang_thai
-                key.trang_thai = enums.TrangThaiKhoa.THU_HOI
-                key.ngay_thu_hoi = bay_gio
-                key.save(update_fields=["trang_thai", "ngay_thu_hoi"])
-                ghi_nhat_ky(tai_khoan, "signing_key", key.pk, "DAT_LAI_PIN_THU_HOI_KHOA", trang_thai_truoc=truoc,
-                            trang_thai_sau=key.trang_thai, du_lieu_kem_theo={"ma_dat_lai_id": ban_ghi.pk},
-                            dia_chi_ip=dia_chi_ip)
+            ghi_nhat_ky(tai_khoan, "signing_key", key.pk, "DAT_LAI_PIN_QUA_EMAIL",
+                        du_lieu_kem_theo={"ma_dat_lai_id": ban_ghi.pk}, dia_chi_ip=dia_chi_ip)
             ghi_nhat_ky(tai_khoan, LOAI, ban_ghi.pk, "XAC_NHAN_MA_DAT_LAI_PIN",
-                        du_lieu_kem_theo={"so_khoa_thu_hoi": len(khoa_thu_hoi)}, dia_chi_ip=dia_chi_ip)
-            return len(khoa_thu_hoi)
+                        du_lieu_kem_theo={"khoa_id": key.pk}, dia_chi_ip=dia_chi_ip)
+            return key.pk
         ban_ghi.so_lan_sai += 1
         con_lai = SO_LAN_SAI_TOI_DA - ban_ghi.so_lan_sai
         if con_lai <= 0:

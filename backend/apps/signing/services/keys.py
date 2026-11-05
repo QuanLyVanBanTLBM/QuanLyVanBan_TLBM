@@ -8,7 +8,7 @@ from rest_framework import status
 
 from .. import crypto, enums
 from ..errors import ConflictError, SigningError
-from ..models import SigningChallengeDaDung, SigningKey
+from ..models import SigningChallengeDaDung, SigningKey, SigningKeyUnlock
 from ..tich_hop import to_chuc
 from . import quyen_ky
 from .audit import ghi_nhat_ky
@@ -85,6 +85,7 @@ def chuyen_het_han(nguoi_so_huu, thoi_diem=None):
         key.save(update_fields=["trang_thai"])
         ghi_nhat_ky(nguoi_so_huu, LOAI, key.pk, "HET_HAN_KHOA", trang_thai_truoc=enums.TrangThaiKhoa.HOAT_DONG,
                     trang_thai_sau=key.trang_thai)
+        SigningKeyUnlock.objects.filter(khoa=key).delete()
         so_khoa += 1
     return so_khoa
 
@@ -135,6 +136,8 @@ def _kich_hoat_khoa_da_khoa(key, dia_chi_ip, nguoi_thuc_hien, hanh_dong):
         raise ConflictError(code="khoa_khong_cho_kich_hoat", detail="Khóa không ở trạng thái chờ kích hoạt.")
     if key.thoi_diem_xac_minh_so_huu is None:
         raise SigningError(code="khoa_chua_xac_minh_so_huu", detail="Khóa chưa được xác minh sở hữu.")
+    if not SigningKeyUnlock.objects.filter(khoa=key).exists():
+        raise ConflictError(code="pin_chua_dat", detail="Khóa ký chưa có private key được mã hóa và PIN.")
     truoc = key.trang_thai
     key.trang_thai = enums.TrangThaiKhoa.HOAT_DONG
     key.thoi_diem_kich_hoat = timezone.now()
@@ -174,6 +177,7 @@ def xoay_vong(khoa_cu, khoa_moi, nguoi_thuc_hien, dia_chi_ip=None):
     ghi_nhat_ky(nguoi_thuc_hien, LOAI, khoa_cu.pk, "XOAY_VONG_KHOA", trang_thai_truoc=truoc,
                 trang_thai_sau=khoa_cu.trang_thai, du_lieu_kem_theo={"khoa_thay_the": khoa_moi.pk},
                 dia_chi_ip=dia_chi_ip)
+    SigningKeyUnlock.objects.filter(khoa=khoa_cu).delete()
     _kich_hoat_khoa_da_khoa(khoa_moi, dia_chi_ip, nguoi_thuc_hien, "KICH_HOAT_KHOA_XOAY_VONG")
     return khoa_moi
 
@@ -192,6 +196,7 @@ def thu_hoi(key, nguoi_thuc_hien, ly_do, dia_chi_ip=None):
     key.save(update_fields=["trang_thai", "ngay_thu_hoi"])
     ghi_nhat_ky(nguoi_thuc_hien, LOAI, key.pk, "THU_HOI_KHOA", trang_thai_truoc=truoc,
                 trang_thai_sau=key.trang_thai, chi_tiet=ly_do, dia_chi_ip=dia_chi_ip)
+    SigningKeyUnlock.objects.filter(khoa=key).delete()
     return key
 
 
@@ -228,6 +233,7 @@ def thu_hoi_khan_cap_boi_quan_tri(nguoi_bi_thu_hoi_id, nguoi_thuc_hien, ly_do, d
         ghi_nhat_ky(nguoi_thuc_hien, LOAI, key.pk, "QUAN_TRI_THU_HOI_KHOA",
                     trang_thai_truoc=truoc, trang_thai_sau=key.trang_thai, chi_tiet=ly_do.strip(),
                     du_lieu_kem_theo={"nguoi_so_huu_id": nguoi_bi_thu_hoi_id}, dia_chi_ip=dia_chi_ip)
+        SigningKeyUnlock.objects.filter(khoa=key).delete()
     from . import thong_bao  # nhập muộn: tránh vòng nhập với quyen_ky
     thong_bao.quan_tri_thu_hoi_khoa(khoa_can_thu_hoi[0].nguoi_so_huu, khoa_can_thu_hoi)
     return khoa_can_thu_hoi

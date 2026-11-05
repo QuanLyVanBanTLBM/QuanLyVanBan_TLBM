@@ -1,6 +1,7 @@
 import base64
 from collections.abc import Mapping
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db.models import Exists, OuterRef, Q, Subquery
 from django.utils import timezone
@@ -31,9 +32,10 @@ from .permissions import (
     XEM_TRINH_KY, co_quyen, yeu_cau_quyen,
 )
 from .serializers import (
-    BatLaiQuyenKySerializer, DatPinSerializer, DoiPinSerializer, GiaiQuyetSerializer, GuiTrinhKySerializer, HuyTrinhKySerializer,
+    BatLaiQuyenKySerializer, DatLaiPinXacNhanSerializer, DatPinSerializer, DoiPinSerializer, GiaiQuyetSerializer,
+    GuiTrinhKySerializer, HuyTrinhKySerializer,
     KhoaDangKySerializer,
-    KhoaQuyenKySerializer, KhoaSerializer, KySerializer, LienKetVanBanDiSerializer, MoKhoaKySerializer, QuyTrinhInputSerializer,
+    KhoaQuyenKySerializer, KhoaSerializer, KySerializer, LienKetVanBanDiSerializer, QuyTrinhInputSerializer,
     MaXacThucSerializer, QuyTrinhSerializer, ThuHoiKhoaSerializer, TrinhKyChiTietSerializer, TrinhKySerializer, TrinhKySuaSerializer,
     ThayNguoiKySerializer, TrinhKyTaoSerializer, TrinhLaiSerializer,
     TinNhanInputSerializer, TinNhanSerializer, TuChoiSerializer, XacMinhSoHuuSerializer,
@@ -65,6 +67,16 @@ def ping_view(request):
 
 def _ip(request):
     return request.META.get("REMOTE_ADDR") or None
+
+
+def _yeu_cau_https_cho_pin(request):
+    """Raw PIN/key material must never traverse production HTTP, including a misconfigured TLS proxy."""
+    if not settings.DEBUG and not request.is_secure():
+        raise SigningError(
+            code="https_bat_buoc",
+            detail="Thao tác khóa ký yêu cầu kết nối HTTPS. Liên hệ quản trị hệ thống.",
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
 
 
 # ── Quy trình ────────────────────────────────────────────────────────────────
@@ -189,13 +201,18 @@ class DatLaiPinYeuCauView(SigningAPIView):
 
 
 class DatLaiPinXacNhanView(SigningAPIView):
-    """POST /dat-lai-pin/xac-nhan/ {ma}: mã đúng thì thu hồi khóa ký hiện tại; chủ khóa tạo khóa và PIN mới sau đó."""
+    """POST /dat-lai-pin/xac-nhan/ {ma, pin_moi}: đổi verifier sau email; giữ nguyên khóa ký hiện tại."""
 
     def post(self, request):
-        data = MaXacThucSerializer(data=request.data)
+        _yeu_cau_https_cho_pin(request)
+        data = DatLaiPinXacNhanSerializer(data=request.data)
         data.is_valid(raise_exception=True)
-        so_khoa = pin_reset_service.xac_nhan_ma(request.user, data.validated_data["ma"], dia_chi_ip=_ip(request))
-        return Response({"so_khoa_thu_hoi": so_khoa})
+        khoa_id = pin_reset_service.xac_nhan_ma(
+            request.user, data.validated_data["ma"], data.validated_data["pin_moi"], dia_chi_ip=_ip(request),
+        )
+        response = Response({"da_dat_lai_pin": True, "khoa": khoa_id})
+        response["Cache-Control"] = "no-store"
+        return response
 
 
 class MfaKyYeuCauView(SigningAPIView):
@@ -253,45 +270,34 @@ class KhoaActionView(SigningAPIView):
 
 class KhoaPinView(SigningAPIView):
     """
-    POST /khoa/<pk>/<action>/ với action = dat-pin | mo-khoa-ky | doi-pin.
-    Trả `manh_bi_mat` (k_srv, Base64) chỉ sau khi xác minh; không trả PIN, verifier hay bản bọc.
-    `doi-pin` trả thêm `manh_bi_mat_cu` (k_srv trước khi xoay vòng) để client mở bản bọc hiện có.
+    POST /khoa/<pk>/<action>/ với action = dat-pin | doi-pin.
+    PIN/private key chỉ được nhận trên HTTPS; API chỉ trả trạng thái, không trả khóa riêng hoặc ciphertext.
     """
 
     action = None
 
     def post(self, request, pk):
         yeu_cau_quyen(request.user, KY_TRINH_KY)
+        _yeu_cau_https_cho_pin(request)
         key = get_object_or_404(_khoa_cua_toi(request), pk=pk)
         ip = _ip(request)
         http_status = status.HTTP_200_OK
-        manh_bi_mat_cu = None
         if self.action == "dat-pin":
             data = DatPinSerializer(data=request.data)
             data.is_valid(raise_exception=True)
-            unlock, manh_bi_mat = pin_service.dat_pin(
-                key, request.user, data.validated_data["xac_minh_pin"], data.validated_data["tham_so_kdf"], ip,
+            pin_service.dat_pin(
+                key, request.user, data.validated_data["pin"], data.validated_data["khoa_bi_mat_pkcs8"],
+                data.validated_data["tham_so_kdf"], ip,
             )
             http_status = status.HTTP_201_CREATED
-        elif self.action == "mo-khoa-ky":
-            data = MoKhoaKySerializer(data=request.data)
-            data.is_valid(raise_exception=True)
-            unlock, manh_bi_mat = pin_service.mo_khoa_ky(key, request.user, data.validated_data["xac_minh_pin"], ip)
         else:  # doi-pin
             data = DoiPinSerializer(data=request.data)
             data.is_valid(raise_exception=True)
-            unlock, manh_bi_mat_cu, manh_bi_mat = pin_service.doi_pin(
-                key, request.user, data.validated_data["xac_minh_pin_cu"], data.validated_data["xac_minh_pin_moi"],
+            pin_service.doi_pin(
+                key, request.user, data.validated_data["pin_cu"], data.validated_data["pin_moi"],
                 data.validated_data["tham_so_kdf"], ip,
             )
-        body = {
-            "khoa": key.pk,
-            "manh_bi_mat": base64.b64encode(manh_bi_mat).decode(),
-            "tham_so_kdf": unlock.tham_so_kdf,
-        }
-        if manh_bi_mat_cu is not None:
-            body["manh_bi_mat_cu"] = base64.b64encode(manh_bi_mat_cu).decode()
-        response = Response(body, status=http_status)
+        response = Response({"khoa": key.pk, "da_dat_pin": True}, status=http_status)
         response["Cache-Control"] = "no-store"
         return response
 
@@ -605,6 +611,7 @@ class HanhDongKyView(SigningAPIView):
         khoa = _khoa_chong_trung(request)
         ip = _ip(request)
         if self.action == "ky":
+            _yeu_cau_https_cho_pin(request)
             data = KySerializer(data=request.data)
             data.is_valid(raise_exception=True)
             ket_qua = hanh_dong_service.ky(ho_so, request.user, khoa_chong_trung=khoa, dia_chi_ip=ip,
@@ -617,7 +624,10 @@ class HanhDongKyView(SigningAPIView):
                                                 ly_do_tu_choi=data.validated_data["ly_do_tu_choi"])
         else:  # thu-hoi
             ket_qua = hanh_dong_service.thu_hoi(ho_so, request.user, khoa_chong_trung=khoa, dia_chi_ip=ip)
-        return Response(_du_lieu_chi_tiet_trinh_ky(ket_qua, request))
+        response = Response(_du_lieu_chi_tiet_trinh_ky(ket_qua, request))
+        if self.action == "ky":
+            response["Cache-Control"] = "no-store"
+        return response
 
 
 # ── Trả lại để sửa (lõi Phase 9, #80; plan mục 3.3 "Nhánh 2") ───────────────
@@ -1197,7 +1207,8 @@ class QuanTriNguoiDungView(SigningAPIView):
         lien_quan = [f for f in ("chuc_vu", "don_vi") if any(x.name == f for x in User._meta.get_fields())]
         khoa_hoat_dong = {
             k.nguoi_so_huu_id: k
-            for k in SigningKey.objects.filter(trang_thai=enums.TrangThaiKhoa.HOAT_DONG).select_related("mo_khoa_pin")
+            for k in SigningKey.objects.filter(trang_thai=enums.TrangThaiKhoa.HOAT_DONG)
+            .select_related("mo_khoa_pin").defer("mo_khoa_pin__khoa_bi_mat_ma_hoa")
         }
         thoi_diem = timezone.now()
         khoa_quyen = {
@@ -1241,5 +1252,5 @@ class QuanTriHanhDongView(SigningAPIView):
             key_service.thu_hoi_khan_cap_boi_quan_tri(pk, request.user, data.validated_data["ly_do"], ip)
         u = get_object_or_404(get_user_model().objects.filter(is_active=True), pk=pk)
         khoa = SigningKey.objects.filter(nguoi_so_huu=u, trang_thai=enums.TrangThaiKhoa.HOAT_DONG)\
-            .select_related("mo_khoa_pin").first()
+            .select_related("mo_khoa_pin").defer("mo_khoa_pin__khoa_bi_mat_ma_hoa").first()
         return Response(_trang_thai_ky_cua(u, khoa, quyen_ky_service.khoa_dang_hieu_luc(u)))

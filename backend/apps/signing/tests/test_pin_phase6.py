@@ -1,19 +1,14 @@
-"""
-Phase 6 — bảo vệ khóa ký bằng PIN (signing-backend-plan.md mục 3.4, bảng signing_key_unlock).
-"""
+"""PIN ký 6 chữ số và private key mã hóa phía máy chủ."""
 
 import base64
 import os
 import threading
 import unittest
-from unittest import mock
 from datetime import timedelta
+from unittest import mock
 
-from cryptography.exceptions import InvalidTag
-from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from django.contrib.auth import get_user_model
 from django.db import connection
 from django.test import TestCase, TransactionTestCase, override_settings
@@ -26,39 +21,46 @@ from signing.models import SigningAuditLog, SigningKey, SigningKeyUnlock
 from signing.services import keys as key_service
 from signing.services import pin as pin_service
 
-from .helpers import cap_quyen
-
 User = get_user_model()
-
 BASE = "/api/v1/signing"
-# manage.py test luôn đặt DEBUG = False nên phải có bí mật PIN riêng (#79)
-BI_MAT_KIEM_THU = override_settings(SIGNING_PIN_SECRET="bi-mat-pin-kiem-thu")
-KDF = {"thuat_toan": "argon2id", "m": 65536, "t": 3, "p": 1, "phien_ban": 1,
-       "salt": base64.b64encode(b"s" * 16).decode()}
+PIN = "123456"
+PEPPER_TEST = "test-only-signing-key-pepper"
 
 
-def kdf_moi(**kw):
-    """Tham số KDF kèm salt mới, như client sinh mỗi lần đặt/đổi PIN (contract salt #79)."""
-    return {**KDF, "salt": base64.b64encode(os.urandom(16)).decode(), **kw}
+def kdf_moi():
+    return {
+        "thuat_toan": pin_service.KDF_THUAT_TOAN,
+        **pin_service.KDF_SAN,
+        "salt": base64.b64encode(os.urandom(pin_service.KDF_SALT_BYTES)).decode("ascii"),
+    }
 
 
-def xac_minh():
-    """Verifier giả lập (32 byte, Base64) — trong thực tế do trình duyệt dẫn xuất từ PIN."""
-    return base64.b64encode(os.urandom(32)).decode()
-
-
-def khoa_hoat_dong(user, ma="K1", kich_hoat=True):
+def khoa_cho(user, ma="K1"):
     private = Ed25519PrivateKey.generate()
-    raw = private.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
-    key = key_service.dang_ky(user, ma_khoa=ma, khoa_cong_khai=base64.b64encode(raw).decode(),
-                              ngay_hieu_luc=timezone.now())
-    thach_thuc = key_service.thach_thuc_so_huu(key)
-    chu_ky = base64.b64encode(private.sign(thach_thuc.encode())).decode()
-    key_service.xac_minh_so_huu(key, user, thach_thuc, chu_ky)
-    if kich_hoat:
-        key_service.kich_hoat(key, user)
+    public = private.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+    key = key_service.dang_ky(
+        user,
+        ma_khoa=ma,
+        khoa_cong_khai=base64.b64encode(public).decode("ascii"),
+        ngay_hieu_luc=timezone.now(),
+    )
+    challenge = key_service.thach_thuc_so_huu(key)
+    proof = base64.b64encode(private.sign(challenge.encode())).decode("ascii")
+    key_service.xac_minh_so_huu(key, user, challenge, proof)
+    private_pkcs8 = private.private_bytes(
+        serialization.Encoding.DER,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    )
+    return key, private_pkcs8
+
+
+def khoa_hoat_dong(user, ma="K1", pin=PIN):
+    key, private_pkcs8 = khoa_cho(user, ma)
+    unlock = pin_service.dat_pin(key, user, pin, base64.b64encode(private_pkcs8).decode("ascii"), kdf_moi())
+    key_service.kich_hoat(key, user)
     key.refresh_from_db()
-    return key
+    return key, private_pkcs8, unlock
 
 
 def hanh_dong(key):
@@ -66,82 +68,92 @@ def hanh_dong(key):
                 .order_by("id").values_list("hanh_dong", flat=True))
 
 
-@BI_MAT_KIEM_THU
+@override_settings(SIGNING_PIN_SECRET="test-only-pin-secret", SIGNING_KEY_PEPPER=PEPPER_TEST)
 class PinBase(TestCase):
     def setUp(self):
         self.u1 = User.objects.create_user("u1")
         self.u2 = User.objects.create_user("u2")
-        self.key = khoa_hoat_dong(self.u1)
-        self.pin = xac_minh()
-        self.unlock, self.k_srv = pin_service.dat_pin(self.key, self.u1, self.pin, KDF)
+        self.key, self.private_pkcs8, self.unlock = khoa_hoat_dong(self.u1)
+        self.pin = PIN
 
     def sai(self, lan=1):
         loi = None
         for _ in range(lan):
             with self.assertRaises(SigningError) as ctx:
-                pin_service.mo_khoa_ky(self.key, self.u1, xac_minh())
+                pin_service.mo_khoa_ky(self.key, self.u1, "999999")
             loi = ctx.exception
         self.unlock.refresh_from_db()
         return loi
 
 
 class DatPinTests(PinBase):
-    def test_set_pin_returns_server_share_and_stores_no_secret_in_clear(self):
-        self.assertEqual(len(self.k_srv), 32)
-        self.assertEqual(self.unlock.tham_so_kdf, KDF)
-        self.assertEqual(self.unlock.so_lan_sai, 0)
-        luu = self.unlock.ma_bam_xac_minh_pin + self.unlock.manh_bi_mat_ma_hoa
-        self.assertNotIn(self.pin, luu)  # không lưu verifier dạng gốc
-        self.assertNotIn(base64.b64encode(self.k_srv).decode(), luu)  # k_srv được mã hóa
+    def test_set_pin_encrypts_matching_private_key_and_stores_no_plaintext(self):
+        self.assertEqual(self.unlock.khoa_id, self.key.pk)
+        self.assertEqual(len(self.unlock.ma_bam_xac_minh_pin), 64)
+        self.assertEqual(self.unlock.tham_so_kdf["thuat_toan"], "argon2id")
+        self.assertNotIn(base64.b64encode(self.private_pkcs8).decode("ascii"), self.unlock.khoa_bi_mat_ma_hoa)
+        self.assertNotIn(self.pin, self.unlock.ma_bam_xac_minh_pin)
         self.assertIn("DAT_PIN", hanh_dong(self.key))
 
     def test_cannot_set_pin_twice(self):
         with self.assertRaises(ConflictError) as ctx:
-            pin_service.dat_pin(self.key, self.u1, xac_minh(), KDF)
+            pin_service.dat_pin(
+                self.key, self.u1, self.pin, base64.b64encode(self.private_pkcs8).decode("ascii"), kdf_moi(),
+            )
         self.assertEqual(ctx.exception.get_codes(), "pin_da_dat")
 
-    def test_rejects_bad_verifier_and_weak_kdf(self):
-        key2 = khoa_hoat_dong(self.u2, ma="K2")
-        for sai in ("khong-phai-base64", base64.b64encode(b"ngan").decode(), ""):
-            with self.assertRaises(SigningError) as ctx:
-                pin_service.dat_pin(key2, self.u2, sai, KDF)
-            self.assertEqual(ctx.exception.get_codes(), "xac_minh_pin_khong_hop_le")
-        for kdf, ma in (({**KDF, "m": 1024}, "tham_so_kdf_duoi_muc_san"),
-                        ({**KDF, "t": 1}, "tham_so_kdf_duoi_muc_san"),
-                        ({**KDF, "thuat_toan": "pbkdf2"}, "tham_so_kdf_khong_hop_le"),
-                        ({**KDF, "muoi": "x"}, "tham_so_kdf_khong_hop_le"),
-                        ({**KDF, "m": "65536"}, "tham_so_kdf_khong_hop_le"),
-                        ({k: v for k, v in KDF.items() if k != "salt"}, "tham_so_kdf_khong_hop_le"),
-                        ({**KDF, "salt": base64.b64encode(b"s" * 8).decode()}, "tham_so_kdf_khong_hop_le"),
-                        ({**KDF, "salt": "khong-phai-base64!"}, "tham_so_kdf_khong_hop_le"),
-                        ({**KDF, "salt": 12345}, "tham_so_kdf_khong_hop_le")):
-            with self.assertRaises(SigningError) as ctx:
-                pin_service.dat_pin(key2, self.u2, xac_minh(), kdf)
-            self.assertEqual(ctx.exception.get_codes(), ma)
-        self.assertFalse(SigningKeyUnlock.objects.filter(khoa=key2).exists())
+    def test_rejects_invalid_pin_private_key_and_kdf(self):
+        key, private_pkcs8 = khoa_cho(self.u2, "K2")
+        encoded_private = base64.b64encode(private_pkcs8).decode("ascii")
+        for invalid_pin in ("12345", "1234567", "12a456", ""):
+            with self.subTest(pin=invalid_pin), self.assertRaises(SigningError) as ctx:
+                pin_service.dat_pin(key, self.u2, invalid_pin, encoded_private, kdf_moi())
+            self.assertEqual(ctx.exception.get_codes(), "pin_khong_hop_le")
 
-    def test_only_owner_and_valid_key_state(self):
-        key2 = khoa_hoat_dong(self.u2, ma="K2")
+        wrong_private = Ed25519PrivateKey.generate().private_bytes(
+            serialization.Encoding.DER, serialization.PrivateFormat.PKCS8, serialization.NoEncryption(),
+        )
         with self.assertRaises(SigningError) as ctx:
-            pin_service.dat_pin(key2, self.u1, xac_minh(), KDF)
-        self.assertEqual(ctx.exception.status_code, 403)
-        key_service.thu_hoi(key2, self.u2, "Mất thiết bị")
-        with self.assertRaises(ConflictError):
-            pin_service.dat_pin(key2, self.u2, xac_minh(), KDF)
+            pin_service.dat_pin(key, self.u2, PIN, base64.b64encode(wrong_private).decode("ascii"), kdf_moi())
+        self.assertEqual(ctx.exception.get_codes(), "khoa_bi_mat_khong_hop_le")
 
-    def test_pending_key_can_set_pin(self):
-        key3 = khoa_hoat_dong(self.u2, ma="K3", kich_hoat=False)
-        unlock, _ = pin_service.dat_pin(key3, self.u2, xac_minh(), KDF)
-        self.assertEqual(unlock.khoa_id, key3.pk)
+        for bad_kdf in ({**kdf_moi(), "m": 1024}, {**kdf_moi(), "phien_ban": 1}, {"salt": "bad"}):
+            with self.subTest(kdf=bad_kdf), self.assertRaises(SigningError) as ctx:
+                pin_service.dat_pin(key, self.u2, PIN, encoded_private, bad_kdf)
+            self.assertEqual(ctx.exception.get_codes(), "tham_so_kdf_khong_hop_le")
+        self.assertFalse(SigningKeyUnlock.objects.filter(khoa=key).exists())
+
+    def test_only_owner_can_set_pin_and_revoked_key_is_rejected(self):
+        key, private_pkcs8 = khoa_cho(self.u2, "K2")
+        encoded_private = base64.b64encode(private_pkcs8).decode("ascii")
+        with self.assertRaises(SigningError) as ctx:
+            pin_service.dat_pin(key, self.u1, PIN, encoded_private, kdf_moi())
+        self.assertEqual(ctx.exception.status_code, 403)
+
+        key_service.thu_hoi(key, self.u2, "Khóa không còn sử dụng")
+        with self.assertRaises(ConflictError) as ctx:
+            pin_service.dat_pin(key, self.u2, PIN, encoded_private, kdf_moi())
+        self.assertEqual(ctx.exception.get_codes(), "khoa_khong_dung_trang_thai")
+
+    def test_key_cannot_activate_before_pin_is_set(self):
+        key, _ = khoa_cho(self.u2, "K2")
+        with self.assertRaises(ConflictError) as ctx:
+            key_service.kich_hoat(key, self.u2)
+        self.assertEqual(ctx.exception.get_codes(), "pin_chua_dat")
+
+    def test_pending_key_can_set_pin_before_activation(self):
+        key, private_pkcs8 = khoa_cho(self.u2, "K2")
+        unlock = pin_service.dat_pin(key, self.u2, PIN, base64.b64encode(private_pkcs8).decode("ascii"), kdf_moi())
+        self.assertEqual((unlock.khoa_id, key.trang_thai), (key.pk, enums.TrangThaiKhoa.CHO_KICH_HOAT))
 
 
 class MoKhoaKyTests(PinBase):
-    def test_correct_pin_returns_same_server_share(self):
-        unlock, manh = pin_service.mo_khoa_ky(self.key, self.u1, self.pin)
-        self.assertEqual(manh, self.k_srv)
+    def test_correct_pin_returns_same_private_key_only_to_service(self):
+        private_pkcs8 = pin_service.mo_khoa_ky(self.key, self.u1, self.pin)
+        self.assertEqual(private_pkcs8, self.private_pkcs8)
         self.assertIn("MO_KHOA_KY", hanh_dong(self.key))
 
-    def test_wrong_pin_counts_and_success_resets(self):
+    def test_wrong_pin_counts_and_success_resets_counter(self):
         loi = self.sai(3)
         self.assertEqual(loi.get_codes(), "pin_khong_dung")
         self.assertEqual(loi.fields["so_lan_con_lai"], [12])
@@ -151,229 +163,168 @@ class MoKhoaKyTests(PinBase):
         self.assertEqual(self.unlock.so_lan_sai, 0)
         self.assertEqual(hanh_dong(self.key).count("PIN_SAI"), 3)
 
-    def test_fifteen_wrong_per_day_then_rate_limited_with_429(self):
-        loi = self.sai(14)
-        self.assertEqual((loi.get_codes(), loi.fields["so_lan_con_lai"]), ("pin_khong_dung", [1]))
-        loi = self.sai(1)
-        self.assertEqual(loi.get_codes(), "pin_khong_dung")
+    def test_fifteen_wrong_attempts_are_rate_limited(self):
+        loi = self.sai(15)
+        self.assertEqual((loi.get_codes(), loi.fields["so_lan_con_lai"]), ("pin_khong_dung", [0]))
         self.assertEqual(self.unlock.so_lan_sai, 15)
-        self.assertEqual(hanh_dong(self.key).count("PIN_SAI"), 15)
-        self.assertEqual(hanh_dong(self.key).count("PIN_HET_LUOT"), 1)
-        # Hết lượt: kể cả PIN đúng cũng bị chặn, không tăng bộ đếm
-        for pin in (self.pin, xac_minh()):
-            with self.assertRaises(SigningError) as ctx:
-                pin_service.mo_khoa_ky(self.key, self.u1, pin)
-            self.assertEqual((ctx.exception.get_codes(), ctx.exception.status_code), ("pin_het_luot_trong_ngay", 429))
-        self.unlock.refresh_from_db()
-        self.assertEqual(self.unlock.so_lan_sai, 15)
-
-    def test_counter_resets_on_correct_pin(self):
-        self.sai(14)
-        _, manh = pin_service.mo_khoa_ky(self.key, self.u1, self.pin)
-        self.assertEqual(manh, self.k_srv)
-        self.unlock.refresh_from_db()
-        self.assertEqual(self.unlock.so_lan_sai, 0)
-        loi = self.sai(14)
-        self.assertEqual(loi.fields["so_lan_con_lai"], [1])
+        with self.assertRaises(SigningError) as ctx:
+            pin_service.mo_khoa_ky(self.key, self.u1, self.pin)
+        self.assertEqual((ctx.exception.get_codes(), ctx.exception.status_code), ("pin_het_luot_trong_ngay", 429))
 
     def test_limit_resets_next_day(self):
         self.sai(15)
-        # Trigger cập nhật `updated_at` ở DB nên giả lập sang ngày mới bằng đồng hồ của dịch vụ
-        ngay_mai = timezone.now() + timedelta(days=1, minutes=1)
-        with mock.patch.object(pin_service.timezone, "now", return_value=ngay_mai):
-            _, manh = pin_service.mo_khoa_ky(self.key, self.u1, self.pin)
-        self.assertEqual(manh, self.k_srv)
+        next_day = timezone.now() + timedelta(days=1, minutes=1)
+        with mock.patch.object(pin_service.timezone, "now", return_value=next_day):
+            private_pkcs8 = pin_service.mo_khoa_ky(self.key, self.u1, self.pin)
+        self.assertEqual(private_pkcs8, self.private_pkcs8)
         self.unlock.refresh_from_db()
         self.assertEqual(self.unlock.so_lan_sai, 0)
 
-    def test_legacy_lock_columns_are_ignored(self):
-        SigningKeyUnlock.objects.filter(pk=self.unlock.pk).update(khoa_den=timezone.now() + timedelta(hours=1))
-        _, manh = pin_service.mo_khoa_ky(self.key, self.u1, self.pin)
-        self.assertEqual(manh, self.k_srv)
+    def test_unreadable_ciphertext_returns_clear_error_without_counting_wrong_pin(self):
+        SigningKeyUnlock.objects.filter(pk=self.unlock.pk).update(khoa_bi_mat_ma_hoa="tampered")
+        with self.assertRaises(SigningError) as ctx:
+            pin_service.mo_khoa_ky(self.key, self.u1, self.pin)
+        self.assertEqual(ctx.exception.get_codes(), "khoa_bi_mat_khong_doc_duoc")
+        self.unlock.refresh_from_db()
+        self.assertEqual(self.unlock.so_lan_sai, 0)
 
-    def test_only_active_key_and_owner(self):
+    def test_only_owner_and_active_key_can_sign(self):
         with self.assertRaises(SigningError) as ctx:
             pin_service.mo_khoa_ky(self.key, self.u2, self.pin)
         self.assertEqual(ctx.exception.status_code, 403)
-        key3 = khoa_hoat_dong(self.u2, ma="K3", kich_hoat=False)
-        pin3 = xac_minh()
-        pin_service.dat_pin(key3, self.u2, pin3, KDF)
-        with self.assertRaises(ConflictError):
-            pin_service.mo_khoa_ky(key3, self.u2, pin3)
-        self.assertEqual(SigningKeyUnlock.objects.get(khoa=key3).so_lan_sai, 0)
 
-    def test_pin_not_set(self):
-        key2 = khoa_hoat_dong(self.u2, ma="K2")
+        key, private_pkcs8 = khoa_cho(self.u2, "K2")
+        pin_service.dat_pin(key, self.u2, PIN, base64.b64encode(private_pkcs8).decode("ascii"), kdf_moi())
         with self.assertRaises(ConflictError) as ctx:
-            pin_service.mo_khoa_ky(key2, self.u2, xac_minh())
-        self.assertEqual(ctx.exception.get_codes(), "pin_chua_dat")
-
-    def test_database_leak_alone_cannot_verify_pin(self):
-        """Bí mật máy chủ khác -> HMAC và bản mã k_srv trong CSDL không dùng được."""
-        with override_settings(SIGNING_PIN_SECRET="bi-mat-khac"):
-            with self.assertRaises(SigningError) as ctx:
-                pin_service.mo_khoa_ky(self.key, self.u1, self.pin)
-        self.assertEqual(ctx.exception.get_codes(), "pin_khong_dung")
-
-
-def bo_khoa_boc(master_pin, k_srv):
-    """Mô phỏng khóa bọc phía trình duyệt: HKDF(master_pin, k_srv, "wrap") (plan mục 3.4)."""
-    return HKDF(algorithm=hashes.SHA256(), length=32, salt=k_srv, info=b"wrap").derive(master_pin)
+            pin_service.mo_khoa_ky(key, self.u2, PIN)
+        self.assertEqual(ctx.exception.get_codes(), "khoa_khong_dung_trang_thai")
 
 
 class DoiPinTests(PinBase):
-    def test_change_pin_rotates_server_share(self):
-        moi = xac_minh()
-        _, manh_cu, manh_moi = pin_service.doi_pin(self.key, self.u1, self.pin, moi, kdf_moi(phien_ban=2))
-        self.assertEqual(manh_cu, self.k_srv)
-        self.assertEqual(len(manh_moi), 32)
-        self.assertNotEqual(manh_moi, self.k_srv)
-        self.unlock.refresh_from_db()
-        self.assertEqual(self.unlock.tham_so_kdf["phien_ban"], 2)
+    def test_change_pin_preserves_same_private_key(self):
+        ciphertext_cu = self.unlock.khoa_bi_mat_ma_hoa
+        verifier_cu = self.unlock.ma_bam_xac_minh_pin
+        moi = "654321"
+        unlock = pin_service.doi_pin(self.key, self.u1, self.pin, moi, kdf_moi())
+        self.assertNotEqual(unlock.khoa_bi_mat_ma_hoa, ciphertext_cu)
+        self.assertNotEqual(unlock.ma_bam_xac_minh_pin, verifier_cu)
+        self.assertEqual(pin_service.mo_khoa_ky(self.key, self.u1, moi), self.private_pkcs8)
         with self.assertRaises(SigningError):
-            pin_service.mo_khoa_ky(self.key, self.u1, self.pin)  # PIN cũ hết hiệu lực
-        _, manh = pin_service.mo_khoa_ky(self.key, self.u1, moi)
-        self.assertEqual(manh, manh_moi)  # server không còn trả k_srv cũ
-        log = SigningAuditLog.objects.filter(ma_doi_tuong=self.key.pk, hanh_dong="DOI_PIN").get()
-        self.assertTrue(log.du_lieu_kem_theo["xoay_vong_manh_bi_mat"])
-        self.assertNotIn(base64.b64encode(manh_moi).decode(), str(log.du_lieu_kem_theo))
+            pin_service.mo_khoa_ky(self.key, self.u1, self.pin)
+        self.assertIn("DOI_PIN", hanh_dong(self.key))
 
-    def test_old_server_share_cannot_open_new_wrap(self):
-        master_pin_moi = os.urandom(32)
-        _, manh_cu, manh_moi = pin_service.doi_pin(self.key, self.u1, self.pin, xac_minh(), kdf_moi())
-        nonce, private_key = os.urandom(12), os.urandom(32)
-        ban_boc = AESGCM(bo_khoa_boc(master_pin_moi, manh_moi)).encrypt(nonce, private_key, None)
-        self.assertEqual(AESGCM(bo_khoa_boc(master_pin_moi, manh_moi)).decrypt(nonce, ban_boc, None), private_key)
-        with self.assertRaises(InvalidTag):
-            AESGCM(bo_khoa_boc(master_pin_moi, manh_cu)).decrypt(nonce, ban_boc, None)
-
-    def test_change_pin_requires_new_salt(self):
-        # KDF dùng salt của lần đặt PIN trong setUp: đổi PIN với salt cũ bị từ chối, không đổi gì
+    def test_change_pin_requires_new_salt_and_preserves_state_on_failure(self):
+        ciphertext_cu = self.unlock.khoa_bi_mat_ma_hoa
         with self.assertRaises(SigningError) as ctx:
-            pin_service.doi_pin(self.key, self.u1, self.pin, xac_minh(), KDF)
+            pin_service.doi_pin(self.key, self.u1, self.pin, "654321", self.unlock.tham_so_kdf)
         self.assertEqual(ctx.exception.get_codes(), "salt_trung_salt_cu")
         self.unlock.refresh_from_db()
-        self.assertEqual(self.unlock.tham_so_kdf, KDF)
-        _, manh = pin_service.mo_khoa_ky(self.key, self.u1, self.pin)  # PIN cũ vẫn dùng được
-        self.assertEqual(manh, self.k_srv)
-        self.assertNotIn("DOI_PIN", hanh_dong(self.key))
+        self.assertEqual(self.unlock.khoa_bi_mat_ma_hoa, ciphertext_cu)
+        self.assertEqual(pin_service.mo_khoa_ky(self.key, self.u1, self.pin), self.private_pkcs8)
 
-    def test_failed_change_keeps_server_share(self):
-        with self.assertRaises(SigningError):
-            pin_service.doi_pin(self.key, self.u1, xac_minh(), xac_minh(), KDF)
-        _, manh = pin_service.mo_khoa_ky(self.key, self.u1, self.pin)
-        self.assertEqual(manh, self.k_srv)
-
-    def test_wrong_old_pin_counts_and_same_pin_rejected(self):
+    def test_wrong_old_pin_counts_and_new_pin_must_differ(self):
         with self.assertRaises(SigningError) as ctx:
-            pin_service.doi_pin(self.key, self.u1, xac_minh(), xac_minh(), KDF)
+            pin_service.doi_pin(self.key, self.u1, "999999", "654321", kdf_moi())
         self.assertEqual(ctx.exception.get_codes(), "pin_khong_dung")
         self.unlock.refresh_from_db()
         self.assertEqual(self.unlock.so_lan_sai, 1)
         with self.assertRaises(SigningError) as ctx:
-            pin_service.doi_pin(self.key, self.u1, self.pin, self.pin, KDF)
+            pin_service.doi_pin(self.key, self.u1, self.pin, self.pin, kdf_moi())
         self.assertEqual(ctx.exception.get_codes(), "pin_moi_trung_pin_cu")
 
 
+@override_settings(SIGNING_PIN_SECRET="test-only-pin-secret", SIGNING_KEY_PEPPER=PEPPER_TEST)
 class PinApiTests(PinBase):
     def setUp(self):
         super().setUp()
+        from .helpers import cap_quyen
+
         cap_quyen(self.u1, "sign_trinhky")
         cap_quyen(self.u2, "sign_trinhky")
         self.c1, self.c2 = APIClient(), APIClient()
         self.c1.force_authenticate(self.u1)
         self.c2.force_authenticate(self.u2)
 
-    def test_pin_endpoints_require_sign_permission(self):
+    def test_set_and_change_pin_endpoints_return_no_private_material(self):
+        key, private_pkcs8 = khoa_cho(self.u2, "K2")
+        private_b64 = base64.b64encode(private_pkcs8).decode("ascii")
+        first_kdf = kdf_moi()
+        response = self.c2.post(f"{BASE}/khoa/{key.pk}/dat-pin/", {
+            "pin": PIN, "khoa_bi_mat_pkcs8": private_b64, "tham_so_kdf": first_kdf,
+        }, format="json", secure=True)
+        self.assertEqual((response.status_code, response.data), (201, {"khoa": key.pk, "da_dat_pin": True}))
+        self.assertEqual(response["Cache-Control"], "no-store")
+
+        key_service.kich_hoat(key, self.u2)
+        response = self.c2.post(f"{BASE}/khoa/{key.pk}/doi-pin/", {
+            "pin_cu": PIN, "pin_moi": "654321", "tham_so_kdf": kdf_moi(),
+        }, format="json", secure=True)
+        self.assertEqual((response.status_code, response.data), (200, {"khoa": key.pk, "da_dat_pin": True}))
+        self.assertEqual(response["Cache-Control"], "no-store")
+        self.assertNotIn("private", response.content.decode().lower())
+        self.assertNotIn(private_b64, response.content.decode())
+        self.assertEqual(pin_service.mo_khoa_ky(key, self.u2, "654321"), private_pkcs8)
+
+    def test_pin_endpoints_require_permission_and_hide_other_users_keys(self):
+        key, private_pkcs8 = khoa_cho(self.u2, "K2")
         u3 = User.objects.create_user("u3")
-        c3 = APIClient()
-        c3.force_authenticate(u3)
-        r = c3.post(f"{BASE}/khoa/{self.key.pk}/mo-khoa-ky/", {"xac_minh_pin": self.pin}, format="json")
-        self.assertEqual((r.status_code, r.data["code"]), (403, "khong_co_quyen"))
+        client = APIClient()
+        client.force_authenticate(u3)
+        response = client.post(f"{BASE}/khoa/{key.pk}/dat-pin/", {
+            "pin": PIN, "khoa_bi_mat_pkcs8": base64.b64encode(private_pkcs8).decode("ascii"),
+            "tham_so_kdf": kdf_moi(),
+        }, format="json", secure=True)
+        self.assertEqual((response.status_code, response.data["code"]), (403, "khong_co_quyen"))
 
-    def test_unlock_endpoint_and_response_content(self):
-        r = self.c1.post(f"{BASE}/khoa/{self.key.pk}/mo-khoa-ky/", {"xac_minh_pin": self.pin}, format="json")
-        self.assertEqual(r.status_code, 200, r.content)
-        self.assertEqual(r["Cache-Control"], "no-store")
-        self.assertEqual(base64.b64decode(r.data["manh_bi_mat"]), self.k_srv)
-        self.assertEqual(set(r.data), {"khoa", "manh_bi_mat", "tham_so_kdf"})  # không trả PIN, hash, bản bọc
-        r = self.c1.get(f"{BASE}/khoa/")
-        self.assertTrue(r.data[0]["da_dat_pin"])
-        self.assertNotIn("ma_bam_xac_minh_pin", r.content.decode())
+        response = self.c1.post(f"{BASE}/khoa/{key.pk}/dat-pin/", {}, format="json", secure=True)
+        self.assertEqual(response.status_code, 404)
 
-    def test_wrong_and_rate_limited_responses(self):
-        r = self.c1.post(f"{BASE}/khoa/{self.key.pk}/mo-khoa-ky/", {"xac_minh_pin": xac_minh()}, format="json")
-        self.assertEqual((r.status_code, r.data["code"]), (400, "pin_khong_dung"))
-        for _ in range(14):
-            r = self.c1.post(f"{BASE}/khoa/{self.key.pk}/mo-khoa-ky/", {"xac_minh_pin": xac_minh()}, format="json")
-        self.assertEqual((r.status_code, r.data["code"]), (400, "pin_khong_dung"))
-        r = self.c1.post(f"{BASE}/khoa/{self.key.pk}/mo-khoa-ky/", {"xac_minh_pin": self.pin}, format="json")
-        self.assertEqual((r.status_code, r.data["code"]), (429, "pin_het_luot_trong_ngay"))
-
-    def test_set_and_change_pin_endpoints(self):
-        key2 = khoa_hoat_dong(self.u2, ma="K2")
-        pin2 = xac_minh()
-        r = self.c2.post(f"{BASE}/khoa/{key2.pk}/dat-pin/", {"xac_minh_pin": pin2, "tham_so_kdf": KDF}, format="json")
-        self.assertEqual(r.status_code, 201, r.content)
-        k_srv_dau = base64.b64decode(r.data["manh_bi_mat"])
-        pin_moi = xac_minh()
-        r = self.c2.post(f"{BASE}/khoa/{key2.pk}/doi-pin/",
-                         {"xac_minh_pin_cu": pin2, "xac_minh_pin_moi": pin_moi, "tham_so_kdf": kdf_moi()},
-                         format="json")
-        self.assertEqual(r.status_code, 200, r.content)
-        self.assertEqual(r["Cache-Control"], "no-store")
-        self.assertEqual(set(r.data), {"khoa", "manh_bi_mat_cu", "manh_bi_mat", "tham_so_kdf"})
-        self.assertNotEqual(r.data["tham_so_kdf"]["salt"], KDF["salt"])
-        self.assertEqual(base64.b64decode(r.data["manh_bi_mat_cu"]), k_srv_dau)
-        k_srv_moi = base64.b64decode(r.data["manh_bi_mat"])
-        self.assertNotEqual(k_srv_moi, k_srv_dau)
-        r = self.c2.post(f"{BASE}/khoa/{key2.pk}/mo-khoa-ky/", {"xac_minh_pin": pin_moi}, format="json")
-        self.assertEqual(base64.b64decode(r.data["manh_bi_mat"]), k_srv_moi)
-
-    @override_settings(DEBUG=False, SIGNING_PIN_SECRET="")
-    def test_production_without_pin_secret_returns_503(self):
+    @override_settings(DEBUG=False, SIGNING_KEY_PEPPER="")
+    def test_production_without_pepper_returns_503_without_storing_pin(self):
+        key, private_pkcs8 = khoa_cho(self.u2, "K2")
         with self.assertLogs("signing.services.pin", level="ERROR"):
-            r = self.c1.post(f"{BASE}/khoa/{self.key.pk}/mo-khoa-ky/", {"xac_minh_pin": self.pin}, format="json")
-        self.assertEqual((r.status_code, r.data["code"]), (503, "chua_cau_hinh_bi_mat_pin"))
-        self.unlock.refresh_from_db()
-        self.assertEqual(self.unlock.so_lan_sai, 0)  # lỗi cấu hình không tính vào số lần sai
-
-    def test_other_users_key_not_found(self):
-        r = self.c2.post(f"{BASE}/khoa/{self.key.pk}/mo-khoa-ky/", {"xac_minh_pin": self.pin}, format="json")
-        self.assertEqual(r.status_code, 404)
-        self.assertEqual(APIClient().post(f"{BASE}/khoa/{self.key.pk}/mo-khoa-ky/", {}).status_code, 401)
+            response = self.c2.post(f"{BASE}/khoa/{key.pk}/dat-pin/", {
+                "pin": PIN, "khoa_bi_mat_pkcs8": base64.b64encode(private_pkcs8).decode("ascii"),
+                "tham_so_kdf": kdf_moi(),
+            }, format="json", secure=True)
+        self.assertEqual((response.status_code, response.data["code"]), (503, "chua_cau_hinh_pepper_khoa_ky"))
+        self.assertFalse(SigningKeyUnlock.objects.filter(khoa=key).exists())
 
 
 @unittest.skipUnless(connection.vendor == "postgresql", "Cần PostgreSQL để kiểm tra khóa dòng đồng thời")
-@BI_MAT_KIEM_THU
+@override_settings(SIGNING_PIN_SECRET="test-only-pin-secret", SIGNING_KEY_PEPPER=PEPPER_TEST)
 class PinConcurrencyTests(TransactionTestCase):
-    def test_concurrent_wrong_attempts_counted_exactly(self):
+    def test_concurrent_wrong_attempts_are_counted_exactly(self):
         user = User.objects.create_user("u1")
-        key = khoa_hoat_dong(user)
-        pin_service.dat_pin(key, user, xac_minh(), KDF)
+        key, _, _ = khoa_hoat_dong(user)
 
         def thu_sai():
             try:
-                pin_service.mo_khoa_ky(key, user, xac_minh())
+                pin_service.mo_khoa_ky(key, user, "999999")
             except SigningError:
                 pass
             finally:
                 connection.close()
 
-        luong = [threading.Thread(target=thu_sai) for _ in range(4)]
-        for t in luong:
-            t.start()
-        for t in luong:
-            t.join()
+        threads = [threading.Thread(target=thu_sai) for _ in range(4)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
         self.assertEqual(SigningKeyUnlock.objects.get(khoa=key).so_lan_sai, 4)
 
 
 class PinCryptoTests(TestCase):
-    def test_server_share_bound_to_key(self):
-        enc = crypto.derive_subkey(b"bi-mat", "server-share")
-        token = crypto.encrypt_server_share(b"x" * 32, enc, b"signing_key:1:abc")
-        self.assertEqual(crypto.decrypt_server_share(token, enc, b"signing_key:1:abc"), b"x" * 32)
+    def test_private_key_ciphertext_is_bound_to_key_and_pepper(self):
+        pepper = b"pepper-a"
+        salt = os.urandom(16)
+        aes_key = crypto.derive_signing_key_encryption_key(pepper, salt)
+        aad = b"tlbm-signing-private-key-v1:1:fingerprint"
+        token = crypto.encrypt_signing_private_key(b"private-key", aes_key, aad)
+        self.assertEqual(crypto.decrypt_signing_private_key(token, aes_key, aad), b"private-key")
+
         with self.assertRaises(ValueError):
-            crypto.decrypt_server_share(token, enc, b"signing_key:2:abc")
-        self.assertNotEqual(crypto.derive_subkey(b"bi-mat", "server-share"),
-                            crypto.derive_subkey(b"bi-mat", "pin-verifier"))
+            crypto.decrypt_signing_private_key(token, aes_key, aad + b"-other-key")
+        wrong_key = crypto.derive_signing_key_encryption_key(b"pepper-b", salt)
+        with self.assertRaises(ValueError):
+            crypto.decrypt_signing_private_key(token, wrong_key, aad)

@@ -1,6 +1,6 @@
 /**
- * Đặt lại PIN bằng mã xác thực gửi qua email (#478): quên PIN thì không mở được bản bọc khóa, nên nhập đúng mã sẽ
- * thu hồi khóa ký hiện tại; chủ khóa tạo khóa và PIN mới ở form của trang Cấu hình khóa ký.
+ * Đặt lại PIN bằng mã xác thực gửi qua email (#478): nhập mã và PIN mới sẽ đổi verifier PIN,
+ * giữ nguyên khóa ký hiện tại và ciphertext trên máy chủ.
  */
 import { useEffect, useState } from 'react';
 import { Button } from '@components/common';
@@ -8,16 +8,21 @@ import { HopThoai, ThongBao, TruongNhap } from '@components/signing/ChungUI';
 import { giayChoThuLai, signingApi } from '@lib/signing/api';
 import { dinhDangNgay, LOP_O_NHAP } from '@lib/signing/dinhDang';
 import { useSigningT } from '@lib/signing/i18n';
+import { kiemTraPin } from '@lib/signing/khoaKy';
 import { useTranslation } from '@i18n/translate';
 
 /** Chỉ đếm ngược khi thời gian chờ ngắn; chờ dài hơn (giới hạn theo ngày) hiện thời điểm được thử lại. */
 const GIAY_DEM_NGUOC_TOI_DA = 15 * 60;
 
-export default function DatLaiPinDialog({ mo, onDong, onXong }: { mo: boolean; onDong: () => void; onXong: () => void }) {
+export default function DatLaiPinDialog({
+  mo, onDong, onXong,
+}: { mo: boolean; onDong: () => void; onXong: (pin_moi: string) => void }) {
   const { t, loi } = useSigningT();
   const { currentLang } = useTranslation();
   const [hetHan, setHetHan] = useState<string | null>(null);
   const [ma, setMa] = useState('');
+  const [pinMoi, setPinMoi] = useState('');
+  const [pinMoi2, setPinMoi2] = useState('');
   const [giayCho, setGiayCho] = useState(0);
   const [dangLam, setDangLam] = useState(false);
   const [thongBao, setThongBao] = useState<string | null>(null);
@@ -33,6 +38,8 @@ export default function DatLaiPinDialog({ mo, onDong, onXong }: { mo: boolean; o
     if (dangLam) return;
     setHetHan(null);
     setMa('');
+    setPinMoi('');
+    setPinMoi2('');
     setGiayCho(0);
     setThongBao(null);
     onDong();
@@ -60,17 +67,23 @@ export default function DatLaiPinDialog({ mo, onDong, onXong }: { mo: boolean; o
     setDangLam(true);
     setThongBao(null);
     try {
-      await signingApi.datLaiPinXacNhan(ma);
+      await signingApi.datLaiPinXacNhan(ma, pinMoi);
       setDangLam(false);
       setHetHan(null);
       setMa('');
       setGiayCho(0);
-      onXong();
+      const pinDaDatLai = pinMoi;
+      setPinMoi('');
+      setPinMoi2('');
+      onXong(pinDaDatLai);
     } catch (err) {
       setThongBao(loi(err));
       setDangLam(false);
     }
   };
+
+  const loiPin = pinMoi ? kiemTraPin(pinMoi) : null;
+  const duocXacNhan = ma.length === 6 && !loiPin && pinMoi.length === 6 && pinMoi === pinMoi2;
 
   return (
     <HopThoai
@@ -83,7 +96,7 @@ export default function DatLaiPinDialog({ mo, onDong, onXong }: { mo: boolean; o
         <>
           <Button variant="secondary" onClick={dong} disabled={dangLam}>{t('chung.dong')}</Button>
           {hetHan && (
-            <Button variant="danger" isLoading={dangLam} disabled={ma.length !== 6} onClick={xacNhan}>
+            <Button variant="primary" isLoading={dangLam} disabled={!duocXacNhan} onClick={xacNhan}>
               {t('khoa.datLaiPinXacNhan')}
             </Button>
           )}
@@ -109,6 +122,32 @@ export default function DatLaiPinDialog({ mo, onDong, onXong }: { mo: boolean; o
               onChange={(e) => setMa(e.target.value.replace(/\D/g, ''))}
             />
           </TruongNhap>
+          <TruongNhap nhan={t('khoa.datLaiPinNhapPinMoi')} batBuoc>
+            <input
+              className={LOP_O_NHAP}
+              type="password"
+              inputMode="numeric"
+              autoComplete="new-password"
+              maxLength={6}
+              value={pinMoi}
+              onChange={(e) => setPinMoi(e.target.value.replace(/\D/g, ''))}
+            />
+          </TruongNhap>
+          {loiPin && <ThongBao loai="canh_bao">{t(`loi.${loiPin}`)}</ThongBao>}
+          <TruongNhap nhan={t('khoa.datLaiPinNhapLaiPinMoi')} batBuoc>
+            <input
+              className={LOP_O_NHAP}
+              type="password"
+              inputMode="numeric"
+              autoComplete="new-password"
+              maxLength={6}
+              value={pinMoi2}
+              onChange={(e) => setPinMoi2(e.target.value.replace(/\D/g, ''))}
+            />
+          </TruongNhap>
+          {pinMoi2 && pinMoi !== pinMoi2 && (
+            <ThongBao loai="canh_bao">{t('khoa.datLaiPinKhongKhop')}</ThongBao>
+          )}
           <Button variant="secondary" size="sm" icon="fa-rotate" disabled={dangLam || giayCho > 0} onClick={guiMa}>
             {giayCho > 0 ? t('khoa.datLaiPinGuiLaiSau', { giay: giayCho }) : t('khoa.datLaiPinGuiLai')}
           </Button>

@@ -11,6 +11,13 @@ import type {
 } from './types';
 
 export const SIGNING_BASE = '/api/v1/signing';
+
+function yeuCauKenhKyAnToan() {
+  // A server-side guard cannot undo credentials already sent over HTTP.
+  // Browsers treat HTTPS and loopback origins as secure contexts.
+  if (typeof window === 'undefined' || !window.isSecureContext) throw new Error('https_bat_buoc');
+}
+
 /** Số hồ sơ (hoặc thông báo) mỗi trang danh sách (server mặc định 10, tối đa 100). */
 export const SO_HO_SO_MOI_TRANG = 10;
 
@@ -122,8 +129,10 @@ export const signingApi = {
     apiClient.post<HoSoChiTiet>(`${SIGNING_BASE}/trinh-ky/${id}/trinh-lai/`, {}, tieuDe(khoa)),
 
   // ── Hành động người ký ───────────────────────────────────────────────────
-  ky: (id: number, khoa: string, body: { khoa_ky: number; hash_tai_lieu: string; chu_ky_so: string; ghi_chu_ky: string }) =>
-    apiClient.post<HoSoChiTiet>(`${SIGNING_BASE}/trinh-ky/${id}/ky/`, body, tieuDe(khoa)),
+  ky: (id: number, khoa: string, body: { khoa_ky: number; hash_tai_lieu: string; pin: string; ghi_chu_ky: string }) => {
+    yeuCauKenhKyAnToan();
+    return apiClient.post<HoSoChiTiet>(`${SIGNING_BASE}/trinh-ky/${id}/ky/`, body, tieuDe(khoa));
+  },
   tuChoi: (id: number, khoa: string, ly_do_tu_choi: string) =>
     apiClient.post<HoSoChiTiet>(`${SIGNING_BASE}/trinh-ky/${id}/tu-choi/`, { ly_do_tu_choi }, tieuDe(khoa)),
   thuHoi: (id: number, khoa: string) =>
@@ -278,8 +287,11 @@ export const signingApi = {
     apiClient.post<KhoaKy>(`${SIGNING_BASE}/khoa/${id}/xac-minh/`, { thach_thuc, chu_ky_so }),
   datLaiPinYeuCau: () =>
     apiClient.post<{ het_han: string; gian_cach_giay: number }>(`${SIGNING_BASE}/dat-lai-pin/yeu-cau/`, {}),
-  datLaiPinXacNhan: (ma: string) =>
-    apiClient.post<{ so_khoa_thu_hoi: number }>(`${SIGNING_BASE}/dat-lai-pin/xac-nhan/`, { ma }),
+  datLaiPinXacNhan: (ma: string, pin_moi: string) => {
+    yeuCauKenhKyAnToan();
+    return apiClient.post<{ da_dat_lai_pin: boolean; khoa: number }>(
+      `${SIGNING_BASE}/dat-lai-pin/xac-nhan/`, { ma, pin_moi });
+  },
   /** MFA khi ký (#509): gửi mã 6 chữ số tới email; `gian_cach_giay` là thời gian tối thiểu giữa hai lần gửi. */
   mfaKyYeuCau: () =>
     apiClient.post<{ het_han: string; gian_cach_giay: number }>(`${SIGNING_BASE}/mfa/yeu-cau/`, {}),
@@ -290,12 +302,14 @@ export const signingApi = {
   xoayVongKhoa: (id: number, khoa_moi: number) =>
     apiClient.post<KhoaKy>(`${SIGNING_BASE}/khoa/${id}/xoay-vong/`, { khoa_moi }),
   thuHoiKhoa: (id: number, ly_do: string) => apiClient.post<KhoaKy>(`${SIGNING_BASE}/khoa/${id}/thu-hoi/`, { ly_do }),
-  datPin: (id: number, xac_minh_pin: string, tham_so_kdf: ThamSoKdf) =>
-    apiClient.post<{ manh_bi_mat: string; tham_so_kdf: ThamSoKdf }>(
-      `${SIGNING_BASE}/khoa/${id}/dat-pin/`, { xac_minh_pin, tham_so_kdf }),
-  moKhoaKy: (id: number, xac_minh_pin: string) =>
-    apiClient.post<{ manh_bi_mat: string; tham_so_kdf: ThamSoKdf }>(`${SIGNING_BASE}/khoa/${id}/mo-khoa-ky/`, { xac_minh_pin }),
-  doiPin: (id: number, xac_minh_pin_cu: string, xac_minh_pin_moi: string, tham_so_kdf: ThamSoKdf) =>
-    apiClient.post<{ manh_bi_mat: string; manh_bi_mat_cu: string; tham_so_kdf: ThamSoKdf }>(
-      `${SIGNING_BASE}/khoa/${id}/doi-pin/`, { xac_minh_pin_cu, xac_minh_pin_moi, tham_so_kdf }),
+  datPin: (id: number, pin: string, khoa_bi_mat_pkcs8: string, tham_so_kdf: ThamSoKdf) => {
+    yeuCauKenhKyAnToan();
+    return apiClient.post<{ khoa: number; da_dat_pin: boolean }>(
+      `${SIGNING_BASE}/khoa/${id}/dat-pin/`, { pin, khoa_bi_mat_pkcs8, tham_so_kdf });
+  },
+  doiPin: (id: number, pin_cu: string, pin_moi: string, tham_so_kdf: ThamSoKdf) => {
+    yeuCauKenhKyAnToan();
+    return apiClient.post<{ khoa: number; da_dat_pin: boolean }>(
+      `${SIGNING_BASE}/khoa/${id}/doi-pin/`, { pin_cu, pin_moi, tham_so_kdf });
+  },
 };

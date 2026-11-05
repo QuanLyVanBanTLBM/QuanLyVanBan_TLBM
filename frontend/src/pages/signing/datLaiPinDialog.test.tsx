@@ -29,20 +29,25 @@ afterEach(() => vi.useRealTimers());
 describe('DatLaiPinDialog', () => {
   it('sends the code, then enables confirm only for a 6-digit code and reports success', async () => {
     api.datLaiPinYeuCau.mockResolvedValue({ het_han: '2026-11-02T03:00:00Z', gian_cach_giay: 120 });
-    api.datLaiPinXacNhan.mockResolvedValue({ so_khoa_thu_hoi: 1 });
+    api.datLaiPinXacNhan.mockResolvedValue({ da_dat_lai_pin: true, khoa: 1 });
     const { onXong } = hien();
-    expect(screen.queryByRole('button', { name: 'Xác nhận và thu hồi khóa' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Xác nhận và cập nhật PIN' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Gửi mã xác thực' }));
     const o = await screen.findByLabelText(/Mã xác thực/);
-    const xacNhan = screen.getByRole('button', { name: 'Xác nhận và thu hồi khóa' });
+    const xacNhan = screen.getByRole('button', { name: 'Xác nhận và cập nhật PIN' });
     expect(xacNhan).toBeDisabled();
     fireEvent.change(o, { target: { value: '12ab34' } });
     expect(o).toHaveValue('1234');
     fireEvent.change(o, { target: { value: '123456' } });
+    fireEvent.change(screen.getByLabelText(/^PIN mới/), { target: { value: '482739' } });
+    expect(xacNhan).toBeDisabled();
+    fireEvent.change(screen.getByLabelText(/^Nhập lại PIN mới/), { target: { value: '482738' } });
+    expect(xacNhan).toBeDisabled();
+    fireEvent.change(screen.getByLabelText(/^Nhập lại PIN mới/), { target: { value: '482739' } });
     expect(xacNhan).toBeEnabled();
     fireEvent.click(xacNhan);
-    await waitFor(() => expect(api.datLaiPinXacNhan).toHaveBeenCalledWith('123456'));
-    await waitFor(() => expect(onXong).toHaveBeenCalled());
+    await waitFor(() => expect(api.datLaiPinXacNhan).toHaveBeenCalledWith('123456', '482739'));
+    await waitFor(() => expect(onXong).toHaveBeenCalledWith('482739'));
   });
 
   it('counts down before allowing a resend', async () => {
@@ -95,7 +100,9 @@ describe('DatLaiPinDialog', () => {
     const { onXong } = hien();
     fireEvent.click(screen.getByRole('button', { name: 'Gửi mã xác thực' }));
     fireEvent.change(await screen.findByLabelText(/Mã xác thực/), { target: { value: '654321' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Xác nhận và thu hồi khóa' }));
+    fireEvent.change(screen.getByLabelText(/^PIN mới/), { target: { value: '482739' } });
+    fireEvent.change(screen.getByLabelText(/^Nhập lại PIN mới/), { target: { value: '482739' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Xác nhận và cập nhật PIN' }));
     expect(await screen.findByText('Mã xác thực không đúng.')).toBeInTheDocument();
     expect(onXong).not.toHaveBeenCalled();
   });

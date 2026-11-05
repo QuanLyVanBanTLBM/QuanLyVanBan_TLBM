@@ -5,6 +5,7 @@ chống thao tác lặp và thao tác đồng thời.
 
 import base64
 import hashlib
+import os
 import shutil
 import tempfile
 import threading
@@ -20,12 +21,13 @@ from django.test import TransactionTestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from signing import enums
+from signing import crypto, enums
 from signing.models import (
     SigningAttempt, SigningAuditLog, SigningKey, SigningRequest, SigningRequestStep, SigningSignature,
 )
 from signing.services import hanh_dong_ky as hanh_dong_service
 from signing.services import keys as key_service
+from signing.services import pin as pin_service
 from signing.services import process as process_service
 from signing.services import trinh_ky as trinh_ky_service
 
@@ -34,6 +36,15 @@ from .test_trinh_ky_phase7 import BASE, PDF, TrinhKyBase, VAN_BAN, tep_pdf
 
 User = get_user_model()
 HASH = hashlib.sha256(PDF).hexdigest()
+PIN_KIEM_THU = "123456"
+
+
+def tham_so_kdf_kiem_thu():
+    return {
+        "thuat_toan": pin_service.KDF_THUAT_TOAN,
+        **pin_service.KDF_SAN,
+        "salt": base64.b64encode(os.urandom(pin_service.KDF_SALT_BYTES)).decode("ascii"),
+    }
 
 
 def khoa_hoat_dong(user, ma):
@@ -43,6 +54,14 @@ def khoa_hoat_dong(user, ma):
                               ngay_hieu_luc=timezone.now() - timedelta(minutes=1))
     challenge = key_service.thach_thuc_so_huu(key)
     key_service.xac_minh_so_huu(key, user, challenge, base64.b64encode(private.sign(challenge.encode())).decode())
+    private_pkcs8 = private.private_bytes(
+        serialization.Encoding.DER,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    )
+    pin_service.dat_pin(
+        key, user, PIN_KIEM_THU, base64.b64encode(private_pkcs8).decode("ascii"), tham_so_kdf_kiem_thu(),
+    )
     key_service.kich_hoat(key, user)
     key.refresh_from_db()
     return private, key
@@ -77,6 +96,7 @@ def chay_song_song(*viec):
     return loi
 
 
+@override_settings(SIGNING_PIN_SECRET="pin-test-secret", SIGNING_KEY_PEPPER="pepper-test")
 class KyBase(TrinhKyBase):
     def setUp(self):
         super().setUp()
@@ -89,11 +109,12 @@ class KyBase(TrinhKyBase):
     def hanh_dong(self, user, action, khoa_thao_tac=None, **body):
         client = self.client_cua(User.objects.get(pk=user.pk))
         khoa = khoa_thao_tac or f"{action}-{user.pk}-{SigningSignature.objects.count()}"
-        return client.post(f"{BASE}/{self.pk}/{action}/", body, format="json", HTTP_IDEMPOTENCY_KEY=khoa)
+        return client.post(f"{BASE}/{self.pk}/{action}/", body, format="json", secure=True,
+                           HTTP_IDEMPOTENCY_KEY=khoa)
 
     def ky(self, user, khoa_thao_tac=None, **ghi_de):
         private, key = self.khoa[user.pk]
-        body = {"khoa_ky": key.pk, "hash_tai_lieu": HASH, "chu_ky_so": ky_so(private)}
+        body = {"khoa_ky": key.pk, "hash_tai_lieu": HASH, "pin": PIN_KIEM_THU}
         body.update(ghi_de)
         return self.hanh_dong(user, "ky", khoa_thao_tac, **body)
 
@@ -152,12 +173,21 @@ class LuongKyTests(KyBase):
         r = self.hanh_dong(self.la, "ky", khoa_ky=1, hash_tai_lieu=HASH, chu_ky_so="x")
         self.assertEqual(r.status_code, 404)  # người ngoài không thấy hồ sơ
 
-    def test_signature_checks(self):
+    def test_server_signs_and_client_signature_is_ignored(self):
         private, key = self.khoa[self.ky1.pk]
+        forged = ky_so(Ed25519PrivateKey.generate())
+        r = self.ky(self.ky1, chu_ky_so=forged)
+        self.assertEqual(r.status_code, 200, r.data)
+        signature = SigningSignature.objects.get(buoc_ky__nguoi_ky=self.ky1)
+        self.assertNotEqual(signature.chu_ky_so, forged)
+        self.assertTrue(crypto.verify_signature(key.khoa_cong_khai, bytes.fromhex(HASH), signature.chu_ky_so))
+
+    def test_signing_checks(self):
+        key = self.khoa[self.ky1.pk][1]
         r = self.ky(self.ky1, hash_tai_lieu="0" * 64)
         self.assertEqual((r.status_code, r.data["code"]), (409, "ma_bam_khong_khop"))
-        r = self.ky(self.ky1, chu_ky_so=ky_so(Ed25519PrivateKey.generate()))
-        self.assertEqual((r.status_code, r.data["code"]), (400, "chu_ky_khong_hop_le"))
+        r = self.ky(self.ky1, pin="000000")
+        self.assertEqual((r.status_code, r.data["code"]), (400, "pin_khong_dung"))
         r = self.ky(self.ky1, khoa_ky=self.khoa[self.ky2.pk][1].pk)
         self.assertEqual((r.status_code, r.data["code"]), (400, "khoa_ky_khong_hop_le"))
         SigningKey.objects.filter(pk=key.pk).update(ngay_het_han=timezone.now() - timedelta(seconds=1))
@@ -235,7 +265,7 @@ class ThuHoiTests(KyBase):
 
 
 @unittest.skipUnless(connection.vendor == "postgresql", "Cần PostgreSQL để kiểm tra khóa dòng đồng thời")
-@override_settings(SIGNING_PIN_SECRET="bi-mat-test")
+@override_settings(SIGNING_PIN_SECRET="bi-mat-test", SIGNING_KEY_PEPPER="pepper-test")
 class DongThoiTests(TransactionTestCase):
     def setUp(self):
         self.thu_muc = tempfile.mkdtemp()
@@ -263,7 +293,7 @@ class DongThoiTests(TransactionTestCase):
     def test_double_sign_with_different_keys_creates_one_signature(self):
         def ky(khoa):
             return lambda: hanh_dong_service.ky(self.ho_so, self.ky1, khoa_ky=self.key.pk, hash_tai_lieu=HASH,
-                                                chu_ky_so=ky_so(self.private), khoa_chong_trung=khoa)
+                                                pin=PIN_KIEM_THU, khoa_chong_trung=khoa)
         loi = chay_song_song(ky("a"), ky("b"))
         self.assertEqual(SigningSignature.objects.count(), 1)
         self.assertEqual(len(loi), 1)
@@ -273,7 +303,7 @@ class DongThoiTests(TransactionTestCase):
     def test_sign_racing_cancel_has_single_consistent_outcome(self):
         loi = chay_song_song(
             lambda: hanh_dong_service.ky(self.ho_so, self.ky1, khoa_ky=self.key.pk, hash_tai_lieu=HASH,
-                                         chu_ky_so=ky_so(self.private), khoa_chong_trung="ky"),
+                                         pin=PIN_KIEM_THU, khoa_chong_trung="ky"),
             lambda: trinh_ky_service.huy(self.ho_so, self.tao, khoa_chong_trung="huy"),
         )
         ho_so = SigningRequest.objects.get(pk=self.ho_so.pk)
