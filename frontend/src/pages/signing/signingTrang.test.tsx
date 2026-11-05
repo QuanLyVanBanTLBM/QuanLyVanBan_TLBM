@@ -86,11 +86,12 @@ describe('TaoHoSoPage', () => {
     api.taoNhap.mockReturnValue(new Promise(() => undefined));
     boc(<TaoHoSoPage />);
     const luu = await screen.findByRole('button', { name: /Lưu nháp và xem trước/ });
-    expect(luu).toBeDisabled();
+    fireEvent.click(luu);
+    expect(await screen.findByText('Vui lòng chọn một văn bản đi từ danh sách.')).toBeInTheDocument();
+    expect(api.taoNhap).not.toHaveBeenCalled();
     fireEvent.click(await screen.findByRole('button', { name: /15\/TTr/ }));
     fireEvent.change(await screen.findByLabelText('Tệp PDF trên văn bản đi'), { target: { value: '99' } });
     fireEvent.change(screen.getByLabelText(/Quy trình ký/), { target: { value: '2' } });
-    await waitFor(() => expect(luu).toBeEnabled());
     fireEvent.click(luu);
     await waitFor(() => expect(api.taoNhap).toHaveBeenCalledTimes(1));
     const form = api.taoNhap.mock.calls[0][0] as FormData;
@@ -117,10 +118,11 @@ describe('TaoHoSoPage văn bản trình ký', () => {
       target: { files: [new File(['%PDF-1.4'], 'to-trinh.pdf', { type: 'application/pdf' })] },
     });
     const luu = screen.getByRole('button', { name: /Lưu nháp và xem trước/ });
-    expect(luu).toBeDisabled();  // chưa có trích yếu
+    fireEvent.click(luu);
+    expect(await screen.findByText('Vui lòng nhập trích yếu văn bản.')).toBeInTheDocument();
+    expect(api.taoNhap).not.toHaveBeenCalled();
     fireEvent.change(screen.getByLabelText('Số hiệu tham chiếu'), { target: { value: '05/TTr' } });
     fireEvent.change(screen.getByLabelText('Trích yếu'), { target: { value: 'Tờ trình đào tạo' } });
-    await waitFor(() => expect(luu).toBeEnabled());
     fireEvent.click(luu);
     await waitFor(() => expect(api.taoNhap).toHaveBeenCalledTimes(1));
     const form = api.taoNhap.mock.calls[0][0] as FormData;

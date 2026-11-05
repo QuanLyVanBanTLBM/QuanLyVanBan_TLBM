@@ -60,7 +60,7 @@ def _so_trang_hoac_loi(data):
 
     try:
         reader = PdfReader(io.BytesIO(data))
-        if reader.is_encrypted and not reader.decrypt(""):
+        if reader.is_encrypted:
             return 0, "tep_pdf_co_mat_khau"
         so_trang = len(reader.pages)
         return so_trang, (None if so_trang > 0 else "tep_khong_phai_pdf")
@@ -85,7 +85,7 @@ def kiem_tra_du_lieu_pdf(data):
         raise _loi("tep_khong_phai_pdf", "Chỉ nhận tệp PDF.", tep=["Không phải tệp PDF."])
     so_trang, loi_pdf = _so_trang_hoac_loi(data)
     if loi_pdf == "tep_pdf_co_mat_khau":
-        raise _loi(loi_pdf, "Không nhận PDF có mật khẩu.", tep=["Gỡ mật khẩu trước khi tải lên."])
+        raise _loi(loi_pdf, "Không hỗ trợ tệp PDF có mật khẩu bảo vệ.", tep=["Không hỗ trợ tệp PDF có mật khẩu bảo vệ."])
     if loi_pdf:
         raise _loi(loi_pdf, "Tệp PDF hỏng hoặc không có trang.", tep=["Không đọc được tệp PDF."])
     return data, so_trang
@@ -264,9 +264,13 @@ def _kiem_tra_van_ban_gan(nguoi, document_type, van_ban_id, tru=None):
 
 
 def _kiem_tra_trich_yeu(trich_yeu):
-    if not (trich_yeu or "").strip():
+    s = (trich_yeu or "").strip()
+    if not s:
         raise _loi("thieu_van_ban_trinh_ky", "Chọn văn bản đi có sẵn hoặc nhập trích yếu cho PDF dự thảo chưa vào sổ.",
                    trich_yeu_van_ban=["Bắt buộc khi không gắn bản ghi văn bản đi."])
+    if len(s) > 1000:
+        raise _loi("trich_yeu_qua_dai", "Trích yếu văn bản không được vượt quá 1000 ký tự.",
+                   trich_yeu_van_ban=["Tối đa 1000 ký tự."])
 
 
 # ── Tạo, sửa nháp ───────────────────────────────────────────────────────────
