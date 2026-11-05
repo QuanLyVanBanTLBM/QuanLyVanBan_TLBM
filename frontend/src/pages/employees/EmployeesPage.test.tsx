@@ -1008,7 +1008,9 @@ describe('EmployeesPage Component (Issue #24)', () => {
     expect(screen.getByText('+2 kiêm nhiệm')).toBeInTheDocument();
     expect(screen.getByText('Chức vụ')).toBeInTheDocument();
     expect(screen.getByText('kiêm Phó phòng')).toBeInTheDocument();
-    expect(screen.getByText('+1 chức vụ')).toBeInTheDocument();
+    const positionBadge = screen.getByText('+1 chức vụ');
+    expect(positionBadge.parentElement).toHaveClass('mt-1');
+    expect(positionBadge.parentElement?.querySelector('i')).toHaveClass('fa-solid', 'fa-briefcase');
     expect(screen.queryByText('Chuyên viên tổng hợp')).not.toBeInTheDocument();
     expect(screen.queryByText('Trưởng ban')).not.toBeInTheDocument();
   });

@@ -500,26 +500,31 @@ export default function EmployeesPage() {
                           {emp.chuc_vu_ten || '—'}
                         </span>
                         {concurrentPositions.length > 0 && (
-                          <div className="mt-0.5 flex flex-wrap items-center gap-1">
-                            <span className="text-[11px] text-muted">
-                              {t('employees.fields.concurrentPosition', {
-                                name: concurrentPositions[0].chuc_vu_ten,
-                              })}
-                            </span>
-                            {hiddenConcurrentPositionCount > 0 && (
-                              <span
-                                className="inline-flex items-center rounded bg-primary-subtle px-1.5 py-0.5 text-[10px] font-medium text-primary"
-                                title={concurrentPositions
-                                  .slice(1)
-                                  .map((assignment) => assignment.chuc_vu_ten)
-                                  .join(', ')}
-                              >
-                                {t('employees.fields.concurrentPositionBadge', {
-                                  count: hiddenConcurrentPositionCount,
+                          <>
+                            <div className="mt-0.5">
+                              <span className="text-[11px] text-muted">
+                                {t('employees.fields.concurrentPosition', {
+                                  name: concurrentPositions[0].chuc_vu_ten,
                                 })}
                               </span>
+                            </div>
+                            {hiddenConcurrentPositionCount > 0 && (
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                <span
+                                  className="inline-flex items-center gap-1 rounded bg-primary-subtle px-1.5 py-0.5 text-[10px] font-medium text-primary"
+                                  title={concurrentPositions
+                                    .slice(1)
+                                    .map((assignment) => assignment.chuc_vu_ten)
+                                    .join(', ')}
+                                >
+                                  <i aria-hidden="true" className="fa-solid fa-briefcase text-[9px]" />
+                                  {t('employees.fields.concurrentPositionBadge', {
+                                    count: hiddenConcurrentPositionCount,
+                                  })}
+                                </span>
+                              </div>
                             )}
-                          </div>
+                          </>
                         )}
                       </td>
 
