@@ -35,7 +35,7 @@
     "table": {
       "employee": "Cán bộ nhân viên",
       "unit": "Đơn vị / Phòng ban",
-      "position": "Chức vụ & Chức danh",
+      "position": "Chức vụ",
       "birthday": "Ngày sinh",
       "phone": "Số điện thoại",
       "status": "Trạng thái",
@@ -79,6 +79,8 @@
       "assignmentTitle": "Chức danh kiêm nhiệm (tùy chọn)",
       "removeAssignment": "Xóa dòng",
       "concurrentBadge": "+{count} kiêm nhiệm",
+      "concurrentPosition": "kiêm {name}",
+      "concurrentPositionBadge": "+{count} chức vụ",
       "duplicateAssignmentUnit": "Đơn vị kiêm nhiệm không được trùng với đơn vị chính hoặc đơn vị đã chọn."
     },
     "placeholders": {
