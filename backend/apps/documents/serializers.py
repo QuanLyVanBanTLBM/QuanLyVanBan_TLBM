@@ -262,13 +262,8 @@ class DocumentListSerializer(serializers.Serializer):
         request = self.context.get("request")
         if not request or not request.user or not request.user.is_authenticated:
             return False
-        from .views import can_edit_document, can_change_hieu_luc
-        if can_edit_document(request.user, obj):
-            return True
-        loai = getattr(obj, "loai", None) or getattr(obj, "document_kind", "DEN")
-        if getattr(obj, "pham_vi", None) == "HAN_CHE" or getattr(obj, "loai", None) == "MAT":
-            return False
-        return can_change_hieu_luc(request.user, loai)
+        from .views import can_edit_document
+        return can_edit_document(request.user, obj)
 
     def get_can_edit_full(self, obj):
         request = self.context.get("request")
@@ -510,13 +505,8 @@ class DocumentDetailSerializer(serializers.Serializer):
         request = self.context.get("request")
         if not request or not request.user or not request.user.is_authenticated:
             return False
-        from .views import can_edit_document, can_change_hieu_luc
-        if can_edit_document(request.user, obj):
-            return True
-        loai = getattr(obj, "loai", None) or getattr(obj, "document_kind", "DEN")
-        if getattr(obj, "pham_vi", None) == "HAN_CHE" or getattr(obj, "loai", None) == "MAT":
-            return False
-        return can_change_hieu_luc(request.user, loai)
+        from .views import can_edit_document
+        return can_edit_document(request.user, obj)
 
     def get_can_edit_full(self, obj):
         request = self.context.get("request")

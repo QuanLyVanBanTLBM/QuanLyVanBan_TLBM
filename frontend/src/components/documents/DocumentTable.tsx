@@ -213,16 +213,22 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
       defaultCanDelete = true;
     }
 
-    let userCanEdit = doc.can_edit !== undefined ? doc.can_edit : defaultCanEdit;
+    const isDi = doc.loai === 'DI' || loai === 'DI';
+    const canChangeHieuLucPerm = Boolean(
+      doc.can_change_hieu_luc ||
+      can(isDi ? 'change_hieu_luc_vanbandi' : 'change_hieu_luc_vanbanden')
+    );
+    const canOnlyChangeHieuLuc = !isExpired && !isDocConfidential && canChangeHieuLucPerm;
+
+    let userCanEdit = (doc.can_edit !== undefined ? doc.can_edit : defaultCanEdit) || canOnlyChangeHieuLuc;
     let userCanDelete = doc.can_delete !== undefined ? doc.can_delete : defaultCanDelete;
 
-    if (isDocConfidential) {
-      // TUYỆT ĐỐI CẤM XÓA VĂN BẢN HẠN CHẾ / MẬT (kể cả Admin theo Trigger DDL prevent_delete_van_ban_han_che)
+    // Văn bản đến/đi hết hiệu lực (cả HAN_CHE): sửa, xóa theo quyền manage_het_hieu_luc_* do backend trả về.
+    if (isDocConfidential && !isAdmin && !(isExpired && !isMat)) {
+      userCanEdit = false;
       userCanDelete = false;
-      userCanEdit = doc.can_edit !== undefined ? doc.can_edit : (isAdmin || (isCreator && !isExpired));
     }
 
-    const isDi = doc.loai === 'DI' || loai === 'DI';
     const canViewPerm = can(isDi ? 'view_vanbandi' : 'view_vanbanden');
     const canViewLogPerm = can(isDi ? 'view_read_log_vanbandi' : 'view_read_log_vanbanden');
 

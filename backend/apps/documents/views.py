@@ -133,19 +133,16 @@ def can_edit_document(user, instance):
 
     is_mat = getattr(instance, "loai", None) == "MAT" or (getattr(instance, "_meta", None) and instance._meta.model_name == "vanbanmat")
 
-    # Văn bản Mật / Hạn chế: CHỈ Quản trị viên (Admin) hoặc Người tạo mới có quyền chỉnh sửa. Cán bộ nhận chỉ có quyền Xem (Read-Only).
+    model_name = instance._meta.model_name
+    is_expired = getattr(instance, "hieu_luc", None) in (HieuLuc.HET_HIEU_LUC, HieuLuc.HET_VA_THAY_THE)
+    if is_expired and not is_mat:
+        from .selectors import co_quyen_xu_ly_het_hieu_luc
+        return co_quyen_xu_ly_het_hieu_luc(user, model_name)
+
     if is_mat or getattr(instance, "pham_vi", None) == PhamVi.HAN_CHE:
         is_real_admin = is_admin_user(user)
         is_creator = (getattr(instance, "nguoi_tao_id", None) == user.pk) or (getattr(instance, "nguoi_tao", None) == user)
         return bool(is_real_admin or is_creator)
-
-    model_name = instance._meta.model_name
-
-    # Văn bản Đến/Đi nội bộ đã hết hiệu lực: CHỈ Admin hoặc quyền manage_het_hieu_luc_* mới có quyền chỉnh sửa.
-    is_expired = getattr(instance, "hieu_luc", None) in (HieuLuc.HET_HIEU_LUC, HieuLuc.HET_VA_THAY_THE)
-    if is_expired:
-        from .selectors import co_quyen_xu_ly_het_hieu_luc
-        return co_quyen_xu_ly_het_hieu_luc(user, model_name)
     # Văn bản Đến/Đi còn hiệu lực: Admin hoặc Cán bộ được chỉ định (người tạo) có quyền chỉnh sửa.
     if is_admin_user(user):
         return True
@@ -267,8 +264,8 @@ def can_change_hieu_luc(user, loai="DEN"):
         return True
 
     try:
-        user_groups = {g.name.lower() for g in user.groups.all()}
-        if any(vt in user_groups for vt in ("vt", "văn thư", "van thu", "vanthu", "admin", "quản trị")):
+        user_groups = {g.name.upper() for g in user.groups.all()}
+        if "ADMIN" in user_groups:
             return True
     except Exception:
         pass
@@ -340,8 +337,8 @@ def can_send_mail_all(user, loai="DEN"):
         return True
 
     try:
-        user_groups = {g.name.lower() for g in user.groups.all()}
-        if any(vt in user_groups for vt in ("vt", "văn thư", "van thu", "vanthu", "admin", "quản trị")):
+        user_groups = {g.name.upper() for g in user.groups.all()}
+        if "ADMIN" in user_groups:
             return True
     except Exception:
         pass
@@ -370,17 +367,14 @@ def can_delete_document(user, instance):
 
     is_mat = getattr(instance, "loai", None) == "MAT" or (getattr(instance, "_meta", None) and instance._meta.model_name == "vanbanmat")
 
-    # Văn bản Hạn chế (HAN_CHE) hoặc Văn bản Mật: CẤM XÓA 100% (Khớp Trigger DB prevent_delete_van_ban_han_che).
-    if is_mat or getattr(instance, "pham_vi", None) == PhamVi.HAN_CHE:
-        return False
-
     model_name = instance._meta.model_name
-
-    # Văn bản Đến/Đi nội bộ đã hết hiệu lực: CHỈ Admin hoặc quyền manage_het_hieu_luc_* mới có quyền xóa.
     is_expired = getattr(instance, "hieu_luc", None) in (HieuLuc.HET_HIEU_LUC, HieuLuc.HET_VA_THAY_THE)
-    if is_expired:
+    if is_expired and not is_mat:
         from .selectors import co_quyen_xu_ly_het_hieu_luc
         return co_quyen_xu_ly_het_hieu_luc(user, model_name)
+
+    if is_mat or getattr(instance, "pham_vi", None) == PhamVi.HAN_CHE:
+        return False
     # Văn bản Đến/Đi còn hiệu lực: Admin hoặc Cán bộ được chỉ định (người tạo) có quyền xóa
     if is_admin_user(user):
         return True
