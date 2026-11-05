@@ -1856,8 +1856,12 @@ class VanBanDiServiceTests(TestCase):
 
     def test_excel_import_scope_and_type_guards(self):
         """Khóa nghiệp vụ: Chặn import chéo giữa Nội bộ và Hạn chế, chặn chéo giữa Đến và Đi."""
+        from django.contrib.auth.models import Permission
         from documents.services import generate_excel_template, import_from_excel
         import openpyxl
+
+        # Import văn bản hạn chế cần quyền thêm văn bản hạn chế (add_han_che_vanbandi).
+        self.creator.user_permissions.add(Permission.objects.get(codename="add_han_che_vanbandi"))
 
         # 1. Mẫu Hạn chế không được nạp vào Nội bộ
         tpl_hc = generate_excel_template("DI", "HAN_CHE")

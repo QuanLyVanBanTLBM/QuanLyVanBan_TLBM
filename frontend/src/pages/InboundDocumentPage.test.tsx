@@ -373,6 +373,44 @@ describe('InboundDocumentPage Component (Phân hệ Văn bản Đến)', () => {
         expect(screen.queryByRole('button', { name: /Xuất Excel/i })).not.toBeInTheDocument();
       });
     });
+
+    const loadWithPermissions = (permissions: string[]) => {
+      resetPermissionsCache();
+      const call = async (url: string) => {
+        if (url.includes('/auth/me/permissions/')) {
+          return { is_superuser: false, permissions };
+        }
+        if (url.includes('/api/documents/')) {
+          return { count: mockDocuments.length, results: mockDocuments };
+        }
+        return { count: 0, results: [] };
+      };
+      mockedApiClient.mockImplementation(call as unknown as typeof apiClientModule.apiClient);
+      mockedApiClient.get.mockImplementation(call);
+    };
+
+    it('khóa mục Nhập văn bản hạn chế khi chỉ có quyền import văn bản', async () => {
+      loadWithPermissions(['view_vanbanden', 'add_vanbanden', 'import_vanbanden']);
+      renderComponent();
+
+      fireEvent.click(await screen.findByRole('button', { name: /(Import Excel|Nhập Excel)/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText('Nhập văn bản hạn chế').closest('button')).toBeDisabled();
+      });
+      expect(screen.getByText('Nhập văn bản thường').closest('button')).not.toBeDisabled();
+    });
+
+    it('mở mục Nhập văn bản hạn chế khi có add_han_che_vanbanden', async () => {
+      loadWithPermissions(['view_vanbanden', 'add_vanbanden', 'import_vanbanden', 'add_han_che_vanbanden']);
+      renderComponent();
+
+      fireEvent.click(await screen.findByRole('button', { name: /(Import Excel|Nhập Excel)/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText('Nhập văn bản hạn chế').closest('button')).not.toBeDisabled();
+      });
+    });
   });
 });
 
