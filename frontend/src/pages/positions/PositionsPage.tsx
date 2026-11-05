@@ -114,11 +114,11 @@ export default function PositionsPage() {
   const columnCount = showActions ? 5 : 4;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-24 sm:pb-0">
       {toast && (
         <div
           role="status"
-          className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-lg shadow-lg flex items-center gap-2.5 text-sm font-semibold animate-fade-in ${
+          className={`fixed top-16 sm:top-5 right-5 z-50 px-4 py-3 rounded-lg shadow-lg flex items-center gap-2.5 text-sm font-semibold animate-fade-in ${
             toast.isError ? 'bg-danger text-white border border-danger-border' : 'bg-success text-white border border-success-border'
           }`}
         >
@@ -177,11 +177,11 @@ export default function PositionsPage() {
           <table className="w-full text-left text-sm border-collapse">
             <thead className="bg-surface-elevated text-secondary text-xs uppercase font-bold border-b border-border">
               <tr>
-                <th className="px-4 py-3 text-center w-20">{t('positions.table.stt')}</th>
-                <th className="px-4 py-3">{t('positions.table.name')}</th>
-                <th className="px-4 py-3 text-center">{t('positions.table.status')}</th>
-                <th className="px-4 py-3">{t('positions.table.notes')}</th>
-                {showActions && <th className="px-4 py-3 text-center w-28">{t('positions.table.actions')}</th>}
+                <th className="px-2 sm:px-4 py-3 text-center w-12 sm:w-20">{t('positions.table.stt')}</th>
+                <th className="px-2 sm:px-4 py-3">{t('positions.table.name')}</th>
+                <th className="px-2 sm:px-4 py-3 text-center">{t('positions.table.status')}</th>
+                <th className="hidden sm:table-cell px-4 py-3">{t('positions.table.notes')}</th>
+                {showActions && <th className="px-2 sm:px-4 py-3 text-center w-24 sm:w-28">{t('positions.table.actions')}</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -229,9 +229,15 @@ export default function PositionsPage() {
                       position.is_public ? '' : 'bg-warning-subtle border-l-4 border-l-warning'
                     }`}
                   >
-                    <td className="px-4 py-3 text-center font-bold text-main">{position.display_order}</td>
-                    <td className="px-4 py-3 font-semibold text-main">{position.name}</td>
-                    <td className="px-4 py-3 text-center">
+                    <td className="px-2 sm:px-4 py-3 text-center font-bold text-main">{position.display_order}</td>
+                    <td className="px-2 sm:px-4 py-3 font-semibold text-main">
+                      {position.name}
+                      {/* Mobile: cột Ghi chú ẩn, ghi chú hiện dưới tên để bảng không tràn ngang. */}
+                      {position.note && (
+                        <span className="sm:hidden block mt-0.5 text-xs font-normal text-secondary">{position.note}</span>
+                      )}
+                    </td>
+                    <td className="px-2 sm:px-4 py-3 text-center">
                       {position.is_public ? (
                         <Badge variant="success" size="sm">
                           {t('positions.table.public')}
@@ -242,9 +248,9 @@ export default function PositionsPage() {
                         </Badge>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-secondary">{position.note || t('positions.table.emptyValue')}</td>
+                    <td className="hidden sm:table-cell px-4 py-3 text-secondary">{position.note || t('positions.table.emptyValue')}</td>
                     {showActions && (
-                    <td className="px-4 py-3 text-center">
+                    <td className="px-2 sm:px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-1">
                         {can('change_chucvu') && (
                           <button
