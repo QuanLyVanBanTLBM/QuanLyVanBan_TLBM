@@ -180,10 +180,18 @@ class DocumentTemplatesModelAndAPITests(TestCase):
         doc.clean()
 
     def test_api_list_documents(self):
-        """Khách vãng lai xem được tài liệu TAT_CA, ẩn tài liệu NOI_BO_PHONG_BAN"""
+        """Khách vãng lai (ẩn danh) bị chặn với 401; Người dùng có quyền xem nhưng khác phòng ban chỉ thấy TAT_CA (Issue #222)"""
+        self.client.force_authenticate(user=None)
+        response_anon = self.client.get('/api/resources/documents/')
+        self.assertEqual(response_anon.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        from django.contrib.auth.models import Permission
+        other_viewer = User.objects.create_user(username='other_viewer_doc', password='password123')
+        other_viewer.user_permissions.add(Permission.objects.get(codename='view_tailieu'))
+
+        self.client.force_authenticate(user=other_viewer)
         response = self.client.get('/api/resources/documents/')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        # Khách vãng lai chỉ thấy doc1 (TAT_CA)
         ids = [item['id'] for item in response.data] if isinstance(response.data, list) else [item['id'] for item in response.data.get('results', [])]
         self.assertIn(self.doc1.id, ids)
         self.assertNotIn(self.doc2.id, ids)
@@ -658,6 +666,9 @@ class DocumentTemplatesModelAndAPITests(TestCase):
             password='password123',
             **extra_other
         )
+        from django.contrib.auth.models import Permission
+        perm_view = Permission.objects.get(codename='view_tailieu')
+        other_user.user_permissions.add(perm_view)
 
         # Tạo file đính kèm trên tài liệu nội bộ self.doc2
         secret_att = ChiTietTaiLieuAttachment.objects.create(
@@ -669,24 +680,22 @@ class DocumentTemplatesModelAndAPITests(TestCase):
             nguoi_tao=self.user,
         )
 
-        # 1. Khách vãng lai (ẩn danh)
+        # 1. Khách vãng lai (ẩn danh) - bị chặn 401 trên mọi endpoint attachments (Issue #222)
         self.client.logout()
         res_list = self.client.get('/api/resources/attachments/')
-        self.assertEqual(res_list.status_code, status.HTTP_200_OK)
-        list_ids = [a['id'] for a in (res_list.data['results'] if isinstance(res_list.data, dict) else res_list.data)]
-        self.assertNotIn(secret_att.id, list_ids)
+        self.assertEqual(res_list.status_code, status.HTTP_401_UNAUTHORIZED)
 
         res_detail = self.client.get(f'/api/resources/attachments/{secret_att.id}/')
-        self.assertEqual(res_detail.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(res_detail.status_code, status.HTTP_401_UNAUTHORIZED)
 
         res_view = self.client.get(f'/api/resources/attachments/{secret_att.id}/view/')
-        self.assertEqual(res_view.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(res_view.status_code, status.HTTP_401_UNAUTHORIZED)
 
         res_preview = self.client.get(f'/api/resources/attachments/{secret_att.id}/preview/')
-        self.assertEqual(res_preview.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(res_preview.status_code, status.HTTP_401_UNAUTHORIZED)
 
         res_delete = self.client.delete(f'/api/resources/attachments/{secret_att.id}/')
-        self.assertIn(res_delete.status_code, [status.HTTP_401_UNAUTHORIZED, status.HTTP_404_NOT_FOUND])
+        self.assertEqual(res_delete.status_code, status.HTTP_401_UNAUTHORIZED)
 
         # 2. Người dùng thuộc phòng ban/đơn vị khác
         self.client.force_authenticate(user=other_user)
@@ -909,3 +918,61 @@ class DocumentTemplatesRBACPermissionsTests(TestCase):
         res_del = self.client.delete(f'/api/resources/categories/{new_cat_id}/')
         self.assertEqual(res_del.status_code, status.HTTP_204_NO_CONTENT)
 
+
+    def test_issue_222_anonymous_read_all_endpoints_returns_401(self):
+        """Issue #222: Khách vãng lai (ẩn danh) đọc bất kỳ endpoint nào cũng phải trả về 401 Unauthorized"""
+        self.client.force_authenticate(user=None)
+        endpoints = [
+            '/api/resources/categories/',
+            f'/api/resources/categories/{self.cat.id}/',
+            '/api/resources/types/',
+            f'/api/resources/types/{self.type_item.id}/',
+            '/api/resources/documents/',
+            f'/api/resources/documents/{self.doc_by_admin.id}/',
+            '/api/resources/attachments/',
+        ]
+        for url in endpoints:
+            with self.subTest(url=url):
+                res = self.client.get(url)
+                self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_issue_222_user_without_read_permission_returns_403(self):
+        """Issue #222: Người dùng đăng nhập nhưng không có quyền xem bị chặn 403 Forbidden"""
+        self.client.force_authenticate(user=self.plain_user)
+
+        # Danh mục và Loại yêu cầu view_loaitailieubieumau
+        res_cat = self.client.get('/api/resources/categories/')
+        self.assertEqual(res_cat.status_code, status.HTTP_403_FORBIDDEN)
+        res_cat_detail = self.client.get(f'/api/resources/categories/{self.cat.id}/')
+        self.assertEqual(res_cat_detail.status_code, status.HTTP_403_FORBIDDEN)
+
+        res_type = self.client.get('/api/resources/types/')
+        self.assertEqual(res_type.status_code, status.HTTP_403_FORBIDDEN)
+        res_type_detail = self.client.get(f'/api/resources/types/{self.type_item.id}/')
+        self.assertEqual(res_type_detail.status_code, status.HTTP_403_FORBIDDEN)
+
+        # Tài liệu và Attachment yêu cầu view_tailieu
+        res_doc = self.client.get('/api/resources/documents/')
+        self.assertEqual(res_doc.status_code, status.HTTP_403_FORBIDDEN)
+        res_doc_detail = self.client.get(f'/api/resources/documents/{self.doc_by_admin.id}/')
+        self.assertEqual(res_doc_detail.status_code, status.HTTP_403_FORBIDDEN)
+
+        res_att = self.client.get('/api/resources/attachments/')
+        self.assertEqual(res_att.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_issue_222_user_with_read_permission_returns_200(self):
+        """Issue #222: Người dùng có quyền view xem được danh sách và chi tiết"""
+        from django.contrib.auth.models import Permission
+        reader = User.objects.create_user(username="viewer_user", password="password123")
+        perm_view_cat = Permission.objects.get(codename="view_loaitailieubieumau")
+        perm_view_doc = Permission.objects.get(codename="view_tailieu")
+        reader.user_permissions.add(perm_view_cat, perm_view_doc)
+
+        self.client.force_authenticate(user=reader)
+        self.assertEqual(self.client.get('/api/resources/categories/').status_code, status.HTTP_200_OK)
+        self.assertEqual(self.client.get(f'/api/resources/categories/{self.cat.id}/').status_code, status.HTTP_200_OK)
+        self.assertEqual(self.client.get('/api/resources/types/').status_code, status.HTTP_200_OK)
+        self.assertEqual(self.client.get(f'/api/resources/types/{self.type_item.id}/').status_code, status.HTTP_200_OK)
+        self.assertEqual(self.client.get('/api/resources/documents/').status_code, status.HTTP_200_OK)
+        self.assertEqual(self.client.get(f'/api/resources/documents/{self.doc_by_admin.id}/').status_code, status.HTTP_200_OK)
+        self.assertEqual(self.client.get('/api/resources/attachments/').status_code, status.HTTP_200_OK)
