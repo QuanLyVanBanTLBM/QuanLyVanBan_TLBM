@@ -12,7 +12,7 @@ Tài liệu liên quan (không chép lại ở đây):
 - [`danh-gia-plan-va-tich-hop.md`](danh-gia-plan-va-tich-hop.md): đánh giá plan và tích hợp với các nhóm.
 - [`du-lieu-mau-va-tinh-trang-nghiep-vu.md`](du-lieu-mau-va-tinh-trang-nghiep-vu.md): bảng tình trạng flow, file khóa,
   dữ liệu mẫu chi tiết, hợp đồng API Dashboard đầy đủ.
-- [`spec.md`](spec.md), [`qa-test-cases-80.md`](qa-test-cases-80.md).
+- [`spec.md`](spec.md), [`qa-test-cases-80.md`](qa-test-cases-80.md), [`qa-staging-e2e-2026-11-05.md`](qa-staging-e2e-2026-11-05.md) (Báo cáo QA E2E Staging 40 ca QA-01 đến QA-40 theo Issue #578).
 
 ## 1. Flow nghiệp vụ
 
@@ -300,7 +300,7 @@ frontend lint, typecheck, i18n, tokens sạch, 525 test đạt, build đạt. E2
 khóa và tải file khóa, ký bằng file khóa + PIN, trả sửa, gửi bản sửa, không đồng ý ban hành, hủy, xem PDF
 desktop và mobile 390px, thông báo có người thực hiện và lý do.
 
-Báo cáo chi tiết các luồng nghiệp vụ (Happy path, Trả sửa lượt 2, Từ chối), ca biên (Edge cases) và nhật ký bằng chứng kiểm thử: xem tại [`FLOW_TEST_EVIDENCE.md`](./FLOW_TEST_EVIDENCE.md). Danh mục 116 test case đối chiếu theo Issue #80 và #248: xem tại [`qa-test-cases-80.md`](./qa-test-cases-80.md).
+Báo cáo chi tiết các luồng nghiệp vụ (Happy path, Trả sửa lượt 2, Từ chối), ca biên (Edge cases) và nhật ký bằng chứng kiểm thử: xem tại [`FLOW_TEST_EVIDENCE.md`](./FLOW_TEST_EVIDENCE.md). Danh mục 116 test case đối chiếu theo Issue #80 và #248: xem tại [`qa-test-cases-80.md`](./qa-test-cases-80.md). Báo cáo kiểm thử thực tế End-to-End trên Staging (40/40 ca QA-01 đến QA-40 theo Issue #578): xem tại [`qa-staging-e2e-2026-11-05.md`](./qa-staging-e2e-2026-11-05.md).
 
 ## 8. Chưa làm và lý do
 
