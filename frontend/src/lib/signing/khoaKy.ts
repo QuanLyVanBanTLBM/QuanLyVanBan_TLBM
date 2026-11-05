@@ -1,14 +1,8 @@
 /**
- * Khóa ký Ed25519 và PIN phía trình duyệt — contract #79 (signing-backend-plan.md mục 3.4).
- *
- * - Private key sinh bằng WebCrypto khi khả dụng, có fallback pure-JS (@noble/curves, @noble/ciphers, @noble/hashes)
- *   cho môi trường HTTP không an toàn (staging) hoặc trình duyệt chưa hỗ trợ WebCrypto Ed25519.
- * - Private key không rời trình duyệt; chỉ bản bọc AES-GCM nằm trong IndexedDB.
- * - master = Argon2id(PIN, salt 16 byte, m = 64 MiB, t = 3, p = 1); salt mới mỗi lần đặt/đổi PIN.
- * - verifier = HKDF-SHA256(master, salt rỗng, info "verify") gửi server; server trả k_srv khi verifier đúng.
- * - khóa bọc = HKDF-SHA256(master, salt = k_srv, info "wrap"); hai nhãn tách biệt để lộ CSDL server không suy
- *   ra được khóa bọc. Đổi PIN: server xoay vòng k_srv, client mở bằng k_srv cũ và bọc lại bằng k_srv mới.
- * - Server không nhận PIN, không nhận private key hay bản bọc.
+ * Utilities for generating and proving ownership of Ed25519 keys (#447 partition 1).
+ * The current server-side flow uses key generation, proof signing and fresh KDF parameters;
+ * private PKCS#8 and PIN travel only over HTTPS. The legacy browser wrapping helpers below
+ * are not used by the active signing flow.
  */
 import { gcm } from '@noble/ciphers/aes.js';
 import { ed25519 } from '@noble/curves/ed25519.js';
@@ -64,7 +58,7 @@ export async function sha256Hex(data: ArrayBuffer): Promise<string> {
   return sha256(new Uint8Array(data));
 }
 
-// ── Chính sách PIN (6 chữ số; PIN 8 chữ số đặt trước đây vẫn dùng để ký) ─────────────────────
+// ── Chính sách PIN (đúng 6 chữ số) ─────────────────────────────────────────
 
 const PIN_PHO_BIEN = new Set(['123456', '654321', '112233', '123123', '000000', '159753', '111222', '520520']);
 

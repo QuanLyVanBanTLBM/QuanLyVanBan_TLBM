@@ -167,8 +167,8 @@ describe('KhoaPage', () => {
   it('chưa có khóa: chặn PIN không đạt chính sách và PIN nhập lại không khớp', async () => {
     api.khoa.mockResolvedValue([]);
     boc(<KhoaPage />);
-    expect(await screen.findByText('Bạn chưa có khóa ký trên thiết bị này.')).toBeInTheDocument();
-    const tao = screen.getByRole('button', { name: /Tạo khóa ký cho thiết bị này/ });
+    expect(await screen.findByText('Bạn chưa đăng ký khóa ký với máy chủ.')).toBeInTheDocument();
+    const tao = screen.getByRole('button', { name: 'Đăng ký khóa ký mới' });
     fireEvent.change(screen.getByLabelText('PIN mới (6 chữ số)'), { target: { value: '234567' } });
     expect(await screen.findByText(/liên tiếp|tăng|giảm/i)).toBeInTheDocument();
     expect(tao).toBeDisabled();
@@ -192,13 +192,14 @@ describe('KhoaPage', () => {
     expect(screen.queryByText(data.detail)).not.toBeInTheDocument();
   });
 
-  it('khóa đang hoạt động thuộc thiết bị khác: cho nhập file khóa vào thiết bị này', async () => {
+  it('khóa trình duyệt cũ cần được thay bằng khóa mới trên máy chủ', async () => {
     const khoa = { id: 4, ma_khoa: 'TB-3-1', dau_van_tay: 'f'.repeat(64), thuat_toan: 'Ed25519',
       khoa_cong_khai: 'pub', trang_thai: 'HOAT_DONG' } as KhoaKy;
     api.khoa.mockResolvedValue([khoa]);
     boc(<KhoaPage />);
-    expect(await screen.findByText(/thuộc thiết bị khác/)).toBeInTheDocument();
-    expect(screen.getByLabelText('Hoặc nhập file khóa đã có vào thiết bị này')).toBeInTheDocument();
+    expect(await screen.findByText(/Khóa trình duyệt cũ không có private key phía máy chủ/)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/file khóa/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Đăng ký khóa ký mới' })).toBeInTheDocument();
   });
 });
 

@@ -16,13 +16,13 @@ from signing.models import SigningAuditLog, SigningMfaOtp, SigningSignature
 from signing.services import mfa_ky
 
 from .helpers import cap_quyen
-from .test_hanh_dong_ky_phase8 import HASH, KyBase, chay_song_song, khoa_hoat_dong, ky_so, ma_loi
-from .test_pin_phase6 import BI_MAT_KIEM_THU
+from .test_hanh_dong_ky_phase8 import HASH, KyBase, chay_song_song, ma_loi
 
 User = get_user_model()
 MFA = "/api/v1/signing/mfa"
 EMAIL_KIEM_THU = override_settings(SIGNING_EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
 MFA_BAT = override_settings(SIGNING_MFA_EMAIL_ENABLED=True)
+BI_MAT_KIEM_THU = override_settings(SIGNING_PIN_SECRET="pin-test-secret", SIGNING_KEY_PEPPER="pepper-test")
 
 
 def ma_trong_thu():
@@ -282,9 +282,10 @@ class MfaKyApiTests(KyBase):
         return client
 
     def ky_jwt(self, client, user, khoa="ky-1"):
-        private, key = self.khoa[user.pk]
-        body = {"khoa_ky": key.pk, "hash_tai_lieu": HASH, "chu_ky_so": ky_so(private)}
-        return client.post(f"/api/v1/signing/trinh-ky/{self.pk}/ky/", body, format="json", HTTP_IDEMPOTENCY_KEY=khoa)
+        _, key = self.khoa[user.pk]
+        body = {"khoa_ky": key.pk, "hash_tai_lieu": HASH, "pin": "123456"}
+        return client.post(f"/api/v1/signing/trinh-ky/{self.pk}/ky/", body, format="json", secure=True,
+                           HTTP_IDEMPOTENCY_KEY=khoa)
 
     def test_flag_off_signing_unchanged_and_toi_reports_off(self):
         client = self.client_jwt(self.ky1)

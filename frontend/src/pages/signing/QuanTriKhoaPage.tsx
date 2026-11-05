@@ -1,6 +1,6 @@
 /**
  * Tab quản lý khóa ký và quyền ký của tài khoản khác (quản trị viên, phân vùng 3 của #447): xem trạng thái khóa ký,
- * PIN, quyền ký; khóa tạm thời hoặc bật lại quyền ký; thu hồi khẩn cấp khóa ký (đồng thời là đặt lại PIN: chủ khóa tạo khóa và PIN mới). Mọi thao tác bắt buộc nhập lý do;
+ * PIN, quyền ký; khóa tạm thời hoặc bật lại quyền ký; thu hồi khẩn cấp khóa ký (người dùng cần đăng ký khóa mới để ký tiếp). Mọi thao tác bắt buộc nhập lý do;
  * server kiểm quyền quản trị và ghi nhật ký.
  */
 import { useEffect, useState } from 'react';

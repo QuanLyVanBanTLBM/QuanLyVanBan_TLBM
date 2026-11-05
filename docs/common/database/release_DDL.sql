@@ -244,7 +244,8 @@
 -- - FK signing_attempt -> request, signing_signature, signing_manifest đổi sang
 -- ON DELETE RESTRICT.
 -- - Trigger chặn xóa cứng attempt đã kích hoạt, chữ ký số và manifest đã chốt.
--- - Kiến trúc Zero-Knowledge: Backend TUYỆT ĐỐI KHÔNG lưu encrypted_private_key.
+-- - Trình ký: backend lưu private key Ed25519 dạng mã hóa trong signing_key_unlock;
+--   khóa AES dẫn xuất từ SIGNING_KEY_PEPPER ngoài CSDL, độc lập PIN để recovery giữ cùng khóa.
 -- 9) [Phan Tạ Hữu Đức & Chỉ đạo GVHD 25/09/2026] Chuẩn hóa phân hệ Công việc:
 -- - Phân quyền duyệt/hủy duyệt theo Object-level trong task_participant (Người tạo,
 -- Chủ trì CHU_TRI, Chỉ đạo CHI_DAO); bỏ kiểm tra 3 lớp cứng và không chặn duyệt bằng approve_congviec.
@@ -1410,7 +1411,7 @@ CREATE TABLE signing_request_step_signer (
 CREATE INDEX idx_signing_request_step_signer_buoc ON signing_request_step_signer (buoc_ky_id);
 CREATE INDEX idx_signing_request_step_signer_nguoi ON signing_request_step_signer (nguoi_ky_id);
 
--- 9.8. Quản lý Khóa ký số (Zero-Knowledge: Backend tuyệt đối không lưu private key)
+-- 9.8. Quản lý khóa ký số (private key mã hóa trong DB; chỉ giải mã trong bộ nhớ khi ký)
 CREATE TABLE signing_key (
     id BIGSERIAL PRIMARY KEY,
     nguoi_so_huu_id BIGINT NOT NULL REFERENCES accounts_employee (id) ON DELETE RESTRICT,
@@ -1436,13 +1437,13 @@ CREATE UNIQUE INDEX uq_signing_key_mot_khoa_hoat_dong ON signing_key (nguoi_so_h
 CREATE INDEX idx_signing_key_khoa_thay_the ON signing_key (khoa_thay_the_id);
 CREATE INDEX idx_signing_key_nguoi_so_huu ON signing_key (nguoi_so_huu_id);
 
--- 9.8b. [v1] Mở khóa ký bằng PIN (Nhóm 5, Phase 6a) — bảng trạng thái, được phép UPDATE.
--- Không lưu PIN; chỉ lưu hash verifier và mảnh bí mật máy chủ đã mã hóa. Sự kiện PIN ghi vào signing_audit_log.
+-- 9.8b. Private key mã hóa AES-256-GCM bằng HKDF(SIGNING_KEY_PEPPER, salt), độc lập với PIN.
+-- PIN chỉ được giữ dưới dạng verifier Argon2id; email recovery thay verifier nhưng giữ nguyên khóa/ciphertext.
 CREATE TABLE signing_key_unlock (
     id BIGSERIAL PRIMARY KEY,
     khoa_id BIGINT NOT NULL UNIQUE REFERENCES signing_key (id) ON DELETE CASCADE,
     ma_bam_xac_minh_pin TEXT NOT NULL,
-    manh_bi_mat_ma_hoa TEXT NOT NULL,
+    khoa_bi_mat_ma_hoa TEXT NOT NULL,
     tham_so_kdf JSONB NOT NULL,
     so_lan_sai INTEGER NOT NULL DEFAULT 0 CHECK (so_lan_sai >= 0),
     khoa_den TIMESTAMPTZ, -- NULL: không bị khóa
@@ -1467,10 +1468,11 @@ CREATE TABLE signing_user_signature (
 CREATE TRIGGER trg_signing_user_signature_updated_at BEFORE UPDATE ON signing_user_signature
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- 9.8c2. Mã xác thực đặt lại PIN gửi qua email (Nhóm 5): lưu mã đã băm, một mã còn hiệu lực cho mỗi lần yêu cầu
+-- 9.8c2. Mã xác thực đặt lại PIN gửi qua email (Nhóm 5): lưu mã đã băm, gắn với khóa đang hoạt động lúc gửi
 CREATE TABLE signing_pin_reset_code (
     id BIGSERIAL PRIMARY KEY,
     nguoi_dung_id BIGINT NOT NULL REFERENCES accounts_employee (id) ON DELETE CASCADE,
+    khoa_id BIGINT REFERENCES signing_key (id) ON DELETE RESTRICT,
     ma_bam VARCHAR(64) NOT NULL,
     het_han TIMESTAMPTZ NOT NULL,
     so_lan_sai INTEGER NOT NULL DEFAULT 0,

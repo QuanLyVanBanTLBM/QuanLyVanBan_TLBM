@@ -1,4 +1,4 @@
-"""System check của phân hệ Trình ký (issue #79): bí mật PIN riêng ở môi trường production."""
+"""System checks của phân hệ Trình ký: secret PIN và pepper khóa ký ở môi trường production."""
 
 from django.conf import settings
 from django.core.checks import Error, Tags, Warning, register
@@ -7,7 +7,7 @@ from django.core.checks import Error, Tags, Warning, register
 @register(Tags.security, deploy=True)
 def kiem_tra_bi_mat_pin(app_configs, **kwargs):
     """
-    `SIGNING_PIN_SECRET` dẫn xuất khóa băm verifier PIN và khóa mã hóa `k_srv` (plan mục 3.4).
+    `SIGNING_PIN_SECRET` dùng để HMAC mã đặt lại PIN và MFA (không dùng mã hóa private key ký).
     Chạy trong `manage.py check --deploy` (cổng kiểm tra cấu hình production). Không đăng ký thành
     check thường vì `manage.py test` luôn đặt DEBUG = False: check thường sẽ chặn test của mọi nhóm
     khi CI không đặt biến này. Lúc chạy, `services.pin._bi_mat_may_chu` từ chối hoạt động nếu
@@ -25,6 +25,25 @@ def kiem_tra_bi_mat_pin(app_configs, **kwargs):
             "SIGNING_PIN_SECRET trùng SECRET_KEY.",
             hint="Dùng một chuỗi ngẫu nhiên riêng cho SIGNING_PIN_SECRET.",
             id="signing.E002",
+        )]
+    return []
+
+
+@register(Tags.security, deploy=True)
+def kiem_tra_pepper_khoa_ky(app_configs, **kwargs):
+    """Pepper tách biệt để mã hóa private key và xác minh PIN; không dùng SECRET_KEY thay thế ở production."""
+    pepper = getattr(settings, "SIGNING_KEY_PEPPER", "")
+    if not pepper:
+        return [Error(
+            "Chưa đặt SIGNING_KEY_PEPPER cho môi trường production.",
+            hint="Đặt SIGNING_KEY_PEPPER là chuỗi ngẫu nhiên riêng và giữ ổn định qua các lần deploy.",
+            id="signing.E005",
+        )]
+    if pepper == settings.SECRET_KEY or pepper == getattr(settings, "SIGNING_PIN_SECRET", ""):
+        return [Error(
+            "SIGNING_KEY_PEPPER phải khác SECRET_KEY và SIGNING_PIN_SECRET.",
+            hint="Dùng một pepper ngẫu nhiên riêng cho mã hóa private key và xác minh PIN.",
+            id="signing.E006",
         )]
     return []
 

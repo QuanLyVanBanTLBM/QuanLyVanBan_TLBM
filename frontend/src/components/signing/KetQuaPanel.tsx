@@ -67,7 +67,7 @@ export default function KetQuaPanel({ hoSo, luot, onTaiLai }: {
           )}
         </>
       )}
-      {trangThai === 'THANH_CONG' && (
+      {hoSo.trang_thai === 'HOAN_THANH' && trangThai !== 'LOI' && (
         <div className="space-y-2">
           <div className="text-sm text-secondary">{t('chiTiet.tepHoanTat')}</div>
           <div className="flex flex-wrap gap-2">

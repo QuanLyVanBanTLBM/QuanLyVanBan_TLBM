@@ -1,6 +1,5 @@
 /**
- * Lối "Quên PIN?" trong hộp thoại ký (#487): mở luồng đặt lại PIN bằng mã email; đặt lại xong chuyển tới trang
- * Khóa ký để tạo khóa và PIN mới.
+ * Lối "Quên PIN?" trong hộp thoại ký (#487): đặt PIN mới qua email, giữ khóa hiện tại và mở lại hộp thoại ký.
  */
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -55,18 +54,22 @@ beforeEach(() => {
 });
 
 describe('Quên PIN trong hộp thoại ký', () => {
-  it('đóng hộp thoại ký, mở đặt lại PIN và chuyển tới trang Khóa ký khi hoàn tất', async () => {
+  it('đóng hộp thoại ký, đặt lại PIN giữ khóa hiện tại rồi mở lại ký', async () => {
     api.datLaiPinYeuCau.mockResolvedValue({ het_han: '2026-11-02T03:00:00Z', gian_cach_giay: 120 });
-    api.datLaiPinXacNhan.mockResolvedValue({ so_khoa_thu_hoi: 1 });
+    api.datLaiPinXacNhan.mockResolvedValue({ da_dat_lai_pin: true, khoa: 4 });
     moHopKy();
     fireEvent.click(await screen.findByRole('button', { name: 'Quên PIN?' }));
     const hop = await screen.findByRole('dialog', { name: /Đặt lại PIN/ });
     expect(screen.queryByLabelText(/Nhập PIN ký/)).not.toBeInTheDocument();
     fireEvent.click(within(hop).getByRole('button', { name: 'Gửi mã xác thực' }));
     fireEvent.change(await screen.findByLabelText(/Mã xác thực/), { target: { value: '123456' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Xác nhận và thu hồi khóa' }));
-    await waitFor(() => expect(api.datLaiPinXacNhan).toHaveBeenCalledWith('123456'));
-    expect(await screen.findByText('Trang khóa ký')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/^PIN mới/), { target: { value: '482739' } });
+    fireEvent.change(screen.getByLabelText(/^Nhập lại PIN mới/), { target: { value: '482739' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Xác nhận và cập nhật PIN' }));
+    await waitFor(() => expect(api.datLaiPinXacNhan).toHaveBeenCalledWith('123456', '482739'));
+    expect(await screen.findByText('Đã cập nhật PIN. Khóa ký và định danh được giữ nguyên.')).toBeInTheDocument();
+    expect(await screen.findByLabelText(/Nhập PIN ký/)).toHaveValue('482739');
+    await waitFor(() => expect(api.khoa).toHaveBeenCalledTimes(2));
     expect(api.ky).not.toHaveBeenCalled();
   });
 

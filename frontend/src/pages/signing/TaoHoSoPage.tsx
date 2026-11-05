@@ -243,7 +243,19 @@ export function Buoc2({ hoSo, tep, quyTrinh, onQuyTrinhNgung }: {
     setDangGui(true);
     setThongBao('');
     try {
-      await signingApi.gui(hoSo.id, khoa.lay(), chonNguoiKy, viTri);
+      const viTriGui: Record<string, ViTriKy> = { ...viTri };
+      nguoiKy.forEach((n, idx) => {
+        if (!viTriGui[n.id]) {
+          viTriGui[n.id] = {
+            trang_ky: tongSoTrang,
+            toa_do_x: '60',
+            toa_do_y: String(Math.min(85, Math.max(10, 75 - idx * 12))),
+            chieu_rong_khung: String(KHUNG_MAC_DINH.w),
+            chieu_cao_khung: String(KHUNG_MAC_DINH.h),
+          };
+        }
+      });
+      await signingApi.gui(hoSo.id, khoa.lay(), chonNguoiKy, viTriGui);
       khoa.lamMoi();
       navigate(`/approvals/${hoSo.id}`);
     } catch (err) {
@@ -311,7 +323,23 @@ export function Buoc2({ hoSo, tep, quyTrinh, onQuyTrinhNgung }: {
           </Button>
         </div>}
         <XemPdf duLieu={tepHienTai} khung={khung} khungDangDat={dangDat}
-          onSoTrang={(so) => setTongSoTrang(so)}
+          onSoTrang={(so) => {
+            setTongSoTrang(so);
+            setViTri((v) => {
+              if (Object.keys(v).length > 0) return v;
+              const macDinh: Record<string, ViTriKy> = {};
+              nguoiKy.forEach((n, idx) => {
+                macDinh[n.id] = {
+                  trang_ky: so,
+                  toa_do_x: '60',
+                  toa_do_y: String(Math.min(85, Math.max(10, 75 - idx * 12))),
+                  chieu_rong_khung: String(KHUNG_MAC_DINH.w),
+                  chieu_cao_khung: String(KHUNG_MAC_DINH.h),
+                };
+              });
+              return macDinh;
+            });
+          }}
           onDat={(id, trang, x, y) => {
             setViTri((v) => ({ ...v, [id]: khungTuDiemBam(trang, x, y) }));
             setDangDat(null);

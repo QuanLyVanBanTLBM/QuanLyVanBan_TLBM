@@ -16,7 +16,7 @@ import TienTrinh from '@components/signing/TienTrinh';
 import TraoDoiPanel from '@components/signing/TraoDoiPanel';
 import XemPdf, { type KhungHienThi } from '@components/signing/XemPdf';
 import { docLoi, signingApi } from '@lib/signing/api';
-import { chiTietNhatKy, dinhDangNgay, inPdf, moTaVanBan } from '@lib/signing/dinhDang';
+import { chiTietNhatKy, dinhDangNgay, inPdf, moTaVanBan, tenTepTaiVe } from '@lib/signing/dinhDang';
 import { useTai, useToi } from '@lib/signing/hooks';
 import { useSigningT } from '@lib/signing/i18n';
 import { sha256Hex } from '@lib/signing/khoaKy';
@@ -30,6 +30,15 @@ function DongThongTin({ nhan, children }: { nhan: string; children: ReactNode })
       <span className="text-main font-semibold sm:text-right min-w-0 break-words">{children}</span>
     </div>
   );
+}
+
+function luuTep(blob: Blob, ten: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = ten;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 /** Mã hồ sơ trên đường dẫn phải là số nguyên dương; sai dạng thì báo không tìm thấy, không gọi API. */
@@ -156,6 +165,36 @@ function ChiTietHoSo({ id }: { id: number }) {
     }
   };
 
+  const taiTepHienTai = async () => {
+    try {
+      if (hoSo.trang_thai === 'HOAN_THANH') {
+        const b = await signingApi.tepHoanTat(hoSo.id);
+        luuTep(b, tenTepTaiVe(hoSo.id, 'HOAN_TAT'));
+      } else if (tep) {
+        luuTep(new Blob([tep], { type: 'application/pdf' }), tenTepTaiVe(hoSo.id, 'DU_THAO'));
+      }
+    } catch {
+      if (tep) {
+        luuTep(new Blob([tep], { type: 'application/pdf' }), tenTepTaiVe(hoSo.id, 'DU_THAO'));
+      }
+    }
+  };
+
+  const inTepHienTai = async () => {
+    try {
+      if (hoSo.trang_thai === 'HOAN_THANH') {
+        const b = await signingApi.tepHoanTat(hoSo.id);
+        inPdf(b);
+      } else if (tep) {
+        inPdf(new Blob([tep], { type: 'application/pdf' }));
+      }
+    } catch {
+      if (tep) {
+        inPdf(new Blob([tep], { type: 'application/pdf' }));
+      }
+    }
+  };
+
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_24rem]">
       <div className="space-y-4 min-w-0">
@@ -186,10 +225,14 @@ function ChiTietHoSo({ id }: { id: number }) {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-xl font-bold text-main">{t('chiTiet.taiLieu')}</h3>
             {tep && (
-              <Button size="sm" variant="secondary" icon="fa-print"
-                onClick={() => inPdf(new Blob([tep], { type: 'application/pdf' }))}>
-                {t('chung.in')}
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button size="sm" variant="secondary" icon="fa-download" onClick={taiTepHienTai}>
+                  {t('chung.taiVe')}
+                </Button>
+                <Button size="sm" variant="secondary" icon="fa-print" onClick={inTepHienTai}>
+                  {t('chung.in')}
+                </Button>
+              </div>
             )}
           </div>
           {/* PDF cuộn trong khung riêng để trang không dài theo số trang tài liệu */}

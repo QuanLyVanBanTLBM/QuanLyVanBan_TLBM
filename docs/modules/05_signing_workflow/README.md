@@ -22,7 +22,7 @@ Tài liệu liên quan (không chép lại ở đây):
 | Tạo hồ sơ nháp (chọn PDF đính kèm trên văn bản đi hoặc tải PDF dự thảo chưa vào sổ; quy trình, hạn chót), sửa nháp | Xong |
 | Trình ký: khóa tệp và mã băm, chọn người ký theo chức vụ, đặt vị trí ký | Xong |
 | Ký tuần tự theo cấp, song song trong cấp | Xong |
-| Khóa ký Ed25519 + PIN 8 số (Argon2id + salt, `k_srv`); xuất file khóa; ký bằng file khóa + PIN | Xong |
+| Khóa ký Ed25519 server-side; private key AES-256-GCM trong DB, khóa mã hóa dẫn xuất từ salt + `SIGNING_KEY_PEPPER` độc lập PIN; PIN Argon2id verifier, recovery email giữ nguyên khóa | Đang triển khai #447 phân vùng 1 |
 | Không đồng ý ban hành (kết thúc); trình lại thành hồ sơ mới | Xong |
 | Trả lại để sửa → trao đổi → gửi bản sửa → lượt trình mới | Xong |
 | Hủy (người tạo; quản trị hủy thay có lý do); thu hồi chữ ký khi cấp còn mở | Xong |
@@ -100,7 +100,7 @@ frontend/src/
 | `trinh-ky/{id}/{ky,tu-choi,thu-hoi,yeu-cau-sua}/` | Hành động người ký |
 | `trinh-ky/{id}/{trao-doi,giai-quyet}/` | Trao đổi khi trả sửa, gửi bản sửa |
 | `trinh-ky/{id}/{tep,tep-hoan-tat,bang-chung,tao-lai-tep-hoan-tat}/` | Tệp, tệp hoàn tất, bằng chứng |
-| `khoa/`, `khoa/{id}/{thach-thuc,xac-minh,kich-hoat,thu-hoi,xoay-vong,dat-pin,mo-khoa-ky,doi-pin}/` | Khóa ký, PIN |
+| `khoa/`, `khoa/{id}/{thach-thuc,xac-minh,kich-hoat,thu-hoi,xoay-vong,dat-pin,doi-pin}/` | Public key, đăng ký private key mã hóa và đổi PIN |
 | `thong-bao/`, `tai-lieu/`, `toi/`, `nguoi-dung/`, `don-vi/`, `van-ban-di/` | Hỗ trợ giao diện (`thong-bao/` giữ ở backend, giao diện Trình ký không còn gọi) |
 | `dashboard/` | Dữ liệu Dashboard/Header cho Nhóm 1 |
 
@@ -175,7 +175,8 @@ bản đầy đủ ở `du-lieu-mau-va-tinh-trang-nghiep-vu.md` mục 5.2):
 | Biến | Ghi chú |
 |---|---|
 | `SIGNING_DOCUMENT_ROOT` | Thư mục lưu tệp PDF, ảnh chữ ký snapshot, tệp hoàn tất |
-| `SIGNING_PIN_SECRET` | Bí mật máy chủ cho PIN và `k_srv`; bắt buộc trên staging/production (`check --deploy` báo `signing.E001/E002`) |
+| `SIGNING_PIN_SECRET` | Secret HMAC mã đặt lại PIN và MFA; bắt buộc trên staging/production (`check --deploy` báo `signing.E001/E002`) |
+| `SIGNING_KEY_PEPPER` | Pepper riêng để dẫn xuất khóa AES độc lập PIN và PIN verifier; bắt buộc, khác `SECRET_KEY`/`SIGNING_PIN_SECRET` (`signing.E005/E006`); giữ ổn định và bảo vệ cùng backup |
 | `SIGNING_PDF_FONT`, `SIGNING_PDF_FONT_BOLD` | Phông có dấu cho PDF hoàn tất; trống thì tự dò phông hệ thống |
 | `SIGNING_EMAIL_BACKEND` | Để trống trên staging/production. Chỉ dùng để chọn backend không cần máy chủ thư khi dev/test: `django.core.mail.backends.console.EmailBackend` hoặc `django.core.mail.backends.locmem.EmailBackend`. Đặt giá trị SMTP thì được coi như để trống (gửi qua cấu hình `EMAIL_*`); giá trị không nạp được báo `signing.E004` |
 | `SIGNING_FRONTEND_URL` | Địa chỉ giao diện dùng trong liên kết email |
@@ -249,7 +250,7 @@ Việc phải làm trực tiếp trên máy chủ (người quản trị máy ch
 
 | # | Việc | Lệnh kiểm tra |
 |---|---|---|
-| 1 | Đặt `SIGNING_PIN_SECRET` (chuỗi ngẫu nhiên, ví dụ `openssl rand -hex 32`) trong `/etc/qlvb/backend.env` | `python manage.py check --deploy` không báo `signing.E001` |
+| 1 | Đặt `SIGNING_PIN_SECRET` và `SIGNING_KEY_PEPPER` (hai chuỗi ngẫu nhiên riêng, ví dụ `openssl rand -hex 32` cho từng biến) trong `/etc/qlvb/backend.env` | `python manage.py check --deploy` không báo `signing.E001/E002/E005/E006` |
 | 2 | Đặt `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USE_TLS`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `DEFAULT_FROM_EMAIL` | `check --deploy` không báo `signing.W002`, `signing.W003`; gửi thử một thông báo và kiểm tra hộp thư |
 | 3 | Đặt `SIGNING_FRONTEND_URL` là URL giao diện staging | Liên kết trong email không trỏ về `localhost` |
 | 4 | Đặt `SIGNING_DOCUMENT_ROOT` (thư mục ngoài mã nguồn, user `qlvb` ghi được) | `check --deploy` không báo `signing.E003` |
@@ -258,6 +259,8 @@ Việc phải làm trực tiếp trên máy chủ (người quản trị máy ch
 | 7 | Sau khi workflow `Signing scheduler` chạy | `tail /srv/qlvb/signing-scheduler.log`; run trong tab Actions ở trạng thái `success` |
 
 Quyền của tệp `/etc/qlvb/backend.env` là 0600 hoặc 0640, thuộc user dịch vụ backend.
+
+Đổi hoặc mất `SIGNING_KEY_PEPPER` khiến khóa riêng đang lưu không giải mã được; phải bảo toàn đúng giá trị qua deploy/backup/restore. Do khóa mã hóa độc lập PIN, người có cả bản sao CSDL và pepper có thể đọc private key dù không biết PIN; PIN chỉ xác nhận mỗi lần ký. Endpoint đăng ký PIN, đổi PIN, recovery PIN và ký từ chối HTTP khi `DEBUG=False`; chỉ bật `DJANGO_SECURE_PROXY_SSL_HEADER=true` nếu reverse proxy luôn ghi đè `X-Forwarded-Proto` bằng scheme thực.
 
 ## 6. Cách chạy
 
@@ -276,7 +279,7 @@ Trên staging, deploy chỉ chạy migration; lệnh dữ liệu mẫu chạy ta
 
 Tài khoản mẫu: `truongphong` (ký cấp 1, có hồ sơ chờ ký), `giamdoc` (ký cấp 2), `vanthu`
 (người trình, đủ trạng thái), `chuyenvien` (soạn nháp), `admin` (quản trị). Sau khi chạy lệnh mẫu, mỗi người
-ký tự tạo khóa ký ở trang **Cấu hình khóa ký** (tải file khóa) trước khi ký.
+ký đăng ký khóa mới ở trang **Cấu hình khóa ký** trước khi ký.
 
 ## 7. Kiểm thử
 
@@ -331,7 +334,7 @@ Báo cáo chi tiết các luồng nghiệp vụ (Happy path, Trả sửa lượt
 
 ## 10. Nhật ký thay đổi PR #251
 
-- File khóa `.tlbmkey` (bản bọc private key): xuất khi tạo khóa và đổi PIN, nhập vào thiết bị, ký bằng file + PIN.
+- Khóa ký server-side: trình duyệt tạo cặp Ed25519 khi đăng ký và gửi PKCS#8 cùng PIN qua HTTPS để lưu ciphertext; mỗi lần ký nhập PIN. Không có import/export `.tlbmkey` hoặc khóa riêng trong IndexedDB.
 - Thông báo: hủy báo người tạo (khi hủy thay) và người đã ký; tin nhắn trao đổi; nhắc hạn/quá hạn (`nhac_han_trinh_ky`);
   số thông báo mới ở tab; email và thông báo ghi người thực hiện và lý do.
 - Lịch sử hiển thị người thực hiện; ghi "Gửi trình ký" trước "Mở cấp ký".
@@ -400,8 +403,7 @@ chữ, i18n, kiểm tra nhập liệu, truy cập). Danh sách lỗi và bằng 
   `maxLength` khớp máy chủ; xóa thông báo lỗi cũ khi đổi dữ liệu; tìm văn bản đi chờ ngừng gõ; "Văn bản công khai" tự áp
   dụng từ khóa như danh sách hồ sơ; Enter gửi tin nhắn trao đổi và Enter ở ô PIN ký.
 - **Quy trình**: xóa được cấp ký khi cấu hình; nhấn đúp "Tạo phiên bản mới" không sinh hai phiên bản; "Ngừng" cần xác
-  nhận; kiểm tra mã và số giờ ngay trên form. **Khóa ký**: thu hồi khóa cần xác nhận; ô nhập file khóa theo ngôn ngữ
-  giao diện.
+  nhận; kiểm tra mã và số giờ ngay trên form. **Khóa ký**: thu hồi khóa cần xác nhận; nhập PIN đủ 6 chữ số.
 - **Hiển thị**: danh sách hồ sơ chuyển sang dạng thẻ dưới 1024px, "Văn bản công khai" dưới 1280px (bảng không còn cắt cột
   Hạn chót ở 768px); chuỗi dài không có dấu cách xuống dòng, tiêu đề tối đa 3 dòng trong thẻ; trang Cấu hình khóa ký không tràn
   ngang ở 390px; số trên thẻ lọc khớp danh sách; số "Cần tôi ký duyệt" và thông báo mới tải lại ngay sau thao tác;

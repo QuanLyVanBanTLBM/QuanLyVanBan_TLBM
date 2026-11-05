@@ -34,7 +34,6 @@ urlpatterns = [
 
     # PIN mở khóa ký (Phase 6)
     path("khoa/<int:pk>/dat-pin/", views.KhoaPinView.as_view(action="dat-pin"), name="khoa-dat-pin"),
-    path("khoa/<int:pk>/mo-khoa-ky/", views.KhoaPinView.as_view(action="mo-khoa-ky"), name="khoa-mo-khoa-ky"),
     path("khoa/<int:pk>/doi-pin/", views.KhoaPinView.as_view(action="doi-pin"), name="khoa-doi-pin"),
 
     # Hồ sơ trình ký (Phase 7, #80)
