@@ -19,6 +19,7 @@ from rest_framework.test import APIClient
 
 from accounts.models import Position
 from signing import enums
+from signing.errors import SigningError
 from signing.models import SigningAttempt, SigningAuditLog, SigningRequest
 from signing.services import process as process_service
 from signing.services import trinh_ky as trinh_ky_service
@@ -180,6 +181,33 @@ class TaoNhapTests(TrinhKyBase):
                                      "tep": tep_pdf(b"khong phai pdf")}, format="multipart")
         self.assertEqual((r.status_code, r.data["code"]), (400, "tep_khong_phai_pdf"))
         self.assertFalse(SigningRequest.objects.exists())
+
+    def test_encrypted_pdf_is_rejected(self):
+        from pypdf import PdfReader, PdfWriter
+        reader = PdfReader(io.BytesIO(PDF))
+        writer = PdfWriter()
+        writer.append(reader)
+        writer.encrypt("mat-khau-123")
+        buf = io.BytesIO()
+        writer.write(buf)
+        r = self.c.post(
+            f"{BASE}/",
+            {"quy_trinh": self.process.pk, "trich_yeu_van_ban": "Dự thảo", "tep": tep_pdf(buf.getvalue())},
+            format="multipart",
+        )
+        self.assertEqual((r.status_code, r.data["code"]), (400, "tep_pdf_co_mat_khau"))
+        self.assertIn("Không hỗ trợ tệp PDF có mật khẩu bảo vệ", r.data.get("detail", ""))
+
+    def test_trich_yeu_qua_dai_raises_error(self):
+        with self.assertRaises(SigningError) as ctx:
+            trinh_ky_service.tao_nhap(
+                self.tao,
+                quy_trinh=self.process,
+                tep=tep_pdf(),
+                so_hieu_van_ban="01/TTr",
+                trich_yeu_van_ban="x" * 1001,
+            )
+        self.assertEqual(ctx.exception.detail.code, "trich_yeu_qua_dai")
 
     def test_file_size_limit(self):
         with mock.patch.object(trinh_ky_service, "TEP_TOI_DA", len(PDF) - 1):

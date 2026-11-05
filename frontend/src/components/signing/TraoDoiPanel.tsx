@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { Button, Card } from '@components/common';
 import { signingApi } from '@lib/signing/api';
 import { dinhDangNgay, GIOI_HAN, kiemTraTepPdf, LOP_O_NHAP } from '@lib/signing/dinhDang';
+import { kiemTraPdfCoMatKhau } from '@lib/signing/pdf';
 import { coQuyen, useKhoaChongTrung, useTai, useToi } from '@lib/signing/hooks';
 import { useSigningT } from '@lib/signing/i18n';
 import type { HoSoChiTiet } from '@lib/signing/types';
@@ -88,10 +89,30 @@ export default function TraoDoiPanel({ hoSo, onXong }: { hoSo: HoSoChiTiet; onXo
           <div className="text-sm font-bold text-main">{t('traoDoi.taiBanSua')}</div>
           <p className="text-sm text-secondary">{t('traoDoi.ghiChuGiaiQuyet')}</p>
           <label className="block">
-            <OChonTep accept="application/pdf" nhan={t('traoDoi.chonTep')} onChon={(f) => {
-              const khoaLoi = f ? kiemTraTepPdf(f) : null;
-              setLoiTep(khoaLoi ? t(khoaLoi) : '');
-              setTep(f && !khoaLoi ? f : null);
+            <OChonTep accept="application/pdf" nhan={t('traoDoi.chonTep')} onChon={async (f) => {
+              if (!f) {
+                setLoiTep('');
+                setTep(null);
+                return;
+              }
+              const khoaLoi = kiemTraTepPdf(f);
+              if (khoaLoi) {
+                setLoiTep(t(khoaLoi));
+                setTep(null);
+                return;
+              }
+              try {
+                const buf = await f.arrayBuffer();
+                if (await kiemTraPdfCoMatKhau(buf)) {
+                  setLoiTep(t('loi.tep_pdf_co_mat_khau'));
+                  setTep(null);
+                  return;
+                }
+              } catch {
+                // tiếp tục nếu không thể kiểm tra
+              }
+              setLoiTep('');
+              setTep(f);
             }} />
           </label>
           {loiTep && <ThongBao>{loiTep}</ThongBao>}
