@@ -559,16 +559,32 @@ class TrinhKyTepView(SigningAPIView):
         luot_id = request.query_params.get("luot")
         if luot_id:
             luot = get_object_or_404(ho_so.luot_trinh_set, pk=_doc_so_nguyen(luot_id, "luot"))
+            vi_tri = luot.vi_tri_luu_tep
+            ten_tep = f"trinh-ky-{ho_so.pk}-luot-{luot.so_luot}.pdf"
         else:
             luot = trinh_ky_service.luot_hien_hanh(ho_so)
-        vi_tri = luot.vi_tri_luu_tep if luot else ho_so.vi_tri_luu_tep
+            if luot and ho_so.trang_thai == enums.TrangThaiYeuCau.HOAN_THANH:
+                if luot.trang_thai_tep_hoan_tat != enums.TrangThaiTepHoanTat.THANH_CONG:
+                    if luot.trang_thai_tep_hoan_tat != enums.TrangThaiTepHoanTat.DANG_XU_LY:
+                        luot.trang_thai_tep_hoan_tat = enums.TrangThaiTepHoanTat.DANG_XU_LY
+                        luot.save(update_fields=["trang_thai_tep_hoan_tat", "update_at"])
+                    tep_hoan_tat_service.tao_tep_hoan_tat(luot.pk, request.user.pk)
+                    luot.refresh_from_db()
+                if luot.trang_thai_tep_hoan_tat == enums.TrangThaiTepHoanTat.THANH_CONG and luot.vi_tri_tep_hoan_tat:
+                    vi_tri = luot.vi_tri_tep_hoan_tat
+                    ten_tep = f"trinh-ky-{ho_so.pk}-da-ky.pdf"
+                else:
+                    vi_tri = luot.vi_tri_luu_tep
+                    ten_tep = f"trinh-ky-{ho_so.pk}.pdf"
+            else:
+                vi_tri = luot.vi_tri_luu_tep if luot else ho_so.vi_tri_luu_tep
+                ten_tep = f"trinh-ky-{ho_so.pk}-luot-{luot.so_luot}.pdf" if luot else f"trinh-ky-{ho_so.pk}.pdf"
         try:
             data = get_storage().read_bytes(vi_tri)
         except StorageError:
             raise SigningError(code="khong_doc_duoc_tep", detail="Không đọc được tệp của hồ sơ.",
                                status_code=status.HTTP_404_NOT_FOUND)
         response = HttpResponse(data, content_type="application/pdf")
-        ten_tep = f"trinh-ky-{ho_so.pk}-luot-{luot.so_luot}.pdf" if luot else f"trinh-ky-{ho_so.pk}.pdf"
         response["Content-Disposition"] = f'inline; filename="{ten_tep}"'
         response["Cache-Control"] = "no-store"
         return response
@@ -690,7 +706,15 @@ class TepHoanTatView(SigningAPIView):
 
     def get(self, request, pk):
         ho_so = _ho_so_xem_duoc(request, pk)
-        data = tep_hoan_tat_service.doc_tep_hoan_tat(trinh_ky_service.luot_hien_hanh(ho_so))
+        luot = trinh_ky_service.luot_hien_hanh(ho_so)
+        if luot and ho_so.trang_thai == enums.TrangThaiYeuCau.HOAN_THANH:
+            if luot.trang_thai_tep_hoan_tat != enums.TrangThaiTepHoanTat.THANH_CONG:
+                if luot.trang_thai_tep_hoan_tat != enums.TrangThaiTepHoanTat.DANG_XU_LY:
+                    luot.trang_thai_tep_hoan_tat = enums.TrangThaiTepHoanTat.DANG_XU_LY
+                    luot.save(update_fields=["trang_thai_tep_hoan_tat", "update_at"])
+                tep_hoan_tat_service.tao_tep_hoan_tat(luot.pk, request.user.pk)
+                luot.refresh_from_db()
+        data = tep_hoan_tat_service.doc_tep_hoan_tat(luot)
         response = HttpResponse(data, content_type="application/pdf")
         response["Content-Disposition"] = f'attachment; filename="trinh-ky-{ho_so.pk}-ban-duyet-noi-bo.pdf"'
         response["Cache-Control"] = "no-store"

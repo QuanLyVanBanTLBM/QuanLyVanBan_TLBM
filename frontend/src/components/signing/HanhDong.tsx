@@ -85,8 +85,7 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
   const khoaKiem = `${toi?.id ?? ''}#${lanKiem}`;
   const dangKiem = !ketQuaKiem || ketQuaKiem.khoa !== khoaKiem;
   const loiKiem = !dangKiem ? ketQuaKiem.loi : null;
-  const anhChuKy = layAnhChuKyUrl(toi);
-  const thieuAnh = !anhChuKy;
+  const thieuAnh = !layAnhChuKyUrl(toi);
   const thieuKhoa = !dangKiem && !loiKiem && !ketQuaKiem.coKhoa;
   const hienThieu = !dangKiem && !loiKiem && (thieuAnh || thieuKhoa);
   // MFA qua email (#510): máy chủ bật cờ và access token hiện tại chưa xác thực thì phải nhập mã trước khi ký.
@@ -424,22 +423,6 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
             />
           </TruongNhap>
 
-          {/* Hiển thị ảnh chữ ký cá nhân áp dụng nếu đã có */}
-          {anhChuKy && (
-              <div className="flex items-center justify-between p-3 rounded-lg border border-border-subtle bg-surface-subtle">
-                <span className="text-xs text-secondary font-medium">{t('hanhDong.anhChuKySeDung')}</span>
-                <div
-                  className="px-2 py-1 rounded border border-border-subtle bg-white"
-                  style={{
-                    backgroundImage:
-                      'linear-gradient(45deg, #f0f0f0 25%, transparent 25%), linear-gradient(-45deg, #f0f0f0 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #f0f0f0 75%), linear-gradient(-45deg, transparent 75%, #f0f0f0 75%)',
-                    backgroundSize: '8px 8px',
-                  }}
-                >
-                  <img src={anhChuKy} alt="Chữ ký cá nhân" className="h-8 max-w-[120px] object-contain" />
-                </div>
-              </div>
-            )}
 
           {dangLam && <ThongBao loai="thong_tin">{t('hanhDong.dangKy')}</ThongBao>}
           {thongBao && <ThongBao>{thongBao}</ThongBao>}

@@ -205,6 +205,27 @@ class AnhChuKyTests(HoanTatBase):
         xm = self.c.get(f"{BASE}/{self.pk}/bang-chung/").data["xac_minh"]
         self.assertEqual((xm["chu_ky"][0]["anh_chu_ky_khop"], xm["hop_le"]), (False, False))
 
+    def test_auto_stamp_last_page_when_no_position_set(self, _anh):
+        tep = pdf_mau(2)
+        self.pk = self.tao_nhap(tep=tep_pdf(tep)).data["id"]
+        self.gui(self.pk, khoa="no-pos")
+        import hashlib
+        h = hashlib.sha256(tep).hexdigest()
+        self.ky(self.ky1, hash_tai_lieu=h, chu_ky_so=ky_so(self.khoa[self.ky1.pk][0], h))
+        self.ky(self.ky2, hash_tai_lieu=h, chu_ky_so=ky_so(self.khoa[self.ky2.pk][0], h))
+        with self.captureOnCommitCallbacks(execute=True):
+            self.ky(self.ky3, hash_tai_lieu=h, chu_ky_so=ky_so(self.khoa[self.ky3.pk][0], h))
+        res_hoan_tat = self.c.get(f"{BASE}/{self.pk}/tep-hoan-tat/")
+        self.assertEqual(res_hoan_tat.status_code, 200)
+        res_tep = self.c.get(f"{BASE}/{self.pk}/tep/")
+        self.assertEqual(res_tep.status_code, 200)
+        self.assertIn("da-ky.pdf", res_tep["Content-Disposition"])
+        pdf = PdfReader(io.BytesIO(res_hoan_tat.content))
+        trang2 = pdf.pages[1].extract_text()
+        self.assertIn("ke_toan", trang2)
+        self.assertIn("phap_che", trang2)
+        self.assertIn("giam_doc", trang2)
+
 
 class GiaiQuyetViTriTests(KyBase):
     """Lượt mới sau trả sửa chép vị trí ký, cho đặt lại; tệp mới ít trang hơn thì báo lỗi rõ (#80 mục A, C)."""

@@ -54,10 +54,8 @@ beforeEach(() => {
 });
 
 describe('Ký duyệt dùng ảnh chữ ký ở máy chủ', () => {
-  it('hiện ảnh từ máy chủ và không gửi ảnh kèm yêu cầu ký', async () => {
+  it('không gửi ảnh kèm yêu cầu ký (máy chủ tự áp dụng snapshot)', async () => {
     moHopKy();
-    const anh = await screen.findByAltText('Chữ ký cá nhân');
-    expect(anh).toHaveAttribute('src', '/api/signing/anh-chu-ky-ca-nhan/tep/?v=7');
     const oPin = await screen.findByLabelText(/Nhập PIN ký/);
     await waitFor(() => expect(oPin).toBeEnabled());
     fireEvent.change(oPin, { target: { value: '48271593' } });
