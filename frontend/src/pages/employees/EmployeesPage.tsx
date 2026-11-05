@@ -429,6 +429,10 @@ export default function EmployeesPage() {
                     .toUpperCase();
                   const isWorking = emp.trang_thai === 'LAM_VIEC';
                   const rowNumber = (currentPage - 1) * pageSize + idx + 1;
+                  const concurrentPositions = (emp.assignments ?? []).filter(
+                    (assignment) => Boolean(assignment.chuc_vu_ten)
+                  );
+                  const hiddenConcurrentPositionCount = Math.max(concurrentPositions.length - 1, 0);
 
                   return (
                     <tr key={emp.id} className="employees-page__employee-row hover:bg-surface-hover transition-colors">
@@ -490,15 +494,32 @@ export default function EmployeesPage() {
                         )}
                       </td>
 
-                      {/* Chức vụ & Chức danh */}
+                      {/* Chức vụ chính và tối đa một chức vụ kiêm nhiệm */}
                       <td className="employees-page__cell employees-page__cell--position py-3.5 px-4" data-label={t('employees.table.position')}>
                         <span className="font-medium text-main block">
                           {emp.chuc_vu_ten || '—'}
                         </span>
-                        {emp.chuc_danh && (
-                          <span className="text-[11px] text-muted block">
-                            {emp.chuc_danh}
-                          </span>
+                        {concurrentPositions.length > 0 && (
+                          <div className="mt-0.5 flex flex-wrap items-center gap-1">
+                            <span className="text-[11px] text-muted">
+                              {t('employees.fields.concurrentPosition', {
+                                name: concurrentPositions[0].chuc_vu_ten,
+                              })}
+                            </span>
+                            {hiddenConcurrentPositionCount > 0 && (
+                              <span
+                                className="inline-flex items-center rounded bg-primary-subtle px-1.5 py-0.5 text-[10px] font-medium text-primary"
+                                title={concurrentPositions
+                                  .slice(1)
+                                  .map((assignment) => assignment.chuc_vu_ten)
+                                  .join(', ')}
+                              >
+                                {t('employees.fields.concurrentPositionBadge', {
+                                  count: hiddenConcurrentPositionCount,
+                                })}
+                              </span>
+                            )}
+                          </div>
                         )}
                       </td>
 

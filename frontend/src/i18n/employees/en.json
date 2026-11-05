@@ -35,7 +35,7 @@
     "table": {
       "employee": "Employee",
       "unit": "Unit / Department",
-      "position": "Position & Title",
+      "position": "Position",
       "birthday": "Birthday",
       "phone": "Phone Number",
       "status": "Status",
@@ -79,6 +79,8 @@
       "assignmentTitle": "Concurrent Title (Optional)",
       "removeAssignment": "Remove",
       "concurrentBadge": "+{count} concurrent",
+      "concurrentPosition": "Concurrent: {name}",
+      "concurrentPositionBadge": "+{count} positions",
       "duplicateAssignmentUnit": "Concurrent unit cannot duplicate primary or selected units."
     },
     "placeholders": {
