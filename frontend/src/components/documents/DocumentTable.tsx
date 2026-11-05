@@ -229,9 +229,6 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
       userCanDelete = false;
     }
 
-    const canViewPerm = can(isDi ? 'view_vanbandi' : 'view_vanbanden');
-    const canViewLogPerm = can(isDi ? 'view_read_log_vanbandi' : 'view_read_log_vanbanden');
-
     // Quyền xem chi tiết:
     // - Quản trị viên, Superuser hoặc Người tạo luôn có quyền xem.
     // - Với văn bản thường (NOI_BO): Tuân thủ cờ can_view từ backend serializer (tính theo RBAC).
