@@ -70,6 +70,7 @@
     "emailLogs": {
       "title": "Nhật ký email chúc mừng sinh nhật",
       "description": "Hệ thống tự gửi tới mọi CBNV có hồ sơ đang hoạt động khi đến ngày sinh nhật, dùng email, họ tên, chức vụ và phòng ban trong hồ sơ.",
+      "filterByDate": "Ngày xem",
       "filterByStatus": "Lọc trạng thái",
       "allStatuses": "Tất cả trạng thái",
       "statusPending": "Chờ xử lý",
@@ -77,10 +78,13 @@
       "statusSuccess": "Gửi thành công",
       "statusFailed": "Thất bại",
       "statusRetry": "Chờ gửi lại",
+      "today": "Hôm nay",
       "refresh": "Tải lại nhật ký",
       "loading": "Đang tải nhật ký email...",
       "loadError": "Không thể tải nhật ký email.",
-      "empty": "Chưa có nhật ký gửi email trong tháng này.",
+      "emptyToday": "Chưa có nhật ký gửi email sinh nhật trong ngày hôm nay.",
+      "emptyDate": "Chưa có nhật ký gửi email sinh nhật ngày {date}.",
+      "viewingDate": "Ngày đang xem: {date}",
       "total": "Tổng số bản ghi: {count}",
       "employee": "Cán bộ nhân viên",
       "email": "Email nhận",
@@ -100,7 +104,8 @@
   "birthdays": {
     "messages": {
       "permissionDenied": "Bạn không có quyền xem nhật ký email sinh nhật.",
-      "invalidStatus": "Trạng thái nhật ký email sinh nhật không hợp lệ."
+      "invalidStatus": "Trạng thái nhật ký email sinh nhật không hợp lệ.",
+      "invalidDate": "Ngày tra cứu nhật ký email sinh nhật không hợp lệ."
     }
   }
 }
