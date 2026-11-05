@@ -17,6 +17,8 @@ export default function OrganizationsPage() {
   const { can } = usePermissions();
   // Khối và Đơn vị dùng chung bộ quyền *_donvi của DDL; backend vẫn kiểm quyền thật ở mọi API.
   const showRowActions = can('change_donvi') || can('delete_donvi');
+  // Bảng Khối có thêm nút xuất danh bạ theo từng Khối nên người chỉ có export_donvi cũng cần cột Thao tác
+  const showRegionRowActions = showRowActions || can('export_donvi');
 
   // Tab chuyển đổi: 'regions' (Khối, cấp 1, mở đầu tiên) hoặc 'units' (Đơn vị, cấp 2)
   const [activeTab, setActiveTab] = useState<'units' | 'regions'>('regions');
@@ -318,16 +320,16 @@ export default function OrganizationsPage() {
     }
   };
 
-  // Xử lý Xuất file Excel
-  const handleExportExcel = async () => {
+  // Xử lý Xuất file Excel: scope là phạm vi của file (Khối, Đơn vị, từ khóa), rỗng nghĩa là không lọc
+  const exportDirectory = async (scope: { regionId: string; unitId: string; search: string }) => {
     setIsExporting(true);
     try {
       const params = new URLSearchParams();
       params.append('lang', currentLang);
-      if (selectedRegionId) params.append('region_id', selectedRegionId);
+      if (scope.regionId) params.append('region_id', scope.regionId);
       // Đã chọn một Đơn vị thì file chỉ gồm Đơn vị đó, khớp với bảng đang hiển thị
-      if (selectedUnitId) params.append('unit_id', selectedUnitId);
-      if (searchQuery.trim()) params.append('search', searchQuery.trim());
+      if (scope.unitId) params.append('unit_id', scope.unitId);
+      if (scope.search) params.append('search', scope.search);
 
       await downloadBlob(
         `/api/organizations/units/export/?${params.toString()}`,
@@ -344,6 +346,14 @@ export default function OrganizationsPage() {
       setIsExporting(false);
     }
   };
+
+  // Tab Đơn vị: xuất theo bộ lọc đang chọn trên bảng
+  const handleExportExcel = () =>
+    exportDirectory({ regionId: selectedRegionId, unitId: selectedUnitId, search: searchQuery.trim() });
+  // Tab Khối: nút trên thanh công cụ xuất toàn bộ Khối, nút trên từng dòng xuất đúng Khối đó
+  const handleExportAll = () => exportDirectory({ regionId: '', unitId: '', search: '' });
+  const handleExportRegion = (regionId: number) =>
+    exportDirectory({ regionId: String(regionId), unitId: '', search: '' });
 
   // Chọn đơn vị cấp 2 cụ thể thì bảng chỉ hiển thị đơn vị đó
   const dropdownUnits = selectedRegionId ? allUnits.filter((u) => String(u.khoi) === selectedRegionId) : [];
@@ -412,18 +422,30 @@ export default function OrganizationsPage() {
               )}
             </>
           ) : (
-            can('add_donvi') && (
-              <Button
-                variant="primary"
-                icon="fa-plus"
-                onClick={() => {
-                  setEditingRegion(null);
-                  setIsRegionModalOpen(true);
-                }}
-              >
-                {t('organizations.region.addBtn')}
-              </Button>
-            )
+            <>
+              {can('export_donvi') && (
+                <Button
+                  variant="outline"
+                  icon="fa-file-excel"
+                  onClick={handleExportAll}
+                  isLoading={isExporting}
+                >
+                  {isExporting ? t('organizations.actions.exporting') : t('organizations.actions.exportExcel')}
+                </Button>
+              )}
+              {can('add_donvi') && (
+                <Button
+                  variant="primary"
+                  icon="fa-plus"
+                  onClick={() => {
+                    setEditingRegion(null);
+                    setIsRegionModalOpen(true);
+                  }}
+                >
+                  {t('organizations.region.addBtn')}
+                </Button>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -734,7 +756,7 @@ export default function OrganizationsPage() {
                   </th>
                   <th className="px-3 sm:px-4 py-3">{t('organizations.table.regionName')}</th>
                   <th className="px-2 sm:px-4 py-3 text-center">{t('organizations.table.unitsCount')}</th>
-                  {showRowActions && (
+                  {showRegionRowActions && (
                     <th className="px-2 sm:px-4 py-3 text-center w-20 sm:w-28">{t('organizations.table.actions')}</th>
                   )}
                 </tr>
@@ -742,14 +764,14 @@ export default function OrganizationsPage() {
               <tbody className="divide-y divide-border">
                 {isRegionsLoading || isAllUnitsLoading ? (
                   <tr>
-                    <td colSpan={showRowActions ? 5 : 4} className="text-center py-12 text-secondary">
+                    <td colSpan={showRegionRowActions ? 5 : 4} className="text-center py-12 text-secondary">
                       <i className="fa-solid fa-spinner fa-spin text-2xl text-primary mb-2 block" />
                       {t('organizations.table.loading')}
                     </td>
                   </tr>
                 ) : regions.length === 0 ? (
                   <tr>
-                    <td colSpan={showRowActions ? 5 : 4} className="text-center py-12 text-secondary">
+                    <td colSpan={showRegionRowActions ? 5 : 4} className="text-center py-12 text-secondary">
                       <i className="fa-solid fa-folder-open text-3xl text-muted mb-2 block" />
                       {t('organizations.table.empty')}
                     </td>
@@ -801,9 +823,21 @@ export default function OrganizationsPage() {
                               {t('organizations.table.unitCountLabel', { count: String(children.length) })}
                             </Badge>
                           </td>
-                          {showRowActions && (
+                          {showRegionRowActions && (
                             <td className="px-2 sm:px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                               <div className="flex items-center justify-center gap-1">
+                                {can('export_donvi') && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleExportRegion(region.id)}
+                                    disabled={isExporting}
+                                    title={t('organizations.actions.exportRegion')}
+                                    aria-label={t('organizations.actions.exportRegion')}
+                                    className="p-1.5 text-secondary hover:text-success rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    <i className="fa-solid fa-file-excel" />
+                                  </button>
+                                )}
                                 {can('change_donvi') && (
                                   <button
                                     type="button"
@@ -868,7 +902,7 @@ export default function OrganizationsPage() {
                                   </Badge>
                                 )}
                               </td>
-                              {showRowActions && <td className="px-2 sm:px-4 py-3" />}
+                              {showRegionRowActions && <td className="px-2 sm:px-4 py-3" />}
                             </tr>
                           ))}
                       </React.Fragment>
