@@ -85,6 +85,7 @@ export interface EmployeeCreatePayload {
 }
 
 export interface EmployeeUpdatePayload {
+  username?: string;
   ho_ten?: string;
   email?: string;
   ngay_sinh?: string | null;
