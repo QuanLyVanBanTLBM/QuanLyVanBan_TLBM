@@ -6,6 +6,9 @@ Cung cấp cho các phân hệ khác (Dashboard Nhóm 1, Hồ sơ Nhóm 3, Công
   + NOI_BO: Người có quyền view_* hoặc admin/staff xem được.
   + HAN_CHE: CHỈ người tạo (nguoi_tao), người nhận (nguoi_nhan), hoặc đơn vị nhận (donvinhan) xem được.
     Tuyệt đối không ngoại lệ cho superuser hay quyền view_*.
+  + Văn bản đến/đi hết hiệu lực (HET_HIEU_LUC, HET_VA_THAY_THE), cả NOI_BO lẫn HAN_CHE: CHỈ superuser hoặc quyền
+    view_het_hieu_luc_* / manage_het_hieu_luc_* xem được; người tạo, người nhận, đơn vị nhận không có quyền thì không thấy.
+    Sửa, xóa văn bản hết hiệu lực cần manage_het_hieu_luc_* (co_quyen_xu_ly_het_hieu_luc).
     Tài khoản bị khóa (is_active = FALSE) mất quyền xem.
 - la_nguoi_xem_duoc(user, van_ban): Kiểm tra boolean quyền xem trên một đối tượng văn bản cụ thể.
 - log_access(document_type, document_id, user, hanh_dong, ...): Ghi nhật ký vào documents_access_log.
@@ -65,6 +68,11 @@ def co_quyen_xem_het_hieu_luc(user, model_name="vanbanden"):
     return _co_quyen(user, f"view_het_hieu_luc_{model_name}")
 
 
+def co_quyen_them_han_che(user, model_name="vanbanden"):
+    """Quyền thêm (tạo, import) văn bản hạn chế: Quản trị viên hoặc add_han_che_vanbanden/vanbandi."""
+    if is_admin_user(user):
+        return True
+    return _co_quyen(user, f"add_han_che_{model_name}")
 def van_ban_xem_duoc(user, loai="DEN"):
     """
     Quy tắc xem văn bản chuẩn:
@@ -150,7 +158,6 @@ def la_nguoi_xem_duoc(user, van_ban):
         getattr(getattr(van_ban, "_meta", None), "model_name", "") == "vanbanmat"
     )
     is_confidential = is_mat or (pham_vi == PhamVi.HAN_CHE)
-
     if is_confidential:
         # KHÓA CỨNG BẢO VỆ VĂN BẢN HẠN CHẾ / MẬT:
         # Tuyệt đối không có ngoại lệ cho Superuser hay Admin nếu không phải người nhận hay người tạo.

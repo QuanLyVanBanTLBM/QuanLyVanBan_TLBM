@@ -59,6 +59,53 @@ export async function moPdf(du_lieu: ArrayBuffer): Promise<TaiLieuPdf> {
 }
 
 /**
+ * Kiểm tra tệp PDF có được bảo vệ bằng mật khẩu (mã hóa / encrypted) hay không.
+ * Trả về true nếu tệp có mật khẩu hoặc bị mã hóa bảo vệ.
+ */
+export async function kiemTraPdfCoMatKhau(du_lieu: ArrayBuffer): Promise<boolean> {
+  // 1. Kiểm tra nhanh qua marker /Encrypt trong cấu trúc PDF (trailer hoặc xref)
+  try {
+    const bytes = new Uint8Array(du_lieu);
+    const len = bytes.length;
+    const textChunk = new TextDecoder('latin1').decode(bytes.slice(Math.max(0, len - 8192)));
+    if (/\/Encrypt\s+(\d+\s+\d+\s+R|<<)/.test(textChunk)) {
+      return true;
+    }
+  } catch {
+    // tiếp tục kiểm tra với pdfjs
+  }
+
+  // 2. Kiểm tra sâu qua pdf.js
+  if (typeof globalThis !== 'undefined' && !(globalThis as unknown as { pdfjsWorker?: unknown }).pdfjsWorker) {
+    (globalThis as unknown as { pdfjsWorker?: typeof pdfjsWorker }).pdfjsWorker = pdfjsWorker;
+  }
+  try {
+    let yeuCauMatKhau = false;
+    const loadingTask = pdfjs.getDocument({
+      data: new Uint8Array(du_lieu.slice(0)),
+      stopAtErrors: true,
+    });
+    loadingTask.onPassword = () => {
+      yeuCauMatKhau = true;
+      return '';
+    };
+    const pdf = await loadingTask.promise;
+    const coMaHoa = yeuCauMatKhau || Boolean((pdf as unknown as { isEncrypted?: boolean }).isEncrypted);
+    await pdf.destroy();
+    return coMaHoa;
+  } catch (err: unknown) {
+    if (err && typeof err === 'object' && ('name' in err && (err as { name: string }).name === 'PasswordException')) {
+      return true;
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/password/i.test(msg) || /encrypted/i.test(msg)) {
+      return true;
+    }
+    return false;
+  }
+}
+
+/**
  * Vẽ trang (1-based) vào canvas theo chiều rộng hiển thị; trả kích thước điểm ảnh CSS. `huy()` dừng lần vẽ đang chạy
  * (pdf.js không cho hai lần render cùng lúc trên một canvas: đổi kích thước hoặc vẽ lại phải hủy lần trước).
  * Lần vẽ bị hủy kết thúc bằng lỗi có `name === 'RenderingCancelledException'` (`laLoiHuyVe`).

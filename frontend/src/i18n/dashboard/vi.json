@@ -83,7 +83,8 @@
       "signed": "Đã ký",
       "rejected": "Đã từ chối",
       "cancelled": "Đã hủy",
-      "draft": "Nháp"
+      "draft": "Nháp",
+      "KY_NGAY": "Ký ngay"
     },
     "noIncomingToday": "Chưa có phát sinh trong ngày",
     "noOutgoingToday": "Chưa có phát hành hôm nay",

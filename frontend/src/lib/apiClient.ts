@@ -89,7 +89,13 @@ export async function apiClient<T = unknown>(
     : `${BASE_URL}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
 
   const headers = new Headers(options.headers || {});
-  if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
+  const isCustomOrFormBody =
+    options.body instanceof FormData ||
+    options.body instanceof URLSearchParams ||
+    options.body instanceof Blob ||
+    options.body instanceof ArrayBuffer ||
+    ArrayBuffer.isView(options.body);
+  if (!headers.has('Content-Type') && !isCustomOrFormBody) {
     headers.set('Content-Type', 'application/json');
   }
 
@@ -194,6 +200,25 @@ export async function apiClient<T = unknown>(
   return await handleResponse<T>(response);
 }
 
+function isRawBody(body: unknown): body is BodyInit {
+  return (
+    typeof body === 'string' ||
+    body instanceof FormData ||
+    body instanceof Blob ||
+    body instanceof ArrayBuffer ||
+    ArrayBuffer.isView(body) ||
+    body instanceof URLSearchParams
+  );
+}
+
+function serializeBody(body?: unknown): BodyInit | undefined {
+  if (body === undefined || body === null) return undefined;
+  if (isRawBody(body)) {
+    return body;
+  }
+  return JSON.stringify(body);
+}
+
 apiClient.get = <T>(endpoint: string, options?: RequestInit) =>
   apiClient<T>(endpoint, { ...options, method: 'GET' });
 
@@ -201,21 +226,21 @@ apiClient.post = <T>(endpoint: string, body?: unknown, options?: RequestInit) =>
   apiClient<T>(endpoint, {
     ...options,
     method: 'POST',
-    body: body ? JSON.stringify(body) : undefined,
+    body: serializeBody(body),
   });
 
 apiClient.put = <T>(endpoint: string, body?: unknown, options?: RequestInit) =>
   apiClient<T>(endpoint, {
     ...options,
     method: 'PUT',
-    body: body ? JSON.stringify(body) : undefined,
+    body: serializeBody(body),
   });
 
 apiClient.patch = <T>(endpoint: string, body?: unknown, options?: RequestInit) =>
   apiClient<T>(endpoint, {
     ...options,
     method: 'PATCH',
-    body: body ? JSON.stringify(body) : undefined,
+    body: serializeBody(body),
   });
 
 apiClient.delete = <T>(endpoint: string, options?: RequestInit) =>

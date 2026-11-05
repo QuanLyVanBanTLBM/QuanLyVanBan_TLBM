@@ -137,6 +137,10 @@ Tất cả các endpoint đều yêu cầu xác thực (`IsAuthenticated`) qua h
     ]
   }
   ```
+- **Quy tắc liên hệ (04/11/2026)**:
+  - `email`: bắt buộc thuộc tên miền công ty `@baolong.vn` (không phân biệt hoa thường, không nhận tên miền con). Danh sách tên miền cho phép đặt bằng biến môi trường `EMPLOYEE_EMAIL_ALLOWED_DOMAINS` (phân tách bằng dấu phẩy, đặt rỗng thì không giới hạn). Sai tên miền trả `400 employees.messages.emailDomainNotAllowed`, sai cú pháp trả `employees.messages.invalidEmail`.
+  - `sdt`: tùy chọn; nếu nhập phải là số di động Việt Nam đúng 10 chữ số, bắt đầu 03/05/07/08/09 (ví dụ `0912345678`). Không nhận dạng `+84`, số có khoảng trắng hoặc số bàn. Sai trả `400 employees.messages.invalidPhone`.
+  - Import Excel áp dụng cùng quy tắc, báo lỗi theo từng dòng. Hồ sơ cũ có email hoặc SĐT sai quy tắc vẫn đọc được; khi sửa và gửi lại các trường này thì phải đổi sang giá trị đúng.
 - **Xử lý đặc biệt**:
   - `username`: Nếu bỏ trống, hệ thống tự động sinh username từ phần tên trước `@` của email (`local_part` + số thứ tự nếu trùng).
   - `password`: Nếu bỏ trống, hệ thống tự động sinh ngẫu nhiên mật khẩu mạnh 10 ký tự. Mật khẩu được băm an toàn lưu vào DB, đồng thời chỉ được trả về **duy nhất 1 lần** trong trường `temporary_password` của response để giao diện hiển thị sao chép cho quản trị viên. Không lưu mật khẩu thô vào DB hay in ra log.

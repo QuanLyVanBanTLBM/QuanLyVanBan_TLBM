@@ -1,25 +1,27 @@
 /**
- * Khóa ký và PIN cá nhân theo contract #79 (#80 mục E): tạo khóa trên thiết bị (proof-of-possession, đặt PIN,
- * kích hoạt hoặc xoay vòng khóa của thiết bị cũ), xuất/nhập file khóa, đổi PIN, thu hồi. PIN và private key
- * không rời trình duyệt; file khóa chứa private key đã mã hóa, chỉ mở được khi có PIN và máy chủ xác minh PIN.
+ * Khóa ký và PIN cá nhân: tạo khóa Ed25519, gửi PKCS#8 qua HTTPS để máy chủ mã hóa, đổi PIN, thu hồi.
+ * Server ký bằng private key giải mã trong bộ nhớ; trình duyệt không giữ file khóa.
  */
 import { useEffect, useRef, useState } from 'react';
 import { Button, Card } from '@components/common';
 import type { KhoaKy } from '@lib/signing/types';
-import { DangTai, HopThoai, LoiTai, OChonTep, ThongBao, TrangThaiBadge, TruongNhap } from '@components/signing/ChungUI';
+import { DangTai, HopThoai, LoiTai, ThongBao, TrangThaiBadge, TruongNhap } from '@components/signing/ChungUI';
 import CropChuKyModal from '@components/signing/CropChuKyModal';
+import DatLaiPinDialog from '@components/signing/DatLaiPinDialog';
 import { signingApi } from '@lib/signing/api';
 import { GIOI_HAN, LOP_O_NHAP } from '@lib/signing/dinhDang';
 import { coQuyen, useTai, useToi } from '@lib/signing/hooks';
 import { useSigningT } from '@lib/signing/i18n';
-import { docFileKhoaTuTep, DUOI_FILE_KHOA, taiXuongFileKhoa } from '@lib/signing/fileKhoa';
-import { hoTroEd25519, kiemTraPin, layBanBoc } from '@lib/signing/khoaKy';
-import { dangKyKhoaThietBi, doiPin, khoaHoatDong, nhapFileKhoa } from '@lib/signing/luongKhoa';
+import { hoTroEd25519, kiemTraPin } from '@lib/signing/khoaKy';
+import { dangKyKhoaThietBi, doiPin, khoaHoatDong } from '@lib/signing/luongKhoa';
+
+// Dung lượng tối đa của ảnh chữ ký PNG sau khi cắt (bằng giới hạn 2 MB của máy chủ)
+const GIOI_HAN_ANH_SAU_CAT = 2 * 1024 * 1024;
 
 function OPin({ nhan, gia_tri, onDoi }: { nhan: string; gia_tri: string; onDoi: (v: string) => void }) {
   return (
     <TruongNhap nhan={nhan}>
-      <input className={LOP_O_NHAP} type="password" inputMode="numeric" autoComplete="new-password" maxLength={8}
+      <input className={LOP_O_NHAP} type="password" inputMode="numeric" autoComplete="new-password" maxLength={6}
         value={gia_tri} onChange={(e) => onDoi(e.target.value.replace(/\D/g, ''))} />
     </TruongNhap>
   );
@@ -30,16 +32,16 @@ export default function KhoaPage() {
   const { toi, taiLaiToi } = useToi();
   const ds = useTai(() => signingApi.khoa());
   const [hoTro, setHoTro] = useState<boolean | null>(null);
-  const [banBoc, setBanBoc] = useState<{ keyId: number; co: boolean } | null>(null);
   const [pin, setPin] = useState('');
   const [pin2, setPin2] = useState('');
   const [pinCu, setPinCu] = useState('');
   const [lyDo, setLyDo] = useState('');
   const [loiLyDo, setLoiLyDo] = useState('');
   const [canThuHoi, setCanThuHoi] = useState<KhoaKy | null>(null);
+  const [moDatLaiPin, setMoDatLaiPin] = useState(false);
   const [dangLam, setDangLam] = useState(false);
   const [thongBao, setThongBao] = useState<{ loai: 'loi' | 'thanh_cong'; noi_dung: string } | null>(null);
-  const [lanTaiBanBoc, setLanTaiBanBoc] = useState(0);
+  const [thongBaoChuKy, setThongBaoChuKy] = useState<{ loai: 'loi' | 'thanh_cong'; noi_dung: string } | null>(null);
   const [anhChuKyTuyChinh, setAnhChuKyTuyChinh] = useState<string | null | undefined>(undefined);
   const anhChuKyServer = toi?.co_anh_chu_ky ? `/api/signing/anh-chu-ky-ca-nhan/tep/?v=${toi.id}` : null;
   const anhChuKy = anhChuKyTuyChinh !== undefined ? anhChuKyTuyChinh : anhChuKyServer;
@@ -51,29 +53,41 @@ export default function KhoaPage() {
   const onChonTepAnh = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
-      const f = files[0];
-      if (f.size > 2 * 1024 * 1024) {
-        setThongBao({ loai: 'loi', noi_dung: t('khoa.anhQuaLon') });
-        return;
-      }
-      setTepChon(f);
+      setThongBao(null);
+      setThongBaoChuKy(null);
+      setTepChon(files[0]);
       setMoCrop(true);
     }
     e.target.value = '';
   };
 
   const onLuuAnhChuKy = async (blob: Blob, dataUrl: string) => {
+    // Giới hạn chỉ tính trên ảnh PNG sau khi cắt (khớp giới hạn của máy chủ), không tính tệp gốc
+    if (blob.size > GIOI_HAN_ANH_SAU_CAT) {
+      setMoCrop(false);
+      setTepChon(null);
+      setThongBaoChuKy({ loai: 'loi', noi_dung: t('khoa.anhQuaLon') });
+      return;
+    }
     setDangLam(true);
-    setThongBao(null);
+    setThongBaoChuKy(null);
     try {
-      await signingApi.taiLenAnhChuKy(blob);
+      try {
+        await signingApi.taiLenAnhChuKy(blob);
+      } catch (uploadErr) {
+        if (dataUrl) {
+          await signingApi.taiLenAnhChuKy(dataUrl);
+        } else {
+          throw uploadErr;
+        }
+      }
       setAnhChuKyTuyChinh(dataUrl);
       taiLaiToi?.();
       setMoCrop(false);
       setTepChon(null);
-      setThongBao({ loai: 'thanh_cong', noi_dung: t('khoa.daLuuChuKy') });
+      setThongBaoChuKy({ loai: 'thanh_cong', noi_dung: t('khoa.daLuuChuKy') });
     } catch (err) {
-      setThongBao({ loai: 'loi', noi_dung: loi(err) });
+      setThongBaoChuKy({ loai: 'loi', noi_dung: loi(err) });
     } finally {
       setDangLam(false);
     }
@@ -81,14 +95,14 @@ export default function KhoaPage() {
 
   const onXoaAnhChuKy = async () => {
     setDangLam(true);
-    setThongBao(null);
+    setThongBaoChuKy(null);
     try {
       await signingApi.xoaAnhChuKy();
       setAnhChuKyTuyChinh(null);
       taiLaiToi?.();
-      setThongBao({ loai: 'thanh_cong', noi_dung: t('khoa.daXoaChuKy') });
+      setThongBaoChuKy({ loai: 'thanh_cong', noi_dung: t('khoa.daXoaChuKy') });
     } catch (err) {
-      setThongBao({ loai: 'loi', noi_dung: loi(err) });
+      setThongBaoChuKy({ loai: 'loi', noi_dung: loi(err) });
     } finally {
       setDangLam(false);
     }
@@ -97,17 +111,8 @@ export default function KhoaPage() {
   useEffect(() => {
     hoTroEd25519().then(setHoTro);
   }, []);
-  // Thiết bị này có giữ bản bọc của khóa đang hoạt động không (gắn với id khóa)
-  const hoatDongId = hoatDong?.id ?? null;
-  const coBanBoc = hoatDongId == null ? false : banBoc?.keyId === hoatDongId ? banBoc.co : null;
-  useEffect(() => {
-    if (hoatDongId == null || !toi) return;
-    layBanBoc(toi.id, hoatDongId).then((b) => setBanBoc({ keyId: hoatDongId, co: Boolean(b) }))
-      .catch(() => setBanBoc({ keyId: hoatDongId, co: false }));
-  }, [hoatDongId, toi, lanTaiBanBoc]);
-
   const loiPin = pin ? kiemTraPin(pin) : null;
-  const pinHopLe = !loiPin && pin.length === 8 && pin === pin2;
+  const pinHopLe = !loiPin && pin.length === 6 && pin === pin2;
 
   const lam = async (ham: () => Promise<unknown>, thanh_cong = t('hanhDong.thanhCong')) => {
     setDangLam(true);
@@ -120,7 +125,6 @@ export default function KhoaPage() {
       setLyDo('');
       setLoiLyDo('');
       setThongBao({ loai: 'thanh_cong', noi_dung: thanh_cong });
-      setLanTaiBanBoc((n) => n + 1);
       ds.tai();
     } catch (err) {
       setThongBao({ loai: 'loi', noi_dung: loi(err) });
@@ -135,12 +139,18 @@ export default function KhoaPage() {
   // Vào thẳng đường dẫn khi chưa có quyền ký: không cho nhập PIN rồi mới báo 403
   if (!coQuyen(toi, 'sign_trinhky')) return <ThongBao loai="thong_tin">{t('khoa.khongCoQuyen')}</ThongBao>;
 
-  const sanSang = hoatDong && coBanBoc;
-  const nhapFile = (tep: File | undefined) => tep && hoatDong && lam(async () => {
-    await nhapFileKhoa(toi.id, hoatDong, await docFileKhoaTuTep(tep));
-  }, t('khoa.daNhapFile'));
+  const sanSang = Boolean(hoatDong?.da_dat_pin);
   return (
     <div className="space-y-4">
+      <DatLaiPinDialog
+        mo={moDatLaiPin}
+        onDong={() => setMoDatLaiPin(false)}
+        onXong={() => {
+          setMoDatLaiPin(false);
+          setThongBao({ loai: 'thanh_cong', noi_dung: t('khoa.datLaiPinXong') });
+          ds.tai();
+        }}
+      />
       {/* Input file ẩn để chọn ảnh chữ ký */}
       <input
         ref={fileInputRef}
@@ -166,12 +176,12 @@ export default function KhoaPage() {
               {dangLam && <ThongBao loai="thong_tin">{t('khoa.dangTao')}</ThongBao>}
               <Button icon="fa-key" isLoading={dangLam} disabled={!pinHopLe}
                 onClick={() => lam(async () => {
-                  taiXuongFileKhoa((await dangKyKhoaThietBi(toi.id, pin, ds.duLieu || [])).banBoc);
+                  await dangKyKhoaThietBi(toi.id, pin, ds.duLieu || []);
                 }, t('khoa.daTaoVaTaiFile'))}>{t('khoa.taoKhoa')}</Button>
               {hoatDong && (
-                <TruongNhap nhan={t('khoa.nhapFile')} ghiChu={t('khoa.nhapFileGhiChu')}>
-                  <OChonTep accept={`${DUOI_FILE_KHOA},application/json`} nhan={t('khoa.nhapFile')} onChon={nhapFile} />
-                </TruongNhap>
+                <button type="button" className="text-sm font-medium text-primary hover:underline" onClick={() => setMoDatLaiPin(true)}>
+                  {t('khoa.quenPin')}
+                </button>
               )}
             </div>
           )}
@@ -187,10 +197,16 @@ export default function KhoaPage() {
               <OPin nhan={t('khoa.pin')} gia_tri={pin} onDoi={setPin} />
               <OPin nhan={t('khoa.pinNhapLai')} gia_tri={pin2} onDoi={setPin2} />
               {loiPin && <ThongBao loai="canh_bao">{t(`loi.${loiPin}`)}</ThongBao>}
-              <Button variant="secondary" icon="fa-rotate" isLoading={dangLam} disabled={!pinHopLe || pinCu.length !== 8}
-                onClick={() => lam(async () => {
-                  taiXuongFileKhoa(await doiPin(toi.id, hoatDong, pinCu, pin));
-                }, t('khoa.daDoiPinTaiFile'))}>{t('khoa.doiPin')}</Button>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button variant="secondary" icon="fa-rotate" isLoading={dangLam} disabled={!pinHopLe || !/^\d{6}$/.test(pinCu)}
+                  onClick={() => lam(async () => {
+                    if (!hoatDong) throw new Error('chua_co_khoa_ky');
+                    await doiPin(hoatDong, pinCu, pin);
+                  }, t('khoa.daDoiPinTaiFile'))}>{t('khoa.doiPin')}</Button>
+                <button type="button" className="text-sm font-medium text-primary hover:underline" onClick={() => setMoDatLaiPin(true)}>
+                  {t('khoa.quenPin')}
+                </button>
+              </div>
             </div>
           )}
           {thongBao && <ThongBao loai={thongBao.loai}>{thongBao.noi_dung}</ThongBao>}
@@ -207,6 +223,7 @@ export default function KhoaPage() {
             )}
           </div>
           <p className="text-sm text-secondary">{t('khoa.chuKyCaNhanGhiChu')}</p>
+          {thongBaoChuKy && <ThongBao loai={thongBaoChuKy.loai}>{thongBaoChuKy.noi_dung}</ThongBao>}
 
           {anhChuKy ? (
             <div className="space-y-3">

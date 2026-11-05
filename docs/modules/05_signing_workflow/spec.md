@@ -71,7 +71,7 @@ Chi tiết field, kiểu dữ liệu và ràng buộc tại [`signing-backend-pl
 | `signing_attempt` | Lượt trình bất biến, nguồn sự thật của mã băm, tệp hoàn tất | `NHAP`, `CHO_KY`, `YEU_CAU_SUA`, `HOAN_THANH`, `TU_CHOI`, `HUY` |
 | `signing_request_step` | Snapshot cấp ký của lượt trình | `CHUA_MO`, `DANG_KY`, `HOAN_THANH`, `TAM_DUNG` |
 | `signing_request_step_signer` | Snapshot người ký, tọa độ ký, `chu_ky_hien_hanh` | `CHO_KY`, `DA_KY`, `TU_CHOI`, `YEU_CAU_SUA` |
-| `signing_key` | Khóa công khai Ed25519 (không lưu private key) | `CHO_KICH_HOAT`, `HOAT_DONG`, `DA_XOAY_VONG`, `THU_HOI`, `HET_HAN` |
+| `signing_key` | Public key Ed25519; private key được mã hóa riêng trong `signing_key_unlock` | `CHO_KICH_HOAT`, `HOAT_DONG`, `DA_XOAY_VONG`, `THU_HOI`, `HET_HAN` |
 | `signing_signature` | Chữ ký bất biến: `chu_ky_so`, `ghi_chu_ky`, `ky_tre_han`, snapshot ảnh chữ ký | `CHUA_XAC_MINH`, `HOP_LE`, `KHONG_HOP_LE` |
 | `signing_manifest` | Bằng chứng tổng hợp chuẩn hóa, `ma_bam_bang_chung` | `NHAP`, `DA_CHOT` |
 | `signing_change_thread` / `signing_change_message` | Trao đổi hai chiều khi yêu cầu sửa | `DANG_MO`, `DA_GIAI_QUYET` |
@@ -100,7 +100,7 @@ Prefix `/api/v1/signing/`. Payload dùng đúng tên field CSDL; lỗi trả `{c
 | `GET` | `trinh-ky/{id}/bang-chung/`, `tep-hoan-tat/`, `anh-chu-ky/{chu_ky}/` | Bằng chứng và xác minh; tệp hoàn tất; ảnh snapshot | Người xem được hồ sơ |
 | `POST` | `trinh-ky/{id}/tao-lai-tep-hoan-tat/` | Thử lại khi tạo tệp lỗi | Người tạo / kiểm toán |
 | `GET/POST` | `khoa/`; `khoa/{id}/thach-thuc/`, `xac-minh/`, `kich-hoat/`, `xoay-vong/`, `thu-hoi/` | Khóa công khai Ed25519 và vòng đời khóa | Chủ khóa (`sign_trinhky`) |
-| `POST` | `khoa/{id}/dat-pin/`, `mo-khoa-ky/`, `doi-pin/` | PIN bảo vệ khóa ký, xoay vòng `k_srv` | Chủ khóa (`sign_trinhky`) |
+| `POST` | `khoa/{id}/dat-pin/`, `doi-pin/` | Mã hóa khóa riêng server-side và đổi PIN; HTTPS bắt buộc | Chủ khóa (`sign_trinhky`) |
 | `GET` | `toi/`, `van-ban-di/`, `nguoi-dung/` | Hỗ trợ giao diện: quyền người dùng hiện tại, chọn văn bản đi, chọn người ký | Đăng nhập / `add_trinhky` / `manage_signing_process` |
 
 Ngoài MVP (backlog): `uy-quyen` (khẩn cấp và theo thời gian), báo cáo trễ hạn.
@@ -118,16 +118,16 @@ API ảnh chữ ký cá nhân thuộc Nhóm 7, không nằm trong phân hệ nà
 3. **Tạo hồ sơ:** bước 1 chọn văn bản đi đã đăng ký rồi chọn PDF đính kèm trên bản ghi, hoặc tải PDF dự thảo chưa vào sổ (hồ sơ được cấp mã tự động; số hiệu nhập tay là tham chiếu), chọn quy trình được dùng, hạn chót → lưu nháp; bước 2 xem trước PDF, xem người ký theo quy trình, kéo-thả khung ký từng người, chọn người ký khi chức vụ nhiều ứng viên, xác nhận mã băm rồi gửi. Nháp mở lại được. Sau khi duyệt PDF dự thảo, người tạo đăng ký tệp kết quả trong Văn bản đi rồi liên kết hồ sơ.
 4. **Chi tiết:** PDF của lượt hiện hành kèm lớp phủ chữ ký (ảnh snapshot hoặc khối "đã ký"; người đang chờ nét đứt), tiến trình theo cấp (vai trò, hạn xử lý, ký trễ), người đang chờ, lịch sử, các lượt trước. Hành động theo quyền/trạng thái: *Ký duyệt* (PIN, hiện tên tệp và mã băm, chặn ký khi tệp đang xem khác mã băm đã khóa), *Trả lại để sửa*, *Không đồng ý ban hành*, *Thu hồi chữ ký*, *Hủy*, *Trình lại*. Trao đổi và tải bản sửa khi trả sửa.
 5. **Kết quả:** nhận diện "Hoàn tất duyệt nội bộ, chưa phát hành"; trạng thái tạo tệp đang xử lý/lỗi/thành công; chỉ cho tải khi tạo tệp thành công; thử lại khi lỗi; xác minh bằng chứng.
-6. **Quy trình và Cấu hình khóa ký:** cấu hình quy trình theo phạm vi; tạo khóa trên thiết bị (Argon2id ở trình duyệt), đổi PIN, đổi thiết bị bằng xoay vòng khóa, thu hồi khóa.
+6. **Quy trình và Cấu hình khóa ký:** cấu hình quy trình theo phạm vi; đăng ký khóa server-side, đặt/đổi PIN, khôi phục PIN qua email trên cùng khóa, đổi thiết bị bằng xoay vòng khóa, thu hồi khóa.
 
 ## 5. TIÊU CHUẨN KỸ THUẬT & INVARIANTS
 
 - **i18n:** text UI của phân hệ khai báo đủ `vi`/`en` trong từ điển riêng `frontend/src/lib/signing/i18n/` (theo ngôn ngữ của bộ chọn chung); test kiểm hai ngôn ngữ cùng tập khóa.
 - **Design Tokens:** chỉ dùng class Tailwind ngữ nghĩa ánh xạ biến của `src/styles/global.css`; không hardcode mã màu. Inline style chỉ cho tọa độ khung ký (ngoại lệ tọa độ động lúc chạy).
-- **Toàn vẹn dữ liệu:** không lưu private key trên backend; verify chữ ký đồng bộ trước khi đổi trạng thái người ký; mã băm của lượt trình, chữ ký và bằng chứng `DA_CHOT` là bất biến; không cascade xóa lịch sử.
+- **Toàn vẹn dữ liệu:** private key chỉ lưu trong DB dưới dạng ciphertext AES-256-GCM, không serialize hoặc ghi log; verify chữ ký bằng public key trước khi đổi trạng thái người ký; mã băm của lượt trình, chữ ký và bằng chứng `DA_CHOT` là bất biến; không cascade xóa lịch sử.
 - **Tọa độ chữ ký:** tỷ lệ % theo trang, gốc trên-trái, độc lập độ phân giải màn hình.
 - **Lazy Stamping:** không sửa raw bytes tệp PDF trong luồng nội bộ; chỉ dán ảnh chữ ký một lần khi lượt trình `HOAN_THANH`, dùng snapshot ảnh tại thời điểm ký.
-- **Bảo vệ khóa ký bằng PIN (Phase 6):** PIN 8 chữ số, Argon2id ở client; bản bọc private key chỉ ở thiết bị, server giữ mảnh bí mật `k_srv` và hash verifier, khóa theo số lần sai, có nhật ký; đổi PIN xoay vòng `k_srv` (Phase 6c). Chi tiết tại `signing-backend-plan.md` mục 3.4.
+- **Bảo vệ khóa ký bằng PIN (#447 phân vùng 1):** PIN 6 chữ số; private key PKCS#8 được gửi qua HTTPS lúc đăng ký, mã hóa trong DB bằng AES-256-GCM với khóa dẫn xuất độc lập từ `SIGNING_KEY_PEPPER` + salt. PIN lưu dưới dạng verifier Argon2id và được xác minh mỗi lần ký. Email recovery thay verifier PIN trên cùng khóa, giữ nguyên public key/ciphertext; người có cả CSDL và pepper có thể giải mã private key mà không cần PIN. API không trả private key/ciphertext; không dùng file `.tlbmkey` hay IndexedDB. Migration yêu cầu đăng ký khóa server-side mới, đồng thời giữ public key, chữ ký và audit cũ để xác minh lịch sử.
 - **Thể thức:** khối chữ ký theo `hinh_thuc_ky` (KT., TL., TUQ.) đi cùng ủy quyền, thuộc backlog sau MVP.
 - **Văn bản hạn chế (`pham_vi = 'HAN_CHE'`):** là văn bản gửi đi chọn người xem và lưu log xem (Nhóm 2), không ký và không đi qua trình ký; API tạo hồ sơ từ chối. Bảo mật trình ký (khóa ký, PIN, mã băm, nhật ký, bằng chứng) giữ nguyên.
 - **Ranh giới pháp lý:** kết quả MVP là bản duyệt nội bộ, chưa phát hành; không thay cho văn bản ban hành.

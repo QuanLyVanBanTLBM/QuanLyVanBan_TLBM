@@ -56,7 +56,7 @@ export default function TaiLieuPanel({ hoSo }: { hoSo: HoSoChiTiet }) {
           hoSo.luot_trinh.length > 1 ? `${t('chiTiet.banLuot')} (${t('chiTiet.luot', { so: l.so_luot })})` : t('chiTiet.banLuot'),
           dinhDangNgay(l.thoi_diem_gui, lang),
           () => tai(() => signingApi.tepCuaLuot(hoSo.id, l.id), tenTepTaiVe(hoSo.id, 'LUOT', l.so_luot))))}
-        {hoSo.trang_thai === 'HOAN_THANH' && hoSo.luot_trinh[0]?.trang_thai_tep_hoan_tat === 'THANH_CONG' && dong('hoan-tat',
+        {hoSo.trang_thai === 'HOAN_THANH' && dong('hoan-tat',
           t('chiTiet.tepHoanTat'), '',
           () => tai(() => signingApi.tepHoanTat(hoSo.id), tenTepTaiVe(hoSo.id, 'HOAN_TAT')))}
       </ul>

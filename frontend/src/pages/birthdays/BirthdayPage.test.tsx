@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { apiClient } from '@lib/apiClient';
+import { ApiError, apiClient } from '@lib/apiClient';
 import { setLanguage } from '@i18n/translate';
 import BirthdayPage, { type CalendarApiResponse, type DayApiResponse } from './BirthdayPage';
 
@@ -34,6 +34,7 @@ describe('BirthdayPage', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   it('shows loading states while both requests are pending', () => {
@@ -42,6 +43,91 @@ describe('BirthdayPage', () => {
 
     expect(screen.getByText('Đang tải lịch sinh nhật...')).toBeInTheDocument();
     expect(screen.getByText('Đang tải danh sách sinh nhật...')).toBeInTheDocument();
+  });
+
+  it('filters logs by date/status, returns to today, and refreshes without sending email', async () => {
+    const get = vi.spyOn(apiClient, 'get').mockImplementation(async (url) => {
+      if (url.includes('/calendar/')) return calendar as never;
+      if (url.includes('/day/')) return emptyDay as never;
+      return { success: true, date: null, total: 0, page: 1, total_pages: 1, logs: [] } as never;
+    });
+    const post = vi.spyOn(apiClient, 'post');
+    const todayParts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).formatToParts(new Date());
+    const today = `${todayParts.find((part) => part.type === 'year')?.value}-${todayParts.find((part) => part.type === 'month')?.value}-${todayParts.find((part) => part.type === 'day')?.value}`;
+    render(<BirthdayPage />);
+
+    const dateFilter = screen.getByLabelText('Ngày xem') as HTMLInputElement;
+    expect(dateFilter.value).toBe(today);
+    await screen.findByText('Tổng số bản ghi: 0');
+    expect(get.mock.calls.some(([url]) => String(url).includes(`/logs/?date=${today}&page=1`))).toBe(true);
+
+    fireEvent.change(dateFilter, { target: { value: '2026-11-03' } });
+    fireEvent.change(screen.getByLabelText('Lọc trạng thái'), { target: { value: 'FAILED' } });
+    await waitFor(() => {
+      expect(get.mock.calls.some(([url]) => String(url).includes('/logs/?date=2026-11-03&page=1&trang_thai=FAILED'))).toBe(true);
+    });
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Hôm nay' })[1]);
+    await waitFor(() => expect(dateFilter.value).toBe(today));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Tải lại nhật ký' })).toBeEnabled());
+
+    const requestsBeforeRefresh = get.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: 'Tải lại nhật ký' }));
+    await waitFor(() => expect(get.mock.calls.length).toBe(requestsBeforeRefresh + 1));
+    expect(String(get.mock.calls.at(-1)?.[0])).toContain('/logs/');
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('shows the empty state when today has no birthday email log entries', async () => {
+    vi.spyOn(apiClient, 'get').mockImplementation(async (url) => {
+      if (url.includes('/calendar/')) return calendar as never;
+      if (url.includes('/day/')) return emptyDay as never;
+      return { success: true, date: null, total: 0, page: 1, total_pages: 1, logs: [] } as never;
+    });
+    render(<BirthdayPage />);
+
+    expect(await screen.findByText('Chưa có nhật ký gửi email sinh nhật trong ngày hôm nay.')).toBeInTheDocument();
+    expect(screen.getByText('Tổng số bản ghi: 0')).toBeInTheDocument();
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+  });
+
+  it('shows an explicit error when the birthday email log request fails', async () => {
+    vi.spyOn(apiClient, 'get').mockImplementation(async (url) => {
+      if (url.includes('/calendar/')) return calendar as never;
+      if (url.includes('/day/')) return emptyDay as never;
+      throw new ApiError(500, { error: 'server error' });
+    });
+    render(<BirthdayPage />);
+
+    expect(await screen.findByText('Không thể tải nhật ký email.')).toBeInTheDocument();
+    expect(screen.queryByText('Chưa có nhật ký gửi email sinh nhật trong ngày hôm nay.')).not.toBeInTheDocument();
+  });
+
+  it('advances today mode at Vietnam midnight and keeps a historical date selected', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-04T16:59:00.000Z'));
+    const get = vi.spyOn(apiClient, 'get').mockImplementation(async (url) => {
+      if (url.includes('/calendar/')) return calendar as never;
+      if (url.includes('/day/')) return emptyDay as never;
+      return { success: true, date: null, total: 0, page: 1, total_pages: 1, logs: [] } as never;
+    });
+    render(<BirthdayPage />);
+    const dateFilter = screen.getByLabelText('Ngày xem') as HTMLInputElement;
+    expect(dateFilter.value).toBe('2026-11-04');
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(61_000);
+    });
+    expect(dateFilter.value).toBe('2026-11-05');
+    expect(get.mock.calls.some(([url]) => String(url).includes('/logs/?date=2026-11-05&page=1'))).toBe(true);
+
+    fireEvent.change(dateFilter, { target: { value: '2026-11-03' } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000);
+    });
+    expect(dateFilter.value).toBe('2026-11-03');
   });
 
   it('shows calendar counts and only permitted staff fields', async () => {
@@ -66,6 +152,20 @@ describe('BirthdayPage', () => {
     expect(screen.getByText('Ngày sinh nhật: 12/5')).toBeInTheDocument();
     expect(screen.getByTitle('1 cán bộ nhân viên có sinh nhật')).toBeInTheDocument();
     expect(screen.queryByText(/Gửi thiệp|Gửi email tự động/)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['vi', 'Bạn không có quyền thực hiện thao tác này.'],
+    ['en', 'You do not have permission to perform this action.'],
+  ] as const)('translates permission errors in both birthday panels (%s)', async (language, message) => {
+    setLanguage(language);
+    vi.spyOn(apiClient, 'get').mockRejectedValue(
+      new ApiError(403, { detail: 'roles.messages.permissionDenied' })
+    );
+    render(<BirthdayPage />);
+
+    expect(await screen.findAllByText(message)).toHaveLength(2);
+    expect(screen.queryByText('roles.messages.permissionDenied')).not.toBeInTheDocument();
   });
 
   it('distinguishes an empty day from a failed day request and retries', async () => {

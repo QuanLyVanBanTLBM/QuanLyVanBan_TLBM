@@ -1,16 +1,18 @@
 import base64
+import os
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, Permission
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from accounts.models import Position
 from signing import enums
 from signing.models import SigningAuditLog, SigningKey, SigningProcess
 from signing.permissions import co_quyen
+from signing.services import pin as pin_service
 
 from .helpers import cap_quyen, tao_chuc_vu, them_vao_nhom_quan_tri
 
@@ -182,6 +184,7 @@ class ProcessApiTests(ApiBase):
         self.assertEqual(self.c1.get(f"{BASE}/quy-trinh/99999/").status_code, 404)
 
 
+@override_settings(SIGNING_PIN_SECRET="pin-test-secret", SIGNING_KEY_PEPPER="pepper-test")
 class KeyApiTests(ApiBase):
     def register(self, client=None, ma="k1"):
         private, public = new_keypair()
@@ -195,17 +198,45 @@ class KeyApiTests(ApiBase):
         client = client or self.c1
         challenge = client.get(f"{BASE}/khoa/{key_id}/thach-thuc/").data["thach_thuc"]
         signature = base64.b64encode(private.sign(challenge.encode())).decode()
-        return client.post(f"{BASE}/khoa/{key_id}/xac-minh/", {"chu_ky_so": signature}, format="json")
+        return client.post(f"{BASE}/khoa/{key_id}/xac-minh/", {"thach_thuc": challenge, "chu_ky_so": signature}, format="json")
+
+    def set_pin(self, private, key_id, client=None):
+        client = client or self.c1
+        private_pkcs8 = private.private_bytes(
+            serialization.Encoding.DER,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+        kdf = {
+            "thuat_toan": pin_service.KDF_THUAT_TOAN,
+            **pin_service.KDF_SAN,
+            "salt": base64.b64encode(os.urandom(pin_service.KDF_SALT_BYTES)).decode("ascii"),
+        }
+        response = client.post(f"{BASE}/khoa/{key_id}/dat-pin/", {
+            "pin": "123456",
+            "khoa_bi_mat_pkcs8": base64.b64encode(private_pkcs8).decode("ascii"),
+            "tham_so_kdf": kdf,
+        }, format="json", secure=True)
+        self.assertEqual((response.status_code, response.data), (201, {"khoa": key_id, "da_dat_pin": True}))
 
     def test_full_lifecycle(self):
         private, key = self.register()
         self.assertEqual(key["trang_thai"], "CHO_KICH_HOAT")
         self.assertEqual(self.c1.post(f"{BASE}/khoa/{key['id']}/kich-hoat/").data["code"], "khoa_chua_xac_minh_so_huu")
         self.assertEqual(self.prove(private, key["id"]).status_code, 200)
+        self.set_pin(private, key["id"])
         r = self.c1.post(f"{BASE}/khoa/{key['id']}/kich-hoat/")
         self.assertEqual((r.status_code, r.data["trang_thai"]), (200, "HOAT_DONG"))
         r = self.c1.post(f"{BASE}/khoa/{key['id']}/thu-hoi/", {"ly_do": "Mất thiết bị"}, format="json")
         self.assertEqual((r.status_code, r.data["trang_thai"]), (200, "THU_HOI"))
+
+    def test_replayed_challenge_rejected(self):
+        private, key = self.register()
+        challenge = self.c1.get(f"{BASE}/khoa/{key['id']}/thach-thuc/").data["thach_thuc"]
+        payload = {"thach_thuc": challenge, "chu_ky_so": base64.b64encode(private.sign(challenge.encode())).decode()}
+        self.assertEqual(self.c1.post(f"{BASE}/khoa/{key['id']}/xac-minh/", payload, format="json").status_code, 200)
+        response = self.c1.post(f"{BASE}/khoa/{key['id']}/xac-minh/", payload, format="json")
+        self.assertEqual((response.status_code, response.data["code"]), (409, "thach_thuc_da_dung"))
 
     def test_bad_proof_rejected(self):
         _, key = self.register()
@@ -223,7 +254,7 @@ class KeyApiTests(ApiBase):
         private, key = self.register()
         self.assertEqual(len(self.c2.get(f"{BASE}/khoa/").data), 0)
         for method, path, body in [
-            ("get", "thach-thuc", None), ("post", "xac-minh", {"chu_ky_so": "x"}),
+            ("get", "thach-thuc", None), ("post", "xac-minh", {"thach_thuc": "x", "chu_ky_so": "x"}),
             ("post", "kich-hoat", None), ("post", "thu-hoi", {"ly_do": "x"}),
             ("post", "xoay-vong", {"khoa_moi": key["id"]}),
         ]:
@@ -234,9 +265,11 @@ class KeyApiTests(ApiBase):
     def test_rotation(self):
         p1, k1 = self.register(ma="k1")
         self.prove(p1, k1["id"])
+        self.set_pin(p1, k1["id"])
         self.c1.post(f"{BASE}/khoa/{k1['id']}/kich-hoat/")
         p2, k2 = self.register(ma="k2")
         self.prove(p2, k2["id"])
+        self.set_pin(p2, k2["id"])
         blocked = self.c1.post(f"{BASE}/khoa/{k2['id']}/kich-hoat/")
         self.assertEqual((blocked.status_code, blocked.data["code"]), (409, "da_co_khoa_hoat_dong"))
         r = self.c1.post(f"{BASE}/khoa/{k1['id']}/xoay-vong/", {"khoa_moi": k2["id"]}, format="json")

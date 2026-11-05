@@ -70,7 +70,7 @@ function projectToday(): SelectedDate {
 }
 
 function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof ApiError ? error.message : fallback;
+  return error instanceof ApiError ? translate(error.message) : fallback;
 }
 
 export default function BirthdayPage() {
@@ -620,7 +620,7 @@ export default function BirthdayPage() {
 
       </div>
 
-      <BirthdayEmailLogs month={displayMonth} year={displayYear} />
+      <BirthdayEmailLogs />
     </main>
   );
 }

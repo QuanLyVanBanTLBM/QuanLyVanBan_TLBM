@@ -90,7 +90,7 @@ class DanhMucTaiLieuViewSet(viewsets.ModelViewSet):
     """
     queryset = DanhMucTaiLieu.objects.select_related('nguoi_lap').all()
     serializer_class = DanhMucTaiLieuSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardResourcePagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['ten_tai_lieu', 'ky_hieu', 'ghi_chu']
@@ -104,7 +104,7 @@ class DanhMucTaiLieuViewSet(viewsets.ModelViewSet):
             return [permissions.IsAuthenticated(), require_permission("change_loaitailieubieumau")()]
         if self.action == "destroy":
             return [permissions.IsAuthenticated(), require_permission("delete_loaitailieubieumau")()]
-        return [permissions.IsAuthenticatedOrReadOnly()]
+        return [permissions.IsAuthenticated(), require_permission("view_loaitailieubieumau")()]
 
     def perform_create(self, serializer):
         kwargs = {}
@@ -188,7 +188,7 @@ class LoaiTaiLieuViewSet(viewsets.ModelViewSet):
     """
     queryset = LoaiTaiLieu.objects.select_related('dm_tai_lieu').all()
     serializer_class = LoaiTaiLieuSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardResourcePagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['dm_tai_lieu', 'is_public']
@@ -203,7 +203,7 @@ class LoaiTaiLieuViewSet(viewsets.ModelViewSet):
             return [permissions.IsAuthenticated(), require_permission("change_loaitailieubieumau")()]
         if self.action == "destroy":
             return [permissions.IsAuthenticated(), require_permission("delete_loaitailieubieumau")()]
-        return [permissions.IsAuthenticatedOrReadOnly()]
+        return [permissions.IsAuthenticated(), require_permission("view_loaitailieubieumau")()]
 
 
 class TaiLieuChiTietViewSet(viewsets.ModelViewSet):
@@ -217,7 +217,7 @@ class TaiLieuChiTietViewSet(viewsets.ModelViewSet):
     - Xuất Excel danh sách tài liệu theo đúng bộ lọc tìm kiếm
     """
     serializer_class = TaiLieuChiTietSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardResourcePagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_class = TaiLieuChiTietFilter
@@ -232,7 +232,7 @@ class TaiLieuChiTietViewSet(viewsets.ModelViewSet):
             return [permissions.IsAuthenticated(), CanChangeTaiLieu()]
         if self.action == "destroy":
             return [permissions.IsAuthenticated(), CanDeleteTaiLieu()]
-        return [permissions.IsAuthenticatedOrReadOnly()]
+        return [permissions.IsAuthenticated(), require_permission("view_tailieu")()]
 
     def get_queryset(self):
         qs = TaiLieuChiTiet.objects.select_related(
@@ -492,7 +492,7 @@ class ChiTietTaiLieuAttachmentViewSet(viewsets.ModelViewSet):
     - Kiểm soát chặt quyền xóa mềm và upload tệp
     """
     serializer_class = ChiTietTaiLieuAttachmentSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardResourcePagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['document']
@@ -503,7 +503,7 @@ class ChiTietTaiLieuAttachmentViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ['create', 'destroy']:
             return [permissions.IsAuthenticated()]
-        return [permissions.IsAuthenticatedOrReadOnly()]
+        return [permissions.IsAuthenticated(), require_permission("view_tailieu")()]
 
     def get_queryset(self):
         user = self.request.user

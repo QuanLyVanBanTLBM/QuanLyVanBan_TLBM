@@ -4,13 +4,14 @@ from unittest.mock import patch
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from django.test import TestCase
-from rest_framework.test import APIClient
+from rest_framework.test import APIClient, APIRequestFactory, force_authenticate
 from rest_framework import status
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 
 from organizations.directory_export import HEADER_ROW
 from organizations.models import KhoiKhuVuc, DonVi
+from organizations.views import region_detail_view, unit_detail_view
 
 
 def next_unit_priority():
@@ -457,6 +458,29 @@ class OrganizationPermissionAPITest(TestCase):
         self.assertEqual(self.admin.delete(f"/api/organizations/units/{unit.data['id']}/").status_code, status.HTTP_204_NO_CONTENT)
         self.assertEqual(self.admin.delete(f"/api/organizations/regions/{region_id}/").status_code, status.HTTP_204_NO_CONTENT)
 
+    def delete_rendered(self, view, path, pk):
+        """Gọi view trực tiếp và render như server: test client của Django tự bỏ body của 204 nên không thấy lỗi."""
+        request = APIRequestFactory().delete(path)
+        force_authenticate(request, user=get_user_model().objects.get(username="org_admin"))
+        response = view(request, pk=pk)
+        response.render()
+        return response
+
+    def test_unit_delete_returns_204_without_body(self):
+        """204 kèm body làm proxy dev của Vite báo Parse Error, giao diện báo xóa lỗi dù DB đã xóa."""
+        unit = DonVi.objects.create(khoi=self.region, stt_uu_tien=next_unit_priority(), ten="Đơn vị Xóa")
+        res = self.delete_rendered(unit_detail_view, f"/api/organizations/units/{unit.id}/", unit.id)
+        self.assertEqual(res.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(res.content, b"")
+        self.assertFalse(DonVi.objects.filter(pk=unit.id).exists())
+
+    def test_region_delete_returns_204_without_body(self):
+        region = KhoiKhuVuc.objects.create(ten="Khối Xóa")
+        res = self.delete_rendered(region_detail_view, f"/api/organizations/regions/{region.id}/", region.id)
+        self.assertEqual(res.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(res.content, b"")
+        self.assertFalse(KhoiKhuVuc.objects.filter(pk=region.id).exists())
+
     def test_permissions_are_independent(self):
         only_add = APIClient()
         user = get_user_model().objects.create_user(username="org_only_add", password="x", don_vi=self.unit)
@@ -541,3 +565,35 @@ class UnitAllParamAndInternalVisibilityTest(TestCase):
             self.assertEqual(client.get(f"/api/organizations/units/{self.internal.id}/").status_code, status.HTTP_200_OK)
             exported = export_unit_names(client.get(f"/api/organizations/units/export/?{self.in_region}").content)
             self.assertIn("ĐƠN VỊ NỘI BỘ", exported)
+
+    def test_export_selected_unit_only(self):
+        """Chọn một Đơn vị trên bảng thì file xuất chỉ có Đơn vị đó (?unit_id=), không phải cả Khối."""
+        picked = DonVi.objects.get(ten="Đơn vị công khai 3")
+        response = self.viewer.get(f"/api/organizations/units/export/?{self.in_region}&unit_id={picked.id}")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(export_unit_names(response.content), ["ĐƠN VỊ CÔNG KHAI 3"])
+        # Ô tìm kiếm vẫn áp dụng cùng Đơn vị đã chọn, giống bảng trên giao diện.
+        empty = self.viewer.get(f"/api/organizations/units/export/?unit_id={picked.id}&search=không khớp")
+        self.assertEqual(export_unit_names(empty.content), [])
+        other = KhoiKhuVuc.objects.create(ten="Khối khác")
+        outside = self.viewer.get(f"/api/organizations/units/export/?region_id={other.id}&unit_id={picked.id}")
+        self.assertEqual(export_unit_names(outside.content), [])
+
+    def test_export_unit_id_invalid_or_not_visible(self):
+        cases = (
+            (self.viewer, "abc", status.HTTP_400_BAD_REQUEST),
+            (self.viewer, "9223372036854775808", status.HTTP_400_BAD_REQUEST),
+            (self.viewer, "987654321", status.HTTP_404_NOT_FOUND),
+            # Đơn vị nội bộ: người không có quyền xem không xuất được, quản trị xuất được.
+            (self.viewer, str(self.internal.id), status.HTTP_404_NOT_FOUND),
+            (self.manager, str(self.internal.id), status.HTTP_200_OK),
+            (self.root, str(self.internal.id), status.HTTP_200_OK),
+        )
+        for client, unit_id, expected in cases:
+            with self.subTest(unit_id=unit_id, expected=expected):
+                response = client.get(f"/api/organizations/units/export/?unit_id={unit_id}")
+                self.assertEqual(response.status_code, expected)
+                if expected != status.HTTP_200_OK:
+                    self.assertEqual(response.data["key"], "organizations.messages.unitNotFound")
+                else:
+                    self.assertEqual(export_unit_names(response.content), ["ĐƠN VỊ NỘI BỘ"])

@@ -1,4 +1,42 @@
 -- =====================================================================
+-- THÊM QUYỀN THÊM VĂN BẢN HẠN CHẾ (Nhóm 7; đánh dấu [TVHC] tại vị trí)
+-- Căn cứ: đề xuất Nhóm 2: thêm văn bản đến/đi phạm vi Hạn chế (pham_vi = 'HAN_CHE') cần quyền riêng;
+--   quyền add_vanbanden/add_vanbandi không đủ (tạo trực tiếp và import Excel).
+--   Thêm 2 quyền: add_han_che_vanbanden, add_han_che_vanbandi (gán ADMIN qua CROSS JOIN sẵn có và VT).
+--   Migration authorization 0017_them_van_ban_han_che_permissions bổ sung cho DB đã seed từ trước.
+-- Quy mô sau [TVHC] (cộng sau [XHHL]): 84 -> 86 quyền thao tác; thêm 4 lượt phân quyền (ADMIN 2, VT 2): 204 -> 208;
+--   nhóm VT 32 -> 34 quyền.
+-- =====================================================================
+-- =====================================================================
+-- THÊM QUYỀN XEM VÀ XỬ LÝ VĂN BẢN HẾT HIỆU LỰC (Nhóm 7; đánh dấu [XHHL] tại vị trí)
+-- Căn cứ: nghiệp vụ văn bản đến/đi (góp ý Nhóm 2): văn bản hết hiệu lực (cả NOI_BO lẫn HAN_CHE) chỉ tài khoản được
+--   phân quyền mới xem được; người tạo, người nhận, đơn vị nhận không có quyền thì không thấy, quyền
+--   view_vanbanden/view_vanbandi không đủ; chỉ tài khoản được phân quyền xử lý mới sửa, xóa được văn bản hết hiệu lực.
+--   Thêm 4 quyền: view_het_hieu_luc_vanbanden, view_het_hieu_luc_vanbandi (gán ADMIN qua CROSS JOIN sẵn có và VT);
+--   manage_het_hieu_luc_vanbanden, manage_het_hieu_luc_vanbandi (gán ADMIN qua CROSS JOIN sẵn có).
+--   Migration authorization 0016_het_hieu_luc_permissions bổ sung cho DB đã seed từ trước.
+-- Quy mô sau [XHHL] (cộng sau [GDLG]): 80 -> 84 quyền thao tác; thêm 6 lượt phân quyền (ADMIN 4, VT 2): 198 -> 204;
+--   nhóm VT 30 -> 32 quyền.
+-- =====================================================================
+-- =====================================================================
+-- GỠ QUYỀN delegate_trinhky (Nhóm 5; đánh dấu [GDLG] tại vị trí)
+-- Căn cứ: ủy quyền ký đã bỏ ở #374, #383; quyền không còn tính năng nào sử dụng (issue #519).
+--   Bỏ quyền delegate_trinhky khỏi seed auth_permission và khỏi danh sách quyền nhóm TP và BGD;
+--   ADMIN nhận quyền qua CROSS JOIN nên giảm theo. Migration authorization 0015_remove_delegate_trinhky
+--   xóa quyền và các lượt gán trên DB đã seed từ trước.
+-- Quy mô sau [GDLG] (cộng sau [VTQ]): 81 -> 80 quyền thao tác; 201 -> 198 lượt phân quyền (TP -1, BGD -1, ADMIN -1).
+-- =====================================================================
+-- =====================================================================
+-- THAY ĐỔI QUYỀN NHÓM VĂN THƯ (Nhóm 7; đánh dấu [VTQ] tại vị trí)
+-- Căn cứ: quyết định nhóm trưởng (02-03/11/2026): Văn thư chỉ xem, thêm, import văn bản đến/đi, xuất Excel văn bản đến,
+--   đổi hiệu lực qua change_hieu_luc_*; không sửa, xóa văn bản của người khác; giữ các quyền chung của CBNV.
+--   Bỏ khỏi nhóm VT 13 lượt: change_vanbanden, delete_vanbanden, send_mail_all_vanbanden, change_vanbandi,
+--   delete_vanbandi, export_vanbandi, send_mail_all_vanbandi, add_hoso, change_hoso, toggle_status_hoso,
+--   manage_documents_hoso, add_tailieu, change_tailieu.
+--   Migration authorization 0014_van_thu_permissions đặt lại nhóm VT đúng 30 quyền trên DB đã seed từ trước.
+-- Quy mô sau [VTQ] (cộng sau [XTKY]): giữ 81 quyền thao tác; 214 -> 201 lượt phân quyền; nhóm VT 43 -> 30 quyền.
+-- =====================================================================
+-- =====================================================================
 -- THAY ĐỔI QUYỀN XEM TẤT CẢ HỒ SƠ TRÌNH KÝ (Nhóm 5; đánh dấu [XTKY] tại vị trí)
 -- Căn cứ: yêu cầu nghiệp vụ: Văn thư xem toàn bộ hồ sơ trình ký như Ban Giám đốc và Quản trị hệ thống,
 --   không mở nhật ký kiểm toán (view_signing_audit).
@@ -215,7 +253,8 @@
 -- - FK signing_attempt -> request, signing_signature, signing_manifest đổi sang
 -- ON DELETE RESTRICT.
 -- - Trigger chặn xóa cứng attempt đã kích hoạt, chữ ký số và manifest đã chốt.
--- - Kiến trúc Zero-Knowledge: Backend TUYỆT ĐỐI KHÔNG lưu encrypted_private_key.
+-- - Trình ký: backend lưu private key Ed25519 dạng mã hóa trong signing_key_unlock;
+--   khóa AES dẫn xuất từ SIGNING_KEY_PEPPER ngoài CSDL, độc lập PIN để recovery giữ cùng khóa.
 -- 9) [Phan Tạ Hữu Đức & Chỉ đạo GVHD 25/09/2026] Chuẩn hóa phân hệ Công việc:
 -- - Phân quyền duyệt/hủy duyệt theo Object-level trong task_participant (Người tạo,
 -- Chủ trì CHU_TRI, Chỉ đạo CHI_DAO); bỏ kiểm tra 3 lớp cứng và không chặn duyệt bằng approve_congviec.
@@ -1381,7 +1420,7 @@ CREATE TABLE signing_request_step_signer (
 CREATE INDEX idx_signing_request_step_signer_buoc ON signing_request_step_signer (buoc_ky_id);
 CREATE INDEX idx_signing_request_step_signer_nguoi ON signing_request_step_signer (nguoi_ky_id);
 
--- 9.8. Quản lý Khóa ký số (Zero-Knowledge: Backend tuyệt đối không lưu private key)
+-- 9.8. Quản lý khóa ký số (private key mã hóa trong DB; chỉ giải mã trong bộ nhớ khi ký)
 CREATE TABLE signing_key (
     id BIGSERIAL PRIMARY KEY,
     nguoi_so_huu_id BIGINT NOT NULL REFERENCES accounts_employee (id) ON DELETE RESTRICT,
@@ -1407,13 +1446,13 @@ CREATE UNIQUE INDEX uq_signing_key_mot_khoa_hoat_dong ON signing_key (nguoi_so_h
 CREATE INDEX idx_signing_key_khoa_thay_the ON signing_key (khoa_thay_the_id);
 CREATE INDEX idx_signing_key_nguoi_so_huu ON signing_key (nguoi_so_huu_id);
 
--- 9.8b. [v1] Mở khóa ký bằng PIN (Nhóm 5, Phase 6a) — bảng trạng thái, được phép UPDATE.
--- Không lưu PIN; chỉ lưu hash verifier và mảnh bí mật máy chủ đã mã hóa. Sự kiện PIN ghi vào signing_audit_log.
+-- 9.8b. Private key mã hóa AES-256-GCM bằng HKDF(SIGNING_KEY_PEPPER, salt), độc lập với PIN.
+-- PIN chỉ được giữ dưới dạng verifier Argon2id; email recovery thay verifier nhưng giữ nguyên khóa/ciphertext.
 CREATE TABLE signing_key_unlock (
     id BIGSERIAL PRIMARY KEY,
     khoa_id BIGINT NOT NULL UNIQUE REFERENCES signing_key (id) ON DELETE CASCADE,
     ma_bam_xac_minh_pin TEXT NOT NULL,
-    manh_bi_mat_ma_hoa TEXT NOT NULL,
+    khoa_bi_mat_ma_hoa TEXT NOT NULL,
     tham_so_kdf JSONB NOT NULL,
     so_lan_sai INTEGER NOT NULL DEFAULT 0 CHECK (so_lan_sai >= 0),
     khoa_den TIMESTAMPTZ, -- NULL: không bị khóa
@@ -1437,6 +1476,49 @@ CREATE TABLE signing_user_signature (
 
 CREATE TRIGGER trg_signing_user_signature_updated_at BEFORE UPDATE ON signing_user_signature
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- 9.8c2. Mã xác thực đặt lại PIN gửi qua email (Nhóm 5): lưu mã đã băm, gắn với khóa đang hoạt động lúc gửi
+CREATE TABLE signing_pin_reset_code (
+    id BIGSERIAL PRIMARY KEY,
+    nguoi_dung_id BIGINT NOT NULL REFERENCES accounts_employee (id) ON DELETE CASCADE,
+    khoa_id BIGINT REFERENCES signing_key (id) ON DELETE RESTRICT,
+    ma_bam VARCHAR(64) NOT NULL,
+    het_han TIMESTAMPTZ NOT NULL,
+    so_lan_sai INTEGER NOT NULL DEFAULT 0,
+    da_dung_luc TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_signing_pin_reset_user ON signing_pin_reset_code (nguoi_dung_id, created_at);
+
+-- 9.8c3. Nonce challenge chứng minh sở hữu khóa đã dùng (Nhóm 5, issue #507): mỗi challenge xác minh thành công một lần
+CREATE TABLE signing_challenge_da_dung (
+    id BIGSERIAL PRIMARY KEY,
+    nguoi_dung_id BIGINT NOT NULL REFERENCES accounts_employee (id) ON DELETE CASCADE,
+    nonce VARCHAR(64) NOT NULL,
+    het_han TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uq_signing_challenge_da_dung UNIQUE (nguoi_dung_id, nonce)
+);
+
+CREATE INDEX idx_signing_challenge_het_han ON signing_challenge_da_dung (het_han);
+
+-- 9.8c4. Mã xác thực MFA khi ký gửi qua email và phiên đã xác thực (Nhóm 5): lưu mã đã băm; dòng đã dùng gắn với access token
+CREATE TABLE signing_mfa_otp (
+    id BIGSERIAL PRIMARY KEY,
+    nguoi_dung_id BIGINT NOT NULL REFERENCES accounts_employee (id) ON DELETE CASCADE,
+    muc_dich VARCHAR(20) NOT NULL DEFAULT 'KY',
+    ma_bam VARCHAR(64) NOT NULL,
+    het_han TIMESTAMPTZ NOT NULL,
+    so_lan_sai INTEGER NOT NULL DEFAULT 0,
+    da_dung_luc TIMESTAMPTZ,
+    phien_jti VARCHAR(64),
+    phien_het_han TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_signing_mfa_otp_user ON signing_mfa_otp (nguoi_dung_id, muc_dich, created_at);
+CREATE INDEX idx_signing_mfa_otp_phien ON signing_mfa_otp (nguoi_dung_id, phien_jti);
 
 -- 9.8d. [v1] Khóa quyền ký của tài khoản do quản trị viên đặt (Nhóm 5, issue #449) — bảng trạng thái.
 -- Một tài khoản có tối đa một dòng đang hiệu lực (bat_lai_luc IS NULL). khoa_den NULL: khóa đến khi được bật lại.
@@ -1657,7 +1739,7 @@ CREATE TRIGGER trg_signing_audit_log_immutable
 -- 9.14. Thông báo trình ký (Outbox nhắc việc & gửi lại)
 CREATE TABLE signing_notification (
     id BIGSERIAL PRIMARY KEY,
-    trinh_ky_id BIGINT NOT NULL REFERENCES signing_request (id) ON DELETE CASCADE,
+    trinh_ky_id BIGINT REFERENCES signing_request (id) ON DELETE CASCADE,
     buoc_ky_id BIGINT REFERENCES signing_request_step_signer (id) ON DELETE CASCADE,
     nguoi_nhan_id BIGINT NOT NULL REFERENCES accounts_employee (id) ON DELETE RESTRICT,
     kenh VARCHAR(20) NOT NULL,
@@ -2270,7 +2352,7 @@ SET
     ma_nhom_quyen = EXCLUDED.ma_nhom_quyen;
 
 -- ---------------------------------------------------------------------
--- 5) Seed 81 Quyền thao tác chi tiết (auth_permission)
+-- 5) Seed 80 Quyền thao tác chi tiết (auth_permission)
 -- ---------------------------------------------------------------------
 INSERT INTO
     auth_permission (name, codename, module_ten)
@@ -2435,6 +2517,23 @@ VALUES
         'change_hieu_luc_vanbanden',
         'Văn bản đến'
     ),
+    -- [XHHL]
+    (
+        'Xem văn bản đến hết hiệu lực',
+        'view_het_hieu_luc_vanbanden',
+        'Văn bản đến'
+    ),
+    (
+        'Xử lý (sửa, xóa) văn bản đến hết hiệu lực',
+        'manage_het_hieu_luc_vanbanden',
+        'Văn bản đến'
+    ),
+    -- [TVHC]
+    (
+        'Thêm văn bản đến hạn chế',
+        'add_han_che_vanbanden',
+        'Văn bản đến'
+    ),
     -- Văn bản đi (Nhóm 2)
     (
         'Xem danh sách/chi tiết văn bản đi',
@@ -2479,6 +2578,23 @@ VALUES
     (
         'Đổi hiệu lực văn bản đi',
         'change_hieu_luc_vanbandi',
+        'Văn bản đi'
+    ),
+    -- [XHHL]
+    (
+        'Xem văn bản đi hết hiệu lực',
+        'view_het_hieu_luc_vanbandi',
+        'Văn bản đi'
+    ),
+    (
+        'Xử lý (sửa, xóa) văn bản đi hết hiệu lực',
+        'manage_het_hieu_luc_vanbandi',
+        'Văn bản đi'
+    ),
+    -- [TVHC]
+    (
+        'Thêm văn bản đi hạn chế',
+        'add_han_che_vanbandi',
         'Văn bản đi'
     ),
     -- Hồ sơ lưu trữ (Nhóm 3)
@@ -2557,11 +2673,6 @@ VALUES
     (
         'Gửi trình ký / Nộp lại lượt trình',
         'send_trinhky',
-        'Trình ký'
-    ),
-    (
-        'Ủy quyền ký số',
-        'delegate_trinhky',
         'Trình ký'
     ),
     (
@@ -2738,7 +2849,6 @@ WHERE
         'add_trinhky',
         'sign_trinhky',
         'send_trinhky',
-        'delegate_trinhky',
         'cancel_trinhky',
         'view_signing_audit',
         'view_all_trinhky',
@@ -2778,7 +2888,6 @@ WHERE
         'add_trinhky',
         'sign_trinhky',
         'send_trinhky',
-        'delegate_trinhky',
         'cancel_trinhky',
         'manage_signing_process', -- [P7] lãnh đạo đơn vị quản lý quy trình PHONG_BAN
         'view_congviec',
@@ -2826,7 +2935,9 @@ WHERE
         'use_aiassistant'
     ) ON CONFLICT (group_id, permission_id) DO NOTHING;
 
--- Nhóm VT (Văn thư): Nghiệp vụ văn thư lưu trữ, văn bản đến/đi, quản lý hồ sơ, tài liệu biểu mẫu
+-- [VTQ] Nhóm VT (Văn thư): xem, thêm, import văn bản đến/đi, xuất Excel văn bản đến, đổi hiệu lực;
+-- [XHHL] xem văn bản đến/đi hết hiệu lực; [TVHC] thêm văn bản đến/đi hạn chế;
+--   không sửa/xóa văn bản đến/đi, không gửi mail toàn hệ thống; xem hồ sơ, tài liệu biểu mẫu; quyền chung của CBNV
 INSERT INTO
     auth_group_permissions (group_id, permission_id)
 SELECT g.id, p.id
@@ -2841,28 +2952,19 @@ WHERE
         'change_self_cbnv',
         'view_vanbanden',
         'add_vanbanden',
-        'change_vanbanden',
-        'delete_vanbanden',
         'import_vanbanden',
         'export_vanbanden',
-        'send_mail_all_vanbanden',
         'change_hieu_luc_vanbanden',
+        'view_het_hieu_luc_vanbanden',
+        'add_han_che_vanbanden',
         'view_vanbandi',
         'add_vanbandi',
-        'change_vanbandi',
-        'delete_vanbandi',
         'import_vanbandi',
-        'export_vanbandi',
-        'send_mail_all_vanbandi',
         'change_hieu_luc_vanbandi',
+        'view_het_hieu_luc_vanbandi',
+        'add_han_che_vanbandi',
         'view_hoso',
-        'add_hoso',
-        'change_hoso',
-        'manage_documents_hoso',
-        'toggle_status_hoso',
         'view_tailieu',
-        'add_tailieu',
-        'change_tailieu',
         'view_trinhky',
         'send_trinhky',
         'add_trinhky',

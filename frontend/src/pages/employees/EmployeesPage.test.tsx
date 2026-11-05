@@ -28,7 +28,7 @@ const mockEmployeeData = [
   {
     id: 1,
     username: 'binhnv',
-    email: 'binhnv@donvi.gov.vn',
+    email: 'binhnv@baolong.vn',
     ho_ten: 'Nguyễn Văn Bình',
     ngay_sinh: '20/05/19xx',
     is_birthday_masked: true,
@@ -62,7 +62,7 @@ const mockEmployeeData = [
   {
     id: 2,
     username: 'hungtv',
-    email: 'hungtv@donvi.gov.vn',
+    email: 'hungtv@baolong.vn',
     ho_ten: 'Trần Văn Hùng',
     ngay_sinh: '15/10/1988',
     is_birthday_masked: false,
@@ -231,6 +231,64 @@ describe('EmployeesPage Component (Issue #24)', () => {
     });
   });
 
+  it('shows a translated message for a password-policy error returned by the API', async () => {
+    mockedApiClient.post.mockRejectedValueOnce(
+      new apiClientModule.ApiError(400, { detail: 'employees.messages.passwordNotAccepted' }),
+    );
+
+    render(
+      <MemoryRouter>
+        <EmployeesPage />
+      </MemoryRouter>
+    );
+
+    await screen.findByText('Nguyễn Văn Bình');
+    fireEvent.click((await screen.findAllByTitle('Chỉnh sửa'))[0]);
+    await screen.findByText('Chỉnh Sửa Hồ Sơ Nhân Viên');
+    fireEvent.click(screen.getByRole('button', { name: 'Đổi mật khẩu' }));
+    fireEvent.change(screen.getByLabelText('Mật khẩu mới'), {
+      target: { value: 'Secure-Reset-Password-42!' },
+    });
+    fireEvent.change(screen.getByLabelText('Xác nhận mật khẩu mới'), {
+      target: { value: 'Secure-Reset-Password-42!' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Lý do đặt lại mật khẩu' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Quên mật khẩu' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu mật khẩu mới' }));
+
+    expect(await screen.findByText('Mật khẩu chưa đạt yêu cầu bảo mật của hệ thống.')).toBeInTheDocument();
+    expect(screen.queryByText('employees.messages.passwordNotAccepted')).not.toBeInTheDocument();
+  });
+
+  it('uses a localized fallback instead of showing an unknown backend error code', async () => {
+    mockedApiClient.post.mockRejectedValueOnce(
+      new apiClientModule.ApiError(500, { detail: 'accounts.password_reset_internal_error' }),
+    );
+
+    render(
+      <MemoryRouter>
+        <EmployeesPage />
+      </MemoryRouter>
+    );
+
+    await screen.findByText('Nguyễn Văn Bình');
+    fireEvent.click((await screen.findAllByTitle('Chỉnh sửa'))[0]);
+    await screen.findByText('Chỉnh Sửa Hồ Sơ Nhân Viên');
+    fireEvent.click(screen.getByRole('button', { name: 'Đổi mật khẩu' }));
+    fireEvent.change(screen.getByLabelText('Mật khẩu mới'), {
+      target: { value: 'Secure-Reset-Password-42!' },
+    });
+    fireEvent.change(screen.getByLabelText('Xác nhận mật khẩu mới'), {
+      target: { value: 'Secure-Reset-Password-42!' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Lý do đặt lại mật khẩu' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Quên mật khẩu' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu mật khẩu mới' }));
+
+    expect(await screen.findByText('Không thể đổi mật khẩu. Vui lòng thử lại.')).toBeInTheDocument();
+    expect(screen.queryByText('accounts.password_reset_internal_error')).not.toBeInTheDocument();
+  });
+
   it('requires an explicit position instead of defaulting a new employee to the first position', async () => {
     const { container } = render(
       <MemoryRouter>
@@ -250,7 +308,7 @@ describe('EmployeesPage Component (Issue #24)', () => {
       target: { value: 'Nhân viên kiểm tra chức vụ' },
     });
     fireEvent.change(container.querySelector('input[name="email"]')!, {
-      target: { value: 'position-required@donvi.gov.vn' },
+      target: { value: 'position-required@baolong.vn' },
     });
     fireEvent.change(container.querySelector('input[name="ngay_sinh"]')!, {
       target: { value: '01/01/1990' },
@@ -260,6 +318,54 @@ describe('EmployeesPage Component (Issue #24)', () => {
     fireEvent.submit(container.querySelector('form')!);
 
     expect(await screen.findByText('Vui lòng chọn chức vụ cho cán bộ nhân viên.')).toBeInTheDocument();
+    expect(mockedApiClient.post).not.toHaveBeenCalled();
+  });
+
+  it('rejects an email outside the company domain before calling the API', async () => {
+    const { container } = render(
+      <MemoryRouter>
+        <EmployeesPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Nguyễn Văn Bình')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Thêm nhân viên/i }));
+    await screen.findByText('Thêm Mới Cán Bộ Nhân Viên');
+
+    fireEvent.change(container.querySelector('input[name="ho_ten"]')!, { target: { value: 'Nhân viên email ngoài' } });
+    fireEvent.change(container.querySelector('input[name="email"]')!, { target: { value: 'nhanvien@yahoo.com' } });
+    fireEvent.submit(container.querySelector('form')!);
+
+    expect(await screen.findByText('Email phải thuộc tên miền công ty (@baolong.vn).')).toBeInTheDocument();
+    expect(mockedApiClient.post).not.toHaveBeenCalled();
+  });
+
+  it('rejects a phone number that is not exactly 10 digits before calling the API', async () => {
+    const { container } = render(
+      <MemoryRouter>
+        <EmployeesPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Nguyễn Văn Bình')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Thêm nhân viên/i }));
+    await screen.findByText('Thêm Mới Cán Bộ Nhân Viên');
+
+    fireEvent.change(container.querySelector('input[name="ho_ten"]')!, { target: { value: 'Nhân viên sai số' } });
+    fireEvent.change(container.querySelector('input[name="email"]')!, { target: { value: 'sai.so@baolong.vn' } });
+    fireEvent.change(container.querySelector('input[name="ngay_sinh"]')!, { target: { value: '01/01/1990' } });
+    fireEvent.change(container.querySelector('input[name="sdt"]')!, { target: { value: '023243423' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Đơn vị / Phòng ban' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Văn phòng Viện' }));
+    fireEvent.submit(container.querySelector('form')!);
+
+    expect(
+      await screen.findByText('Số điện thoại phải gồm đúng 10 chữ số, bắt đầu bằng 0 (ví dụ: 0912345678).')
+    ).toBeInTheDocument();
     expect(mockedApiClient.post).not.toHaveBeenCalled();
   });
 
@@ -280,7 +386,7 @@ describe('EmployeesPage Component (Issue #24)', () => {
       target: { value: 'Nhân viên kiểm tra đơn vị' },
     });
     fireEvent.change(container.querySelector('input[name="email"]')!, {
-      target: { value: 'unit-required@donvi.gov.vn' },
+      target: { value: 'unit-required@baolong.vn' },
     });
     fireEvent.change(container.querySelector('input[name="ngay_sinh"]')!, {
       target: { value: '01/01/1990' },
@@ -631,8 +737,8 @@ describe('EmployeesPage Component (Issue #24)', () => {
             row: 3,
             field: 'email',
             code: 'employees.messages.emailExists',
-            value: 'trung@donvi.gov.vn',
-            message: "Email 'trung@donvi.gov.vn' đã tồn tại trên hệ thống.",
+            value: 'trung@baolong.vn',
+            message: "Email 'trung@baolong.vn' đã tồn tại trên hệ thống.",
           },
           {
             row: 4,
@@ -689,8 +795,8 @@ describe('EmployeesPage Component (Issue #24)', () => {
             row: 4,
             field: 'email',
             code: 'employees.messages.emailExists',
-            value: 'dup@donvi.gov.vn',
-            message: "Email 'dup@donvi.gov.vn' đã tồn tại trong hệ thống.",
+            value: 'dup@baolong.vn',
+            message: "Email 'dup@baolong.vn' đã tồn tại trong hệ thống.",
           },
         ],
       },

@@ -6,11 +6,18 @@
 import apiClient, { ApiError } from '@lib/apiClient';
 import { resolveDocumentApiUrl } from '@lib/routes';
 import type {
-  BangChung, BoLocHoSo, BoLocTaiLieu, CanBo, CanBoChucVu, ChucVu, DonViApDungHoSo, DonViLuaChon, TepTaiLieu, ThongKeHoSo, HoSo, HoSoChiTiet, KhoaKy, LoiNghiepVu, NguoiDungHienTai, QuanTriNguoiDung, QuyTrinh, ThoiHanKhoaQuyenKy, ThongTinAnhChuKyCaNhan,
+  BangChung, BoLocHoSo, BoLocTaiLieu, CanBo, CanBoChucVu, ChucVu, DonViApDungHoSo, DonViLuaChon, TepTaiLieu, ThongKeHoSo, UngVienThayNguoiKy, HoSo, HoSoChiTiet, KhoaKy, LoiNghiepVu, NguoiDungHienTai, QuanTriNguoiDung, QuyTrinh, ThoiHanKhoaQuyenKy, ThongTinAnhChuKyCaNhan,
   ThamSoKdf, TinNhan, TrangKetQua, TraoDoi, VanBanDi, VanBanDiTepDinhKem, ViTriKy,
 } from './types';
 
 export const SIGNING_BASE = '/api/v1/signing';
+
+function yeuCauKenhKyAnToan() {
+  // A server-side guard cannot undo credentials already sent over HTTP.
+  // Browsers treat HTTPS and loopback origins as secure contexts.
+  if (typeof window === 'undefined' || !window.isSecureContext) throw new Error('https_bat_buoc');
+}
+
 /** Số hồ sơ (hoặc thông báo) mỗi trang danh sách (server mặc định 10, tối đa 100). */
 export const SO_HO_SO_MOI_TRANG = 10;
 
@@ -39,6 +46,24 @@ export function docLoi(err: unknown): LoiNghiepVu & { status: number } {
     return { status: err.status, code: data.code, detail: data.detail || err.message, fields: data.fields };
   }
   return { status: 0, detail: err instanceof Error ? err.message : String(err) };
+}
+
+/**
+ * HTTP 429: thời điểm được thử lại (`fields.thu_lai_sau` ISO) do máy chủ trả; null khi không phải 429
+ * hoặc máy chủ không nêu thời điểm.
+ */
+export function thoiDiemThuLai(err: unknown): Date | null {
+  const l = docLoi(err);
+  if (l.status !== 429) return null;
+  const gia_tri = (l.fields as Record<string, unknown[]> | undefined)?.thu_lai_sau?.[0];
+  const thoi_diem = typeof gia_tri === 'string' ? new Date(gia_tri) : null;
+  return thoi_diem && !Number.isNaN(thoi_diem.getTime()) ? thoi_diem : null;
+}
+
+/** Số giây còn phải chờ theo phản hồi 429 (làm tròn lên, tối thiểu 0); 0 khi không có thông tin. */
+export function giayChoThuLai(err: unknown, bay_gio: number = Date.now()): number {
+  const thoi_diem = thoiDiemThuLai(err);
+  return thoi_diem ? Math.max(0, Math.ceil((thoi_diem.getTime() - bay_gio) / 1000)) : 0;
 }
 
 async function layBlobMotLan(duong_dan: string): Promise<Response> {
@@ -93,12 +118,21 @@ export const signingApi = {
     apiClient.post<HoSoChiTiet>(`${SIGNING_BASE}/trinh-ky/${id}/gui/`, { chon_nguoi_ky, vi_tri_ky }, tieuDe(khoa)),
   huy: (id: number, khoa: string, ly_do: string) =>
     apiClient.post<HoSoChiTiet>(`${SIGNING_BASE}/trinh-ky/${id}/huy/`, { ly_do }, tieuDe(khoa)),
+  /** Tài khoản có thể thay người ký `nguoiKyId`: đã lọc theo quyền ký, khóa quyền ký, cấp và thứ bậc chức vụ. */
+  ungVienThayNguoiKy: (id: number, nguoiKyId: number, q: string) =>
+    apiClient.get<UngVienThayNguoiKy[]>(
+      `${SIGNING_BASE}/trinh-ky/${id}/thay-nguoi-ky/?nguoi_ky_id=${nguoiKyId}&q=${encodeURIComponent(q)}`),
+  /** Người tạo hoặc quản trị viên thay người ký đang chờ có quyền ký bị khóa; bắt buộc lý do. */
+  thayNguoiKy: (id: number, body: { nguoi_ky_id: number; nguoi_ky_moi_id: number; ly_do: string }) =>
+    apiClient.post<HoSoChiTiet>(`${SIGNING_BASE}/trinh-ky/${id}/thay-nguoi-ky/`, body),
   trinhLai: (id: number, khoa: string) =>
     apiClient.post<HoSoChiTiet>(`${SIGNING_BASE}/trinh-ky/${id}/trinh-lai/`, {}, tieuDe(khoa)),
 
   // ── Hành động người ký ───────────────────────────────────────────────────
-  ky: (id: number, khoa: string, body: { khoa_ky: number; hash_tai_lieu: string; chu_ky_so: string; ghi_chu_ky: string }) =>
-    apiClient.post<HoSoChiTiet>(`${SIGNING_BASE}/trinh-ky/${id}/ky/`, body, tieuDe(khoa)),
+  ky: (id: number, khoa: string, body: { khoa_ky: number; hash_tai_lieu: string; pin: string; ghi_chu_ky: string }) => {
+    yeuCauKenhKyAnToan();
+    return apiClient.post<HoSoChiTiet>(`${SIGNING_BASE}/trinh-ky/${id}/ky/`, body, tieuDe(khoa));
+  },
   tuChoi: (id: number, khoa: string, ly_do_tu_choi: string) =>
     apiClient.post<HoSoChiTiet>(`${SIGNING_BASE}/trinh-ky/${id}/tu-choi/`, { ly_do_tu_choi }, tieuDe(khoa)),
   thuHoi: (id: number, khoa: string) =>
@@ -223,10 +257,15 @@ export const signingApi = {
   // ── Khóa ký, PIN ─────────────────────────────────────────────────────────
   // ── Ảnh chữ ký cá nhân (Issue #424) ──────────────────────────────────────
   anhChuKyCaNhan: () => apiClient.get<ThongTinAnhChuKyCaNhan>(`${SIGNING_BASE}/anh-chu-ky-ca-nhan/`),
-  taiLenAnhChuKy: (tep: Blob | File) => {
+  taiLenAnhChuKy: (tep: Blob | File | string) => {
+    if (typeof tep === 'string') {
+      return apiClient.post<ThongTinAnhChuKyCaNhan>(`${SIGNING_BASE}/anh-chu-ky-ca-nhan/`, {
+        du_lieu_base64: tep,
+      });
+    }
     const form = new FormData();
     form.append('tep', tep, 'signature.png');
-    return apiClient.post<ThongTinAnhChuKyCaNhan>(`${SIGNING_BASE}/anh-chu-ky-ca-nhan/`, form);
+    return postForm<ThongTinAnhChuKyCaNhan>('/anh-chu-ky-ca-nhan/', form);
   },
   xoaAnhChuKy: () => apiClient.delete<void>(`${SIGNING_BASE}/anh-chu-ky-ca-nhan/`),
 
@@ -244,19 +283,33 @@ export const signingApi = {
   dangKyKhoa: (ma_khoa: string, khoa_cong_khai: string) =>
     apiClient.post<KhoaKy>(`${SIGNING_BASE}/khoa/`, { ma_khoa, khoa_cong_khai, ngay_hieu_luc: new Date().toISOString() }),
   thachThuc: (id: number) => apiClient.get<{ thach_thuc: string }>(`${SIGNING_BASE}/khoa/${id}/thach-thuc/`),
-  xacMinhKhoa: (id: number, chu_ky_so: string) =>
-    apiClient.post<KhoaKy>(`${SIGNING_BASE}/khoa/${id}/xac-minh/`, { chu_ky_so }),
+  xacMinhKhoa: (id: number, thach_thuc: string, chu_ky_so: string) =>
+    apiClient.post<KhoaKy>(`${SIGNING_BASE}/khoa/${id}/xac-minh/`, { thach_thuc, chu_ky_so }),
+  datLaiPinYeuCau: () =>
+    apiClient.post<{ het_han: string; gian_cach_giay: number }>(`${SIGNING_BASE}/dat-lai-pin/yeu-cau/`, {}),
+  datLaiPinXacNhan: (ma: string, pin_moi: string) => {
+    yeuCauKenhKyAnToan();
+    return apiClient.post<{ da_dat_lai_pin: boolean; khoa: number }>(
+      `${SIGNING_BASE}/dat-lai-pin/xac-nhan/`, { ma, pin_moi });
+  },
+  /** MFA khi ký (#509): gửi mã 6 chữ số tới email; `gian_cach_giay` là thời gian tối thiểu giữa hai lần gửi. */
+  mfaKyYeuCau: () =>
+    apiClient.post<{ het_han: string; gian_cach_giay: number }>(`${SIGNING_BASE}/mfa/yeu-cau/`, {}),
+  mfaKyXacMinh: (ma: string) =>
+    apiClient.post<{ da_xac_thuc: boolean; het_han: string }>(`${SIGNING_BASE}/mfa/xac-minh/`, { ma }),
   kichHoatKhoa: (id: number) => apiClient.post<KhoaKy>(`${SIGNING_BASE}/khoa/${id}/kich-hoat/`, {}),
   /** Đổi thiết bị: khóa cũ DA_XOAY_VONG, khóa mới (đã xác minh) thành HOAT_DONG. */
   xoayVongKhoa: (id: number, khoa_moi: number) =>
     apiClient.post<KhoaKy>(`${SIGNING_BASE}/khoa/${id}/xoay-vong/`, { khoa_moi }),
   thuHoiKhoa: (id: number, ly_do: string) => apiClient.post<KhoaKy>(`${SIGNING_BASE}/khoa/${id}/thu-hoi/`, { ly_do }),
-  datPin: (id: number, xac_minh_pin: string, tham_so_kdf: ThamSoKdf) =>
-    apiClient.post<{ manh_bi_mat: string; tham_so_kdf: ThamSoKdf }>(
-      `${SIGNING_BASE}/khoa/${id}/dat-pin/`, { xac_minh_pin, tham_so_kdf }),
-  moKhoaKy: (id: number, xac_minh_pin: string) =>
-    apiClient.post<{ manh_bi_mat: string; tham_so_kdf: ThamSoKdf }>(`${SIGNING_BASE}/khoa/${id}/mo-khoa-ky/`, { xac_minh_pin }),
-  doiPin: (id: number, xac_minh_pin_cu: string, xac_minh_pin_moi: string, tham_so_kdf: ThamSoKdf) =>
-    apiClient.post<{ manh_bi_mat: string; manh_bi_mat_cu: string; tham_so_kdf: ThamSoKdf }>(
-      `${SIGNING_BASE}/khoa/${id}/doi-pin/`, { xac_minh_pin_cu, xac_minh_pin_moi, tham_so_kdf }),
+  datPin: (id: number, pin: string, khoa_bi_mat_pkcs8: string, tham_so_kdf: ThamSoKdf) => {
+    yeuCauKenhKyAnToan();
+    return apiClient.post<{ khoa: number; da_dat_pin: boolean }>(
+      `${SIGNING_BASE}/khoa/${id}/dat-pin/`, { pin, khoa_bi_mat_pkcs8, tham_so_kdf });
+  },
+  doiPin: (id: number, pin_cu: string, pin_moi: string, tham_so_kdf: ThamSoKdf) => {
+    yeuCauKenhKyAnToan();
+    return apiClient.post<{ khoa: number; da_dat_pin: boolean }>(
+      `${SIGNING_BASE}/khoa/${id}/doi-pin/`, { pin_cu, pin_moi, tham_so_kdf });
+  },
 };

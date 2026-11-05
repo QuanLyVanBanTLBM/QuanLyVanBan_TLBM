@@ -76,6 +76,8 @@
       "unitsCount": "Số đơn vị trực thuộc",
       "unitCountLabel": "{count} đơn vị",
       "paginationInfo": "Hiển thị {from} - {to} trên tổng số {total}",
+      "prevPage": "Trang trước",
+      "nextPage": "Trang sau",
       "emptyValue": "—"
     },
     "actions": {
@@ -87,6 +89,7 @@
       "filterUnitSelectRegionFirst": "Chọn Khối trước",
       "exportExcel": "Xuất danh bạ",
       "exporting": "Đang xuất tệp...",
+      "exportRegion": "Xuất danh bạ Khối này",
       "save": "Lưu thay đổi",
       "create": "Tạo mới",
       "cancel": "Hủy bỏ",

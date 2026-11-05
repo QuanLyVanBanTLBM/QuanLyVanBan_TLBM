@@ -20,6 +20,8 @@ export interface NguoiDungHienTai {
   co_anh_chu_ky?: boolean;
   /** Quyền ký đang bị quản trị viên khóa (null: không bị khóa); không kèm lý do nội bộ. */
   khoa_quyen_ky?: { khoa_den: string | null } | null;
+  /** MFA qua email khi ký (#509): `bat` theo cấu hình máy chủ; `da_xac_thuc` theo access token hiện tại. */
+  mfa_ky?: { bat: boolean; da_xac_thuc: boolean; het_han: string | null };
 }
 
 export type ThoiHanKhoaQuyenKy = '1_gio' | '8_gio' | '24_gio' | 'den_khi_bat_lai';
@@ -33,7 +35,7 @@ export interface QuanTriNguoiDung {
   don_vi: string | null;
   co_quyen_ky: boolean;
   khoa_ky: { id: number; ma_khoa: string; trang_thai: string } | null;
-  pin: { so_lan_sai: number; khoa_den: string | null; khoa_cung: boolean; dang_khoa: boolean } | null;
+  pin: { so_lan_sai: number } | null;
   khoa_quyen_ky: { id: number; khoa_tu: string; khoa_den: string | null; ly_do: string; nguoi_khoa_id: number } | null;
 }
 
@@ -119,6 +121,16 @@ export interface NguoiKyLuot {
   chieu_rong_khung: string | null;
   chieu_cao_khung: string | null;
   chu_ky: ChuKyTomTat | null;
+  /** Máy chủ chỉ trả true cho người tạo hoặc quản trị viên khi người ký đang chờ có quyền ký bị khóa. */
+  co_the_thay?: boolean;
+}
+
+/** Tài khoản có thể thay một người ký (GET /trinh-ky/<id>/thay-nguoi-ky/). */
+export interface UngVienThayNguoiKy {
+  id: number;
+  ten: string;
+  chuc_vu: string | null;
+  don_vi: string | null;
 }
 
 export interface CapLuot {

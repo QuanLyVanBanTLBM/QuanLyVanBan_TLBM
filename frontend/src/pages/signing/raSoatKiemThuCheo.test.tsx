@@ -314,7 +314,7 @@ describe('Vào thẳng đường dẫn khi thiếu quyền', () => {
     api.khoa.mockResolvedValue([]);
     boc(<KhoaPage />, CHUYEN_VIEN);
     expect(await screen.findByText(/chưa được cấp quyền ký nên không cần khóa ký/)).toBeInTheDocument();
-    expect(screen.queryByLabelText('PIN mới (8 chữ số)')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('PIN mới (6 chữ số)')).not.toBeInTheDocument();
   });
 
   it('Tạo hồ sơ: không có quyền tạo thì báo ngay, không hiện form', async () => {

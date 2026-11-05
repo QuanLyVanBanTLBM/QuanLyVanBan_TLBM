@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { ActivePageId } from '@app-types/navigation';
 import { useTranslation } from '@i18n/translate';
+import { formatUserName } from '@lib/roleUtils';
+import { apiClient } from '@lib/apiClient';
 import { Badge } from '@components/common';
 import BirthdaysWidget, { BirthdayEmployee } from './BirthdaysWidget';
 import DocumentPreviewModal from './DocumentPreviewModal';
@@ -80,12 +82,22 @@ export interface SigningRequestItem {
   variant?: 'success' | 'warning' | 'info' | 'danger';
 }
 
+export interface YearlyComparisonItem {
+  year: number;
+  incoming: number;
+  outgoing: number;
+}
+
 export interface ModernDashboardViewProps {
   onNavigate?: (page: ActivePageId) => void;
   incomingCount?: number;
   outgoingCount?: number;
   tasksCount?: number;
   signingCount?: number;
+  selectedYear?: number;
+  availableYears?: number[];
+  yearlyComparison?: YearlyComparisonItem[];
+  onYearChange?: (year: number) => void;
   incomingDocuments?: DocumentItem[];
   outgoingDocuments?: DocumentItem[];
   tasks?: TaskItem[];
@@ -94,12 +106,32 @@ export interface ModernDashboardViewProps {
   birthdays?: BirthdayEmployee[];
 }
 
+interface ApiDocumentSearchAttachment {
+  ten_file?: string;
+  duong_dan?: string;
+}
+
+interface ApiDocumentSearchItem {
+  id: number | string;
+  so_hieu?: string;
+  trich_yeu?: string;
+  ngay_den?: string;
+  ngay_ban_hanh?: string;
+  noi_ban_hanh?: string;
+  nguoi_ky?: string;
+  dinh_kem?: ApiDocumentSearchAttachment[];
+}
+
 export default function ModernDashboardView({
   onNavigate = () => {},
   incomingCount = 0,
   outgoingCount = 0,
   tasksCount = 0,
   signingCount = 0,
+  selectedYear = new Date().getFullYear(),
+  availableYears = [2024, 2025, 2026],
+  yearlyComparison = [],
+  onYearChange,
   incomingDocuments = [],
   outgoingDocuments = [],
   tasks = [],
@@ -107,7 +139,7 @@ export default function ModernDashboardView({
   signingRequests = [],
   birthdays,
 }: ModernDashboardViewProps) {
-  const { t } = useTranslation();
+  const { t, currentLang } = useTranslation();
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [taskFilter, setTaskFilter] = useState<'processing' | 'completed' | 'overdue' | 'pending'>('processing');
@@ -119,6 +151,68 @@ export default function ModernDashboardView({
   const [isScrolled, setIsScrolled] = useState<boolean>(false);
   const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
   const compactInputRef = useRef<HTMLInputElement>(null);
+  const [isSearchingServer, setIsSearchingServer] = useState<boolean>(false);
+  const [serverIncoming, setServerIncoming] = useState<DocumentItem[] | null>(null);
+  const [serverOutgoing, setServerOutgoing] = useState<DocumentItem[] | null>(null);
+
+  useEffect(() => {
+    const trimmed = searchTerm.trim();
+    const timer = setTimeout(async () => {
+      if (!trimmed) {
+        setServerIncoming(null);
+        setServerOutgoing(null);
+        setIsSearchingServer(false);
+        return;
+      }
+
+      setIsSearchingServer(true);
+      try {
+        const [resDen, resDi] = await Promise.allSettled([
+          apiClient<{ results: ApiDocumentSearchItem[] }>(`/api/documents/den/?q=${encodeURIComponent(trimmed)}`),
+          apiClient<{ results: ApiDocumentSearchItem[] }>(`/api/documents/di/?q=${encodeURIComponent(trimmed)}`),
+        ]);
+
+        if (resDen.status === 'fulfilled' && resDen.value?.results) {
+          const mappedDen: DocumentItem[] = resDen.value.results.map((d: ApiDocumentSearchItem) => ({
+            id: d.id,
+            code: d.so_hieu || '',
+            title: d.trich_yeu || '',
+            date: d.ngay_den ? new Date(d.ngay_den).toLocaleDateString('vi-VN') : '',
+            sender: d.noi_ban_hanh,
+            attachments: (d.dinh_kem || []).map((att: ApiDocumentSearchAttachment) => ({
+              name: att.ten_file || '',
+              url: att.duong_dan || '',
+              size: '',
+            })),
+          }));
+          setServerIncoming(mappedDen);
+        }
+
+        if (resDi.status === 'fulfilled' && resDi.value?.results) {
+          const mappedDi: DocumentItem[] = resDi.value.results.map((d: ApiDocumentSearchItem) => ({
+            id: d.id,
+            code: d.so_hieu || '',
+            title: d.trich_yeu || '',
+            date: d.ngay_ban_hanh ? new Date(d.ngay_ban_hanh).toLocaleDateString('vi-VN') : '',
+            sender: d.nguoi_ky,
+            recipient: d.noi_ban_hanh,
+            attachments: (d.dinh_kem || []).map((att: ApiDocumentSearchAttachment) => ({
+              name: att.ten_file || '',
+              url: att.duong_dan || '',
+              size: '',
+            })),
+          }));
+          setServerOutgoing(mappedDi);
+        }
+      } catch {
+        // Fallback to client search
+      } finally {
+        setIsSearchingServer(false);
+      }
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
   useEffect(() => {
     const updateTarget = () => {
@@ -176,20 +270,22 @@ export default function ModernDashboardView({
   };
 
   const filteredIncoming = useMemo(() => {
+    if (serverIncoming !== null) return serverIncoming;
     if (!searchTerm.trim()) return incomingDocuments;
     const term = searchTerm.toLowerCase();
     return incomingDocuments.filter(
       (doc) => doc.code.toLowerCase().includes(term) || doc.title.toLowerCase().includes(term)
     );
-  }, [incomingDocuments, searchTerm]);
+  }, [incomingDocuments, searchTerm, serverIncoming]);
 
   const filteredOutgoing = useMemo(() => {
+    if (serverOutgoing !== null) return serverOutgoing;
     if (!searchTerm.trim()) return outgoingDocuments;
     const term = searchTerm.toLowerCase();
     return outgoingDocuments.filter(
       (doc) => doc.code.toLowerCase().includes(term) || doc.title.toLowerCase().includes(term)
     );
-  }, [outgoingDocuments, searchTerm]);
+  }, [outgoingDocuments, searchTerm, serverOutgoing]);
 
   const filteredTasks = useMemo(() => {
     return tasks.filter((task) => task.status === taskFilter);
@@ -204,13 +300,24 @@ export default function ModernDashboardView({
   }, [resources, searchTerm]);
 
   const filteredSigning = useMemo(() => {
-    if (!searchTerm.trim()) return signingRequests;
-    const term = searchTerm.toLowerCase();
-    return signingRequests.filter((s) => {
-      const code = (s.ma_trinh_ky || s.code || '').toLowerCase();
-      const title = (s.tieu_de || s.title || '').toLowerCase();
-      const submitter = (s.nguoi_trinh || s.submitter || '').toLowerCase();
-      return code.includes(term) || title.includes(term) || submitter.includes(term);
+    let list = signingRequests;
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase();
+      list = signingRequests.filter((s) => {
+        const code = (s.ma_trinh_ky || s.code || '').toLowerCase();
+        const title = (s.tieu_de || s.title || '').toLowerCase();
+        const submitter = (s.nguoi_trinh || s.submitter || '').toLowerCase();
+        return code.includes(term) || title.includes(term) || submitter.includes(term);
+      });
+    }
+    // Sắp xếp ưu tiên: Phiếu "Ký ngay" (can_toi_ky === true) ĐƯA LÊN ĐẦU DANH SÁCH
+    return [...list].sort((a, b) => {
+      const aCanSign = a.can_toi_ky ? 1 : 0;
+      const bCanSign = b.can_toi_ky ? 1 : 0;
+      if (bCanSign !== aCanSign) {
+        return bCanSign - aCanSign;
+      }
+      return 0;
     });
   }, [signingRequests, searchTerm]);
 
@@ -266,7 +373,7 @@ export default function ModernDashboardView({
             placeholder={t('dashboardDetails.searchPlaceholder')}
             className="w-full pl-12 pr-10 py-3.5 rounded-xl border border-border-subtle bg-surface text-main text-base shadow-xs focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all placeholder:text-muted"
           />
-          <i className="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-muted text-lg pointer-events-none" />
+          <i className={`fa-solid ${isSearchingServer ? 'fa-spinner fa-spin text-primary' : 'fa-magnifying-glass text-muted'} absolute left-4 top-1/2 -translate-y-1/2 text-lg pointer-events-none transition-colors`} />
           {searchTerm && (
             <button
               type="button"
@@ -289,6 +396,71 @@ export default function ModernDashboardView({
           <i className="fa-solid fa-calendar-plus text-white text-base" />
           <span className="whitespace-nowrap">{t('dashboardDetails.bookMeetingRoomBtn') || 'Đặt phòng họp'}</span>
         </button>
+      </div>
+
+      {/* Khối Thống kê theo năm & Đối chiếu nhiều năm (Bug 2) */}
+      <div className="bg-surface border border-border-subtle rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-primary-subtle text-primary flex items-center justify-center text-sm font-bold">
+              <i className="fa-solid fa-chart-simple" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-main leading-tight">
+                Thống Kê Số Lượng Văn Bản Đi & Đến Theo Năm ({availableYears.length > 0 ? `${availableYears[0]} - ${availableYears[availableYears.length - 1]}` : '2024 - 2026'})
+              </h3>
+              <span className="text-xs text-secondary">
+                Dữ liệu đồng bộ trực tiếp từ CSDL PostgreSQL (Nhóm 1 & Nhóm 2)
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label htmlFor="dashboard-year-select" className="text-xs font-semibold text-secondary whitespace-nowrap">
+              Chọn năm:
+            </label>
+            <select
+              id="dashboard-year-select"
+              value={selectedYear}
+              onChange={(e) => onYearChange?.(Number(e.target.value))}
+              className="px-3 py-1.5 rounded-xl border border-border-subtle bg-surface-elevated text-main text-sm font-bold focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary cursor-pointer transition-all shadow-2xs"
+            >
+              {availableYears.map((y) => (
+                <option key={y} value={y}>
+                  Năm {y}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {yearlyComparison.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-border-subtle">
+            {yearlyComparison.map((item) => (
+              <div
+                key={item.year}
+                onClick={() => onYearChange?.(item.year)}
+                className={`p-3 rounded-xl border transition-all cursor-pointer ${
+                  item.year === selectedYear
+                    ? 'bg-primary-subtle/40 border-primary/40 shadow-xs'
+                    : 'bg-surface-elevated border-border-subtle hover:bg-surface-hover'
+                }`}
+              >
+                <div className="flex items-center justify-between text-xs font-bold text-secondary mb-1.5">
+                  <span className={item.year === selectedYear ? 'text-primary' : ''}>Năm {item.year}</span>
+                  {item.year === selectedYear && (
+                    <span className="px-1.5 py-0.5 rounded text-[10px] bg-primary text-white font-semibold">Đang chọn</span>
+                  )}
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-primary font-medium">Đến: <b>{item.incoming}</b></span>
+                  <span className="text-success font-medium">Đi: <b>{item.outgoing}</b></span>
+                  <span className="text-main font-bold">Tổng: {item.incoming + item.outgoing}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* 2. Modern KPI Deck (4 cards cân đối: Đến, Đi, Nhiệm vụ, Chờ Ký) */}
@@ -765,14 +937,22 @@ export default function ModernDashboardView({
                   {filteredSigning.slice(0, 5).map((row) => {
                     const code = row.ma_trinh_ky || row.code || `TK-${row.id}`;
                     const title = row.tieu_de || row.title || 'Hồ sơ trình ký';
-                    const submitter = row.nguoi_trinh || row.submitter || 'Cán bộ';
+                    const submitter = formatUserName(row.nguoi_trinh || row.submitter || 'Cán bộ', currentLang);
                     const date = row.ngay_gui || row.date || '';
                     const rawStatus = row.trang_thai || row.status || 'CHO_KY';
                     const displayStatus = (rawStatus === 'CHO_KY' || rawStatus === 'pending') && row.trang_thai_luot === 'YEU_CAU_SUA'
                       ? 'YEU_CAU_SUA'
                       : rawStatus;
 
+                    const canSign = !!row.can_toi_ky;
+
                     const getSigningStatusInfo = (st: string) => {
+                      if (canSign) {
+                        return {
+                          variant: 'primary' as const,
+                          label: t('dashboardDetails.signingStatuses.KY_NGAY') || 'Ký ngay',
+                        };
+                      }
                       switch (st) {
                         case 'CHO_KY':
                         case 'pending':
@@ -830,9 +1010,8 @@ export default function ModernDashboardView({
                     };
 
                     const statusInfo = getSigningStatusInfo(displayStatus);
-                    const statusVariant = row.variant || statusInfo.variant;
+                    const statusVariant = canSign ? 'primary' : (row.variant || statusInfo.variant);
                     const statusLabel = statusInfo.label || row.nhan_trang_thai || row.trang_thai_display || row.statusLabel || rawStatus;
-                    const canSign = !!row.can_toi_ky;
 
                     return (
                       <tr

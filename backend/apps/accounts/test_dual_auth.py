@@ -265,3 +265,74 @@ class DualAuthenticationTests(TestCase):
         self.assertEqual(len(result["data"]), 1)
         self.assertEqual(result["data"][0]["fullName"], "Admin Core")
 
+    def test_check_alpaca_auth_success_with_list_payload(self):
+        """Kiểm tra check_alpaca_auth khi máy chủ Bảo Long thật trả về Data là list thông tin CBNV (như tài khoản duytp)."""
+        self.provider.side_effect = None
+        self.provider.return_value.__enter__.return_value.read.return_value = json.dumps({
+            "Success": True,
+            "Data": [{
+                "userName": "duytp",
+                "fullName": "Trần Phương Duy",
+                "email": "duy_tp@baohiembaolong.vn",
+            }],
+            "StatusCode": "200",
+        }).encode()
+
+        result = check_alpaca_auth("duytp", "Phong!@#$")
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], 7)
+        self.assertEqual(result["status_name"], "PASSWORD_CORRECT")
+        self.assertEqual(result["user_info"]["fullName"], "Trần Phương Duy")
+
+    def test_check_alpaca_auth_handles_http_400_format_error(self):
+        """Kiểm tra check_alpaca_auth khi máy chủ Bảo Long trả về lỗi HTTP 400 do mật khẩu sai định dạng."""
+        from io import BytesIO
+        err_body = json.dumps({
+            "errorCode": "SHARE_COMMON.BAD_REQUEST",
+            "message": ["Mật khẩu không đúng định dạng"],
+            "Success": False,
+            "StatusCode": "400",
+        }).encode("utf-8")
+        http_err = urllib.error.HTTPError(
+            url="https://api2.bhbl.vn/auth-command/public/user/check-auth-user",
+            code=400,
+            msg="Bad Request",
+            hdrs={},
+            fp=BytesIO(err_body),
+        )
+        self.provider.side_effect = http_err
+
+        result = check_alpaca_auth("duytp", "InvalidFormatPass")
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], 6)
+        self.assertEqual(result["status_name"], "PASSWORD_INCORRECT")
+
+    def test_jit_provisioning_for_authenticated_alpaca_user(self):
+        """Kiểm tra cơ chế Just-In-Time Provisioning: khi API Bảo Long trả về hồ sơ CBNV thật, tự động kích hoạt tài khoản."""
+        self.provider.side_effect = None
+        self.provider.return_value.__enter__.return_value.read.return_value = json.dumps({
+            "Success": True,
+            "Data": [{
+                "userName": "duytp",
+                "fullName": "Trần Phương Duy",
+                "email": "duy_tp@baohiembaolong.vn",
+                "phoneNumber": "0989433920",
+                "departmentName": "Công nghệ thông tin",
+                "positionName": "Trưởng Bộ phận",
+            }],
+            "StatusCode": "200",
+        }).encode()
+
+        # Đảm bảo trước khi login chưa có tài khoản duytp
+        User.objects.filter(username="duytp").delete()
+
+        response = self.client.post(
+            "/api/auth/login/",
+            {"username": "duytp", "password": "Phong!@#$"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data["success"])
+        self.assertEqual(response.data["auth_provider"], "alpaca_api")
+        self.assertEqual(response.data["user"]["fullName"], "Trần Phương Duy")
+        self.assertTrue(User.objects.filter(username="duytp").exists())

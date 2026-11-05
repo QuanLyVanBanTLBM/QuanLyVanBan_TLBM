@@ -247,6 +247,21 @@ elif not OLDFILE_STORAGE_ROOT:
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# Celery uses Upstash's TCP endpoint. Eager mode preserves the existing synchronous
+# behavior in local/test environments without REDIS_URL; a configured broker is used directly.
+REDIS_URL = os.getenv("REDIS_URL", "").strip()
+CELERY_BROKER_URL = REDIS_URL or "memory://"
+CELERY_TASK_ALWAYS_EAGER = not REDIS_URL
+CELERY_TASK_EAGER_PROPAGATES = True
+CELERY_TASK_IGNORE_RESULT = True
+CELERY_TASK_SERIALIZER = "json"
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+# Reduce broker requests while the queue is idle; task pickup can wait up to 10s.
+CELERY_BROKER_TRANSPORT_OPTIONS = {"polling_interval": 10}
+
 # Email (Django 6.1 MAILERS)
 # Keep console delivery until an SMTP host is explicitly configured.
 email_host = os.getenv("EMAIL_HOST", "").strip()
@@ -315,10 +330,13 @@ REST_FRAMEWORK = {
 # ─────────────────────────────────────────────────
 SIGNING_DOCUMENT_ROOT = os.environ.get("SIGNING_DOCUMENT_ROOT", "")
 
-# Trình ký — bí mật máy chủ để băm mã xác minh PIN và mã hóa k_srv (plan mục 3.4).
-# Bắt buộc đặt riêng trên Staging/Production; để trống thì dùng SECRET_KEY (chỉ cho môi trường dev).
-# Đổi giá trị này làm mọi PIN đã đặt mất hiệu lực (người dùng phải đặt lại).
+# Trình ký — SIGNING_PIN_SECRET tiếp tục dùng để HMAC mã đặt lại PIN qua email.
+# Bí mật này bắt buộc riêng trên Staging/Production; chức năng mới không dùng nó làm pepper mã hóa khóa.
 SIGNING_PIN_SECRET = os.environ.get("SIGNING_PIN_SECRET", "")
+
+# Pepper riêng để dẫn xuất khóa AES từ salt và xác minh PIN (#447 partition 1); mã hóa độc lập PIN.
+# Bắt buộc giữ ổn định trong môi trường; thay đổi pepper làm khóa đang lưu không thể giải mã.
+SIGNING_KEY_PEPPER = os.environ.get("SIGNING_KEY_PEPPER", "")
 
 # Trình ký — phông chữ có dấu tiếng Việt để in tệp PDF hoàn tất (Phase 10). Để trống thì tự dò phông hệ thống
 # (DejaVu Sans, Noto Sans, Liberation Sans, Arial); không có phông nào thì tạo tệp báo lỗi `thieu_phong_chu`.
@@ -366,3 +384,10 @@ ALPACA_GET_USER_INFO_URL = os.getenv(
     "https://api2.bhbl.vn/auth-command/public/user/get-info-user",
 )
 ALPACA_BEARER_AUTH_KEY = os.getenv("ALPACA_BEARER_AUTH_KEY", "")
+
+# Email CBNV chỉ nhận tên miền công ty (chốt 04/11/2026). Phân tách bằng dấu phẩy; đặt rỗng để không giới hạn.
+EMPLOYEE_EMAIL_ALLOWED_DOMAINS = tuple(
+    domain.strip().lower()
+    for domain in os.getenv("EMPLOYEE_EMAIL_ALLOWED_DOMAINS", "baolong.vn").split(",")
+    if domain.strip()
+)

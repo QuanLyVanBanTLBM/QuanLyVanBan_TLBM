@@ -85,7 +85,7 @@ class EmployeeBaseTestCase(APITestCase):
         # Superuser
         self.admin_user = User.objects.create_superuser(
             username="admin_user",
-            email="admin@donvi.gov.vn",
+            email="admin.test@baolong.vn",
             password="SuperPassword123",
             ho_ten="Quản trị viên",
             don_vi=self.don_vi_1,
@@ -95,7 +95,7 @@ class EmployeeBaseTestCase(APITestCase):
         # User thường (không có quyền view_full_cbnv)
         self.normal_user = User.objects.create_user(
             username="normal_user",
-            email="normal@donvi.gov.vn",
+            email="normal@baolong.vn",
             password="NormalPassword123",
             ho_ten="Nguyễn Văn Bình kiểm thử",
             ngay_sinh=date(1995, 5, 20),
@@ -107,7 +107,7 @@ class EmployeeBaseTestCase(APITestCase):
         # User có quyền xem thông tin nhạy cảm
         self.sensitive_user = User.objects.create_user(
             username="sensitive_user",
-            email="sensitive@donvi.gov.vn",
+            email="sensitive@baolong.vn",
             password="SensitivePassword123",
             ho_ten="Trần Văn Hùng",
             ngay_sinh=date(1988, 10, 15),
@@ -132,7 +132,7 @@ class EmployeeBaseTestCase(APITestCase):
         # User không có quyền nào (để test 403)
         self.no_perm_user = User.objects.create_user(
             username="no_perm_user",
-            email="noperm@donvi.gov.vn",
+            email="noperm@baolong.vn",
             password="NoPermPassword123",
             ho_ten="Người dùng không quyền",
             don_vi=self.don_vi_1,
@@ -142,7 +142,7 @@ class EmployeeBaseTestCase(APITestCase):
         # User chỉ có quyền thay đổi thông tin bản thân (change_self_cbnv)
         self.self_user = User.objects.create_user(
             username="self_user",
-            email="self@donvi.gov.vn",
+            email="self@baolong.vn",
             password="SelfPassword123",
             ho_ten="Người dùng sửa bản thân",
             don_vi=self.don_vi_1,
@@ -167,7 +167,7 @@ class EmployeeCRUDAndFilterTests(EmployeeBaseTestCase):
         self.client.force_authenticate(user=self.admin_user)
         payload = {
             "ho_ten": "Lê Thị Mai",
-            "email": "mailt@donvi.gov.vn",
+            "email": "mailt@baolong.vn",
             "ngay_sinh": "1992-08-25",
             "don_vi_id": self.don_vi_1.id,
             "chuc_vu_id": self.cv_chuyen_vien.id,
@@ -182,13 +182,13 @@ class EmployeeCRUDAndFilterTests(EmployeeBaseTestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         data = response.json()
         self.assertEqual(data["ho_ten"], "Lê Thị Mai")
-        self.assertEqual(data["email"], "mailt@donvi.gov.vn")
+        self.assertEqual(data["email"], "mailt@baolong.vn")
         self.assertEqual(data["don_vi_ten"], "Văn phòng Viện")
         self.assertEqual(data["chuc_vu_ten"], "Chuyên viên")
         self.assertIsNotNone(data["temporary_password"])
 
         # Kiểm tra bản ghi User được tạo trong DB
-        user = User.objects.get(email="mailt@donvi.gov.vn")
+        user = User.objects.get(email="mailt@baolong.vn")
         self.assertTrue(user.is_active)
         self.assertTrue(user.check_password(data["temporary_password"]))
         # Kiểm tra nhóm quyền được liên kết
@@ -199,7 +199,7 @@ class EmployeeCRUDAndFilterTests(EmployeeBaseTestCase):
         self.client.force_authenticate(user=self.admin_user)
         payload = {
             "ho_ten": "Nguyễn Văn Trùng",
-            "email": "normal@donvi.gov.vn",  # Trùng với self.normal_user
+            "email": "normal@baolong.vn",  # Trùng với self.normal_user
             "ngay_sinh": "1990-01-01",
         }
         response = self.client.post(self.employee_list_url, payload, format="json")
@@ -211,7 +211,7 @@ class EmployeeCRUDAndFilterTests(EmployeeBaseTestCase):
         self.client.force_authenticate(user=self.admin_user)
         payload = {
             "ho_ten": "Trần Thị Sai SĐT",
-            "email": "saisdt@donvi.gov.vn",
+            "email": "saisdt@baolong.vn",
             "ngay_sinh": "1990-01-01",
             "sdt": "123456",  # Không phải số điện thoại VN hợp lệ
         }
@@ -317,7 +317,7 @@ class EmployeeCRUDAndFilterTests(EmployeeBaseTestCase):
         self.client.force_authenticate(user=self.admin_user)
         target = User.objects.create_user(
             username="to_delete_wrong_pwd",
-            email="to_delete_wrong_pwd@donvi.gov.vn",
+            email="to_delete_wrong_pwd@baolong.vn",
             password="Password123",
             ho_ten="Sắp Xóa",
             ngay_sinh=date(1995, 5, 5),
@@ -335,7 +335,7 @@ class EmployeeCRUDAndFilterTests(EmployeeBaseTestCase):
         self.client.force_authenticate(user=self.admin_user)
         target = User.objects.create_user(
             username="to_delete_ok_pwd",
-            email="to_delete_ok_pwd@donvi.gov.vn",
+            email="to_delete_ok_pwd@baolong.vn",
             password="Password123",
             ho_ten="Sắp Xóa Thành Công",
             ngay_sinh=date(1995, 5, 5),
@@ -351,13 +351,13 @@ class EmployeeCRUDAndFilterTests(EmployeeBaseTestCase):
     def test_create_employee_requires_unit_and_position(self):
         """SQL_Fix4: don_vi_id và chuc_vu_id NOT NULL -> thiếu là 400."""
         self.client.force_authenticate(user=self.admin_user)
-        payload = {"ho_ten": "Thiếu Đơn Vị", "email": "thieu@donvi.gov.vn", "ngay_sinh": "1990-01-01"}
+        payload = {"ho_ten": "Thiếu Đơn Vị", "email": "thieu@baolong.vn", "ngay_sinh": "1990-01-01"}
         response = self.client.post(self.employee_list_url, payload, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         body = response.json()
         self.assertIn("don_vi_id", body)
         self.assertIn("chuc_vu_id", body)
-        self.assertFalse(User.objects.filter(email="thieu@donvi.gov.vn").exists())
+        self.assertFalse(User.objects.filter(email="thieu@baolong.vn").exists())
 
     def test_status_is_stored_with_ddl_enum_values(self):
         """API nhận và trả đúng giá trị ENUM employee_work_status của DDL."""
@@ -398,8 +398,8 @@ class EmployeeSecurityAndPrivacyTests(EmployeeBaseTestCase):
         self.assertFalse(data["has_sensitive_permission"])
         self.assertEqual(data["nhom_quyen"], [])
 
-    def test_birthday_full_for_user_with_sensitive_perm(self):
-        """User có quyền view_full_cbnv: xem được ngày sinh đầy đủ DD/MM/YYYY và nhóm quyền."""
+    def test_birthday_masked_for_user_with_sensitive_perm(self):
+        """Quyền xem nhóm nhạy cảm không cho phép xem năm sinh người khác."""
         self.client.force_authenticate(user=self.sensitive_user)
         # Gán nhóm quyền cho normal_profile
         self.normal_user.groups.add(self.group_van_thu)
@@ -409,24 +409,23 @@ class EmployeeSecurityAndPrivacyTests(EmployeeBaseTestCase):
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         data = res.json()
 
-        # Ngày sinh gốc 1995-05-20 -> trả về đúng 20/05/1995 và ngay_sinh_iso là 1995-05-20
-        self.assertEqual(data["ngay_sinh"], "20/05/1995")
-        self.assertEqual(data.get("ngay_sinh_iso"), "1995-05-20")
-        self.assertFalse(data["is_birthday_masked"])
+        self.assertEqual(data["ngay_sinh"], "20/05/----")
+        self.assertIsNone(data.get("ngay_sinh_iso"))
+        self.assertTrue(data["is_birthday_masked"])
         self.assertTrue(data["has_sensitive_permission"])
         self.assertEqual(len(data["nhom_quyen"]), 1)
         self.assertEqual(data["nhom_quyen"][0]["name"], "Văn thư")
 
-    def test_superuser_has_sensitive_perm_by_default(self):
-        """Superuser luôn có toàn quyền xem ngày sinh đầy đủ."""
+    def test_superuser_cannot_view_other_employee_birth_year(self):
+        """Superuser vẫn chỉ xem được ngày sinh đầy đủ của chính mình."""
         self.client.force_authenticate(user=self.admin_user)
         detail_url = f"{self.employee_list_url}{self.normal_user.id}/"
         res = self.client.get(detail_url)
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         data = res.json()
-        self.assertEqual(data["ngay_sinh"], "20/05/1995")
-        self.assertEqual(data.get("ngay_sinh_iso"), "1995-05-20")
-        self.assertFalse(data["is_birthday_masked"])
+        self.assertEqual(data["ngay_sinh"], "20/05/----")
+        self.assertIsNone(data.get("ngay_sinh_iso"))
+        self.assertTrue(data["is_birthday_masked"])
 
     def test_owner_sees_unmasked_birthday(self):
         """Chủ tài khoản (dù không có quyền view_full_cbnv) luôn xem được ngày sinh đầy đủ của chính mình."""
@@ -537,7 +536,7 @@ class EmployeeExcelImportExportTests(EmployeeBaseTestCase):
         ws.append(["(Ghi chú)", "", "", "", "", "", "", "", "", ""])
 
         # Dòng 3: Dữ liệu hợp lệ
-        ws.append([1, "Đoàn Văn Hậu", "1999-04-19", "doanvanhau@donvi.gov.vn", "0912345679", "Văn phòng Viện", "Chuyên viên", "Chuyên viên đối ngoại", "Đang làm việc", "Ghi chú mẫu"])
+        ws.append([1, "Đoàn Văn Hậu", "1999-04-19", "doanvanhau@baolong.vn", "0912345679", "Văn phòng Viện", "Chuyên viên", "Chuyên viên đối ngoại", "Đang làm việc", "Ghi chú mẫu"])
 
         bio = BytesIO()
         wb.save(bio)
@@ -551,7 +550,7 @@ class EmployeeExcelImportExportTests(EmployeeBaseTestCase):
         self.assertEqual(data["created_count"], 1)
 
         # Kiểm tra bản ghi trong DB
-        self.assertTrue(User.objects.filter(email="doanvanhau@donvi.gov.vn").exists())
+        self.assertTrue(User.objects.filter(email="doanvanhau@baolong.vn").exists())
         self.assertTrue(User.objects.filter(ho_ten="Đoàn Văn Hậu", don_vi=self.don_vi_1).exists())
 
     def test_import_excel_prefetches_lookup_data_for_many_rows(self):
@@ -565,7 +564,7 @@ class EmployeeExcelImportExportTests(EmployeeBaseTestCase):
         ])
         for index in range(20):
             ws.append([
-                f"Nhân viên tối ưu {index}", "1990-01-01", f"fast-import-{index}@example.test",
+                f"Nhân viên tối ưu {index}", "1990-01-01", f"fast-import-{index}@baolong.vn",
                 "0912345678", self.khoi.ten, self.don_vi_1.ten, self.cv_chuyen_vien.name,
                 "", "Đang làm việc", "",
             ])
@@ -675,7 +674,7 @@ class EmployeeExcelImportExportTests(EmployeeBaseTestCase):
         ws.title = "Danh Sach CBNV"
         ws.append(["STT", "Họ và tên (*)", "Ngày sinh (*)", "Email (*)", "Số điện thoại", "Tên Đơn vị / Phòng ban (*)", "Tên Chức vụ (*)", "Chức danh", "Trạng thái", "Ghi chú"])
         ws.append(["(Ghi chú)", "", "", "", "", "", "", "", "", ""])
-        ws.append([1, "Lê Không Chức Vụ", "1990-01-01", "nochucvu@donvi.gov.vn", "0911223344", "Văn phòng Viện", "Chức Vụ Không Tồn Tại 999", "", "Đang làm việc", ""])
+        ws.append([1, "Lê Không Chức Vụ", "1990-01-01", "nochucvu@baolong.vn", "0911223344", "Văn phòng Viện", "Chức Vụ Không Tồn Tại 999", "", "Đang làm việc", ""])
 
         bio = BytesIO()
         wb.save(bio)
@@ -703,7 +702,7 @@ class EmployeeExcelImportExportTests(EmployeeBaseTestCase):
         ws.title = "Danh Sach CBNV"
         ws.append(["STT", "Họ và tên (*)", "Ngày sinh (*)", "Email (*)", "Số điện thoại", "Tên Đơn vị / Phòng ban (*)", "Tên Chức vụ (*)", "Chức danh", "Trạng thái", "Ghi chú"])
         ws.append(["(Ghi chú)", "", "", "", "", "", "", "", "", ""])
-        ws.append([1, "Nguyễn Trùng Đơn Vị", "1990-01-01", "trungdonvi@donvi.gov.vn", "0911223344", "Văn phòng Viện", "Chuyên viên", "", "Đang làm việc", ""])
+        ws.append([1, "Nguyễn Trùng Đơn Vị", "1990-01-01", "trungdonvi@baolong.vn", "0911223344", "Văn phòng Viện", "Chuyên viên", "", "Đang làm việc", ""])
 
         bio = BytesIO()
         wb.save(bio)
@@ -738,7 +737,7 @@ class EmployeeExcelImportExportTests(EmployeeBaseTestCase):
         ])
         ws.append(["(Ghi chú)", "", "", "", "", "", "", "", "", "", ""])
         ws.append([
-            1, "Nguyễn Trùng Đơn Vị", "1990-01-01", "trungdonvi.khoi2@donvi.gov.vn",
+            1, "Nguyễn Trùng Đơn Vị", "1990-01-01", "trungdonvi.khoi2@baolong.vn",
             "0911223345", khoi2.ten, self.don_vi_1.ten, "Chuyên viên", "",
             "Đang làm việc", "",
         ])
@@ -752,7 +751,7 @@ class EmployeeExcelImportExportTests(EmployeeBaseTestCase):
 
         self.assertEqual(res.status_code, status.HTTP_201_CREATED)
         self.assertEqual(res.json()["created_count"], 1)
-        imported_user = User.objects.get(email="trungdonvi.khoi2@donvi.gov.vn")
+        imported_user = User.objects.get(email="trungdonvi.khoi2@baolong.vn")
         self.assertEqual(imported_user.don_vi, don_vi_khoi2)
 
     def test_export_excel_forbidden_without_export_cbnv(self):
@@ -781,7 +780,7 @@ class EmployeeExcelImportExportTests(EmployeeBaseTestCase):
         tp_group, _ = Group.objects.get_or_create(name="Trưởng phòng")
         tp_user = User.objects.create_user(
             username="tp_test_user",
-            email="tp@donvi.gov.vn",
+            email="tp@baolong.vn",
             password="Password123",
             ho_ten="Trưởng Phòng Test",
             don_vi=self.don_vi_1,
@@ -796,7 +795,7 @@ class EmployeeExcelImportExportTests(EmployeeBaseTestCase):
         bgd_group, _ = Group.objects.get_or_create(name="Ban Giám đốc")
         bgd_user = User.objects.create_user(
             username="bgd_test_user",
-            email="bgd@donvi.gov.vn",
+            email="bgd@baolong.vn",
             password="Password123",
             ho_ten="Ban Giám Đốc Test",
             don_vi=self.don_vi_1,
@@ -816,7 +815,7 @@ class EmployeeExcelImportExportTests(EmployeeBaseTestCase):
         cv_group, _ = Group.objects.get_or_create(name="Chuyên viên")
         cv_user = User.objects.create_user(
             username="cv_test_user",
-            email="cv@donvi.gov.vn",
+            email="cv@baolong.vn",
             password="Password123",
             ho_ten="Chuyên Viên Test",
             don_vi=self.don_vi_1,
@@ -830,7 +829,7 @@ class EmployeeExcelImportExportTests(EmployeeBaseTestCase):
         # 5. Nhóm Văn thư (VT) -> 403
         vt_user = User.objects.create_user(
             username="vt_test_user",
-            email="vt@donvi.gov.vn",
+            email="vt@baolong.vn",
             password="Password123",
             ho_ten="Văn Thư Test",
             don_vi=self.don_vi_1,
@@ -849,7 +848,7 @@ class EmployeeExcelImportExportTests(EmployeeBaseTestCase):
         # Tạo nhân sự chứa ký tự công thức độc hại
         User.objects.create_user(
             username="formula_user",
-            email="formula@donvi.gov.vn",
+            email="formula@baolong.vn",
             password="Password123",
             ho_ten="=1+1",
             chuc_danh="@SUM(A1:B1)",
@@ -900,7 +899,7 @@ class EmployeeExcelImportExportTests(EmployeeBaseTestCase):
         # Tạo nhân sự đã nghỉ việc
         User.objects.create_user(
             username="retired_user",
-            email="retired@donvi.gov.vn",
+            email="retired@baolong.vn",
             password="Password123",
             ho_ten="Nguyễn Đã Nghỉ Việc",
             don_vi=self.don_vi_1,
@@ -912,7 +911,7 @@ class EmployeeExcelImportExportTests(EmployeeBaseTestCase):
         # Tạo nhân sự nội bộ (is_public = False) đang làm việc
         User.objects.create_user(
             username="private_user",
-            email="private@donvi.gov.vn",
+            email="private@baolong.vn",
             password="Password123",
             ho_ten="Trần Nội Bộ",
             don_vi=self.don_vi_1,
@@ -937,7 +936,7 @@ class EmployeeExcelImportExportTests(EmployeeBaseTestCase):
         # 2. Người xuất có export_cbnv nhưng KHÔNG có view_full_cbnv
         user_export_only = User.objects.create_user(
             username="export_only_user",
-            email="export_only@donvi.gov.vn",
+            email="export_only@baolong.vn",
             password="Password123",
             ho_ten="Người Chỉ Có Quyền Xuất",
             don_vi=self.don_vi_1,
@@ -998,7 +997,7 @@ class EmployeeExcelImportExportTests(EmployeeBaseTestCase):
         )
         internal_emp = User.objects.create_user(
             username="internal_emp",
-            email="internal_emp@donvi.gov.vn",
+            email="internal_emp@baolong.vn",
             password="Password123",
             ho_ten="Nhân Viên Ban Mật",
             don_vi=internal_unit,
@@ -1011,7 +1010,7 @@ class EmployeeExcelImportExportTests(EmployeeBaseTestCase):
         # 1. Trưởng phòng (có quyền export_cbnv nhưng không có change_donvi)
         tp_user = User.objects.create_user(
             username="tp_export_only",
-            email="tp_export@donvi.gov.vn",
+            email="tp_export@baolong.vn",
             password="Password123",
             ho_ten="Trưởng Phòng Export",
             don_vi=self.don_vi_1,
@@ -1030,7 +1029,7 @@ class EmployeeExcelImportExportTests(EmployeeBaseTestCase):
         # 2. Cán bộ có quyền organizations.change_donvi -> được xem đơn vị nội bộ trong danh bạ
         user_with_change_donvi = User.objects.create_user(
             username="officer_change_dv",
-            email="officer_dv@donvi.gov.vn",
+            email="officer_dv@baolong.vn",
             password="Password123",
             ho_ten="Cán Bộ Quản Lý Đơn Vị",
             don_vi=self.don_vi_1,
@@ -1057,7 +1056,7 @@ class EmployeeExcelImportExportTests(EmployeeBaseTestCase):
         )
         assigned_employee = User.objects.create_user(
             username="public_assignment_employee",
-            email="public_assignment@donvi.gov.vn",
+            email="public_assignment@baolong.vn",
             password="Password123",
             ho_ten="Nhân Viên Có Kiêm Nhiệm Công Khai",
             don_vi=internal_unit,
@@ -1073,7 +1072,7 @@ class EmployeeExcelImportExportTests(EmployeeBaseTestCase):
 
         tp_user = User.objects.create_user(
             username="tp_public_assignment_export",
-            email="tp_public_assignment@donvi.gov.vn",
+            email="tp_public_assignment@baolong.vn",
             password="Password123",
             ho_ten="Trưởng Phòng Export",
             don_vi=self.don_vi_1,
@@ -1105,7 +1104,7 @@ class EmployeeExcelImportExportTests(EmployeeBaseTestCase):
         all_emails = [str(ws.cell(row=r, column=6).value or "") for r in range(6, ws.max_row + 1)]
         all_names = [str(ws.cell(row=r, column=2).value or "") for r in range(6, ws.max_row + 1)]
         self.assertNotIn("admin@baolong.vn", all_emails)
-        self.assertNotIn("admin@donvi.gov.vn", all_emails)
+        self.assertNotIn("admin.test@baolong.vn", all_emails)
         self.assertNotIn("Quản trị hệ thống", all_names)
 
 
@@ -1122,7 +1121,7 @@ class EmployeePermissionSecurityTests(EmployeeBaseTestCase):
         detail_url = f"{self.employee_list_url}{self.normal_user.id}/"
         payload = {
             "ho_ten": "Test Unauthorized",
-            "email": "unauth@donvi.gov.vn",
+            "email": "unauth@baolong.vn",
             "ngay_sinh": "1990-01-01",
             "don_vi_id": self.don_vi_1.id,
             "chuc_vu_id": self.cv_chuyen_vien.id,
@@ -1147,7 +1146,7 @@ class EmployeePermissionSecurityTests(EmployeeBaseTestCase):
         detail_url = f"{self.employee_list_url}{self.normal_user.id}/"
         payload = {
             "ho_ten": "CBNV Không Quyền",
-            "email": "failperm@donvi.gov.vn",
+            "email": "failperm@baolong.vn",
             "ngay_sinh": "1990-01-01",
             "don_vi_id": self.don_vi_1.id,
             "chuc_vu_id": self.cv_chuyen_vien.id,
@@ -1321,20 +1320,20 @@ class EmployeePermissionSecurityTests(EmployeeBaseTestCase):
         # 7. Gửi thông tin cá nhân hợp lệ (sdt, email, ngay_sinh) -> 200 OK
         res_ok = self.client.patch(
             own_url,
-            {"sdt": "0988112233", "email": "newself@donvi.gov.vn", "ngay_sinh": "1993-03-03"},
+            {"sdt": "0988112233", "email": "newself@baolong.vn", "ngay_sinh": "1993-03-03"},
             format="json"
         )
         self.assertEqual(res_ok.status_code, status.HTTP_200_OK)
         self.self_user.refresh_from_db()
         self.assertEqual(self.self_user.sdt, "0988112233")
-        self.assertEqual(self.self_user.email, "newself@donvi.gov.vn")
+        self.assertEqual(self.self_user.email, "newself@baolong.vn")
         self.assertEqual(self.self_user.ngay_sinh.strftime("%Y-%m-%d"), "1993-03-03")
 
     def test_change_full_permission_cannot_edit_other_employee_without_admin_role(self):
         """Quyền change_full_cbnv không thay thế role admin khi sửa hồ sơ người khác."""
         hr_user = User.objects.create_user(
             username="hr_user",
-            email="hr@donvi.gov.vn",
+            email="hr@baolong.vn",
             password="HrPassword123",
             ho_ten="Cán bộ nhân sự",
             don_vi=self.don_vi_1,
@@ -1360,7 +1359,7 @@ class EmployeePermissionSecurityTests(EmployeeBaseTestCase):
         """Kiểm tra quyền add_cbnv và delete_cbnv hoạt động độc lập và chính xác."""
         creator_user = User.objects.create_user(
             username="creator_user",
-            email="creator@donvi.gov.vn",
+            email="creator@baolong.vn",
             password="CreatorPassword123",
             ho_ten="Cán bộ thêm mới",
             don_vi=self.don_vi_1,
@@ -1372,7 +1371,7 @@ class EmployeePermissionSecurityTests(EmployeeBaseTestCase):
         # 1. Có quyền add_cbnv -> POST thành công
         payload = {
             "ho_ten": "Nhân viên mới do Creator tạo",
-            "email": "newbie@donvi.gov.vn",
+            "email": "newbie@baolong.vn",
             "ngay_sinh": "1994-04-04",
             "don_vi_id": self.don_vi_1.id,
             "chuc_vu_id": self.cv_chuyen_vien.id,
@@ -1389,7 +1388,7 @@ class EmployeePermissionSecurityTests(EmployeeBaseTestCase):
         # 3. User có quyền delete_cbnv -> DELETE thành công 204
         deleter_user = User.objects.create_user(
             username="deleter_user",
-            email="deleter@donvi.gov.vn",
+            email="deleter@baolong.vn",
             password="DeleterPassword123",
             ho_ten="Cán bộ xóa",
             don_vi=self.don_vi_1,
@@ -1419,10 +1418,11 @@ class EmployeePermissionSecurityTests(EmployeeBaseTestCase):
         self.assertEqual(res_birth.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(res_birth.data["detail"], "employees.messages.invalidOrdering")
 
-        # 3. User có view_full_cbnv ordering ngay_sinh -> 200 OK
+        # 3. Không ai được sắp xếp theo năm sinh để tránh suy luận thông tin cá nhân
         self.client.force_authenticate(user=self.sensitive_user)
         res_birth_ok = self.client.get(f"{self.employee_list_url}?ordering=-ngay_sinh")
-        self.assertEqual(res_birth_ok.status_code, status.HTTP_200_OK)
+        self.assertEqual(res_birth_ok.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(res_birth_ok.data["detail"], "employees.messages.invalidOrdering")
 
         # 4. Filter id không phải số nguyên -> 400 Bad Request (thay vì 500)
         res_filter_err = self.client.get(f"{self.employee_list_url}?don_vi_id=abc")
@@ -1463,7 +1463,7 @@ class EmployeePermissionSecurityTests(EmployeeBaseTestCase):
         # 3. User có delete_cbnv (nhưng không phải superuser) cố xóa superuser -> 403
         deleter_user = User.objects.create_user(
             username="guard_deleter",
-            email="gdeleter@donvi.gov.vn",
+            email="gdeleter@baolong.vn",
             password="DeleterPass123",
             ho_ten="Deleter",
             don_vi=self.don_vi_1,
@@ -1482,7 +1482,7 @@ class EmployeePermissionSecurityTests(EmployeeBaseTestCase):
         # 4. User có change_full_cbnv (nhưng không phải superuser) cố chuyển superuser thành nghỉ việc -> 403
         hr_user = User.objects.create_user(
             username="guard_hr",
-            email="ghr@donvi.gov.vn",
+            email="ghr@baolong.vn",
             password="HrPassword123",
             ho_ten="HR User",
             don_vi=self.don_vi_1,
@@ -1504,7 +1504,7 @@ class EmployeePermissionSecurityTests(EmployeeBaseTestCase):
 
         second_admin = User.objects.create_superuser(
             username="admin_2",
-            email="admin2@donvi.gov.vn",
+            email="admin2@baolong.vn",
             password="AdminPassword123",
             ho_ten="Quản trị viên 2",
             don_vi=self.don_vi_1,
@@ -1522,7 +1522,7 @@ class EmployeePermissionSecurityTests(EmployeeBaseTestCase):
         # Nếu ai đó cố gắng xóa hoặc thôi việc admin_2 -> 400 cannotDeactivateLastSuperuser / cannotDeleteLastSuperuser
         third_admin = User.objects.create_superuser(
             username="admin_3",
-            email="admin3@donvi.gov.vn",
+            email="admin3@baolong.vn",
             password="AdminPassword123",
             ho_ten="Quản trị viên 3",
             don_vi=self.don_vi_1,
@@ -1545,7 +1545,7 @@ class EmployeePermissionSecurityTests(EmployeeBaseTestCase):
         self.client.force_authenticate(user=self.admin_user)
         payload = {
             "ho_ten": "Tài Khoản Mật Khẩu Yếu",
-            "email": "weakpass@donvi.gov.vn",
+            "email": "weakpass@baolong.vn",
             "ngay_sinh": "1990-01-01",
             "don_vi_id": self.don_vi_1.id,
             "chuc_vu_id": self.cv_chuyen_vien.id,
@@ -1604,7 +1604,7 @@ class ReviewRound4FixesTests(EmployeeBaseTestCase):
             self.employee_list_url,
             {
                 "ho_ten": "Người Tương Lai",
-                "email": "future@donvi.gov.vn",
+                "email": "future@baolong.vn",
                 "ngay_sinh": tomorrow.isoformat(),
                 "don_vi_id": self.don_vi_1.id,
                 "chuc_vu_id": self.cv_chuyen_vien.id,
@@ -1620,7 +1620,7 @@ class ReviewRound4FixesTests(EmployeeBaseTestCase):
             self.employee_list_url,
             {
                 "ho_ten": "Người Chưa Đủ 18",
-                "email": "under18@donvi.gov.vn",
+                "email": "under18@baolong.vn",
                 "ngay_sinh": under_18.isoformat(),
                 "don_vi_id": self.don_vi_1.id,
                 "chuc_vu_id": self.cv_chuyen_vien.id,
@@ -1636,7 +1636,7 @@ class ReviewRound4FixesTests(EmployeeBaseTestCase):
             self.employee_list_url,
             {
                 "ho_ten": "Cụ Thượng Thọ",
-                "email": "over100@donvi.gov.vn",
+                "email": "over100@baolong.vn",
                 "ngay_sinh": over_100.isoformat(),
                 "don_vi_id": self.don_vi_1.id,
                 "chuc_vu_id": self.cv_chuyen_vien.id,
@@ -1652,7 +1652,7 @@ class ReviewRound4FixesTests(EmployeeBaseTestCase):
             self.employee_list_url,
             {
                 "ho_ten": "Người Hợp Lệ Tuổi",
-                "email": "validage@donvi.gov.vn",
+                "email": "validage@baolong.vn",
                 "ngay_sinh": valid_bday.isoformat(),
                 "don_vi_id": self.don_vi_1.id,
                 "chuc_vu_id": self.cv_chuyen_vien.id,
@@ -1712,7 +1712,7 @@ class ReviewRound4FixesTests(EmployeeBaseTestCase):
             self.employee_list_url,
             {
                 "ho_ten": "A" * 151,
-                "email": "nametoolong@donvi.gov.vn",
+                "email": "nametoolong@baolong.vn",
                 "ngay_sinh": "1990-01-01",
                 "don_vi_id": self.don_vi_1.id,
                 "chuc_vu_id": self.cv_chuyen_vien.id,
@@ -1742,7 +1742,7 @@ class ReviewRound4FixesTests(EmployeeBaseTestCase):
             self.employee_list_url,
             {
                 "ho_ten": "Đơn Vị Ảo",
-                "email": "donviao@donvi.gov.vn",
+                "email": "donviao@baolong.vn",
                 "ngay_sinh": "1990-01-01",
                 "don_vi_id": 999999,
                 "chuc_vu_id": self.cv_chuyen_vien.id,
@@ -1757,7 +1757,7 @@ class ReviewRound4FixesTests(EmployeeBaseTestCase):
             self.employee_list_url,
             {
                 "ho_ten": "Chức Vụ Ảo",
-                "email": "chucvuao@donvi.gov.vn",
+                "email": "chucvuao@baolong.vn",
                 "ngay_sinh": "1990-01-01",
                 "don_vi_id": self.don_vi_1.id,
                 "chuc_vu_id": 999999,
@@ -1772,7 +1772,7 @@ class ReviewRound4FixesTests(EmployeeBaseTestCase):
             self.employee_list_url,
             {
                 "ho_ten": "SĐT Sai",
-                "email": "sdtsai@donvi.gov.vn",
+                "email": "sdtsai@baolong.vn",
                 "ngay_sinh": "1990-01-01",
                 "don_vi_id": self.don_vi_1.id,
                 "chuc_vu_id": self.cv_chuyen_vien.id,
@@ -1793,8 +1793,8 @@ class ReviewRound4FixesTests(EmployeeBaseTestCase):
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.append(["Họ và tên", "Ngày sinh", "Email", "Số điện thoại", "Đơn vị", "Chức vụ", "Chức danh", "Trạng thái", "Ghi chú"])
-        ws.append(["Tương Lai", fut_date, "fut@donvi.gov.vn", "0912345678", self.don_vi_1.ten, self.cv_truong_phong.name, "", "Đang làm việc", ""])
-        ws.append(["Dưới 18", u18_date, "u18@donvi.gov.vn", "0912345679", self.don_vi_1.ten, self.cv_truong_phong.name, "", "Đang làm việc", ""])
+        ws.append(["Tương Lai", fut_date, "fut@baolong.vn", "0912345678", self.don_vi_1.ten, self.cv_truong_phong.name, "", "Đang làm việc", ""])
+        ws.append(["Dưới 18", u18_date, "u18@baolong.vn", "0912345679", self.don_vi_1.ten, self.cv_truong_phong.name, "", "Đang làm việc", ""])
 
         bio = BytesIO()
         wb.save(bio)
@@ -1883,7 +1883,7 @@ class EmployeeAssignmentTests(EmployeeBaseTestCase):
         self.client.force_authenticate(user=self.admin_user)
         payload = {
             "ho_ten": "Hoàng Đa Nhiệm",
-            "email": "daniem@donvi.gov.vn",
+            "email": "daniem@baolong.vn",
             "ngay_sinh": "1991-03-15",
             "don_vi_id": self.don_vi_1.id,
             "chuc_vu_id": self.cv_chuyen_vien.id,
@@ -1907,7 +1907,7 @@ class EmployeeAssignmentTests(EmployeeBaseTestCase):
         self.assertEqual(data["assignments"][0]["chuc_danh"], "Phó phòng kiêm nhiệm")
 
         # Kiểm tra trong DB
-        user = User.objects.get(email="daniem@donvi.gov.vn")
+        user = User.objects.get(email="daniem@baolong.vn")
         assignments = EmployeeAssignment.objects.filter(employee=user)
         self.assertEqual(assignments.count(), 1)
         self.assertEqual(assignments.first().don_vi, self.don_vi_2)
@@ -1918,7 +1918,7 @@ class EmployeeAssignmentTests(EmployeeBaseTestCase):
         self.client.force_authenticate(user=self.admin_user)
         payload = {
             "ho_ten": "Trùng Phòng Ban Chính",
-            "email": "trungchinh@donvi.gov.vn",
+            "email": "trungchinh@baolong.vn",
             "ngay_sinh": "1991-03-15",
             "don_vi_id": self.don_vi_1.id,
             "chuc_vu_id": self.cv_chuyen_vien.id,
@@ -1941,7 +1941,7 @@ class EmployeeAssignmentTests(EmployeeBaseTestCase):
         self.client.force_authenticate(user=self.admin_user)
         payload = {
             "ho_ten": "Trùng Kiêm Nhiệm",
-            "email": "trungkiem@donvi.gov.vn",
+            "email": "trungkiem@baolong.vn",
             "ngay_sinh": "1991-03-15",
             "don_vi_id": self.don_vi_1.id,
             "chuc_vu_id": self.cv_chuyen_vien.id,
@@ -2134,7 +2134,7 @@ class EmployeeDefaultGroupAssignmentTests(EmployeeBaseTestCase):
         ])
         worksheet.append(["(Ghi chú)", "", "", "", "", "", "", "", "", ""])
         worksheet.append([
-            1, "Trần Import Kiêm Quyền", "1990-01-01", "import_default_groups@donvi.gov.vn",
+            1, "Trần Import Kiêm Quyền", "1990-01-01", "import_default_groups@baolong.vn",
             "0912345679", "Văn phòng Viện", position.name, "", "Đang làm việc", "",
         ])
         file_obj = BytesIO()
@@ -2144,7 +2144,7 @@ class EmployeeDefaultGroupAssignmentTests(EmployeeBaseTestCase):
 
         response = self.client.post(self.import_url, {"file": file_obj}, format="multipart")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        imported_employee = User.objects.get(email="import_default_groups@donvi.gov.vn")
+        imported_employee = User.objects.get(email="import_default_groups@baolong.vn")
         assigned_codes = set(
             GroupInfo.objects.filter(
                 id__in=imported_employee.groups.values_list("id", flat=True)
@@ -2167,7 +2167,7 @@ class EmployeeDefaultGroupAssignmentTests(EmployeeBaseTestCase):
         ]
         for idx, (pos_name, expected_code) in enumerate(cases):
             pos = self._create_position(pos_name)
-            email = f"emp_auto_{idx}@donvi.gov.vn"
+            email = f"emp_auto_{idx}@baolong.vn"
             emp = self._post_employee(f"CBNV {pos_name}", email, pos)
 
             assigned_group_ids = list(emp.groups.values_list("id", flat=True))
@@ -2199,7 +2199,7 @@ class EmployeeDefaultGroupAssignmentTests(EmployeeBaseTestCase):
                 )
 
         pos_tro_ly = self._create_position("Trợ lý TGĐ")
-        emp_tro_ly = self._post_employee("Trần Trợ Lý", "troly_both@donvi.gov.vn", pos_tro_ly)
+        emp_tro_ly = self._post_employee("Trần Trợ Lý", "troly_both@baolong.vn", pos_tro_ly)
         tro_ly_codes = set(
             GroupInfo.objects.filter(id__in=emp_tro_ly.groups.values_list("id", flat=True)).values_list(
                 "ma_nhom_quyen", flat=True
@@ -2208,7 +2208,7 @@ class EmployeeDefaultGroupAssignmentTests(EmployeeBaseTestCase):
         self.assertEqual(tro_ly_codes, {"CV", "TLBGD"})
 
         pos_kiem_toan = self._create_position("Kiểm toán viên")
-        emp_kiem_toan = self._post_employee("Lê Kiểm Toán", "kiemtoan_both@donvi.gov.vn", pos_kiem_toan)
+        emp_kiem_toan = self._post_employee("Lê Kiểm Toán", "kiemtoan_both@baolong.vn", pos_kiem_toan)
         kiem_toan_codes = set(
             GroupInfo.objects.filter(id__in=emp_kiem_toan.groups.values_list("id", flat=True)).values_list(
                 "ma_nhom_quyen", flat=True
@@ -2225,7 +2225,7 @@ class EmployeeDefaultGroupAssignmentTests(EmployeeBaseTestCase):
             cursor.execute("DELETE FROM auth_group WHERE ma_nhom_quyen IN ('TLBGD', 'KT')")
 
         pos_tro_ly = self._create_position("Trợ lý TGĐ")
-        emp_tro_ly = self._post_employee("Trần Trợ Lý", "troly_cv_only@donvi.gov.vn", pos_tro_ly)
+        emp_tro_ly = self._post_employee("Trần Trợ Lý", "troly_cv_only@baolong.vn", pos_tro_ly)
         tro_ly_codes = set(
             GroupInfo.objects.filter(id__in=emp_tro_ly.groups.values_list("id", flat=True)).values_list(
                 "ma_nhom_quyen", flat=True
@@ -2234,7 +2234,7 @@ class EmployeeDefaultGroupAssignmentTests(EmployeeBaseTestCase):
         self.assertEqual(tro_ly_codes, {"CV"})
 
         pos_kiem_toan = self._create_position("Kiểm toán viên")
-        emp_kiem_toan = self._post_employee("Lê Kiểm Toán", "kiemtoan_cv_only@donvi.gov.vn", pos_kiem_toan)
+        emp_kiem_toan = self._post_employee("Lê Kiểm Toán", "kiemtoan_cv_only@baolong.vn", pos_kiem_toan)
         kiem_toan_codes = set(
             GroupInfo.objects.filter(id__in=emp_kiem_toan.groups.values_list("id", flat=True)).values_list(
                 "ma_nhom_quyen", flat=True
@@ -2249,17 +2249,17 @@ class EmployeeDefaultGroupAssignmentTests(EmployeeBaseTestCase):
             cursor.execute("DELETE FROM auth_group WHERE ma_nhom_quyen = 'BGD'")
 
         pos = self._create_position("Tổng Giám đốc")
-        emp = self._post_employee("Nguyễn Bgd Test", "bgd_skip_500@donvi.gov.vn", pos)
+        emp = self._post_employee("Nguyễn Bgd Test", "bgd_skip_500@baolong.vn", pos)
         self.assertEqual(emp.groups.count(), 0)
 
         pos_custom = self._create_position("Chức vụ Chưa Định Nghĩa")
-        emp_custom = self._post_employee("Nguyễn Tự Do", "custom_pos@donvi.gov.vn", pos_custom)
+        emp_custom = self._post_employee("Nguyễn Tự Do", "custom_pos@baolong.vn", pos_custom)
         self.assertEqual(emp_custom.groups.count(), 0)
 
     def test_quan_tri_vien_position_does_not_auto_assign_admin(self):
         """Chức vụ Quản trị viên không tự nhận nhóm ADMIN, kể cả khi người tạo là superuser."""
         pos = self._create_position("Quản trị viên")
-        emp = self._post_employee("Nguyễn Quản Trị", "qtv_no_auto@donvi.gov.vn", pos)
+        emp = self._post_employee("Nguyễn Quản Trị", "qtv_no_auto@baolong.vn", pos)
         self.assertEqual(emp.groups.count(), 0)
 
     def _manager_client(self, codename="change_full_cbnv"):
@@ -2267,7 +2267,7 @@ class EmployeeDefaultGroupAssignmentTests(EmployeeBaseTestCase):
 
         manager = User.objects.create_user(
             username=f"mgr_{codename}",
-            email=f"mgr_{codename}@donvi.gov.vn",
+            email=f"mgr_{codename}@baolong.vn",
             password="ManagerPassword123",
             ho_ten="Trưởng Phòng Quản Lý",
             ngay_sinh=date(1985, 1, 1),
@@ -2295,24 +2295,24 @@ class EmployeeDefaultGroupAssignmentTests(EmployeeBaseTestCase):
         pos = self._create_position("Chuyên viên")
         _, client = self._manager_client()
 
-        denied = client.post(self.employee_list_url, self._create_payload("deny_admin@donvi.gov.vn", pos, [admin_group.id]), format="json")
+        denied = client.post(self.employee_list_url, self._create_payload("deny_admin@baolong.vn", pos, [admin_group.id]), format="json")
         self.assertEqual(denied.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("employees.messages.adminGroupForbidden", str(denied.data))
-        self.assertFalse(User.objects.filter(email="deny_admin@donvi.gov.vn").exists())
+        self.assertFalse(User.objects.filter(email="deny_admin@baolong.vn").exists())
 
-        allowed = client.post(self.employee_list_url, self._create_payload("allow_cv@donvi.gov.vn", pos, [cv_group.id]), format="json")
+        allowed = client.post(self.employee_list_url, self._create_payload("allow_cv@baolong.vn", pos, [cv_group.id]), format="json")
         self.assertEqual(allowed.status_code, status.HTTP_201_CREATED)
 
     def test_admin_group_member_and_superuser_can_grant_admin_group(self):
         admin_group = Group.objects.get(name="Quản trị hệ thống")
         pos = self._create_position("Chuyên viên")
 
-        superuser_emp = self._post_employee("Do Superuser", "by_super@donvi.gov.vn", pos, nhom_quyen_ids=[admin_group.id])
+        superuser_emp = self._post_employee("Do Superuser", "by_super@baolong.vn", pos, nhom_quyen_ids=[admin_group.id])
         self.assertTrue(superuser_emp.groups.filter(pk=admin_group.pk).exists())
 
         admin_member, client = self._manager_client()
         admin_member.groups.add(admin_group)
-        response = client.post(self.employee_list_url, self._create_payload("by_member@donvi.gov.vn", pos, [admin_group.id]), format="json")
+        response = client.post(self.employee_list_url, self._create_payload("by_member@baolong.vn", pos, [admin_group.id]), format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
     def test_non_admin_cannot_add_or_remove_admin_group_on_update(self):
@@ -2328,7 +2328,7 @@ class EmployeeDefaultGroupAssignmentTests(EmployeeBaseTestCase):
         admin_group = Group.objects.get(name="Quản trị hệ thống")
         cv_group = Group.objects.get(name="Chuyên viên")
         pos = self._create_position("Chuyên viên")
-        target = self._post_employee("Mục Tiêu", "target_update@donvi.gov.vn", pos, nhom_quyen_ids=[cv_group.id])
+        target = self._post_employee("Mục Tiêu", "target_update@baolong.vn", pos, nhom_quyen_ids=[cv_group.id])
         url = f"{self.employee_list_url}{target.id}/"
         manager, client = self._manager_client()
 
@@ -2360,7 +2360,7 @@ class EmployeeDefaultGroupAssignmentTests(EmployeeBaseTestCase):
         admin_group = Group.objects.get(name="Quản trị hệ thống")
         cv_group = Group.objects.get(name="Chuyên viên")
         pos = self._create_position("Chuyên viên")
-        target = self._post_employee("Mục Tiêu Hai", "target_update2@donvi.gov.vn", pos, nhom_quyen_ids=[cv_group.id])
+        target = self._post_employee("Mục Tiêu Hai", "target_update2@baolong.vn", pos, nhom_quyen_ids=[cv_group.id])
 
         response = self.client.patch(
             f"{self.employee_list_url}{target.id}/",
@@ -2380,7 +2380,7 @@ class EmployeeDefaultGroupAssignmentTests(EmployeeBaseTestCase):
 
         emp = self._post_employee(
             "Phạm Tổng Giám Đốc",
-            "tgd_manual@donvi.gov.vn",
+            "tgd_manual@baolong.vn",
             pos,
             nhom_quyen_ids=[cv_group.id],
         )
@@ -2410,7 +2410,7 @@ class EmployeeImportWorkerIntegrationTests(TransactionTestCase):
             "Tên Đơn vị / Phòng ban (*)", "Tên Chức vụ (*)", "Chức danh", "Trạng thái", "Ghi chú",
         ])
         sheet.append([
-            "Nhân viên nền", "1990-01-01", "worker-import@example.test", "0912345678",
+            "Nhân viên nền", "1990-01-01", "worker-import@baolong.vn", "0912345678",
             self.don_vi_1.ten, self.cv_chuyen_vien.name, "", "Đang làm việc", "",
         ])
         file_obj = BytesIO()
@@ -2434,5 +2434,5 @@ class EmployeeImportWorkerIntegrationTests(TransactionTestCase):
         self.assertEqual(job.status, EmployeeImportJob.Status.DONE)
         self.assertIsNone(job.active_key)
         self.assertEqual(job.created_count, 1)
-        self.assertTrue(User.objects.filter(email="worker-import@example.test").exists())
+        self.assertTrue(User.objects.filter(email="worker-import@baolong.vn").exists())
         self.assertFalse(stored_file.exists())

@@ -18,6 +18,7 @@ const mockedApiClient = vi.mocked(apiClientModule.apiClient);
 describe('NotificationStreams Component (Approvals Tab Replacement)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
     localStorage.setItem('tlbm_access_token', 'test-token');
   });
 
@@ -110,5 +111,42 @@ describe('NotificationStreams Component (Approvals Tab Replacement)', () => {
       expect(screen.getByText('Ho so can toi ky')).toBeInTheDocument();
     });
     expect(screen.queryByText('Ho so nguoi khac ky')).not.toBeInTheDocument();
+  });
+
+  it('decreases unread count and marks item as read when clicked', async () => {
+    mockedApiClient.mockResolvedValue({
+      recentIncoming: [
+        { id: 1, code: 'VBD-01', title: 'Van ban den 1', sender: 'Cuc Tin hoc' },
+        { id: 2, code: 'VBD-02', title: 'Van ban den 2', sender: 'Cuc Thue' },
+      ],
+      recentOutgoing: [],
+      recentSigning: [],
+    });
+
+    render(
+      <MemoryRouter>
+        <NotificationStreams />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(mockedApiClient).toHaveBeenCalled());
+
+    const bellBtn = screen.getByRole('button', { name: /thông báo/i });
+    fireEvent.click(bellBtn);
+
+    // Should have "2 chưa đọc" or tab Đến has badge 2
+    expect(screen.getByText('2')).toBeInTheDocument();
+
+    // Click on item 1
+    const docItem = screen.getByText('Van ban den 1');
+    fireEvent.click(docItem);
+
+    // Reopen popover
+    fireEvent.click(bellBtn);
+
+    // Now unread count in Đến badge should be 1
+    await waitFor(() => {
+      expect(screen.getByText('1')).toBeInTheDocument();
+    });
   });
 });

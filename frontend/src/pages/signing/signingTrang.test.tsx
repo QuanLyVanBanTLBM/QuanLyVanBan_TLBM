@@ -86,11 +86,12 @@ describe('TaoHoSoPage', () => {
     api.taoNhap.mockReturnValue(new Promise(() => undefined));
     boc(<TaoHoSoPage />);
     const luu = await screen.findByRole('button', { name: /Lưu nháp và xem trước/ });
-    expect(luu).toBeDisabled();
+    fireEvent.click(luu);
+    expect(await screen.findByText('Vui lòng chọn một văn bản đi từ danh sách.')).toBeInTheDocument();
+    expect(api.taoNhap).not.toHaveBeenCalled();
     fireEvent.click(await screen.findByRole('button', { name: /15\/TTr/ }));
     fireEvent.change(await screen.findByLabelText('Tệp PDF trên văn bản đi'), { target: { value: '99' } });
     fireEvent.change(screen.getByLabelText(/Quy trình ký/), { target: { value: '2' } });
-    await waitFor(() => expect(luu).toBeEnabled());
     fireEvent.click(luu);
     await waitFor(() => expect(api.taoNhap).toHaveBeenCalledTimes(1));
     const form = api.taoNhap.mock.calls[0][0] as FormData;
@@ -117,10 +118,11 @@ describe('TaoHoSoPage văn bản trình ký', () => {
       target: { files: [new File(['%PDF-1.4'], 'to-trinh.pdf', { type: 'application/pdf' })] },
     });
     const luu = screen.getByRole('button', { name: /Lưu nháp và xem trước/ });
-    expect(luu).toBeDisabled();  // chưa có trích yếu
+    fireEvent.click(luu);
+    expect(await screen.findByText('Vui lòng nhập trích yếu văn bản.')).toBeInTheDocument();
+    expect(api.taoNhap).not.toHaveBeenCalled();
     fireEvent.change(screen.getByLabelText('Số hiệu tham chiếu'), { target: { value: '05/TTr' } });
     fireEvent.change(screen.getByLabelText('Trích yếu'), { target: { value: 'Tờ trình đào tạo' } });
-    await waitFor(() => expect(luu).toBeEnabled());
     fireEvent.click(luu);
     await waitFor(() => expect(api.taoNhap).toHaveBeenCalledTimes(1));
     const form = api.taoNhap.mock.calls[0][0] as FormData;
@@ -167,16 +169,16 @@ describe('KhoaPage', () => {
   it('chưa có khóa: chặn PIN không đạt chính sách và PIN nhập lại không khớp', async () => {
     api.khoa.mockResolvedValue([]);
     boc(<KhoaPage />);
-    expect(await screen.findByText('Bạn chưa có khóa ký trên thiết bị này.')).toBeInTheDocument();
-    const tao = screen.getByRole('button', { name: /Tạo khóa ký cho thiết bị này/ });
-    fireEvent.change(screen.getByLabelText('PIN mới (8 chữ số)'), { target: { value: '12345678' } });
+    expect(await screen.findByText('Bạn chưa đăng ký khóa ký với máy chủ.')).toBeInTheDocument();
+    const tao = screen.getByRole('button', { name: 'Đăng ký khóa ký mới' });
+    fireEvent.change(screen.getByLabelText('PIN mới (6 chữ số)'), { target: { value: '234567' } });
     expect(await screen.findByText(/liên tiếp|tăng|giảm/i)).toBeInTheDocument();
     expect(tao).toBeDisabled();
-    fireEvent.change(screen.getByLabelText('PIN mới (8 chữ số)'), { target: { value: '48273916' } });
-    fireEvent.change(screen.getByLabelText('Nhập lại PIN'), { target: { value: '48273917' } });
+    fireEvent.change(screen.getByLabelText('PIN mới (6 chữ số)'), { target: { value: '482739' } });
+    fireEvent.change(screen.getByLabelText('Nhập lại PIN'), { target: { value: '482738' } });
     expect(await screen.findByText('Hai lần nhập PIN không khớp.')).toBeInTheDocument();
     expect(tao).toBeDisabled();
-    fireEvent.change(screen.getByLabelText('Nhập lại PIN'), { target: { value: '48273916' } });
+    fireEvent.change(screen.getByLabelText('Nhập lại PIN'), { target: { value: '482739' } });
     await waitFor(() => expect(tao).toBeEnabled());
   });
 
@@ -192,13 +194,14 @@ describe('KhoaPage', () => {
     expect(screen.queryByText(data.detail)).not.toBeInTheDocument();
   });
 
-  it('khóa đang hoạt động thuộc thiết bị khác: cho nhập file khóa vào thiết bị này', async () => {
+  it('khóa trình duyệt cũ cần được thay bằng khóa mới trên máy chủ', async () => {
     const khoa = { id: 4, ma_khoa: 'TB-3-1', dau_van_tay: 'f'.repeat(64), thuat_toan: 'Ed25519',
       khoa_cong_khai: 'pub', trang_thai: 'HOAT_DONG' } as KhoaKy;
     api.khoa.mockResolvedValue([khoa]);
     boc(<KhoaPage />);
-    expect(await screen.findByText(/thuộc thiết bị khác/)).toBeInTheDocument();
-    expect(screen.getByLabelText('Hoặc nhập file khóa đã có vào thiết bị này')).toBeInTheDocument();
+    expect(await screen.findByText(/Khóa trình duyệt cũ không có private key phía máy chủ/)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/file khóa/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Đăng ký khóa ký mới' })).toBeInTheDocument();
   });
 });
 

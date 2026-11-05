@@ -55,11 +55,11 @@ describe('khóa Ed25519 và bản bọc', () => {
   }, 30000);
 });
 
-describe('chính sách PIN 8 chữ số', () => {
+describe('chính sách PIN 6 chữ số', () => {
   it.each([
-    ['1234567', 'pin_8_chu_so'], ['1234567a', 'pin_8_chu_so'], ['77777777', 'pin_lap_mot_chu_so'],
-    ['23456789', 'pin_day_lien_tiep'], ['98765432', 'pin_day_lien_tiep'], ['15081990', 'pin_dang_ngay'],
-    ['11223344', 'pin_pho_bien'], ['48273916', null],
+    ['12345', 'pin_6_chu_so'], ['12345a', 'pin_6_chu_so'], ['48273916', 'pin_6_chu_so'], ['777777', 'pin_lap_mot_chu_so'],
+    ['234567', 'pin_day_lien_tiep'], ['987654', 'pin_day_lien_tiep'], ['150890', 'pin_dang_ngay'],
+    ['112233', 'pin_pho_bien'], ['159753', 'pin_pho_bien'], ['482739', null],
   ])('%s → %s', (pin, ma) => {
     expect(kiemTraPin(pin)).toBe(ma);
   });

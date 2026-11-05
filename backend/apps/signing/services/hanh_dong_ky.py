@@ -26,7 +26,7 @@ from ..models import (
 from ..permissions import KY_TRINH_KY, co_quyen
 from ..storage import StorageError, get_storage
 from ..tich_hop import to_chuc
-from . import quyen_ky, tep_hoan_tat, thong_bao
+from . import keys, mfa_ky, pin as pin_service, quyen_ky, tep_hoan_tat, thong_bao
 from .audit import ghi_nhat_ky
 from .bang_chung import chot_bang_chung
 from .trinh_ky import dung_cap_dang_mo, luot_hien_hanh, mo_cap, mo_nguoi_ky_trong_cap
@@ -140,8 +140,33 @@ def _kiem_tra_khoa(nguoi, khoa_ky_id, thoi_diem):
     return khoa
 
 
+def ky(yeu_cau, nguoi, *, pin, khoa_ky, hash_tai_lieu, phien_mfa=None, ghi_chu_ky="", khoa_chong_trung,
+       dia_chi_ip=None):
+    # Cờ MFA bật thì phiên (access token) phải đã xác thực mã email; kiểm trước mọi thao tác ghi (#509).
+    mfa_ky.kiem_tra_da_xac_thuc(nguoi, phien_mfa)
+    # Chuyển HET_HAN ở transaction riêng để trạng thái vẫn được lưu khi bước ký bị từ chối (#488).
+    keys.chuyen_het_han(nguoi)
+    if _thao_tac_lap(yeu_cau, nguoi, khoa_chong_trung):
+        return SigningRequest.objects.get(pk=yeu_cau.pk)
+    khoa = SigningKey.objects.filter(pk=khoa_ky, nguoi_so_huu=nguoi).first()
+    if khoa is None:
+        raise SigningError(code="khoa_ky_khong_hop_le", detail="Khóa ký không thuộc người ký.",
+                           fields={"khoa_ky": ["Không phải khóa của bạn."]})
+    _kiem_tra_khoa(nguoi, khoa.pk, timezone.now())
+    luot = luot_hien_hanh(yeu_cau)
+    if luot is None:
+        raise ConflictError(code="ho_so_chua_gui", detail="Hồ sơ chưa được gửi.")
+    if hash_tai_lieu != luot.ma_bam_tai_lieu:
+        raise ConflictError(code="ma_bam_khong_khop",
+                            detail="Mã băm tài liệu khác bản đã khóa của lượt trình; tải lại hồ sơ trước khi ký.")
+    private_key = pin_service.mo_khoa_ky(khoa, nguoi, pin, dia_chi_ip)
+    chu_ky_so = crypto.sign_with_private_key(private_key, bytes.fromhex(hash_tai_lieu))
+    return _ky(yeu_cau, nguoi, khoa_ky=khoa_ky, hash_tai_lieu=hash_tai_lieu, chu_ky_so=chu_ky_so,
+               khoa_chong_trung=khoa_chong_trung, ghi_chu_ky=ghi_chu_ky, dia_chi_ip=dia_chi_ip)
+
+
 @transaction.atomic
-def ky(yeu_cau, nguoi, *, khoa_ky, hash_tai_lieu, chu_ky_so, khoa_chong_trung, ghi_chu_ky="", dia_chi_ip=None):
+def _ky(yeu_cau, nguoi, *, khoa_ky, hash_tai_lieu, chu_ky_so, khoa_chong_trung, ghi_chu_ky="", dia_chi_ip=None):
     if _thao_tac_lap(yeu_cau, nguoi, khoa_chong_trung):
         return SigningRequest.objects.get(pk=yeu_cau.pk)  # ký lặp cùng khóa: trả kết quả lần trước
     luot = _khoa_luot_hien_hanh(yeu_cau)

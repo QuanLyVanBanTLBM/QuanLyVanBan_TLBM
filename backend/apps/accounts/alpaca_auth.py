@@ -137,59 +137,103 @@ def check_alpaca_auth(username: str, password: str) -> dict:
         with urllib.request.urlopen(req, timeout=req_timeout) as resp:
             body = resp.read().decode("utf-8")
             data = json.loads(body)
-            # Phản hồi từ SIT API: {"Success": true, "Data": 7, "StatusCode": "200"}
-            status_code = data.get("Data")
-            status_name = ALPACA_STATUS_MAP.get(status_code, "UNKNOWN")
+            raw_data = data.get("Data")
+            is_success = bool(data.get("Success", False))
 
-            if status_code == 7:
+            # 1. Trường hợp xác thực thành công:
+            # - Môi trường production thật (api2.bhbl.vn): Success=True và Data là list chứa thông tin CBNV [ {...} ]
+            # - Môi trường SIT cũ: Success=True và Data=7 (PASSWORD_CORRECT)
+            if is_success and (raw_data == 7 or (isinstance(raw_data, list) and len(raw_data) > 0)):
+                user_info = raw_data[0] if isinstance(raw_data, list) and raw_data else {}
                 return {
                     "success": True,
                     "status": 7,
                     "status_name": "PASSWORD_CORRECT",
                     "message": "Xác thực thành công qua API Bảo Long.",
+                    "user_info": user_info,
                     "is_fallback": False,
                 }
-            elif status_code == 6:
+
+            # 2. Trường hợp trả về mã trạng thái số nguyên
+            if isinstance(raw_data, int):
+                status_code = raw_data
+                status_name = ALPACA_STATUS_MAP.get(status_code, "UNKNOWN")
+
+                if status_code == 6:
+                    return {
+                        "success": False,
+                        "status": 6,
+                        "status_name": "PASSWORD_INCORRECT",
+                        "message": "Mật khẩu không chính xác.",
+                        "is_fallback": False,
+                    }
+                elif status_code == 3:
+                    return {
+                        "success": False,
+                        "status": 3,
+                        "status_name": "BLOCK",
+                        "message": "Tài khoản đang bị khóa trong hệ thống Bảo Long.",
+                        "is_fallback": False,
+                    }
+                elif status_code == 0:
+                    return {
+                        "success": False,
+                        "status": 0,
+                        "status_name": "DISABLE",
+                        "message": "Tài khoản đã bị vô hiệu hóa.",
+                        "is_fallback": False,
+                    }
+                elif status_code == 5:
+                    return {
+                        "success": False,
+                        "status": 5,
+                        "status_name": "NOT_EXIST",
+                        "message": "Tài khoản không tồn tại trên hệ thống Bảo Long.",
+                        "is_fallback": False,
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "status": status_code,
+                        "status_name": status_name,
+                        "message": data.get("message") or f"Xác thực thất bại (Mã: {status_code}).",
+                        "is_fallback": False,
+                    }
+
+            # 3. Các trường hợp Data khác hoặc thông báo từ chối
+            return {
+                "success": False,
+                "status": None,
+                "status_name": "AUTH_FAILED",
+                "message": data.get("message") or "Xác thực thất bại qua API Bảo Long.",
+                "is_fallback": False,
+            }
+
+    except urllib.error.HTTPError as http_err:
+        try:
+            err_body = http_err.read().decode("utf-8")
+            err_data = json.loads(err_body)
+            logger.info("API Bảo Long trả về HTTP %s: %s", http_err.code, err_body)
+            # HTTP 400 thường do mật khẩu sai định dạng hoặc validation failed từ server Bảo Long
+            if http_err.code == 400:
                 return {
                     "success": False,
                     "status": 6,
                     "status_name": "PASSWORD_INCORRECT",
-                    "message": "Mật khẩu không chính xác.",
+                    "message": "Mật khẩu không chính xác hoặc không đúng định dạng.",
                     "is_fallback": False,
                 }
-            elif status_code == 3:
-                return {
-                    "success": False,
-                    "status": 3,
-                    "status_name": "BLOCK",
-                    "message": "Tài khoản đang bị khóa trong hệ thống Bảo Long.",
-                    "is_fallback": False,
-                }
-            elif status_code == 0:
-                return {
-                    "success": False,
-                    "status": 0,
-                    "status_name": "DISABLE",
-                    "message": "Tài khoản đã bị vô hiệu hóa.",
-                    "is_fallback": False,
-                }
-            elif status_code == 5:
-                return {
-                    "success": False,
-                    "status": 5,
-                    "status_name": "NOT_EXIST",
-                    "message": "Tài khoản không tồn tại trên hệ thống Bảo Long.",
-                    "is_fallback": False,
-                }
-            else:
-                return {
-                    "success": False,
-                    "status": status_code,
-                    "status_name": status_name,
-                    "message": data.get("message") or f"Xác thực thất bại (Mã: {status_code}).",
-                    "is_fallback": False,
-                }
+        except Exception:
+            pass
 
+        logger.warning("Lỗi HTTP từ API Bảo Long (%s): %s", url, http_err)
+        return {
+            "success": False,
+            "status": http_err.code,
+            "status_name": "HTTP_ERROR",
+            "message": f"Máy chủ Bảo Long trả về lỗi HTTP {http_err.code}.",
+            "is_fallback": False,
+        }
     except Exception as exc:
         logger.warning("Không thể kết nối đến API Bảo Long (%s): %s", url, exc)
 

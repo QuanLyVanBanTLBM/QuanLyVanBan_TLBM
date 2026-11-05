@@ -32,13 +32,14 @@ def _attachment_type(name):
     return "pdf"
 
 
-def _recent_documents(user, loai, date_field, extra_field, extra_key, extra_default):
-    """Top văn bản gần nhất mà user được xem, cùng bộ đếm trong năm hiện tại.
+def _recent_documents(user, loai, date_field, extra_field, extra_key, extra_default, selected_year=None):
+    """Top văn bản gần nhất mà user được xem, cùng bộ đếm theo năm (mặc định là năm hiện tại).
 
     Cả bộ đếm và danh sách dùng selector chung `van_ban_xem_duoc` nên không lộ văn bản HAN_CHE.
     """
     visible = van_ban_xem_duoc(user, loai)
-    year_total = visible.filter(**{f"{date_field}__year": timezone.localdate().year}).count()
+    calc_year = selected_year if selected_year else timezone.localdate().year
+    year_total = visible.filter(**{f"{date_field}__year": calc_year}).count()
     documents = list(visible.order_by(f"-{date_field}", "-pk")[:RECENT_LIMIT])
 
     attachments = {}
@@ -131,18 +132,49 @@ def _birthday_payload(employee, label, is_today, day):
 def overview_view(request):
     """
     Tổng hợp số liệu cho Dashboard Nhóm 1.
+    Hỗ trợ tham số query `year`: lọc số liệu thống kê văn bản theo năm được chọn.
 
     Yêu cầu Header: Authorization: Bearer <access_token>
     """
     today = timezone.localdate()
     tomorrow = today + timedelta(days=1)
+    current_year = today.year
+
+    # Nhận năm thống kê từ query param nếu có
+    selected_year = None
+    year_param = request.query_params.get("year")
+    if year_param:
+        try:
+            parsed_year = int(year_param)
+            if 2000 <= parsed_year <= 2100:
+                selected_year = parsed_year
+        except (ValueError, TypeError):
+            pass
+
+    year_to_calc = selected_year if selected_year else current_year
 
     incoming_total, recent_incoming = _recent_documents(
-        request.user, "DEN", "ngay_den", "noi_ban_hanh", "sender", "Cơ quan ban hành"
+        request.user, "DEN", "ngay_den", "noi_ban_hanh", "sender", "Cơ quan ban hành", selected_year=year_to_calc
     )
     outgoing_total, recent_outgoing = _recent_documents(
-        request.user, "DI", "ngay_ban_hanh", "nguoi_ky", "recipient", "Nơi nhận"
+        request.user, "DI", "ngay_ban_hanh", "nguoi_ky", "recipient", "Nơi nhận", selected_year=year_to_calc
     )
+
+    # Thống kê so sánh nhiều năm (2024, 2025, 2026...)
+    visible_den = van_ban_xem_duoc(request.user, "DEN")
+    visible_di = van_ban_xem_duoc(request.user, "DI")
+    years_den = set(visible_den.dates("ngay_den", "year").values_list("ngay_den__year", flat=True))
+    years_di = set(visible_di.dates("ngay_ban_hanh", "year").values_list("ngay_ban_hanh__year", flat=True))
+    available_years = sorted(list(years_den | years_di | {current_year - 2, current_year - 1, current_year}))
+
+    yearly_stats = []
+    for y in available_years:
+        yearly_stats.append({
+            "year": y,
+            "incoming": visible_den.filter(ngay_den__year=y).count(),
+            "outgoing": visible_di.filter(ngay_ban_hanh__year=y).count(),
+        })
+
     tasks = _tasks(request.user, today)
     resources = _resources(request.user)
     signing_pending = 0
@@ -191,12 +223,7 @@ def overview_view(request):
             for p in (_birthday_payload(u, "", False, today) for u in users)
         ]
 
-    stats = {
-        "incoming_total": incoming_total,
-        "outgoing_total": outgoing_total,
-        "tasks_pending": tasks_pending,
-        "signing_pending": signing_pending,
-    }
+    # Giữ nguyên hợp đồng kpis gồm đúng 4 key: incomingCount, outgoingCount, tasksCount, signingCount
     kpis = {
         "incomingCount": incoming_total,
         "outgoingCount": outgoing_total,
@@ -204,10 +231,28 @@ def overview_view(request):
         "signingCount": signing_pending,
     }
 
+    # Bổ sung thông tin thống kê theo năm độc lập
+    doc_stats_by_year = {
+        "selectedYear": year_to_calc,
+        "availableYears": available_years,
+        "yearlyComparison": yearly_stats,
+    }
+
+    stats = {
+        "incoming_total": incoming_total,
+        "outgoing_total": outgoing_total,
+        "tasks_pending": tasks_pending,
+        "signing_pending": signing_pending,
+        "selected_year": year_to_calc,
+        "available_years": available_years,
+        "yearly_comparison": yearly_stats,
+    }
+
     return Response(
         {
             # Hợp đồng chuẩn Hieu.md
             "kpis": kpis,
+            "docStatsByYear": doc_stats_by_year,
             "recentIncoming": recent_incoming,
             "recentOutgoing": recent_outgoing,
             "tasks": tasks,

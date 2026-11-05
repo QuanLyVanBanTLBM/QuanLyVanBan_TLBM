@@ -12,6 +12,7 @@ from .models import (
     SigningRequestStepSigner,
 )
 from .services import quyen_ky as quyen_ky_service
+from .services import thay_nguoi_ky as thay_nguoi_ky_service
 from .tich_hop import to_chuc
 from .tich_hop.van_ban import mo_ta_ho_so
 
@@ -127,7 +128,17 @@ class KhoaDangKySerializer(serializers.Serializer):
 
 
 class XacMinhSoHuuSerializer(serializers.Serializer):
+    thach_thuc = serializers.CharField()
     chu_ky_so = serializers.CharField()
+
+
+class MaXacThucSerializer(serializers.Serializer):
+    ma = serializers.CharField(max_length=16)
+
+
+class DatLaiPinXacNhanSerializer(serializers.Serializer):
+    ma = serializers.RegexField(r"^\d{6}$")
+    pin_moi = serializers.RegexField(r"^\d{6}$")
 
 
 class ThuHoiKhoaSerializer(serializers.Serializer):
@@ -161,22 +172,18 @@ class KhoaSerializer(serializers.ModelSerializer):
         return SigningKeyUnlock.objects.filter(khoa=obj).exists()
 
 
-# ── PIN mở khóa ký (Phase 6) ─────────────────────────────────────────────────
-# xac_minh_pin = Base64 của verifier 32 byte do client dẫn xuất; server không nhận PIN.
+# ── Bảo vệ private key ký ở máy chủ (#447 partition 1) ───────────────────────
 
 
 class DatPinSerializer(serializers.Serializer):
-    xac_minh_pin = serializers.CharField()
+    pin = serializers.RegexField(r"^\d{6}$")
+    khoa_bi_mat_pkcs8 = serializers.CharField(max_length=128)
     tham_so_kdf = serializers.JSONField()
 
 
-class MoKhoaKySerializer(serializers.Serializer):
-    xac_minh_pin = serializers.CharField()
-
-
 class DoiPinSerializer(serializers.Serializer):
-    xac_minh_pin_cu = serializers.CharField()
-    xac_minh_pin_moi = serializers.CharField()
+    pin_cu = serializers.RegexField(r"^\d{6}$")
+    pin_moi = serializers.RegexField(r"^\d{6}$")
     tham_so_kdf = serializers.JSONField()
 
 
@@ -282,14 +289,27 @@ class TrinhLaiSerializer(serializers.Serializer):
     han_chot = serializers.DateTimeField(required=False, allow_null=True)
 
 
+class ThayNguoiKySerializer(serializers.Serializer):
+    nguoi_ky_id = serializers.IntegerField(min_value=1)
+    nguoi_ky_moi_id = serializers.IntegerField(min_value=1)
+    ly_do = serializers.CharField(max_length=MAX_LY_DO)
+
+
 class NguoiKyLuotSerializer(serializers.ModelSerializer):
     chu_ky = serializers.SerializerMethodField()
+    co_the_thay = serializers.SerializerMethodField()
 
     class Meta:
         model = SigningRequestStepSigner
         fields = ["id", "nguoi_ky", "ten_nguoi_ky", "ten_chuc_vu", "vai_tro_ky", "trang_thai",
                   "thoi_diem_mo", "ngay_ky", "ngay_tu_choi", "ly_do_tu_choi", "trang_ky", "toa_do_x", "toa_do_y", "chieu_rong_khung",
-                  "chieu_cao_khung", "chu_ky"]
+                  "chieu_cao_khung", "chu_ky", "co_the_thay"]
+
+    def get_co_the_thay(self, obj):
+        """Người dùng hiện tại được thay người ký này: người ký đang chờ ở cấp đang ký, quyền ký bị khóa. Chỉ báo cho
+        người tạo hoặc quản trị viên; người khác luôn nhận False để không lộ trạng thái khóa."""
+        ids = self.context.get("nguoi_ky_thay_duoc")
+        return bool(ids) and obj.pk in ids
 
     def get_chu_ky(self, obj):
         """Chữ ký hiện hành (ghi chú, trễ hạn, kết quả xác minh, có ảnh snapshot); không trả nội dung chữ ký."""
@@ -437,7 +457,11 @@ class TrinhKyChiTietSerializer(TrinhKySerializer):
 
     def get_luot_trinh(self, obj):
         luot = obj.luot_trinh_set.order_by("-so_luot").prefetch_related("cap_ky_set__nguoi_ky_set")
-        return LuotTrinhSerializer(luot, many=True, context=self.context).data
+        context = dict(self.context)
+        request = context.get("request")
+        if request is not None:
+            context["nguoi_ky_thay_duoc"] = thay_nguoi_ky_service.ids_thay_duoc(obj, request.user)
+        return LuotTrinhSerializer(luot, many=True, context=context).data
 
     def get_lich_su(self, obj):
         return NhatKyTrinhKySerializer(SigningAuditLog.objects.filter(trinh_ky=obj).select_related("nguoi_thuc_hien")
@@ -450,7 +474,7 @@ class TrinhKyChiTietSerializer(TrinhKySerializer):
 class KySerializer(serializers.Serializer):
     khoa_ky = serializers.IntegerField(min_value=1)
     hash_tai_lieu = serializers.RegexField(r"^[0-9a-f]{64}$")
-    chu_ky_so = serializers.CharField(max_length=200)  # Ed25519 Base64 là 88 ký tự
+    pin = serializers.RegexField(r"^\d{6}$")
     ghi_chu_ky = serializers.CharField(max_length=MAX_GHI_CHU, required=False, allow_blank=True, default="")
 
 

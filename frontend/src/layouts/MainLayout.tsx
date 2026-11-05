@@ -143,7 +143,7 @@ export default function MainLayout({
     }
     hoverLeaveTimerRef.current = setTimeout(() => {
       setIsSidebarHovered(false);
-    }, 280);
+    }, 75);
   };
 
   useEffect(() => {
@@ -301,20 +301,29 @@ export default function MainLayout({
     }
 
     const handleScroll = () => {
-      if (scrollContainer) {
-        const maxScroll = scrollContainer.scrollHeight - scrollContainer.clientHeight;
-        // Nếu độ dài cuộn khả dụng < 120px (trang ngắn), giữ nguyên TopSubNav để tránh vòng lặp co giãn gây nháy (jitter loop)
-        if (maxScroll < 120) {
-          setIsScrolled(false);
-          return;
-        }
-      }
       const scrollY = (scrollContainer ? scrollContainer.scrollTop : 0) || window.scrollY || document.documentElement.scrollTop || 0;
       setIsScrolled((prev) => {
-        // Hysteresis (độ trễ ngưỡng): cuộn xuống > 80px mới thu gọn, cuộn ngược lên < 20px mới mở rộng
-        if (!prev && scrollY > 80) return true;
-        if (prev && scrollY < 20) return false;
-        return prev;
+        // Hysteresis (độ trễ ngưỡng) thông minh chống vòng lặp giật co giãn (jitter loop):
+        // 1. Chỉ thu gọn khi cuộn xuống > 80px VÀ trang có độ dài cuộn đủ lớn (> 120px)
+        if (!prev) {
+          if (scrollY > 80) {
+            if (scrollContainer) {
+              const maxScroll = scrollContainer.scrollHeight - scrollContainer.clientHeight;
+              if (maxScroll < 120) {
+                return false;
+              }
+            }
+            return true;
+          }
+          return false;
+        }
+        // 2. Khi đang ở trạng thái thu gọn (prev === true):
+        // Tuyệt đối không kiểm tra maxScroll tại đáy trang để tránh loop do thay đổi chiều cao viewport.
+        // Chỉ mở rộng lại KHI VÀ CHỈ KHI người dùng thực sự cuộn ngược về gần đỉnh (< 20px).
+        if (scrollY < 20) {
+          return false;
+        }
+        return true;
       });
     };
 
@@ -368,7 +377,7 @@ export default function MainLayout({
             : 'max-lg:-translate-x-full max-lg:pointer-events-none lg:w-[72px] lg:translate-x-0 lg:pointer-events-auto lg:shadow-none'
         }`}
         style={{
-          transition: 'width 0.28s cubic-bezier(0.16, 1, 0.3, 1), transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease',
+          transition: 'width 160ms cubic-bezier(0.4, 0, 0.2, 1), transform 160ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 150ms ease-out',
           willChange: 'width, transform',
         }}
         onMouseEnter={handleSidebarMouseEnter}
@@ -399,7 +408,7 @@ export default function MainLayout({
           isSidebarPinned && isEffectiveSidebarOpen ? 'lg:pl-[248px]' : 'lg:pl-[72px] pl-0'
         }`}
         style={{
-          transition: 'padding-left 0.28s cubic-bezier(0.16, 1, 0.3, 1)',
+          transition: 'padding-left 160ms cubic-bezier(0.4, 0, 0.2, 1)',
         }}
       >
         <AppHeader

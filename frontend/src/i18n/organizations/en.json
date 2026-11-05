@@ -76,6 +76,8 @@
       "unitsCount": "Affiliated Units",
       "unitCountLabel": "{count} units",
       "paginationInfo": "Showing {from} - {to} of {total}",
+      "prevPage": "Previous page",
+      "nextPage": "Next page",
       "emptyValue": "—"
     },
     "actions": {
@@ -87,6 +89,7 @@
       "filterUnitSelectRegionFirst": "Select a Block first",
       "exportExcel": "Export directory",
       "exporting": "Exporting...",
+      "exportRegion": "Export this region's directory",
       "save": "Save Changes",
       "create": "Create",
       "cancel": "Cancel",

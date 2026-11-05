@@ -83,7 +83,8 @@
       "signed": "Signed",
       "rejected": "Rejected",
       "cancelled": "Cancelled",
-      "draft": "Draft"
+      "draft": "Draft",
+      "KY_NGAY": "Sign Now"
     },
     "noIncomingToday": "No documents recorded today",
     "noOutgoingToday": "No documents issued today",

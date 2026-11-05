@@ -7,6 +7,7 @@ import { Button } from '@components/common/Button';
 import { Badge } from '@components/common/Badge';
 import { Select } from '@components/common/Select';
 import { ApiError } from '@lib/apiClient';
+import { isCompanyEmail, isValidEmployeePhone } from '../employeeContactRules';
 
 interface EmployeeModalProps {
   isOpen: boolean;
@@ -26,6 +27,41 @@ interface EmployeeModalProps {
     reasonDetail?: string
   ) => Promise<void>;
 }
+
+const PASSWORD_ERROR_FALLBACKS: Record<string, { vi: string; en: string }> = {
+  'employees.validation.passwordRequired': {
+    vi: 'Vui lòng nhập và xác nhận mật khẩu mới.',
+    en: 'Enter and confirm the new password.',
+  },
+  'employees.validation.passwordReasonRequired': {
+    vi: 'Vui lòng chọn lý do đặt lại mật khẩu.',
+    en: 'Select a reason for resetting the password.',
+  },
+  'employees.validation.passwordReasonInvalid': {
+    vi: 'Lý do đặt lại mật khẩu không hợp lệ.',
+    en: 'The password reset reason is invalid.',
+  },
+  'employees.validation.passwordReasonDetailRequired': {
+    vi: 'Vui lòng nhập chi tiết lý do khi chọn “Khác”.',
+    en: 'Enter reason details when selecting “Other”.',
+  },
+  'employees.validation.passwordReasonDetailTooLong': {
+    vi: 'Chi tiết lý do không được vượt quá 500 ký tự.',
+    en: 'Reason details cannot exceed 500 characters.',
+  },
+  'employees.messages.passwordMismatch': {
+    vi: 'Mật khẩu mới và xác nhận mật khẩu không khớp.',
+    en: 'The new password and confirmation do not match.',
+  },
+  'employees.messages.passwordNotAccepted': {
+    vi: 'Mật khẩu chưa đạt yêu cầu bảo mật của hệ thống.',
+    en: 'The password does not meet the system security requirements.',
+  },
+  'employees.messages.passwordChangeError': {
+    vi: 'Không thể đổi mật khẩu. Vui lòng kiểm tra thông tin và thử lại.',
+    en: 'Could not change the password. Check the information and try again.',
+  },
+};
 
 export const EmployeeModal: React.FC<EmployeeModalProps> = ({
   isOpen,
@@ -125,10 +161,13 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
   const [errorKey, setErrorKey] = useState<string | null>(null);
   const [createdPassword, setCreatedPassword] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState<boolean>(false);
+  const [usernameEditEmployeeId, setUsernameEditEmployeeId] = useState<number | null>(null);
   const [copyFailed, setCopyFailed] = useState<boolean>(false);
   const [isPasswordFormOpen, setIsPasswordFormOpen] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
+
+  const isUsernameEditMode = Boolean(initialData && usernameEditEmployeeId === initialData.id);
   const [passwordResetReason, setPasswordResetReason] = useState('');
   const [passwordResetReasonDetail, setPasswordResetReasonDetail] = useState('');
   const [passwordError, setPasswordError] = useState<string | null>(null);
@@ -136,6 +175,30 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
   const [showInitialPassword, setShowInitialPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false);
+
+  const getPasswordErrorText = (key: string): string => {
+    const translated = t(key);
+    if (translated !== key) return translated;
+    const fallback = PASSWORD_ERROR_FALLBACKS[key];
+    return fallback?.[currentLang] ?? PASSWORD_ERROR_FALLBACKS['employees.messages.passwordChangeError'][currentLang];
+  };
+
+  const resolvePasswordError = (rawError: string): string => {
+    const normalized = rawError.trim();
+    const knownKey = Object.keys(PASSWORD_ERROR_FALLBACKS).find(
+      (key) => normalized === key || normalized.includes(key)
+    );
+    if (knownKey) return getPasswordErrorText(knownKey);
+
+    const translated = t(normalized);
+    if (translated !== normalized) return translated;
+
+    // Không để lộ khóa dịch/mã máy chủ hoặc trace kỹ thuật khi chưa có mapping.
+    if (!normalized || /^[a-zA-Z][a-zA-Z0-9_.:-]*$/.test(normalized) || /traceback|stack trace|exception/i.test(normalized)) {
+      return getPasswordErrorText('employees.messages.passwordChangeError');
+    }
+    return normalized.length <= 300 ? normalized : getPasswordErrorText('employees.messages.passwordChangeError');
+  };
 
   const handleAddAssignment = () => {
     const usedUnitIds = new Set([
@@ -220,19 +283,19 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
     if (!initialData || !isAdmin || !onChangePassword) return;
     setPasswordError(null);
     if (!newPassword || !confirmNewPassword) {
-      setPasswordError(t('employees.validation.passwordRequired'));
+      setPasswordError(getPasswordErrorText('employees.validation.passwordRequired'));
       return;
     }
     if (!passwordResetReason) {
-      setPasswordError(t('employees.validation.passwordReasonRequired'));
+      setPasswordError(getPasswordErrorText('employees.validation.passwordReasonRequired'));
       return;
     }
     if (passwordResetReason === 'OTHER' && !passwordResetReasonDetail.trim()) {
-      setPasswordError(t('employees.validation.passwordReasonDetailRequired'));
+      setPasswordError(getPasswordErrorText('employees.validation.passwordReasonDetailRequired'));
       return;
     }
     if (newPassword !== confirmNewPassword) {
-      setPasswordError(t('employees.messages.passwordMismatch'));
+      setPasswordError(getPasswordErrorText('employees.messages.passwordMismatch'));
       return;
     }
 
@@ -254,14 +317,18 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
       let rawError: unknown;
       if (error instanceof ApiError) {
         rawError = error.data?.detail || error.data?.error || error.data?.message;
+        const newPasswordErrors = error.data?.new_password;
+        if (!rawError && Array.isArray(newPasswordErrors) && newPasswordErrors.length > 0) {
+          rawError = 'employees.messages.passwordNotAccepted';
+        }
         if (!rawError && error.data && typeof error.data === 'object') {
           const firstValue = Object.values(error.data).find((value) => value !== undefined);
           rawError = Array.isArray(firstValue) ? firstValue[0] : firstValue;
         }
       }
       const message = typeof rawError === 'string'
-        ? resolveErrorMessage(rawError)
-        : t('employees.messages.passwordChangeError');
+        ? resolvePasswordError(rawError)
+        : getPasswordErrorText('employees.messages.passwordChangeError');
       setPasswordError(message);
     } finally {
       setIsChangingPassword(false);
@@ -298,6 +365,12 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
       formRef.current?.scrollTo?.({ top: 0, behavior: 'smooth' });
       return;
     }
+    if (!isCompanyEmail(formData.email)) {
+      const msg = t('employees.validation.emailDomainInvalid');
+      setErrorKey(msg);
+      formRef.current?.scrollTo?.({ top: 0, behavior: 'smooth' });
+      return;
+    }
     if (!initialData && !formData.don_vi_id) {
       const msg = t('employees.import.errors.unitRequired');
       setErrorKey(msg);
@@ -321,7 +394,7 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
       return;
     }
 
-    if (formData.sdt && !/^(0|\+84)[1-9][0-9]{7,9}$/.test(formData.sdt.replace(/\s+/g, ''))) {
+    if (formData.sdt && !isValidEmployeePhone(formData.sdt)) {
       const msg = t('employees.validation.phoneInvalid');
       setErrorKey(msg);
       formRef.current?.scrollTo?.({ top: 0, behavior: 'smooth' });
@@ -337,7 +410,7 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
         payload = {
           email: formData.email.trim(),
           sdt: formData.sdt.trim(),
-          ngay_sinh: isoBirthday || formData.ngay_sinh,
+          ...(formData.ngay_sinh ? { ngay_sinh: isoBirthday || formData.ngay_sinh } : {}),
         };
       } else {
         if (!initialData && !formData.chuc_vu_id) {
@@ -382,7 +455,7 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
         payload = {
           ho_ten: formData.ho_ten.trim(),
           email: formData.email.trim(),
-          ngay_sinh: isoBirthday || formData.ngay_sinh,
+          ...(formData.ngay_sinh ? { ngay_sinh: isoBirthday || formData.ngay_sinh } : {}),
           don_vi_id: formData.don_vi_id ? Number(formData.don_vi_id) : null,
           chuc_vu_id: formData.chuc_vu_id ? Number(formData.chuc_vu_id) : null,
           chuc_danh: formData.chuc_danh.trim(),
@@ -397,6 +470,12 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
             chuc_danh: a.chuc_danh.trim(),
           })),
         };
+        if (
+          initialData && isAdmin && isUsernameEditMode &&
+          formData.username.trim() !== initialData.username
+        ) {
+          payload.username = formData.username.trim();
+        }
 
         if (!initialData) {
           if (formData.username.trim()) {
@@ -762,25 +841,45 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                 />
               </div>
 
-              {/* Username (chỉ khi tạo mới hoặc hiển thị readonly) */}
-              {!initialData ? (
-                <div>
+              {/* Username */}
+              <div>
                   <label className="block text-sm font-semibold text-secondary mb-1.5">
                     {t('employees.fields.username')}
                   </label>
-                  <input
-                    type="text"
-                    name="username"
-                    value={formData.username}
-                    onChange={handleChange}
-                    placeholder={t('employees.placeholders.username')}
-                    className="w-full px-3.5 py-2 text-sm bg-surface-elevated border border-border rounded-lg text-main placeholder-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
-                  />
-                  <span className="text-xs text-muted block mt-1">
-                    {t('employees.hints.usernameAuto')}
-                  </span>
-                </div>
-              ) : null}
+                  <div className="relative">
+                    <input
+                      type="text"
+                      name="username"
+                      value={formData.username}
+                      onChange={handleChange}
+                      placeholder={t('employees.placeholders.username')}
+                      disabled={Boolean(initialData && (!isAdmin || !isUsernameEditMode))}
+                      className="w-full px-3.5 py-2 pr-11 text-sm bg-surface-elevated border border-border rounded-lg text-main placeholder-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+                    />
+                    {initialData && isAdmin && (
+                      <button
+                        type="button"
+                        aria-label={t(isUsernameEditMode ? 'employees.actions.cancelUsernameEdit' : 'employees.actions.editUsername')}
+                        title={t(isUsernameEditMode ? 'employees.actions.cancelUsernameEdit' : 'employees.actions.editUsername')}
+                        onClick={() => {
+                          if (isUsernameEditMode) {
+                            setFormData((prev) => ({ ...prev, username: initialData.username }));
+                          }
+                          setUsernameEditEmployeeId(isUsernameEditMode ? null : initialData.id);
+                        }}
+                        disabled={isLoading}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded"
+                      >
+                        <i aria-hidden="true" className={`fa-solid ${isUsernameEditMode ? 'fa-xmark' : 'fa-pen'}`} />
+                      </button>
+                    )}
+                  </div>
+                  {!initialData && (
+                    <span className="text-xs text-muted block mt-1">
+                      {t('employees.hints.usernameAuto')}
+                    </span>
+                  )}
+              </div>
 
               {/* Password (khi tạo mới) */}
               {!initialData ? (

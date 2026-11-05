@@ -46,6 +46,7 @@ export const MeetingsPage: React.FC = () => {
 
   // Bộ lọc lịch
   const [selectedDate, setSelectedDate] = useState<string>(() => formatLocalDate());
+  const [roomsDate, setRoomsDate] = useState<string>(() => formatLocalDate());
   const [selectedRoomFilter, setSelectedRoomFilter] = useState<string>('all');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('all');
   const [selectedFloorFilter, setSelectedFloorFilter] = useState<string>('all');
@@ -213,12 +214,12 @@ export const MeetingsPage: React.FC = () => {
     };
   }, [selectedDate, selectedRoomFilter, selectedStatusFilter, reloadBookingsTrigger]);
 
-  // 4. Tải lịch của ngày hôm nay cho Tab Danh mục phòng (không lọc room hay trang_thai)
+  // 4. Tải lịch theo ngày được chọn cho Tab Danh mục phòng (không lọc room hay trang_thai)
   useEffect(() => {
     let isMounted = true;
     apiClient
       .get<PaginatedResponse<MeetingBooking> | MeetingBooking[]>(
-        `/api/meeting-bookings/?date=${todayStr}&page_size=100`
+        `/api/meeting-bookings/?date=${roomsDate}&page_size=100`
       )
       .then((res) => {
         if (!isMounted) return;
@@ -232,7 +233,15 @@ export const MeetingsPage: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [todayStr, reloadBookingsTrigger]);
+  }, [roomsDate, reloadBookingsTrigger]);
+
+  // Điều khiển ngày Tab 2 (Danh mục phòng họp)
+  const handleRoomsDateChange = (daysDelta: number) => {
+    const parts = roomsDate.split('-');
+    const current = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    current.setDate(current.getDate() + daysDelta);
+    setRoomsDate(formatLocalDate(current));
+  };
 
   // Điều khiển ngày: Hôm nay, trước, sau
   const handleDateChange = (daysDelta: number) => {
@@ -452,20 +461,6 @@ export const MeetingsPage: React.FC = () => {
       {/* Tabs Navigation */}
       <div className="flex items-center gap-2 border-b border-border-subtle pb-px">
         <button
-          onClick={() => setActiveTab('schedule')}
-          className={`flex items-center gap-2.5 px-5 py-3 font-bold text-sm rounded-t-xl transition-all border-b-2 ${activeTab === 'schedule'
-              ? 'text-primary border-primary bg-primary-subtle'
-              : 'text-secondary border-transparent hover:text-main hover:bg-surface-hover'
-            }`}
-        >
-          <i className="fa-regular fa-calendar-days text-base" />
-          <span>{t('meetings.tabSchedule')}</span>
-          <span className="px-2 py-0.5 rounded-full text-xs bg-primary-subtle text-primary font-semibold">
-            {activeInDay}
-          </span>
-        </button>
-
-        <button
           onClick={() => setActiveTab('rooms')}
           className={`flex items-center gap-2.5 px-5 py-3 font-bold text-sm rounded-t-xl transition-all border-b-2 ${activeTab === 'rooms'
               ? 'text-primary border-primary bg-primary-subtle'
@@ -476,6 +471,20 @@ export const MeetingsPage: React.FC = () => {
           <span>{t('meetings.tabRooms')}</span>
           <span className="px-2 py-0.5 rounded-full text-xs bg-surface-elevated text-secondary font-semibold">
             {rooms.length}
+          </span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('schedule')}
+          className={`flex items-center gap-2.5 px-5 py-3 font-bold text-sm rounded-t-xl transition-all border-b-2 ${activeTab === 'schedule'
+              ? 'text-primary border-primary bg-primary-subtle'
+              : 'text-secondary border-transparent hover:text-main hover:bg-surface-hover'
+            }`}
+        >
+          <i className="fa-regular fa-calendar-days text-base" />
+          <span>{t('meetings.tabSchedule')}</span>
+          <span className="px-2 py-0.5 rounded-full text-xs bg-primary-subtle text-primary font-semibold">
+            {activeInDay}
           </span>
         </button>
       </div>
@@ -822,6 +831,45 @@ export const MeetingsPage: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-3 w-full md:w-auto flex-wrap">
+              {/* Bộ điều khiển ngày của Danh mục phòng họp */}
+              <div className="flex items-center gap-1.5 w-full sm:w-auto">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => handleRoomsDateChange(-1)}
+                  title={t('meetings.prevDay')}
+                  className="h-9 px-2.5"
+                >
+                  <i className="fa-solid fa-chevron-left text-xs" />
+                </Button>
+                <Button
+                  variant={roomsDate === todayStr ? 'primary' : 'secondary'}
+                  size="sm"
+                  onClick={() => setRoomsDate(todayStr)}
+                  className="font-bold text-xs h-9 px-3"
+                >
+                  {t('meetings.today')}
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => handleRoomsDateChange(1)}
+                  title={t('meetings.nextDay')}
+                  className="h-9 px-2.5"
+                >
+                  <i className="fa-solid fa-chevron-right text-xs" />
+                </Button>
+                <div className="relative flex items-center">
+                  <input
+                    type="date"
+                    aria-label="Chọn ngày xem danh mục phòng"
+                    value={roomsDate}
+                    onChange={(e) => setRoomsDate(e.target.value)}
+                    className="px-3 py-1.5 rounded-xl bg-surface-elevated border border-border-subtle text-main font-bold text-xs focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer h-9"
+                  />
+                </div>
+              </div>
+
               {/* Bộ lọc theo tầng */}
               <select
                 value={selectedFloorFilter}
@@ -896,13 +944,14 @@ export const MeetingsPage: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {filteredRooms.map((room) => {
                 const isAvailable = (room.trang_thai || 'AVAILABLE') === 'AVAILABLE';
-                const roomBookingsToday = todayBookings.filter(
+                const roomBookingsForDate = todayBookings.filter(
                   (b) => b.room === room.id && b.trang_thai !== 'CANCELLED'
                 );
 
+                const isViewingToday = roomsDate === todayStr;
                 const now = new Date();
                 const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-                const isOccupiedNow = roomBookingsToday.some(
+                const isOccupiedNow = isViewingToday && roomBookingsForDate.some(
                   (b) => b.date === todayStr && b.start_time.slice(0, 5) <= currentTimeStr && currentTimeStr < b.end_time.slice(0, 5)
                 );
 
@@ -962,10 +1011,10 @@ export const MeetingsPage: React.FC = () => {
                               <Badge variant="success" size="sm" withDot>
                                 {t('meetings.status.available')}
                               </Badge>
-                              {roomBookingsToday.length > 0 && (
+                              {roomBookingsForDate.length > 0 && (
                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-warning-subtle text-warning-text border border-warning/30 flex items-center gap-1 shadow-2xs">
                                   <i className="fa-solid fa-clock text-[9px]" />
-                                  {t('meetings.hasScheduleToday')}
+                                  {isViewingToday ? t('meetings.hasScheduleToday') : 'Có lịch trong ngày'}
                                 </span>
                               )}
                             </div>
@@ -1006,12 +1055,17 @@ export const MeetingsPage: React.FC = () => {
                         <div className="flex items-center justify-between text-xs">
                           <span className="font-bold text-secondary uppercase tracking-wider text-[11px] flex items-center gap-1.5">
                             <i className="fa-regular fa-calendar-days text-primary text-xs" />
-                            {t('meetings.today')}:
+                            {isViewingToday ? `${t('meetings.today')}:` : (() => {
+                              const parts = roomsDate.split('-');
+                              return parts.length === 3 ? `NGÀY ${parts[2]}/${parts[1]}/${parts[0]}:` : `${roomsDate}:`;
+                            })()}
                           </span>
-                          {roomBookingsToday.length > 0 ? (
+                          {roomBookingsForDate.length > 0 ? (
                             <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-warning-subtle text-warning-text border border-warning/40 flex items-center gap-1.5 shadow-xs">
                               <i className="fa-solid fa-calendar-check text-[10px] text-warning" />
-                              {t('meetings.roomBookedToday', { count: roomBookingsToday.length })}
+                              {isViewingToday
+                                ? t('meetings.roomBookedToday', { count: roomBookingsForDate.length })
+                                : `Đã có ${roomBookingsForDate.length} lịch đặt`}
                             </span>
                           ) : (
                             <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-success-subtle text-success border border-success/30 flex items-center gap-1">
@@ -1021,10 +1075,10 @@ export const MeetingsPage: React.FC = () => {
                           )}
                         </div>
 
-                        {roomBookingsToday.length > 0 ? (
+                        {roomBookingsForDate.length > 0 ? (
                           <div className="space-y-2 max-h-40 overflow-y-auto pr-0.5">
-                            {roomBookingsToday.map((b) => {
-                              const isCurrentMeeting = b.date === selectedDate && b.start_time.slice(0, 5) <= currentTimeStr && currentTimeStr < b.end_time.slice(0, 5);
+                            {roomBookingsForDate.map((b) => {
+                              const isCurrentMeeting = isViewingToday && b.date === todayStr && b.start_time.slice(0, 5) <= currentTimeStr && currentTimeStr < b.end_time.slice(0, 5);
                               const timeRange = `${b.start_time.slice(0, 5)} - ${b.end_time.slice(0, 5)}`;
 
                               return (
@@ -1180,7 +1234,7 @@ export const MeetingsPage: React.FC = () => {
         }}
         rooms={rooms}
         bookingToEdit={bookingToEdit}
-        initialDate={selectedDate}
+        initialDate={activeTab === 'rooms' ? roomsDate : selectedDate}
         initialRoomId={selectedRoomForBooking}
         currentUser={currentUser}
         existingBookings={bookings}

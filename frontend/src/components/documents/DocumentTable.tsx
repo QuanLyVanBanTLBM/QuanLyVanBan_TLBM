@@ -185,8 +185,9 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
 
   // Helper tính quyền sửa và xóa trên từng văn bản
   const getDocPermissions = useCallback((doc: DocumentItem) => {
-    const isExpired = doc.hieu_luc === 'HET_HIEU_LUC';
-    const isDocConfidential = isConfidential || doc.pham_vi === 'HAN_CHE' || doc.loai === 'MAT' || loai === 'MAT';
+    const isExpired = doc.hieu_luc === 'HET_HIEU_LUC' || doc.hieu_luc === 'HET_VA_THAY_THE';
+    const isMat = isConfidential || doc.loai === 'MAT' || loai === 'MAT';
+    const isDocConfidential = isMat || doc.pham_vi === 'HAN_CHE';
     const isAdmin =
       currentSession?.role === 'admin' ||
       currentSession?.username === 'admin';

@@ -137,10 +137,7 @@ def region_detail_view(request, pk):
             )
         try:
             region.delete()
-            return Response(
-                {"detail": "organizations.messages.deleteSuccess", "key": "organizations.messages.deleteSuccess"},
-                status=status.HTTP_204_NO_CONTENT,
-            )
+            return Response(status=status.HTTP_204_NO_CONTENT)
         except ProtectedError:
             return Response(
                 {"detail": "organizations.messages.protectedError", "key": "organizations.messages.protectedError"},
@@ -238,10 +235,7 @@ def unit_detail_view(request, pk):
             )
         except IntegrityError:  # DB dựng từ DDL chặn bằng ON DELETE RESTRICT
             return in_use
-        return Response(
-            {"detail": "organizations.messages.deleteSuccess", "key": "organizations.messages.deleteSuccess"},
-            status=status.HTTP_204_NO_CONTENT,
-        )
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 @api_view(["GET"])
@@ -258,6 +252,16 @@ def unit_export_excel_view(request):
         return invalid
     if region_id:
         queryset = queryset.filter(khoi_id=region_id)
+
+    # ?unit_id=: xuất đúng Đơn vị đang chọn trên bảng; Đơn vị người dùng không xem được thì 404 như unit_detail_view.
+    unit_id = request.query_params.get("unit_id")
+    if unit_id:
+        unit_not_found = {"detail": "organizations.messages.unitNotFound", "key": "organizations.messages.unitNotFound"}
+        if not unit_id.isdigit() or int(unit_id) > 9223372036854775807:
+            return Response(unit_not_found, status=status.HTTP_400_BAD_REQUEST)
+        if not _visible_units(request.user).filter(pk=unit_id).exists():
+            return Response(unit_not_found, status=status.HTTP_404_NOT_FOUND)
+        queryset = queryset.filter(pk=unit_id)
 
     search_query = request.query_params.get("search", "").strip()
     if search_query:

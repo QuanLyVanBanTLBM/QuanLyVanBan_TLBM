@@ -369,6 +369,8 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
     can(isDi ? 'send_mail_all_vanbandi' : 'send_mail_all_vanbanden') ||
     Boolean(initDoc?.can_send_mail_all)
   );
+  // Phân quyền thêm văn bản hạn chế (contract: add_han_che_vanbanden / add_han_che_vanbandi)
+  const canAddHanChe = Boolean(isAdmin || can(isDi ? 'add_han_che_vanbandi' : 'add_han_che_vanbanden'));
   const [units, setUnits] = useState<string[]>(DEFAULT_UNITS);
   const [staff, setStaff] = useState<UserOption[]>([]);
   const [isStaffLoading, setIsStaffLoading] = useState(false);
@@ -1621,7 +1623,13 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                     }
                   >
                     <option value="NOI_BO">{t('documents_ui.formModal.scopeInternal') || 'Nội bộ (Toàn cơ quan)'}</option>
-                    <option value="HAN_CHE">{t('documents_ui.formModal.scopeRestrictedOption') || 'Hạn chế (Chỉ người nhận xem)'}</option>
+                    <option
+                      value="HAN_CHE"
+                      disabled={!canAddHanChe && form.pham_vi !== 'HAN_CHE'}
+                      title={!canAddHanChe ? (t('documents_ui.formModal.scopeRestrictedNoPermission') || 'Bạn chưa được cấp quyền thêm văn bản hạn chế.') : undefined}
+                    >
+                      {t('documents_ui.formModal.scopeRestrictedOption') || 'Hạn chế (Chỉ người nhận xem)'}
+                    </option>
                   </select>
                 )}
               </div>

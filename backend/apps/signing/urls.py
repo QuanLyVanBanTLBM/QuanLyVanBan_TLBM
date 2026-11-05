@@ -17,6 +17,11 @@ urlpatterns = [
 
     # Khóa ký của người dùng hiện tại
     path("khoa/", views.KhoaListCreateView.as_view(), name="khoa-list"),
+    path("dat-lai-pin/yeu-cau/", views.DatLaiPinYeuCauView.as_view(), name="dat-lai-pin-yeu-cau"),
+    path("dat-lai-pin/xac-nhan/", views.DatLaiPinXacNhanView.as_view(), name="dat-lai-pin-xac-nhan"),
+    # MFA qua email khi ký (#509), bật bằng SIGNING_MFA_EMAIL_ENABLED
+    path("mfa/yeu-cau/", views.MfaKyYeuCauView.as_view(), name="mfa-ky-yeu-cau"),
+    path("mfa/xac-minh/", views.MfaKyXacMinhView.as_view(), name="mfa-ky-xac-minh"),
     path("khoa/<int:pk>/thach-thuc/", views.KhoaThachThucView.as_view(), name="khoa-thach-thuc"),
     path("khoa/<int:pk>/xac-minh/", views.KhoaActionView.as_view(action="xac-minh"), name="khoa-xac-minh"),
     path("khoa/<int:pk>/kich-hoat/", views.KhoaActionView.as_view(action="kich-hoat"), name="khoa-kich-hoat"),
@@ -29,7 +34,6 @@ urlpatterns = [
 
     # PIN mở khóa ký (Phase 6)
     path("khoa/<int:pk>/dat-pin/", views.KhoaPinView.as_view(action="dat-pin"), name="khoa-dat-pin"),
-    path("khoa/<int:pk>/mo-khoa-ky/", views.KhoaPinView.as_view(action="mo-khoa-ky"), name="khoa-mo-khoa-ky"),
     path("khoa/<int:pk>/doi-pin/", views.KhoaPinView.as_view(action="doi-pin"), name="khoa-doi-pin"),
 
     # Hồ sơ trình ký (Phase 7, #80)
@@ -44,6 +48,8 @@ urlpatterns = [
     path("trinh-ky/<int:pk>/huy/", views.TrinhKyActionView.as_view(action="huy"), name="trinh-ky-huy"),
     path("trinh-ky/<int:pk>/trinh-lai/", views.TrinhKyActionView.as_view(action="trinh-lai"),
          name="trinh-ky-trinh-lai"),
+
+    path("trinh-ky/<int:pk>/thay-nguoi-ky/", views.ThayNguoiKyView.as_view(), name="trinh-ky-thay-nguoi-ky"),
 
     # Quản trị khóa ký và quyền ký của tài khoản khác (#451)
     path("quan-tri/nguoi-dung/", views.QuanTriNguoiDungView.as_view(), name="quan-tri-nguoi-dung"),

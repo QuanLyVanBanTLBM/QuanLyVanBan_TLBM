@@ -10,20 +10,31 @@ import { RegionUnitSelect } from './components/RegionUnitSelect';
 import { RegionModal } from './components/RegionModal';
 import { UnitModal } from './components/UnitModal';
 import { DeleteConfirmModal } from './components/DeleteConfirmModal';
+import './OrganizationsPage.mobile.css';
 
 export default function OrganizationsPage() {
   const { t, currentLang } = useTranslation();
   const { can } = usePermissions();
   // Khối và Đơn vị dùng chung bộ quyền *_donvi của DDL; backend vẫn kiểm quyền thật ở mọi API.
   const showRowActions = can('change_donvi') || can('delete_donvi');
+  // Bảng Khối có thêm nút xuất danh bạ theo từng Khối nên người chỉ có export_donvi cũng cần cột Thao tác
+  const showRegionRowActions = showRowActions || can('export_donvi');
 
-  // Tab chuyển đổi: 'units' (Đơn vị) hoặc 'regions' (Khối)
-  const [activeTab, setActiveTab] = useState<'units' | 'regions'>('units');
+  // Tab chuyển đổi: 'regions' (Khối, cấp 1, mở đầu tiên) hoặc 'units' (Đơn vị, cấp 2)
+  const [activeTab, setActiveTab] = useState<'units' | 'regions'>('regions');
 
   // Dữ liệu Khối & Đơn vị
   const [dropdownRegions, setDropdownRegions] = useState<Region[]>([]);
   const [regions, setRegions] = useState<Region[]>([]);
   const [regionsTotal, setRegionsTotal] = useState<number>(0);
+  // Khối đang mở ở tab Khối (bấm vào Khối để hiện các Đơn vị trực thuộc)
+  const [expandedRegionIds, setExpandedRegionIds] = useState<Set<number>>(new Set());
+  const toggleInSet = (set: Set<number>, id: number) => {
+    const next = new Set(set);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  };
   const [units, setUnits] = useState<Unit[]>([]);
   const [unitsTotal, setUnitsTotal] = useState<number>(0);
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -38,6 +49,9 @@ export default function OrganizationsPage() {
 
   // Trạng thái tải & thông báo
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  // Tab Khối mở đầu tiên: chờ cả danh sách Khối và danh sách Đơn vị để không hiện "Chưa có dữ liệu" hay "0 đơn vị" khi đang tải
+  const [isRegionsLoading, setIsRegionsLoading] = useState<boolean>(true);
+  const [isAllUnitsLoading, setIsAllUnitsLoading] = useState<boolean>(true);
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<{ textKey: string; isError?: boolean } | null>(null);
 
@@ -61,6 +75,16 @@ export default function OrganizationsPage() {
   const showToast = (textKey: string, isError = false) => {
     setToastMessage({ textKey, isError });
     setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  // Thiếu quyền xem (403) khác lỗi mạng: báo đúng nguyên nhân một lần trong khung thay vì "kiểm tra kết nối" và số 0.
+  const [accessDenied, setAccessDenied] = useState<boolean>(false);
+  const handleLoadError = (err: unknown) => {
+    if (err instanceof ApiError && err.status === 403) {
+      setAccessDenied(true);
+      return;
+    }
+    showToast('organizations.messages.fetchError', true);
   };
 
   // Phân trang cho Tab Khối
@@ -89,7 +113,8 @@ export default function OrganizationsPage() {
     };
   }, []);
 
-  // Toàn bộ Đơn vị (cấp 2): dropdown Khối hiện theo hover, dropdown Đơn vị lọc theo Khối đang chọn
+  // Toàn bộ Đơn vị (cấp 2) người dùng được xem: danh sách Đơn vị trực thuộc ở tab Khối,
+  // dropdown Khối hiện theo hover, dropdown Đơn vị lọc theo Khối đang chọn
   const loadAllUnits = async () => {
     try {
       const data = await apiClient<Unit[]>('/api/organizations/units/?all=true');
@@ -107,7 +132,13 @@ export default function OrganizationsPage() {
       .then((data) => {
         if (!ignore) setAllUnits(Array.isArray(data) ? data : []);
       })
-      .catch(() => {});
+      .catch((err: unknown) => {
+        // Tab Khối mở đầu tiên dựa vào danh sách này để đếm và liệt kê Đơn vị nên phải báo lỗi
+        if (!ignore) handleLoadError(err);
+      })
+      .finally(() => {
+        if (!ignore) setIsAllUnitsLoading(false);
+      });
     return () => {
       ignore = true;
     };
@@ -132,10 +163,11 @@ export default function OrganizationsPage() {
           }
         }
       })
-      .catch(() => {
-        if (!ignore) {
-          setToastMessage({ textKey: 'organizations.messages.fetchError', isError: true });
-        }
+      .catch((err: unknown) => {
+        if (!ignore) handleLoadError(err);
+      })
+      .finally(() => {
+        if (!ignore) setIsRegionsLoading(false);
       });
 
     return () => {
@@ -159,9 +191,9 @@ export default function OrganizationsPage() {
           setIsLoading(false);
         }
       })
-      .catch(() => {
+      .catch((err: unknown) => {
         if (!ignore) {
-          setToastMessage({ textKey: 'organizations.messages.fetchError', isError: true });
+          handleLoadError(err);
           setIsLoading(false);
         }
       });
@@ -186,8 +218,8 @@ export default function OrganizationsPage() {
         setRegions(res.results || []);
         setRegionsTotal(res.count || 0);
       }
-    } catch {
-      showToast('organizations.messages.fetchError', true);
+    } catch (err: unknown) {
+      handleLoadError(err);
     }
   };
 
@@ -204,8 +236,8 @@ export default function OrganizationsPage() {
       setUnits(res.results || []);
       setUnitsTotal(res.count || 0);
       await loadAllUnits();
-    } catch {
-      showToast('organizations.messages.fetchError', true);
+    } catch (err: unknown) {
+      handleLoadError(err);
     } finally {
       setIsLoading(false);
     }
@@ -288,14 +320,16 @@ export default function OrganizationsPage() {
     }
   };
 
-  // Xử lý Xuất file Excel
-  const handleExportExcel = async () => {
+  // Xử lý Xuất file Excel: scope là phạm vi của file (Khối, Đơn vị, từ khóa), rỗng nghĩa là không lọc
+  const exportDirectory = async (scope: { regionId: string; unitId: string; search: string }) => {
     setIsExporting(true);
     try {
       const params = new URLSearchParams();
       params.append('lang', currentLang);
-      if (selectedRegionId) params.append('region_id', selectedRegionId);
-      if (searchQuery.trim()) params.append('search', searchQuery.trim());
+      if (scope.regionId) params.append('region_id', scope.regionId);
+      // Đã chọn một Đơn vị thì file chỉ gồm Đơn vị đó, khớp với bảng đang hiển thị
+      if (scope.unitId) params.append('unit_id', scope.unitId);
+      if (scope.search) params.append('search', scope.search);
 
       await downloadBlob(
         `/api/organizations/units/export/?${params.toString()}`,
@@ -313,6 +347,14 @@ export default function OrganizationsPage() {
     }
   };
 
+  // Tab Đơn vị: xuất theo bộ lọc đang chọn trên bảng
+  const handleExportExcel = () =>
+    exportDirectory({ regionId: selectedRegionId, unitId: selectedUnitId, search: searchQuery.trim() });
+  // Tab Khối: nút trên thanh công cụ xuất toàn bộ Khối, nút trên từng dòng xuất đúng Khối đó
+  const handleExportAll = () => exportDirectory({ regionId: '', unitId: '', search: '' });
+  const handleExportRegion = (regionId: number) =>
+    exportDirectory({ regionId: String(regionId), unitId: '', search: '' });
+
   // Chọn đơn vị cấp 2 cụ thể thì bảng chỉ hiển thị đơn vị đó
   const dropdownUnits = selectedRegionId ? allUnits.filter((u) => String(u.khoi) === selectedRegionId) : [];
   const keyword = searchQuery.trim().toLowerCase();
@@ -327,11 +369,11 @@ export default function OrganizationsPage() {
   const totalPages = Math.ceil(shownTotal / pageSize) || 1;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-24 md:pb-0">
       {/* Toast Notification */}
       {toastMessage && (
         <div
-          className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-lg shadow-lg flex items-center gap-2.5 text-sm font-semibold animate-fade-in ${
+          className={`fixed top-5 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl shadow-2xl flex items-center gap-2.5 text-sm font-semibold animate-fade-in ${
             toastMessage.isError
               ? 'bg-danger text-white border border-danger-border'
               : 'bg-success text-white border border-success-border'
@@ -380,18 +422,30 @@ export default function OrganizationsPage() {
               )}
             </>
           ) : (
-            can('add_donvi') && (
-              <Button
-                variant="primary"
-                icon="fa-plus"
-                onClick={() => {
-                  setEditingRegion(null);
-                  setIsRegionModalOpen(true);
-                }}
-              >
-                {t('organizations.region.addBtn')}
-              </Button>
-            )
+            <>
+              {can('export_donvi') && (
+                <Button
+                  variant="outline"
+                  icon="fa-file-excel"
+                  onClick={handleExportAll}
+                  isLoading={isExporting}
+                >
+                  {isExporting ? t('organizations.actions.exporting') : t('organizations.actions.exportExcel')}
+                </Button>
+              )}
+              {can('add_donvi') && (
+                <Button
+                  variant="primary"
+                  icon="fa-plus"
+                  onClick={() => {
+                    setEditingRegion(null);
+                    setIsRegionModalOpen(true);
+                  }}
+                >
+                  {t('organizations.region.addBtn')}
+                </Button>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -400,39 +454,50 @@ export default function OrganizationsPage() {
       <div className="flex border-b border-border gap-2">
         <button
           type="button"
-          onClick={() => setActiveTab('units')}
-          className={`px-5 py-3 font-bold text-sm border-b-2 transition-all cursor-pointer flex items-center gap-2 select-none ${
-            activeTab === 'units'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-secondary hover:text-main'
-          }`}
-        >
-          <i className="fa-solid fa-building" />
-          {t('organizations.tabs.units')}
-          <span className="text-xs px-2 py-0.5 rounded-full bg-surface-elevated text-secondary border border-border">
-            {unitsTotal}
-          </span>
-        </button>
-
-        <button
-          type="button"
           onClick={() => setActiveTab('regions')}
-          className={`px-5 py-3 font-bold text-sm border-b-2 transition-all cursor-pointer flex items-center gap-2 select-none ${
+          className={`flex-1 sm:flex-none justify-center px-2 sm:px-5 py-3 font-bold text-sm text-center leading-tight border-b-2 transition-all cursor-pointer flex items-center gap-2 select-none ${
             activeTab === 'regions'
               ? 'border-primary text-primary'
               : 'border-transparent text-secondary hover:text-main'
           }`}
         >
-          <i className="fa-solid fa-layer-group" />
+          <i className="fa-solid fa-layer-group hidden sm:inline" />
           {t('organizations.tabs.regions')}
-          <span className="text-xs px-2 py-0.5 rounded-full bg-surface-elevated text-secondary border border-border">
-            {regionsTotal}
-          </span>
+          {!accessDenied && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-surface-elevated text-secondary border border-border">
+              {regionsTotal}
+            </span>
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('units')}
+          className={`flex-1 sm:flex-none justify-center px-2 sm:px-5 py-3 font-bold text-sm text-center leading-tight border-b-2 transition-all cursor-pointer flex items-center gap-2 select-none ${
+            activeTab === 'units'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-secondary hover:text-main'
+          }`}
+        >
+          <i className="fa-solid fa-building hidden sm:inline" />
+          {t('organizations.tabs.units')}
+          {!accessDenied && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-surface-elevated text-secondary border border-border">
+              {unitsTotal}
+            </span>
+          )}
         </button>
       </div>
 
-      {/* ── NỘI DUNG TAB 1: ĐƠN VỊ / PHÒNG BAN ── */}
-      {activeTab === 'units' && (
+      {accessDenied && (
+        <div role="alert" className="bg-surface border border-border rounded-xl py-12 text-center text-danger">
+          <i className="fa-solid fa-circle-exclamation text-3xl mb-2 block" />
+          {t('organizations.messages.permissionDenied')}
+        </div>
+      )}
+
+      {/* ── NỘI DUNG TAB 2: ĐƠN VỊ / PHÒNG BAN ── */}
+      {!accessDenied && activeTab === 'units' && (
         <div className="space-y-4">
           {/* Thanh công cụ lọc & tìm kiếm */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
@@ -502,8 +567,8 @@ export default function OrganizationsPage() {
           {/* Bảng danh sách Đơn vị */}
           <div className="bg-surface border border-border rounded-xl shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm border-collapse">
-                <thead className="bg-surface-elevated text-secondary text-xs uppercase font-bold border-b border-border">
+              <table className="units-table w-full text-left text-sm border-collapse">
+                <thead className="units-table__head bg-surface-elevated text-secondary text-xs uppercase font-bold border-b border-border">
                   <tr>
                     <th className="px-4 py-3 text-center w-16">{t('organizations.table.priority')}</th>
                     <th className="px-4 py-3">{t('organizations.table.unitName')}</th>
@@ -516,16 +581,16 @@ export default function OrganizationsPage() {
                     )}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border">
+                <tbody className="units-table__body divide-y divide-border">
                   {isLoading ? (
-                    <tr>
+                    <tr className="units-table__row--message">
                       <td colSpan={showRowActions ? 7 : 6} className="text-center py-12 text-secondary">
                         <i className="fa-solid fa-spinner fa-spin text-2xl text-primary mb-2 block" />
                         {t('organizations.table.loading')}
                       </td>
                     </tr>
                   ) : shownUnits.length === 0 ? (
-                    <tr>
+                    <tr className="units-table__row--message">
                       <td colSpan={showRowActions ? 7 : 6} className="text-center py-12 text-secondary">
                         <i className="fa-solid fa-folder-open text-3xl text-muted mb-2 block" />
                         {t('organizations.table.empty')}
@@ -538,12 +603,12 @@ export default function OrganizationsPage() {
                       return (
                         <tr
                           key={unit.id}
-                          className={`transition-colors hover:bg-surface-hover ${
+                          className={`units-table__row transition-colors hover:bg-surface-hover ${
                             isInternal ? 'bg-warning-subtle/20 border-l-4 border-l-warning' : ''
                           }`}
                         >
-                          <td className="px-4 py-3 text-center font-bold text-main">{unit.stt_uu_tien}</td>
-                          <td className="px-4 py-3 font-semibold text-main">
+                          <td className="units-table__cell units-table__cell--order px-4 py-3 text-center font-bold text-main">{unit.stt_uu_tien}</td>
+                          <td className="units-table__cell units-table__cell--name px-4 py-3 font-semibold text-main min-w-[14rem]">
                             <div>{unit.ten}</div>
                             {unit.dia_chi && (
                               <div className="text-xs text-secondary font-normal flex items-center gap-1 mt-0.5">
@@ -552,14 +617,25 @@ export default function OrganizationsPage() {
                               </div>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-secondary">{unit.khoi_ten || t('organizations.table.emptyValue')}</td>
-                          <td className="px-4 py-3 text-secondary font-mono text-xs">
+                          <td
+                            data-label={t('organizations.table.parentRegion')}
+                            className="units-table__cell units-table__cell--region px-4 py-3 text-secondary min-w-[10rem]"
+                          >
+                            {unit.khoi_ten || t('organizations.table.emptyValue')}
+                          </td>
+                          <td
+                            data-label={t('organizations.table.phone')}
+                            className="units-table__cell units-table__cell--phone px-4 py-3 text-secondary font-mono text-xs whitespace-nowrap"
+                          >
                             {unit.dien_thoai || t('organizations.table.emptyValue')}
                           </td>
-                          <td className="px-4 py-3 text-secondary text-xs">
+                          <td
+                            data-label={t('organizations.table.email')}
+                            className="units-table__cell units-table__cell--email px-4 py-3 text-secondary text-xs"
+                          >
                             {unit.email || t('organizations.table.emptyValue')}
                           </td>
-                          <td className="px-4 py-3 text-center">
+                          <td className="units-table__cell units-table__cell--status px-4 py-3 text-center whitespace-nowrap">
                             {unit.is_public ? (
                               <Badge variant="success" size="sm">
                                 {t('organizations.table.public')}
@@ -571,7 +647,7 @@ export default function OrganizationsPage() {
                             )}
                           </td>
                           {showRowActions && (
-                            <td className="px-4 py-3 text-center">
+                            <td className="units-table__cell units-table__cell--actions px-4 py-3 text-center">
                               <div className="flex items-center justify-center gap-1">
                                 {can('change_donvi') && (
                                   <button
@@ -625,6 +701,7 @@ export default function OrganizationsPage() {
                     variant="secondary"
                     size="sm"
                     disabled={currentPage <= 1}
+                    aria-label={t('organizations.table.prevPage')}
                     onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
                   >
                     <i className="fa-solid fa-chevron-left" />
@@ -636,6 +713,7 @@ export default function OrganizationsPage() {
                     variant="secondary"
                     size="sm"
                     disabled={currentPage >= totalPages}
+                    aria-label={t('organizations.table.nextPage')}
                     onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
                   >
                     <i className="fa-solid fa-chevron-right" />
@@ -647,8 +725,8 @@ export default function OrganizationsPage() {
         </div>
       )}
 
-      {/* ── NỘI DUNG TAB 2: KHỐI / KHU VỰC ── */}
-      {activeTab === 'regions' && (
+      {/* ── NỘI DUNG TAB 1: KHỐI / KHU VỰC ── */}
+      {!accessDenied && activeTab === 'regions' && (
         <div className="space-y-4">
           {/* Tìm kiếm Khối */}
           <div className="relative max-w-md">
@@ -670,68 +748,166 @@ export default function OrganizationsPage() {
             <table className="w-full text-left text-sm border-collapse">
               <thead className="bg-surface-elevated text-secondary text-xs uppercase font-bold border-b border-border">
                 <tr>
-                  <th className="px-4 py-3 text-center w-16">{t('organizations.table.id')}</th>
-                  <th className="px-2 sm:px-4 py-3 text-center w-16 sm:w-32">{t('organizations.table.displayOrder')}</th>
-                  <th className="px-4 py-3">{t('organizations.table.regionName')}</th>
-                  <th className="px-4 py-3 text-center">{t('organizations.table.unitsCount')}</th>
-                  {showRowActions && (
-                    <th className="px-4 py-3 text-center w-28">{t('organizations.table.actions')}</th>
+                  <th className="hidden sm:table-cell px-4 py-3 text-center w-16">{t('organizations.table.id')}</th>
+                  <th className="px-2 sm:px-4 py-3 text-center w-12 sm:w-32">
+                    {/* Màn hình hẹp dùng nhãn ngắn để tiêu đề cột không xuống nhiều dòng */}
+                    <span className="sm:hidden">{t('organizations.table.priority')}</span>
+                    <span className="hidden sm:inline">{t('organizations.table.displayOrder')}</span>
+                  </th>
+                  <th className="px-3 sm:px-4 py-3">{t('organizations.table.regionName')}</th>
+                  <th className="px-2 sm:px-4 py-3 text-center">{t('organizations.table.unitsCount')}</th>
+                  {showRegionRowActions && (
+                    <th className="px-2 sm:px-4 py-3 text-center w-20 sm:w-28">{t('organizations.table.actions')}</th>
                   )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {regions.length === 0 ? (
+                {isRegionsLoading || isAllUnitsLoading ? (
                   <tr>
-                    <td colSpan={showRowActions ? 5 : 4} className="text-center py-12 text-secondary">
+                    <td colSpan={showRegionRowActions ? 5 : 4} className="text-center py-12 text-secondary">
+                      <i className="fa-solid fa-spinner fa-spin text-2xl text-primary mb-2 block" />
+                      {t('organizations.table.loading')}
+                    </td>
+                  </tr>
+                ) : regions.length === 0 ? (
+                  <tr>
+                    <td colSpan={showRegionRowActions ? 5 : 4} className="text-center py-12 text-secondary">
                       <i className="fa-solid fa-folder-open text-3xl text-muted mb-2 block" />
                       {t('organizations.table.empty')}
                     </td>
                   </tr>
                 ) : (
-                  regions.map((region) => (
-                    <tr key={region.id} className="transition-colors hover:bg-surface-hover">
-                      <td className="px-4 py-3 text-center font-mono text-xs text-muted">{region.id}</td>
-                      <td className="px-2 sm:px-4 py-3 text-center font-mono text-xs text-secondary">{region.thu_tu_hien_thi ?? 0}</td>
-                      <td className="px-4 py-3 font-bold text-main">{region.ten}</td>
-                      <td className="px-4 py-3 text-center">
-                        <Badge variant="info" size="sm">
-                          {t('organizations.table.unitCountLabel', { count: String(region.don_vi_count ?? 0) })}
-                        </Badge>
-                      </td>
-                      {showRowActions && (
-                        <td className="px-4 py-3 text-center">
-                          <div className="flex items-center justify-center gap-1">
-                            {can('change_donvi') && (
+                  regions.map((region) => {
+                    // Bấm vào Khối thì hiện các Đơn vị trực thuộc. Chỉ tính những Đơn vị người dùng được xem
+                    // (don_vi_count của API đếm cả Đơn vị nội bộ mà người không phải admin không thấy)
+                    const children = allUnits.filter((u) => u.khoi === region.id);
+                    const open = children.length > 0 && expandedRegionIds.has(region.id);
+                    const toggle = () => setExpandedRegionIds((s) => toggleInSet(s, region.id));
+                    return (
+                      <React.Fragment key={region.id}>
+                        <tr
+                          onClick={children.length > 0 ? toggle : undefined}
+                          className={`transition-colors hover:bg-surface-hover ${children.length > 0 ? 'cursor-pointer' : ''} ${
+                            open ? 'bg-primary-subtle' : ''
+                          }`}
+                        >
+                          <td className="hidden sm:table-cell px-4 py-3 text-center font-mono text-xs text-muted">{region.id}</td>
+                          <td className="px-2 sm:px-4 py-3 text-center font-mono text-xs text-secondary">{region.thu_tu_hien_thi ?? 0}</td>
+                          <td className="px-3 sm:px-4 py-3 font-bold text-main">
+                            {children.length > 0 ? (
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setEditingRegion(region);
-                                  setIsRegionModalOpen(true);
+                                aria-expanded={open}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggle();
                                 }}
-                                title={t('organizations.actions.edit')}
-                                className="p-1.5 text-secondary hover:text-primary rounded-lg transition-colors cursor-pointer"
+                                className="flex items-center gap-2 text-left font-bold text-main hover:text-primary transition-colors cursor-pointer"
                               >
-                                <i className="fa-solid fa-pen-to-square" />
+                                <i
+                                  className={`fa-solid fa-chevron-right text-[11px] text-muted transition-transform ${
+                                    open ? 'rotate-90' : ''
+                                  }`}
+                                />
+                                {region.ten}
                               </button>
+                            ) : (
+                              <span className="flex items-center gap-2">
+                                <i className="fa-solid fa-chevron-right text-[11px] invisible" />
+                                {region.ten}
+                              </span>
                             )}
-                            {can('delete_donvi') && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setDeletingRegion(region);
-                                  setRegionDeleteErrorKey(null);
-                                }}
-                                title={t('organizations.actions.delete')}
-                                className="p-1.5 text-secondary hover:text-danger rounded-lg transition-colors cursor-pointer"
-                              >
-                                <i className="fa-solid fa-trash-can" />
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  ))
+                          </td>
+                          <td className="px-2 sm:px-4 py-3 text-center whitespace-nowrap">
+                            <Badge variant="info" size="sm">
+                              {t('organizations.table.unitCountLabel', { count: String(children.length) })}
+                            </Badge>
+                          </td>
+                          {showRegionRowActions && (
+                            <td className="px-2 sm:px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex items-center justify-center gap-1">
+                                {can('export_donvi') && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleExportRegion(region.id)}
+                                    disabled={isExporting}
+                                    title={t('organizations.actions.exportRegion')}
+                                    aria-label={t('organizations.actions.exportRegion')}
+                                    className="p-1.5 text-secondary hover:text-success rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    <i className="fa-solid fa-file-excel" />
+                                  </button>
+                                )}
+                                {can('change_donvi') && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingRegion(region);
+                                      setIsRegionModalOpen(true);
+                                    }}
+                                    title={t('organizations.actions.edit')}
+                                    className="p-1.5 text-secondary hover:text-primary rounded-lg transition-colors cursor-pointer"
+                                  >
+                                    <i className="fa-solid fa-pen-to-square" />
+                                  </button>
+                                )}
+                                {can('delete_donvi') && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setDeletingRegion(region);
+                                      setRegionDeleteErrorKey(null);
+                                    }}
+                                    title={t('organizations.actions.delete')}
+                                    className="p-1.5 text-secondary hover:text-danger rounded-lg transition-colors cursor-pointer"
+                                  >
+                                    <i className="fa-solid fa-trash-can" />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          )}
+                        </tr>
+                        {/* Đơn vị trực thuộc: mỗi Đơn vị một dòng, thẳng cột với Khối (số thứ tự đánh lại từ 1 trong Khối, tên, trạng thái).
+                            Vạch màu ở mép trái và đường kẻ nét đứt để tách nhóm Đơn vị khỏi các dòng Khối */}
+                        {open &&
+                          children.map((unit, index) => (
+                            <tr key={`unit-${unit.id}`} data-unit-row className="bg-surface-hover border-dashed">
+                              <td className="hidden sm:table-cell px-4 py-3 shadow-[inset_4px_0_0_var(--color-primary)]" />
+                              <td className="px-2 sm:px-4 py-3 text-center font-mono text-xs text-secondary shadow-[inset_4px_0_0_var(--color-primary)] sm:shadow-none">
+                                {index + 1}
+                              </td>
+                              <td className="px-3 sm:px-4 py-3">
+                                <div className="flex items-start gap-2">
+                                  <i className="fa-solid fa-chevron-right text-[11px] invisible" />
+                                  <div className="min-w-0">
+                                    <div className="font-semibold text-main">{unit.ten}</div>
+                                    {unit.dien_thoai && (
+                                      <div className="text-secondary font-mono mt-0.5 flex items-center gap-1.5">
+                                        <i className="fa-solid fa-phone text-muted text-[0.65rem]" />
+                                        {unit.dien_thoai}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-2 sm:px-4 py-3 text-center whitespace-nowrap">
+                                {unit.is_public ? (
+                                  <Badge variant="success" size="sm">
+                                    {t('organizations.table.public')}
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="warning" size="sm">
+                                    {t('organizations.table.internal')}
+                                  </Badge>
+                                )}
+                              </td>
+                              {showRegionRowActions && <td className="px-2 sm:px-4 py-3" />}
+                            </tr>
+                          ))}
+                      </React.Fragment>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -751,6 +927,7 @@ export default function OrganizationsPage() {
                     variant="secondary"
                     size="sm"
                     disabled={regionPage <= 1}
+                    aria-label={t('organizations.table.prevPage')}
                     onClick={() => setRegionPage((p) => Math.max(p - 1, 1))}
                   >
                     <i className="fa-solid fa-chevron-left" />
@@ -762,6 +939,7 @@ export default function OrganizationsPage() {
                     variant="secondary"
                     size="sm"
                     disabled={regionPage >= totalRegionPages}
+                    aria-label={t('organizations.table.nextPage')}
                     onClick={() => setRegionPage((p) => Math.min(p + 1, totalRegionPages))}
                   >
                     <i className="fa-solid fa-chevron-right" />
@@ -776,7 +954,7 @@ export default function OrganizationsPage() {
       {/* ── CÁC MODALS ── */}
       {/* Modal Khối */}
       <RegionModal
-        key={editingRegion?.id ?? (isRegionModalOpen ? 'open-new-region' : 'closed-region')}
+        key={`${editingRegion?.id ?? 'new-region'}-${isRegionModalOpen ? 'open' : 'closed'}`}
         isOpen={isRegionModalOpen}
         onClose={() => setIsRegionModalOpen(false)}
         onSubmit={handleSaveRegion}
@@ -786,7 +964,7 @@ export default function OrganizationsPage() {
 
       {/* Modal Đơn vị */}
       <UnitModal
-        key={editingUnit?.id ?? (isUnitModalOpen ? 'open-new-unit' : 'closed-unit')}
+        key={`${editingUnit?.id ?? 'new-unit'}-${isUnitModalOpen ? 'open' : 'closed'}`}
         isOpen={isUnitModalOpen}
         onClose={() => setIsUnitModalOpen(false)}
         onSubmit={handleSaveUnit}

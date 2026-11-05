@@ -10,12 +10,13 @@ import { DangTai, HopThoai, KhongTimThay, LoiTai, ThongBao, TrangThaiHoSo } from
 import HanhDong from '@components/signing/HanhDong';
 import KetQuaPanel from '@components/signing/KetQuaPanel';
 import SuaNhapDialog from '@components/signing/SuaNhapDialog';
+import ThayNguoiKyDialog from '@components/signing/ThayNguoiKyDialog';
 import TaiLieuPanel from '@components/signing/TaiLieuPanel';
 import TienTrinh from '@components/signing/TienTrinh';
 import TraoDoiPanel from '@components/signing/TraoDoiPanel';
 import XemPdf, { type KhungHienThi } from '@components/signing/XemPdf';
 import { docLoi, signingApi } from '@lib/signing/api';
-import { chiTietNhatKy, dinhDangNgay, inPdf, moTaVanBan } from '@lib/signing/dinhDang';
+import { chiTietNhatKy, dinhDangNgay, inPdf, moTaVanBan, tenTepTaiVe } from '@lib/signing/dinhDang';
 import { useTai, useToi } from '@lib/signing/hooks';
 import { useSigningT } from '@lib/signing/i18n';
 import { sha256Hex } from '@lib/signing/khoaKy';
@@ -29,6 +30,15 @@ function DongThongTin({ nhan, children }: { nhan: string; children: ReactNode })
       <span className="text-main font-semibold sm:text-right min-w-0 break-words">{children}</span>
     </div>
   );
+}
+
+function luuTep(blob: Blob, ten: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = ten;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 /** Mã hồ sơ trên đường dẫn phải là số nguyên dương; sai dạng thì báo không tìm thấy, không gọi API. */
@@ -50,6 +60,7 @@ function ChiTietHoSo({ id }: { id: number }) {
   const [tepTai, setTepTai] = useState<{ khoa: string; buf: ArrayBuffer | null; maBam: string | null; loi: unknown } | null>(null);
   const [anh, setAnh] = useState<Record<number, string>>({});
   const [dangSua, setDangSua] = useState(false);
+  const [dangThayNguoiKy, setDangThayNguoiKy] = useState(false);
   const [qVanBan, setQVanBan] = useState('');
   const [qVanBanTim, setQVanBanTim] = useState('');
   const [vanBanDinhLienKet, setVanBanDinhLienKet] = useState('');
@@ -135,6 +146,7 @@ function ChiTietHoSo({ id }: { id: number }) {
       anhUrl: da_ky ? anh[n.chu_ky.id] : undefined, kieu: da_ky ? 'da_ky' : 'cho',
     } as KhungHienThi];
   }));
+  const nguoiKyThayDuoc = (luot?.cap_ky ?? []).flatMap((c) => c.nguoi_ky).filter((n) => n.co_the_thay);
   const coTraoDoi = hoSo.luot_trinh.some((l) => l.yeu_cau_sua.length > 0);
   const vanBanChon = (vanBanDi.duLieu || []).find((vb) => String(vb.id) === vanBanDinhLienKet) || null;
   const lienKetVanBan = async () => {
@@ -153,6 +165,36 @@ function ChiTietHoSo({ id }: { id: number }) {
     }
   };
 
+  const taiTepHienTai = async () => {
+    try {
+      if (hoSo.trang_thai === 'HOAN_THANH') {
+        const b = await signingApi.tepHoanTat(hoSo.id);
+        luuTep(b, tenTepTaiVe(hoSo.id, 'HOAN_TAT'));
+      } else if (tep) {
+        luuTep(new Blob([tep], { type: 'application/pdf' }), tenTepTaiVe(hoSo.id, 'DU_THAO'));
+      }
+    } catch {
+      if (tep) {
+        luuTep(new Blob([tep], { type: 'application/pdf' }), tenTepTaiVe(hoSo.id, 'DU_THAO'));
+      }
+    }
+  };
+
+  const inTepHienTai = async () => {
+    try {
+      if (hoSo.trang_thai === 'HOAN_THANH') {
+        const b = await signingApi.tepHoanTat(hoSo.id);
+        inPdf(b);
+      } else if (tep) {
+        inPdf(new Blob([tep], { type: 'application/pdf' }));
+      }
+    } catch {
+      if (tep) {
+        inPdf(new Blob([tep], { type: 'application/pdf' }));
+      }
+    }
+  };
+
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_24rem]">
       <div className="space-y-4 min-w-0">
@@ -168,6 +210,11 @@ function ChiTietHoSo({ id }: { id: number }) {
           {hoSo.trang_thai === 'NHAP' && toi?.id === hoSo.create_by && (
             <Button size="sm" variant="secondary" icon="fa-pen" onClick={() => setDangSua(true)}>{t('chiTiet.suaHoSo')}</Button>
           )}
+          {nguoiKyThayDuoc.length > 0 && (
+            <Button size="sm" variant="secondary" icon="fa-user-pen" onClick={() => setDangThayNguoiKy(true)}>
+              {t('thayNguoiKy.nut')}
+            </Button>
+          )}
           <HanhDong hoSo={hoSo} luot={luot} maBamTepDangXem={maBam} onXong={capNhat} />
           {hoSo.trang_thai === 'TU_CHOI' && hoSo.ly_do_tu_choi && (
             <ThongBao>{t('chiTiet.lyDoTuChoi')}: {hoSo.ly_do_tu_choi}</ThongBao>
@@ -178,10 +225,14 @@ function ChiTietHoSo({ id }: { id: number }) {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-xl font-bold text-main">{t('chiTiet.taiLieu')}</h3>
             {tep && (
-              <Button size="sm" variant="secondary" icon="fa-print"
-                onClick={() => inPdf(new Blob([tep], { type: 'application/pdf' }))}>
-                {t('chung.in')}
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button size="sm" variant="secondary" icon="fa-download" onClick={taiTepHienTai}>
+                  {t('chung.taiVe')}
+                </Button>
+                <Button size="sm" variant="secondary" icon="fa-print" onClick={inTepHienTai}>
+                  {t('chung.in')}
+                </Button>
+              </div>
             )}
           </div>
           {/* PDF cuộn trong khung riêng để trang không dài theo số trang tài liệu */}
@@ -293,6 +344,10 @@ function ChiTietHoSo({ id }: { id: number }) {
           </ol>
         </Card>
       </div>
+      {dangThayNguoiKy && nguoiKyThayDuoc.length > 0 && (
+        <ThayNguoiKyDialog hoSo={hoSo} nguoiKyThayDuoc={nguoiKyThayDuoc} onDong={() => setDangThayNguoiKy(false)}
+          onXong={(moi) => { setDangThayNguoiKy(false); capNhat(moi); }} />
+      )}
       {dangSua && <SuaNhapDialog hoSo={hoSo} onDong={() => setDangSua(false)} onXong={(moi) => { setDangSua(false); capNhat(moi); }} />}
       <HopThoai moTieuDe={t('chiTiet.lienKetVanBanDi')} mo={moXacNhanLienKet}
         onDong={() => setMoXacNhanLienKet(false)} dangXuLy={dangLienKet}

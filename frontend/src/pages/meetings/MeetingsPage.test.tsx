@@ -638,4 +638,89 @@ describe('MeetingsPage Component (Issue #22)', () => {
     const matches = roomCard?.textContent?.match(/Trưởng phòng QA/g);
     expect(matches).toHaveLength(1);
   });
+
+  it('thẻ phòng ở Tab Danh mục cho phép chọn ngày và hiển thị lịch của ngày được chọn', async () => {
+    const singleRoom = [
+      {
+        id: 1,
+        name: 'Phòng Hội Thảo A',
+        location: 'Tầng 2, Tòa A',
+        capacity: 30,
+        amenities: 'Máy chiếu',
+        is_public: true,
+        trang_thai: 'AVAILABLE',
+        ghi_chu: '',
+      },
+    ];
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const tomorrow = new Date(now);
+    tomorrow.setDate(now.getDate() + 1);
+    const tomorrowStr = `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth() + 1)}-${pad(tomorrow.getDate())}`;
+
+    const tomorrowBooking = [
+      {
+        id: 107,
+        room: 1,
+        room_detail: singleRoom[0],
+        title: 'Họp chiến lược kinh doanh ngày mai',
+        date: tomorrowStr,
+        start_time: '08:30:00',
+        end_time: '11:00:00',
+        attendees_count: 12,
+        trang_thai: 'CONFIRMED',
+        organizer: 7,
+        organizer_detail: {
+          id: 7,
+          username: 'giamdoc',
+          ho_ten: 'Nguyễn Giám Đốc',
+          don_vi_ten: 'Ban Lãnh Đạo',
+          chuc_vu_ten: 'Giám đốc',
+        },
+        department_name: 'Ban Lãnh Đạo',
+      },
+    ];
+
+    apiClient.get = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/meeting-rooms/')) {
+        return Promise.resolve({ results: singleRoom });
+      }
+      if (url.includes('/api/meeting-bookings/')) {
+        if (url.includes(`date=${tomorrowStr}`)) {
+          return Promise.resolve({ results: tomorrowBooking });
+        }
+        return Promise.resolve({ results: [] });
+      }
+      if (url.includes('/api/auth/profile/')) {
+        return Promise.resolve(mockProfile);
+      }
+      return Promise.resolve({});
+    });
+
+    render(
+      <MemoryRouter>
+        <MeetingsPage />
+      </MemoryRouter>
+    );
+
+    // Mặc định ở Tab 2, hôm nay không có lịch
+    await waitFor(() => {
+      expect(screen.getByText('Phòng Hội Thảo A')).toBeInTheDocument();
+      expect(screen.getByText('Trống lịch trong ngày')).toBeInTheDocument();
+    });
+
+    // Chọn ngày mai trên bộ chọn ngày của Tab Danh mục
+    const roomsDateInput = screen.getByLabelText('Chọn ngày xem danh mục phòng');
+    fireEvent.change(roomsDateInput, { target: { value: tomorrowStr } });
+
+    // Sau khi đổi ngày sang ngày mai, danh mục phòng hiển thị lịch của ngày mai
+    await waitFor(() => {
+      expect(screen.getByText('Họp chiến lược kinh doanh ngày mai')).toBeInTheDocument();
+      expect(screen.getByText('Đã có 1 lịch đặt')).toBeInTheDocument();
+    });
+
+    const roomCard = screen.getByText('Phòng Hội Thảo A').closest('.p-5');
+    expect(roomCard).toHaveTextContent('Nguyễn Giám Đốc');
+    expect(roomCard).not.toHaveTextContent('Đang họp');
+  });
 });

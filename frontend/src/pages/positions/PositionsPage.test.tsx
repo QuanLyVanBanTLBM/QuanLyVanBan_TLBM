@@ -72,11 +72,34 @@ describe('PositionsPage (Issue #20)', () => {
     renderPage();
 
     expect(await screen.findByText('Tổng Giám đốc')).toBeInTheDocument();
-    expect(screen.getByText('Cấp cao nhất')).toBeInTheDocument();
+    expect(screen.getAllByText('Cấp cao nhất').length).toBeGreaterThan(0);
     expect(screen.getByText('Công khai')).toBeInTheDocument();
     expect(screen.getByText('Nội bộ')).toBeInTheDocument();
     expect(screen.getByTestId('position-row-2').className).toContain('border-l-warning');
     expect(screen.getByTestId('position-row-1').className).not.toContain('border-l-warning');
+  });
+
+  it('keeps the table inside a phone screen: notes column is desktop-only and the note moves under the name', async () => {
+    mockApi();
+    renderPage();
+
+    await screen.findByText('Tổng Giám đốc');
+    const notesHeader = screen.getByRole('columnheader', { name: /Ghi chú/i });
+    expect(notesHeader.className).toContain('hidden');
+    expect(notesHeader.className).toContain('sm:table-cell');
+
+    const nameCell = screen.getByText('Tổng Giám đốc').closest('td')!;
+    const mobileNote = within(nameCell).getByText('Cấp cao nhất');
+    expect(mobileNote.className).toContain('sm:hidden');
+    expect(screen.getAllByText('Cấp cao nhất')).toHaveLength(2);
+  });
+
+  it('leaves room under the list so the floating assistant never covers the last rows', async () => {
+    mockApi();
+    const { container } = renderPage();
+
+    await screen.findByText('Tổng Giám đốc');
+    expect((container.firstElementChild as HTMLElement).className).toContain('pb-24');
   });
 
   it('hides write actions when the user only has view permission', async () => {

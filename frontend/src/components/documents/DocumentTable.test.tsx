@@ -252,6 +252,48 @@ describe('DocumentTable Component', () => {
     localStorage.removeItem('tlbm_session');
   });
 
+  it('follows backend flags for restricted expired documents (manage_het_hieu_luc_*)', () => {
+    const restricted = (id: number, hieuLuc: DocumentItem['hieu_luc'], allowed: boolean): DocumentItem => ({
+      ...mockDocuments[1],
+      id,
+      so_hieu: `${id}/HC`,
+      pham_vi: 'HAN_CHE',
+      hieu_luc: hieuLuc,
+      can_edit: allowed,
+      can_delete: allowed,
+    });
+    localStorage.setItem('tlbm_session', JSON.stringify({ username: 'nhom_admin', role: 'staff' }));
+
+    const cases: [DocumentItem, boolean][] = [
+      [restricted(31, 'HET_HIEU_LUC', true), true],
+      [restricted(32, 'HET_VA_THAY_THE', true), true],
+      [restricted(33, 'HET_HIEU_LUC', false), false],
+      // Văn bản hạn chế còn hiệu lực: giữ quy tắc cũ, chỉ admin mới thấy nút.
+      [restricted(34, 'CON_HIEU_LUC', true), false],
+    ];
+    for (const [doc, visible] of cases) {
+      const { unmount } = render(
+        <DocumentTable
+          documents={[doc]}
+          totalCount={1}
+          page={1}
+          pageSize={10}
+          onPageChange={vi.fn()}
+          onViewDetail={vi.fn()}
+          onViewHistory={vi.fn()}
+          onEdit={vi.fn()}
+          onDelete={vi.fn()}
+        />
+      );
+      fireEvent.click(screen.getByTitle('Tác vụ'));
+      expect(Boolean(screen.queryByText('Chỉnh sửa')), doc.so_hieu).toBe(visible);
+      expect(Boolean(screen.queryByText('Xóa văn bản')), doc.so_hieu).toBe(visible);
+      unmount();
+    }
+
+    localStorage.removeItem('tlbm_session');
+  });
+
   it('triggers onViewDetail when clicking anywhere on a document row', () => {
     const onViewDetail = vi.fn();
     render(

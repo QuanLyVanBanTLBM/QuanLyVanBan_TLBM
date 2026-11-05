@@ -26,3 +26,12 @@ class EmployeeAdmin(BaseUserAdmin):
         (None, {"classes": ("wide",), "fields": ("username", "password1", "password2", "ho_ten", "ngay_sinh", "email", "don_vi", "chuc_vu")}),
     )
     filter_horizontal = ("groups", "user_permissions")
+
+    def get_fieldsets(self, request, obj=None):
+        fieldsets = super().get_fieldsets(request, obj)
+        if obj is None or obj.pk == request.user.pk:
+            return fieldsets
+        return tuple(
+            (name, {**options, "fields": tuple(field for field in options["fields"] if field != "ngay_sinh")})
+            for name, options in fieldsets
+        )

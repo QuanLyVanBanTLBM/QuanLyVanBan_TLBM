@@ -277,7 +277,7 @@ describe('HanhDong', () => {
     const hop = await screen.findByRole('dialog');
     expect(hop).toHaveTextContent('Tệp đã thay đổi so với lượt trình');
     await waitFor(() => expect(screen.getByLabelText(/Nhập PIN ký/)).toBeEnabled());
-    fireEvent.change(screen.getByLabelText(/Nhập PIN ký/), { target: { value: '48273916' } });
+    fireEvent.change(screen.getByLabelText(/Nhập PIN ký/), { target: { value: '482739' } });
     await waitFor(() => expect(screen.getAllByRole('button', { name: /Ký duyệt/ }).at(-1)).toBeDisabled());
   });
 
@@ -305,14 +305,23 @@ describe('Danh sách: trạng thái trả lại, quá hạn', () => {
   });
 });
 
-describe('Ký bằng file khóa', () => {
-  it('hộp thoại ký có ô tải file khóa và báo lỗi khi file sai định dạng', async () => {
+describe('Ký bằng private key phía máy chủ', () => {
+  it('không cần tải file khóa lên trình duyệt và gửi đúng PIN 6 chữ số để ký', async () => {
     boc(<HanhDong hoSo={hoSo()} luot={hoSo().luot_trinh[0]} maBamTepDangXem={'a'.repeat(64)} onXong={() => undefined} />);
     fireEvent.click(screen.getByRole('button', { name: /Ký duyệt/ }));
-    const o = await screen.findByLabelText(/File khóa ký/);
-    await waitFor(() => expect(o).toBeEnabled());
-    fireEvent.change(o, { target: { files: [new File(['khong phai json'], 'sai.tlbmkey')] } });
-    expect(await screen.findByText('File khóa không đúng định dạng.')).toBeInTheDocument();
+    const oPin = await screen.findByLabelText(/Nhập PIN ký/);
+    await waitFor(() => expect(oPin).toBeEnabled());
+    expect(screen.queryByLabelText(/file khóa ký/i)).not.toBeInTheDocument();
+    fireEvent.change(oPin, { target: { value: '48271593' } });
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /Ký duyệt/ }));
+    expect(await screen.findByText('Vui lòng nhập mã PIN ký gồm đúng 6 chữ số.')).toBeInTheDocument();
+    expect(api.ky).not.toHaveBeenCalled();
+    fireEvent.change(oPin, { target: { value: '482739' } });
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /Ký duyệt/ }));
+    await waitFor(() => expect(api.ky).toHaveBeenCalledTimes(1));
+    expect(api.ky.mock.calls[0][2]).toEqual({
+      khoa_ky: 4, hash_tai_lieu: 'a'.repeat(64), pin: '482739', ghi_chu_ky: '',
+    });
   });
 });
 
@@ -332,7 +341,6 @@ describe('Hộp thoại ký: điều kiện chữ ký hợp lệ', () => {
   };
   const nutKy = () => within(screen.getByRole('dialog')).getByRole('button', { name: /Ký duyệt/ });
   const khoaTatCa = () => {
-    expect(screen.getByLabelText(/File khóa ký/)).toBeDisabled();
     expect(screen.getByLabelText(/Nhập PIN ký/)).toBeDisabled();
     expect(screen.getByPlaceholderText('Ghi chú kèm chữ ký')).toBeDisabled();
     expect(nutKy()).toBeDisabled();
@@ -393,7 +401,7 @@ describe('Hộp thoại ký: điều kiện chữ ký hợp lệ', () => {
   it('đủ điều kiện: mở khóa các ô và nút Ký duyệt', async () => {
     moHopKy();
     await waitFor(() => expect(screen.getByLabelText(/Nhập PIN ký/)).toBeEnabled());
-    expect(screen.getByLabelText(/File khóa ký/)).toBeEnabled();
+    expect(screen.queryByLabelText(/file khóa ký/i)).not.toBeInTheDocument();
     expect(screen.getByPlaceholderText('Ghi chú kèm chữ ký')).toBeEnabled();
     expect(nutKy()).toBeEnabled();
     expect(screen.queryByText('Thiếu chữ ký')).not.toBeInTheDocument();
@@ -643,20 +651,7 @@ describe('TaiLieuPage phân trang', () => {
 
 describe('QuyTrinhPage chọn người ký từ phân hệ CBNV', () => {
   const QUAN_TRI: NguoiDungHienTai = { ...TOI, la_quan_tri: true, quyen: { ...TOI.quyen, manage_signing_process: true } };
-  const CHUC_VU_THU_BAC = [
-    { id: 10, name: 'Chức vụ cấp cao', display_order: 10 },
-    { id: 20, name: 'Chức vụ cấp trung', display_order: 20 },
-    { id: 30, name: 'Chức vụ cấp thấp', display_order: 30 },
-  ];
 
-  async function moFormThuBac() {
-    api.quyTrinh.mockResolvedValue([]);
-    api.donVi.mockResolvedValue([]);
-    api.chucVu.mockResolvedValue(CHUC_VU_THU_BAC);
-    boc(<QuyTrinhPage />, QUAN_TRI);
-    fireEvent.click(await screen.findByRole('button', { name: /Tạo quy trình/ }));
-    return screen.findAllByRole('combobox', { name: 'Thêm người ký theo chức danh' });
-  }
 
   const DANH_BA_2 = [
     { id: 31, username: 'tp_kh', ho_ten: 'Lê Văn Minh', don_vi_id: 4, don_vi_ten: 'Phòng Kế hoạch', chuc_vu_id: 5, chuc_vu_ten: 'Trưởng phòng' },
@@ -690,25 +685,20 @@ describe('QuyTrinhPage chọn người ký từ phân hệ CBNV', () => {
     expect(screen.getByRole('button', { name: /Phạm Thu Hà/ })).toBeEnabled();
   });
 
-  it('chưa lọc chức danh: chỉ hiện kết quả sau khi gõ tối thiểu 2 ký tự', async () => {
+  it('mở ô chọn người ký: hiển thị trực tiếp danh sách cán bộ khi mở ô nhập', async () => {
     api.danhBaCanBo.mockResolvedValue(DANH_BA_2);
-    const o = await moFormTimNguoi();
-    expect(await screen.findByText(/Nhập tối thiểu 2 ký tự/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Lê Văn Minh/ })).not.toBeInTheDocument();
-    fireEvent.change(o, { target: { value: 'l' } });
-    expect(screen.queryByRole('button', { name: /Lê Văn Minh/ })).not.toBeInTheDocument();
-    fireEvent.change(o, { target: { value: 'le' } });
+    await moFormTimNguoi();
     expect(await screen.findByRole('button', { name: /Lê Văn Minh/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Phạm Thu Hà/ })).toBeInTheDocument();
   });
 
-  it('chưa lọc chức danh: tối đa 8 kết quả kèm gợi ý nhập thêm để thu hẹp', async () => {
+  it('danh sách gợi ý hiển thị đầy đủ danh sách cán bộ không bị giới hạn 8 kết quả', async () => {
     api.danhBaCanBo.mockResolvedValue(Array.from({ length: 20 }, (_, i) => ({
       id: 1 + i, username: `u${i}`, ho_ten: `Nhân viên ${i}`, don_vi_id: 1, don_vi_ten: 'Phòng A', chuc_vu_id: 9, chuc_vu_ten: 'Chuyên viên',
     })));
     await moFormTimNguoi('nhan vien');
     await screen.findByRole('button', { name: /Nhân viên 0/ });
-    expect(within(screen.getByRole('listbox')).getAllByRole('button')).toHaveLength(8);
-    expect(screen.getByText('Nhập thêm để thu hẹp kết quả.')).toBeInTheDocument();
+    expect(within(screen.getByRole('listbox')).getAllByRole('button')).toHaveLength(20);
   });
 
   it('mỗi lựa chọn một dòng họ tên · chức danh · đơn vị; chỉ hiện tài khoản khi trùng họ tên', async () => {
@@ -738,7 +728,7 @@ describe('QuyTrinhPage chọn người ký từ phân hệ CBNV', () => {
     expect(await screen.findByRole('button', { name: /Lê Văn Minh/ })).toBeInTheDocument();
   });
 
-  it('chọn cán bộ từ danh bạ CBNV và chức danh từ Danh mục chức danh; lưu đúng payload', async () => {
+  it('chọn cán bộ từ danh bạ CBNV và lưu đúng payload', async () => {
     api.quyTrinh.mockResolvedValue([]);
     api.donVi.mockResolvedValue([]);
     api.danhBaCanBo.mockResolvedValue([
@@ -747,8 +737,6 @@ describe('QuyTrinhPage chọn người ký từ phân hệ CBNV', () => {
     ]);
     api.chucVu.mockResolvedValue([{ id: 5, name: 'Trưởng phòng', display_order: 6 }, { id: 2, name: 'Giám đốc', display_order: 3 }]);
     api.taoQuyTrinh.mockResolvedValue({} as QuyTrinh);
-    api.canBoTheoChucVu.mockResolvedValue({ count: 1, results: [
-      { id: 40, ten: 'Đỗ Quang Huy', chuc_vu: 'Giám đốc', don_vi_id: 1, don_vi: 'Ban Tổng Giám đốc' }] });
     boc(<QuyTrinhPage />, QUAN_TRI);
     fireEvent.click(await screen.findByRole('button', { name: /Tạo quy trình/ }));
     fireEvent.change(screen.getByRole('textbox', { name: /Mã tra cứu|Mã quy trình/ }), { target: { value: 'QT-CV' } });
@@ -761,27 +749,16 @@ describe('QuyTrinhPage chọn người ký từ phân hệ CBNV', () => {
     const chonCapKy = await screen.findByRole('combobox', { name: /Tên cấp ký 1/ });
     await waitFor(() => expect(within(chonCapKy).getByRole('option', { name: 'Giám đốc' })).toBeInTheDocument());
     fireEvent.change(chonCapKy, { target: { value: 'Giám đốc' } });
-    const chonCv = screen.getByRole('combobox', { name: 'Thêm người ký theo chức danh' });
-    expect((chonCv as HTMLSelectElement).value).toBe('2');
-    await waitFor(() => expect(within(chonCv).getByRole('option', { name: 'Giám đốc' })).toBeInTheDocument());
-    fireEvent.change(chonCv, { target: { value: '2' } });
-    // Chọn chức danh là thấy ngay tên người đang giữ chức danh (quy trình công ty: mọi đơn vị)
-    expect(await screen.findByText('Đỗ Quang Huy')).toBeInTheDocument();
-    expect(api.canBoTheoChucVu).toHaveBeenLastCalledWith(2, null);
-    fireEvent.change(screen.getByRole('combobox', { name: 'Phạm vi chức danh' }), { target: { value: 'TOAN_CO_QUAN' } });
-    fireEvent.click(screen.getByRole('button', { name: /Thêm người ký theo chức danh/ }));
-    expect(screen.getByText('Chức danh: Giám đốc')).toBeInTheDocument();
-    expect(await screen.findAllByText('Đỗ Quang Huy')).toHaveLength(1);  // dòng người ký đã thêm (ô chọn đã xóa chức danh)
+
     fireEvent.click(screen.getByRole('button', { name: /Lưu/ }));
     await waitFor(() => expect(api.taoQuyTrinh).toHaveBeenCalledTimes(1));
     const body = api.taoQuyTrinh.mock.calls[0][0] as { cap_ky: Array<{ nguoi_ky: unknown[] }> };
     expect(body.cap_ky[0].nguoi_ky).toEqual([
       expect.objectContaining({ nguoi_ky: 32, thu_tu: 1, vai_tro_ky: 'KY_CHINH' }),
-      expect.objectContaining({ chuc_vu_id: 2, pham_vi_chuc_vu: 'TOAN_CO_QUAN', thu_tu: 2, vai_tro_ky: 'KY_CHINH' }),
     ]);
   });
 
-  it('lọc theo chức danh thì danh sách chọn người ký cụ thể chỉ còn cán bộ giữ chức danh đó', async () => {
+  it('danh sách chọn người ký cụ thể hiển thị đầy đủ cán bộ không bị giới hạn theo chức danh', async () => {
     api.quyTrinh.mockResolvedValue([]);
     api.donVi.mockResolvedValue([]);
     api.danhBaCanBo.mockResolvedValue([
@@ -795,59 +772,37 @@ describe('QuyTrinhPage chọn người ký từ phân hệ CBNV', () => {
     ]);
     boc(<QuyTrinhPage />, QUAN_TRI);
     fireEvent.click(await screen.findByRole('button', { name: /Tạo quy trình/ }));
-    const chonCv = screen.getByRole('combobox', { name: 'Thêm người ký theo chức danh' });
-    await waitFor(() => expect(within(chonCv).getByRole('option', { name: 'Trưởng phòng' })).toBeInTheDocument());
-    fireEvent.change(chonCv, { target: { value: '5' } });
 
     fireEvent.focus(screen.getByRole('textbox', { name: 'Thêm người ký' }));
     expect(await screen.findByRole('button', { name: /Lê Văn Minh/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Hoàng Đức Nam/ })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Phạm Thu Hà/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Phạm Thu Hà/ })).toBeInTheDocument();
   });
 
-  it('cấp sau chỉ gợi ý chức danh giữ thứ bậc cao hơn hoặc bằng cấp chức danh liền trước', async () => {
-    const [capTruoc] = await moFormThuBac();
-    fireEvent.change(capTruoc, { target: { value: '20' } });
-    fireEvent.click(screen.getByRole('button', { name: /Thêm người ký theo chức danh/ }));
-    fireEvent.click(screen.getByRole('button', { name: /Thêm cấp/ }));
-
-    const capSau = (await screen.findAllByRole('combobox', { name: 'Thêm người ký theo chức danh' }))[1];
-    await waitFor(() => expect(within(capSau).getByRole('option', { name: 'Chức vụ cấp cao' })).toBeInTheDocument());
-    expect(within(capSau).getByRole('option', { name: 'Chức vụ cấp trung' })).toBeInTheDocument();
-    expect(within(capSau).queryByRole('option', { name: 'Chức vụ cấp thấp' })).not.toBeInTheDocument();
-    expect(screen.getByText(/thứ bậc hiệu lực.*Chức vụ cấp trung.*cấp có chức danh liền trước/i)).toBeInTheDocument();
-  });
-
-  it('cấp trước chỉ gợi ý chức danh không làm sai thứ bậc của cấp chức danh liền sau', async () => {
-    await moFormThuBac();
-    fireEvent.click(screen.getByRole('button', { name: /Thêm cấp/ }));
-    const cap = await screen.findAllByRole('combobox', { name: 'Thêm người ký theo chức danh' });
-    fireEvent.change(cap[1], { target: { value: '30' } });
-    fireEvent.click(screen.getAllByRole('button', { name: /Thêm người ký theo chức danh/ })[1]);
-
-    await waitFor(() => expect(within(cap[0]).getByRole('option', { name: 'Chức vụ cấp thấp' })).toBeInTheDocument());
-    expect(within(cap[0]).queryByRole('option', { name: 'Chức vụ cấp cao' })).not.toBeInTheDocument();
-    expect(within(cap[0]).queryByRole('option', { name: 'Chức vụ cấp trung' })).not.toBeInTheDocument();
-    expect(screen.getByText(/thứ bậc hiệu lực.*Chức vụ cấp thấp.*cấp có chức danh liền sau/i)).toBeInTheDocument();
-  });
-
-  it('giới hạn thứ bậc chức danh không làm hẹp danh bạ cán bộ đích danh', async () => {
+  it('các cấp ký khác nhau cho phép chọn người ký đích danh độc lập', async () => {
     api.danhBaCanBo.mockResolvedValue([
       { id: 41, username: 'can_bo_cap_cao', ho_ten: 'Cán bộ cấp cao', don_vi_id: 1, don_vi_ten: 'Đơn vị A', chuc_vu_id: 10, chuc_vu_ten: 'Chức vụ cấp cao' },
       { id: 42, username: 'can_bo_cap_thap', ho_ten: 'Cán bộ cấp thấp', don_vi_id: 2, don_vi_ten: 'Đơn vị B', chuc_vu_id: 30, chuc_vu_ten: 'Chức vụ cấp thấp' },
     ]);
-    const [capTruoc] = await moFormThuBac();
-    fireEvent.change(capTruoc, { target: { value: '20' } });
-    fireEvent.click(screen.getByRole('button', { name: /Thêm người ký theo chức danh/ }));
+    api.quyTrinh.mockResolvedValue([]);
+    api.donVi.mockResolvedValue([]);
+    api.chucVu.mockResolvedValue([]);
+    boc(<QuyTrinhPage />, QUAN_TRI);
+    fireEvent.click(await screen.findByRole('button', { name: /Tạo quy trình/ }));
     fireEvent.click(screen.getByRole('button', { name: /Thêm cấp/ }));
 
-    const capSau = (await screen.findAllByRole('combobox', { name: 'Thêm người ký theo chức danh' }))[1];
-    await waitFor(() => expect(within(capSau).queryByRole('option', { name: 'Chức vụ cấp thấp' })).not.toBeInTheDocument());
-    const danhBaCapSau = screen.getAllByRole('textbox', { name: 'Thêm người ký' })[1];
-    fireEvent.focus(danhBaCapSau);
-    fireEvent.change(danhBaCapSau, { target: { value: 'can bo' } });
-    expect(await screen.findByRole('button', { name: /Cán bộ cấp cao/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Cán bộ cấp thấp/ })).toBeInTheDocument();
+    const oTim1 = screen.getAllByRole('textbox', { name: 'Thêm người ký' })[0];
+    fireEvent.focus(oTim1);
+    fireEvent.change(oTim1, { target: { value: 'cap cao' } });
+    fireEvent.click(await screen.findByRole('button', { name: /Cán bộ cấp cao/ }));
+
+    const oTim2 = screen.getAllByRole('textbox', { name: 'Thêm người ký' })[1];
+    fireEvent.focus(oTim2);
+    fireEvent.change(oTim2, { target: { value: 'cap thap' } });
+    fireEvent.click(await screen.findByRole('button', { name: /Cán bộ cấp thấp/ }));
+
+    expect(screen.getByText('Cán bộ cấp cao')).toBeInTheDocument();
+    expect(screen.getByText('Cán bộ cấp thấp')).toBeInTheDocument();
   });
 
   it('hiển thị cán bộ khớp từ khóa trong ô tìm kiếm người ký (#330)', async () => {
@@ -883,17 +838,13 @@ describe('QuyTrinhPage chọn người ký từ phân hệ CBNV', () => {
 describe('QuyTrinhPage tên cán bộ theo chức danh và đơn vị', () => {
   const TP: NguoiDungHienTai = { ...TOI, don_vi_id: 4, la_lanh_dao_don_vi: true, quyen: { ...TOI.quyen, manage_signing_process: true } };
 
-  it('quy trình phòng ban: tìm theo đơn vị áp dụng; không có ai thì cảnh báo cấp ký không có người ký', async () => {
+  it('form cảnh báo khi cấp ký chưa có người ký cụ thể', async () => {
     api.quyTrinh.mockResolvedValue([]);
     api.donVi.mockResolvedValue([{ id: 4, ten: 'Phòng Kế hoạch' }]);
     api.chucVu.mockResolvedValue([{ id: 5, name: 'Trưởng phòng', display_order: 6 }]);
     boc(<QuyTrinhPage />, TP);
     fireEvent.click(await screen.findByRole('button', { name: /Tạo quy trình/ }));
-    const chonCv = await screen.findByRole('combobox', { name: 'Thêm người ký theo chức danh' });
-    await waitFor(() => expect(within(chonCv).getByRole('option', { name: 'Trưởng phòng' })).toBeInTheDocument());
-    fireEvent.change(chonCv, { target: { value: '5' } });
-    expect(await screen.findByRole('alert')).toHaveTextContent('Chưa có cán bộ nào ở chức danh/đơn vị này');
-    expect(api.canBoTheoChucVu).toHaveBeenLastCalledWith(5, 4);  // đơn vị người trình = đơn vị áp dụng
+    expect(screen.getByText(/Thêm ít nhất một người ký vào mỗi cấp/)).toBeInTheDocument();
   });
 
   it('chi tiết quy trình hiện tên người đang khớp người ký theo chức danh', async () => {
@@ -919,20 +870,25 @@ describe('QuyTrinhPage tên cán bộ theo chức danh và đơn vị', () => {
   });
 });
 
-describe('Khối cán bộ đang giữ chức danh thu gọn', () => {
+describe('Khối cán bộ đang giữ chức danh trong chi tiết quy trình', () => {
   const TP: NguoiDungHienTai = { ...TOI, don_vi_id: 4, la_lanh_dao_don_vi: true, quyen: { ...TOI.quyen, manage_signing_process: true } };
 
-  it('mặc định hiện số lượng và tối đa 3 người; Xem thêm mở rộng, Thu gọn đóng lại', async () => {
-    api.quyTrinh.mockResolvedValue([]);
-    api.donVi.mockResolvedValue([]);
-    api.chucVu.mockResolvedValue([{ id: 5, name: 'Trưởng phòng', display_order: 6 }]);
+  it('mặc định hiện số lượng và tối đa 3 người trong chi tiết; Xem thêm mở rộng, Thu gọn đóng lại', async () => {
+    const qt: QuyTrinh = {
+      id: 9, ma_quy_trinh: 'QT-CV5', ten_quy_trinh: 'Quy trình có chức danh', mo_ta: '', phien_ban: 1, trang_thai: 'HOAT_DONG',
+      pham_vi: 'CONG_TY', don_vi_ap_dung_id: null, ten_don_vi_ap_dung: null, so_ho_so: 0, cap_ky: [{
+        id: 1, cap_ky: 1, ten_cap_ky: 'Duyệt', thu_tu: 1, don_vi_id: null, so_gio_xu_ly: null, nguoi_ky: [{
+          id: 2, nguoi_ky: null, ten_nguoi_ky: null, chuc_vu_id: 5, ten_chuc_vu: 'Trưởng phòng', pham_vi_chuc_vu: 'TOAN_CO_QUAN',
+          vai_tro_ky: 'KY_CHINH', thu_tu: 1,
+        }],
+      }],
+    };
+    api.quyTrinh.mockResolvedValue([qt]);
+    api.chiTietQuyTrinh.mockResolvedValue(qt);
     api.canBoTheoChucVu.mockResolvedValue({ count: 5, results: Array.from({ length: 5 }, (_, i) => (
       { id: 60 + i, ten: `Cán bộ ${i + 1}`, chuc_vu: 'Trưởng phòng', don_vi_id: 1 + i, don_vi: `Đơn vị ${i + 1}` })) });
     boc(<QuyTrinhPage />, TP);
-    fireEvent.click(await screen.findByRole('button', { name: /Tạo quy trình/ }));
-    const chonCv = await screen.findByRole('combobox', { name: 'Thêm người ký theo chức danh' });
-    await waitFor(() => expect(within(chonCv).getByRole('option', { name: 'Trưởng phòng' })).toBeInTheDocument());
-    fireEvent.change(chonCv, { target: { value: '5' } });
+    fireEvent.click(await screen.findByRole('button', { name: /Xem chi tiết/ }));
 
     expect(await screen.findByText(/Cán bộ đang giữ chức danh \(5\)/)).toBeInTheDocument();
     expect(screen.getByText('Cán bộ 3')).toBeInTheDocument();
@@ -1047,10 +1003,6 @@ describe('Chọn cấp ký từ danh mục chức danh CBNV (#297)', () => {
     const chonCapKy = await screen.findByRole('combobox', { name: /Tên cấp ký 1/ });
     await waitFor(() => expect(within(chonCapKy).getByRole('option', { name: 'Trưởng phòng' })).toBeInTheDocument());
     fireEvent.change(chonCapKy, { target: { value: 'Trưởng phòng' } });
-
-    // Bộ chọn theo chức danh tự động đồng bộ sang "Trưởng phòng"
-    const chonCvNguoiKy = screen.getByRole('combobox', { name: 'Thêm người ký theo chức danh' });
-    expect((chonCvNguoiKy as HTMLSelectElement).value).toBe('5');
 
     // Người ký hiện có không bị mất
     expect(screen.getByText('Lê Văn Minh')).toBeInTheDocument();

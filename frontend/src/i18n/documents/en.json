@@ -281,6 +281,7 @@
       "scopeInternal": "Internal (Organization-wide)",
       "scopeRestrictedOption": "Restricted (Recipients only)",
       "scopeAdminOnlyTooltip": "Only Administrators have permission to change circulation scope after creation.",
+      "scopeRestrictedNoPermission": "You have not been granted permission to add restricted documents.",
       "section2Title": "2. Issuing Source & Content",
       "section2Subtitle": "Issuing agency & Summary",
       "issuerInbound": "Issuing Agency / Entity",

@@ -70,7 +70,18 @@ def ids_dang_bi_khoa(thoi_diem=None):
     )
 
 
+def kiem_tra_tai_khoan_hoat_dong(nguoi):
+    """Tài khoản bị vô hiệu hóa hoặc nghỉ việc không đăng ký, kích hoạt khóa hay ký."""
+    if not getattr(nguoi, "is_active", True):
+        raise SigningError(
+            code="tai_khoan_khong_hoat_dong",
+            detail="Tài khoản không còn hoạt động nên không thực hiện được thao tác ký.",
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+
+
 def kiem_tra_duoc_ky(nguoi):
+    kiem_tra_tai_khoan_hoat_dong(nguoi)
     khoa = khoa_dang_hieu_luc(nguoi)
     if khoa is not None:
         raise SigningError(
@@ -121,6 +132,8 @@ def khoa_quyen(nguoi_bi_khoa_id, nguoi_thuc_hien, *, ly_do, thoi_han, dia_chi_ip
                           "khoa_den": khoa.khoa_den.isoformat() if khoa.khoa_den else None},
         dia_chi_ip=dia_chi_ip,
     )
+    from . import thong_bao  # nhập muộn: thong_bao dùng quyen_ky
+    thong_bao.quan_tri_khoa_quyen(khoa)
     return khoa
 
 
@@ -144,4 +157,6 @@ def bat_lai_quyen(nguoi_bi_khoa_id, nguoi_thuc_hien, *, ly_do, dia_chi_ip=None):
         trang_thai_truoc=TRANG_THAI_DANG_KHOA, trang_thai_sau=TRANG_THAI_DA_BAT_LAI, chi_tiet=ly_do,
         du_lieu_kem_theo={"nguoi_bi_khoa_id": tai_khoan.pk}, dia_chi_ip=dia_chi_ip,
     )
+    from . import thong_bao  # nhập muộn: thong_bao dùng quyen_ky
+    thong_bao.quan_tri_bat_lai_quyen(khoa)
     return khoa

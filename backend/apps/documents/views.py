@@ -60,6 +60,8 @@ from .selectors import (
     van_ban_xem_duoc,
     la_nguoi_xem_duoc,
     log_access,
+    co_quyen_them_han_che,
+    co_quyen_xu_ly_het_hieu_luc,
 )
 from .serializers import (
     DocumentCreateUpdateSerializer,
@@ -144,7 +146,6 @@ def can_edit_document(user, instance):
     if is_expired:
         from .selectors import co_quyen_xu_ly_het_hieu_luc
         return co_quyen_xu_ly_het_hieu_luc(user, model_name)
-
     # Văn bản Đến/Đi còn hiệu lực: Admin hoặc Cán bộ được chỉ định (người tạo) có quyền chỉnh sửa.
     if is_admin_user(user):
         return True
@@ -236,7 +237,7 @@ def can_change_hieu_luc(user, loai="DEN"):
     """
     Kiểm tra quyền thay đổi trạng thái hiệu lực của văn bản.
     Quyền: documents.change_hieu_luc_vanbanden / documents.change_hieu_luc_vanbandi.
-    Mặc định cho Admin và Văn thư (VT).
+    Admin luôn được phép; các nhóm khác (kể cả Văn thư) chỉ khi được gán quyền trong Phân quyền.
     """
     if not user or not user.is_authenticated:
         return False
@@ -380,7 +381,6 @@ def can_delete_document(user, instance):
     if is_expired:
         from .selectors import co_quyen_xu_ly_het_hieu_luc
         return co_quyen_xu_ly_het_hieu_luc(user, model_name)
-
     # Văn bản Đến/Đi còn hiệu lực: Admin hoặc Cán bộ được chỉ định (người tạo) có quyền xóa
     if is_admin_user(user):
         return True
@@ -574,6 +574,16 @@ class DocumentViewSet(viewsets.ViewSet):
         loai = serializer.validated_data.get("loai", LoaiVanBan.DEN)
         if not can_create_document(request.user, loai):
             raise PermissionDenied("Bạn không có quyền tạo văn bản mới. Vui lòng liên hệ Quản trị viên để được cấp quyền.")
+
+        # Văn bản Đến/Đi phạm vi Hạn chế cần quyền riêng add_han_che_vanbanden/vanbandi (Văn bản Mật có luồng riêng).
+        if (
+            serializer.validated_data.get("pham_vi") == PhamVi.HAN_CHE
+            and str(loai).upper() not in ("MAT", "VANBANMAT")
+            and not co_quyen_them_han_che(
+                request.user, "vanbandi" if str(loai).upper() in ("DI", "VANBANDI") else "vanbanden"
+            )
+        ):
+            raise PermissionDenied("Bạn không có quyền thêm văn bản hạn chế. Vui lòng liên hệ Quản trị viên để được cấp quyền.")
 
         nam = serializer.validated_data.get("nam", timezone.now().year)
 

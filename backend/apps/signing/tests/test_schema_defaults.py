@@ -111,7 +111,7 @@ class SigningSchemaDefaultsTests(TestCase):
 
             cursor.execute(
                 "INSERT INTO signing_key_unlock "
-                "(khoa_id, ma_bam_xac_minh_pin, manh_bi_mat_ma_hoa, tham_so_kdf) "
+                "(khoa_id, ma_bam_xac_minh_pin, khoa_bi_mat_ma_hoa, tham_so_kdf) "
                 "VALUES (%s, %s, %s, %s::jsonb) RETURNING so_lan_sai, created_at, updated_at",
                 [key_id, "verifier", "encrypted-share", "{}"],
             )
