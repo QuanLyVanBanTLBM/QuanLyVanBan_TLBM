@@ -178,6 +178,7 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
   const { t } = useTranslation();
   const isMobile = useIsMobile();
   const { can, isSuperuser } = usePermissions();
+  const isDi = loai === 'DI';
 
   // Lấy thông tin phiên làm việc hiện tại để phân quyền hiển thị tác vụ
   const currentSession = useMemo(() => authService.getSession(), []);
@@ -214,26 +215,46 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
     let userCanEdit = doc.can_edit !== undefined ? doc.can_edit : defaultCanEdit;
     let userCanDelete = doc.can_delete !== undefined ? doc.can_delete : defaultCanDelete;
 
-    if (isDocConfidential && !isAdmin) {
-      userCanEdit = false;
+    if (isDocConfidential) {
+      // TUYỆT ĐỐI CẤM XÓA VĂN BẢN HẠN CHẾ / MẬT (kể cả Admin theo Trigger DDL prevent_delete_van_ban_han_che)
       userCanDelete = false;
+      userCanEdit = doc.can_edit !== undefined ? doc.can_edit : (isAdmin || (isCreator && !isExpired));
     }
 
     const isDi = doc.loai === 'DI' || loai === 'DI';
+    const canViewPerm = can(isDi ? 'view_vanbandi' : 'view_vanbanden');
     const canViewLogPerm = can(isDi ? 'view_read_log_vanbandi' : 'view_read_log_vanbanden');
-    const defaultCanViewHistory = !isDocConfidential;
-    const userCanViewHistory = doc.can_view_read_log !== undefined 
-      ? doc.can_view_read_log 
-      : (canViewLogPerm || defaultCanViewHistory);
+
+    // Quyền xem chi tiết:
+    // - Quản trị viên, Superuser hoặc Người tạo luôn có quyền xem.
+    // - Với văn bản thường (NOI_BO): Tuân thủ cờ can_view từ backend serializer (tính theo RBAC).
+    //   Nếu doc.can_view === false (do bị bỏ tick view_vanbanden/di ở Nhóm 7) -> khóa xem.
+    //   Nếu doc.can_view là undefined (trong unit test mock) -> fallback cho phép xem.
+    const userCanView = doc.can_view !== undefined ? doc.can_view : true;
+    const canViewDetail = Boolean(
+      isAdmin ||
+      isSuperuser ||
+      isCreator ||
+      (isDocConfidential ? true : userCanView)
+    );
+
+    // Quyền xem lịch sử người đọc (Audit Log):
+    // 1. Quản trị viên (Admin / Superuser) luôn có quyền xem.
+    // 2. Văn bản hạn chế/mật: CHỈ Admin hoặc Người tạo mới được xem. Người nhận KHÔNG được xem.
+    // 3. Văn bản thường (NOI_BO):
+    //    - Tuân thủ cờ can_view_read_log từ backend serializer (tính theo RBAC).
+    //    - Nếu doc.can_view_read_log === false (do bị bỏ tick ở Nhóm 7) -> ẩn nút xem lịch sử.
+    //    - Nếu doc.can_view_read_log là undefined (trong unit test mock) -> fallback cho phép xem.
+    const userCanViewHistory = doc.can_view_read_log !== undefined ? doc.can_view_read_log : true;
 
     const canViewHistory = Boolean(
       isAdmin ||
       isSuperuser ||
-      isCreator ||
-      userCanViewHistory
+      (isDocConfidential ? isCreator : userCanViewHistory)
     );
 
     return {
+      canView: canViewDetail,
       canEdit: Boolean(onEdit) && userCanEdit,
       canDelete: Boolean(onDelete) && userCanDelete,
       canViewHistory: Boolean(onViewHistory) && canViewHistory,
@@ -364,7 +385,7 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
                 const isExpired = doc.hieu_luc === 'HET_HIEU_LUC';
                 const isActiveRow = activeMenuId === doc.id;
                 const isNearBottom = documents.length >= 5 && index >= documents.length - 2 && index >= 3;
-                const { canEdit, canDelete, canViewHistory } = getDocPermissions(doc);
+                const { canView, canEdit, canDelete, canViewHistory } = getDocPermissions(doc);
 
                 // Tông màu hàng theo yêu cầu:
                 // - Toàn bộ hàng trắng đồng nhất, di chuột vào sáng trắng/xám nhẹ
@@ -376,11 +397,13 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
                 return (
                   <tr
                     key={doc.id}
-                    onClick={() => onViewDetail(doc.id)}
-                    className={`${rowHighlightClass} cursor-pointer transition-all duration-150 ease-out group ${
+                    onClick={() => {
+                      if (canView) onViewDetail(doc.id);
+                    }}
+                    className={`${rowHighlightClass} ${canView ? 'cursor-pointer' : 'cursor-default'} transition-all duration-150 ease-out group ${
                       isActiveRow ? 'relative z-30 ring-2 ring-primary/40' : ''
                     }`}
-                    title={t('documents_ui.table.clickToView') || 'Bấm vào hàng để xem chi tiết văn bản'}
+                    title={canView ? (t('documents_ui.table.clickToView') || 'Bấm vào hàng để xem chi tiết văn bản') : (t('documents_ui.table.noViewPermission') || 'Bạn không có quyền xem chi tiết văn bản này')}
                   >
                     {/* 1. STT dòng */}
                     <td className="px-4 py-3.5 text-center font-bold text-primary whitespace-nowrap text-sm">
@@ -393,11 +416,17 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
-                            onClick={() => onViewDetail(doc.id)}
-                            className="text-left font-semibold text-main group-hover:text-primary transition-colors flex items-center gap-1.5"
-                            title={t('documents_ui.table.clickDocToView') || 'Bấm để xem chi tiết văn bản'}
+                            onClick={(e) => {
+                              if (canView) {
+                                onViewDetail(doc.id);
+                              } else {
+                                e.stopPropagation();
+                              }
+                            }}
+                            className={`text-left font-semibold ${canView ? 'text-main group-hover:text-primary cursor-pointer' : 'text-muted cursor-default'} transition-colors flex items-center gap-1.5`}
+                            title={canView ? (t('documents_ui.table.clickDocToView') || 'Bấm để xem chi tiết văn bản') : (t('documents_ui.table.noViewPermission') || 'Bạn không có quyền xem chi tiết văn bản này')}
                           >
-                            <i className="fa-solid fa-file-contract text-primary/70 group-hover:text-primary group-hover:scale-110 text-xs shrink-0 transition-transform duration-150" />
+                            <i className={`fa-solid fa-file-contract ${canView ? 'text-primary/70 group-hover:text-primary group-hover:scale-110' : 'text-muted'} text-xs shrink-0 transition-transform duration-150`} />
                             <span>{doc.so_hieu}</span>
                           </button>
                           {doc.pham_vi === 'HAN_CHE' && (
@@ -579,17 +608,19 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
                               } w-52 bg-surface-elevated border border-border-subtle rounded-xl shadow-2xl z-50 py-1.5 animate-in fade-in zoom-in-95 duration-100 select-none`}
                           >
                             {/* 1. Nút Xem chi tiết */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveMenuId(null);
-                                onViewDetail(doc.id);
-                              }}
-                              className="w-full text-left px-3.5 py-2 text-sm text-main hover:bg-primary-subtle hover:text-primary flex items-center gap-2.5 transition-colors cursor-pointer"
-                            >
-                              <i className="fa-solid fa-eye text-primary w-4 text-xs" />
-                              <span>{t('documents_ui.table.viewDetail') || 'Xem chi tiết'}</span>
-                            </button>
+                            {canView && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveMenuId(null);
+                                  onViewDetail(doc.id);
+                                }}
+                                className="w-full text-left px-3.5 py-2 text-sm text-main hover:bg-primary-subtle hover:text-primary flex items-center gap-2.5 transition-colors cursor-pointer"
+                              >
+                                <i className="fa-solid fa-eye text-primary w-4 text-xs" />
+                                <span>{t('documents_ui.table.viewDetail') || 'Xem chi tiết'}</span>
+                              </button>
+                            )}
 
                             {/* 2. Nút Lịch sử xem */}
                             {canViewHistory && (
@@ -617,7 +648,11 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
                                 className="w-full text-left px-3.5 py-2 text-sm text-main hover:bg-warning-subtle hover:text-warning-text flex items-center gap-2.5 transition-colors cursor-pointer"
                               >
                                 <i className="fa-solid fa-pen-to-square text-warning-text w-4 text-xs" />
-                                <span>{t('documents_ui.table.edit') || 'Chỉnh sửa'}</span>
+                                <span>
+                                  {doc.can_edit_full === false && (doc.can_change_hieu_luc || can(isDi ? 'change_hieu_luc_vanbandi' : 'change_hieu_luc_vanbanden'))
+                                    ? (t('documents_ui.table.changeValidity') || 'Đổi hiệu lực')
+                                    : (t('documents_ui.table.edit') || 'Chỉnh sửa')}
+                                </span>
                               </button>
                             )}
 
@@ -686,18 +721,20 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
         ) : (
           documents.map((doc, index) => {
             const isExpired = doc.hieu_luc === 'HET_HIEU_LUC';
-            const { canEdit, canDelete, canViewHistory } = getDocPermissions(doc);
+            const { canView, canEdit, canDelete, canViewHistory } = getDocPermissions(doc);
 
             return (
               <div
                 key={`mobile-${doc.id}`}
-                onClick={() => onViewDetail(doc.id)}
-                className={`border rounded-xl p-3.5 shadow-sm transition-all cursor-pointer ${
+                onClick={() => {
+                  if (canView) onViewDetail(doc.id);
+                }}
+                className={`border rounded-xl p-3.5 shadow-sm transition-all ${canView ? 'cursor-pointer hover:border-primary/50' : 'cursor-default'} ${
                   isExpired
                     ? 'bg-slate-50/90 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/60'
-                    : 'bg-white dark:bg-surface border-border-subtle hover:border-primary/50'
+                    : 'bg-white dark:bg-surface border-border-subtle'
                 }`}
-                title={t('documents_ui.table.clickToView') || 'Bấm vào thẻ để xem chi tiết văn bản'}
+                title={canView ? (t('documents_ui.table.clickToView') || 'Bấm vào thẻ để xem chi tiết văn bản') : (t('documents_ui.table.noViewPermission') || 'Bạn không có quyền xem chi tiết văn bản này')}
               >
                 {/* Header thẻ: STT + Số hiệu + Badge Hạn chế + Trạng thái */}
                 <div className="flex items-start justify-between gap-2">
@@ -832,16 +869,18 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
                   className="flex items-center justify-end gap-1.5 pt-2 mt-2 border-t border-border-subtle/50"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    icon="fa-eye"
-                    onClick={() => onViewDetail(doc.id)}
-                    className="!px-2.5 !py-1 text-xs"
-                  >
-                    {t('documents_ui.table.viewDetail') || 'Xem'}
-                  </Button>
+                  {canView && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      icon="fa-eye"
+                      onClick={() => onViewDetail(doc.id)}
+                      className="!px-2.5 !py-1 text-xs"
+                    >
+                      {t('documents_ui.table.viewDetail') || 'Xem'}
+                    </Button>
+                  )}
                   {canViewHistory && (
                     <Button
                       type="button"
@@ -861,7 +900,11 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
                       icon="fa-pen-to-square"
                       onClick={() => onEdit!(doc)}
                       className="!px-2 !py-1 text-xs text-warning-text hover:bg-warning-subtle"
-                      title={t('documents_ui.table.edit') || 'Chỉnh sửa'}
+                      title={
+                        doc.can_edit_full === false && (doc.can_change_hieu_luc || can(isDi ? 'change_hieu_luc_vanbandi' : 'change_hieu_luc_vanbanden'))
+                          ? (t('documents_ui.table.changeValidity') || 'Đổi hiệu lực')
+                          : (t('documents_ui.table.edit') || 'Chỉnh sửa')
+                      }
                     />
                   )}
                   {canDelete && (

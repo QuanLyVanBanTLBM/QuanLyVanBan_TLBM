@@ -41,6 +41,30 @@ def is_admin_user(user):
     return False
 
 
+def _co_quyen(user, perm_code):
+    try:
+        return user.has_perm(f"documents.{perm_code}") or user.has_perm(perm_code)
+    except Exception:
+        return False
+
+
+def co_quyen_xu_ly_het_hieu_luc(user, model_name="vanbanden"):
+    """Quyền sửa, xóa văn bản hết hiệu lực: superuser hoặc manage_het_hieu_luc_vanbanden/vanbandi."""
+    if getattr(user, "is_superuser", False) or is_admin_user(user):
+        return True
+    return _co_quyen(user, f"manage_het_hieu_luc_{model_name}")
+
+
+def co_quyen_xem_het_hieu_luc(user, model_name="vanbanden"):
+    """
+    Quyền xem văn bản hết hiệu lực: superuser, view_het_hieu_luc_vanbanden/vanbandi,
+    hoặc quyền xử lý manage_het_hieu_luc_* (được sửa, xóa thì được xem).
+    """
+    if co_quyen_xu_ly_het_hieu_luc(user, model_name):
+        return True
+    return _co_quyen(user, f"view_het_hieu_luc_{model_name}")
+
+
 def van_ban_xem_duoc(user, loai="DEN"):
     """
     Quy tắc xem văn bản chuẩn:
@@ -81,19 +105,33 @@ def van_ban_xem_duoc(user, loai="DEN"):
         has_view_perm = (
             user.is_staff
             or user.is_superuser
+            or is_admin_user(user)
             or user.has_perm(f"documents.view_{model_name}")
             or user.has_perm(f"view_{model_name}")
         )
     except Exception:
         has_view_perm = bool(user.is_staff or user.is_superuser)
+
+    # Điều kiện văn bản còn hiệu lực và hết hiệu lực
+    cond_active = Q(hieu_luc__in=[HieuLuc.CON_HIEU_LUC, HieuLuc.CON_HIEU_LUC_1_PHAN])
+    cond_expired = Q(hieu_luc__in=[HieuLuc.HET_HIEU_LUC, HieuLuc.HET_VA_THAY_THE])
+    has_expired_view = co_quyen_xem_het_hieu_luc(user, model_name)
+
     if has_view_perm:
-        cond_noi_bo = Q(pham_vi=PhamVi.NOI_BO)
+        # Nếu có quyền xem văn bản hết hiệu lực (hoặc admin/superuser) -> xem được toàn bộ NOI_BO
+        if has_expired_view:
+            cond_noi_bo = Q(pham_vi=PhamVi.NOI_BO)
+        else:
+            # Nếu KHÔNG có quyền xem văn bản hết hiệu lực -> chỉ xem NOI_BO còn hiệu lực (hoặc văn bản do mình tạo/nhận)
+            cond_noi_bo = Q(pham_vi=PhamVi.NOI_BO) & (cond_active | q_han_che_user)
     else:
-        # Cán bộ thường không có quyền view_*:
-        # - Chỉ tài khoản chỉ định (người tạo, người nhận) mới được xem văn bản hết hiệu lực
-        # - Tài khoản không chỉ định thì chỉ xem được văn bản còn hiệu lực (CON_HIEU_LUC, CON_HIEU_LUC_1_PHAN)
-        cond_active = Q(hieu_luc__in=[HieuLuc.CON_HIEU_LUC, HieuLuc.CON_HIEU_LUC_1_PHAN])
-        cond_noi_bo = Q(pham_vi=PhamVi.NOI_BO, hien_thi=True) & (q_han_che_user | cond_active)
+        # Khi KHÔNG có quyền view_vanbanden / view_vanbandi (bị bỏ tick):
+        if has_expired_view:
+            # Nếu LẠI ĐƯỢC CẤP quyền xem văn bản hết hiệu lực -> xem được văn bản NOI_BO hết hiệu lực + văn bản của mình
+            cond_noi_bo = Q(pham_vi=PhamVi.NOI_BO) & (cond_expired | q_han_che_user)
+        else:
+            # Cán bộ thường chỉ xem được các văn bản mà họ là Người tạo hoặc Người nhận chỉ định.
+            cond_noi_bo = Q(pham_vi=PhamVi.NOI_BO) & q_han_che_user
 
     return model.objects.filter(cond_noi_bo | cond_han_che).distinct()
 
@@ -108,9 +146,15 @@ def la_nguoi_xem_duoc(user, van_ban):
         return False
 
     pham_vi = getattr(van_ban, "pham_vi", PhamVi.NOI_BO)
-    is_confidential = (getattr(van_ban, "loai", None) == "MAT") or (pham_vi == PhamVi.HAN_CHE)
+    is_mat = (getattr(van_ban, "loai", None) == "MAT") or (
+        getattr(getattr(van_ban, "_meta", None), "model_name", "") == "vanbanmat"
+    )
+    is_confidential = is_mat or (pham_vi == PhamVi.HAN_CHE)
+
     if is_confidential:
-        if van_ban.nguoi_tao_id == user.pk:
+        # KHÓA CỨNG BẢO VỆ VĂN BẢN HẠN CHẾ / MẬT:
+        # Tuyệt đối không có ngoại lệ cho Superuser hay Admin nếu không phải người nhận hay người tạo.
+        if (getattr(van_ban, "nguoi_tao_id", None) == user.pk) or (getattr(van_ban, "nguoi_tao", None) == user):
             return True
         has_recipients = hasattr(van_ban, "nguoi_nhan") and van_ban.nguoi_nhan.exists()
         if has_recipients:
@@ -122,36 +166,42 @@ def la_nguoi_xem_duoc(user, van_ban):
             return van_ban.donvinhan.filter(donvi_id=user_don_vi_id).exists()
         return False
 
-    # NOI_BO: Văn bản nội bộ hiển thị cho mọi cán bộ nhân viên đang hoạt động
-    if getattr(van_ban, "hien_thi", True):
-        # Nếu văn bản đã hết hiệu lực: chỉ tài khoản chỉ định (Admin, Người tạo, Người nhận) hoặc quyền view_* mới xem được
-        is_expired = getattr(van_ban, "hieu_luc", None) in (HieuLuc.HET_HIEU_LUC, HieuLuc.HET_VA_THAY_THE)
-        if is_expired:
-            if user.is_staff or user.is_superuser or van_ban.nguoi_tao_id == user.pk:
-                return True
-            if hasattr(van_ban, "nguoi_nhan") and van_ban.nguoi_nhan.filter(pk=user.pk).exists():
-                return True
-            model_name = getattr(van_ban, "document_kind", "vanbanden")
-            try:
-                if user.has_perm(f"documents.view_{model_name}") or user.has_perm(f"view_{model_name}"):
-                    return True
-            except Exception:
-                pass
-            return False
+    # NOI_BO: Văn bản nội bộ
+    if is_admin_user(user) or getattr(user, "is_staff", False) or getattr(user, "is_superuser", False):
         return True
 
-    if user.is_staff or user.is_superuser:
+    if (getattr(van_ban, "nguoi_tao_id", None) == user.pk) or (getattr(van_ban, "nguoi_tao", None) == user):
+        return True
+    if hasattr(van_ban, "nguoi_nhan") and van_ban.nguoi_nhan.filter(pk=user.pk).exists():
         return True
 
-    model_name = getattr(van_ban, "document_kind", "vanbanden")
+    model_name = getattr(van_ban, "document_kind", None) or getattr(getattr(van_ban, "_meta", None), "model_name", "vanbanden")
+
+    # Văn bản nội bộ hết hiệu lực: Yêu cầu quyền view_het_hieu_luc_* do Nhóm 7 cấp
+    is_expired = getattr(van_ban, "hieu_luc", None) in (HieuLuc.HET_HIEU_LUC, HieuLuc.HET_VA_THAY_THE)
+    if is_expired:
+        return co_quyen_xem_het_hieu_luc(user, model_name)
+
+    # Quyền sửa, xóa, xem log, đổi hiệu lực tự động cho phép tiếp cận văn bản
     try:
-        return (
+        if (
             user.has_perm(f"documents.view_{model_name}")
             or user.has_perm(f"view_{model_name}")
-        )
+            or user.has_perm(f"documents.change_{model_name}")
+            or user.has_perm(f"change_{model_name}")
+            or user.has_perm(f"documents.delete_{model_name}")
+            or user.has_perm(f"delete_{model_name}")
+            or user.has_perm(f"documents.view_read_log_{model_name}")
+            or user.has_perm(f"view_read_log_{model_name}")
+            or user.has_perm(f"documents.change_hieu_luc_{model_name}")
+            or user.has_perm(f"change_hieu_luc_{model_name}")
+        ):
+            return True
     except Exception:
-        return False
+        pass
 
+    # Mặc định văn bản nội bộ hiển thị (hien_thi = True)
+    return bool(getattr(van_ban, "hien_thi", True))
 
 def log_access(document_type, document_id, user, hanh_dong, doi_tuong_user=None, tep_id=None, dia_chi_ip=None):
     """

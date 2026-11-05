@@ -137,10 +137,13 @@ def can_edit_document(user, instance):
         is_creator = (getattr(instance, "nguoi_tao_id", None) == user.pk) or (getattr(instance, "nguoi_tao", None) == user)
         return bool(is_real_admin or is_creator)
 
-    # Văn bản Đến/Đi đã hết hiệu lực: CHỈ Admin mới có quyền chỉnh sửa. Cán bộ chỉ định chỉ có quyền Xem.
+    model_name = instance._meta.model_name
+
+    # Văn bản Đến/Đi nội bộ đã hết hiệu lực: CHỈ Admin hoặc quyền manage_het_hieu_luc_* mới có quyền chỉnh sửa.
     is_expired = getattr(instance, "hieu_luc", None) in (HieuLuc.HET_HIEU_LUC, HieuLuc.HET_VA_THAY_THE)
     if is_expired:
-        return is_admin_user(user)
+        from .selectors import co_quyen_xu_ly_het_hieu_luc
+        return co_quyen_xu_ly_het_hieu_luc(user, model_name)
 
     # Văn bản Đến/Đi còn hiệu lực: Admin hoặc Cán bộ được chỉ định (người tạo) có quyền chỉnh sửa.
     if is_admin_user(user):
@@ -148,7 +151,6 @@ def can_edit_document(user, instance):
     if getattr(instance, "nguoi_tao_id", None) == user.pk or getattr(instance, "nguoi_tao", None) == user:
         return True
 
-    model_name = instance._meta.model_name
     try:
         if (
             user.has_perm(f"documents.change_{model_name}")
@@ -241,20 +243,6 @@ def can_change_hieu_luc(user, loai="DEN"):
     if is_admin_user(user):
         return True
 
-    profile = getattr(user, "profile", None)
-    if profile and getattr(profile, "role", None) in ("admin", "vt", "vanthu", "van_thu"):
-        return True
-
-    if getattr(user, "role", None) in ("admin", "vt", "vanthu", "van_thu"):
-        return True
-
-    try:
-        user_groups = {g.name.lower() for g in user.groups.all()}
-        if any(vt in user_groups for vt in ("vt", "văn thư", "van thu", "vanthu", "admin", "quản trị")):
-            return True
-    except Exception:
-        pass
-
     model_name = "vanbandi" if str(loai).upper() in ("DI", "VANBANDI") else "vanbanden"
     perm_code = f"change_hieu_luc_{model_name}"
 
@@ -266,6 +254,20 @@ def can_change_hieu_luc(user, loai="DEN"):
             return True
         perms = getattr(user, "_user_permissions_cache", None) or set()
         if any(perm_code in str(p) for p in perms):
+            return True
+    except Exception:
+        pass
+
+    profile = getattr(user, "profile", None)
+    if profile and getattr(profile, "role", None) in ("admin", "vt", "vanthu", "van_thu"):
+        return True
+
+    if getattr(user, "role", None) in ("admin", "vt", "vanthu", "van_thu"):
+        return True
+
+    try:
+        user_groups = {g.name.lower() for g in user.groups.all()}
+        if any(vt in user_groups for vt in ("vt", "văn thư", "van thu", "vanthu", "admin", "quản trị")):
             return True
     except Exception:
         pass
@@ -295,6 +297,10 @@ def can_view_read_log(user, instance):
             return True
     except Exception:
         pass
+
+    is_mat = getattr(instance, "loai", None) == "MAT" or (getattr(instance, "_meta", None) and instance._meta.model_name == "vanbanmat")
+    if is_mat or getattr(instance, "pham_vi", None) == PhamVi.HAN_CHE:
+        return False
 
     model_name = getattr(instance, "document_kind", None) or getattr(getattr(instance, "_meta", None), "model_name", "vanbanden")
     perm_code = "view_read_log_vanbandi" if str(model_name).lower() in ("vanbandi", "di") else "view_read_log_vanbanden"
@@ -363,14 +369,17 @@ def can_delete_document(user, instance):
 
     is_mat = getattr(instance, "loai", None) == "MAT" or (getattr(instance, "_meta", None) and instance._meta.model_name == "vanbanmat")
 
-    # Văn bản Hạn chế (HAN_CHE) hoặc Văn bản Mật: CHỈ Quản trị viên (Admin) mới có quyền xóa. Cán bộ thường / Cán bộ chỉ định / Người tạo không được phép xóa.
+    # Văn bản Hạn chế (HAN_CHE) hoặc Văn bản Mật: CẤM XÓA 100% (Khớp Trigger DB prevent_delete_van_ban_han_che).
     if is_mat or getattr(instance, "pham_vi", None) == PhamVi.HAN_CHE:
-        return is_admin_user(user)
+        return False
 
-    # Văn bản Đến/Đi đã hết hiệu lực: CHỈ Admin mới có quyền xóa. Cán bộ chỉ định chỉ có quyền xem.
+    model_name = instance._meta.model_name
+
+    # Văn bản Đến/Đi nội bộ đã hết hiệu lực: CHỈ Admin hoặc quyền manage_het_hieu_luc_* mới có quyền xóa.
     is_expired = getattr(instance, "hieu_luc", None) in (HieuLuc.HET_HIEU_LUC, HieuLuc.HET_VA_THAY_THE)
     if is_expired:
-        return is_admin_user(user)
+        from .selectors import co_quyen_xu_ly_het_hieu_luc
+        return co_quyen_xu_ly_het_hieu_luc(user, model_name)
 
     # Văn bản Đến/Đi còn hiệu lực: Admin hoặc Cán bộ được chỉ định (người tạo) có quyền xóa
     if is_admin_user(user):
@@ -619,8 +628,15 @@ class DocumentViewSet(viewsets.ViewSet):
         if getattr(instance, "pham_vi", None) == PhamVi.HAN_CHE and not is_real_admin and instance.nguoi_tao != user:
             raise PermissionDenied("Người được chỉ định xem văn bản hạn chế chỉ có quyền xem, không được phép chỉnh sửa.")
 
-        if not can_edit_document(user, instance):
+        has_full_edit = can_edit_document(user, instance)
+        has_hieu_luc_only = can_change_hieu_luc(user, getattr(instance, "loai", "DEN"))
+        if not has_full_edit and not has_hieu_luc_only:
             raise PermissionDenied("Bạn không có quyền chỉnh sửa văn bản này. Chỉ Quản trị viên, Người tạo hoặc Cán bộ được cấp quyền mới được phép chỉnh sửa.")
+        if not has_full_edit and has_hieu_luc_only:
+            allowed_fields = {"hieu_luc", "ngay_het_hieu_luc", "link_thay_the", "id", "loai"}
+            modified_fields = set(request.data.keys()) - allowed_fields
+            if modified_fields:
+                raise PermissionDenied("Bạn chỉ có quyền thay đổi trạng thái hiệu lực của văn bản.")
 
         old_link = (instance.link_thay_the or "").strip()
         old_so_hieu = (instance.so_hieu or "").strip()
@@ -967,8 +983,15 @@ class VanBanDenViewSet(viewsets.ModelViewSet):
         obj = VanBanDen.objects.filter(pk=pk).first()
         if not obj:
             raise NotFound(f"Không tìm thấy văn bản với ID {pk}.")
-        if not can_edit_document(request.user, obj):
-            raise PermissionDenied("Bạn không có quyền chỉnh sửa văn bản này.")
+        has_full_edit = can_edit_document(request.user, obj)
+        has_hieu_luc_only = can_change_hieu_luc(request.user, "DEN")
+        if not has_full_edit and not has_hieu_luc_only:
+            raise PermissionDenied("Bạn không có quyền chỉnh sửa văn bản này. Chỉ Quản trị viên, Người tạo hoặc Cán bộ được cấp quyền mới được phép chỉnh sửa.")
+        if not has_full_edit and has_hieu_luc_only:
+            allowed_fields = {"hieu_luc", "ngay_het_hieu_luc", "link_thay_the", "id", "loai"}
+            modified_fields = set(request.data.keys()) - allowed_fields
+            if modified_fields:
+                raise PermissionDenied("Bạn chỉ có quyền thay đổi trạng thái hiệu lực của văn bản.")
         return super().update(request, *args, **kwargs)
 
     def partial_update(self, request, *args, **kwargs):
@@ -976,8 +999,15 @@ class VanBanDenViewSet(viewsets.ModelViewSet):
         obj = VanBanDen.objects.filter(pk=pk).first()
         if not obj:
             raise NotFound(f"Không tìm thấy văn bản với ID {pk}.")
-        if not can_edit_document(request.user, obj):
-            raise PermissionDenied("Bạn không có quyền chỉnh sửa văn bản này.")
+        has_full_edit = can_edit_document(request.user, obj)
+        has_hieu_luc_only = can_change_hieu_luc(request.user, "DEN")
+        if not has_full_edit and not has_hieu_luc_only:
+            raise PermissionDenied("Bạn không có quyền chỉnh sửa văn bản này. Chỉ Quản trị viên, Người tạo hoặc Cán bộ được cấp quyền mới được phép chỉnh sửa.")
+        if not has_full_edit and has_hieu_luc_only:
+            allowed_fields = {"hieu_luc", "ngay_het_hieu_luc", "link_thay_the", "id", "loai"}
+            modified_fields = set(request.data.keys()) - allowed_fields
+            if modified_fields:
+                raise PermissionDenied("Bạn chỉ có quyền thay đổi trạng thái hiệu lực của văn bản.")
         return super().partial_update(request, *args, **kwargs)
 
     def create(self, request, *args, **kwargs):
@@ -1046,8 +1076,15 @@ class VanBanDiViewSet(viewsets.ModelViewSet):
         obj = VanBanDi.objects.filter(pk=pk).first()
         if not obj:
             raise NotFound(f"Không tìm thấy văn bản với ID {pk}.")
-        if not can_edit_document(request.user, obj):
-            raise PermissionDenied("Bạn không có quyền chỉnh sửa văn bản này.")
+        has_full_edit = can_edit_document(request.user, obj)
+        has_hieu_luc_only = can_change_hieu_luc(request.user, "DI")
+        if not has_full_edit and not has_hieu_luc_only:
+            raise PermissionDenied("Bạn không có quyền chỉnh sửa văn bản này. Chỉ Quản trị viên, Người tạo hoặc Cán bộ được cấp quyền mới được phép chỉnh sửa.")
+        if not has_full_edit and has_hieu_luc_only:
+            allowed_fields = {"hieu_luc", "ngay_het_hieu_luc", "link_thay_the", "id", "loai"}
+            modified_fields = set(request.data.keys()) - allowed_fields
+            if modified_fields:
+                raise PermissionDenied("Bạn chỉ có quyền thay đổi trạng thái hiệu lực của văn bản.")
         return super().update(request, *args, **kwargs)
 
     def partial_update(self, request, *args, **kwargs):
@@ -1055,8 +1092,15 @@ class VanBanDiViewSet(viewsets.ModelViewSet):
         obj = VanBanDi.objects.filter(pk=pk).first()
         if not obj:
             raise NotFound(f"Không tìm thấy văn bản với ID {pk}.")
-        if not can_edit_document(request.user, obj):
-            raise PermissionDenied("Bạn không có quyền chỉnh sửa văn bản này.")
+        has_full_edit = can_edit_document(request.user, obj)
+        has_hieu_luc_only = can_change_hieu_luc(request.user, "DI")
+        if not has_full_edit and not has_hieu_luc_only:
+            raise PermissionDenied("Bạn không có quyền chỉnh sửa văn bản này. Chỉ Quản trị viên, Người tạo hoặc Cán bộ được cấp quyền mới được phép chỉnh sửa.")
+        if not has_full_edit and has_hieu_luc_only:
+            allowed_fields = {"hieu_luc", "ngay_het_hieu_luc", "link_thay_the", "id", "loai"}
+            modified_fields = set(request.data.keys()) - allowed_fields
+            if modified_fields:
+                raise PermissionDenied("Bạn chỉ có quyền thay đổi trạng thái hiệu lực của văn bản.")
         return super().partial_update(request, *args, **kwargs)
 
     def create(self, request, *args, **kwargs):
