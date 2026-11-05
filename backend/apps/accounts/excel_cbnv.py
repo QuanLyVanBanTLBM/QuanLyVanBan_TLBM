@@ -11,11 +11,13 @@ from typing import Callable
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from django.contrib.auth.models import Group
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.validators import validate_email
 from django.db import transaction
 from django.contrib.auth import get_user_model
 
 from organizations.models import DonVi, KhoiKhuVuc
-from .models import Employee, EmployeeAssignment, Position, vietnam_phone_regex
+from .models import Employee, EmployeeAssignment, Position, validate_company_email, vietnam_phone_regex
 from .serializers import get_default_groups_for_position
 
 
@@ -131,6 +133,24 @@ def generate_cbnv_template() -> BytesIO:
     wb.save(output)
     output.seek(0)
     return output
+
+
+def _is_valid_email_syntax(value: str) -> bool:
+    """Cùng bộ kiểm tra cú pháp email với form và API (Django validate_email)."""
+    try:
+        validate_email(value)
+    except DjangoValidationError:
+        return False
+    return True
+
+
+def _is_company_email(value: str) -> bool:
+    """Email thuộc tên miền công ty (settings.EMPLOYEE_EMAIL_ALLOWED_DOMAINS)."""
+    try:
+        validate_company_email(value)
+    except DjangoValidationError:
+        return False
+    return True
 
 
 def _parse_date(val) -> date | None:
@@ -367,13 +387,21 @@ def import_cbnv_from_excel(
         # 3. Validate Email
         if not raw_email:
             add_error(idx, "email", "employees.validation.emailRequired", "", "Email không được để trống.")
-        elif not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", raw_email):
+        elif not _is_valid_email_syntax(raw_email):
             add_error(
                 idx,
                 "email",
                 "employees.import.errors.invalidEmail",
                 raw_email,
                 f"Email '{raw_email}' không đúng định dạng.",
+            )
+        elif not _is_company_email(raw_email):
+            add_error(
+                idx,
+                "email",
+                "employees.messages.emailDomainNotAllowed",
+                raw_email,
+                f"Email '{raw_email}' phải thuộc tên miền công ty.",
             )
         elif raw_email in seen_emails_in_file:
             add_error(
@@ -397,7 +425,7 @@ def import_cbnv_from_excel(
         # 4. Validate Số điện thoại
         if sdt:
             sdt_clean = sdt.replace(" ", "").replace(".", "")
-            if not re.match(r"^(0|\+84)[1-9][0-9]{7,9}$", sdt_clean):
+            if not vietnam_phone_regex.regex.match(sdt_clean):
                 add_error(
                     idx,
                     "sdt",

@@ -384,3 +384,10 @@ ALPACA_GET_USER_INFO_URL = os.getenv(
     "https://api2.bhbl.vn/auth-command/public/user/get-info-user",
 )
 ALPACA_BEARER_AUTH_KEY = os.getenv("ALPACA_BEARER_AUTH_KEY", "")
+
+# Email CBNV chỉ nhận tên miền công ty (chốt 04/11/2026). Phân tách bằng dấu phẩy; đặt rỗng để không giới hạn.
+EMPLOYEE_EMAIL_ALLOWED_DOMAINS = tuple(
+    domain.strip().lower()
+    for domain in os.getenv("EMPLOYEE_EMAIL_ALLOWED_DOMAINS", "baolong.vn").split(",")
+    if domain.strip()
+)

@@ -4,15 +4,33 @@ import uuid
 from django.conf import settings
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.contrib.auth.models import PermissionsMixin
-from django.core.validators import MinValueValidator, RegexValidator
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.validators import MinValueValidator, RegexValidator, validate_email
 from django.db import models
 from django.db.models.functions import Now
 
-# Regex kiểm tra số điện thoại Việt Nam chuẩn
+# Số điện thoại di động Việt Nam: đúng 10 chữ số, bắt đầu 03/05/07/08/09 (chốt 04/11/2026).
 vietnam_phone_regex = RegexValidator(
-    regex=r"^(0|\+84)[1-9][0-9]{7,9}$",
+    regex=r"^0[35789][0-9]{8}$",
     message="employees.messages.invalidPhone",
 )
+
+
+def validate_company_email(value):
+    """Email CBNV phải thuộc tên miền công ty (settings.EMPLOYEE_EMAIL_ALLOWED_DOMAINS, mặc định baolong.vn).
+
+    Chỉ so khớp đúng tên miền (không nhận tên miền con hay tên miền chứa baolong.vn); danh sách rỗng là không giới hạn.
+    """
+    allowed = tuple(getattr(settings, "EMPLOYEE_EMAIL_ALLOWED_DOMAINS", ()))
+    if not allowed:
+        return
+    try:
+        validate_email(str(value).strip())
+    except DjangoValidationError:
+        return  # sai cú pháp thì EmailField báo lỗi định dạng, không báo thêm lỗi tên miền
+    domain = str(value).strip().rsplit("@", 1)[-1].lower()
+    if domain not in allowed:
+        raise DjangoValidationError("employees.messages.emailDomainNotAllowed", code="email_domain")
 
 
 class DbNow(Now):

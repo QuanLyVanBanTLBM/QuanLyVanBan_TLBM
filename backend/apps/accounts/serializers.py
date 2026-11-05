@@ -21,6 +21,7 @@ from .models import (
     EmployeeAssignment,
     EmployeePasswordResetAudit,
     Position,
+    validate_company_email,
     vietnam_phone_regex,
 )
 
@@ -434,6 +435,7 @@ class EmployeeCreateSerializer(serializers.Serializer):
     )
     email = serializers.EmailField(
         required=True,
+        validators=[validate_company_email],
         error_messages={
             "required": "employees.validation.emailRequired",
             "blank": "employees.validation.emailRequired",
@@ -659,6 +661,7 @@ class EmployeeUpdateSerializer(serializers.Serializer):
     )
     email = serializers.EmailField(
         required=False,
+        validators=[validate_company_email],
         error_messages={
             "blank": "employees.validation.emailRequired",
             "invalid": "employees.messages.invalidEmail",
