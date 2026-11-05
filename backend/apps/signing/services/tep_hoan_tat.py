@@ -2,7 +2,7 @@
 Sinh tệp PDF hoàn tất — phần lõi Phase 10 (#80, mục D).
 
 - Lượt trình hoàn thành thì `trang_thai_tep_hoan_tat = DANG_XU_LY` và bằng chứng được chốt trong cùng transaction;
-  `tao_tep_hoan_tat` chạy sau commit (`transaction.on_commit`). Sau này chuyển thành task Celery chỉ nhận id.
+  `tao_tep_hoan_tat` được đưa vào Celery sau commit (`transaction.on_commit`), task chỉ nhận ID.
 - Tệp hoàn tất ghi một lần (tệp mới, không ghi đè): lỗi thì `LOI` kèm mã lỗi, không ảnh hưởng chữ ký đã có,
   không yêu cầu ký lại; người tạo hồ sơ hoặc kiểm toán thử lại (`tao_lai_tep_hoan_tat`). Đã `THANH_CONG` thì
   không sinh lại, tránh hai bản kết quả khác nhau.
@@ -112,7 +112,14 @@ def tao_tep_hoan_tat(luot_id, nguoi_id):
 
 
 def bat_dau_sau_commit(luot, nguoi):
-    transaction.on_commit(lambda: tao_tep_hoan_tat(luot.pk, nguoi.pk), robust=True)
+    luot_id, nguoi_id = luot.pk, nguoi.pk
+
+    def dua_vao_hang():
+        from signing.tasks import tao_tep_hoan_tat as task_tao_tep
+
+        task_tao_tep.delay(luot_id, nguoi_id)
+
+    transaction.on_commit(dua_vao_hang, robust=True)
 
 
 def tao_lai_tep_hoan_tat(yeu_cau, nguoi):
@@ -165,13 +172,17 @@ def luot_can_phuc_hoi(bay_gio=None):
         trang_thai=enums.TrangThaiLuotTrinh.HOAN_THANH,
         trang_thai_tep_hoan_tat__in=(enums.TrangThaiTepHoanTat.DANG_XU_LY, enums.TrangThaiTepHoanTat.LOI),
     ).select_related("trinh_ky").order_by("pk")
-    return [
-        luot for luot in ung_vien
-        if (luot.trang_thai_tep_hoan_tat == enums.TrangThaiTepHoanTat.DANG_XU_LY
-            and luot.update_at <= bay_gio - THOI_HAN_XU_LY)
-        or (luot.trang_thai_tep_hoan_tat == enums.TrangThaiTepHoanTat.LOI
-            and not la_loi_vinh_vien(luot.loi_tep_hoan_tat))
-    ]
+    return [luot for luot in ung_vien if _co_the_phuc_hoi(luot, bay_gio)]
+
+
+def _co_the_phuc_hoi(luot, bay_gio):
+    return (
+        luot.trang_thai_tep_hoan_tat == enums.TrangThaiTepHoanTat.DANG_XU_LY
+        and luot.update_at <= bay_gio - THOI_HAN_XU_LY
+    ) or (
+        luot.trang_thai_tep_hoan_tat == enums.TrangThaiTepHoanTat.LOI
+        and not la_loi_vinh_vien(luot.loi_tep_hoan_tat)
+    )
 
 
 def _nguoi_thuc_hien_phuc_hoi(luot):
@@ -179,6 +190,28 @@ def _nguoi_thuc_hien_phuc_hoi(luot):
     ban_ghi = SigningAuditLog.objects.filter(
         luot_trinh=luot, hanh_dong="HOAN_THANH_TRINH_KY").order_by("-pk").select_related("nguoi_thuc_hien").first()
     return ban_ghi.nguoi_thuc_hien if ban_ghi else luot.trinh_ky.create_by
+
+
+def phuc_hoi_mot_luot_tep_hoan_tat(luot_id, bay_gio=None):
+    """Phục hồi một lượt PDF retryable; dùng được từ lệnh vận hành và task Celery."""
+    bay_gio = bay_gio or timezone.now()
+    ung_vien = (SigningAttempt.objects.filter(pk=luot_id, trang_thai=enums.TrangThaiLuotTrinh.HOAN_THANH)
+                .select_related("trinh_ky__create_by").first())
+    if ung_vien is None or not _co_the_phuc_hoi(ung_vien, bay_gio):
+        return None
+
+    nguoi = _nguoi_thuc_hien_phuc_hoi(ung_vien)
+    with transaction.atomic():
+        luot = SigningAttempt.objects.select_for_update().select_related("trinh_ky").get(pk=ung_vien.pk)
+        truoc = luot.trang_thai_tep_hoan_tat
+        if not _co_the_phuc_hoi(luot, bay_gio):
+            return None
+        luot.trang_thai_tep_hoan_tat, luot.loi_tep_hoan_tat = enums.TrangThaiTepHoanTat.DANG_XU_LY, ""
+        luot.save(update_fields=["trang_thai_tep_hoan_tat", "loi_tep_hoan_tat", "update_at"])
+        ghi_nhat_ky(nguoi, LOAI, luot.pk, "PHUC_HOI_TEP_HOAN_TAT", trinh_ky=luot.trinh_ky, luot_trinh=luot,
+                    trang_thai_truoc=truoc or "", trang_thai_sau=luot.trang_thai_tep_hoan_tat)
+    sau = tao_tep_hoan_tat(luot.pk, nguoi.pk)
+    return luot.pk, truoc, sau.trang_thai_tep_hoan_tat
 
 
 def phuc_hoi_tep_hoan_tat(bay_gio=None):
@@ -189,18 +222,7 @@ def phuc_hoi_tep_hoan_tat(bay_gio=None):
     bay_gio = bay_gio or timezone.now()
     ket_qua = []
     for ung_vien in luot_can_phuc_hoi(bay_gio):
-        nguoi = _nguoi_thuc_hien_phuc_hoi(ung_vien)
-        with transaction.atomic():
-            luot = SigningAttempt.objects.select_for_update().get(pk=ung_vien.pk)
-            truoc = luot.trang_thai_tep_hoan_tat
-            con_can = (truoc == enums.TrangThaiTepHoanTat.DANG_XU_LY and luot.update_at <= bay_gio - THOI_HAN_XU_LY) \
-                or (truoc == enums.TrangThaiTepHoanTat.LOI and not la_loi_vinh_vien(luot.loi_tep_hoan_tat))
-            if not con_can:
-                continue
-            luot.trang_thai_tep_hoan_tat, luot.loi_tep_hoan_tat = enums.TrangThaiTepHoanTat.DANG_XU_LY, ""
-            luot.save(update_fields=["trang_thai_tep_hoan_tat", "loi_tep_hoan_tat", "update_at"])
-            ghi_nhat_ky(nguoi, LOAI, luot.pk, "PHUC_HOI_TEP_HOAN_TAT", trinh_ky=luot.trinh_ky, luot_trinh=luot,
-                        trang_thai_truoc=truoc or "", trang_thai_sau=luot.trang_thai_tep_hoan_tat)
-        sau = tao_tep_hoan_tat(luot.pk, nguoi.pk)
-        ket_qua.append((luot.pk, truoc, sau.trang_thai_tep_hoan_tat))
+        ket_qua_luot = phuc_hoi_mot_luot_tep_hoan_tat(ung_vien.pk, bay_gio)
+        if ket_qua_luot is not None:
+            ket_qua.append(ket_qua_luot)
     return ket_qua

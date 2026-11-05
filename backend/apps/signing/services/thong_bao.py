@@ -4,8 +4,8 @@ Thông báo người trong luồng trình ký (bảng `signing_notification`, ki
 - Mỗi sự kiện tạo một bản ghi cho từng kênh: `IN_APP` (hiện ngay trong ứng dụng) và `EMAIL` (khi người nhận
   có email). Tạo trong cùng transaction nghiệp vụ; `khoa_chong_gui_trung` duy nhất nên thao tác lặp không
   tạo thêm thông báo.
-- Email gửi sau commit (`transaction.on_commit`), lỗi thì ghi `THAT_BAI` + `loi_gui`; lệnh
-  `gui_thong_bao_trinh_ky` gửi lại các bản ghi `CHO_GUI`/`THAT_BAI`. Sau này chuyển sang task Celery chỉ nhận id.
+- Email được đưa vào Celery sau commit (`transaction.on_commit`); lỗi SMTP ghi `THAT_BAI` + `loi_gui`. Lệnh
+  `gui_thong_bao_trinh_ky` gửi lại các bản ghi `CHO_GUI`/`THAT_BAI`.
 - Sự kiện: người ký được mở (`CAN_KY`); hồ sơ hoàn tất (`HOAN_THANH`), không đồng ý (`TU_CHOI`), trả lại để
   sửa (`YEU_CAU_SUA`), bị hủy (`HUY`: người ký đã được mở trên lượt hiện hành và người tạo khi quản trị hủy
   thay); tin nhắn trao đổi khi trả sửa (`TIN_NHAN`); nhắc hạn (`NHAC_HAN`, `QUA_HAN`,
@@ -59,6 +59,12 @@ TEN_LOAI_EN = {
 SO_LAN_GUI_TOI_DA = 5
 
 
+def _dua_email_vao_hang(tb_id):
+    from signing.tasks import gui_email_thong_bao
+
+    gui_email_thong_bao.delay(tb_id)
+
+
 def _tao(yeu_cau, nguoi_nhan, loai, khoa, buoc_ky=None):
     """`yeu_cau` rỗng với thông báo thao tác quản trị trên tài khoản (không gắn hồ sơ trình ký)."""
     bay_gio = timezone.now()
@@ -78,7 +84,7 @@ def _tao(yeu_cau, nguoi_nhan, loai, khoa, buoc_ky=None):
         except IntegrityError:  # đã tạo ở lần thao tác trước (cùng khóa chống gửi trùng)
             continue
         if not trong_ung_dung:
-            transaction.on_commit(lambda pk=tb.pk: gui_email(pk), robust=True)
+            transaction.on_commit(lambda pk=tb.pk: _dua_email_vao_hang(pk), robust=True)
 
 
 def quan_tri_khoa_quyen(khoa):

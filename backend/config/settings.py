@@ -247,6 +247,21 @@ elif not OLDFILE_STORAGE_ROOT:
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# Celery uses Upstash's TCP endpoint. Eager mode preserves the existing synchronous
+# behavior in local/test environments without REDIS_URL; a configured broker is used directly.
+REDIS_URL = os.getenv("REDIS_URL", "").strip()
+CELERY_BROKER_URL = REDIS_URL or "memory://"
+CELERY_TASK_ALWAYS_EAGER = not REDIS_URL
+CELERY_TASK_EAGER_PROPAGATES = True
+CELERY_TASK_IGNORE_RESULT = True
+CELERY_TASK_SERIALIZER = "json"
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+# Reduce broker requests while the queue is idle; task pickup can wait up to 10s.
+CELERY_BROKER_TRANSPORT_OPTIONS = {"polling_interval": 10}
+
 # Email (Django 6.1 MAILERS)
 # Keep console delivery until an SMTP host is explicitly configured.
 email_host = os.getenv("EMAIL_HOST", "").strip()

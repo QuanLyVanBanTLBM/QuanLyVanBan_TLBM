@@ -73,3 +73,7 @@ SOURCE_SCORE_THRESHOLD = 0.15
 
 CHAT_HISTORY_MAX_TURNS = int(os.getenv("CHAT_HISTORY_MAX_TURNS", "4"))
 CHAT_HISTORY_MAX_CHARS = int(os.getenv("CHAT_HISTORY_MAX_CHARS", "800"))
+
+from .celery import app as celery_app
+
+__all__ = ("celery_app",)

@@ -180,6 +180,7 @@ bản đầy đủ ở `du-lieu-mau-va-tinh-trang-nghiep-vu.md` mục 5.2):
 | `SIGNING_PDF_FONT`, `SIGNING_PDF_FONT_BOLD` | Phông có dấu cho PDF hoàn tất; trống thì tự dò phông hệ thống |
 | `SIGNING_EMAIL_BACKEND` | Để trống trên staging/production. Chỉ dùng để chọn backend không cần máy chủ thư khi dev/test: `django.core.mail.backends.console.EmailBackend` hoặc `django.core.mail.backends.locmem.EmailBackend`. Đặt giá trị SMTP thì được coi như để trống (gửi qua cấu hình `EMAIL_*`); giá trị không nạp được báo `signing.E004` |
 | `SIGNING_FRONTEND_URL` | Địa chỉ giao diện dùng trong liên kết email |
+| `REDIS_URL` | URL TCP/TLS cho Celery broker; dùng endpoint và token TCP của Upstash, ví dụ `rediss://default:<token-đã-mã-hóa-URL>@<host>:6379?ssl_cert_reqs=required`. Không dùng REST URL/token; Celery không lưu kết quả task vào Redis |
 | `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USE_TLS`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD` | SMTP chung của dự án (Django 6.1 `MAILERS`); `EMAIL_HOST` trống thì email in ra console |
 | `DEFAULT_FROM_EMAIL` | Địa chỉ người gửi, bắt buộc khi gửi SMTP, ví dụ `Hệ thống QLVB <qlvb@baohiembaolong.vn>`. Để trống thì mọi thư lỗi `Invalid address ''`; `manage.py check` báo `signing.W003` |
 | `SIGNING_MFA_EMAIL_ENABLED` | Bật MFA qua email khi ký (`true`/`1`); mặc định tắt. Điều kiện bật: `EMAIL_HOST`, `DEFAULT_FROM_EMAIL`, `SIGNING_PIN_SECRET` và tài khoản ký có email. Cờ bật mà email chưa cấu hình thì API trả 503 `mfa_email_khong_kha_dung` |
@@ -189,6 +190,8 @@ bản đầy đủ ở `du-lieu-mau-va-tinh-trang-nghiep-vu.md` mục 5.2):
 System check của phân hệ (`python manage.py check`): `signing.W002` khi `SIGNING_EMAIL_BACKEND` đặt SMTP mà dự án chưa
 có `EMAIL_HOST`; `signing.W003` khi gửi SMTP mà `DEFAULT_FROM_EMAIL` trống; `signing.E004` khi `SIGNING_EMAIL_BACKEND`
 không nạp được.
+
+Celery xử lý PDF hoàn tất và gửi email thông báo từ bảng outbox. Khi `REDIS_URL` chưa được đặt, ứng dụng giữ hành vi đồng bộ hiện tại; worker systemd kiểm tra URL broker trước khi chạy. Worker chạy một tiến trình, được bật như dependency của `qlvb-backend` và dừng/khởi động lại cùng backend qua `deploy/qlvb-celery-worker.service`. Worker poll Redis mỗi 10 giây khi hàng đợi rỗng để giảm lệnh nền trên Upstash Free; do đó task mới lúc rỗi có thể chờ tối đa khoảng 10 giây mới bắt đầu.
 
 ### 5.1. Tài khoản demo và mật khẩu
 
@@ -244,7 +247,7 @@ Workflow `.github/workflows/signing-scheduler.yml` (cùng cơ chế SSH và khó
 | `manage.py nhac_han_trinh_ky` | mỗi giờ (phút 15) | Tạo thông báo nhắc hạn, quá hạn; chạy lặp không gửi trùng |
 | `manage.py gui_thong_bao_trinh_ky` | mỗi 10 phút | Gửi lại thông báo còn `CHO_GUI` hoặc `THAT_BAI` trong `signing_notification` |
 
-Lịch của GitHub Actions chạy theo cơ chế best-effort, có thể trễ vài phút. Nhật ký lệnh: `/srv/qlvb/signing-scheduler.log` (quyền 0600). Không cần Redis, Celery hay worker: MFA, challenge, đặt lại PIN lưu bằng PostgreSQL, và các tác vụ hiện hành chạy đồng bộ trong request hoặc qua hai lệnh trên.
+Lịch của GitHub Actions chạy theo cơ chế best-effort, có thể trễ vài phút. Nhật ký lệnh: `/srv/qlvb/signing-scheduler.log` (quyền 0600). MFA, challenge và đặt lại PIN vẫn lưu bằng PostgreSQL; nhắc hạn và quét outbox tiếp tục chạy qua hai lệnh trên. Khi `REDIS_URL` được cấu hình, Celery worker gửi email outbox và tạo PDF hoàn tất; nếu chưa cấu hình, ứng dụng chạy đồng bộ như trước.
 
 Việc phải làm trực tiếp trên máy chủ (người quản trị máy chủ, quyền SSH):
 
@@ -255,8 +258,9 @@ Việc phải làm trực tiếp trên máy chủ (người quản trị máy ch
 | 3 | Đặt `SIGNING_FRONTEND_URL` là URL giao diện staging | Liên kết trong email không trỏ về `localhost` |
 | 4 | Đặt `SIGNING_DOCUMENT_ROOT` (thư mục ngoài mã nguồn, user `qlvb` ghi được) | `check --deploy` không báo `signing.E003` |
 | 5 | Cài phông có dấu (`fonts-dejavu-core`, `fonts-noto-core`) hoặc đặt `SIGNING_PDF_FONT` | `check --deploy` không báo `signing.W001` |
-| 6 | Khi mục 1-3 xong, đặt `SIGNING_MFA_EMAIL_ENABLED=true` và khởi động lại dịch vụ backend | Ký thử: yêu cầu mã, nhận email, ký thành công |
-| 7 | Sau khi workflow `Signing scheduler` chạy | `tail /srv/qlvb/signing-scheduler.log`; run trong tab Actions ở trạng thái `success` |
+| 6 | Khi mục 1-3 xong, đặt `SIGNING_MFA_EMAIL_ENABLED=true`; chỉ restart sau khi code và các cấu hình khác đã sẵn sàng | Ký thử: yêu cầu mã, nhận email, ký thành công |
+| 7 | Nếu bật Celery, đặt `REDIS_URL` bằng URL TCP/TLS từ Upstash (không dùng REST token); cài `deploy/qlvb-celery-worker.service`, chạy `systemctl daemon-reload` và `systemctl enable qlvb-celery-worker` trước lần restart backend | Sau deploy, `systemctl is-active qlvb-celery-worker`; xem lỗi bằng `journalctl -u qlvb-celery-worker -n 50 --no-pager` |
+| 8 | Sau khi workflow `Signing scheduler` chạy | `tail /srv/qlvb/signing-scheduler.log`; run trong tab Actions ở trạng thái `success` |
 
 Quyền của tệp `/etc/qlvb/backend.env` là 0600 hoặc 0640, thuộc user dịch vụ backend.
 
