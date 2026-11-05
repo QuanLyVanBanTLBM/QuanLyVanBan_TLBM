@@ -10,6 +10,7 @@ import { RegionUnitSelect } from './components/RegionUnitSelect';
 import { RegionModal } from './components/RegionModal';
 import { UnitModal } from './components/UnitModal';
 import { DeleteConfirmModal } from './components/DeleteConfirmModal';
+import './OrganizationsPage.mobile.css';
 
 export default function OrganizationsPage() {
   const { t, currentLang } = useTranslation();
@@ -74,6 +75,16 @@ export default function OrganizationsPage() {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
+  // Thiếu quyền xem (403) khác lỗi mạng: báo đúng nguyên nhân một lần trong khung thay vì "kiểm tra kết nối" và số 0.
+  const [accessDenied, setAccessDenied] = useState<boolean>(false);
+  const handleLoadError = (err: unknown) => {
+    if (err instanceof ApiError && err.status === 403) {
+      setAccessDenied(true);
+      return;
+    }
+    showToast('organizations.messages.fetchError', true);
+  };
+
   // Phân trang cho Tab Khối
   const [regionPage, setRegionPage] = useState<number>(1);
   const regionPageSize = 10;
@@ -119,9 +130,9 @@ export default function OrganizationsPage() {
       .then((data) => {
         if (!ignore) setAllUnits(Array.isArray(data) ? data : []);
       })
-      .catch(() => {
+      .catch((err: unknown) => {
         // Tab Khối mở đầu tiên dựa vào danh sách này để đếm và liệt kê Đơn vị nên phải báo lỗi
-        if (!ignore) setToastMessage({ textKey: 'organizations.messages.fetchError', isError: true });
+        if (!ignore) handleLoadError(err);
       })
       .finally(() => {
         if (!ignore) setIsAllUnitsLoading(false);
@@ -150,10 +161,8 @@ export default function OrganizationsPage() {
           }
         }
       })
-      .catch(() => {
-        if (!ignore) {
-          setToastMessage({ textKey: 'organizations.messages.fetchError', isError: true });
-        }
+      .catch((err: unknown) => {
+        if (!ignore) handleLoadError(err);
       })
       .finally(() => {
         if (!ignore) setIsRegionsLoading(false);
@@ -180,9 +189,9 @@ export default function OrganizationsPage() {
           setIsLoading(false);
         }
       })
-      .catch(() => {
+      .catch((err: unknown) => {
         if (!ignore) {
-          setToastMessage({ textKey: 'organizations.messages.fetchError', isError: true });
+          handleLoadError(err);
           setIsLoading(false);
         }
       });
@@ -207,8 +216,8 @@ export default function OrganizationsPage() {
         setRegions(res.results || []);
         setRegionsTotal(res.count || 0);
       }
-    } catch {
-      showToast('organizations.messages.fetchError', true);
+    } catch (err: unknown) {
+      handleLoadError(err);
     }
   };
 
@@ -225,8 +234,8 @@ export default function OrganizationsPage() {
       setUnits(res.results || []);
       setUnitsTotal(res.count || 0);
       await loadAllUnits();
-    } catch {
-      showToast('organizations.messages.fetchError', true);
+    } catch (err: unknown) {
+      handleLoadError(err);
     } finally {
       setIsLoading(false);
     }
@@ -350,11 +359,11 @@ export default function OrganizationsPage() {
   const totalPages = Math.ceil(shownTotal / pageSize) || 1;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-24 md:pb-0">
       {/* Toast Notification */}
       {toastMessage && (
         <div
-          className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-lg shadow-lg flex items-center gap-2.5 text-sm font-semibold animate-fade-in ${
+          className={`fixed top-16 sm:top-5 right-5 z-50 px-4 py-3 rounded-lg shadow-lg flex items-center gap-2.5 text-sm font-semibold animate-fade-in ${
             toastMessage.isError
               ? 'bg-danger text-white border border-danger-border'
               : 'bg-success text-white border border-success-border'
@@ -432,9 +441,11 @@ export default function OrganizationsPage() {
         >
           <i className="fa-solid fa-layer-group hidden sm:inline" />
           {t('organizations.tabs.regions')}
-          <span className="text-xs px-2 py-0.5 rounded-full bg-surface-elevated text-secondary border border-border">
-            {regionsTotal}
-          </span>
+          {!accessDenied && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-surface-elevated text-secondary border border-border">
+              {regionsTotal}
+            </span>
+          )}
         </button>
 
         <button
@@ -448,14 +459,23 @@ export default function OrganizationsPage() {
         >
           <i className="fa-solid fa-building hidden sm:inline" />
           {t('organizations.tabs.units')}
-          <span className="text-xs px-2 py-0.5 rounded-full bg-surface-elevated text-secondary border border-border">
-            {unitsTotal}
-          </span>
+          {!accessDenied && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-surface-elevated text-secondary border border-border">
+              {unitsTotal}
+            </span>
+          )}
         </button>
       </div>
 
+      {accessDenied && (
+        <div role="alert" className="bg-surface border border-border rounded-xl py-12 text-center text-danger">
+          <i className="fa-solid fa-circle-exclamation text-3xl mb-2 block" />
+          {t('organizations.messages.permissionDenied')}
+        </div>
+      )}
+
       {/* ── NỘI DUNG TAB 2: ĐƠN VỊ / PHÒNG BAN ── */}
-      {activeTab === 'units' && (
+      {!accessDenied && activeTab === 'units' && (
         <div className="space-y-4">
           {/* Thanh công cụ lọc & tìm kiếm */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
@@ -525,8 +545,8 @@ export default function OrganizationsPage() {
           {/* Bảng danh sách Đơn vị */}
           <div className="bg-surface border border-border rounded-xl shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm border-collapse">
-                <thead className="bg-surface-elevated text-secondary text-xs uppercase font-bold border-b border-border">
+              <table className="units-table w-full text-left text-sm border-collapse">
+                <thead className="units-table__head bg-surface-elevated text-secondary text-xs uppercase font-bold border-b border-border">
                   <tr>
                     <th className="px-4 py-3 text-center w-16">{t('organizations.table.priority')}</th>
                     <th className="px-4 py-3">{t('organizations.table.unitName')}</th>
@@ -539,16 +559,16 @@ export default function OrganizationsPage() {
                     )}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border">
+                <tbody className="units-table__body divide-y divide-border">
                   {isLoading ? (
-                    <tr>
+                    <tr className="units-table__row--message">
                       <td colSpan={showRowActions ? 7 : 6} className="text-center py-12 text-secondary">
                         <i className="fa-solid fa-spinner fa-spin text-2xl text-primary mb-2 block" />
                         {t('organizations.table.loading')}
                       </td>
                     </tr>
                   ) : shownUnits.length === 0 ? (
-                    <tr>
+                    <tr className="units-table__row--message">
                       <td colSpan={showRowActions ? 7 : 6} className="text-center py-12 text-secondary">
                         <i className="fa-solid fa-folder-open text-3xl text-muted mb-2 block" />
                         {t('organizations.table.empty')}
@@ -561,12 +581,12 @@ export default function OrganizationsPage() {
                       return (
                         <tr
                           key={unit.id}
-                          className={`transition-colors hover:bg-surface-hover ${
+                          className={`units-table__row transition-colors hover:bg-surface-hover ${
                             isInternal ? 'bg-warning-subtle/20 border-l-4 border-l-warning' : ''
                           }`}
                         >
-                          <td className="px-4 py-3 text-center font-bold text-main">{unit.stt_uu_tien}</td>
-                          <td className="px-4 py-3 font-semibold text-main min-w-[14rem]">
+                          <td className="units-table__cell units-table__cell--order px-4 py-3 text-center font-bold text-main">{unit.stt_uu_tien}</td>
+                          <td className="units-table__cell units-table__cell--name px-4 py-3 font-semibold text-main min-w-[14rem]">
                             <div>{unit.ten}</div>
                             {unit.dia_chi && (
                               <div className="text-xs text-secondary font-normal flex items-center gap-1 mt-0.5">
@@ -575,14 +595,25 @@ export default function OrganizationsPage() {
                               </div>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-secondary min-w-[10rem]">{unit.khoi_ten || t('organizations.table.emptyValue')}</td>
-                          <td className="px-4 py-3 text-secondary font-mono text-xs whitespace-nowrap">
+                          <td
+                            data-label={t('organizations.table.parentRegion')}
+                            className="units-table__cell units-table__cell--region px-4 py-3 text-secondary min-w-[10rem]"
+                          >
+                            {unit.khoi_ten || t('organizations.table.emptyValue')}
+                          </td>
+                          <td
+                            data-label={t('organizations.table.phone')}
+                            className="units-table__cell units-table__cell--phone px-4 py-3 text-secondary font-mono text-xs whitespace-nowrap"
+                          >
                             {unit.dien_thoai || t('organizations.table.emptyValue')}
                           </td>
-                          <td className="px-4 py-3 text-secondary text-xs">
+                          <td
+                            data-label={t('organizations.table.email')}
+                            className="units-table__cell units-table__cell--email px-4 py-3 text-secondary text-xs"
+                          >
                             {unit.email || t('organizations.table.emptyValue')}
                           </td>
-                          <td className="px-4 py-3 text-center whitespace-nowrap">
+                          <td className="units-table__cell units-table__cell--status px-4 py-3 text-center whitespace-nowrap">
                             {unit.is_public ? (
                               <Badge variant="success" size="sm">
                                 {t('organizations.table.public')}
@@ -594,7 +625,7 @@ export default function OrganizationsPage() {
                             )}
                           </td>
                           {showRowActions && (
-                            <td className="px-4 py-3 text-center">
+                            <td className="units-table__cell units-table__cell--actions px-4 py-3 text-center">
                               <div className="flex items-center justify-center gap-1">
                                 {can('change_donvi') && (
                                   <button
@@ -648,6 +679,7 @@ export default function OrganizationsPage() {
                     variant="secondary"
                     size="sm"
                     disabled={currentPage <= 1}
+                    aria-label={t('organizations.table.prevPage')}
                     onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
                   >
                     <i className="fa-solid fa-chevron-left" />
@@ -659,6 +691,7 @@ export default function OrganizationsPage() {
                     variant="secondary"
                     size="sm"
                     disabled={currentPage >= totalPages}
+                    aria-label={t('organizations.table.nextPage')}
                     onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
                   >
                     <i className="fa-solid fa-chevron-right" />
@@ -671,7 +704,7 @@ export default function OrganizationsPage() {
       )}
 
       {/* ── NỘI DUNG TAB 1: KHỐI / KHU VỰC ── */}
-      {activeTab === 'regions' && (
+      {!accessDenied && activeTab === 'regions' && (
         <div className="space-y-4">
           {/* Tìm kiếm Khối */}
           <div className="relative max-w-md">
@@ -860,6 +893,7 @@ export default function OrganizationsPage() {
                     variant="secondary"
                     size="sm"
                     disabled={regionPage <= 1}
+                    aria-label={t('organizations.table.prevPage')}
                     onClick={() => setRegionPage((p) => Math.max(p - 1, 1))}
                   >
                     <i className="fa-solid fa-chevron-left" />
@@ -871,6 +905,7 @@ export default function OrganizationsPage() {
                     variant="secondary"
                     size="sm"
                     disabled={regionPage >= totalRegionPages}
+                    aria-label={t('organizations.table.nextPage')}
                     onClick={() => setRegionPage((p) => Math.min(p + 1, totalRegionPages))}
                   >
                     <i className="fa-solid fa-chevron-right" />
@@ -885,7 +920,7 @@ export default function OrganizationsPage() {
       {/* ── CÁC MODALS ── */}
       {/* Modal Khối */}
       <RegionModal
-        key={editingRegion?.id ?? (isRegionModalOpen ? 'open-new-region' : 'closed-region')}
+        key={`${editingRegion?.id ?? 'new-region'}-${isRegionModalOpen ? 'open' : 'closed'}`}
         isOpen={isRegionModalOpen}
         onClose={() => setIsRegionModalOpen(false)}
         onSubmit={handleSaveRegion}
@@ -895,7 +930,7 @@ export default function OrganizationsPage() {
 
       {/* Modal Đơn vị */}
       <UnitModal
-        key={editingUnit?.id ?? (isUnitModalOpen ? 'open-new-unit' : 'closed-unit')}
+        key={`${editingUnit?.id ?? 'new-unit'}-${isUnitModalOpen ? 'open' : 'closed'}`}
         isOpen={isUnitModalOpen}
         onClose={() => setIsUnitModalOpen(false)}
         onSubmit={handleSaveUnit}

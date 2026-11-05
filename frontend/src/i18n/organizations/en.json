@@ -76,6 +76,8 @@
       "unitsCount": "Affiliated Units",
       "unitCountLabel": "{count} units",
       "paginationInfo": "Showing {from} - {to} of {total}",
+      "prevPage": "Previous page",
+      "nextPage": "Next page",
       "emptyValue": "—"
     },
     "actions": {

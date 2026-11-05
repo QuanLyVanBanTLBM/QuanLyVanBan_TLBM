@@ -76,6 +76,8 @@
       "unitsCount": "Số đơn vị trực thuộc",
       "unitCountLabel": "{count} đơn vị",
       "paginationInfo": "Hiển thị {from} - {to} trên tổng số {total}",
+      "prevPage": "Trang trước",
+      "nextPage": "Trang sau",
       "emptyValue": "—"
     },
     "actions": {

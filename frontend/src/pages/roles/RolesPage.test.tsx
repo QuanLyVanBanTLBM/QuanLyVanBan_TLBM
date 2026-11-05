@@ -102,6 +102,50 @@ describe('RolesPage (Issue #21)', () => {
     expect(screen.queryByRole('button', { name: /Thử lại/ })).not.toBeInTheDocument();
   });
 
+  it('reports a missing view permission once and hides the empty matrix guide', async () => {
+    mockApi({ permissions: [], rolesError: new ApiError(403, { detail: 'roles.messages.permissionDenied' }) });
+    renderPage();
+
+    await screen.findByText('Bạn không có quyền thực hiện thao tác này.');
+    // Trước đây vừa có toast vừa có dòng trong khung nên hiện hai lần.
+    expect(screen.getAllByText('Bạn không có quyền thực hiện thao tác này.')).toHaveLength(1);
+    expect(screen.queryByText('Chức năng phân quyền sử dụng theo nhóm')).not.toBeInTheDocument();
+  });
+
+  it('still toasts other load failures', async () => {
+    mockApi({ rolesError: new ApiError(500, { detail: 'roles.messages.fetchError' }) });
+    renderPage();
+
+    expect(await screen.findAllByText(/Không thể tải danh sách nhóm quyền/)).toHaveLength(2);
+  });
+
+  it('scrolls the chosen role into view inside the short list', async () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    mockApi();
+    renderPage();
+
+    await selectRole('Nhóm tự tạo');
+
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' }));
+    const target = scrollIntoView.mock.contexts[scrollIntoView.mock.contexts.length - 1] as HTMLElement;
+    expect(target.getAttribute('data-role-id')).toBe('12');
+  });
+
+  it('gives the role list and the matrix their own height on a phone instead of sharing a fixed 71vh', async () => {
+    mockApi();
+    const { container } = renderPage();
+
+    const roleButton = await screen.findByRole('button', { name: 'Văn thư' });
+    const list = roleButton.parentElement as HTMLElement;
+    expect(list.className).toContain('max-h-60');
+    expect(list.className).toContain('lg:max-h-none');
+    const grid = container.querySelector('.grid') as HTMLElement;
+    expect(grid.className).toContain('lg:h-[71vh]');
+    expect(grid.className).not.toMatch(/(^|\s)h-\[71vh\]/);
+    expect((container.firstElementChild as HTMLElement).className).toContain('pb-24');
+  });
+
   it('select all / deselect all only change the permissions visible in the search (B2)', async () => {
     mockApi();
     renderPage();
