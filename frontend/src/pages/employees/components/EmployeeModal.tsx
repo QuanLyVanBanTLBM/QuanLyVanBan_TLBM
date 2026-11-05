@@ -7,6 +7,7 @@ import { Button } from '@components/common/Button';
 import { Badge } from '@components/common/Badge';
 import { Select } from '@components/common/Select';
 import { ApiError } from '@lib/apiClient';
+import { isCompanyEmail, isValidEmployeePhone } from '../employeeContactRules';
 
 interface EmployeeModalProps {
   isOpen: boolean;
@@ -361,6 +362,12 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
       formRef.current?.scrollTo?.({ top: 0, behavior: 'smooth' });
       return;
     }
+    if (!isCompanyEmail(formData.email)) {
+      const msg = t('employees.validation.emailDomainInvalid');
+      setErrorKey(msg);
+      formRef.current?.scrollTo?.({ top: 0, behavior: 'smooth' });
+      return;
+    }
     if (!initialData && !formData.don_vi_id) {
       const msg = t('employees.import.errors.unitRequired');
       setErrorKey(msg);
@@ -384,7 +391,7 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
       return;
     }
 
-    if (formData.sdt && !/^(0|\+84)[1-9][0-9]{7,9}$/.test(formData.sdt.replace(/\s+/g, ''))) {
+    if (formData.sdt && !isValidEmployeePhone(formData.sdt)) {
       const msg = t('employees.validation.phoneInvalid');
       setErrorKey(msg);
       formRef.current?.scrollTo?.({ top: 0, behavior: 'smooth' });
