@@ -73,8 +73,6 @@ def co_quyen_them_han_che(user, model_name="vanbanden"):
     if is_admin_user(user):
         return True
     return _co_quyen(user, f"add_han_che_{model_name}")
-
-
 def van_ban_xem_duoc(user, loai="DEN"):
     """
     Quy tắc xem văn bản chuẩn:
@@ -115,18 +113,23 @@ def van_ban_xem_duoc(user, loai="DEN"):
         has_view_perm = (
             user.is_staff
             or user.is_superuser
+            or is_admin_user(user)
             or user.has_perm(f"documents.view_{model_name}")
             or user.has_perm(f"view_{model_name}")
         )
     except Exception:
         has_view_perm = bool(user.is_staff or user.is_superuser)
+
+    # Điều kiện văn bản còn hiệu lực và hết hiệu lực
+    cond_active = Q(hieu_luc__in=[HieuLuc.CON_HIEU_LUC, HieuLuc.CON_HIEU_LUC_1_PHAN])
+    cond_expired = Q(hieu_luc__in=[HieuLuc.HET_HIEU_LUC, HieuLuc.HET_VA_THAY_THE])
+    has_expired_view = co_quyen_xem_het_hieu_luc(user, model_name)
+
     if has_view_perm:
         cond_noi_bo = Q(pham_vi=PhamVi.NOI_BO)
     else:
         cond_noi_bo = Q(pham_vi=PhamVi.NOI_BO, hien_thi=True)
 
-    # Văn bản hết hiệu lực (HET_HIEU_LUC, HET_VA_THAY_THE), cả NOI_BO lẫn HAN_CHE: chỉ superuser hoặc quyền
-    # view_het_hieu_luc_* / manage_het_hieu_luc_* xem được; tài khoản chỉ định và quyền view_* không đủ.
     cond_active = Q(hieu_luc__in=[HieuLuc.CON_HIEU_LUC, HieuLuc.CON_HIEU_LUC_1_PHAN])
     if co_quyen_xem_het_hieu_luc(user, model_name):
         cond = cond_noi_bo | cond_han_che | (Q(pham_vi=PhamVi.HAN_CHE) & ~cond_active)
@@ -146,11 +149,11 @@ def la_nguoi_xem_duoc(user, van_ban):
         return False
 
     pham_vi = getattr(van_ban, "pham_vi", PhamVi.NOI_BO)
-    is_mat = getattr(van_ban, "loai", None) == "MAT"
-    model_name = getattr(van_ban, "document_kind", "vanbanden")
+    is_mat = (getattr(van_ban, "loai", None) == "MAT") or (
+        getattr(getattr(van_ban, "_meta", None), "model_name", "") == "vanbanmat"
+    )
+    model_name = getattr(van_ban, "document_kind", None) or getattr(getattr(van_ban, "_meta", None), "model_name", "vanbanden")
 
-    # Văn bản đến/đi hết hiệu lực (cả NOI_BO lẫn HAN_CHE): chỉ superuser hoặc quyền view_het_hieu_luc_* /
-    # manage_het_hieu_luc_* xem được; người tạo, người nhận, đơn vị nhận không có quyền thì không xem được.
     is_expired = getattr(van_ban, "hieu_luc", None) in (HieuLuc.HET_HIEU_LUC, HieuLuc.HET_VA_THAY_THE)
     if is_expired and not is_mat:
         if not co_quyen_xem_het_hieu_luc(user, model_name):
@@ -160,7 +163,7 @@ def la_nguoi_xem_duoc(user, van_ban):
 
     is_confidential = is_mat or (pham_vi == PhamVi.HAN_CHE)
     if is_confidential:
-        if van_ban.nguoi_tao_id == user.pk:
+        if (getattr(van_ban, "nguoi_tao_id", None) == user.pk) or (getattr(van_ban, "nguoi_tao", None) == user):
             return True
         has_recipients = hasattr(van_ban, "nguoi_nhan") and van_ban.nguoi_nhan.exists()
         if has_recipients:
@@ -172,8 +175,6 @@ def la_nguoi_xem_duoc(user, van_ban):
             return van_ban.donvinhan.filter(donvi_id=user_don_vi_id).exists()
         return False
 
-    # NOI_BO: Văn bản nội bộ hiển thị (hien_thi) cho mọi cán bộ nhân viên đang hoạt động;
-    # văn bản ẩn chỉ admin/staff hoặc quyền view_* xem được.
     if not getattr(van_ban, "hien_thi", True) and not (user.is_staff or user.is_superuser):
         try:
             if not (user.has_perm(f"documents.view_{model_name}") or user.has_perm(f"view_{model_name}")):
@@ -181,7 +182,6 @@ def la_nguoi_xem_duoc(user, van_ban):
         except Exception:
             return False
     return True
-
 
 def log_access(document_type, document_id, user, hanh_dong, doi_tuong_user=None, tep_id=None, dia_chi_ip=None):
     """
