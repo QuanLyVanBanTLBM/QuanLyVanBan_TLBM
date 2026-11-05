@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { useTranslation } from '@i18n/translate';
 import { Badge } from '@components/common';
 import { TaskItem } from './ModernDashboardView';
+import { formatUserName } from '@lib/roleUtils';
 
 export interface TaskDetailModalProps {
   isOpen: boolean;
@@ -16,7 +17,7 @@ export default function TaskDetailModal({
   task,
   onNavigateTasks,
 }: TaskDetailModalProps) {
-  const { t } = useTranslation();
+  const { t, currentLang } = useTranslation();
 
   // Đóng bằng phím Escape
   useEffect(() => {
@@ -124,7 +125,7 @@ export default function TaskDetailModal({
               <div className="text-sm space-y-2">
                 <div className="flex justify-between items-center text-secondary">
                   <span>Người giao việc:</span>
-                  <span className="font-semibold text-main">{task.creator || 'Quản trị hệ thống'}</span>
+                  <span className="font-semibold text-main">{formatUserName(task.creator || 'Quản trị hệ thống', currentLang)}</span>
                 </div>
                 <div className="flex justify-between items-center text-secondary">
                   <span>Cán bộ chủ trì:</span>

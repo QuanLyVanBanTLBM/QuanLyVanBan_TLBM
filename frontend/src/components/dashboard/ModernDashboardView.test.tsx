@@ -196,8 +196,18 @@ describe('ModernDashboardView Component (Zero Mock Data)', () => {
         nguoi_trinh: 'Lê Thanh Hậu',
         ngay_gui: '23/10/2026',
         trang_thai: 'CHO_KY',
-        nhan_trang_thai: 'Đang chờ ký',
+        nhan_trang_thai: 'Ký ngay',
         can_toi_ky: true,
+      },
+      {
+        id: '2',
+        ma_trinh_ky: '16/TTr-VP',
+        tieu_de: 'Tờ trình phê duyệt dự toán',
+        nguoi_trinh: 'Trần Văn B',
+        ngay_gui: '24/10/2026',
+        trang_thai: 'CHO_KY',
+        nhan_trang_thai: 'Đang chờ ký',
+        can_toi_ky: false,
       },
     ];
 
@@ -205,7 +215,7 @@ describe('ModernDashboardView Component (Zero Mock Data)', () => {
       <MemoryRouter>
         <ModernDashboardView
           onNavigate={mockNavigate}
-          signingCount={1}
+          signingCount={2}
           signingRequests={mockSigning}
         />
       </MemoryRouter>
@@ -216,7 +226,7 @@ describe('ModernDashboardView Component (Zero Mock Data)', () => {
     expect(screen.getByText('Lê Thanh Hậu')).toBeInTheDocument();
     expect(screen.getByText('Đang chờ ký')).toBeInTheDocument();
 
-    const signBtn = screen.getByText('Ký ngay');
+    const signBtn = screen.getByRole('button', { name: /ký ngay/i });
     fireEvent.click(signBtn);
 
     const viewAllBtn = screen.getByText('Xem tất cả hồ sơ trình ký');

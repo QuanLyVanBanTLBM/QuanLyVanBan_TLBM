@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { useTranslation, SupportedLanguage } from '@i18n/translate';
 
 export default function LanguageSwitcher() {
@@ -12,7 +12,7 @@ export default function LanguageSwitcher() {
     <div className="flex items-center p-0.5 rounded-full bg-surface-elevated border border-border-subtle select-none" role="group" aria-label="Language switcher">
       <button
         type="button"
-        className={`px-2.5 py-1 rounded-full text-[0.72rem] font-bold transition-all duration-fast cursor-pointer ${
+        className={`px-1.5 py-0.5 sm:px-2.5 sm:py-1 rounded-full text-[0.68rem] sm:text-[0.72rem] font-bold transition-all duration-fast cursor-pointer ${
           currentLang === 'vi'
             ? 'bg-primary text-white shadow-sm'
             : 'text-muted hover:text-main bg-transparent'
@@ -27,7 +27,7 @@ export default function LanguageSwitcher() {
 
       <button
         type="button"
-        className={`px-2.5 py-1 rounded-full text-[0.72rem] font-bold transition-all duration-fast cursor-pointer ${
+        className={`px-1.5 py-0.5 sm:px-2.5 sm:py-1 rounded-full text-[0.68rem] sm:text-[0.72rem] font-bold transition-all duration-fast cursor-pointer ${
           currentLang === 'en'
             ? 'bg-primary text-white shadow-sm'
             : 'text-muted hover:text-main bg-transparent'
@@ -42,5 +42,3 @@ export default function LanguageSwitcher() {
     </div>
   );
 }
-
-

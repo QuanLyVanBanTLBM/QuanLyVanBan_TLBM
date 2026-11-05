@@ -596,7 +596,7 @@ export default function EmployeesPage() {
         </div>
 
         {/* Pagination Footer */}
-        <div className="employees-page__pagination flex items-center justify-between px-6 py-3.5 border-t border-border bg-surface-elevated text-xs text-secondary">
+        <div className="employees-page__pagination flex items-center justify-between px-6 py-3.5 border-t border-border bg-surface-elevated text-xs text-secondary pr-20 sm:pr-24">
           <span>
             {t('employees.pagination.showing', {
               from: employees.length > 0 ? (currentPage - 1) * pageSize + 1 : 0,

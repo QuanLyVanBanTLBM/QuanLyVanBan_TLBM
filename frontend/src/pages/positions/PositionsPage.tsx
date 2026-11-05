@@ -118,7 +118,7 @@ export default function PositionsPage() {
       {toast && (
         <div
           role="status"
-          className={`fixed top-16 sm:top-5 right-5 z-50 px-4 py-3 rounded-lg shadow-lg flex items-center gap-2.5 text-sm font-semibold animate-fade-in ${
+          className={`fixed top-5 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl shadow-2xl flex items-center gap-2.5 text-sm font-semibold animate-fade-in ${
             toast.isError ? 'bg-danger text-white border border-danger-border' : 'bg-success text-white border border-success-border'
           }`}
         >

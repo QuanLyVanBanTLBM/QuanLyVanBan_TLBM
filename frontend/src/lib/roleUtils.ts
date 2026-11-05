@@ -8,6 +8,7 @@ const ROLE_TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
     'quản trị hệ thống': 'Quản trị hệ thống',
     'quản trị viên tối cao': 'Quản trị viên tối cao',
     'quản trị viên (admin)': 'Quản trị viên (Admin)',
+    'cán bộ': 'Cán bộ',
     'cán bộ chuyên viên': 'Cán bộ chuyên viên',
     'cán bộ xử lý văn bản': 'Cán bộ xử lý văn bản',
     'chuyên viên': 'Chuyên viên',
@@ -31,6 +32,7 @@ const ROLE_TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
     'quản trị hệ thống': 'System Administrator',
     'quản trị viên tối cao': 'Super Administrator',
     'quản trị viên (admin)': 'System Administrator',
+    'cán bộ': 'Staff / Officer',
     'cán bộ chuyên viên': 'Specialist / Officer',
     'cán bộ xử lý văn bản': 'Document Processing Officer',
     'chuyên viên': 'Specialist',
@@ -69,6 +71,10 @@ export function formatUserName(name?: string, lang: SupportedLanguage = 'vi'): s
     if (normalized === 'quản trị hệ thống' || normalized === 'admin') {
       return 'System Administrator';
     }
+    const roleTrans = formatRoleTitle(name, 'en');
+    if (roleTrans && roleTrans !== name) {
+      return roleTrans;
+    }
   } else {
     if (normalized === 'admin') {
       return 'Quản trị hệ thống';
@@ -88,8 +94,11 @@ const GROUP_NAME_EN: Record<string, string> = {
   'kiểm toán': 'Audit',
 };
 
-export function formatGroupName(name?: string, lang: SupportedLanguage = 'vi'): string {
-  if (!name) return '';
-  if (lang !== 'en') return name;
-  return GROUP_NAME_EN[name.trim().toLowerCase()] || name;
+export function formatGroupName(groupName?: string, lang: SupportedLanguage = 'vi'): string {
+  if (!groupName) return '';
+  if (lang === 'en') {
+    const normalized = groupName.trim().toLowerCase();
+    return GROUP_NAME_EN[normalized] || groupName;
+  }
+  return groupName;
 }

@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React, { useMemo } from 'react';
 import { useTranslation } from '@i18n/translate';
 
 export interface BirthdayEmployee {
@@ -8,10 +8,42 @@ export interface BirthdayEmployee {
   position: string; // Ưu tiên 3: Chức vụ
   department?: string; // Đơn vị công tác
   isToday?: boolean;
+  positionRank?: number; // Thứ tự ưu tiên chức vụ nếu có
 }
 
 interface BirthdaysWidgetProps {
   birthdays?: BirthdayEmployee[];
+}
+
+/**
+ * Trọng số ưu tiên chức vụ dự phòng phía client
+ * (Số nhỏ hơn = Chức vụ cao hơn, ưu tiên hiển thị trước).
+ */
+const POSITION_RANK_FALLBACK: Record<string, number> = {
+  'chủ tịch': 1,
+  'tổng giám đốc': 2,
+  'giám đốc': 3,
+  'phó tổng giám đốc': 4,
+  'phó giám đốc': 5,
+  'trưởng phòng': 6,
+  'trưởng ban': 6,
+  'trưởng bộ phận': 6,
+  'phó phòng': 7,
+  'phó ban': 7,
+  'phó bộ phận': 7,
+  'chuyên viên': 8,
+  'nhân viên': 9,
+  'văn thư': 10,
+};
+
+function getPositionPriority(posName: string = ''): number {
+  const normalized = posName.trim().toLowerCase();
+  for (const [key, rank] of Object.entries(POSITION_RANK_FALLBACK)) {
+    if (normalized.includes(key)) {
+      return rank;
+    }
+  }
+  return 50;
 }
 
 export default function BirthdaysWidget({
@@ -25,8 +57,28 @@ export default function BirthdaysWidget({
       .replace('(Ngày mai)', `(${t('dashboardDetails.tomorrow') || 'Ngày mai'})`);
   };
 
+  // Sắp xếp danh sách sinh nhật theo chức vụ cao đến thấp trước khi hiển thị trên banner
+  const sortedBirthdays = useMemo(() => {
+    return [...birthdays].sort((a, b) => {
+      // 1. Ưu tiên hôm nay trước ngày mai
+      const aToday = a.isToday ? 0 : 1;
+      const bToday = b.isToday ? 0 : 1;
+      if (aToday !== bToday) {
+        return aToday - bToday;
+      }
+      // 2. Ưu tiên chức vụ cao hơn xếp trước (rank nhỏ hơn)
+      const rankA = a.positionRank ?? getPositionPriority(a.position);
+      const rankB = b.positionRank ?? getPositionPriority(b.position);
+      if (rankA !== rankB) {
+        return rankA - rankB;
+      }
+      // 3. Cùng chức vụ -> sắp theo tên
+      return (a.name || '').localeCompare(b.name || '', 'vi');
+    });
+  }, [birthdays]);
+
   // Nhân đôi danh sách để tạo luồng chạy vô tận mượt mà (-50% translateX)
-  const marqueeItems = [...birthdays, ...birthdays];
+  const marqueeItems = [...sortedBirthdays, ...sortedBirthdays];
 
   if (birthdays.length === 0) {
     return null;
@@ -89,8 +141,3 @@ export default function BirthdaysWidget({
     </div>
   );
 }
-
-
-
-
-
