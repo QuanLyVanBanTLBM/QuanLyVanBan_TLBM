@@ -6,13 +6,18 @@ MODEL_CONFIG = {
             "gemini-3.8-flash",
             "gemini-3.6-flash",
             "gemini-3.5-flash-lite",
+            "gpt-6-luna",
         ),
         "default_llm": "gemini-3.8-flash",
         "embed_model": "models/gemini-embedding-001",
     },
     "openai": {
-        "llm_models": ("gpt-4o-mini", "gpt-4o"),
-        "default_llm": "gpt-4o-mini",
-        "embed_model": "text-embedding-3-small",
+        "llm_models": (
+            "gpt-6-luna",
+            "gpt-4o-mini",
+            "gpt-4o",
+        ),
+        "default_llm": "gpt-6-luna",
+        "embed_model": "text-embedding-3-large",
     },
 }
