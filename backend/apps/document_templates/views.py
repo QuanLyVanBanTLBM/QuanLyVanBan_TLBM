@@ -34,6 +34,38 @@ from .serializers import (
 )
 
 
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework.authentication import SessionAuthentication
+
+
+class JWTQueryParamAuthentication(JWTAuthentication):
+    """
+    Xác thực JWT hỗ trợ cả Authorization Header và query parameter `token`.
+    Phục vụ cho các hành động mở trực tiếp URL máy chủ trong tab mới (window.open, iframe, <a>)
+    mà trình duyệt không thể tự động đính kèm Authorization header, tránh việc phải dùng
+    URL bộ nhớ tạm blob:... gây lỗi ERR_FILE_NOT_FOUND trên Chromium.
+    """
+    def authenticate(self, request):
+        header = self.get_header(request)
+        if header is not None:
+            raw_token = self.get_raw_token(header)
+        else:
+            query_dict = getattr(request, 'query_params', None)
+            if query_dict is None:
+                query_dict = getattr(request, 'GET', {})
+            raw_token = query_dict.get('token')
+            if not raw_token:
+                return None
+            if isinstance(raw_token, str):
+                raw_token = raw_token.encode('utf-8')
+
+        if raw_token is None:
+            return None
+
+        validated_token = self.get_validated_token(raw_token)
+        return self.get_user(validated_token), validated_token
+
+
 def can_user_modify_document(user, doc, perm_codename):
     """
     Kiểm tra quyền sở hữu (RBAC) khi Cập nhật, Xóa và Đổi hiệu lực tài liệu:
@@ -144,6 +176,7 @@ class DanhMucTaiLieuViewSet(viewsets.ModelViewSet):
     - Tìm kiếm theo tên tài liệu, số ký hiệu
     - Xuất Excel danh mục Cấp 1
     """
+    authentication_classes = [JWTQueryParamAuthentication, SessionAuthentication]
     queryset = DanhMucTaiLieu.objects.select_related('nguoi_lap').all()
     serializer_class = DanhMucTaiLieuSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -272,6 +305,7 @@ class TaiLieuChiTietViewSet(viewsets.ModelViewSet):
     - Bộ lọc đa tiêu chí: dm_tai_lieu, loai_tai_lieu, nam, hieu_luc, search
     - Xuất Excel danh sách tài liệu theo đúng bộ lọc tìm kiếm
     """
+    authentication_classes = [JWTQueryParamAuthentication, SessionAuthentication]
     serializer_class = TaiLieuChiTietSerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardResourcePagination
@@ -547,6 +581,7 @@ class ChiTietTaiLieuAttachmentViewSet(viewsets.ModelViewSet):
     - Chống lỗ hổng IDOR rò rỉ tệp nội bộ: lọc tệp theo visible_resources của tài liệu cha
     - Kiểm soát chặt quyền xóa mềm và upload tệp
     """
+    authentication_classes = [JWTQueryParamAuthentication, SessionAuthentication]
     serializer_class = ChiTietTaiLieuAttachmentSerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardResourcePagination
@@ -615,8 +650,10 @@ class ChiTietTaiLieuAttachmentViewSet(viewsets.ModelViewSet):
             else:
                 content_type = 'application/octet-stream'
 
+        from urllib.parse import quote
+        encoded_name = quote(att.name)
         response = FileResponse(open(disk_path, 'rb'), content_type=content_type, as_attachment=False)
-        response['Content-Disposition'] = f'inline; filename="{att.name}"'
+        response['Content-Disposition'] = f'inline; filename="{encoded_name}"; filename*=UTF-8\'\'{encoded_name}'
         return response
 
     @action(detail=True, methods=['get'], url_path='download')
@@ -637,7 +674,10 @@ class ChiTietTaiLieuAttachmentViewSet(viewsets.ModelViewSet):
         if not content_type:
             content_type = 'application/octet-stream'
 
+        from urllib.parse import quote
+        encoded_name = quote(att.name)
         response = FileResponse(open(disk_path, 'rb'), content_type=content_type, as_attachment=True, filename=att.name)
+        response['Content-Disposition'] = f'attachment; filename="{encoded_name}"; filename*=UTF-8\'\'{encoded_name}'
         return response
 
     @action(detail=True, methods=['get'], url_path='preview')

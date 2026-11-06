@@ -114,11 +114,7 @@ describe('ResourceDetailModal Component', () => {
       ],
     };
 
-    const mockBlob = new Blob(['pdf-data'], { type: 'application/pdf' });
-    vi.mocked(apiClientBlob).mockResolvedValueOnce(mockBlob);
-    const originalCreateObjectURL = window.URL.createObjectURL;
     const originalOpen = window.open;
-    window.URL.createObjectURL = vi.fn(() => 'blob:http://localhost:5173/uuid-pdf');
     window.open = vi.fn();
 
     render(
@@ -133,13 +129,11 @@ describe('ResourceDetailModal Component', () => {
     fireEvent.click(previewBtn);
 
     await waitFor(() => {
-      expect(apiClientBlob).toHaveBeenCalledWith('/api/resources/attachments/1/view/');
-      expect(window.URL.createObjectURL).toHaveBeenCalled();
-      expect(window.open).toHaveBeenCalledWith('blob:http://localhost:5173/uuid-pdf', '_blank');
+      expect(window.open).toHaveBeenCalledWith(expect.stringContaining('/api/resources/attachments/1/view/'), '_blank');
+      expect(window.open).not.toHaveBeenCalledWith(expect.stringMatching(/^blob:/), '_blank');
       expect(downloadBlob).not.toHaveBeenCalled();
     });
 
-    window.URL.createObjectURL = originalCreateObjectURL;
     window.open = originalOpen;
   });
 

@@ -14,7 +14,8 @@ import { authService } from '@lib/authService';
 import { usePermissions } from '@lib/permissions';
 import { formatDate } from '@lib/dateUtils';
 import { ConfirmationModal } from './ConfirmationModal';
-import { apiClientBlob, downloadBlob } from '@lib/apiClient';
+import { downloadBlob } from '@lib/apiClient';
+import { getAbsoluteFileUrl } from '@lib/fileUtils';
 import { FilePreviewModal } from './FilePreviewModal';
 
 export interface ResourceFormData {
@@ -578,7 +579,7 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
     return ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'svg', 'bmp'].includes(ext);
   };
 
-  // Xem trước tệp hiện có: PDF/Ảnh -> mở tab mới; ZIP/DOCX/EXCEL -> tải về máy
+  // Xem trước tệp hiện có: PDF/Ảnh -> mở tab mới theo đường dẫn máy chủ; ZIP/DOCX/EXCEL -> tải về máy
   const handlePreviewExistingFile = async (file: { id?: number; name: string; size?: number; path?: string }) => {
     const isPreviewable = isDirectPreviewable(file.name);
     const targetUrl = file.id
@@ -595,8 +596,15 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
         await downloadBlob(downloadUrl, file.name);
       } catch (err) {
         console.warn('Lỗi downloadBlob:', err);
+        const token = typeof window !== 'undefined'
+          ? (localStorage.getItem('tlbm_access_token') || localStorage.getItem('tlbm_token') || '')
+          : '';
+        const absUrl = getAbsoluteFileUrl(downloadUrl);
+        const serverUrl = token
+          ? `${absUrl}${absUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`
+          : absUrl;
         const a = document.createElement('a');
-        a.href = downloadUrl;
+        a.href = serverUrl;
         a.download = file.name;
         document.body.appendChild(a);
         a.click();
@@ -605,32 +613,15 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
       return;
     }
 
-    try {
-      const rawBlob = await apiClientBlob(targetUrl);
-      const lower = file.name.toLowerCase();
-      let mimeType = rawBlob.type;
-      if (lower.endsWith('.pdf')) {
-        mimeType = 'application/pdf';
-      } else if (lower.endsWith('.png')) {
-        mimeType = 'image/png';
-      } else if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
-        mimeType = 'image/jpeg';
-      } else if (lower.endsWith('.webp')) {
-        mimeType = 'image/webp';
-      } else if (lower.endsWith('.gif')) {
-        mimeType = 'image/gif';
-      } else if (lower.endsWith('.svg')) {
-        mimeType = 'image/svg+xml';
-      } else if (lower.endsWith('.bmp')) {
-        mimeType = 'image/bmp';
-      }
-      const viewBlob = mimeType ? new Blob([rawBlob], { type: mimeType }) : rawBlob;
-      const blobUrl = window.URL.createObjectURL(viewBlob);
-      window.open(blobUrl, '_blank');
-    } catch (err) {
-      console.error('Lỗi khi mở xem trước tệp:', err);
-      window.open(targetUrl, '_blank');
-    }
+    // Mở trực tiếp đường dẫn máy chủ trong tab mới (không dùng URL blob: bộ nhớ tạm)
+    const token = typeof window !== 'undefined'
+      ? (localStorage.getItem('tlbm_access_token') || localStorage.getItem('tlbm_token') || '')
+      : '';
+    const absUrl = getAbsoluteFileUrl(targetUrl);
+    const serverUrl = token
+      ? `${absUrl}${absUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`
+      : absUrl;
+    window.open(serverUrl, '_blank');
   };
 
   // Xem trước tệp mới tải lên: PDF/Ảnh -> mở tab mới; ZIP/DOCX/EXCEL -> tải về máy
@@ -1437,7 +1428,14 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
                           </button>
                           {file.id && (
                             <a
-                              href={`/api/resources/attachments/${file.id}/download/`}
+                              href={(() => {
+                                const token = typeof window !== 'undefined'
+                                  ? (localStorage.getItem('tlbm_access_token') || localStorage.getItem('tlbm_token') || '')
+                                  : '';
+                                const raw = `/api/resources/attachments/${file.id}/download/`;
+                                const abs = getAbsoluteFileUrl(raw);
+                                return token ? `${abs}${abs.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}` : abs;
+                              })()}
                               download={file.name}
                               className="p-1 text-muted hover:text-primary rounded transition-colors cursor-pointer inline-flex items-center justify-center"
                               title={t('resourceManagement.downloadAttachment')}

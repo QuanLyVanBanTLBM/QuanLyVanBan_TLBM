@@ -14,7 +14,8 @@ import { FolderManagerModal } from '@components/folders/FolderManagerModal';
 import { Button } from '@components/common/Button';
 import { Toast, ToastNotification } from '@components/resources/Toast';
 import { useTranslation } from '@i18n/translate';
-import { apiClient } from '@lib/apiClient';
+import { apiClient, downloadBlob } from '@lib/apiClient';
+import { getAbsoluteFileUrl } from '@lib/fileUtils';
 import { authService } from '@lib/authService';
 import { usePermissions } from '@lib/permissions';
 import { computeEffectiveStatus } from '@lib/resourceValidity';
@@ -1471,22 +1472,40 @@ export default function ResourceManagementPage() {
   };
 
   // Xử lý tải tệp đính kèm về máy
-  const handleDownloadFile = (item: ResourceItem, fileName?: string, filePath?: string) => {
-    const targetPath = filePath || item.file_dinh_kem;
-    if (!targetPath) return;
-    const a = document.createElement('a');
-    a.href = targetPath;
-    a.target = '_blank';
-    a.rel = 'noopener noreferrer';
+  const handleDownloadFile = async (item: ResourceItem, fileName?: string, filePath?: string) => {
+    const att = fileName
+      ? item.attachments?.find((a) => a.name === fileName)
+      : item.attachments?.[0];
+    const targetUrl = att?.id
+      ? `/api/resources/attachments/${att.id}/download/`
+      : (filePath || item.file_dinh_kem);
+
+    if (!targetUrl) return;
+
     const suggestedName =
       fileName ||
-      item.attachments?.[0]?.name ||
-      (targetPath.startsWith('blob:') ? `${item.tieu_de || 'tai_lieu'}.pdf` : targetPath.split('?')[0].split('/').pop()) ||
-      'tai_lieu.pdf';
-    a.download = suggestedName;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+      att?.name ||
+      (targetUrl.split('?')[0].split('/').pop()) ||
+      `${item.tieu_de || 'tai_lieu'}.pdf`;
+
+    try {
+      await downloadBlob(targetUrl, suggestedName);
+    } catch (err) {
+      console.warn('Lỗi downloadBlob, chuyển sang fallback tải URL máy chủ:', err);
+      const token = typeof window !== 'undefined'
+        ? (localStorage.getItem('tlbm_access_token') || localStorage.getItem('tlbm_token') || '')
+        : '';
+      const absUrl = getAbsoluteFileUrl(targetUrl);
+      const serverUrl = token
+        ? `${absUrl}${absUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`
+        : absUrl;
+      const a = document.createElement('a');
+      a.href = serverUrl;
+      a.download = suggestedName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
   };
 
   return (

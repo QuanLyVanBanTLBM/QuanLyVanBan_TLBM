@@ -1097,3 +1097,51 @@ class DocumentTemplatesRBACPermissionsTests(TestCase):
         self.assertEqual(res_root.status_code, status.HTTP_200_OK)
         self.assertTrue(res_root.data.get('can_edit'))
         self.assertTrue(res_root.data.get('can_delete'))
+
+def test_view_and_download_attachment_with_query_param_token(self):
+        """Xác thực qua query param ?token=... khi mở tab mới xem hoặc tải tệp trực tiếp từ server"""
+        import os
+        from rest_framework_simplejwt.tokens import RefreshToken
+        from django.contrib.auth.models import Permission
+        from document_templates.models import template_disk_path
+
+        viewer = User.objects.create_user(username="query_token_viewer", password="password123")
+        perm_view = Permission.objects.get(codename="view_tailieu")
+        viewer.user_permissions.add(perm_view)
+        token = str(RefreshToken.for_user(viewer).access_token)
+
+        # Tạo file đính kèm trên self.doc_by_creator (TAT_CA)
+        att = ChiTietTaiLieuAttachment.objects.create(
+            document=self.doc_by_creator,
+            name="huong_dan.pdf",
+            path="mau-van-ban/2026/03/10/huong_dan.pdf",
+            file_size=1024,
+            mime_type="application/pdf",
+            nguoi_tao=self.creator_user,
+        )
+
+        self.client.logout()  # Đảm bảo không còn Authorization header
+        # 1. Truy cập không có token -> 401
+        res_no_token = self.client.get(f'/api/resources/attachments/{att.id}/view/')
+        self.assertEqual(res_no_token.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        # 2. Chuẩn bị file trên đĩa
+        disk_path = template_disk_path(att.path)
+        if disk_path:
+            os.makedirs(os.path.dirname(disk_path), exist_ok=True)
+            with open(disk_path, 'wb') as f:
+                f.write(b"%PDF-1.4 sample file")
+
+        # 3. Truy cập với query param token hợp lệ -> 200 OK và inline disposition
+        res_token = self.client.get(f'/api/resources/attachments/{att.id}/view/?token={token}')
+        self.assertEqual(res_token.status_code, status.HTTP_200_OK)
+        self.assertIn('inline', res_token.headers.get('Content-Disposition', ''))
+
+        # 4. Tải về với query param token -> 200 OK và attachment disposition
+        res_download = self.client.get(f'/api/resources/attachments/{att.id}/download/?token={token}')
+        self.assertEqual(res_download.status_code, status.HTTP_200_OK)
+        self.assertIn('attachment', res_download.headers.get('Content-Disposition', ''))
+
+        # 5. Token sai -> 401
+        res_bad_token = self.client.get(f'/api/resources/attachments/{att.id}/view/?token=invalid_token_xyz')
+        self.assertEqual(res_bad_token.status_code, status.HTTP_401_UNAUTHORIZED)
