@@ -429,20 +429,22 @@ jobs:
             ENVF=/etc/qlvb/backend.env
             if [ -f "$ENVF" ] && [ -w "$ENVF" ]; then
               for var in DJANGO_SECURE_PROXY_SSL_HEADER DJANGO_SECURE_SSL_REDIRECT DJANGO_SECURE_COOKIES; do
-                if grep -q "^${var}=" "$ENVF"; then
-                  sed -i "s/^${var}=.*/${var}=true/" "$ENVF"
+                if grep -q "^[[:space:]]*${var}=" "$ENVF"; then
+                  sed -i "s/^[[:space:]]*${var}=.*/${var}=true/" "$ENVF"
                 else
                   echo "${var}=true" >> "$ENVF"
                 fi
               done
-              if grep -q "^SIGNING_FRONTEND_URL=" "$ENVF"; then
-                sed -i "s#^SIGNING_FRONTEND_URL=.*#SIGNING_FRONTEND_URL=https://staging-quanlyvanban.bhbl.vn:8088#" "$ENVF"
+              if grep -q "^[[:space:]]*SIGNING_FRONTEND_URL=" "$ENVF"; then
+                if ! grep -q "^[[:space:]]*SIGNING_FRONTEND_URL=.*https://staging-quanlyvanban\.bhbl\.vn:8088" "$ENVF"; then
+                  sed -i "s#^[[:space:]]*SIGNING_FRONTEND_URL=.*#SIGNING_FRONTEND_URL=https://staging-quanlyvanban.bhbl.vn:8088#" "$ENVF"
+                fi
               else
                 echo "SIGNING_FRONTEND_URL=https://staging-quanlyvanban.bhbl.vn:8088" >> "$ENVF"
               fi
-              if grep -q "^DJANGO_CSRF_TRUSTED_ORIGINS=" "$ENVF"; then
-                if ! grep -q "https://staging-quanlyvanban.bhbl.vn:8088" "$ENVF"; then
-                  sed -i "s#^DJANGO_CSRF_TRUSTED_ORIGINS=\(.*\)#DJANGO_CSRF_TRUSTED_ORIGINS=https://staging-quanlyvanban.bhbl.vn:8088,\1#" "$ENVF"
+              if grep -q "^[[:space:]]*DJANGO_CSRF_TRUSTED_ORIGINS=" "$ENVF"; then
+                if ! grep -q "^[[:space:]]*DJANGO_CSRF_TRUSTED_ORIGINS=.*https://staging-quanlyvanban\.bhbl\.vn:8088" "$ENVF"; then
+                  sed -i "s#^[[:space:]]*DJANGO_CSRF_TRUSTED_ORIGINS=.*#DJANGO_CSRF_TRUSTED_ORIGINS=https://staging-quanlyvanban.bhbl.vn:8088,http://127.0.0.1:8088#" "$ENVF"
                 fi
               else
                 echo "DJANGO_CSRF_TRUSTED_ORIGINS=https://staging-quanlyvanban.bhbl.vn:8088,http://127.0.0.1:8088" >> "$ENVF"
