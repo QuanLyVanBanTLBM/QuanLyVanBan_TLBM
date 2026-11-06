@@ -489,6 +489,61 @@ describe('EmployeesPage Component (Issue #24)', () => {
     expect(screen.getAllByTitle('Xem chi tiết').length).toBeGreaterThan(0);
   });
 
+  function mockPermissions(me: { is_superuser: boolean; is_system_admin?: boolean; permissions: string[] }) {
+    mockedApiClient.mockImplementation(async (endpoint: string) => {
+      if (endpoint.includes('/api/auth/me/permissions/')) return me;
+      if (endpoint.includes('/organizations/units/')) return [];
+      if (endpoint.includes('/api/positions/')) return [];
+      if (endpoint.includes('/accounts/groups/')) return [];
+      if (endpoint.includes('/accounts/employees/')) {
+        return { count: 2, next: null, previous: null, results: mockEmployeeData };
+      }
+      return [];
+    });
+  }
+
+  it('hides add and import buttons for a non-admin who holds add_cbnv and import_cbnv', async () => {
+    mockPermissions({
+      is_superuser: false,
+      is_system_admin: false,
+      permissions: ['view_list_cbnv', 'add_cbnv', 'import_cbnv', 'change_full_cbnv'],
+    });
+
+    render(
+      <MemoryRouter>
+        <EmployeesPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Nguyễn Văn Bình')).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('button', { name: /Thêm nhân viên/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Nhập từ Excel/i })).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Chỉnh sửa')).not.toBeInTheDocument();
+  });
+
+  it('shows add, import and edit buttons for an ADMIN group member who is not a superuser', async () => {
+    mockPermissions({
+      is_superuser: false,
+      is_system_admin: true,
+      permissions: ['view_list_cbnv', 'add_cbnv', 'import_cbnv', 'change_full_cbnv'],
+    });
+
+    render(
+      <MemoryRouter>
+        <EmployeesPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Nguyễn Văn Bình')).toBeInTheDocument();
+    });
+    expect(screen.getByRole('button', { name: /Thêm nhân viên/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Nhập từ Excel/i })).toBeInTheDocument();
+    expect(screen.getAllByTitle('Chỉnh sửa').length).toBeGreaterThan(0);
+  });
+
   it('allows self-edit for own record with change_self_cbnv and disables administrative fields', async () => {
     localStorage.setItem(
       'tlbm_session',

@@ -268,6 +268,13 @@ def admin_set_password_view(request):
             status=status.HTTP_404_NOT_FOUND,
         )
 
+    # Mật khẩu superuser chỉ superuser mới đặt lại được (nhóm ADMIN có approve_password_reset_cbnv nhưng không đủ).
+    if target_user.is_superuser and not request.user.is_superuser:
+        return Response(
+            {"success": False, "error": "roles.messages.permissionDenied"},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
     # [Điểm 5]: Kiểm tra chất lượng mật khẩu bằng password validation chuẩn Django
     try:
         validate_password(new_password, user=target_user)
