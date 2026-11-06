@@ -17,9 +17,9 @@ vietnam_phone_regex = RegexValidator(
 
 
 def validate_company_email(value):
-    """Email CBNV phải thuộc tên miền công ty (settings.EMPLOYEE_EMAIL_ALLOWED_DOMAINS, mặc định baolong.vn).
+    """Giới hạn tên miền email CBNV theo settings.EMPLOYEE_EMAIL_ALLOWED_DOMAINS (mặc định rỗng: không giới hạn).
 
-    Chỉ so khớp đúng tên miền (không nhận tên miền con hay tên miền chứa baolong.vn); danh sách rỗng là không giới hạn.
+    Khi có cấu hình thì chỉ so khớp đúng tên miền (không nhận tên miền con hay tên miền chứa chuỗi đó).
     """
     allowed = tuple(getattr(settings, "EMPLOYEE_EMAIL_ALLOWED_DOMAINS", ()))
     if not allowed:
