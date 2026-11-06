@@ -9,6 +9,21 @@ export type TrangThaiNguoiKy = 'CHO_KY' | 'DA_KY' | 'TU_CHOI' | 'YEU_CAU_SUA';
 export type TrangThaiTepHoanTat = 'DANG_XU_LY' | 'LOI' | 'THANH_CONG' | null;
 export type VaiTroKy = 'KY_CHINH';
 export type PhamViQuyTrinh = 'CONG_TY' | 'PHONG_BAN';
+export type KenhOtpPin = 'SMS' | 'EMAIL';
+
+export interface TrangThaiPin {
+  da_dat_pin: boolean;
+  so_lan_sai_ngay: number;
+  so_lan_con_lai: number;
+  khoa_den: string | null;
+}
+
+export interface PinOtpYeuCau {
+  challenge_id: number;
+  kenh: KenhOtpPin;
+  het_han: string;
+  gian_cach_giay: number;
+}
 
 export interface NguoiDungHienTai {
   id: number;
@@ -20,8 +35,7 @@ export interface NguoiDungHienTai {
   co_anh_chu_ky?: boolean;
   /** Quyền ký đang bị quản trị viên khóa (null: không bị khóa); không kèm lý do nội bộ. */
   khoa_quyen_ky?: { khoa_den: string | null } | null;
-  /** MFA qua email khi ký (#509): `bat` theo cấu hình máy chủ; `da_xac_thuc` theo access token hiện tại. */
-  mfa_ky?: { bat: boolean; da_xac_thuc: boolean; het_han: string | null };
+  da_dat_pin?: boolean;
 }
 
 export type ThoiHanKhoaQuyenKy = '1_gio' | '8_gio' | '24_gio' | 'den_khi_bat_lai';
@@ -34,8 +48,12 @@ export interface QuanTriNguoiDung {
   chuc_vu: string | null;
   don_vi: string | null;
   co_quyen_ky: boolean;
-  khoa_ky: { id: number; ma_khoa: string; trang_thai: string } | null;
-  pin: { so_lan_sai: number } | null;
+  pin: {
+    da_dat: boolean;
+    so_lan_sai_ngay: number;
+    so_lan_sai_chu_ky: number;
+    khoa_den: string | null;
+  };
   khoa_quyen_ky: { id: number; khoa_tu: string; khoa_den: string | null; ly_do: string; nguoi_khoa_id: number } | null;
 }
 
@@ -99,7 +117,7 @@ export interface ChuKyTomTat {
   ghi_chu_ky: string;
   ky_tre_han: boolean;
   so_giay_tre: number | null;
-  trang_thai_xac_minh: string;
+  phuong_thuc: 'PIN';
   co_anh_chu_ky: boolean;
 }
 
@@ -249,29 +267,6 @@ export interface TinNhan {
 export interface TraoDoi {
   thread: YeuCauSuaThread | null;
   tin_nhan: TinNhan[];
-}
-
-export interface KhoaKy {
-  id: number;
-  ma_khoa: string;
-  dau_van_tay: string;
-  thuat_toan: string;
-  khoa_cong_khai: string;
-  trang_thai: 'CHO_KICH_HOAT' | 'HOAT_DONG' | 'DA_XOAY_VONG' | 'THU_HOI' | 'HET_HAN';
-  thoi_diem_xac_minh_so_huu: string | null;
-  thoi_diem_kich_hoat: string | null;
-  ngay_hieu_luc: string;
-  created_at: string;
-  da_dat_pin: boolean;
-}
-
-export interface ThamSoKdf {
-  thuat_toan: 'argon2id';
-  m: number;
-  t: number;
-  p: number;
-  phien_ban: number;
-  salt: string;
 }
 
 export interface BangChung {

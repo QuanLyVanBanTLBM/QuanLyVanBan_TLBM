@@ -26,7 +26,7 @@ import HanhDong from '@components/signing/HanhDong';
 import TaiLieuPanel from '@components/signing/TaiLieuPanel';
 import { signingApi } from '@lib/signing/api';
 import { SigningContext } from '@lib/signing/hooks';
-import type { HoSoChiTiet, KhoaKy, NguoiDungHienTai, QuyTrinh } from '@lib/signing/types';
+import type { HoSoChiTiet, NguoiDungHienTai, QuyTrinh } from '@lib/signing/types';
 import DanhSachPage from './DanhSachPage';
 import QuyTrinhPage from './QuyTrinhPage';
 import SigningModule from './SigningModule';
@@ -37,7 +37,7 @@ vi.mock('@lib/signing/api', async () => {
   return { ...actual, signingApi: {
     toi: vi.fn(), danhSach: vi.fn(), thongKe: vi.fn(), taiLieu: vi.fn(), quyTrinh: vi.fn(), donVi: vi.fn(), donViApDungTheoHop: vi.fn(), chiTietQuyTrinh: vi.fn(),
     xoaQuyTrinh: vi.fn(), taoQuyTrinh: vi.fn(), suaQuyTrinh: vi.fn(), chucVu: vi.fn(), danhBaCanBo: vi.fn(), nguoiKyCoQuyen: vi.fn(), canBoTheoChucVu: vi.fn(), tepCuaLuot: vi.fn(), tepGoc: vi.fn(), tepHoanTat: vi.fn(), bangChung: vi.fn(),
-    thaoTacQuyTrinh: vi.fn(), khoa: vi.fn(), ky: vi.fn(),
+    thaoTacQuyTrinh: vi.fn(), ky: vi.fn(),
   } };
 });
 // pdfjs-dist cần DOMMatrix/canvas của trình duyệt; jsdom không có, nên chỉ thay lớp vẽ PDF.
@@ -49,7 +49,7 @@ vi.mock('@lib/signing/pdf', () => ({
 const api = vi.mocked(signingApi);
 
 const TOI: NguoiDungHienTai = {
-  id: 7, ten: 'Trưởng phòng', don_vi_id: 1, la_quan_tri: false, la_lanh_dao_don_vi: false, co_anh_chu_ky: true,
+  id: 7, ten: 'Trưởng phòng', don_vi_id: 1, la_quan_tri: false, la_lanh_dao_don_vi: false, co_anh_chu_ky: true, da_dat_pin: true,
   quyen: { view_trinhky: true, add_trinhky: false, sign_trinhky: true, send_trinhky: false },
 };
 
@@ -83,9 +83,6 @@ const moModule = (duong_dan = '/approvals') => render(
   </MemoryRouter>,
 );
 
-const KHOA_HOAT_DONG = { id: 4, ma_khoa: 'TB-7-1', dau_van_tay: 'f'.repeat(64), thuat_toan: 'Ed25519',
-  khoa_cong_khai: 'pub', trang_thai: 'HOAT_DONG' } as KhoaKy;
-
 const boc = (ui: React.ReactNode, toi: NguoiDungHienTai = TOI) => render(
   <MemoryRouter><SigningContext.Provider value={{ toi, taiLaiToi: () => undefined }}>{ui}</SigningContext.Provider></MemoryRouter>,
 );
@@ -100,7 +97,6 @@ beforeEach(() => {
   api.canBoTheoChucVu.mockResolvedValue({ count: 0, results: [] });
   api.thongKe.mockResolvedValue({ tat_ca: 3, cho_ky: 1, qua_han: 1, hoan_thanh: 0, tra_lai: 1 });
   localStorage.setItem('tlbm_lang', 'vi');
-  api.khoa.mockResolvedValue([KHOA_HOAT_DONG]);
 });
 
 describe('SigningModule', () => {
@@ -109,7 +105,7 @@ describe('SigningModule', () => {
     api.danhSach.mockResolvedValue(trang([]));
     moModule();
     expect(await screen.findByRole('link', { name: /Cần tôi ký duyệt/ })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Cấu hình khóa ký/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /PIN ký/ })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Tạo hồ sơ trình ký/ })).not.toBeInTheDocument();
     expect(screen.queryByText(/Ký số & Phê duyệt điện tử/)).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 1, name: 'Trình ký' })).toBeInTheDocument();
@@ -123,7 +119,7 @@ describe('SigningModule', () => {
     await waitFor(() => expect(tabKy).toHaveTextContent('2'));
     expect(api.thongKe).toHaveBeenCalledWith('can_toi_ky');
     const nav = within(screen.getByRole('navigation'));
-    for (const ten of [/Hồ sơ tôi trình/, /Hồ sơ được xem/, /Cấu hình khóa ký/]) {
+    for (const ten of [/Hồ sơ tôi trình/, /Hồ sơ được xem/, /PIN ký/]) {
       expect(nav.getByRole('link', { name: ten })).toBeInTheDocument();
     }
     expect(nav.queryByRole('link', { name: /^Quy trình/ })).toBeInTheDocument();
@@ -305,7 +301,7 @@ describe('Danh sách: trạng thái trả lại, quá hạn', () => {
   });
 });
 
-describe('Ký bằng private key phía máy chủ', () => {
+describe('Ký bằng PIN', () => {
   it('không cần tải file khóa lên trình duyệt và gửi đúng PIN 6 chữ số để ký', async () => {
     boc(<HanhDong hoSo={hoSo()} luot={hoSo().luot_trinh[0]} maBamTepDangXem={'a'.repeat(64)} onXong={() => undefined} />);
     fireEvent.click(screen.getByRole('button', { name: /Ký duyệt/ }));
@@ -314,25 +310,25 @@ describe('Ký bằng private key phía máy chủ', () => {
     expect(screen.queryByLabelText(/file khóa ký/i)).not.toBeInTheDocument();
     fireEvent.change(oPin, { target: { value: '48271593' } });
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /Ký duyệt/ }));
-    expect(await screen.findByText('Vui lòng nhập mã PIN ký gồm đúng 6 chữ số.')).toBeInTheDocument();
+    expect(await screen.findByText('PIN phải gồm đúng 6 chữ số.')).toBeInTheDocument();
     expect(api.ky).not.toHaveBeenCalled();
     fireEvent.change(oPin, { target: { value: '482739' } });
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /Ký duyệt/ }));
     await waitFor(() => expect(api.ky).toHaveBeenCalledTimes(1));
     expect(api.ky.mock.calls[0][2]).toEqual({
-      khoa_ky: 4, hash_tai_lieu: 'a'.repeat(64), pin: '482739', ghi_chu_ky: '',
+      hash_tai_lieu: 'a'.repeat(64), pin: '482739', ghi_chu_ky: '',
     });
   });
 });
 
-describe('Hộp thoại ký: điều kiện chữ ký hợp lệ', () => {
+describe('Hộp thoại ký: điều kiện', () => {
   const moHopKy = (nguoi: NguoiDungHienTai = TOI) => {
     render(
       <MemoryRouter>
         <SigningContext.Provider value={{ toi: nguoi, taiLaiToi: () => undefined }}>
           <Routes>
             <Route path="/" element={<HanhDong hoSo={hoSo()} luot={hoSo().luot_trinh[0]} maBamTepDangXem={'a'.repeat(64)} onXong={() => undefined} />} />
-            <Route path="/approvals/khoa" element={<div>TRANG_CAU_HINH_KHOA</div>} />
+            <Route path="/approvals/pin" element={<div>TRANG_PIN</div>} />
           </Routes>
         </SigningContext.Provider>
       </MemoryRouter>,
@@ -340,81 +336,26 @@ describe('Hộp thoại ký: điều kiện chữ ký hợp lệ', () => {
     fireEvent.click(screen.getByRole('button', { name: /Ký duyệt/ }));
   };
   const nutKy = () => within(screen.getByRole('dialog')).getByRole('button', { name: /Ký duyệt/ });
-  const khoaTatCa = () => {
+
+  it('thiếu PIN thì khóa thao tác và đưa tới trang tạo PIN', async () => {
+    moHopKy({ ...TOI, da_dat_pin: false });
+    expect(await screen.findByText('Chưa tạo PIN ký')).toBeInTheDocument();
     expect(screen.getByLabelText(/Nhập PIN ký/)).toBeDisabled();
-    expect(screen.getByPlaceholderText('Ghi chú kèm chữ ký')).toBeDisabled();
     expect(nutKy()).toBeDisabled();
-  };
-
-  it('đang kiểm tra: khóa ô nhập, không hiện cảnh báo thiếu chữ ký', async () => {
-    api.khoa.mockReturnValue(new Promise(() => undefined));
-    moHopKy();
-    expect(await screen.findByText('Đang kiểm tra điều kiện ký…')).toBeInTheDocument();
-    khoaTatCa();
-    expect(screen.queryByText('Thiếu chữ ký')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Đi tới/ }));
+    expect(await screen.findByText('TRANG_PIN')).toBeInTheDocument();
   });
 
-  it('thiếu cả ảnh chữ ký và khóa ký: nêu đủ hai mục, khóa mọi ô, không gọi API ký', async () => {
-    api.khoa.mockResolvedValue([]);
-    moHopKy({ ...TOI, co_anh_chu_ky: false });
-    expect(await screen.findByText('Thiếu chữ ký')).toBeInTheDocument();
-    expect(screen.getByText('Chưa có ảnh chữ ký cá nhân')).toBeInTheDocument();
-    expect(screen.getByText('Chưa có khóa ký đang hoạt động')).toBeInTheDocument();
-    expect(screen.getByText('Thiếu chữ ký').closest('[role]')).toHaveAttribute('role', 'status');
-    khoaTatCa();
-    fireEvent.click(nutKy());
-    expect(api.ky).not.toHaveBeenCalled();
-  });
-
-  it('chỉ thiếu ảnh chữ ký', async () => {
+  it('thiếu ảnh cá nhân thì chặn ký', async () => {
     moHopKy({ ...TOI, co_anh_chu_ky: false });
     expect(await screen.findByText('Chưa có ảnh chữ ký cá nhân')).toBeInTheDocument();
-    expect(screen.queryByText('Chưa có khóa ký đang hoạt động')).not.toBeInTheDocument();
-    khoaTatCa();
+    expect(nutKy()).toBeDisabled();
   });
 
-  it('chỉ thiếu khóa ký (khóa đã thu hồi không tính)', async () => {
-    api.khoa.mockResolvedValue([{ ...KHOA_HOAT_DONG, trang_thai: 'DA_THU_HOI' } as unknown as KhoaKy]);
-    moHopKy();
-    expect(await screen.findByText('Chưa có khóa ký đang hoạt động')).toBeInTheDocument();
-    expect(screen.queryByText('Chưa có ảnh chữ ký cá nhân')).not.toBeInTheDocument();
-    khoaTatCa();
-  });
-
-  it('CTA đóng hộp thoại và đi tới trang cấu hình khóa ký', async () => {
-    api.khoa.mockResolvedValue([]);
-    moHopKy();
-    const cta = await screen.findByRole('button', { name: /Đi tới/ });
-    await waitFor(() => expect(cta).toHaveFocus());
-    fireEvent.click(cta);
-    expect(await screen.findByText('TRANG_CAU_HINH_KHOA')).toBeInTheDocument();
-  });
-
-  it('Hủy bỏ vẫn đóng được hộp thoại khi đang khóa', async () => {
-    api.khoa.mockResolvedValue([]);
-    moHopKy();
-    await screen.findByText('Thiếu chữ ký');
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Hủy bỏ' }));
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-  });
-
-  it('đủ điều kiện: mở khóa các ô và nút Ký duyệt', async () => {
+  it('đủ PIN và ảnh thì cho nhập PIN', async () => {
     moHopKy();
     await waitFor(() => expect(screen.getByLabelText(/Nhập PIN ký/)).toBeEnabled());
-    expect(screen.queryByLabelText(/file khóa ký/i)).not.toBeInTheDocument();
-    expect(screen.getByPlaceholderText('Ghi chú kèm chữ ký')).toBeEnabled();
     expect(nutKy()).toBeEnabled();
-    expect(screen.queryByText('Thiếu chữ ký')).not.toBeInTheDocument();
-  });
-
-  it('lỗi mạng khi kiểm tra: báo lỗi, vẫn khóa, Thử lại mở khóa khi thành công', async () => {
-    api.khoa.mockRejectedValueOnce(new Error('mang')).mockResolvedValue([KHOA_HOAT_DONG]);
-    moHopKy();
-    const thuLai = await screen.findByRole('button', { name: /Thử lại/ });
-    khoaTatCa();
-    expect(screen.queryByText('Thiếu chữ ký')).not.toBeInTheDocument();
-    fireEvent.click(thuLai);
-    await waitFor(() => expect(screen.getByLabelText(/Nhập PIN ký/)).toBeEnabled());
   });
 });
 

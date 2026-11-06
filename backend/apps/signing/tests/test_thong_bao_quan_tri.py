@@ -6,7 +6,7 @@ from django.test import override_settings
 
 from signing import enums
 from signing.models import SigningNotification
-from signing.services import keys, quyen_ky
+from signing.services import quyen_ky
 from signing.services import thong_bao as thong_bao_service
 
 from .helpers import cap_quyen
@@ -53,17 +53,6 @@ class ThongBaoQuanTriTests(KyBase):
         self.assertIn("An administrator has restored the signing permission", thu.body)
         self.assertLess(thu.body.index("Xin chào"), thu.body.index("Hello"))  # tiếng Việt trước, tiếng Anh sau
         self.assertNotIn(LY_DO_NOI_BO, thu.subject + thu.body)
-
-    def test_admin_revoke_notifies_owner_once_per_revocation(self):
-        with self.captureOnCommitCallbacks(execute=True):
-            danh_sach = keys.thu_hoi_khan_cap_boi_quan_tri(self.ky1.pk, self.quan_tri, LY_DO_NOI_BO)
-        self.assertEqual(self.thong_bao("THU_HOI_KHOA", enums.KenhThongBao.IN_APP).count(), 1)
-        self.assertEqual(len(danh_sach), 1)
-        self.assertEqual(len(mail.outbox), 1)
-        self.assertIn("Khóa ký bị thu hồi", mail.outbox[0].subject)
-        self.assertIn("Signing key revoked", mail.outbox[0].subject)
-        self.assertIn("An administrator has revoked the signing key", mail.outbox[0].body)
-        self.assertNotIn(LY_DO_NOI_BO, mail.outbox[0].subject + mail.outbox[0].body)
 
     def test_lock_body_states_expiry_and_notification_list_handles_no_request(self):
         quyen_ky.khoa_quyen(self.ky1.pk, self.quan_tri, ly_do="khoa", thoi_han="8_gio")

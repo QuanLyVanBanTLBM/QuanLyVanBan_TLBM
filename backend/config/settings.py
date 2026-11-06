@@ -104,6 +104,14 @@ AUTH_USER_MODEL = "accounts.Employee"
 # RBAC theo release_DDL: quyền định danh bằng codename trần (auth_permission.content_type_id = NULL)
 AUTHENTICATION_BACKENDS = ["authorization.backends.RbacBackend"]
 
+# Chỉ bật các password hasher được ứng dụng hỗ trợ; hash mới dùng PBKDF2.
+PASSWORD_HASHERS = [
+    "django.contrib.auth.hashers.PBKDF2PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher",
+    "django.contrib.auth.hashers.BCryptSHA256PasswordHasher",
+    "django.contrib.auth.hashers.ScryptPasswordHasher",
+]
+
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -330,13 +338,13 @@ REST_FRAMEWORK = {
 # ─────────────────────────────────────────────────
 SIGNING_DOCUMENT_ROOT = os.environ.get("SIGNING_DOCUMENT_ROOT", "")
 
-# Trình ký — SIGNING_PIN_SECRET tiếp tục dùng để HMAC mã đặt lại PIN qua email.
-# Bí mật này bắt buộc riêng trên Staging/Production; chức năng mới không dùng nó làm pepper mã hóa khóa.
+# Trình ký — pepper riêng cho PBKDF2 verifier PIN và HMAC mã OTP.
+# Phải giữ ổn định trong môi trường; thay đổi sẽ khiến PIN đã tạo không thể xác minh.
 SIGNING_PIN_SECRET = os.environ.get("SIGNING_PIN_SECRET", "")
 
-# Pepper riêng để dẫn xuất khóa AES từ salt và xác minh PIN (#447 partition 1); mã hóa độc lập PIN.
-# Bắt buộc giữ ổn định trong môi trường; thay đổi pepper làm khóa đang lưu không thể giải mã.
-SIGNING_KEY_PEPPER = os.environ.get("SIGNING_KEY_PEPPER", "")
+SIGNING_SMS_URL = os.environ.get("SIGNING_SMS_URL", "")
+SIGNING_SMS_AUTHORIZATION = os.environ.get("SIGNING_SMS_AUTHORIZATION", "")
+SIGNING_SMS_FROM = os.environ.get("SIGNING_SMS_FROM", "")
 
 # Trình ký — phông chữ có dấu tiếng Việt để in tệp PDF hoàn tất (Phase 10). Để trống thì tự dò phông hệ thống
 # (DejaVu Sans, Noto Sans, Liberation Sans, Arial); không có phông nào thì tạo tệp báo lỗi `thieu_phong_chu`.

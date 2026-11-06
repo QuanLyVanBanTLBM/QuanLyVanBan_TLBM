@@ -19,7 +19,7 @@ import { docLoi, signingApi } from '@lib/signing/api';
 import { chiTietNhatKy, dinhDangNgay, inPdf, moTaVanBan, tenTepTaiVe } from '@lib/signing/dinhDang';
 import { useTai, useToi } from '@lib/signing/hooks';
 import { useSigningT } from '@lib/signing/i18n';
-import { sha256Hex } from '@lib/signing/khoaKy';
+import { sha256Hex } from '@lib/signing/hash';
 import type { HoSoChiTiet } from '@lib/signing/types';
 import { soKhung, viTriCuaNguoiKy, xepKhungKhongChong } from '@lib/signing/viTri';
 

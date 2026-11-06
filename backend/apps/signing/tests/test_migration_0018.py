@@ -2,6 +2,7 @@
 
 from django.contrib.auth import get_user_model
 from django.db import connection
+from django.db.migrations.recorder import MigrationRecorder
 from django.db.migrations.executor import MigrationExecutor
 from django.test import TransactionTestCase
 from django.utils import timezone
@@ -19,6 +20,10 @@ class Migration0018ChuyenKyNhayTests(TransactionTestCase):
         return executor.loader.project_state(targets).apps
 
     def setUp(self):
+        if MigrationRecorder(connection).migration_qs.filter(
+            app="signing", name="0027_sms_otp_pin"
+        ).exists():
+            self.skipTest("Migration 0027 irreversibly scrubs legacy signing key material.")
         self._migrate(TRUOC)
 
     def tearDown(self):

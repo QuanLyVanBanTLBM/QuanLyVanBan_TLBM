@@ -7,7 +7,7 @@ from rest_framework import serializers
 from . import enums
 from .errors import SigningError
 from .models import (
-    SigningAttempt, SigningAuditLog, SigningChangeMessage, SigningChangeThread, SigningKey, SigningKeyUnlock,
+    SigningAttempt, SigningAuditLog, SigningChangeMessage, SigningChangeThread,
     SigningProcess, SigningProcessStep, SigningProcessStepSigner, SigningRequest, SigningRequestStep,
     SigningRequestStepSigner,
 )
@@ -116,35 +116,6 @@ class QuyTrinhSerializer(serializers.ModelSerializer):
         return SigningRequest.objects.filter(quy_trinh=obj).count()
 
 
-# ── Khóa ký ──────────────────────────────────────────────────────────────────
-
-
-class KhoaDangKySerializer(serializers.Serializer):
-    ma_khoa = serializers.CharField(max_length=100)
-    khoa_cong_khai = serializers.CharField()
-    ngay_hieu_luc = serializers.DateTimeField()
-    ngay_het_han = serializers.DateTimeField(required=False, allow_null=True)
-    ghi_chu = serializers.CharField(max_length=MAX_GHI_CHU, required=False, allow_blank=True, default="")
-
-
-class XacMinhSoHuuSerializer(serializers.Serializer):
-    thach_thuc = serializers.CharField()
-    chu_ky_so = serializers.CharField()
-
-
-class MaXacThucSerializer(serializers.Serializer):
-    ma = serializers.CharField(max_length=16)
-
-
-class DatLaiPinXacNhanSerializer(serializers.Serializer):
-    ma = serializers.RegexField(r"^\d{6}$")
-    pin_moi = serializers.RegexField(r"^\d{6}$")
-
-
-class ThuHoiKhoaSerializer(serializers.Serializer):
-    ly_do = serializers.CharField(max_length=MAX_LY_DO)
-
-
 class KhoaQuyenKySerializer(serializers.Serializer):
     thoi_han = serializers.ChoiceField(choices=list(quyen_ky_service.THOI_HAN_KHOA))
     ly_do = serializers.CharField(max_length=MAX_LY_DO)
@@ -154,37 +125,19 @@ class BatLaiQuyenKySerializer(serializers.Serializer):
     ly_do = serializers.CharField(max_length=MAX_LY_DO)
 
 
-class XoayVongSerializer(serializers.Serializer):
-    khoa_moi = serializers.IntegerField(min_value=1)
-
-
-class KhoaSerializer(serializers.ModelSerializer):
-    da_dat_pin = serializers.SerializerMethodField()
-
-    class Meta:
-        model = SigningKey
-        fields = ["id", "nguoi_so_huu", "ma_khoa", "dau_van_tay", "thuat_toan", "khoa_cong_khai",
-                  "trang_thai", "thoi_diem_xac_minh_so_huu", "thoi_diem_kich_hoat", "ngay_hieu_luc",
-                  "ngay_het_han", "ngay_thu_hoi", "khoa_thay_the", "ghi_chu", "created_at", "da_dat_pin"]
-        read_only_fields = fields
-
-    def get_da_dat_pin(self, obj):
-        return SigningKeyUnlock.objects.filter(khoa=obj).exists()
-
-
-# ── Bảo vệ private key ký ở máy chủ (#447 partition 1) ───────────────────────
-
-
-class DatPinSerializer(serializers.Serializer):
-    pin = serializers.RegexField(r"^\d{6}$")
-    khoa_bi_mat_pkcs8 = serializers.CharField(max_length=128)
-    tham_so_kdf = serializers.JSONField()
-
-
-class DoiPinSerializer(serializers.Serializer):
-    pin_cu = serializers.RegexField(r"^\d{6}$")
+class PinOtpYeuCauSerializer(serializers.Serializer):
     pin_moi = serializers.RegexField(r"^\d{6}$")
-    tham_so_kdf = serializers.JSONField()
+    pin_xac_nhan = serializers.RegexField(r"^\d{6}$")
+    kenh = serializers.ChoiceField(choices=(("SMS", "SMS"), ("EMAIL", "Email")), default="SMS")
+
+
+class PinOtpXacNhanSerializer(serializers.Serializer):
+    challenge_id = serializers.IntegerField(min_value=1)
+    ma = serializers.RegexField(r"^\d{6}$")
+
+
+class PinOtpHuySerializer(serializers.Serializer):
+    challenge_id = serializers.IntegerField(min_value=1)
 
 
 # ── Hồ sơ trình ký (Phase 7, #80) ────────────────────────────────────────────
@@ -312,12 +265,12 @@ class NguoiKyLuotSerializer(serializers.ModelSerializer):
         return bool(ids) and obj.pk in ids
 
     def get_chu_ky(self, obj):
-        """Chữ ký hiện hành (ghi chú, trễ hạn, kết quả xác minh, có ảnh snapshot); không trả nội dung chữ ký."""
+        """Bản xác nhận ký hiện hành (PIN, thời điểm, ghi chú và ảnh snapshot)."""
         ck = obj.chu_ky_hien_hanh
         if ck is None:
             return None
         return {"id": ck.pk, "ngay_ky": ck.ngay_ky, "ghi_chu_ky": ck.ghi_chu_ky, "ky_tre_han": ck.ky_tre_han,
-                "so_giay_tre": ck.so_giay_tre, "trang_thai_xac_minh": ck.trang_thai_xac_minh,
+                "so_giay_tre": ck.so_giay_tre, "phuong_thuc": "PIN",
                 "co_anh_chu_ky": bool(ck.vi_tri_anh_chu_ky)}
 
 
@@ -472,7 +425,6 @@ class TrinhKyChiTietSerializer(TrinhKySerializer):
 
 
 class KySerializer(serializers.Serializer):
-    khoa_ky = serializers.IntegerField(min_value=1)
     hash_tai_lieu = serializers.RegexField(r"^[0-9a-f]{64}$")
     pin = serializers.RegexField(r"^\d{6}$")
     ghi_chu_ky = serializers.CharField(max_length=MAX_GHI_CHU, required=False, allow_blank=True, default="")

@@ -130,7 +130,7 @@
       "welcome": "**Xin chào Quý Cán bộ!**\n\nTôi là **Trợ Lý AI TLBM** — hệ thống hỏi đáp quy trình số hóa, văn bản nội bộ và hồ sơ tra cứu thông minh.\n\nTôi ưu tiên tìm kiếm trong kho tài liệu đã nạp (PDF, DOCX, TXT), phân tích văn bản đến/đi và liên kết chính xác đến các phân hệ nghiệp vụ. Bạn có thể chọn thẻ mẫu bên dưới hoặc gõ câu hỏi bất kỳ!",
       "quickPrompt1": "Quy trình tiếp nhận văn bản đến?",
       "quickPrompt2": "Quy định phân loại và quyền truy cập tài liệu?",
-      "quickPrompt3": "Quy trình ký số nội bộ Ed25519 và xác thực OTP?",
+      "quickPrompt3": "Quy trình tạo PIN ký qua SMS OTP hoạt động thế nào?",
       "quickPrompt4": "Xem cơ cấu và phân quyền cán bộ nhân viên?"
     },
     "templates": {
@@ -146,8 +146,8 @@
       },
       "signing": {
         "title": "Trình ký nội bộ",
-        "desc": "Ký số nội bộ Ed25519 với khóa ký, PIN và mã OTP xác thực hai bước.",
-        "query": "Quy trình ký số nội bộ Ed25519 sử dụng khóa ký, PIN và OTP diễn ra như thế nào?"
+        "desc": "Tạo hoặc khôi phục PIN ký bằng OTP SMS; ký duyệt bằng PIN.",
+        "query": "Quy trình tạo hoặc khôi phục PIN ký bằng OTP SMS diễn ra như thế nào?"
       },
       "organization": {
         "title": "Cơ cấu & Phân quyền",
@@ -228,7 +228,7 @@
     "welcome": "**Xin chào Quý Cán bộ!**\n\nTôi là **Trợ lý AI TLBM**, hỗ trợ tra cứu tài liệu và thông tin nghiệp vụ được cấp quyền.",
     "suggestionIncoming": "Quy trình tiếp nhận văn bản đến?",
     "suggestionLookup": "Tra cứu văn bản nội bộ theo số hiệu?",
-    "suggestionSigning": "Hướng dẫn ký số nội bộ bằng Ed25519 và OTP?",
+    "suggestionSigning": "Hướng dẫn tạo PIN ký qua OTP SMS?",
     "suggestionPermissions": "Thông tin phân quyền cán bộ được tra cứu ở đâu?",
     "openTitle": "Mở Trợ lý AI TLBM",
     "modelLoading": "Đang tải cấu hình",

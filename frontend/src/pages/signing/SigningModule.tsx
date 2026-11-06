@@ -17,8 +17,8 @@ const DanhSachPage = lazy(() => import('./DanhSachPage'));
 const TaoHoSoPage = lazy(() => import('./TaoHoSoPage'));
 const ChiTietPage = lazy(() => import('./ChiTietPage'));
 const QuyTrinhPage = lazy(() => import('./QuyTrinhPage'));
-const KhoaPage = lazy(() => import('./KhoaPage'));
-const QuanTriKhoaPage = lazy(() => import('./QuanTriKhoaPage'));
+const PinPage = lazy(() => import('./PinPage'));
+const QuanTriQuyenKyPage = lazy(() => import('./QuanTriQuyenKyPage'));
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -64,7 +64,7 @@ export default function SigningModule() {
   const dieuHuong = useNavigate();
   const location = useLocation();
   const { pathname } = location;
-  // Màn hẹp: thanh tab cuộn ngang, đưa tab đang xem vào vùng nhìn thấy (vd. vào thẳng "Cấu hình khóa ký")
+  // Màn hẹp: thanh tab cuộn ngang, đưa tab đang xem vào vùng nhìn thấy.
   const thanhTab = useRef<HTMLElement>(null);
   useEffect(() => {
     thanhTab.current?.querySelector('[aria-current="page"]')?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
@@ -84,16 +84,16 @@ export default function SigningModule() {
   const tabPhu = [
     ...(coQuyen(toi.duLieu, 'manage_signing_process') || coQuyen(toi.duLieu, 'view_trinhky')
       ? [{ den: '/approvals/quy-trinh', nhan: t('nav.quyTrinh'), icon: 'fa-diagram-project' }] : []),
-    ...(coQuyen(toi.duLieu, 'sign_trinhky') ? [{ den: '/approvals/khoa', nhan: t('nav.khoaCuaToi'), icon: 'fa-key' }] : []),
-    ...(toi.duLieu?.la_quan_tri ? [{ den: '/approvals/quan-ly-khoa', nhan: t('nav.quanLyKhoa'), icon: 'fa-user-lock' }] : []),
+    ...(coQuyen(toi.duLieu, 'sign_trinhky') ? [{ den: '/approvals/pin', nhan: t('nav.pinCuaToi'), icon: 'fa-lock' }] : []),
+    ...(toi.duLieu?.la_quan_tri ? [{ den: '/approvals/quan-ly-quyen-ky', nhan: t('nav.quanLyQuyenKy'), icon: 'fa-user-lock' }] : []),
   ];
   const tieuDeRoute = pathname === '/approvals' || pathname === '/approvals/' ? t('nav.canToiKy')
     : pathname === '/approvals/toi-gui' ? t('nav.toiGui')
       : pathname === '/approvals/tat-ca' ? t('nav.tatCa')
         : pathname === '/approvals/tao-moi' ? t('nav.taoMoi')
           : pathname === '/approvals/quy-trinh' ? t('nav.quyTrinh')
-            : pathname === '/approvals/khoa' ? t('nav.khoaCuaToi')
-              : pathname === '/approvals/quan-ly-khoa' ? t('nav.quanLyKhoa')
+            : pathname === '/approvals/pin' ? t('nav.pinCuaToi')
+              : pathname === '/approvals/quan-ly-quyen-ky' ? t('nav.quanLyQuyenKy')
               : pathname === '/approvals/tai-lieu' ? t('nav.taiLieu')
                 : /^\/approvals\/\d+$/.test(pathname) ? t('chiTiet.tienTrinh') : t('chung.trangKhongTonTai');
 
@@ -198,8 +198,8 @@ export default function SigningModule() {
                 <Route path="tat-ca" element={<DanhSachPage key="tat_ca" hop="tat_ca" />} />
                 <Route path="tao-moi" element={<TaoHoSoPage />} />
                 <Route path="quy-trinh" element={<QuyTrinhPage />} />
-                <Route path="khoa" element={<KhoaPage />} />
-                <Route path="quan-ly-khoa" element={<QuanTriKhoaPage />} />
+                <Route path="pin" element={<PinPage />} />
+                <Route path="quan-ly-quyen-ky" element={<QuanTriQuyenKyPage />} />
                 {/* Tab Thông báo đã bỏ: giữ đường dẫn cũ để liên kết lưu sẵn không rơi vào 404 */}
                 <Route path="thong-bao" element={<Navigate to="/approvals" replace />} />
                 <Route path="tai-lieu" element={<Navigate to="/approvals/tat-ca?che_do=tep" replace />} />
