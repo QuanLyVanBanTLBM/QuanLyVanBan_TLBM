@@ -420,6 +420,91 @@ describe('OrganizationsPage Component (Issue #19)', () => {
     });
   });
 
+  describe('Chọn nhiều Khối và Đơn vị để xuất chung một file', () => {
+    const unitA = { id: 1, khoi: 1, khoi_ten: 'Khối A', stt_uu_tien: 1, ten: 'Phòng Kế toán', is_public: true };
+    const unitC = { id: 3, khoi: 2, khoi_ten: 'Khối B', stt_uu_tien: 3, ten: 'Phòng Kỹ thuật', is_public: true };
+
+    function mockApi(permissions: string[]) {
+      mockedApiClient.mockImplementation(async (endpoint: string) => {
+        if (endpoint.includes('/auth/me/permissions/')) return { is_superuser: false, permissions };
+        if (endpoint.includes('/regions/')) {
+          return [
+            { id: 1, ten: 'Khối A', thu_tu_hien_thi: 1, don_vi_count: 1 },
+            { id: 2, ten: 'Khối B', thu_tu_hien_thi: 2, don_vi_count: 1 },
+          ];
+        }
+        if (endpoint.includes('/units/') && endpoint.includes('all=true')) return [unitA, unitC];
+        if (endpoint.includes('/units/')) return { count: 2, next: null, previous: null, results: [unitA, unitC] };
+        return [];
+      });
+    }
+
+    const renderPage = () =>
+      render(
+        <MemoryRouter>
+          <OrganizationsPage />
+        </MemoryRouter>
+      );
+
+    it('tích Khối và Đơn vị rồi xuất đã chọn: một file với region_ids và unit_ids', async () => {
+      mockApi(['view_donvi', 'export_donvi']);
+      renderPage();
+      await screen.findByRole('button', { name: 'Khối A' });
+      expect(screen.queryByRole('button', { name: /Xuất đã chọn/ })).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Chọn Khối Khối B để xuất' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Khối A' }));
+      fireEvent.click(await screen.findByRole('checkbox', { name: 'Chọn đơn vị Phòng Kế toán để xuất' }));
+
+      const exportSelected = screen.getByRole('button', { name: 'Xuất đã chọn (2)' });
+      fireEvent.click(exportSelected);
+      await waitFor(() => expect(apiClientModule.downloadBlob).toHaveBeenCalledTimes(1));
+      const url = vi.mocked(apiClientModule.downloadBlob).mock.calls[0][0];
+      expect(url).toContain('region_ids=2');
+      expect(url).toContain('unit_ids=1');
+      expect(url).not.toContain('region_id=');
+      expect(url).not.toContain('unit_id=');
+    });
+
+    it('tích nhiều Khối bằng ô chọn tất cả và bỏ chọn xóa hết', async () => {
+      mockApi(['view_donvi', 'export_donvi']);
+      renderPage();
+      await screen.findByRole('button', { name: 'Khối A' });
+
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Chọn tất cả Khối đang hiển thị' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Xuất đã chọn (2)' }));
+      await waitFor(() => expect(apiClientModule.downloadBlob).toHaveBeenCalledTimes(1));
+      expect(vi.mocked(apiClientModule.downloadBlob).mock.calls[0][0]).toContain('region_ids=1%2C2');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Bỏ chọn' }));
+      expect(screen.queryByRole('button', { name: /Xuất đã chọn/ })).not.toBeInTheDocument();
+      expect(screen.getByRole('checkbox', { name: 'Chọn Khối Khối A để xuất' })).not.toBeChecked();
+    });
+
+    it('lựa chọn giữ nguyên khi sang tab Đơn vị và gộp chung vào một file', async () => {
+      mockApi(['view_donvi', 'export_donvi']);
+      renderPage();
+      await screen.findByRole('button', { name: 'Khối A' });
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Chọn Khối Khối A để xuất' }));
+
+      fireEvent.click(screen.getByRole('button', { name: /Đơn vị \/ Phòng ban/ }));
+      fireEvent.click(await screen.findByRole('checkbox', { name: 'Chọn đơn vị Phòng Kỹ thuật để xuất' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Xuất đã chọn (2)' }));
+
+      await waitFor(() => expect(apiClientModule.downloadBlob).toHaveBeenCalledTimes(1));
+      const url = vi.mocked(apiClientModule.downloadBlob).mock.calls[0][0];
+      expect(url).toContain('region_ids=1');
+      expect(url).toContain('unit_ids=3');
+    });
+
+    it('không có quyền xuất thì không có ô tích nào', async () => {
+      mockApi(['view_donvi']);
+      renderPage();
+      await screen.findByRole('button', { name: 'Khối A' });
+      expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    });
+  });
+
   it('bấm vào Khối thì lọc theo Khối và mở luôn danh sách Đơn vị của Khối đó', async () => {
     const unitA = { id: 1, khoi: 1, khoi_ten: 'Khối A', stt_uu_tien: 1, ten: 'Phòng Kế toán', is_public: true };
     const unitB = { id: 2, khoi: 1, khoi_ten: 'Khối A', stt_uu_tien: 2, ten: 'Phòng Nhân sự', is_public: true };
