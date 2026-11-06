@@ -46,6 +46,7 @@ class StagingHttpsConfigTests(unittest.TestCase):
         ):
             self.assertIn(f'require_true_env "{variable}"', self.deploy_script)
         self.assertIn("https://staging-quanlyvanban.bhbl.vn:8088", self.deploy_script)
+        self.assertIn("-H 'X-Forwarded-Proto: https'", self.deploy_script)
 
     def test_admin_remains_available_only_through_local_ssh_tunnel(self):
         self.assertRegex(self.config, r"(?m)^\s*listen 127\.0\.0\.1:8089;")
