@@ -44,7 +44,10 @@ export default function KhoaPage() {
   const [thongBaoChuKy, setThongBaoChuKy] = useState<{ loai: 'loi' | 'thanh_cong'; noi_dung: string } | null>(null);
   const [anhChuKyTuyChinh, setAnhChuKyTuyChinh] = useState<string | null | undefined>(undefined);
   const anhChuKyServer = toi?.co_anh_chu_ky ? `/api/signing/anh-chu-ky-ca-nhan/tep/?v=${toi.id}` : null;
-  const anhChuKy = anhChuKyTuyChinh !== undefined ? anhChuKyTuyChinh : anhChuKyServer;
+  // Nguồn ảnh vừa tải lỗi (bản ghi còn nhưng tệp không đọc được): coi như chưa có ảnh để người dùng tải lại
+  const [nguonAnhLoi, setNguonAnhLoi] = useState<string | null>(null);
+  const anhChuKyGoc = anhChuKyTuyChinh !== undefined ? anhChuKyTuyChinh : anhChuKyServer;
+  const anhChuKy = anhChuKyGoc && anhChuKyGoc !== nguonAnhLoi ? anhChuKyGoc : null;
   const [tepChon, setTepChon] = useState<File | null>(null);
   const [moCrop, setMoCrop] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -239,6 +242,7 @@ export default function KhoaPage() {
                 <img
                   src={anhChuKy}
                   alt={t('khoa.chuKyCaNhan')}
+                  onError={() => setNguonAnhLoi(anhChuKy)}
                   className="max-h-32 object-contain rounded drop-shadow-sm"
                 />
               </div>

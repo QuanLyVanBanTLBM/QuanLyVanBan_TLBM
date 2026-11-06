@@ -90,4 +90,18 @@ describe('KhoaPage: giới hạn dung lượng ảnh chữ ký', () => {
     expect(api.taiLenAnhChuKy).toHaveBeenLastCalledWith('data:image/png;base64,AA');
     expect(await screen.findByText(/Đã lưu ảnh chữ ký cá nhân/)).toBeInTheDocument();
   });
+
+  it('ảnh đang lưu không tải được thì hiển thị trạng thái trống kèm nút tải lên', async () => {
+    render(
+      <MemoryRouter>
+        <SigningContext.Provider value={{ toi: { ...TOI, co_anh_chu_ky: true }, taiLaiToi: () => undefined }}>
+          <KhoaPage />
+        </SigningContext.Provider>
+      </MemoryRouter>,
+    );
+    fireEvent.error(await screen.findByRole('img', { name: 'Ảnh chữ ký cá nhân' }));
+    expect(await screen.findByText('Chưa thiết lập ảnh chữ ký cá nhân')).toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: 'Ảnh chữ ký cá nhân' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Tải lên ảnh chữ ký/ })).toBeInTheDocument();
+  });
 });
