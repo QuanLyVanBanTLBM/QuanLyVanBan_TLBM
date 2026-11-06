@@ -274,32 +274,6 @@ jobs:
           raise SystemExit(0 if result.wasSuccessful() else 1)
           PY
 
-      - name: Install PostgreSQL 16 client tools for backup drill
-        run: |
-          set -euo pipefail
-          if ! apt-cache show postgresql-client-16 >/dev/null 2>&1; then
-            sudo install -d /etc/apt/keyrings
-            curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/keyrings/postgresql.gpg
-            echo "deb [signed-by=/etc/apt/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
-            sudo apt-get update
-          else
-            sudo apt-get update
-          fi
-          sudo apt-get install --yes postgresql-client-16
-          CLIENT_BIN=/usr/lib/postgresql/16/bin
-          for tool in psql pg_dump pg_restore; do
-            test -x "$CLIENT_BIN/$tool"
-            version=$("$CLIENT_BIN/$tool" --version)
-            printf '%s\n' "$version"
-            case "$version" in
-              *"(PostgreSQL) 16."*) ;;
-              *) echo "$tool must be PostgreSQL 16, got: $version" >&2; exit 1 ;;
-            esac
-          done
-          echo "$CLIENT_BIN" >> "$GITHUB_PATH"
-
-      - name: Database lifecycle and upgrade regressions
-        working-directory: .
       - name: Database lifecycle and upgrade regressions
         run: python -m unittest discover -s scripts -p "test_build_db.py"
 
