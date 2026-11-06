@@ -173,7 +173,7 @@ class EmployeeContactRulesTests(EmployeeBaseTestCase):
     # --- Import Excel -----------------------------------------------------------------------------------------
 
     def import_rows(self, rows):
-        self.client.force_authenticate(user=self.sensitive_user)
+        self.client.force_authenticate(user=self.admin_user)
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Danh Sach CBNV"
