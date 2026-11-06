@@ -153,6 +153,35 @@ BACKUP_TOOL="$REL/scripts/backup_restore.py"
 DDL="$REL/docs/common/database/release_DDL.sql"
 
 step "3/9 Nap cau hinh, check, collectstatic"
+if [ -z "${CASE_ROOT:-}" ] && [ -w "$ENVF" ]; then
+  if grep -q '^DJANGO_SECURE_SSL_REDIRECT=false' "$ENVF"; then
+    sed -i 's/^DJANGO_SECURE_SSL_REDIRECT=false/DJANGO_SECURE_SSL_REDIRECT=true/' "$ENVF"
+  elif ! grep -q '^DJANGO_SECURE_SSL_REDIRECT=' "$ENVF"; then
+    echo 'DJANGO_SECURE_SSL_REDIRECT=true' >> "$ENVF"
+  fi
+  if ! grep -q '^DJANGO_SECURE_PROXY_SSL_HEADER=' "$ENVF"; then
+    echo 'DJANGO_SECURE_PROXY_SSL_HEADER=true' >> "$ENVF"
+  fi
+  if grep -q '^DJANGO_SECURE_COOKIES=false' "$ENVF"; then
+    sed -i 's/^DJANGO_SECURE_COOKIES=false/DJANGO_SECURE_COOKIES=true/' "$ENVF"
+  elif ! grep -q '^DJANGO_SECURE_COOKIES=' "$ENVF"; then
+    echo 'DJANGO_SECURE_COOKIES=true' >> "$ENVF"
+  fi
+  if grep -q '^SIGNING_FRONTEND_URL=' "$ENVF"; then
+    if grep -q '^SIGNING_FRONTEND_URL=http://' "$ENVF"; then
+      sed -i 's#^SIGNING_FRONTEND_URL=.*#SIGNING_FRONTEND_URL=https://staging-quanlyvanban.bhbl.vn:8088#' "$ENVF"
+    fi
+  else
+    echo 'SIGNING_FRONTEND_URL=https://staging-quanlyvanban.bhbl.vn:8088' >> "$ENVF"
+  fi
+  if grep -q '^DJANGO_CSRF_TRUSTED_ORIGINS=' "$ENVF"; then
+    if ! grep -q 'https://staging-quanlyvanban.bhbl.vn:8088' "$ENVF"; then
+      sed -i 's#^DJANGO_CSRF_TRUSTED_ORIGINS=\(.*\)#DJANGO_CSRF_TRUSTED_ORIGINS=https://staging-quanlyvanban.bhbl.vn:8088,\1#' "$ENVF"
+    fi
+  else
+    echo 'DJANGO_CSRF_TRUSTED_ORIGINS=https://staging-quanlyvanban.bhbl.vn:8088,http://127.0.0.1:8088' >> "$ENVF"
+  fi
+fi
 set -a; . "$ENVF"; set +a
 require_true_env "DJANGO_SECURE_PROXY_SSL_HEADER"
 require_true_env "DJANGO_SECURE_SSL_REDIRECT"
