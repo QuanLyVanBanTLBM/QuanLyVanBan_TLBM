@@ -422,7 +422,7 @@ step "8/9 Kiem tra sau deploy"
 ok=0; code=000; actual_release=""
 for _ in $(seq 1 15); do
   sleep 2
-  response=$(curl -sS -m 5 -w $'\n%{http_code}' -H 'Host: 127.0.0.1' \
+  response=$(curl -sS -m 5 -w $'\n%{http_code}' -H 'Host: 127.0.0.1' -H 'X-Forwarded-Proto: https' \
     "http://127.0.0.1:$PORT/api/health/ready/" 2>/dev/null || true)
   code=${response##*$'\n'}
   body=${response%$'\n'*}
