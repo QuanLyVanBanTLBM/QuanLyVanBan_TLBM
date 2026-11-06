@@ -41,8 +41,22 @@ Danh sách và chi tiết chỉ trả về công việc người gọi được 
    (lấy từ `accounts_employee.don_vi_id`, không cần chọn phòng ban khi cấp quyền).
 
 Không đủ điều kiện thì API trả `404` (không để lộ công việc đang ẩn).
+`view_congviec` ("Xem công việc (chung)") KHÔNG phải một trong ba lớp xem — cấp riêng quyền này
+không làm thấy thêm việc nào.
 Mã quyền hiện kiểm tra bằng permission có sẵn của Django — `TODO: noi he thong phan quyen nhom 7`
 (hàm `user_has_task_permission` trong `models.py`).
+
+### Quyền thao tác (Sửa/Xóa/Duyệt)
+
+Ngoài vai trò per-task (người tạo / chủ trì / chỉ đạo), người được cấp các quyền RBAC sau đây
+thao tác được trên **mọi công việc mà họ xem được** (kiểm tra qua `user_has_task_permission`
+trong `models.py`):
+
+- `change_congviec` → Sửa công việc
+- `delete_congviec` → Xóa công việc
+- `approve_congviec` → Duyệt / Hủy duyệt công việc
+
+Các quyền trạng thái (Chờ duyệt / Hoàn thành / đóng băng) vẫn áp dụng như cũ.
 
 ## 3. Danh sách API
 
@@ -183,7 +197,7 @@ Gồm toàn bộ trường của danh sách, cộng thêm:
 
 ### 4.4. `PATCH /api/work/tasks/{id}/` — Sửa
 
-- Chỉ người tạo và chủ trì; chỉ khi Chờ xử lý hoặc Đang xử lý.
+- Người tạo và chủ trì, HOẶC có quyền `change_congviec`; chỉ khi Chờ xử lý hoặc Đang xử lý.
 - Gửi trường nào sửa trường đó (cùng tên trường như khi thêm). Riêng người liên quan: muốn đổi thì gửi **đủ cả** `hostId`, `directorIds`, `participantIds`.
 - `createdDate` được giữ ngày cũ (không bắt buộc ≥ hôm nay); `dueDate` khi sửa phải ≥ hôm nay.
 - `attachments`: thêm file giao việc mới. `removeAttachmentIds`: id file giao việc muốn bỏ.
@@ -192,7 +206,7 @@ Gồm toàn bộ trường của danh sách, cộng thêm:
 
 ### 4.5. `DELETE /api/work/tasks/{id}/` — Xóa
 
-Người tạo và chủ trì, ở mọi trạng thái. Xóa hẳn công việc, người liên quan, ý kiến và file (kể cả file trên đĩa). Trả về `204`.
+Người tạo và chủ trì, HOẶC có quyền `delete_congviec`, ở mọi trạng thái. Xóa hẳn công việc, người liên quan, ý kiến và file (kể cả file trên đĩa). Trả về `204`.
 
 ### 4.6. `POST /api/work/tasks/{id}/open/` — Ghi nhận mở
 
@@ -256,8 +270,8 @@ trong danh sách, không tải xuống được và không tính vào trạng th
 
 | API | Ai | Điều kiện | Kết quả |
 |---|---|---|---|
-| `POST tasks/{id}/approve/` | Người tạo, chủ trì, chỉ đạo | Chờ duyệt (kể cả đã quá hạn) | Hoàn thành |
-| `POST tasks/{id}/unapprove/` | Người tạo, chủ trì, chỉ đạo | Hoàn thành | Chờ duyệt, duyệt lại được |
+| `POST tasks/{id}/approve/` | Người tạo, chủ trì, chỉ đạo, hoặc có quyền `approve_congviec` | Chờ duyệt (kể cả đã quá hạn) | Hoàn thành |
+| `POST tasks/{id}/unapprove/` | Người tạo, chủ trì, chỉ đạo, hoặc có quyền `approve_congviec` | Hoàn thành | Chờ duyệt, duyệt lại được |
 
 Cả hai trả về `200` với dữ liệu chi tiết. Hai người bấm cùng lúc thì người sau nhận `400` kèm lời nhắc tải lại trang.
 
