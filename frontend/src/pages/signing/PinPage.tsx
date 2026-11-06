@@ -4,7 +4,7 @@ import { DangTai, LoiTai, ThongBao, TruongNhap } from '@components/signing/Chung
 import CropChuKyModal from '@components/signing/CropChuKyModal';
 import { docLoi, signingApi } from '@lib/signing/api';
 import { LOP_O_NHAP } from '@lib/signing/dinhDang';
-import { coQuyen, useTai, useToi } from '@lib/signing/hooks';
+import { coQuyen, useAnhChuKyCaNhan, useTai, useToi } from '@lib/signing/hooks';
 import { useSigningT } from '@lib/signing/i18n';
 import type { KenhOtpPin, PinOtpYeuCau } from '@lib/signing/types';
 
@@ -26,7 +26,7 @@ export default function PinPage() {
   const [tepChon, setTepChon] = useState<File | null>(null);
   const [moCrop, setMoCrop] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const anhChuKyServer = toi?.co_anh_chu_ky ? `/api/signing/anh-chu-ky-ca-nhan/tep/?v=${toi.id}` : null;
+  const anhChuKyServer = useAnhChuKyCaNhan(toi?.co_anh_chu_ky, toi?.id);
   const anhChuKy = anhChuKyTuyChinh !== undefined ? anhChuKyTuyChinh : anhChuKyServer;
   const dangChoGuiLai = giayGuiLai > 0;
 

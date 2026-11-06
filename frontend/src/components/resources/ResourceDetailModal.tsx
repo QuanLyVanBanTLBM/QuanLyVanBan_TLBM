@@ -5,7 +5,8 @@ import { Badge } from '@components/common/Badge';
 import { Button } from '@components/common/Button';
 import { useTranslation } from '@i18n/translate';
 import { computeEffectiveStatus, getTodayLocalDateString } from '@lib/resourceValidity';
-import { apiClientBlob, downloadBlob } from '@lib/apiClient';
+import { downloadBlob, apiClient } from '@lib/apiClient';
+import { getAbsoluteFileUrl } from '@lib/fileUtils';
 import { FilePreviewModal } from './FilePreviewModal';
 
 export interface ResourceDetailModalProps {
@@ -51,9 +52,26 @@ export const ResourceDetailModal: React.FC<ResourceDetailModalProps> = ({
       console.warn('Lỗi downloadBlob, chuyển sang fallback tải file:', err);
       if (item && onDownloadFile) {
         onDownloadFile(item, file.name, file.path);
+      } else if (file.id) {
+        try {
+          const res = await apiClient.post<{ ticket: string; download_url: string }>(
+            `/api/resources/attachments/${file.id}/ticket/`
+          );
+          if (res?.download_url) {
+            const a = document.createElement('a');
+            a.href = getAbsoluteFileUrl(res.download_url);
+            a.download = file.name;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+          }
+        } catch (ticketErr) {
+          console.error('Lỗi lấy vé tải tệp:', ticketErr);
+        }
       } else {
+        const absUrl = getAbsoluteFileUrl(downloadUrl);
         const a = document.createElement('a');
-        a.href = downloadUrl;
+        a.href = absUrl;
         a.download = file.name;
         document.body.appendChild(a);
         a.click();
@@ -64,7 +82,7 @@ export const ResourceDetailModal: React.FC<ResourceDetailModalProps> = ({
     }
   };
 
-  // Xem trước tệp: PDF/Ảnh -> mở tab mới; ZIP/DOCX/EXCEL -> tải về máy
+  // Xem trước tệp: PDF/Ảnh -> xin vé dùng 1 lần (Burn on Read) và mở tab mới; ZIP/DOCX/EXCEL -> tải về máy
   const handlePreviewAttachment = async (file: { id?: number; name: string; path?: string; file_size?: number; mime_type?: string }) => {
     const isPreviewable = isDirectPreviewable(file.name);
     const targetUrl = file.id
@@ -79,36 +97,30 @@ export const ResourceDetailModal: React.FC<ResourceDetailModalProps> = ({
       return;
     }
 
-    // Đối với PDF hoặc Ảnh -> Mở tab mới xem luôn
-    try {
-      setLoadingFileId(file.id ?? file.name);
-      const rawBlob = await apiClientBlob(targetUrl);
-      const lower = file.name.toLowerCase();
-      let mimeType = rawBlob.type;
-      if (lower.endsWith('.pdf')) {
-        mimeType = 'application/pdf';
-      } else if (lower.endsWith('.png')) {
-        mimeType = 'image/png';
-      } else if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
-        mimeType = 'image/jpeg';
-      } else if (lower.endsWith('.webp')) {
-        mimeType = 'image/webp';
-      } else if (lower.endsWith('.gif')) {
-        mimeType = 'image/gif';
-      } else if (lower.endsWith('.svg')) {
-        mimeType = 'image/svg+xml';
-      } else if (lower.endsWith('.bmp')) {
-        mimeType = 'image/bmp';
+    // Đối với PDF hoặc Ảnh có file.id:
+    // Xin vé dùng 1 lần (Single-Use Ticket) từ backend để mở trực tiếp trong tab mới.
+    // Vé sẽ bị backend hủy ngay (Burn on Read) sau khi tab tải xong tệp.
+    // Ngăn chặn hoàn toàn việc lộ token trên URL và ngăn không cho truy cập trái phép qua tab ẩn danh.
+    if (file.id) {
+      try {
+        setLoadingFileId(file.id);
+        const res = await apiClient.post<{ ticket: string; view_url: string }>(
+          `/api/resources/attachments/${file.id}/ticket/`
+        );
+        if (res?.view_url) {
+          window.open(getAbsoluteFileUrl(res.view_url), '_blank');
+          return;
+        }
+      } catch (err) {
+        console.error('Lỗi cấp vé xem tài liệu:', err);
+      } finally {
+        setLoadingFileId(null);
       }
-      const viewBlob = mimeType ? new Blob([rawBlob], { type: mimeType }) : rawBlob;
-      const blobUrl = window.URL.createObjectURL(viewBlob);
-      window.open(blobUrl, '_blank');
-    } catch (err) {
-      console.error('Lỗi khi mở xem trước tệp trong tab mới:', err);
-      window.open(targetUrl, '_blank');
-    } finally {
-      setLoadingFileId(null);
     }
+
+    // Fallback cho URL trực tiếp / blob URL
+    const absUrl = getAbsoluteFileUrl(targetUrl);
+    window.open(absUrl, '_blank');
   };
 
   // Lắng nghe phím ESC để đóng Modal
@@ -245,7 +257,7 @@ export const ResourceDetailModal: React.FC<ResourceDetailModalProps> = ({
       case 'HET_VA_THAY_THE':
         return (
           <Badge variant="warning" size="md" withDot>
-            {t('resourceManagement.statusExpired')}
+            {t('resourceManagement.statusReplaced')}
           </Badge>
         );
       default:

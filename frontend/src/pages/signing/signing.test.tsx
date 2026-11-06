@@ -141,6 +141,18 @@ describe('SigningModule', () => {
     expect(await screen.findByRole('button', { name: /Tạo hồ sơ trình ký/ })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Tạo hồ sơ trình ký/ })).not.toBeInTheDocument();
   });
+
+  it('xếp nút tạo hồ sơ thành hàng riêng trên màn hình nhỏ để không che thanh tab', async () => {
+    api.toi.mockResolvedValue({ ...TOI, quyen: { ...TOI.quyen, add_trinhky: true } });
+    api.danhSach.mockResolvedValue(trang([]));
+    moModule();
+
+    const nutTao = await screen.findByRole('button', { name: /Tạo hồ sơ trình ký/ });
+    const khungDieuHuong = nutTao.parentElement;
+
+    expect(khungDieuHuong).toHaveClass('flex-col', 'items-stretch', 'sm:flex-row', 'sm:items-end');
+    expect(nutTao).toHaveClass('order-first', 'self-end', 'sm:order-none');
+  });
 });
 
 describe('DanhSachPage', () => {

@@ -304,6 +304,7 @@
       "statusActive": "Còn hiệu lực",
       "statusPartiallyActive": "Còn hiệu lực 1 phần",
       "statusInactive": "Hết hiệu lực",
+      "noHieuLucPermission": "Chỉ Quản trị viên hoặc người có quyền sửa/đổi hiệu lực mới được phép thay đổi",
       "expirationDate": "Ngày hết hiệu lực",
       "optional": "(Tùy chọn)",
       "replacesOtherCheckbox": "Văn bản này thay thế cho văn bản khác trong hệ thống",

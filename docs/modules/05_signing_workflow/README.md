@@ -264,7 +264,7 @@ Việc phải làm trực tiếp trên máy chủ (người quản trị máy ch
 
 Quyền của tệp `/etc/qlvb/backend.env` là 0600 hoặc 0640, thuộc user dịch vụ backend.
 
-PIN và OTP dùng `SIGNING_PIN_SECRET`; phải giữ ổn định giá trị qua deploy/backup/restore. Module ký chấp nhận HTTP và HTTPS, kể cả khi `DEBUG=False`. Khi dùng HTTP, PIN, OTP và access token không được mã hóa trên đường truyền. Kết nối backend tới nhà cung cấp SMS vẫn bắt buộc dùng HTTPS. Chỉ bật `DJANGO_SECURE_PROXY_SSL_HEADER=true` nếu reverse proxy luôn ghi đè `X-Forwarded-Proto` bằng scheme thực.
+PIN và OTP dùng `SIGNING_PIN_SECRET`; phải giữ ổn định giá trị qua deploy/backup/restore. Local development có thể dùng HTTP; staging kết thúc TLS tại Nginx theo cấu hình deploy. Django chỉ bật `DJANGO_SECURE_PROXY_SSL_HEADER=true` khi Nginx luôn ghi đè `X-Forwarded-Proto` bằng scheme thực. Chứng chỉ tự ký được tạo dự phòng theo #612 không được trình duyệt tin cậy mặc định; cần kiểm tra chứng chỉ hợp lệ và quy trình gia hạn trước khi coi HTTPS staging đã sẵn sàng. Kết nối backend tới nhà cung cấp SMS vẫn bắt buộc dùng HTTPS.
 
 ## 6. Cách chạy
 

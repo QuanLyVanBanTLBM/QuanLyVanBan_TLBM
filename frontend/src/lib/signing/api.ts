@@ -259,6 +259,8 @@ export const signingApi = {
     apiClient.post<{ da_huy: boolean }>(`${SIGNING_BASE}/pin/huy/`, { challenge_id }),
 
   // ── Ảnh chữ ký cá nhân (Issue #424) ──────────────────────────────────────
+  /** Tệp ảnh chữ ký cá nhân (có Bearer); 404 khi chưa có ảnh hoặc tệp không còn. */
+  tepAnhChuKyCaNhan: () => layBlob('/anh-chu-ky-ca-nhan/tep/'),
   anhChuKyCaNhan: () => apiClient.get<ThongTinAnhChuKyCaNhan>(`${SIGNING_BASE}/anh-chu-ky-ca-nhan/`),
   taiLenAnhChuKy: (tep: Blob | File | string) => {
     if (typeof tep === 'string') {

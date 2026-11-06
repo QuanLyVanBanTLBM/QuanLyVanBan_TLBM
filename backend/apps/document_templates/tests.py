@@ -976,3 +976,221 @@ class DocumentTemplatesRBACPermissionsTests(TestCase):
         self.assertEqual(self.client.get('/api/resources/documents/').status_code, status.HTTP_200_OK)
         self.assertEqual(self.client.get(f'/api/resources/documents/{self.doc_by_admin.id}/').status_code, status.HTTP_200_OK)
         self.assertEqual(self.client.get('/api/resources/attachments/').status_code, status.HTTP_200_OK)
+
+    def test_cross_department_modification_blocked(self):
+        """Cán bộ phòng ban khác không được sửa, xóa hoặc đổi hiệu lực tài liệu (RBAC sở hữu phòng ban)"""
+        from django.contrib.auth.models import Permission
+        from organizations.models import DonVi, KhoiKhuVuc
+        from django.db.models import Max
+
+        perm_view = Permission.objects.get(codename="view_tailieu")
+        perm_change = Permission.objects.get(codename="change_tailieu")
+        perm_delete = Permission.objects.get(codename="delete_tailieu")
+
+        khoi = KhoiKhuVuc.objects.first() or KhoiKhuVuc.objects.create(ten="Khối RBAC Test")
+        max_stt = (DonVi.objects.aggregate(m=Max("stt_uu_tien"))["m"] or 0)
+        dv1 = DonVi.objects.create(khoi=khoi, stt_uu_tien=max_stt + 1, ten="Phòng Hành chính Quản trị")
+        dv2 = DonVi.objects.create(khoi=khoi, stt_uu_tien=max_stt + 2, ten="Phòng Kế toán Tài chính")
+
+        extra_u1 = {'ho_ten': 'Dept 1 User'} if hasattr(User, 'ho_ten') else {}
+        u1 = User.objects.create_user(username="dept1_officer", password="password123", **extra_u1)
+        u1.don_vi = dv1
+        u1.don_vi_id = dv1.id
+        u1.save()
+        u1.user_permissions.add(perm_view, perm_change, perm_delete)
+
+        extra_u2 = {'ho_ten': 'Dept 2 User'} if hasattr(User, 'ho_ten') else {}
+        u2 = User.objects.create_user(username="dept2_officer", password="password123", **extra_u2)
+        u2.don_vi = dv2
+        u2.don_vi_id = dv2.id
+        u2.save()
+        u2.user_permissions.add(perm_view, perm_change, perm_delete)
+
+        doc_dept1 = TaiLieuChiTiet.objects.create(
+            dm_tai_lieu=self.cat,
+            ky_hieu="55/TB-HCNS",
+            tieu_de="Quy trình văn phòng phẩm",
+            ngay_dang=date(2026, 1, 1),
+            noi_ban_hanh="Phòng Hành chính Quản trị",
+            hieu_luc="CON_HIEU_LUC",
+            hien_thi="TAT_CA",
+            don_vi_id=dv1.id,
+            nguoi_tao=u1,
+        )
+
+        # 1. Cán bộ đơn vị dv2 (khác phòng ban) cố sửa doc của đơn vị dv1 -> 403
+        self.client.force_authenticate(user=u2)
+        res_patch = self.client.patch(f'/api/resources/documents/{doc_dept1.id}/', {'tieu_de': 'Hacker sửa'})
+        self.assertEqual(res_patch.status_code, status.HTTP_403_FORBIDDEN)
+
+        # 2. Cán bộ đơn vị dv2 cố đổi hiệu lực doc của đơn vị dv1 -> 403
+        res_toggle = self.client.post(f'/api/resources/documents/{doc_dept1.id}/toggle-validity/', {'hieu_luc': 'HET_HIEU_LUC'})
+        self.assertEqual(res_toggle.status_code, status.HTTP_403_FORBIDDEN)
+
+        # 3. Cán bộ đơn vị dv2 cố xóa doc của đơn vị dv1 -> 403
+        res_del = self.client.delete(f'/api/resources/documents/{doc_dept1.id}/')
+        self.assertEqual(res_del.status_code, status.HTTP_403_FORBIDDEN)
+
+        # 4. Cán bộ đơn vị dv1 (cùng phòng ban) sửa và đổi hiệu lực -> 200
+        self.client.force_authenticate(user=u1)
+        res_patch_ok = self.client.patch(f'/api/resources/documents/{doc_dept1.id}/', {'tieu_de': 'Cùng phòng sửa'})
+        self.assertEqual(res_patch_ok.status_code, status.HTTP_200_OK)
+
+        res_toggle_ok = self.client.post(f'/api/resources/documents/{doc_dept1.id}/toggle-validity/', {'hieu_luc': 'CON_HIEU_LUC_1_PHAN'})
+        self.assertEqual(res_toggle_ok.status_code, status.HTTP_200_OK)
+
+    def test_serializer_can_edit_and_can_delete_flags(self):
+        """API serializer trả về can_edit và can_delete chính xác theo phòng ban của user đang gọi"""
+        from django.contrib.auth.models import Permission
+        from organizations.models import DonVi, KhoiKhuVuc
+        from django.db.models import Max
+
+        perm_view = Permission.objects.get(codename="view_tailieu")
+        perm_change = Permission.objects.get(codename="change_tailieu")
+        perm_delete = Permission.objects.get(codename="delete_tailieu")
+
+        khoi = KhoiKhuVuc.objects.first() or KhoiKhuVuc.objects.create(ten="Khối RBAC Test 2")
+        max_stt = (DonVi.objects.aggregate(m=Max("stt_uu_tien"))["m"] or 0)
+        dv1 = DonVi.objects.create(khoi=khoi, stt_uu_tien=max_stt + 1, ten="Phòng Nghiên cứu 201")
+        dv2 = DonVi.objects.create(khoi=khoi, stt_uu_tien=max_stt + 2, ten="Phòng Đào tạo 202")
+
+        extra_u1 = {'ho_ten': 'Dept 101 User'} if hasattr(User, 'ho_ten') else {}
+        u1 = User.objects.create_user(username="dept101_user", password="password123", **extra_u1)
+        u1.don_vi = dv1
+        u1.don_vi_id = dv1.id
+        u1.save()
+        u1.user_permissions.add(perm_view, perm_change, perm_delete)
+
+        extra_u2 = {'ho_ten': 'Dept 102 User'} if hasattr(User, 'ho_ten') else {}
+        u2 = User.objects.create_user(username="dept102_user", password="password123", **extra_u2)
+        u2.don_vi = dv2
+        u2.don_vi_id = dv2.id
+        u2.save()
+        u2.user_permissions.add(perm_view, perm_change, perm_delete)
+
+        doc = TaiLieuChiTiet.objects.create(
+            dm_tai_lieu=self.cat,
+            ky_hieu="DOC-201",
+            tieu_de="Tài liệu phòng 201",
+            ngay_dang=date(2026, 1, 1),
+            don_vi_id=dv1.id,
+            nguoi_tao=u1,
+        )
+
+        # User thuộc đơn vị dv2 xem: can_edit=False, can_delete=False
+        self.client.force_authenticate(user=u2)
+        res_u2 = self.client.get(f'/api/resources/documents/{doc.id}/')
+        self.assertEqual(res_u2.status_code, status.HTTP_200_OK)
+        self.assertFalse(res_u2.data.get('can_edit'))
+        self.assertFalse(res_u2.data.get('can_delete'))
+
+        # User thuộc đơn vị dv1 xem: can_edit=True, can_delete=True
+        self.client.force_authenticate(user=u1)
+        res_u1 = self.client.get(f'/api/resources/documents/{doc.id}/')
+        self.assertEqual(res_u1.status_code, status.HTTP_200_OK)
+        self.assertTrue(res_u1.data.get('can_edit'))
+        self.assertTrue(res_u1.data.get('can_delete'))
+
+        # Superuser xem: can_edit=True, can_delete=True
+        self.client.force_authenticate(user=self.superuser)
+        res_root = self.client.get(f'/api/resources/documents/{doc.id}/')
+        self.assertEqual(res_root.status_code, status.HTTP_200_OK)
+        self.assertTrue(res_root.data.get('can_edit'))
+        self.assertTrue(res_root.data.get('can_delete'))
+
+def test_view_and_download_attachment_with_query_param_token(self):
+
+        """Xác thực qua query param ?token=... khi mở tab mới xem hoặc tải tệp trực tiếp từ server"""
+
+        import os
+
+        from rest_framework_simplejwt.tokens import RefreshToken
+
+        from django.contrib.auth.models import Permission
+
+        from document_templates.models import template_disk_path
+
+
+
+        viewer = User.objects.create_user(username="query_token_viewer", password="password123")
+
+        perm_view = Permission.objects.get(codename="view_tailieu")
+
+        viewer.user_permissions.add(perm_view)
+
+        token = str(RefreshToken.for_user(viewer).access_token)
+
+
+
+        # Tạo file đính kèm trên self.doc_by_creator (TAT_CA)
+
+        att = ChiTietTaiLieuAttachment.objects.create(
+
+            document=self.doc_by_creator,
+
+            name="huong_dan.pdf",
+
+            path="mau-van-ban/2026/03/10/huong_dan.pdf",
+
+            file_size=1024,
+
+            mime_type="application/pdf",
+
+            nguoi_tao=self.creator_user,
+
+        )
+
+
+
+        self.client.logout()  # Đảm bảo không còn Authorization header
+
+        # 1. Truy cập không có vé / không đăng nhập -> 401 Unauthorized
+        res_no_token = self.client.get(f'/api/resources/attachments/{att.id}/view/')
+        self.assertEqual(res_no_token.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        # 2. Truy cập bằng query param token cũ -> 401 Unauthorized (đã chặn hoàn toàn việc truyền access token qua URL)
+        res_old_token = self.client.get(f'/api/resources/attachments/{att.id}/view/?token={token}')
+        self.assertEqual(res_old_token.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        # 3. Chuẩn bị file trên đĩa
+        disk_path = template_disk_path(att.path)
+        if disk_path:
+            os.makedirs(os.path.dirname(disk_path), exist_ok=True)
+            with open(disk_path, 'wb') as f:
+                f.write(b"%PDF-1.4 sample file")
+
+        # 4. Người dùng đăng nhập hợp lệ xin vé xem tạm thời dùng 1 lần (Single-Use Short-Lived Ticket)
+        from rest_framework.test import APIClient
+        auth_client = APIClient()
+        auth_client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+        res_ticket = auth_client.post(f'/api/resources/attachments/{att.id}/ticket/')
+        self.assertEqual(res_ticket.status_code, status.HTTP_200_OK)
+        ticket = res_ticket.data['ticket']
+        self.assertTrue(ticket.startswith('vt_'))
+
+        # 5. Mở xem tệp lần đầu với vé hợp lệ -> 200 OK và inline disposition
+        res_view = self.client.get(f'/api/resources/attachments/{att.id}/view/?ticket={ticket}')
+        self.assertEqual(res_view.status_code, status.HTTP_200_OK)
+        self.assertIn('inline', res_view.headers.get('Content-Disposition', ''))
+
+        # 6. BURN ON READ: Mở lại bằng vé cũ (ví dụ copy link sang cửa sổ ẩn danh) -> 403 Forbidden ("Vé xem tài liệu không hợp lệ hoặc đã hết hạn")
+        res_reuse = self.client.get(f'/api/resources/attachments/{att.id}/view/?ticket={ticket}')
+        self.assertEqual(res_reuse.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn('không hợp lệ hoặc đã hết hạn', res_reuse.data.get('detail', ''))
+
+        # 7. Vé ngẫu nhiên / không tồn tại -> 403 Forbidden
+        res_bad_ticket = self.client.get(f'/api/resources/attachments/{att.id}/view/?ticket=vt_fake_xyz')
+        self.assertEqual(res_bad_ticket.status_code, status.HTTP_403_FORBIDDEN)
+
+        # 8. Cấp vé tải về dùng 1 lần và thử tải lại lần 2
+        res_dl_ticket = auth_client.post(f'/api/resources/attachments/{att.id}/ticket/')
+        self.assertEqual(res_dl_ticket.status_code, status.HTTP_200_OK)
+        dl_ticket = res_dl_ticket.data['ticket']
+
+        res_dl = self.client.get(f'/api/resources/attachments/{att.id}/download/?ticket={dl_ticket}')
+        self.assertEqual(res_dl.status_code, status.HTTP_200_OK)
+        self.assertIn('attachment', res_dl.headers.get('Content-Disposition', ''))
+
+        # Tải lại vé tải về đã sử dụng -> 403 Forbidden
+        res_dl_reuse = self.client.get(f'/api/resources/attachments/{att.id}/download/?ticket={dl_ticket}')
+        self.assertEqual(res_dl_reuse.status_code, status.HTTP_403_FORBIDDEN)

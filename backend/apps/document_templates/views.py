@@ -34,11 +34,130 @@ from .serializers import (
 )
 
 
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework.authentication import SessionAuthentication
+
+
+class TicketOrJWTAuthentication(JWTAuthentication):
+    """
+    Xác thực kép bảo mật cho phân hệ tài liệu:
+    1. Chuẩn REST API: HTTP Header Authorization: Bearer <token>
+    2. Vé xem tạm thời dùng 1 lần (Single-Use Short-Lived Ticket, Burn on Read) qua query parameter `ticket`.
+       Vé chỉ có hiệu lực tối đa 60 giây và bị hủy ngay lập tức khi sử dụng.
+    Tuyệt đối KHÔNG chấp nhận access token qua query parameter `token` để ngăn chặn rò rỉ token trên URL!
+    """
+    def authenticate(self, request):
+        # 1. Thử xác thực qua Authorization Header
+        header = self.get_header(request)
+        if header is not None:
+            raw_token = self.get_raw_token(header)
+            if raw_token:
+                validated_token = self.get_validated_token(raw_token)
+                return self.get_user(validated_token), validated_token
+
+        # 2. Thử xác thực qua vé dùng 1 lần `ticket` (Burn on Read)
+        query_dict = getattr(request, 'query_params', None)
+        if query_dict is None:
+            query_dict = getattr(request, 'GET', {})
+
+        ticket = query_dict.get('ticket')
+        if ticket:
+            from django.core.cache import cache
+            cache_key = f"doc_view_ticket:{ticket}"
+            ticket_data = cache.get(cache_key)
+            if not ticket_data:
+                raise exceptions.PermissionDenied("Vé xem tài liệu không hợp lệ hoặc đã hết hạn.")
+
+            # BURN ON READ: Hủy vé ngay lập tức khi sử dụng
+            cache.delete(cache_key)
+
+            from django.contrib.auth import get_user_model
+            UserModel = get_user_model()
+            user_id = ticket_data.get('user_id')
+            user = UserModel.objects.filter(id=user_id, is_active=True).first()
+            if not user:
+                raise exceptions.PermissionDenied("Tài khoản liên kết với vé không còn hoạt động.")
+
+            # Gắn metadata vé vào request để view kiểm tra attachment ID
+            request._view_ticket_data = ticket_data
+            return (user, None)
+
+        return None
+
+
+def can_user_modify_document(user, doc, perm_codename):
+    """
+    Kiểm tra quyền sở hữu (RBAC) khi Cập nhật, Xóa và Đổi hiệu lực tài liệu:
+    - Quản trị viên tối cao (is_superuser, is_staff, role='admin', username in ('admin', 'quantri')) có toàn quyền.
+    - Người trực tiếp tạo ra tài liệu (nguoi_tao == user hoặc nguoi_tao_id == user.id) luôn có quyền trên tài liệu của mình.
+    - Cán bộ có quyền perm_codename ('change_tailieu' hoặc 'delete_tailieu'):
+      + Chỉ có quyền trên tài liệu thuộc cùng phòng ban / đơn vị của mình.
+      + Tuyệt đối KHÔNG được sửa, xóa hoặc đổi hiệu lực tài liệu của phòng ban khác!
+    """
+    if not user or not user.is_authenticated:
+        return False
+
+    # 1. Quản trị viên tối cao / Admin
+    if getattr(user, 'is_superuser', False) or getattr(user, 'is_staff', False):
+        return True
+    if getattr(user, 'username', '') in ('admin', 'quantri'):
+        return True
+    user_role = getattr(getattr(user, 'profile', None), 'role', None)
+    if user_role == 'admin':
+        return True
+
+    # 2. Người trực tiếp tạo tài liệu
+    if doc.nguoi_tao_id and doc.nguoi_tao_id == user.id:
+        return True
+
+    # 3. Phải có quyền RBAC tương ứng
+    if not user.has_perm(perm_codename):
+        return False
+
+    # 4. Xác định đơn vị sở hữu của tài liệu
+    doc_don_vi_id = doc.don_vi_id
+    if not doc_don_vi_id and doc.nguoi_tao_id and hasattr(doc.nguoi_tao, 'don_vi_id'):
+        doc_don_vi_id = doc.nguoi_tao.don_vi_id
+
+    user_don_vi_id = getattr(user, 'don_vi_id', None)
+
+    # Nếu cả 2 phía đều có thông tin đơn vị ID:
+    if user_don_vi_id is not None and doc_don_vi_id is not None:
+        return user_don_vi_id == doc_don_vi_id
+
+    # Kiểm tra theo tên phòng ban (đơn vị hoặc nơi ban hành)
+    user_dept = None
+    if hasattr(user, 'don_vi') and user.don_vi:
+        user_dept = getattr(user.don_vi, 'ten', None)
+    if not user_dept and hasattr(user, 'profile'):
+        user_dept = getattr(user.profile, 'department', None)
+
+    doc_dept = None
+    if doc.noi_ban_hanh:
+        doc_dept = doc.noi_ban_hanh
+    elif doc.nguoi_tao_id:
+        if hasattr(doc.nguoi_tao, 'don_vi') and doc.nguoi_tao.don_vi:
+            doc_dept = getattr(doc.nguoi_tao.don_vi, 'ten', None)
+        elif hasattr(doc.nguoi_tao, 'profile'):
+            doc_dept = getattr(doc.nguoi_tao.profile, 'department', None)
+
+    if user_dept and doc_dept:
+        return user_dept.strip().lower() == doc_dept.strip().lower()
+
+    # Nếu tài liệu có đơn vị mà user không khớp đơn vị đó -> Chặn quyền của phòng ban khác
+    if doc_don_vi_id is not None or doc_dept is not None:
+        return False
+
+    return True
+
+
 class CanChangeTaiLieu(permissions.BasePermission):
     """
-    Quyền sửa tài liệu (RBAC contract Issue #21):
-    - Quản trị viên tối cao (is_superuser) hoặc có quyền change_tailieu
-    - Hoặc là người trực tiếp tạo ra tài liệu đó (nguoi_tao == request.user)
+    Quyền sửa và đổi hiệu lực tài liệu (RBAC contract & kiểm tra sở hữu phòng ban):
+    - Quản trị viên tối cao (is_superuser) có toàn quyền trên mọi tài liệu.
+    - Người trực tiếp tạo ra tài liệu đó (nguoi_tao == request.user).
+    - Cán bộ có quyền change_tailieu chỉ được sửa/đổi hiệu lực tài liệu thuộc cùng phòng ban.
+      Không được phép sửa tài liệu của phòng ban khác!
     """
     message = "roles.messages.permissionDenied"
 
@@ -47,21 +166,16 @@ class CanChangeTaiLieu(permissions.BasePermission):
         return bool(user and user.is_authenticated)
 
     def has_object_permission(self, request, view, obj):
-        user = request.user
-        if not user or not user.is_authenticated:
-            return False
-        if user.is_superuser or user.has_perm("change_tailieu"):
-            return True
-        if obj.nguoi_tao_id and obj.nguoi_tao_id == user.id:
-            return True
-        return False
+        return can_user_modify_document(request.user, obj, "change_tailieu")
 
 
 class CanDeleteTaiLieu(permissions.BasePermission):
     """
-    Quyền xóa tài liệu (RBAC contract Issue #21):
-    - Quản trị viên tối cao (is_superuser) hoặc có quyền delete_tailieu
-    - Hoặc là người trực tiếp tạo ra tài liệu đó (nguoi_tao == request.user)
+    Quyền xóa tài liệu (RBAC contract & kiểm tra sở hữu phòng ban):
+    - Quản trị viên tối cao (is_superuser) có toàn quyền trên mọi tài liệu.
+    - Người trực tiếp tạo ra tài liệu đó (nguoi_tao == request.user).
+    - Cán bộ có quyền delete_tailieu chỉ được xóa tài liệu thuộc cùng phòng ban.
+      Không được phép xóa tài liệu của phòng ban khác!
     """
     message = "roles.messages.permissionDenied"
 
@@ -70,14 +184,7 @@ class CanDeleteTaiLieu(permissions.BasePermission):
         return bool(user and user.is_authenticated)
 
     def has_object_permission(self, request, view, obj):
-        user = request.user
-        if not user or not user.is_authenticated:
-            return False
-        if user.is_superuser or user.has_perm("delete_tailieu"):
-            return True
-        if obj.nguoi_tao_id and obj.nguoi_tao_id == user.id:
-            return True
-        return False
+        return can_user_modify_document(request.user, obj, "delete_tailieu")
 
 
 class DanhMucTaiLieuViewSet(viewsets.ModelViewSet):
@@ -88,6 +195,7 @@ class DanhMucTaiLieuViewSet(viewsets.ModelViewSet):
     - Tìm kiếm theo tên tài liệu, số ký hiệu
     - Xuất Excel danh mục Cấp 1
     """
+    authentication_classes = [JWTAuthentication, SessionAuthentication]
     queryset = DanhMucTaiLieu.objects.select_related('nguoi_lap').all()
     serializer_class = DanhMucTaiLieuSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -216,6 +324,7 @@ class TaiLieuChiTietViewSet(viewsets.ModelViewSet):
     - Bộ lọc đa tiêu chí: dm_tai_lieu, loai_tai_lieu, nam, hieu_luc, search
     - Xuất Excel danh sách tài liệu theo đúng bộ lọc tìm kiếm
     """
+    authentication_classes = [JWTAuthentication, SessionAuthentication]
     serializer_class = TaiLieuChiTietSerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardResourcePagination
@@ -491,6 +600,7 @@ class ChiTietTaiLieuAttachmentViewSet(viewsets.ModelViewSet):
     - Chống lỗ hổng IDOR rò rỉ tệp nội bộ: lọc tệp theo visible_resources của tài liệu cha
     - Kiểm soát chặt quyền xóa mềm và upload tệp
     """
+    authentication_classes = [TicketOrJWTAuthentication, SessionAuthentication]
     serializer_class = ChiTietTaiLieuAttachmentSerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardResourcePagination
@@ -501,7 +611,7 @@ class ChiTietTaiLieuAttachmentViewSet(viewsets.ModelViewSet):
     ordering = ['id']
 
     def get_permissions(self):
-        if self.action in ['create', 'destroy']:
+        if self.action in ['create', 'destroy', 'issue_view_ticket']:
             return [permissions.IsAuthenticated()]
         return [permissions.IsAuthenticated(), require_permission("view_tailieu")()]
 
@@ -519,13 +629,7 @@ class ChiTietTaiLieuAttachmentViewSet(viewsets.ModelViewSet):
         if not user or not user.is_authenticated:
             raise exceptions.PermissionDenied("roles.messages.permissionDenied")
         doc = serializer.validated_data.get('document')
-        can_add = (
-            user.is_superuser or
-            user.has_perm('change_tailieu') or
-            (doc and doc.nguoi_tao == user) or
-            (doc and hasattr(user, 'don_vi_id') and user.don_vi_id and doc.don_vi_id == user.don_vi_id)
-        )
-        if not can_add:
+        if not doc or not can_user_modify_document(user, doc, "change_tailieu"):
             raise exceptions.PermissionDenied("roles.messages.permissionDenied")
         serializer.save(nguoi_tao=user)
 
@@ -533,17 +637,43 @@ class ChiTietTaiLieuAttachmentViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if not user or not user.is_authenticated:
             raise exceptions.PermissionDenied("roles.messages.permissionDenied")
-        can_delete = (
-            user.is_superuser or
-            user.has_perm('delete_tailieu') or
-            instance.nguoi_tao == user or
-            instance.document.nguoi_tao == user or
-            (hasattr(user, 'don_vi_id') and user.don_vi_id and instance.document.don_vi_id == user.don_vi_id)
-        )
-        if not can_delete:
+        doc = instance.document
+        if not doc or not can_user_modify_document(user, doc, "delete_tailieu"):
             raise exceptions.PermissionDenied("roles.messages.permissionDenied")
         instance.is_deleted = True
         instance.save()
+
+    @action(detail=True, methods=['post'], url_path='ticket')
+    def issue_view_ticket(self, request, pk=None):
+        """
+        Cấp vé xem tài liệu tạm thời dùng 1 lần (Single-Use Short-Lived Ticket).
+        Chỉ dành cho người dùng đã đăng nhập hợp lệ.
+        Vé có thời hạn tối đa 60 giây và sẽ bị hủy ngay lập tức khi tệp được tải (Burn on Read).
+        """
+        user = request.user
+        if not user or not user.is_authenticated:
+            raise exceptions.NotAuthenticated("Yêu cầu đăng nhập để lấy vé xem tài liệu.")
+
+        att = self.get_object()
+        import secrets
+        from django.core.cache import cache
+        ticket = f"vt_{secrets.token_urlsafe(32)}"
+        cache_data = {
+            "att_id": att.id,
+            "user_id": user.id,
+        }
+        # Lưu vé vào cache với TTL 60 giây
+        cache.set(f"doc_view_ticket:{ticket}", cache_data, timeout=60)
+
+        view_url = f"/api/resources/attachments/{att.id}/view/?ticket={ticket}"
+        download_url = f"/api/resources/attachments/{att.id}/download/?ticket={ticket}"
+
+        return Response({
+            "ticket": ticket,
+            "expires_in": 60,
+            "view_url": view_url,
+            "download_url": download_url,
+        })
 
     @action(detail=True, methods=['get'], url_path='view')
     def view_file(self, request, pk=None):
@@ -555,6 +685,11 @@ class ChiTietTaiLieuAttachmentViewSet(viewsets.ModelViewSet):
         from django.http import FileResponse, Http404
 
         att = self.get_object()
+        if hasattr(request, '_view_ticket_data'):
+            allowed_att_id = request._view_ticket_data.get('att_id')
+            if allowed_att_id and allowed_att_id != att.id:
+                raise exceptions.PermissionDenied("Vé không áp dụng cho tài liệu này.")
+
         disk_path = template_disk_path(att.path)
         if not disk_path or not os.path.exists(disk_path):
             raise Http404("Tệp không tồn tại trên máy chủ")
@@ -571,8 +706,10 @@ class ChiTietTaiLieuAttachmentViewSet(viewsets.ModelViewSet):
             else:
                 content_type = 'application/octet-stream'
 
+        from urllib.parse import quote
+        encoded_name = quote(att.name)
         response = FileResponse(open(disk_path, 'rb'), content_type=content_type, as_attachment=False)
-        response['Content-Disposition'] = f'inline; filename="{att.name}"'
+        response['Content-Disposition'] = f'inline; filename="{encoded_name}"; filename*=UTF-8\'\'{encoded_name}'
         return response
 
     @action(detail=True, methods=['get'], url_path='download')
@@ -585,6 +722,11 @@ class ChiTietTaiLieuAttachmentViewSet(viewsets.ModelViewSet):
         from django.http import FileResponse, Http404
 
         att = self.get_object()
+        if hasattr(request, '_view_ticket_data'):
+            allowed_att_id = request._view_ticket_data.get('att_id')
+            if allowed_att_id and allowed_att_id != att.id:
+                raise exceptions.PermissionDenied("Vé không áp dụng cho tài liệu này.")
+
         disk_path = template_disk_path(att.path)
         if not disk_path or not os.path.exists(disk_path):
             raise Http404("Tệp không tồn tại trên máy chủ")
@@ -593,7 +735,10 @@ class ChiTietTaiLieuAttachmentViewSet(viewsets.ModelViewSet):
         if not content_type:
             content_type = 'application/octet-stream'
 
+        from urllib.parse import quote
+        encoded_name = quote(att.name)
         response = FileResponse(open(disk_path, 'rb'), content_type=content_type, as_attachment=True, filename=att.name)
+        response['Content-Disposition'] = f'attachment; filename="{encoded_name}"; filename*=UTF-8\'\'{encoded_name}'
         return response
 
     @action(detail=True, methods=['get'], url_path='preview')

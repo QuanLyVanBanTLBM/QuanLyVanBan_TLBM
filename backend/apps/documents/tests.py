@@ -2102,8 +2102,15 @@ class VanBanMatServiceTests(TestCase):
         self.assertIsNotNone(view_log)
         self.assertIsNotNone(view_log.viewed_at)
 
-        res_viewers = client_rec.get(f"/api/documents/mat/{doc.id}/viewers/")
-        self.assertEqual(res_viewers.status_code, status.HTTP_200_OK)
+        # Can bo duoc chi dinh chi co duy nhat quyen doc noi dung, bi cam xem nhat ky nguoi doc (viewers)
+        res_viewers_rec = client_rec.get(f"/api/documents/mat/{doc.id}/viewers/")
+        self.assertEqual(res_viewers_rec.status_code, status.HTTP_403_FORBIDDEN)
+
+        # Nguoi tao hoac Admin co quyen xem nhat ky nguoi doc
+        client_creator = APIClient()
+        client_creator.force_authenticate(user=self.creator)
+        res_viewers_creator = client_creator.get(f"/api/documents/mat/{doc.id}/viewers/")
+        self.assertEqual(res_viewers_creator.status_code, status.HTTP_200_OK)
 
     def test_mat_access_log_uses_backing_kind(self):
         from documents.selectors import log_access

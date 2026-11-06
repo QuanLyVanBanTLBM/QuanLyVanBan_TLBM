@@ -956,7 +956,7 @@ class AnhChuKyCaNhanView(SigningAPIView):
 
     def get(self, request):
         sig = SigningUserSignature.objects.filter(nguoi_dung=request.user).first()
-        if not sig:
+        if not sig or not to_chuc.tep_trinh_ky_ton_tai(request.user):
             return Response({"co_anh": False})
         return Response({
             "co_anh": True,

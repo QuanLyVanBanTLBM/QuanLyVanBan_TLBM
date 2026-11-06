@@ -104,7 +104,7 @@ export default function SigningModule() {
         <h1 className="sr-only">{t('tieuDe')}</h1>
         <h2 className="sr-only">{tieuDeRoute}</h2>
 
-        <div className="flex items-end justify-between gap-3 border-b border-border-subtle">
+        <div className="flex flex-col items-stretch gap-2 border-b border-border-subtle sm:flex-row sm:items-end sm:justify-between sm:gap-3">
           <nav
             ref={thanhTab}
             className="signing-nav-scroll -mb-px flex items-end gap-x-1 overflow-x-auto flex-nowrap whitespace-nowrap touch-pan-x scroll-smooth overscroll-x-contain min-w-0 flex-1 -mx-4 px-4 sm:mx-0 sm:px-0"
@@ -169,7 +169,7 @@ export default function SigningModule() {
             <Button
               size="sm"
               icon="fa-plus"
-              className="shrink-0 shadow-xs mb-1.5"
+              className="order-first self-end shrink-0 shadow-xs mb-1.5 sm:order-none"
               onClick={() => dieuHuong('/approvals/tao-moi')}
             >
               {t('nav.taoMoi')}
