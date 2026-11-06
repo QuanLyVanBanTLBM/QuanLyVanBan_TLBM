@@ -23,7 +23,11 @@ class GeminiRESTLLM(CustomLLM):
         return LLMMetadata(model_name=self.model_name)
 
     def _get_models_to_try(self) -> List[str]:
-        return [self.model_name]
+        models = [self.model_name]
+        for fallback in ["gemini-3-flash-preview", "gemini-2.5-flash"]:
+            if fallback not in models:
+                models.append(fallback)
+        return models
 
     def complete(self, prompt: str, **kwargs: Any) -> CompletionResponse:
         models = self._get_models_to_try()
@@ -185,6 +189,12 @@ def call_gemini_vision(
     b64_image = base64.b64encode(buffer.getvalue()).decode("utf-8")
 
     models = [model_name]
+
+    for fallback in ['gemini-3-flash-preview', 'gemini-2.5-flash']:
+
+        if fallback not in models:
+
+            models.append(fallback)
 
     payload = {
         "contents": [{
