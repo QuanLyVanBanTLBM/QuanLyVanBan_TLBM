@@ -923,13 +923,58 @@ class TaskUpdateDeleteApiTests(WorkTestBase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertIn("liên hệ người tạo hoặc người chủ trì", response.data["detail"])
 
-    def test_admin_khong_lien_quan_chi_xem(self):
+    def test_admin_co_du_quyen_rbac_sua_xoa_duoc_du_khong_lien_quan(self):
+        # Superuser được cấp toàn bộ quyền RBAC (gồm change/delete_congviec) nên sửa / xóa
+        # được mọi công việc xem được, dù không nằm trong danh sách người liên quan.
         task = self.make_task(is_public=False)
         self.login(self.admin)
         detail = self.client.get(self.task_url(task))
         self.assertEqual(detail.status_code, status.HTTP_200_OK)
-        self.assertFalse(any(detail.data["permissions"].values()))
-        self.assertEqual(self.client.patch(self.task_url(task), {"title": "X"}).status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(detail.data["myRoles"], [])
+        self.assertTrue(detail.data["permissions"]["canEdit"])
+        self.assertTrue(detail.data["permissions"]["canDelete"])
+        patched = self.client.patch(self.task_url(task), {"title": "Admin sửa"}, format="multipart")
+        self.assertEqual(patched.status_code, status.HTTP_200_OK, patched.data)
+        self.assertEqual(self.client.delete(self.task_url(task)).status_code, status.HTTP_204_NO_CONTENT)
+
+    def test_co_quyen_change_congviec_sua_duoc_du_khong_lien_quan(self):
+        # Kịch bản bug phân quyền vai trò: Ban Giám đốc có view_all_congviec + change_congviec
+        # nhưng không phải người tạo / chủ trì -> trước đây không sửa được, nay sửa được.
+        task = self.make_task()
+        self.outsider.user_permissions.add(
+            *Permission.objects.filter(codename__in=["view_all_congviec", "change_congviec"])
+        )
+        self.login(self.outsider)
+        item = self.client.get("/api/work/tasks/").data["results"][0]
+        self.assertTrue(item["permissions"]["canEdit"])
+        response = self.client.patch(self.task_url(task), {"title": "BGD sửa"}, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data["title"], "BGD sửa")
+
+    def test_co_quyen_delete_congviec_xoa_duoc_du_khong_lien_quan(self):
+        task = self.make_task()
+        self.outsider.user_permissions.add(
+            *Permission.objects.filter(codename__in=["view_all_congviec", "delete_congviec"])
+        )
+        self.login(self.outsider)
+        item = self.client.get("/api/work/tasks/").data["results"][0]
+        self.assertTrue(item["permissions"]["canDelete"])
+        response = self.client.delete(self.task_url(task))
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Task.objects.filter(pk=task.pk).exists())
+
+    def test_view_all_nhung_khong_co_change_delete_van_bi_chan(self):
+        # Chỉ xem được (view_all) mà không có change/delete_congviec thì cột Tác vụ vẫn "—".
+        task = self.make_task()
+        self.outsider.user_permissions.add(Permission.objects.get(codename="view_all_congviec"))
+        self.login(self.outsider)
+        item = self.client.get("/api/work/tasks/").data["results"][0]
+        self.assertFalse(item["permissions"]["canEdit"])
+        self.assertFalse(item["permissions"]["canDelete"])
+        self.assertEqual(
+            self.client.patch(self.task_url(task), {"title": "X"}, format="multipart").status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
         self.assertEqual(self.client.delete(self.task_url(task)).status_code, status.HTTP_403_FORBIDDEN)
 
     def test_dang_cho_duyet_khong_sua_duoc(self):
@@ -1248,13 +1293,28 @@ class TaskApprovalApiTests(WorkTestBase):
         self.assertEqual(response.data["status"], "HOAN_THANH")
         self.assertEqual(response.data["approvedBy"]["id"], self.director.pk)
 
-    def test_tham_gia_va_admin_khong_lien_quan_khong_duoc_duyet(self):
+    def test_tham_gia_khong_duoc_duyet(self):
+        # Cán bộ tham gia không có quyền approve_congviec và không thuộc nhóm được duyệt.
         task = self.waiting_task()
-        for user in (self.member, self.admin):
-            self.login(user)
-            response = self.client.post(self.task_url(task, "approve/"))
-            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-            self.assertIn("người tạo, người chủ trì hoặc người chỉ đạo", response.data["detail"])
+        self.login(self.member)
+        response = self.client.post(self.task_url(task, "approve/"))
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn("mới được duyệt công việc", response.data["detail"])
+
+    def test_co_quyen_approve_congviec_duyet_duoc_du_khong_lien_quan(self):
+        # Vai trò như Ban Giám đốc: view_all_congviec + approve_congviec -> duyệt mọi việc xem được.
+        task = self.waiting_task()
+        self.outsider.user_permissions.add(
+            *Permission.objects.filter(codename__in=["view_all_congviec", "approve_congviec"])
+        )
+        self.login(self.outsider)
+        response = self.client.post(self.task_url(task, "approve/"))
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data["status"], "HOAN_THANH")
+        self.assertEqual(response.data["approvedBy"]["id"], self.outsider.pk)
+        response = self.client.post(self.task_url(task, "unapprove/"))
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data["status"], "CHO_DUYET")
 
     def test_nguoi_tao_duyet_va_huy_duyet_duoc(self):
         task = self.waiting_task()
