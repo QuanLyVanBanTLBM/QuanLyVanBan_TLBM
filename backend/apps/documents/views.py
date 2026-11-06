@@ -1559,87 +1559,32 @@ class FolderViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_404_NOT_FOUND,
                 )
 
-        project_root = os.path.abspath(os.path.dirname(str(settings.BASE_DIR)))
-        backend_root = os.path.abspath(str(settings.BASE_DIR))
-
         # Mặc định quét thư mục 'Folder' ở root project nếu không truyền đường dẫn
         if not req_path:
-            display_path = "./Folder"
-            candidate_parent = os.path.join(project_root, "Folder")
-            candidate_base = os.path.join(backend_root, "Folder")
+            candidate_parent = os.path.join(os.path.dirname(str(settings.BASE_DIR)), "Folder")
+            candidate_base = os.path.join(str(settings.BASE_DIR), "Folder")
             if os.path.exists(candidate_parent):
                 base_folder = os.path.abspath(candidate_parent)
             elif os.path.exists(candidate_base):
                 base_folder = os.path.abspath(candidate_base)
             else:
                 base_folder = os.path.abspath(candidate_parent)
-                os.makedirs(base_folder, exist_ok=True)
-
-            # Tự động nạp cấu trúc mẫu nếu thư mục trống
-            try:
-                has_entries = bool(os.listdir(base_folder))
-            except OSError:
-                has_entries = False
-
-            if not has_entries:
-                f1 = os.path.join(base_folder, "folder1")
-                f2 = os.path.join(base_folder, "folder2")
-                os.makedirs(f1, exist_ok=True)
-                os.makedirs(f2, exist_ok=True)
-                data_docs = os.path.join(project_root, "data", "docs")
-                if os.path.exists(data_docs):
-                    import shutil
-                    sample_map = {
-                        "Folder_folder1_item1.docx": os.path.join(f1, "item1.docx"),
-                        "Folder_folder1_item2.docx": os.path.join(f1, "item2.docx"),
-                        "Folder_folder1_item3.docx": os.path.join(f1, "item3.docx"),
-                        "Folder_folder2_item1.docx": os.path.join(f2, "item1.docx"),
-                        "Folder_folder2_item2.docx": os.path.join(f2, "item2.docx"),
-                        "Folder_folder2_item3.docx": os.path.join(f2, "item3.docx"),
-                    }
-                    for src_name, dst_file in sample_map.items():
-                        src_file = os.path.join(data_docs, src_name)
-                        if os.path.exists(src_file) and not os.path.exists(dst_file):
-                            try:
-                                shutil.copy2(src_file, dst_file)
-                            except OSError:
-                                pass
         else:
-            display_path = req_path
             if not os.path.isabs(req_path):
-                c_parent = os.path.join(project_root, req_path)
-                c_base = os.path.join(backend_root, req_path)
+                c_parent = os.path.join(os.path.dirname(str(settings.BASE_DIR)), req_path)
+                c_base = os.path.join(str(settings.BASE_DIR), req_path)
                 if os.path.exists(c_parent):
                     base_folder = os.path.abspath(c_parent)
                 elif os.path.exists(c_base):
                     base_folder = os.path.abspath(c_base)
                 else:
-                    base_folder = os.path.abspath(c_parent)
+                    base_folder = os.path.abspath(req_path)
             else:
                 base_folder = os.path.abspath(req_path)
-                try:
-                    rel = os.path.relpath(base_folder, project_root)
-                    if not rel.startswith(".."):
-                        display_path = f"./{rel}".replace("\\", "/")
-                except (ValueError, OSError):
-                    pass
-
-        # Bảo mật: Ngăn chặn Path Traversal ngoài phạm vi project root
-        try:
-            common = os.path.commonpath([project_root, base_folder])
-            is_inside = (common == project_root)
-        except (ValueError, OSError):
-            is_inside = False
-
-        if not is_inside:
-            return Response(
-                {"detail": f"Đường dẫn thư mục '{display_path}' không hợp lệ hoặc nằm ngoài phạm vi cho phép."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
 
         if not os.path.exists(base_folder) or not os.path.isdir(base_folder):
             return Response(
-                {"detail": f"Đường dẫn thư mục '{display_path}' không tồn tại hoặc không phải là thư mục."},
+                {"detail": f"Đường dẫn thư mục '{base_folder}' không tồn tại hoặc không phải là thư mục."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -1649,12 +1594,6 @@ class FolderViewSet(viewsets.ModelViewSet):
         file_count = 0
         dir_to_folder = {}
 
-        try:
-            rel_root = os.path.relpath(base_folder, project_root).replace("\\", "/")
-            safe_root_path = f"./{rel_root}" if not rel_root.startswith(".") else rel_root
-        except (ValueError, OSError):
-            safe_root_path = display_path
-
         # Tạo hoặc lấy thư mục gốc cho lần đồng bộ này
         root_name = os.path.basename(os.path.normpath(base_folder)) or "Folder"
         root_folder, created = Folder.objects.get_or_create(
@@ -1662,14 +1601,14 @@ class FolderViewSet(viewsets.ModelViewSet):
             parent=target_parent,
             defaults={
                 "is_local": True,
-                "local_path": safe_root_path,
-                "description": f"Thư mục đồng bộ từ local: {safe_root_path}",
+                "local_path": base_folder,
+                "description": f"Thư mục đồng bộ từ local: {base_folder}",
                 "created_by": user,
             },
         )
         if not created and not root_folder.is_local:
             root_folder.is_local = True
-            root_folder.local_path = safe_root_path
+            root_folder.local_path = base_folder
             root_folder.save(update_fields=["is_local", "local_path"])
 
         dir_to_folder[os.path.normpath(base_folder)] = root_folder
@@ -1682,25 +1621,19 @@ class FolderViewSet(viewsets.ModelViewSet):
             # Tạo các thư mục con
             for dir_name in dir_names:
                 sub_path = os.path.normpath(os.path.join(current_root, dir_name))
-                try:
-                    rel_sub = os.path.relpath(sub_path, project_root).replace("\\", "/")
-                    safe_sub_path = f"./{rel_sub}" if not rel_sub.startswith(".") else rel_sub
-                except (ValueError, OSError):
-                    safe_sub_path = dir_name
-
                 sub_folder, s_created = Folder.objects.get_or_create(
                     name=dir_name,
                     parent=parent_folder,
                     defaults={
                         "is_local": True,
-                        "local_path": safe_sub_path,
+                        "local_path": sub_path,
                         "description": f"Thư mục con local: {dir_name}",
                         "created_by": user,
                     },
                 )
                 if not s_created and not sub_folder.is_local:
                     sub_folder.is_local = True
-                    sub_folder.local_path = safe_sub_path
+                    sub_folder.local_path = sub_path
                     sub_folder.save(update_fields=["is_local", "local_path"])
 
                 dir_to_folder[sub_path] = sub_folder
@@ -1718,21 +1651,15 @@ class FolderViewSet(viewsets.ModelViewSet):
                 if "." in filename:
                     ext = filename.rsplit(".", 1)[-1].lower()
 
-                try:
-                    rel_file = os.path.relpath(file_full_path, project_root).replace("\\", "/")
-                    safe_file_path = rel_file
-                except (ValueError, OSError):
-                    safe_file_path = filename
-
                 FolderFile.objects.update_or_create(
                     folder=parent_folder,
                     file_name=filename,
                     defaults={
-                        "file_path": safe_file_path,
+                        "file_path": file_full_path,
                         "file_size": file_size,
                         "file_type": ext,
                         "is_local": True,
-                        "description": f"File cục bộ: {filename}",
+                        "description": f"File cục bộ từ: {file_full_path}",
                         "uploaded_by": user,
                     },
                 )
@@ -1740,8 +1667,8 @@ class FolderViewSet(viewsets.ModelViewSet):
 
         return Response({
             "status": "success",
-            "message": f"Đồng bộ thành công từ '{display_path}'! Đã lập chỉ mục {folder_count} thư mục và {file_count} tệp.",
-            "base_folder": display_path,
+            "message": f"Đồng bộ thành công từ '{base_folder}'! Đã lập chỉ mục {folder_count} thư mục và {file_count} tệp.",
+            "base_folder": base_folder,
             "root_folder_id": root_folder.id,
             "folder_count": folder_count,
             "file_count": file_count,
@@ -1783,8 +1710,6 @@ class FolderFileViewSet(viewsets.ModelViewSet):
             safe_roots.append(Path(settings.MEDIA_ROOT).resolve())
         safe_roots.append((Path(str(settings.BASE_DIR)) / "media").resolve())
         safe_roots.append((Path(str(settings.BASE_DIR)) / "Folder").resolve())
-        safe_roots.append((Path(str(settings.BASE_DIR)).parent / "Folder").resolve())
-        safe_roots.append(Path(str(settings.BASE_DIR)).parent.resolve())
 
         file_disk_path = None
         for root in safe_roots:
