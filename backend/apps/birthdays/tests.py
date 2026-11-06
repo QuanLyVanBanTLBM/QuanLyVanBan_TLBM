@@ -53,7 +53,7 @@ class BirthdaySystemTests(TestCase):
         self.don_vi = DonVi.objects.create(khoi=khoi, stt_uu_tien=latest_stt + 1, ten="Khoa CNTT")
         self.chuc_vu = Position.objects.create(display_order=Position.get_next_display_order(), name="Giảng viên")
 
-        # 1. Nhân viên thường (có quyền view_sinhnhat, send_wish_sinhnhat)
+        # 1. Nhân viên thường (có quyền xem danh sách sinh nhật)
         self.emp_staff = Employee.objects.create_user(
             username="staff1",
             password="password123",
@@ -65,8 +65,7 @@ class BirthdaySystemTests(TestCase):
             is_active=True,
         )
         perm_view = Permission.objects.get(codename="view_sinhnhat")
-        perm_wish = Permission.objects.get(codename="send_wish_sinhnhat")
-        self.emp_staff.user_permissions.add(perm_view, perm_wish)
+        self.emp_staff.user_permissions.add(perm_view)
 
         # 2. Quản trị viên (superuser)
         self.emp_admin = Employee.objects.create_superuser(
