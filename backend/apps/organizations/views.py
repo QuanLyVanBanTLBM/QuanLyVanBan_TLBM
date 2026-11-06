@@ -24,6 +24,23 @@ def _invalid_region_filter(region_id):
     return None
 
 
+MAX_SELECTED_IDS = 500
+BIGINT_MAX = 9223372036854775807
+
+
+def _parse_id_list(raw, error_key):
+    """?region_ids=1,2,3 hoặc ?unit_ids=4,5: danh sách số nguyên dương trong khoảng BIGINT, tối đa MAX_SELECTED_IDS.
+
+    Trả về (danh sách đã khử trùng, None); giá trị sai trả về (None, Response 400) thay vì lỗi 500.
+    """
+    if raw is None or not raw.strip():
+        return [], None
+    parts = [part.strip() for part in raw.split(",")]
+    if len(parts) > MAX_SELECTED_IDS or any(not part.isdigit() or int(part) > BIGINT_MAX for part in parts):
+        return None, Response({"detail": error_key, "key": error_key}, status=status.HTTP_400_BAD_REQUEST)
+    return sorted({int(part) for part in parts}), None
+
+
 def _can_see_internal_units(user) -> bool:
     """Đơn vị is_public = False (nội bộ) chỉ hiển thị với quản trị: superuser hoặc có change_donvi (giống Chức vụ)."""
     return bool(user.is_superuser or user.has_perm("change_donvi"))
@@ -262,6 +279,24 @@ def unit_export_excel_view(request):
         if not _visible_units(request.user).filter(pk=unit_id).exists():
             return Response(unit_not_found, status=status.HTTP_404_NOT_FOUND)
         queryset = queryset.filter(pk=unit_id)
+
+    # ?region_ids= và ?unit_ids=: chọn nhiều Khối và Đơn vị để xuất chung một file (hợp của hai danh sách).
+    # Đơn vị người dùng không xem được thì 404 như ?unit_id=.
+    region_ids, error = _parse_id_list(request.query_params.get("region_ids"), "organizations.messages.regionNotFound")
+    if error:
+        return error
+    unit_ids, error = _parse_id_list(request.query_params.get("unit_ids"), "organizations.messages.unitNotFound")
+    if error:
+        return error
+    if unit_ids:
+        visible_ids = set(_visible_units(request.user).filter(pk__in=unit_ids).values_list("pk", flat=True))
+        if len(visible_ids) != len(unit_ids):
+            return Response(
+                {"detail": "organizations.messages.unitNotFound", "key": "organizations.messages.unitNotFound"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+    if region_ids or unit_ids:
+        queryset = queryset.filter(Q(khoi_id__in=region_ids) | Q(pk__in=unit_ids))
 
     search_query = request.query_params.get("search", "").strip()
     if search_query:
