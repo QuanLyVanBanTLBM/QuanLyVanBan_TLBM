@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { ResourceAttachment } from '@app-types/resource';
+import { getAbsoluteFileUrl } from '@lib/fileUtils';
 
 export interface FilePreviewModalProps {
   isOpen: boolean;
@@ -79,7 +80,11 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
     if (file.id) {
       setIsLoadingExcel(true);
       setLoadError(null);
-      fetch(`/api/resources/attachments/${file.id}/preview/`)
+      const token = typeof window !== 'undefined' ? (localStorage.getItem('tlbm_access_token') || localStorage.getItem('tlbm_token') || '') : '';
+      const previewUrl = `/api/resources/attachments/${file.id}/preview/${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+      fetch(previewUrl, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
         .then((res) => {
           if (!res.ok) throw new Error('Không thể tải cấu trúc bảng tính');
           return res.json() as Promise<PreviewApiResponse>;
@@ -107,7 +112,24 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
   if (!isOpen || !file) return null;
   if (typeof document === 'undefined') return null;
 
-  const fileUrl = file.path || '';
+  const token = typeof window !== 'undefined' ? (localStorage.getItem('tlbm_access_token') || localStorage.getItem('tlbm_token') || '') : '';
+  const rawViewUrl = file.id
+    ? `/api/resources/attachments/${file.id}/view/`
+    : (file.path || '');
+  const absViewUrl = getAbsoluteFileUrl(rawViewUrl);
+  const serverViewUrl = rawViewUrl
+    ? (token ? `${absViewUrl}${absViewUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}` : absViewUrl)
+    : '';
+
+  const rawDownloadUrl = file.id
+    ? `/api/resources/attachments/${file.id}/download/`
+    : (file.path || '');
+  const absDownloadUrl = getAbsoluteFileUrl(rawDownloadUrl);
+  const serverDownloadUrl = rawDownloadUrl
+    ? (token ? `${absDownloadUrl}${absDownloadUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}` : absDownloadUrl)
+    : '';
+
+  const fileUrl = serverViewUrl;
 
   const getBadgeStyle = (extension: string) => {
     switch (extension) {
@@ -220,9 +242,9 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
                 <i className="fa-solid fa-download text-[11px]" />
                 <span className="hidden sm:inline">Tải về</span>
               </button>
-            ) : fileUrl ? (
+            ) : (serverDownloadUrl || fileUrl) ? (
               <a
-                href={fileUrl}
+                href={serverDownloadUrl || fileUrl}
                 download={file.name}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary text-white hover:bg-primary-hover shadow-2xs transition-colors cursor-pointer"
                 title="Tải tệp này về máy"

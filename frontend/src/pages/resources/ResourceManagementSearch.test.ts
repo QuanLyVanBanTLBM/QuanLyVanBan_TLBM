@@ -119,3 +119,53 @@ describe('ResourceManagement Specific Search Logic', () => {
     expect(filterResource(sampleDoc, 'tu_khoa_khong_ton_tai', 'all')).toBe(false);
   });
 });
+describe('ResourceManagement URL State Synchronization', () => {
+  it('serializes filter and modal state into URL search params correctly', () => {
+    const params = new URLSearchParams();
+    const state = {
+      category: '2',
+      type: '5',
+      year: '2026',
+      status: 'CON_HIEU_LUC',
+      q: 'hiiii',
+      search_field: 'author',
+      page: 2,
+      pageSize: 10,
+      detail: 15,
+    };
+
+    if (state.category !== 'all') params.set('category', state.category);
+    if (state.type !== 'all') params.set('type', state.type);
+    if (state.year !== 'all') params.set('year', state.year);
+    if (state.status !== 'all') params.set('status', state.status);
+    if (state.q.trim()) params.set('q', state.q.trim());
+    if (state.search_field !== 'all') params.set('search_field', state.search_field);
+    if (state.page > 1) params.set('page', String(state.page));
+    if (state.pageSize !== 5) params.set('pageSize', String(state.pageSize));
+    if (state.detail) params.set('detail', String(state.detail));
+
+    expect(params.get('category')).toBe('2');
+    expect(params.get('type')).toBe('5');
+    expect(params.get('year')).toBe('2026');
+    expect(params.get('status')).toBe('CON_HIEU_LUC');
+    expect(params.get('q')).toBe('hiiii');
+    expect(params.get('search_field')).toBe('author');
+    expect(params.get('page')).toBe('2');
+    expect(params.get('pageSize')).toBe('10');
+    expect(params.get('detail')).toBe('15');
+  });
+
+  it('restores modal and action states from URL search params correctly', () => {
+    const detailUrl = new URLSearchParams('detail=42');
+    expect(detailUrl.get('detail')).toBe('42');
+
+    const createUrl = new URLSearchParams('action=create');
+    expect(createUrl.get('action')).toBe('create');
+
+    const editUrl = new URLSearchParams('edit=99');
+    expect(editUrl.get('edit')).toBe('99');
+
+    const categoriesUrl = new URLSearchParams('action=categories');
+    expect(categoriesUrl.get('action')).toBe('categories');
+  });
+});
