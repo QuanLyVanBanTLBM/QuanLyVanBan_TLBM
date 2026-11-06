@@ -11,15 +11,13 @@ import AlertModal from '@components/common/AlertModal';
 import ConfirmModal from '@components/common/ConfirmModal';
 import { Button } from '@components/common/Button';
 import apiClient from '@lib/apiClient';
-import { authService } from '@lib/authService';
 import { usePermissions } from '@lib/permissions';
 import { useTranslation } from '@i18n/translate';
 
 export const ConfidentialDocumentPage: React.FC = () => {
   const { t } = useTranslation();
-  const { can, isSuperuser } = usePermissions();
-  const currentSession = useMemo(() => authService.getSession(), []);
-  const isAdmin = Boolean(isSuperuser || currentSession?.role === 'admin' || currentSession?.username === 'admin');
+  const { can, isSuperuser, isSystemAdmin } = usePermissions();
+  const isAdmin = Boolean(isSuperuser || isSystemAdmin);
 
   const canAdd = Boolean(isAdmin || can('add_vanbanden') || can('add_vanbandi'));
   const canImport = Boolean(isAdmin || can('import_vanbanden') || can('import_vanbandi'));

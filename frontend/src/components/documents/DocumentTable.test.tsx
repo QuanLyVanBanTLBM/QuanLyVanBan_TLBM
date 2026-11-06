@@ -1,9 +1,18 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import DocumentTable from './DocumentTable';
 import { DocumentItem } from '@app-types/document';
 
+const permissionState = vi.hoisted(() => ({ isSystemAdmin: false }));
+vi.mock('@lib/permissions', () => ({
+  usePermissions: () => ({ loaded: true, isSuperuser: false, isSystemAdmin: permissionState.isSystemAdmin, can: () => false }),
+}));
+
 describe('DocumentTable Component', () => {
+  afterEach(() => {
+    permissionState.isSystemAdmin = false;
+  });
+
   const mockDocuments: DocumentItem[] = [
     {
       id: 1,
@@ -181,11 +190,34 @@ describe('DocumentTable Component', () => {
     localStorage.removeItem('tlbm_session');
   });
 
-  it('shows edit and delete buttons for admin user', () => {
+  it('does not treat a session named admin as an administrator', () => {
     localStorage.setItem(
       'tlbm_session',
       JSON.stringify({ username: 'admin', role: 'admin' })
     );
+    permissionState.isSystemAdmin = false;
+
+    render(
+      <DocumentTable
+        documents={mockDocuments}
+        totalCount={2}
+        page={1}
+        pageSize={10}
+        onPageChange={vi.fn()}
+        onViewDetail={vi.fn()}
+        onViewHistory={vi.fn()}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getAllByTitle('Tác vụ')[0]);
+    expect(screen.queryByText('Chỉnh sửa')).not.toBeInTheDocument();
+    expect(screen.queryByText('Xóa văn bản')).not.toBeInTheDocument();
+  });
+
+  it('shows edit and delete buttons for admin user', () => {
+    permissionState.isSystemAdmin = true;
 
     const onEdit = vi.fn();
     const onDelete = vi.fn();

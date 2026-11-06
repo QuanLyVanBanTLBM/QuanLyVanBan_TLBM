@@ -29,6 +29,7 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
+from authorization.permissions import is_system_admin
 from .filters import (
     DocumentFilter,
     VanBanDenFilter,
@@ -118,12 +119,7 @@ def is_admin_user(user):
     """Kiểm tra người dùng có quyền Quản trị viên (Admin) hay không."""
     if not user or not user.is_authenticated:
         return False
-    if user.is_staff or user.is_superuser:
-        return True
-    profile = getattr(user, "profile", None)
-    if profile and profile.role == "admin":
-        return True
-    return False
+    return bool(user.is_staff or is_system_admin(user))
 
 
 def can_edit_document(user, instance):
@@ -623,8 +619,7 @@ class DocumentViewSet(viewsets.ViewSet):
         validate_attachment_files(request)
         instance = self._get_object_across_models(pk, record_log=False)
         user = request.user
-        profile = getattr(user, "profile", None)
-        is_real_admin = bool(user.is_superuser or (profile and getattr(profile, "role", None) == "admin") or getattr(user, "username", "") in ("admin", "quantri"))
+        is_real_admin = is_system_admin(user)
 
         if getattr(instance, "pham_vi", None) == PhamVi.HAN_CHE and not is_real_admin and instance.nguoi_tao != user:
             raise PermissionDenied("Người được chỉ định xem văn bản hạn chế chỉ có quyền xem, không được phép chỉnh sửa.")
