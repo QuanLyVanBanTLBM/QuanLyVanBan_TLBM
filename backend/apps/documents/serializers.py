@@ -12,6 +12,8 @@ from django.db import models
 from django.utils import timezone
 from rest_framework import serializers
 
+from authorization.permissions import is_system_admin
+
 from .models import (
     HieuLuc,
     LoaiVanBan,
@@ -853,16 +855,7 @@ class DocumentCreateUpdateSerializer(serializers.Serializer):
         if self.instance and "pham_vi" in attrs and attrs["pham_vi"] != self.instance.pham_vi:
             request = self.context.get("request")
             user = getattr(request, "user", None) if request else None
-            profile = getattr(user, "profile", None) if user else None
-            is_admin = bool(
-                user
-                and (
-                    user.is_superuser
-                    or (profile and getattr(profile, "role", None) == "admin")
-                    or getattr(user, "username", "") in ("admin", "quantri")
-                )
-            )
-            if not is_admin:
+            if not is_system_admin(user):
                 raise serializers.ValidationError(
                     {"pham_vi": "Chỉ Quản trị viên (Admin) mới có quyền thay đổi phạm vi lưu hành của văn bản."}
                 )
@@ -1120,16 +1113,7 @@ class DocumentCreateUpdateSerializer(serializers.Serializer):
         if "pham_vi" in validated_data and validated_data["pham_vi"] != instance.pham_vi:
             req = self.context.get("request")
             user = getattr(req, "user", None) if req else None
-            profile = getattr(user, "profile", None) if user else None
-            is_admin = bool(
-                user
-                and (
-                    user.is_superuser
-                    or (profile and getattr(profile, "role", None) == "admin")
-                    or getattr(user, "username", "") in ("admin", "quantri")
-                )
-            )
-            if not is_admin:
+            if not is_system_admin(user):
                 raise serializers.ValidationError({"pham_vi": "Chỉ Quản trị viên (Admin) mới có quyền thay đổi phạm vi lưu hành của văn bản."})
             instance._allow_scope_change = True
 
