@@ -144,10 +144,15 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
   const isSessionAdmin = currentSession?.role === 'admin' || currentSession?.username === 'admin';
   const { can, isSuperuser } = usePermissions();
   const canAdd = isSuperuser || isSessionAdmin || can('add_tailieu');
-  const canEdit = isSuperuser || isSessionAdmin || can('change_tailieu') || Boolean(
+  const canEdit = isSuperuser || isSessionAdmin || (initialData ? Boolean(initialData.can_edit) : false) || Boolean(
     initialData && (
       (currentSession?.fullName && initialData.nguoi_tao_name === currentSession.fullName) ||
-      (currentSession?.username && initialData.nguoi_tao_name === currentSession.username)
+      (currentSession?.username && initialData.nguoi_tao_name === currentSession.username) ||
+      (currentSession?.id && initialData.nguoi_tao === currentSession.id) ||
+      (can('change_tailieu') && (
+        (initialData.don_vi_id && currentSession?.don_vi_id && initialData.don_vi_id === currentSession.don_vi_id) ||
+        (initialData.noi_ban_hanh && (currentSession?.department || currentSession?.unit) && initialData.noi_ban_hanh.trim().toLowerCase() === ((currentSession?.department || currentSession?.unit) as string).trim().toLowerCase())
+      ))
     )
   );
   const canSubmit = isEditMode ? canEdit : canAdd;

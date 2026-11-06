@@ -103,6 +103,8 @@ class TaiLieuChiTietSerializer(serializers.ModelSerializer):
     link_thay_the = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     is_expired = serializers.BooleanField(read_only=True)
     effective_hieu_luc = serializers.CharField(read_only=True)
+    can_edit = serializers.SerializerMethodField()
+    can_delete = serializers.SerializerMethodField()
 
     class Meta:
         model = TaiLieuChiTiet
@@ -128,10 +130,12 @@ class TaiLieuChiTietSerializer(serializers.ModelSerializer):
             'don_vi_id',
             'nguoi_tao',
             'nguoi_tao_name',
+            'can_edit',
+            'can_delete',
             'created_at',
             'updated_at',
         ]
-        read_only_fields = ['id', 'nguoi_tao', 'created_at', 'updated_at', 'is_expired', 'effective_hieu_luc']
+        read_only_fields = ['id', 'nguoi_tao', 'created_at', 'updated_at', 'is_expired', 'effective_hieu_luc', 'can_edit', 'can_delete']
 
     def to_internal_value(self, data):
         if hasattr(data, '_mutable'):
@@ -163,6 +167,20 @@ class TaiLieuChiTietSerializer(serializers.ModelSerializer):
         if not obj.nguoi_tao:
             return None
         return obj.nguoi_tao.get_full_name() or obj.nguoi_tao.username
+
+    def get_can_edit(self, obj):
+        request = self.context.get('request')
+        if not request or not request.user:
+            return False
+        from .views import can_user_modify_document
+        return can_user_modify_document(request.user, obj, "change_tailieu")
+
+    def get_can_delete(self, obj):
+        request = self.context.get('request')
+        if not request or not request.user:
+            return False
+        from .views import can_user_modify_document
+        return can_user_modify_document(request.user, obj, "delete_tailieu")
 
     def validate_file_dinh_kem(self, value):
         if value:

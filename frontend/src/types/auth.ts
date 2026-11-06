@@ -1,12 +1,16 @@
 ﻿export type AuthRole = 'admin' | 'staff';
 
 export interface UserSession {
+  id?: number;
   username: string;
   fullName: string;
   role: AuthRole;
   roleTitle: string;
   avatar?: string;
   token?: string;
+  don_vi_id?: number;
+  department?: string;
+  unit?: string;
 }
 
 export interface LoginCredentials {

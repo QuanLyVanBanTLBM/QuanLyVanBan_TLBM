@@ -645,28 +645,51 @@ export default function ResourceManagementPage() {
   const { can, isSuperuser } = usePermissions();
   const canAdd = isSuperuser || isSessionAdmin || can('add_tailieu');
   const canManageCategory = isSuperuser || isSessionAdmin || can('add_loaitailieubieumau') || can('change_loaitailieubieumau') || can('delete_loaitailieubieumau');
-  const canEditAny = isSuperuser || isSessionAdmin || can('change_tailieu');
-  const canDeleteAny = isSuperuser || isSessionAdmin || can('delete_tailieu');
-
   const canEditItem = useCallback((item: ResourceItem) => {
-    if (canEditAny) return true;
+    if (typeof item.can_edit === 'boolean') {
+      return item.can_edit;
+    }
+    if (isSuperuser || isSessionAdmin) return true;
     const sess = authService.getSession();
     if (!sess) return false;
-    return Boolean(
+    const isCreator = Boolean(
       (item.nguoi_tao_name && sess.fullName && item.nguoi_tao_name === sess.fullName) ||
-      (item.nguoi_tao_name && sess.username && item.nguoi_tao_name === sess.username)
+      (item.nguoi_tao_name && sess.username && item.nguoi_tao_name === sess.username) ||
+      (item.nguoi_tao && sess.id && item.nguoi_tao === sess.id)
     );
-  }, [canEditAny]);
+    if (isCreator) return true;
+
+    if (can('change_tailieu')) {
+      const userDonViId = sess.don_vi_id || (sess as any).donViId;
+      const userDept = sess.department || sess.unit;
+      if (item.don_vi_id && userDonViId && item.don_vi_id === userDonViId) return true;
+      if (item.noi_ban_hanh && userDept && item.noi_ban_hanh.trim().toLowerCase() === userDept.trim().toLowerCase()) return true;
+    }
+    return false;
+  }, [isSuperuser, isSessionAdmin, can]);
 
   const canDeleteItem = useCallback((item: ResourceItem) => {
-    if (canDeleteAny) return true;
+    if (typeof item.can_delete === 'boolean') {
+      return item.can_delete;
+    }
+    if (isSuperuser || isSessionAdmin) return true;
     const sess = authService.getSession();
     if (!sess) return false;
-    return Boolean(
+    const isCreator = Boolean(
       (item.nguoi_tao_name && sess.fullName && item.nguoi_tao_name === sess.fullName) ||
-      (item.nguoi_tao_name && sess.username && item.nguoi_tao_name === sess.username)
+      (item.nguoi_tao_name && sess.username && item.nguoi_tao_name === sess.username) ||
+      (item.nguoi_tao && sess.id && item.nguoi_tao === sess.id)
     );
-  }, [canDeleteAny]);
+    if (isCreator) return true;
+
+    if (can('delete_tailieu')) {
+      const userDonViId = sess.don_vi_id || (sess as any).donViId;
+      const userDept = sess.department || sess.unit;
+      if (item.don_vi_id && userDonViId && item.don_vi_id === userDonViId) return true;
+      if (item.noi_ban_hanh && userDept && item.noi_ban_hanh.trim().toLowerCase() === userDept.trim().toLowerCase()) return true;
+    }
+    return false;
+  }, [isSuperuser, isSessionAdmin, can]);
 
 
   // Toast thông báo nổi trên cùng (z-[999999] trên tất cả modal và màn đen)

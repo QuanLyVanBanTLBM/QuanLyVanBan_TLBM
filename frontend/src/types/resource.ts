@@ -21,6 +21,8 @@ export interface ResourceItem {
   nguoi_tao?: number;
   nguoi_tao_name?: string;
   attachments?: ResourceAttachment[];
+  can_edit?: boolean;
+  can_delete?: boolean;
 }
 
 export interface ResourceAttachment {
