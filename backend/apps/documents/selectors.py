@@ -16,6 +16,8 @@ Cung cấp cho các phân hệ khác (Dashboard Nhóm 1, Hồ sơ Nhóm 3, Công
 """
 
 from django.db.models import Q
+from authorization.permissions import is_system_admin
+
 from .models import (
     LoaiVanBan,
     PhamVi,
@@ -34,14 +36,7 @@ def is_admin_user(user):
     """Kiểm tra người dùng có quyền Quản trị viên (Admin) hay không."""
     if not user or not user.is_authenticated:
         return False
-    if getattr(user, "is_staff", False) or getattr(user, "is_superuser", False):
-        return True
-    profile = getattr(user, "profile", None)
-    if profile and getattr(profile, "role", None) == "admin":
-        return True
-    if getattr(user, "username", "") in ("admin", "quantri"):
-        return True
-    return False
+    return bool(getattr(user, "is_staff", False) or is_system_admin(user))
 
 
 def _co_quyen(user, perm_code):
