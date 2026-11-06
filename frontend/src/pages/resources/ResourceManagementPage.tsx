@@ -14,7 +14,8 @@ import { FolderManagerModal } from '@components/folders/FolderManagerModal';
 import { Button } from '@components/common/Button';
 import { Toast, ToastNotification } from '@components/resources/Toast';
 import { useTranslation } from '@i18n/translate';
-import { apiClient } from '@lib/apiClient';
+import { apiClient, downloadBlob, ApiError } from '@lib/apiClient';
+import { getAbsoluteFileUrl } from '@lib/fileUtils';
 import { authService } from '@lib/authService';
 import { usePermissions } from '@lib/permissions';
 import { computeEffectiveStatus } from '@lib/resourceValidity';
@@ -582,8 +583,22 @@ export default function ResourceManagementPage() {
   const tabBarRef = useRef<HTMLDivElement>(null);
   const typeBarRef = useRef<HTMLDivElement>(null);
 
-  // Tự động lưu trạng thái vào sessionStorage và đồng bộ URL Query Parameters
-  // Khi reload lại trang (F5), toàn bộ mục đang chọn, trang và dòng hiển thị vẫn được giữ nguyên
+  // Modal State
+  const [detailItem, setDetailItem] = useState<ResourceItem | null>(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [formInitialData, setFormInitialData] = useState<ResourceItem | null>(null);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isSubmittingDoc, setIsSubmittingDoc] = useState(false);
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [isFolderManagerOpen, setIsFolderManagerOpen] = useState(false);
+
+  // Modal Xóa Tài liệu
+  const [deleteItem, setDeleteItem] = useState<ResourceItem | null>(null);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // Tự động lưu trạng thái vào sessionStorage và đồng bộ URL Query Parameters hai chiều
+  // Đảm bảo URL luôn phản ánh trạng thái mới nhất khi thao tác trên trang (bộ lọc, phân trang, modal chi tiết/thêm/sửa)
   useEffect(() => {
     const stateToSave: PersistedResourceState = {
       category: selectedCategory,
@@ -612,7 +627,28 @@ export default function ResourceManagementPage() {
     if (currentPage > 1) newParams.set('page', String(currentPage));
     if (pageSize !== 5) newParams.set('pageSize', String(pageSize));
 
-    setSearchParams(newParams, { replace: true });
+    // Đồng bộ trạng thái Modal lên URL
+    if (isDetailOpen && detailItem) {
+      newParams.set('detail', String(detailItem.id));
+    }
+    if (isFormOpen) {
+      if (formInitialData) {
+        newParams.set('edit', String(formInitialData.id));
+      } else {
+        newParams.set('action', 'create');
+      }
+    }
+    if (isCategoryModalOpen) {
+      newParams.set('action', 'categories');
+    }
+    if (isFolderManagerOpen) {
+      newParams.set('action', 'folder_tree');
+    }
+
+    // Chỉ cập nhật nếu query string thực sự có sự thay đổi
+    if (searchParams.toString() !== newParams.toString()) {
+      setSearchParams(newParams, { replace: true });
+    }
   }, [
     selectedCategory,
     selectedType,
@@ -622,22 +658,100 @@ export default function ResourceManagementPage() {
     searchField,
     currentPage,
     pageSize,
+    isDetailOpen,
+    detailItem,
+    isFormOpen,
+    formInitialData,
+    isCategoryModalOpen,
+    isFolderManagerOpen,
+    searchParams,
     setSearchParams,
   ]);
 
-  // Modal State
-  const [detailItem, setDetailItem] = useState<ResourceItem | null>(null);
-  const [isDetailOpen, setIsDetailOpen] = useState(false);
-  const [formInitialData, setFormInitialData] = useState<ResourceItem | null>(null);
-  const [isFormOpen, setIsFormOpen] = useState(false);
-  const [isSubmittingDoc, setIsSubmittingDoc] = useState(false);
-  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
-  const [isFolderManagerOpen, setIsFolderManagerOpen] = useState(false);
+  // Lắng nghe URL query params để tự động cập nhật bộ lọc hoặc mở modal tương ứng khi truy cập link trực tiếp/back/forward
+  useEffect(() => {
+    const urlCategory = searchParams.get('category') || 'all';
+    const urlType = searchParams.get('type') || 'all';
+    const urlYear = searchParams.get('year') || 'all';
+    const urlStatus = searchParams.get('status') || 'all';
+    const urlQ = searchParams.get('q') || '';
+    const urlSearchField = (searchParams.get('search_field') as SearchScopeType) || 'all';
+    const urlPage = searchParams.get('page') ? Number(searchParams.get('page')) : 1;
+    const urlPageSize = searchParams.get('pageSize') ? Number(searchParams.get('pageSize')) : 5;
 
-  // Modal Xóa Tài liệu
-  const [deleteItem, setDeleteItem] = useState<ResourceItem | null>(null);
-  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
+    setSelectedCategory((prev) => (prev !== urlCategory ? urlCategory : prev));
+    setSelectedType((prev) => (prev !== urlType ? urlType : prev));
+    setSelectedYear((prev) => (prev !== urlYear ? urlYear : prev));
+    setStatusFilter((prev) => (prev !== urlStatus ? urlStatus : prev));
+    setSearchTerm((prev) => (prev !== urlQ ? urlQ : prev));
+    setSearchField((prev) => (prev !== urlSearchField ? urlSearchField : prev));
+    setCurrentPage((prev) => (prev !== urlPage ? urlPage : prev));
+    setPageSize((prev) => (prev !== urlPageSize ? urlPageSize : prev));
+
+    const detailParam = searchParams.get('detail');
+    const actionParam = searchParams.get('action');
+    const editParam = searchParams.get('edit');
+
+    if (detailParam && !isNaN(Number(detailParam))) {
+      const docId = Number(detailParam);
+      const found = documents.find((d) => d.id === docId);
+      if (found) {
+        setDetailItem((prev) => (prev?.id === docId ? prev : found));
+        setIsDetailOpen(true);
+      } else {
+        // Tự động tải từ API nếu tài liệu chưa có sẵn trong danh sách
+        apiClient<ResourceItem>(`/api/resources/documents/${docId}/`)
+          .then((fetched) => {
+            if (fetched && fetched.id) {
+              setDetailItem(fetched);
+              setIsDetailOpen(true);
+            }
+          })
+          .catch(() => {
+            /* ignore if not found */
+          });
+      }
+    } else {
+      setIsDetailOpen((prev) => (prev ? false : prev));
+      setDetailItem((prev) => (prev ? null : prev));
+    }
+
+    if (actionParam === 'create') {
+      setFormInitialData(null);
+      setIsFormOpen(true);
+    } else if (actionParam === 'categories') {
+      setIsCategoryModalOpen(true);
+    } else if (actionParam === 'folder_tree') {
+      setIsFolderManagerOpen(true);
+    } else if (editParam && !isNaN(Number(editParam))) {
+      const editId = Number(editParam);
+      const found = documents.find((d) => d.id === editId);
+      if (found) {
+        setFormInitialData((prev) => (prev?.id === editId ? prev : found));
+        setIsFormOpen(true);
+      } else {
+        apiClient<ResourceItem>(`/api/resources/documents/${editId}/`)
+          .then((fetched) => {
+            if (fetched && fetched.id) {
+              setFormInitialData(fetched);
+              setIsFormOpen(true);
+            }
+          })
+          .catch(() => {
+            /* ignore if not found */
+          });
+      }
+    } else if (!actionParam && !editParam) {
+      setIsFormOpen((prev) => (prev ? false : prev));
+      setFormInitialData((prev) => (prev ? null : prev));
+      if (actionParam !== 'categories') {
+        setIsCategoryModalOpen((prev) => (prev ? false : prev));
+      }
+      if (actionParam !== 'folder_tree') {
+        setIsFolderManagerOpen((prev) => (prev ? false : prev));
+      }
+    }
+  }, [searchParams, documents]);
 
   // Phân quyền người dùng (RBAC contract Issue #21)
   const currentSession = authService.getSession();
@@ -645,28 +759,51 @@ export default function ResourceManagementPage() {
   const { can, isSuperuser } = usePermissions();
   const canAdd = isSuperuser || isSessionAdmin || can('add_tailieu');
   const canManageCategory = isSuperuser || isSessionAdmin || can('add_loaitailieubieumau') || can('change_loaitailieubieumau') || can('delete_loaitailieubieumau');
-  const canEditAny = isSuperuser || isSessionAdmin || can('change_tailieu');
-  const canDeleteAny = isSuperuser || isSessionAdmin || can('delete_tailieu');
-
   const canEditItem = useCallback((item: ResourceItem) => {
-    if (canEditAny) return true;
+    if (typeof item.can_edit === 'boolean') {
+      return item.can_edit;
+    }
+    if (isSuperuser || isSessionAdmin) return true;
     const sess = authService.getSession();
     if (!sess) return false;
-    return Boolean(
+    const isCreator = Boolean(
       (item.nguoi_tao_name && sess.fullName && item.nguoi_tao_name === sess.fullName) ||
-      (item.nguoi_tao_name && sess.username && item.nguoi_tao_name === sess.username)
+      (item.nguoi_tao_name && sess.username && item.nguoi_tao_name === sess.username) ||
+      (item.nguoi_tao && sess.id && item.nguoi_tao === sess.id)
     );
-  }, [canEditAny]);
+    if (isCreator) return true;
+
+    if (can('change_tailieu')) {
+      const userDonViId = sess.don_vi_id || sess.donViId;
+      const userDept = sess.department || sess.unit;
+      if (item.don_vi_id && userDonViId && item.don_vi_id === userDonViId) return true;
+      if (item.noi_ban_hanh && userDept && item.noi_ban_hanh.trim().toLowerCase() === userDept.trim().toLowerCase()) return true;
+    }
+    return false;
+  }, [isSuperuser, isSessionAdmin, can]);
 
   const canDeleteItem = useCallback((item: ResourceItem) => {
-    if (canDeleteAny) return true;
+    if (typeof item.can_delete === 'boolean') {
+      return item.can_delete;
+    }
+    if (isSuperuser || isSessionAdmin) return true;
     const sess = authService.getSession();
     if (!sess) return false;
-    return Boolean(
+    const isCreator = Boolean(
       (item.nguoi_tao_name && sess.fullName && item.nguoi_tao_name === sess.fullName) ||
-      (item.nguoi_tao_name && sess.username && item.nguoi_tao_name === sess.username)
+      (item.nguoi_tao_name && sess.username && item.nguoi_tao_name === sess.username) ||
+      (item.nguoi_tao && sess.id && item.nguoi_tao === sess.id)
     );
-  }, [canDeleteAny]);
+    if (isCreator) return true;
+
+    if (can('delete_tailieu')) {
+      const userDonViId = sess.don_vi_id || sess.donViId;
+      const userDept = sess.department || sess.unit;
+      if (item.don_vi_id && userDonViId && item.don_vi_id === userDonViId) return true;
+      if (item.noi_ban_hanh && userDept && item.noi_ban_hanh.trim().toLowerCase() === userDept.trim().toLowerCase()) return true;
+    }
+    return false;
+  }, [isSuperuser, isSessionAdmin, can]);
 
 
   // Toast thông báo nổi trên cùng (z-[999999] trên tất cả modal và màn đen)
@@ -694,6 +831,93 @@ export default function ResourceManagementPage() {
       duration: duration || 2500,
     });
   };
+
+  const formatApiError = useCallback(
+    (
+      error: unknown,
+      defaultTitle = currentLang === 'en' ? 'Operation Error' : 'Lỗi thao tác',
+      defaultMessage = currentLang === 'en' ? 'Failed to process request on server.' : 'Không thể lưu dữ liệu lên hệ thống máy chủ'
+    ): { title: string; message: string; type: 'danger' } => {
+      let status: number | undefined;
+      let detail: string | undefined;
+
+      if (error instanceof ApiError) {
+        status = error.status;
+        if (typeof error.data === 'object' && error.data !== null) {
+          if ('detail' in error.data && typeof error.data.detail === 'string') {
+            detail = error.data.detail;
+          } else if ('message' in error.data && typeof error.data.message === 'string') {
+            detail = error.data.message;
+          } else if ('error' in error.data && typeof error.data.error === 'string') {
+            detail = error.data.error;
+          } else {
+            const entries = Object.entries(error.data);
+            if (entries.length > 0) {
+              detail = entries
+                .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : String(v)}`)
+                .join(' | ');
+            }
+          }
+        }
+        if (!detail && error.message) {
+          detail = error.message;
+        }
+      } else if (typeof error === 'object' && error !== null) {
+        const errObj = error as {
+          status?: number;
+          response?: { status?: number; data?: Record<string, unknown> | string };
+          data?: Record<string, unknown> | string;
+          message?: string;
+        };
+        status = errObj.status ?? errObj.response?.status;
+        const data = errObj.data ?? errObj.response?.data;
+        if (typeof data === 'object' && data !== null && 'detail' in data) {
+          detail = String(data.detail);
+        } else if (typeof data === 'string') {
+          detail = data;
+        } else if (typeof data === 'object' && data !== null) {
+          const entries = Object.entries(data);
+          if (entries.length > 0) {
+            detail = entries
+              .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : String(v)}`)
+              .join(' | ');
+          }
+        } else if (errObj.message) {
+          detail = errObj.message;
+        }
+      }
+
+      const isPermissionDenied =
+        status === 403 ||
+        detail === 'roles.messages.permissionDenied' ||
+        detail?.toLowerCase().includes('permissiondenied') ||
+        detail?.toLowerCase().includes('không có quyền') ||
+        detail?.toLowerCase().includes('permission denied');
+
+      if (isPermissionDenied) {
+        return {
+          title: currentLang === 'en' ? 'Permission Denied' : 'Từ chối quyền hạn',
+          message: t('roles.messages.permissionDenied'),
+          type: 'danger',
+        };
+      }
+
+      let finalMessage = detail || defaultMessage;
+      if (finalMessage.includes('.')) {
+        const translated = t(finalMessage as never);
+        if (translated && translated !== finalMessage) {
+          finalMessage = translated;
+        }
+      }
+
+      return {
+        title: defaultTitle,
+        message: finalMessage,
+        type: 'danger',
+      };
+    },
+    [currentLang, t]
+  );
 
   // Danh sách năm trích xuất từ dữ liệu thực tế kết hợp sinh động năm hiện tại
   const availableYears = useMemo(() => {
@@ -1047,9 +1271,7 @@ export default function ResourceManagementPage() {
       setIsDeleting(true);
 
       // Gọi API Backend xóa tài liệu
-      await apiClient.delete(`/api/resources/documents/${deleteItem.id}/`).catch((e) => {
-        console.warn('Lỗi khi xóa tài liệu trên backend:', e);
-      });
+      await apiClient.delete(`/api/resources/documents/${deleteItem.id}/`);
 
       // Xóa khỏi danh sách tài liệu (instant UI feedback)
       const targetId = deleteItem.id;
@@ -1061,7 +1283,11 @@ export default function ResourceManagementPage() {
       setDeleteItem(null);
 
       // Hiển thị Toast thông báo thành công
-      showToast(`Đã xóa thành công tài liệu: "${targetTitle}"`, 'danger', 'Xóa tài liệu');
+      showToast(
+        currentLang === 'en' ? `Deleted document: "${targetTitle}"` : `Đã xóa thành công tài liệu: "${targetTitle}"`,
+        'danger',
+        currentLang === 'en' ? 'Delete Document' : 'Xóa tài liệu'
+      );
 
       // Tự động điều chỉnh trang nếu trang hiện tại bị trống
       const remainingDocs = documents.filter((d) => d.id !== targetId);
@@ -1073,6 +1299,14 @@ export default function ResourceManagementPage() {
       // Đồng bộ ngầm với server và thông báo cho các tab/client khác
       await fetchResources(true, true);
       notifyMutation();
+    } catch (error: unknown) {
+      console.error('Lỗi khi xóa tài liệu trên backend:', error);
+      const errInfo = formatApiError(
+        error,
+        currentLang === 'en' ? 'Delete Document' : 'Xóa tài liệu',
+        currentLang === 'en' ? 'Failed to delete document from server.' : 'Không thể xóa tài liệu trên hệ thống máy chủ'
+      );
+      showToast(errInfo.message, errInfo.type, errInfo.title);
     } finally {
       setIsDeleting(false);
     }
@@ -1114,6 +1348,7 @@ export default function ResourceManagementPage() {
         );
         setDetailItem((prev) => (prev && prev.id === savedDoc.id ? savedDoc : prev));
         setIsFormOpen(false);
+        setFormInitialData(null);
         showToast(`Đã cập nhật thành công tài liệu: "${savedDoc.tieu_de}"`, 'success', 'Cập nhật tài liệu');
       } else {
         // Tạo mới tài liệu qua Backend API
@@ -1134,6 +1369,7 @@ export default function ResourceManagementPage() {
         // Cập nhật local state ngay lập tức (instant UI feedback)
         setDocuments((prev) => [savedDoc, ...prev]);
         setIsFormOpen(false);
+        setFormInitialData(null);
         showToast(`Đã thêm mới thành công tài liệu: "${savedDoc.tieu_de}"`, 'success', 'Thêm mới tài liệu');
       }
       // Đồng bộ ngầm với server sau khi cập nhật local state và thông báo cho các tab/client khác
@@ -1141,19 +1377,15 @@ export default function ResourceManagementPage() {
       notifyMutation();
     } catch (error: unknown) {
       console.error('Lỗi khi lưu tài liệu lên server:', error);
-      const err = error as { response?: { data?: Record<string, unknown> | string }; message?: string };
-      const serverMsg =
-        (typeof err?.response?.data === 'object' && err?.response?.data !== null && 'detail' in err.response.data
-          ? String(err.response.data.detail)
-          : null) ||
-        (typeof err?.response?.data === 'string' ? err.response.data : null) ||
-        (err?.response?.data && typeof err?.response?.data === 'object'
-          ? Object.entries(err.response.data)
-              .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
-              .join(' | ')
-          : null) ||
-        err?.message;
-      showToast(serverMsg || 'Không thể lưu tài liệu lên hệ thống máy chủ', 'danger', 'Lỗi lưu trữ');
+      const isEdit = Boolean(formInitialData);
+      const errInfo = formatApiError(
+        error,
+        isEdit
+          ? (currentLang === 'en' ? 'Update Document' : 'Cập nhật tài liệu')
+          : (currentLang === 'en' ? 'Add Document' : 'Thêm mới tài liệu'),
+        currentLang === 'en' ? 'Failed to save document to server.' : 'Không thể lưu tài liệu lên hệ thống máy chủ'
+      );
+      showToast(errInfo.message, errInfo.type, errInfo.title);
     } finally {
       setIsSubmittingDoc(false);
     }
@@ -1233,7 +1465,14 @@ export default function ResourceManagementPage() {
       notifyMutation();
     } catch (e) {
       console.error('Lỗi khi lưu thư mục lên máy chủ:', e);
-      showToast('Không thể lưu thư mục lên hệ thống máy chủ', 'danger', 'Lỗi lưu trữ');
+      const errInfo = formatApiError(
+        e,
+        isEdit
+          ? (currentLang === 'en' ? 'Update Folder' : 'Cập nhật Thư mục')
+          : (currentLang === 'en' ? 'Add Folder' : 'Thêm mới Thư mục'),
+        currentLang === 'en' ? 'Failed to save folder to server.' : 'Không thể lưu thư mục lên hệ thống máy chủ'
+      );
+      showToast(errInfo.message, errInfo.type, errInfo.title);
       throw e;
     }
   };
@@ -1256,7 +1495,12 @@ export default function ResourceManagementPage() {
       notifyMutation();
     } catch (e) {
       console.error('Lỗi khi xóa danh mục trên máy chủ:', e);
-      showToast('Không thể xóa thư mục trên hệ thống máy chủ', 'danger', 'Lỗi thao tác');
+      const errInfo = formatApiError(
+        e,
+        currentLang === 'en' ? 'Delete Folder' : 'Xóa Thư mục',
+        currentLang === 'en' ? 'Failed to delete folder from server.' : 'Không thể xóa thư mục trên hệ thống máy chủ'
+      );
+      showToast(errInfo.message, errInfo.type, errInfo.title);
       throw e;
     }
   };
@@ -1309,7 +1553,14 @@ export default function ResourceManagementPage() {
       notifyMutation();
     } catch (e) {
       console.error('Lỗi khi lưu loại tài liệu lên máy chủ:', e);
-      showToast('Không thể lưu loại tài liệu lên hệ thống máy chủ', 'danger', 'Lỗi lưu trữ');
+      const errInfo = formatApiError(
+        e,
+        isEdit
+          ? (currentLang === 'en' ? 'Update Document Type' : 'Cập nhật Loại tài liệu')
+          : (currentLang === 'en' ? 'Add Document Type' : 'Thêm mới Loại tài liệu'),
+        currentLang === 'en' ? 'Failed to save document type to server.' : 'Không thể lưu loại tài liệu lên hệ thống máy chủ'
+      );
+      showToast(errInfo.message, errInfo.type, errInfo.title);
       throw e;
     }
   };
@@ -1339,7 +1590,12 @@ export default function ResourceManagementPage() {
       notifyMutation();
     } catch (e) {
       console.error('Lỗi khi xóa loại tài liệu trên máy chủ:', e);
-      showToast('Không thể xóa loại tài liệu trên hệ thống máy chủ', 'danger', 'Lỗi thao tác');
+      const errInfo = formatApiError(
+        e,
+        currentLang === 'en' ? 'Delete Document Type' : 'Xóa Loại tài liệu',
+        currentLang === 'en' ? 'Failed to delete document type from server.' : 'Không thể xóa loại tài liệu trên hệ thống máy chủ'
+      );
+      showToast(errInfo.message, errInfo.type, errInfo.title);
       throw e;
     }
   };
@@ -1417,7 +1673,7 @@ export default function ResourceManagementPage() {
             ? (currentLang === 'en' ? 'Partially Active' : 'Còn hiệu lực một phần')
             : doc.hieu_luc === 'HET_HIEU_LUC'
               ? (currentLang === 'en' ? 'Expired' : 'Hết hiệu lực')
-              : (currentLang === 'en' ? 'Expired & Replaced' : 'Hết và thay thế'),
+              : (currentLang === 'en' ? 'Expired & Replaced' : 'Hết hiệu lực và thay thế'),
         doc.hien_thi === 'TAT_CA'
           ? (currentLang === 'en' ? 'Public / All' : 'Tất cả')
           : (currentLang === 'en' ? 'Internal department' : 'Nội bộ phòng ban'),
@@ -1448,22 +1704,40 @@ export default function ResourceManagementPage() {
   };
 
   // Xử lý tải tệp đính kèm về máy
-  const handleDownloadFile = (item: ResourceItem, fileName?: string, filePath?: string) => {
-    const targetPath = filePath || item.file_dinh_kem;
-    if (!targetPath) return;
-    const a = document.createElement('a');
-    a.href = targetPath;
-    a.target = '_blank';
-    a.rel = 'noopener noreferrer';
+  const handleDownloadFile = async (item: ResourceItem, fileName?: string, filePath?: string) => {
+    const att = fileName
+      ? item.attachments?.find((a) => a.name === fileName)
+      : item.attachments?.[0];
+    const targetUrl = att?.id
+      ? `/api/resources/attachments/${att.id}/download/`
+      : (filePath || item.file_dinh_kem);
+
+    if (!targetUrl) return;
+
     const suggestedName =
       fileName ||
-      item.attachments?.[0]?.name ||
-      (targetPath.startsWith('blob:') ? `${item.tieu_de || 'tai_lieu'}.pdf` : targetPath.split('?')[0].split('/').pop()) ||
-      'tai_lieu.pdf';
-    a.download = suggestedName;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+      att?.name ||
+      (targetUrl.split('?')[0].split('/').pop()) ||
+      `${item.tieu_de || 'tai_lieu'}.pdf`;
+
+    try {
+      await downloadBlob(targetUrl, suggestedName);
+    } catch (err) {
+      console.warn('Lỗi downloadBlob, chuyển sang fallback tải URL máy chủ:', err);
+      const token = typeof window !== 'undefined'
+        ? (localStorage.getItem('tlbm_access_token') || localStorage.getItem('tlbm_token') || '')
+        : '';
+      const absUrl = getAbsoluteFileUrl(targetUrl);
+      const serverUrl = token
+        ? `${absUrl}${absUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`
+        : absUrl;
+      const a = document.createElement('a');
+      a.href = serverUrl;
+      a.download = suggestedName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
   };
 
   return (
@@ -2561,15 +2835,20 @@ export default function ResourceManagementPage() {
       {/* MODAL XEM CHI TIẾT TÀI LIỆU (MỤC 6) */}
       <ResourceDetailModal
         isOpen={isDetailOpen}
-        onClose={() => setIsDetailOpen(false)}
+        onClose={() => {
+          setIsDetailOpen(false);
+          setDetailItem(null);
+        }}
         item={detailItem}
         onDownloadFile={handleDownloadFile}
         onEdit={detailItem && canEditItem(detailItem) ? (item) => {
           setIsDetailOpen(false);
+          setDetailItem(null);
           handleEdit(item);
         } : undefined}
         onDelete={detailItem && canDeleteItem(detailItem) ? (item) => {
           setIsDetailOpen(false);
+          setDetailItem(null);
           handleDelete(item);
         } : undefined}
       />
@@ -2577,7 +2856,10 @@ export default function ResourceManagementPage() {
       {/* MODAL THÊM MỚI / SỬA TÀI LIỆU (MỤC 7) */}
       <ResourceFormModal
         isOpen={isFormOpen}
-        onClose={() => setIsFormOpen(false)}
+        onClose={() => {
+          setIsFormOpen(false);
+          setFormInitialData(null);
+        }}
         onSubmit={handleFormSubmit}
         initialData={formInitialData}
         categories={categories}

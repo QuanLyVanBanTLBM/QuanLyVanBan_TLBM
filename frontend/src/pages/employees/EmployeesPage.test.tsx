@@ -55,6 +55,14 @@ const mockEmployeeData = [
         chuc_vu_ten: 'Phó phòng',
         chuc_danh: 'Phó phòng kiêm nhiệm',
       },
+      {
+        id: 11,
+        don_vi_id: 3,
+        don_vi_ten: 'Phòng Nhân sự',
+        chuc_vu_id: 3,
+        chuc_vu_ten: 'Trưởng ban',
+        chuc_danh: 'Trưởng ban kiêm nhiệm',
+      },
     ],
     created_at: '2026-01-15T08:00:00Z',
     updated_at: '2026-01-15T08:00:00Z',
@@ -986,7 +994,7 @@ describe('EmployeesPage Component (Issue #24)', () => {
     );
   });
 
-  it('renders concurrent assignments badge on employee unit cell', async () => {
+  it('renders the main and one concurrent position with a badge for remaining positions', async () => {
     render(
       <MemoryRouter>
         <EmployeesPage />
@@ -997,8 +1005,14 @@ describe('EmployeesPage Component (Issue #24)', () => {
       expect(screen.getByText('Nguyễn Văn Bình')).toBeInTheDocument();
     });
 
-    // Cán bộ 1 có 1 phòng ban kiêm nhiệm -> hiển thị badge '+1 kiêm nhiệm'
-    expect(screen.getByText('+1 kiêm nhiệm')).toBeInTheDocument();
+    expect(screen.getByText('+2 kiêm nhiệm')).toBeInTheDocument();
+    expect(screen.getByText('Chức vụ')).toBeInTheDocument();
+    expect(screen.getByText('kiêm Phó phòng')).toBeInTheDocument();
+    const positionBadge = screen.getByText('+1 chức vụ');
+    expect(positionBadge.parentElement).toHaveClass('mt-1');
+    expect(positionBadge.parentElement?.querySelector('i')).toHaveClass('fa-solid', 'fa-briefcase');
+    expect(screen.queryByText('Chuyên viên tổng hợp')).not.toBeInTheDocument();
+    expect(screen.queryByText('Trưởng ban')).not.toBeInTheDocument();
   });
 
   it('triggers export excel download on clicking Export Excel button', async () => {
