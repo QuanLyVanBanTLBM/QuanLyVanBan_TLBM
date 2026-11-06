@@ -54,8 +54,7 @@
       "syncIntoSelected": "Sync into the selected folder:",
       "close": "Close",
       "scanning": "Scanning...",
-      "startSync": "Start sync",
-      "syncError": "Local folder sync failed."
+      "startSync": "Start sync"
     },
     "tree": {
       "localFolderTitle": "Local folder: {path}",
