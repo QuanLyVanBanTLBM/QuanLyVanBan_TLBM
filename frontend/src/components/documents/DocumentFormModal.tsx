@@ -330,9 +330,9 @@ function buildInitialForm(initDocInput?: InitialDocType | DocumentFormInput | nu
 
 export default function DocumentFormModal({ open, onClose, initial, onSaved, defaultLoai = 'DEN' }: Props) {
   const { t } = useTranslation();
-  const { can } = usePermissions();
+  const { can, isSystemAdmin } = usePermissions();
   const currentSession = useMemo(() => authService.getSession(), []);
-  const isAdmin = currentSession?.role === 'admin' || currentSession?.username === 'admin';
+  const isAdmin = isSystemAdmin;
   const initDoc = initial as (Partial<DocumentDetail> & Record<string, unknown>) | null | undefined;
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState<FormState>(() => buildInitialForm(initial, defaultLoai));

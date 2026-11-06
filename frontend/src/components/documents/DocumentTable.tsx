@@ -177,7 +177,7 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
 }) => {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
-  const { can, isSuperuser } = usePermissions();
+  const { can, isSuperuser, isSystemAdmin } = usePermissions();
   const isDi = loai === 'DI';
 
   // Lấy thông tin phiên làm việc hiện tại để phân quyền hiển thị tác vụ
@@ -188,9 +188,7 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
     const isExpired = doc.hieu_luc === 'HET_HIEU_LUC' || doc.hieu_luc === 'HET_VA_THAY_THE';
     const isMat = isConfidential || doc.loai === 'MAT' || loai === 'MAT';
     const isDocConfidential = isMat || doc.pham_vi === 'HAN_CHE';
-    const isAdmin =
-      currentSession?.role === 'admin' ||
-      currentSession?.username === 'admin';
+    const isAdmin = isSystemAdmin;
     const isCreator = Boolean(
       currentSession?.username &&
       doc.nguoi_tao_username &&
@@ -263,7 +261,7 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
       canDelete: Boolean(onDelete) && userCanDelete,
       canViewHistory: Boolean(onViewHistory) && canViewHistory,
     };
-  }, [currentSession, isConfidential, isSuperuser, can, loai, onDelete, onEdit, onViewHistory]);
+  }, [currentSession, isConfidential, isSuperuser, isSystemAdmin, can, loai, onDelete, onEdit, onViewHistory]);
 
   // Quản lý menu 3 chấm ⋮ mở trên dòng nào
   const [activeMenuId, setActiveMenuId] = useState<number | null>(null);
