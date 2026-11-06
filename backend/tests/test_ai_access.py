@@ -124,6 +124,7 @@ class AIAccessTests(TestCase):
             "data": [
                 {"id": "gpt-4o-mini"},
                 {"id": "text-embedding-3-small"},
+                {"id": "text-embedding-3-large"},
             ]
         }
         mock_response = MagicMock()
