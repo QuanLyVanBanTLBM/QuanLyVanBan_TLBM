@@ -14,7 +14,7 @@ import { authService } from '@lib/authService';
 import { usePermissions } from '@lib/permissions';
 import { formatDate } from '@lib/dateUtils';
 import { ConfirmationModal } from './ConfirmationModal';
-import { downloadBlob } from '@lib/apiClient';
+import { downloadBlob, apiClient } from '@lib/apiClient';
 import { getAbsoluteFileUrl } from '@lib/fileUtils';
 import { FilePreviewModal } from './FilePreviewModal';
 
@@ -579,7 +579,46 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
     return ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'svg', 'bmp'].includes(ext);
   };
 
-  // Xem trước tệp hiện có: PDF/Ảnh -> mở tab mới theo đường dẫn máy chủ; ZIP/DOCX/EXCEL -> tải về máy
+  // Tải tệp đính kèm hiện có về máy
+  const handleDownloadExistingFile = async (file: { id?: number; name: string; size?: number; path?: string }) => {
+    const downloadUrl = file.id
+      ? `/api/resources/attachments/${file.id}/download/`
+      : (file.path || '');
+    if (!downloadUrl) return;
+
+    try {
+      await downloadBlob(downloadUrl, file.name);
+    } catch (err) {
+      console.warn('Lỗi downloadBlob:', err);
+      if (file.id) {
+        try {
+          const res = await apiClient.post<{ ticket: string; download_url: string }>(
+            `/api/resources/attachments/${file.id}/ticket/`
+          );
+          if (res?.download_url) {
+            const a = document.createElement('a');
+            a.href = getAbsoluteFileUrl(res.download_url);
+            a.download = file.name;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            return;
+          }
+        } catch (ticketErr) {
+          console.error('Lỗi lấy vé tải tệp:', ticketErr);
+        }
+      }
+      const absUrl = getAbsoluteFileUrl(downloadUrl);
+      const a = document.createElement('a');
+      a.href = absUrl;
+      a.download = file.name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+  };
+
+  // Xem trước tệp hiện có: PDF/Ảnh -> xin vé dùng 1 lần (Burn on Read) và mở tab mới; ZIP/DOCX/EXCEL -> tải về máy
   const handlePreviewExistingFile = async (file: { id?: number; name: string; size?: number; path?: string }) => {
     const isPreviewable = isDirectPreviewable(file.name);
     const targetUrl = file.id
@@ -589,39 +628,26 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
     if (!targetUrl) return;
 
     if (!isPreviewable) {
-      const downloadUrl = file.id
-        ? `/api/resources/attachments/${file.id}/download/`
-        : targetUrl;
-      try {
-        await downloadBlob(downloadUrl, file.name);
-      } catch (err) {
-        console.warn('Lỗi downloadBlob:', err);
-        const token = typeof window !== 'undefined'
-          ? (localStorage.getItem('tlbm_access_token') || localStorage.getItem('tlbm_token') || '')
-          : '';
-        const absUrl = getAbsoluteFileUrl(downloadUrl);
-        const serverUrl = token
-          ? `${absUrl}${absUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`
-          : absUrl;
-        const a = document.createElement('a');
-        a.href = serverUrl;
-        a.download = file.name;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-      }
+      await handleDownloadExistingFile(file);
       return;
     }
 
-    // Mở trực tiếp đường dẫn máy chủ trong tab mới (không dùng URL blob: bộ nhớ tạm)
-    const token = typeof window !== 'undefined'
-      ? (localStorage.getItem('tlbm_access_token') || localStorage.getItem('tlbm_token') || '')
-      : '';
+    if (file.id) {
+      try {
+        const res = await apiClient.post<{ ticket: string; view_url: string }>(
+          `/api/resources/attachments/${file.id}/ticket/`
+        );
+        if (res?.view_url) {
+          window.open(getAbsoluteFileUrl(res.view_url), '_blank');
+          return;
+        }
+      } catch (err) {
+        console.error('Lỗi cấp vé xem tài liệu:', err);
+      }
+    }
+
     const absUrl = getAbsoluteFileUrl(targetUrl);
-    const serverUrl = token
-      ? `${absUrl}${absUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`
-      : absUrl;
-    window.open(serverUrl, '_blank');
+    window.open(absUrl, '_blank');
   };
 
   // Xem trước tệp mới tải lên: PDF/Ảnh -> mở tab mới; ZIP/DOCX/EXCEL -> tải về máy
@@ -1427,22 +1453,15 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
                             <i className="fa-solid fa-eye text-xs" />
                           </button>
                           {file.id && (
-                            <a
-                              href={(() => {
-                                const token = typeof window !== 'undefined'
-                                  ? (localStorage.getItem('tlbm_access_token') || localStorage.getItem('tlbm_token') || '')
-                                  : '';
-                                const raw = `/api/resources/attachments/${file.id}/download/`;
-                                const abs = getAbsoluteFileUrl(raw);
-                                return token ? `${abs}${abs.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}` : abs;
-                              })()}
-                              download={file.name}
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadExistingFile(file)}
                               className="p-1 text-muted hover:text-primary rounded transition-colors cursor-pointer inline-flex items-center justify-center"
                               title={t('resourceManagement.downloadAttachment')}
                               aria-label={t('resourceManagement.downloadAttachment')}
                             >
                               <i className="fa-solid fa-download text-xs" />
-                            </a>
+                            </button>
                           )}
                           <button
                             type="button"
