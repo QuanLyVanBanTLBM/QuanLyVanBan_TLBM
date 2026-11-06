@@ -1131,7 +1131,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
         .filter((message) => !message.id.startsWith('msg-welcome'))
         .slice(-8)
         .map((message) => ({ role: message.sender === 'user' ? 'user' : 'assistant', content: message.text }));
-      const response = await askQuestion(text, history, selectedCategory || null, targetDocument?.filename || null);
+      const response = await askQuestion(text, history, selectedCategory || null, targetDocument?.filename || null, currentLang);
       const aiText = response.answer || response.text;
       if (typeof aiText !== 'string' || !aiText.trim()) throw new Error('Empty AI response');
 

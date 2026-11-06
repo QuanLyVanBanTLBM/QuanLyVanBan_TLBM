@@ -99,6 +99,11 @@ export async function apiClient<T = unknown>(
     headers.set('Content-Type', 'application/json');
   }
 
+  const currentLanguage = (typeof window !== 'undefined' ? localStorage.getItem('tlbm_lang') : null) || 'vi';
+  if (!headers.has('Accept-Language')) {
+    headers.set('Accept-Language', currentLanguage);
+  }
+
   const token = localStorage.getItem('tlbm_access_token') || localStorage.getItem('tlbm_token');
   if (token && !headers.has('Authorization')) {
     headers.set('Authorization', `Bearer ${token}`);
