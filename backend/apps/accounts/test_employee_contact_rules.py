@@ -1,7 +1,8 @@
-"""Quy tắc email và số điện thoại CBNV (chốt 04/11/2026): email thuộc tên miền công ty, SĐT đúng 10 số di động VN."""
+"""Quy tắc email và số điện thoại CBNV: SĐT đúng 10 số di động VN; email nhận mọi tên miền, giới hạn tên miền chỉ khi cấu hình."""
 from io import BytesIO
 
 import openpyxl
+from django.conf import settings
 from django.test import override_settings
 from rest_framework import status
 
@@ -103,11 +104,13 @@ class EmployeeContactRulesTests(EmployeeBaseTestCase):
 
     # --- Email ------------------------------------------------------------------------------------------------
 
+    @override_settings(EMPLOYEE_EMAIL_ALLOWED_DOMAINS=("baolong.vn",))
     def test_create_accepts_company_domain_in_any_letter_case(self):
         response = self.create(email="Nguyen.Van.An@BaoLong.VN")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.content)
         self.assertEqual(response.json()["email"], "nguyen.van.an@baolong.vn")
 
+    @override_settings(EMPLOYEE_EMAIL_ALLOWED_DOMAINS=("baolong.vn",))
     def test_create_rejects_non_company_domains(self):
         for email in NON_COMPANY_EMAILS:
             with self.subTest(email=email):
@@ -120,6 +123,7 @@ class EmployeeContactRulesTests(EmployeeBaseTestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.json()["email"], ["employees.messages.invalidEmail"])
 
+    @override_settings(EMPLOYEE_EMAIL_ALLOWED_DOMAINS=("baolong.vn",))
     def test_update_rejects_non_company_email_and_accepts_company_email(self):
         employee = self.normal_user
         bad = self.client.patch(self.detail_url(employee), {"email": "binh@yahoo.com"}, format="json")
@@ -128,6 +132,7 @@ class EmployeeContactRulesTests(EmployeeBaseTestCase):
         good = self.client.patch(self.detail_url(employee), {"email": "binh@baolong.vn"}, format="json")
         self.assertEqual(good.status_code, status.HTTP_200_OK)
 
+    @override_settings(EMPLOYEE_EMAIL_ALLOWED_DOMAINS=("baolong.vn",))
     def test_update_that_does_not_send_email_keeps_a_legacy_address(self):
         """Hồ sơ cũ có email ngoài tên miền vẫn sửa được các trường khác khi không gửi lại email."""
         Employee.objects.filter(pk=self.normal_user.pk).update(email="cu@yahoo.com", sdt="023243423")
@@ -135,6 +140,26 @@ class EmployeeContactRulesTests(EmployeeBaseTestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.normal_user.refresh_from_db()
         self.assertEqual((self.normal_user.email, self.normal_user.sdt), ("cu@yahoo.com", "023243423"))
+
+    def test_default_settings_do_not_restrict_the_email_domain(self):
+        self.assertEqual(settings.EMPLOYEE_EMAIL_ALLOWED_DOMAINS, ())
+
+    def test_create_and_update_accept_any_domain_by_default(self):
+        for email in ("ai.do@gmail.com", "ai.do2@yahoo.com", "ai.do3@baolong.vn", "ai.do4@baohiembaolong.vn"):
+            with self.subTest(email=email):
+                response = self.create(email=email)
+                self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.content)
+        updated = self.client.patch(self.detail_url(self.normal_user), {"email": "binh.moi@gmail.com"}, format="json")
+        self.assertEqual(updated.status_code, status.HTTP_200_OK, updated.content)
+
+    def test_default_import_accepts_gmail_rows(self):
+        response = self.import_rows([("nguoi.moi@gmail.com", "0912345670"), ("khac@yahoo.com", "0912345671")])
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.content)
+        self.assertEqual(response.json()["created_count"], 2)
+
+    def test_malformed_email_is_still_rejected_by_default(self):
+        response = self.create(email="gmail.com")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     @override_settings(EMPLOYEE_EMAIL_ALLOWED_DOMAINS=())
     def test_empty_allow_list_disables_the_domain_rule(self):
@@ -167,6 +192,7 @@ class EmployeeContactRulesTests(EmployeeBaseTestCase):
     def error_codes(self, response):
         return {(error["field"], error["code"]) for error in response.json()["errors"]}
 
+    @override_settings(EMPLOYEE_EMAIL_ALLOWED_DOMAINS=("baolong.vn",))
     def test_import_reports_domain_and_phone_errors_per_row(self):
         response = self.import_rows([
             ("a@yahoo.com", "0912345678"),

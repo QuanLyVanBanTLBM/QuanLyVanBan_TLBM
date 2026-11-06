@@ -7,7 +7,7 @@ import { Button } from '@components/common/Button';
 import { Badge } from '@components/common/Badge';
 import { Select } from '@components/common/Select';
 import { ApiError } from '@lib/apiClient';
-import { isCompanyEmail, isValidEmployeePhone } from '../employeeContactRules';
+import { isValidEmployeePhone } from '../employeeContactRules';
 
 interface EmployeeModalProps {
   isOpen: boolean;
@@ -361,12 +361,6 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
     }
     if (!formData.email.trim()) {
       const msg = t('employees.validation.emailRequired');
-      setErrorKey(msg);
-      formRef.current?.scrollTo?.({ top: 0, behavior: 'smooth' });
-      return;
-    }
-    if (!isCompanyEmail(formData.email)) {
-      const msg = t('employees.validation.emailDomainInvalid');
       setErrorKey(msg);
       formRef.current?.scrollTo?.({ top: 0, behavior: 'smooth' });
       return;
