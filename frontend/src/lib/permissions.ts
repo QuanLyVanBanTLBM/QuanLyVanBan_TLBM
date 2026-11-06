@@ -7,6 +7,8 @@ import rawDefaultApiClient, * as allApiClient from '@lib/apiClient';
  */
 export interface MyPermissions {
   is_superuser: boolean;
+  /** Superuser hoặc thành viên nhóm ADMIN (backend: `authorization.permissions.is_system_admin`). */
+  is_system_admin?: boolean;
   permissions: string[];
 }
 
@@ -109,6 +111,7 @@ export function usePermissions() {
   return {
     loaded,
     isSuperuser: Boolean(me?.is_superuser),
+    isSystemAdmin: Boolean(me?.is_system_admin || me?.is_superuser),
     can: (codename: string) => hasPermission(me, codename),
   };
 }

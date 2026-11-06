@@ -1,5 +1,7 @@
 from django.db.models import Prefetch, Q
 
+from authorization.permissions import is_system_admin
+
 from .models import ChiTietTaiLieuAttachment, TaiLieuChiTiet
 
 
@@ -9,8 +11,8 @@ def visible_resources(qs, user):
     if not user or not user.is_authenticated:
         return qs.filter(hien_thi='TAT_CA')
 
-    # Quản trị viên và Staff: thấy toàn bộ
-    if user.is_superuser or user.is_staff:
+    # Quản trị hệ thống (superuser, nhóm ADMIN) và Staff: thấy toàn bộ
+    if user.is_staff or is_system_admin(user):
         return qs
 
     # Người dùng đăng nhập: thấy tài liệu TAT_CA, hoặc do chính mình tạo, hoặc cùng đơn vị/phòng ban
