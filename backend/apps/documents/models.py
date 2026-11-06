@@ -517,7 +517,8 @@ class BaseVanBan(models.Model):
         super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
-        if self.pham_vi == self.PhamVi.HAN_CHE:
+        # Chỉ DocumentViewSet.destroy đặt _allow_delete_han_che (Quản trị viên, đã kiểm quyền) cùng biến phiên của trigger.
+        if self.pham_vi == self.PhamVi.HAN_CHE and not getattr(self, "_allow_delete_han_che", False):
             raise ValidationError("Văn bản hạn chế không được phép xóa.")
         # Dọn dẹp liên kết Loại văn bản và Hồ sơ trước để thỏa mãn Trigger CSDL PostgreSQL
         if hasattr(self, "danhmuc"):
