@@ -116,6 +116,8 @@ def van_ban_xem_duoc(user, loai="DEN"):
             or is_admin_user(user)
             or user.has_perm(f"documents.view_{model_name}")
             or user.has_perm(f"view_{model_name}")
+            or user.has_perm(f"documents.view_read_log_{model_name}")
+            or user.has_perm(f"view_read_log_{model_name}")
         )
     except Exception:
         has_view_perm = bool(user.is_staff or user.is_superuser)
@@ -193,7 +195,11 @@ def la_nguoi_xem_duoc(user, van_ban):
     # Văn bản hiển thị bình thường: nếu user có nhóm quyền/phân quyền nhưng bị tước view_* thì không được xem chi tiết
     try:
         if user.user_permissions.exists() or user.groups.filter(permissions__isnull=False).exists():
-            return _co_quyen(user, f"view_{model_name}") or _co_quyen(user, f"change_{model_name}")
+            return (
+                _co_quyen(user, f"view_{model_name}")
+                or _co_quyen(user, f"change_{model_name}")
+                or _co_quyen(user, f"view_read_log_{model_name}")
+            )
     except Exception:
         pass
     return True
