@@ -583,8 +583,22 @@ export default function ResourceManagementPage() {
   const tabBarRef = useRef<HTMLDivElement>(null);
   const typeBarRef = useRef<HTMLDivElement>(null);
 
-  // Tự động lưu trạng thái vào sessionStorage và đồng bộ URL Query Parameters
-  // Khi reload lại trang (F5), toàn bộ mục đang chọn, trang và dòng hiển thị vẫn được giữ nguyên
+  // Modal State
+  const [detailItem, setDetailItem] = useState<ResourceItem | null>(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [formInitialData, setFormInitialData] = useState<ResourceItem | null>(null);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isSubmittingDoc, setIsSubmittingDoc] = useState(false);
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [isFolderManagerOpen, setIsFolderManagerOpen] = useState(false);
+
+  // Modal Xóa Tài liệu
+  const [deleteItem, setDeleteItem] = useState<ResourceItem | null>(null);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // Tự động lưu trạng thái vào sessionStorage và đồng bộ URL Query Parameters hai chiều
+  // Đảm bảo URL luôn phản ánh trạng thái mới nhất khi thao tác trên trang (bộ lọc, phân trang, modal chi tiết/thêm/sửa)
   useEffect(() => {
     const stateToSave: PersistedResourceState = {
       category: selectedCategory,
@@ -613,7 +627,28 @@ export default function ResourceManagementPage() {
     if (currentPage > 1) newParams.set('page', String(currentPage));
     if (pageSize !== 5) newParams.set('pageSize', String(pageSize));
 
-    setSearchParams(newParams, { replace: true });
+    // Đồng bộ trạng thái Modal lên URL
+    if (isDetailOpen && detailItem) {
+      newParams.set('detail', String(detailItem.id));
+    }
+    if (isFormOpen) {
+      if (formInitialData) {
+        newParams.set('edit', String(formInitialData.id));
+      } else {
+        newParams.set('action', 'create');
+      }
+    }
+    if (isCategoryModalOpen) {
+      newParams.set('action', 'categories');
+    }
+    if (isFolderManagerOpen) {
+      newParams.set('action', 'folder_tree');
+    }
+
+    // Chỉ cập nhật nếu query string thực sự có sự thay đổi
+    if (searchParams.toString() !== newParams.toString()) {
+      setSearchParams(newParams, { replace: true });
+    }
   }, [
     selectedCategory,
     selectedType,
@@ -623,22 +658,100 @@ export default function ResourceManagementPage() {
     searchField,
     currentPage,
     pageSize,
+    isDetailOpen,
+    detailItem,
+    isFormOpen,
+    formInitialData,
+    isCategoryModalOpen,
+    isFolderManagerOpen,
+    searchParams,
     setSearchParams,
   ]);
 
-  // Modal State
-  const [detailItem, setDetailItem] = useState<ResourceItem | null>(null);
-  const [isDetailOpen, setIsDetailOpen] = useState(false);
-  const [formInitialData, setFormInitialData] = useState<ResourceItem | null>(null);
-  const [isFormOpen, setIsFormOpen] = useState(false);
-  const [isSubmittingDoc, setIsSubmittingDoc] = useState(false);
-  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
-  const [isFolderManagerOpen, setIsFolderManagerOpen] = useState(false);
+  // Lắng nghe URL query params để tự động cập nhật bộ lọc hoặc mở modal tương ứng khi truy cập link trực tiếp/back/forward
+  useEffect(() => {
+    const urlCategory = searchParams.get('category') || 'all';
+    const urlType = searchParams.get('type') || 'all';
+    const urlYear = searchParams.get('year') || 'all';
+    const urlStatus = searchParams.get('status') || 'all';
+    const urlQ = searchParams.get('q') || '';
+    const urlSearchField = (searchParams.get('search_field') as SearchScopeType) || 'all';
+    const urlPage = searchParams.get('page') ? Number(searchParams.get('page')) : 1;
+    const urlPageSize = searchParams.get('pageSize') ? Number(searchParams.get('pageSize')) : 5;
 
-  // Modal Xóa Tài liệu
-  const [deleteItem, setDeleteItem] = useState<ResourceItem | null>(null);
-  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
+    setSelectedCategory((prev) => (prev !== urlCategory ? urlCategory : prev));
+    setSelectedType((prev) => (prev !== urlType ? urlType : prev));
+    setSelectedYear((prev) => (prev !== urlYear ? urlYear : prev));
+    setStatusFilter((prev) => (prev !== urlStatus ? urlStatus : prev));
+    setSearchTerm((prev) => (prev !== urlQ ? urlQ : prev));
+    setSearchField((prev) => (prev !== urlSearchField ? urlSearchField : prev));
+    setCurrentPage((prev) => (prev !== urlPage ? urlPage : prev));
+    setPageSize((prev) => (prev !== urlPageSize ? urlPageSize : prev));
+
+    const detailParam = searchParams.get('detail');
+    const actionParam = searchParams.get('action');
+    const editParam = searchParams.get('edit');
+
+    if (detailParam && !isNaN(Number(detailParam))) {
+      const docId = Number(detailParam);
+      const found = documents.find((d) => d.id === docId);
+      if (found) {
+        setDetailItem((prev) => (prev?.id === docId ? prev : found));
+        setIsDetailOpen(true);
+      } else {
+        // Tự động tải từ API nếu tài liệu chưa có sẵn trong danh sách
+        apiClient<ResourceItem>(`/api/resources/documents/${docId}/`)
+          .then((fetched) => {
+            if (fetched && fetched.id) {
+              setDetailItem(fetched);
+              setIsDetailOpen(true);
+            }
+          })
+          .catch(() => {
+            /* ignore if not found */
+          });
+      }
+    } else {
+      setIsDetailOpen((prev) => (prev ? false : prev));
+      setDetailItem((prev) => (prev ? null : prev));
+    }
+
+    if (actionParam === 'create') {
+      setFormInitialData(null);
+      setIsFormOpen(true);
+    } else if (actionParam === 'categories') {
+      setIsCategoryModalOpen(true);
+    } else if (actionParam === 'folder_tree') {
+      setIsFolderManagerOpen(true);
+    } else if (editParam && !isNaN(Number(editParam))) {
+      const editId = Number(editParam);
+      const found = documents.find((d) => d.id === editId);
+      if (found) {
+        setFormInitialData((prev) => (prev?.id === editId ? prev : found));
+        setIsFormOpen(true);
+      } else {
+        apiClient<ResourceItem>(`/api/resources/documents/${editId}/`)
+          .then((fetched) => {
+            if (fetched && fetched.id) {
+              setFormInitialData(fetched);
+              setIsFormOpen(true);
+            }
+          })
+          .catch(() => {
+            /* ignore if not found */
+          });
+      }
+    } else if (!actionParam && !editParam) {
+      setIsFormOpen((prev) => (prev ? false : prev));
+      setFormInitialData((prev) => (prev ? null : prev));
+      if (actionParam !== 'categories') {
+        setIsCategoryModalOpen((prev) => (prev ? false : prev));
+      }
+      if (actionParam !== 'folder_tree') {
+        setIsFolderManagerOpen((prev) => (prev ? false : prev));
+      }
+    }
+  }, [searchParams, documents]);
 
   // Phân quyền người dùng (RBAC contract Issue #21)
   const currentSession = authService.getSession();
@@ -1235,6 +1348,7 @@ export default function ResourceManagementPage() {
         );
         setDetailItem((prev) => (prev && prev.id === savedDoc.id ? savedDoc : prev));
         setIsFormOpen(false);
+        setFormInitialData(null);
         showToast(`Đã cập nhật thành công tài liệu: "${savedDoc.tieu_de}"`, 'success', 'Cập nhật tài liệu');
       } else {
         // Tạo mới tài liệu qua Backend API
@@ -1255,6 +1369,7 @@ export default function ResourceManagementPage() {
         // Cập nhật local state ngay lập tức (instant UI feedback)
         setDocuments((prev) => [savedDoc, ...prev]);
         setIsFormOpen(false);
+        setFormInitialData(null);
         showToast(`Đã thêm mới thành công tài liệu: "${savedDoc.tieu_de}"`, 'success', 'Thêm mới tài liệu');
       }
       // Đồng bộ ngầm với server sau khi cập nhật local state và thông báo cho các tab/client khác
@@ -2720,15 +2835,20 @@ export default function ResourceManagementPage() {
       {/* MODAL XEM CHI TIẾT TÀI LIỆU (MỤC 6) */}
       <ResourceDetailModal
         isOpen={isDetailOpen}
-        onClose={() => setIsDetailOpen(false)}
+        onClose={() => {
+          setIsDetailOpen(false);
+          setDetailItem(null);
+        }}
         item={detailItem}
         onDownloadFile={handleDownloadFile}
         onEdit={detailItem && canEditItem(detailItem) ? (item) => {
           setIsDetailOpen(false);
+          setDetailItem(null);
           handleEdit(item);
         } : undefined}
         onDelete={detailItem && canDeleteItem(detailItem) ? (item) => {
           setIsDetailOpen(false);
+          setDetailItem(null);
           handleDelete(item);
         } : undefined}
       />
@@ -2736,7 +2856,10 @@ export default function ResourceManagementPage() {
       {/* MODAL THÊM MỚI / SỬA TÀI LIỆU (MỤC 7) */}
       <ResourceFormModal
         isOpen={isFormOpen}
-        onClose={() => setIsFormOpen(false)}
+        onClose={() => {
+          setIsFormOpen(false);
+          setFormInitialData(null);
+        }}
         onSubmit={handleFormSubmit}
         initialData={formInitialData}
         categories={categories}
