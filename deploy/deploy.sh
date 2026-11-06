@@ -204,6 +204,20 @@ $PY manage.py check
 $PY manage.py collectstatic --noinput | tail -1
 
 step "4/9 Cau hinh nginx"
+if [ -z "${CASE_ROOT:-}" ]; then
+  TLS_DIR="/etc/qlvb/tls"
+  if [ ! -f "$TLS_DIR/fullchain.pem" ] || [ ! -f "$TLS_DIR/privkey.pem" ]; then
+    if mkdir -p "$TLS_DIR" 2>/dev/null && [ -w "$TLS_DIR" ]; then
+      echo "Chung chi TLS chua ton tai; tu dong khoi tao chung chi tu ky cho staging tai $TLS_DIR..."
+      openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
+        -subj "/CN=staging-quanlyvanban.bhbl.vn" \
+        -keyout "$TLS_DIR/privkey.pem" \
+        -out "$TLS_DIR/fullchain.pem" >/dev/null 2>&1 || true
+      chmod 644 "$TLS_DIR/fullchain.pem" 2>/dev/null || true
+      chmod 644 "$TLS_DIR/privkey.pem" 2>/dev/null || true
+    fi
+  fi
+fi
 # Cau hinh khong phu thuoc release (/static/ tro qua current). Lam truoc khi dung service de loi nginx
 # chi can khoi phuc file cu; nginx dang chay giu cau hinh cu vi chua reload.
 if cmp -s -- "$NGINX_NEW" "$NGINX_SITE"; then
