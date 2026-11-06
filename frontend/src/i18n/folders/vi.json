@@ -54,7 +54,8 @@
       "syncIntoSelected": "Đồng bộ vào bên trong thư mục đang chọn:",
       "close": "Đóng",
       "scanning": "Đang quét...",
-      "startSync": "Bắt đầu đồng bộ"
+      "startSync": "Bắt đầu đồng bộ",
+      "syncError": "Đồng bộ thư mục local thất bại."
     },
     "tree": {
       "localFolderTitle": "Thư mục cục bộ: {path}",
