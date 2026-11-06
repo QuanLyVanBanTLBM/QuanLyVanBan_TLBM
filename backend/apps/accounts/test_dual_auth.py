@@ -113,6 +113,22 @@ class DualAuthenticationTests(TestCase):
         self.assertIn("chưa được phân quyền", response.data.get("error", ""))
         self.assertFalse(User.objects.filter(username="unprovisioned_user").exists())
 
+    def test_jit_position_is_matched_exactly_not_by_substring(self):
+        """Chức vụ từ Bảo Long chỉ khớp đúng tên; tên ngắn hơn một chức vụ cao hơn không được khớp nhầm."""
+        from accounts.models import Position
+        from accounts.views import _provision_alpaca_employee
+
+        cao = Position.objects.get(name="Phó Tổng Giám đốc điều hành")
+        chuyen_vien = Position.objects.get(name="Chuyên viên")
+
+        nham = _provision_alpaca_employee("jit_nham", {"fullName": "Người Nhầm", "positionName": "Phó Tổng Giám đốc"})
+        self.assertEqual(nham.chuc_vu_id, chuyen_vien.id)
+        self.assertFalse(nham.groups.filter(name="Ban Giám đốc").exists())
+
+        dung = _provision_alpaca_employee("jit_dung", {"fullName": "Người Đúng", "positionName": "phó tổng giám đốc điều hành"})
+        self.assertEqual(dung.chuc_vu_id, cao.id)
+        self.assertTrue(dung.groups.filter(name="Ban Giám đốc").exists())
+
     def test_privileged_user_never_calls_external_api_on_failed_local_auth(self):
         """[Điểm 1 & Điểm 2]: Tài khoản admin/staff nhập sai mật khẩu cục bộ thì trả 401 ngay, TUYỆT ĐỐI không gọi Alpaca API."""
         with patch("accounts.views.check_alpaca_auth") as mock_check_alpaca:
