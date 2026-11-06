@@ -19,11 +19,36 @@ Method không có trong dict bị từ chối; HEAD và OPTIONS dùng quyền c�
 Quyền được kiểm trước khi view chạy, nên người thiếu quyền nhận 403 kể cả với id không tồn tại.
 
 Chưa đăng nhập -> 401 (do IsAuthenticated), thiếu quyền -> 403.
-Quản trị tối cao (is_superuser) luôn được phép.
+Quản trị tối cao (is_superuser) luôn được phép; nhóm ADMIN được cấp đủ mọi quyền trong seed.
+Chỗ kiểm theo vai trò (không phải codename) dùng `is_system_admin(user)` thay vì tự so username hay role.
 """
 from rest_framework.permissions import BasePermission
 
 DEFAULT_DENIED_MESSAGE = "roles.messages.permissionDenied"
+ADMIN_GROUP_CODE = "ADMIN"
+
+
+def is_system_admin(user) -> bool:
+    """
+    Quản trị hệ thống: tài khoản đang hoạt động là superuser hoặc thành viên nhóm quyền ADMIN (ma_nhom_quyen).
+
+    Dùng cho các chỗ kiểm theo vai trò mà quyền codename không thay thế được (sửa dữ liệu của người khác,
+    thao tác quản trị CBNV...). Không dùng username, role của hồ sơ hay is_staff để suy ra quản trị.
+    Kết quả được nhớ trên đối tượng user trong vòng đời một request.
+    """
+    if not user or not user.is_authenticated or not user.is_active:
+        return False
+    if user.is_superuser:
+        return True
+    cached = getattr(user, "_is_system_admin", None)
+    if cached is None:
+        from .models import GroupInfo
+
+        cached = GroupInfo.objects.filter(
+            ma_nhom_quyen=ADMIN_GROUP_CODE, pk__in=user.groups.values("pk")
+        ).exists()
+        user._is_system_admin = cached
+    return cached
 
 
 def require_permission(codename, message: str = DEFAULT_DENIED_MESSAGE):

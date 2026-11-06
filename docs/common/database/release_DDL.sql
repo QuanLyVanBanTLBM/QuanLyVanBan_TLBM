@@ -6,6 +6,17 @@
 --   Migration documents 0013_cho_admin_xoa_van_ban_han_che cập nhật hàm trên DB đã dựng từ trước.
 -- =====================================================================
 -- =====================================================================
+-- GỠ 3 MÃ QUYỀN KHÔNG CÓ CHỨC NĂNG DÙNG (Nhóm 7; đánh dấu [GQVC] tại vị trí)
+-- Căn cứ: audit phân quyền 05/11/2026, không có API hoặc giao diện nào kiểm các mã này:
+--   toggle_status_hoso (Mở/Đóng danh mục hồ sơ), manage_documents_hoso (Đưa văn bản vào/loại ra khỏi hồ sơ điện tử),
+--   send_wish_sinhnhat (Gửi lời chúc thủ công; module Sinh nhật chỉ xem lịch và gửi email tự động).
+--   Bỏ 3 quyền khỏi seed auth_permission; bỏ lượt gán send_wish_sinhnhat khỏi VT, CV, TP, BGD; ADMIN nhận quyền qua
+--   CROSS JOIN nên giảm theo. Migration authorization 0018_remove_unused_permissions xóa quyền và các lượt gán
+--   (nhóm và người dùng) trên DB đã seed từ trước.
+-- Quy mô sau [GQVC] (cộng sau [TVHC]): 86 -> 83 quyền thao tác; 208 -> 201 lượt phân quyền (VT -1, CV -1, TP -1, BGD -1,
+--   ADMIN -3); nhóm VT 34 -> 33 quyền, CV 22 -> 21, TP 28 -> 27, BGD 31 -> 30.
+-- =====================================================================
+-- =====================================================================
 -- THÊM QUYỀN THÊM VĂN BẢN HẠN CHẾ (Nhóm 7; đánh dấu [TVHC] tại vị trí)
 -- Căn cứ: đề xuất Nhóm 2: thêm văn bản đến/đi phạm vi Hạn chế (pham_vi = 'HAN_CHE') cần quyền riêng;
 --   quyền add_vanbanden/add_vanbandi không đủ (tạo trực tiếp và import Excel).
@@ -2627,16 +2638,6 @@ VALUES
         'delete_hoso',
         'Hồ sơ'
     ),
-    (
-        'Mở/Đóng danh mục hồ sơ',
-        'toggle_status_hoso',
-        'Hồ sơ'
-    ),
-    (
-        'Đưa văn bản vào / loại ra khỏi hồ sơ điện tử',
-        'manage_documents_hoso',
-        'Hồ sơ'
-    ),
     -- Tài liệu, biểu mẫu (Nhóm 4)
     (
         'Xem tài liệu, biểu mẫu',
@@ -2762,11 +2763,6 @@ VALUES
         'view_sinhnhat',
         'Sinh nhật'
     ),
-    (
-        'Gửi lời chúc (thủ công)',
-        'send_wish_sinhnhat',
-        'Sinh nhật'
-    ),
     -- [v1] Quyền bổ sung của Nhóm 7 (Issue #53): trang Phân quyền, import Chức vụ, quản lý danh mục phòng họp
     (
         'Xem danh sách nhóm quyền',
@@ -2870,7 +2866,6 @@ WHERE
         'add_datphonghop',
         'change_own_datphonghop',
         'view_sinhnhat',
-        'send_wish_sinhnhat',
         'use_aiassistant'
     ) ON CONFLICT (group_id, permission_id) DO NOTHING;
 
@@ -2908,7 +2903,6 @@ WHERE
         'add_datphonghop',
         'change_own_datphonghop',
         'view_sinhnhat',
-        'send_wish_sinhnhat',
         'use_aiassistant'
     ) ON CONFLICT (group_id, permission_id) DO NOTHING;
 
@@ -2940,7 +2934,6 @@ WHERE
         'add_datphonghop',
         'change_own_datphonghop',
         'view_sinhnhat',
-        'send_wish_sinhnhat',
         'use_aiassistant'
     ) ON CONFLICT (group_id, permission_id) DO NOTHING;
 
@@ -2986,7 +2979,6 @@ WHERE
         'add_datphonghop',
         'change_own_datphonghop',
         'view_sinhnhat',
-        'send_wish_sinhnhat',
         'use_aiassistant'
     ) ON CONFLICT (group_id, permission_id) DO NOTHING;
 -- [NQBS] Nhóm TLBGD (Trợ lý Ban Giám đốc): chỉ chứa quyền cộng thêm, người dùng giữ nhóm CV

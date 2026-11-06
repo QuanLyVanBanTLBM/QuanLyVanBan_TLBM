@@ -754,9 +754,8 @@ export default function ResourceManagementPage() {
   }, [searchParams, documents]);
 
   // Phân quyền người dùng (RBAC contract Issue #21)
-  const currentSession = authService.getSession();
-  const isSessionAdmin = currentSession?.role === 'admin' || currentSession?.username === 'admin';
-  const { can, isSuperuser } = usePermissions();
+  const { can, isSuperuser, isSystemAdmin } = usePermissions();
+  const isSessionAdmin = isSystemAdmin;
   const canAdd = isSuperuser || isSessionAdmin || can('add_tailieu');
   const canManageCategory = isSuperuser || isSessionAdmin || can('add_loaitailieubieumau') || can('change_loaitailieubieumau') || can('delete_loaitailieubieumau');
   const canEditItem = useCallback((item: ResourceItem) => {
@@ -1724,15 +1723,27 @@ export default function ResourceManagementPage() {
       await downloadBlob(targetUrl, suggestedName);
     } catch (err) {
       console.warn('Lỗi downloadBlob, chuyển sang fallback tải URL máy chủ:', err);
-      const token = typeof window !== 'undefined'
-        ? (localStorage.getItem('tlbm_access_token') || localStorage.getItem('tlbm_token') || '')
-        : '';
+      if (att?.id) {
+        try {
+          const res = await apiClient.post<{ ticket: string; download_url: string }>(
+            `/api/resources/attachments/${att.id}/ticket/`
+          );
+          if (res?.download_url) {
+            const a = document.createElement('a');
+            a.href = getAbsoluteFileUrl(res.download_url);
+            a.download = suggestedName;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            return;
+          }
+        } catch (ticketErr) {
+          console.error('Lỗi lấy vé tải tệp:', ticketErr);
+        }
+      }
       const absUrl = getAbsoluteFileUrl(targetUrl);
-      const serverUrl = token
-        ? `${absUrl}${absUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`
-        : absUrl;
       const a = document.createElement('a');
-      a.href = serverUrl;
+      a.href = absUrl;
       a.download = suggestedName;
       document.body.appendChild(a);
       a.click();
