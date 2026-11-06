@@ -128,7 +128,11 @@ def van_ban_xem_duoc(user, loai="DEN"):
     if has_view_perm:
         cond_noi_bo = Q(pham_vi=PhamVi.NOI_BO)
     else:
-        cond_noi_bo = Q(pham_vi=PhamVi.NOI_BO, hien_thi=True)
+        # Khi user có phân quyền nhưng bị tước quyền view_*: chỉ xem được văn bản do mình tạo
+        if user.user_permissions.exists() or user.groups.filter(permissions__isnull=False).exists():
+            cond_noi_bo = Q(pham_vi=PhamVi.NOI_BO, nguoi_tao=user)
+        else:
+            cond_noi_bo = Q(pham_vi=PhamVi.NOI_BO, hien_thi=True)
 
     cond_active = Q(hieu_luc__in=[HieuLuc.CON_HIEU_LUC, HieuLuc.CON_HIEU_LUC_1_PHAN])
     if co_quyen_xem_het_hieu_luc(user, model_name):
@@ -175,12 +179,23 @@ def la_nguoi_xem_duoc(user, van_ban):
             return van_ban.donvinhan.filter(donvi_id=user_don_vi_id).exists()
         return False
 
-    if not getattr(van_ban, "hien_thi", True) and not (user.is_staff or user.is_superuser):
-        try:
-            if not (user.has_perm(f"documents.view_{model_name}") or user.has_perm(f"view_{model_name}")):
-                return False
-        except Exception:
-            return False
+    # Với văn bản nội bộ (NOI_BO):
+    if is_admin_user(user) or getattr(user, "is_staff", False) or getattr(user, "is_superuser", False):
+        return True
+    if (getattr(van_ban, "nguoi_tao_id", None) == user.pk) or (getattr(van_ban, "nguoi_tao", None) == user):
+        return True
+    if hasattr(van_ban, "nguoi_nhan") and van_ban.nguoi_nhan.filter(pk=user.pk).exists():
+        return True
+
+    if not getattr(van_ban, "hien_thi", True):
+        return _co_quyen(user, f"view_{model_name}")
+
+    # Văn bản hiển thị bình thường: nếu user có nhóm quyền/phân quyền nhưng bị tước view_* thì không được xem chi tiết
+    try:
+        if user.user_permissions.exists() or user.groups.filter(permissions__isnull=False).exists():
+            return _co_quyen(user, f"view_{model_name}") or _co_quyen(user, f"change_{model_name}")
+    except Exception:
+        pass
     return True
 
 def log_access(document_type, document_id, user, hanh_dong, doi_tuong_user=None, tep_id=None, dia_chi_ip=None):

@@ -289,16 +289,13 @@ def can_view_read_log(user, instance):
     if getattr(instance, "nguoi_tao_id", None) == user.pk or getattr(instance, "nguoi_tao", None) == user:
         return True
 
-    # Cán bộ là người nhận được chỉ định tiếp cận văn bản hạn chế / mật
-    try:
-        if hasattr(instance, "nguoi_nhan") and instance.nguoi_nhan.filter(id=user.pk).exists():
-            return True
-    except Exception:
-        pass
-
+    # Với văn bản hạn chế / mật: CHỈ Quản trị viên, Người tạo, hoặc Cán bộ có quyền thêm/quản lý vb hạn chế mới được xem lịch sử người đọc.
+    # Cán bộ được chỉ định (nguoi_nhan) chỉ có duy nhất quyền đọc nội dung văn bản, tuyệt đối không được xem lịch sử người đọc.
     is_mat = getattr(instance, "loai", None) == "MAT" or (getattr(instance, "_meta", None) and instance._meta.model_name == "vanbanmat")
+    model_name = getattr(instance, "document_kind", None) or getattr(getattr(instance, "_meta", None), "model_name", "vanbanden")
     if is_mat or getattr(instance, "pham_vi", None) == PhamVi.HAN_CHE:
-        return False
+        from .selectors import co_quyen_them_han_che
+        return bool(co_quyen_them_han_che(user, model_name))
 
     model_name = getattr(instance, "document_kind", None) or getattr(getattr(instance, "_meta", None), "model_name", "vanbanden")
     perm_code = "view_read_log_vanbandi" if str(model_name).lower() in ("vanbandi", "di") else "view_read_log_vanbanden"
