@@ -480,4 +480,28 @@ describe('ResourceTable Component', () => {
     expect(screen.getByRole('button', { name: 'Chỉnh sửa' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Xóa' })).toBeInTheDocument();
   });
+
+  it('renders HET_VA_THAY_THE badge correctly with label "Hết hiệu lực và thay thế"', () => {
+    const replacedItem: ResourceItem = {
+      ...mockItems[0],
+      id: 99,
+      hieu_luc: 'HET_VA_THAY_THE',
+      link_thay_the: 'https://example.com/replacement.pdf',
+    };
+
+    render(
+      <ResourceTable
+        items={[replacedItem]}
+        currentPage={1}
+        totalPages={1}
+        pageSize={10}
+        totalCount={1}
+        onPageChange={vi.fn()}
+        onViewDetail={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('Hết hiệu lực và thay thế')).toBeInTheDocument();
+    expect(screen.queryByText('Hết hiệu lực')).not.toBeInTheDocument();
+  });
 });

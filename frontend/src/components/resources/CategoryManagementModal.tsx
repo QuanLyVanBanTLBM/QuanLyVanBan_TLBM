@@ -340,8 +340,8 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
   const [isSubmittingUnified, setIsSubmittingUnified] = useState(false);
 
   const currentSession = authService.getSession();
-  const isSessionAdmin = currentSession?.role === 'admin' || currentSession?.username === 'admin';
-  const { can, isSuperuser } = usePermissions();
+  const { can, isSuperuser, isSystemAdmin } = usePermissions();
+  const isSessionAdmin = isSystemAdmin;
   const canAdd = isSuperuser || isSessionAdmin || can('add_loaitailieubieumau');
   const canEdit = isSuperuser || isSessionAdmin || can('change_loaitailieubieumau');
   const canDelete = isSuperuser || isSessionAdmin || can('delete_loaitailieubieumau');

@@ -336,7 +336,7 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
       case 'HET_VA_THAY_THE':
         return (
           <Badge variant="warning" size="sm" withDot>
-            {t('resourceManagement.statusExpired')}
+            {t('resourceManagement.statusReplaced')}
           </Badge>
         );
       default:

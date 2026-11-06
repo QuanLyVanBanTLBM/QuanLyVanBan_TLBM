@@ -72,6 +72,7 @@ def _build_user_payload(user):
     position = user.chuc_vu.name if user.chuc_vu_id else ("Quản trị viên tối cao" if user.is_superuser else "Chuyên viên văn thư")
     date_joined_str = user.created_at.strftime("%Y-%m-%d") if user.created_at else ""
 
+    user_don_vi_id = getattr(user, "don_vi_id", None)
     return {
         "id": user.id,
         "username": user.username,
@@ -79,11 +80,13 @@ def _build_user_payload(user):
         # CamelCase (theo API Contract Hieu.md)
         "fullName": full_name,
         "unit": department,
+        "donViId": user_don_vi_id,
         "roleTitle": position,
         "dateJoined": date_joined_str,
         # Snake_case (tương thích backward)
         "full_name": full_name,
         "department": department,
+        "don_vi_id": user_don_vi_id,
         "position": position,
         "role": "admin" if user.is_superuser else "staff",
         "phone": user.sdt,

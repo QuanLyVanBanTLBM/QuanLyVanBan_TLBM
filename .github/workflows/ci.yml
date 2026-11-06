@@ -246,10 +246,18 @@ jobs:
         run: |
           bash -n deploy/deploy.sh scripts/test_deploy.sh
           bash scripts/test_deploy.sh
+          python -m unittest scripts.test_staging_https -v
 
       - name: Nginx config syntax (nginx 1.24, same as Ubuntu 24.04)
         run: |
+          TLS_DIR="$RUNNER_TEMP/qlvb-tls"
+          mkdir -p "$TLS_DIR"
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+            -subj '/CN=staging-quanlyvanban.bhbl.vn' \
+            -keyout "$TLS_DIR/privkey.pem" \
+            -out "$TLS_DIR/fullchain.pem"
           docker run --rm -v "$PWD/deploy/nginx/qlvb-frontend.conf:/etc/nginx/conf.d/default.conf:ro" \
+            -v "$TLS_DIR:/etc/qlvb/tls:ro" \
             nginx:1.24 nginx -t
 
       - name: Signing schema CHECK normalization regressions
@@ -443,6 +451,32 @@ jobs:
           SSH='ssh -i ~/.ssh/id_ed25519 -p 2150'
           REMOTE="$DEPLOY_USER@$DEPLOY_HOST"
           $SSH "$REMOTE" 'mkdir -p ~/deploy'
+          $SSH "$REMOTE" '
+            ENVF=/etc/qlvb/backend.env
+            if [ -f "$ENVF" ] && [ -w "$ENVF" ]; then
+              for var in DJANGO_SECURE_PROXY_SSL_HEADER DJANGO_SECURE_SSL_REDIRECT DJANGO_SECURE_COOKIES; do
+                if grep -q "^[[:space:]]*${var}=" "$ENVF"; then
+                  sed -i "s/^[[:space:]]*${var}=.*/${var}=true/" "$ENVF"
+                else
+                  echo "${var}=true" >> "$ENVF"
+                fi
+              done
+              if grep -q "^[[:space:]]*SIGNING_FRONTEND_URL=" "$ENVF"; then
+                if ! grep -q "^[[:space:]]*SIGNING_FRONTEND_URL=.*https://staging-quanlyvanban\.bhbl\.vn:8088" "$ENVF"; then
+                  sed -i "s#^[[:space:]]*SIGNING_FRONTEND_URL=.*#SIGNING_FRONTEND_URL=https://staging-quanlyvanban.bhbl.vn:8088#" "$ENVF"
+                fi
+              else
+                echo "SIGNING_FRONTEND_URL=https://staging-quanlyvanban.bhbl.vn:8088" >> "$ENVF"
+              fi
+              if grep -q "^[[:space:]]*DJANGO_CSRF_TRUSTED_ORIGINS=" "$ENVF"; then
+                if ! grep -q "^[[:space:]]*DJANGO_CSRF_TRUSTED_ORIGINS=.*https://staging-quanlyvanban\.bhbl\.vn:8088" "$ENVF"; then
+                  sed -i "s#^[[:space:]]*DJANGO_CSRF_TRUSTED_ORIGINS=.*#DJANGO_CSRF_TRUSTED_ORIGINS=https://staging-quanlyvanban.bhbl.vn:8088,http://127.0.0.1:8088#" "$ENVF"
+                fi
+              else
+                echo "DJANGO_CSRF_TRUSTED_ORIGINS=https://staging-quanlyvanban.bhbl.vn:8088,http://127.0.0.1:8088" >> "$ENVF"
+              fi
+            fi
+          '
           rsync -az -e "$SSH" "qlvb-$SHA7.tar.gz" deploy/deploy.sh "$REMOTE:deploy/"
           rsync -az -e "$SSH" deploy/nginx/qlvb-frontend.conf "$REMOTE:deploy/qlvb-frontend.nginx"
           DB_MODE=sync

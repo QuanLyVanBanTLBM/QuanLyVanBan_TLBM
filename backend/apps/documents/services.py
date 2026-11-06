@@ -1050,6 +1050,19 @@ def import_from_excel(file_obj, loai: str, user, pham_vi: str = None, attachment
     else:
         target_pv = PhamVi.NOI_BO
 
+    # Import văn bản Đến/Đi phạm vi Hạn chế cần quyền riêng add_han_che_vanbanden/vanbandi.
+    if target_pv == PhamVi.HAN_CHE and norm_loai != LoaiVanBan.MAT:
+        from .selectors import co_quyen_them_han_che
+
+        if not co_quyen_them_han_che(user, "vanbandi" if norm_loai == LoaiVanBan.DI else "vanbanden"):
+            return {
+                "created": 0,
+                "errors": [{
+                    "row": 0,
+                    "message": "Bạn không có quyền thêm văn bản hạn chế. Vui lòng liên hệ Quản trị viên để được cấp quyền.",
+                }],
+            }
+
     # ── Phân tích thông tin từ Sheet title, Cột và Dữ liệu ──
     sheet_title_norm = _normalize_text(getattr(ws, "title", ""))
     has_recipient_col = any(f == "nguoi_nhan" for f in col_map.values())

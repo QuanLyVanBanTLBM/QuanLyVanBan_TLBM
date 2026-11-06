@@ -63,7 +63,9 @@ export interface DocumentItem {
   pham_vi_display?: string;
   nguoi_tao_name?: string | null;
   nguoi_tao_username?: string | null;
+  can_view?: boolean;
   can_edit?: boolean;
+  can_edit_full?: boolean;
   can_delete?: boolean;
   can_change_hieu_luc?: boolean;
   can_view_read_log?: boolean;

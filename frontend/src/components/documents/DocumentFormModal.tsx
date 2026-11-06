@@ -345,12 +345,35 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
     Boolean(initDoc?.can_change_hieu_luc)
   );
 
+  const isCreator = Boolean(
+    currentSession?.username &&
+    initDoc?.nguoi_tao_username &&
+    currentSession.username === initDoc.nguoi_tao_username
+  );
+
+  // Quyền sửa toàn bộ văn bản (change_*) hoặc Admin/Người tạo
+  const canEditFull = Boolean(
+    !initDoc?.id ||
+    isAdmin ||
+    isCreator ||
+    Boolean(initDoc?.can_edit_full) ||
+    can(isDi ? 'change_vanbandi' : 'change_vanbanden')
+  );
+
+  // Cho phép chỉnh sửa trạng thái hiệu lực: Khi Thêm mới (!initDoc?.id) HOẶC có quyền Sửa full (canEditFull) HOẶC có quyền Đổi hiệu lực (hasHieuLucPerm)
+  const canModifyHieuLuc = Boolean(!initDoc?.id || canEditFull || hasHieuLucPerm);
+
+  // Chế độ "Chỉ đổi hiệu lực": khi sửa văn bản mà user KHÔNG có quyền sửa full, nhưng CÓ quyền đổi hiệu lực
+  const isOnlyHieuLuc = Boolean(initDoc?.id) && !canEditFull && hasHieuLucPerm;
+
   // Phân quyền gửi mail toàn hệ thống (Nhóm 7 contract: send_mail_all_vanbanden / send_mail_all_vanbandi)
   const canSendMailAll = Boolean(
     isAdmin ||
     can(isDi ? 'send_mail_all_vanbandi' : 'send_mail_all_vanbanden') ||
     Boolean(initDoc?.can_send_mail_all)
   );
+  // Phân quyền thêm văn bản hạn chế (contract: add_han_che_vanbanden / add_han_che_vanbandi)
+  const canAddHanChe = Boolean(isAdmin || can(isDi ? 'add_han_che_vanbandi' : 'add_han_che_vanbanden'));
   const [units, setUnits] = useState<string[]>(DEFAULT_UNITS);
   const [staff, setStaff] = useState<UserOption[]>([]);
   const [isStaffLoading, setIsStaffLoading] = useState(false);
@@ -1051,6 +1074,29 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
   async function handleSubmit(e?: React.FormEvent) {
     e?.preventDefault();
 
+    // Chế độ chỉ đổi hiệu lực: Chỉ gửi payload cập nhật hiệu lực
+    if (isOnlyHieuLuc && initial?.id) {
+      setLoading(true);
+      try {
+        const payload: Record<string, unknown> = {
+          hieu_luc: form.hieu_luc,
+          ngay_het_hieu_luc: form.hieu_luc === 'CON_HIEU_LUC' ? null : (form.ngay_het_hieu_luc || null),
+          link_thay_the: isReplacingOther ? (form.link_thay_the || '') : '',
+        };
+        const endpoint = form.loai === 'DI' ? `/api/documents/di/${initial.id}/` : `/api/documents/den/${initial.id}/`;
+        const res = await apiClient.patch(endpoint, payload);
+        onSaved?.(res as unknown as Record<string, unknown>);
+        onClose();
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Có lỗi xảy ra khi cập nhật hiệu lực.';
+        setAlertMsg(message);
+        setAlertOpen(true);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     if (!form.so_hieu?.trim()) {
       setAlertMsg('Vui lòng nhập Số, ký hiệu văn bản (*)');
       setAlertOpen(true);
@@ -1314,8 +1360,10 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
               <i className={initial?.id ? 'fa-solid fa-file-pen' : 'fa-solid fa-file-circle-plus'} />
             </span>
             <div>
-              <h3 className="text-base font-bold text-main m-0">
-                {initial?.id
+              <h3 className="text-base font-bold text-main m-0 flex items-center gap-2">
+                {isOnlyHieuLuc
+                  ? (t('documents_ui.formModal.titleChangeHieuLuc') || 'Đổi Hiệu Lực Văn Bản')
+                  : initial?.id
                   ? (form.loai === 'MAT'
                       ? (t('documents_ui.formModal.titleEditConfidential') || 'Cập Nhật Văn Bản Mật')
                       : form.loai === 'DI'
@@ -1350,8 +1398,17 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
 
         {/* Scrollable Body */}
         <div className="flex-1 overflow-y-auto p-3.5 sm:p-6 space-y-4 sm:space-y-6 custom-scrollbar">
+          {isOnlyHieuLuc && (
+            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-2.5 text-xs text-amber-700 dark:text-amber-400">
+              <i className="fa-solid fa-circle-info text-sm shrink-0" />
+              <span>
+                <strong>{t('documents_ui.formModal.onlyHieuLucMode') || 'Chế độ Đổi hiệu lực văn bản:'}</strong>{' '}
+                {t('documents_ui.formModal.onlyHieuLucNotice') || 'Bạn chỉ có quyền thay đổi trạng thái hiệu lực văn bản. Các trường thông tin khác được khóa ở chế độ chỉ đọc.'}
+              </span>
+            </div>
+          )}
           {/* PHẦN 1: TIẾP NHẬN & VÀO SỔ */}
-          <div className="bg-canvas/40 border border-border-subtle rounded-xl p-3.5 sm:p-5 space-y-3.5">
+          <fieldset disabled={isOnlyHieuLuc} className={`bg-canvas/40 border border-border-subtle rounded-xl p-3.5 sm:p-5 space-y-3.5 ${isOnlyHieuLuc ? 'opacity-70' : ''}`}>
             <div className="flex items-center justify-between pb-2.5 border-b border-border-subtle/60 gap-4">
               <div className="flex items-center gap-2 min-w-0">
                 <span className="w-6 h-6 rounded-md bg-blue-500/10 text-blue-600 flex items-center justify-center text-xs font-bold shrink-0">
@@ -1569,15 +1626,21 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                     }
                   >
                     <option value="NOI_BO">{t('documents_ui.formModal.scopeInternal') || 'Nội bộ (Toàn cơ quan)'}</option>
-                    <option value="HAN_CHE">{t('documents_ui.formModal.scopeRestrictedOption') || 'Hạn chế (Chỉ người nhận xem)'}</option>
+                    <option
+                      value="HAN_CHE"
+                      disabled={!canAddHanChe && form.pham_vi !== 'HAN_CHE'}
+                      title={!canAddHanChe ? (t('documents_ui.formModal.scopeRestrictedNoPermission') || 'Bạn chưa được cấp quyền thêm văn bản hạn chế.') : undefined}
+                    >
+                      {t('documents_ui.formModal.scopeRestrictedOption') || 'Hạn chế (Chỉ người nhận xem)'}
+                    </option>
                   </select>
                 )}
               </div>
             </div>
-          </div>
+          </fieldset>
 
           {/* PHẦN 2: NGUỒN BAN HÀNH & NỘI DUNG VĂN BẢN */}
-          <div className="bg-canvas/40 border border-border-subtle rounded-xl p-4 sm:p-5 space-y-3.5">
+          <fieldset disabled={isOnlyHieuLuc} className={`bg-canvas/40 border border-border-subtle rounded-xl p-4 sm:p-5 space-y-3.5 ${isOnlyHieuLuc ? 'opacity-70' : ''}`}>
             <div className="flex items-center justify-between pb-2.5 border-b border-border-subtle/60 gap-4">
               <div className="flex items-center gap-2 min-w-0">
                 <span className="w-6 h-6 rounded-md bg-indigo-500/10 text-indigo-600 flex items-center justify-center text-xs font-bold shrink-0">
@@ -1778,7 +1841,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                 />
               </div>
             </div>
-          </div>
+          </fieldset>
 
           {/* PHẦN 3: KÝ DUYỆT & HIỆU LỰC VĂN BẢN */}
           <div className="bg-canvas/40 border border-border-subtle rounded-xl p-4 sm:p-5 space-y-3.5">
@@ -1801,7 +1864,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                   {t('documents_ui.formModal.signer') || 'Người ký văn bản'}
                 </label>
                 <input
-                  value={form.nguoi_ky}
+                  disabled={isOnlyHieuLuc} value={form.nguoi_ky}
                   onChange={e => setForm({ ...form, nguoi_ky: e.target.value })}
                   placeholder={t('documents_ui.formModal.signerPlaceholder') || 'Họ và tên người ký (VD: Nguyễn Văn A)'}
                   className="w-full text-sm bg-surface border border-border-subtle rounded-xl px-3 py-2 text-main placeholder:text-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-fast"
@@ -1814,7 +1877,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                   {t('documents_ui.formModal.position') || 'Chức vụ người ký'}
                 </label>
                 <input
-                  value={form.chuc_vu}
+                  disabled={isOnlyHieuLuc} value={form.chuc_vu}
                   onChange={e => setForm({ ...form, chuc_vu: e.target.value })}
                   placeholder={t('documents_ui.formModal.positionPlaceholder') || 'VD: Thứ trưởng, Giám đốc, Hiệu trưởng...'}
                   className="w-full text-sm bg-surface border border-border-subtle rounded-xl px-3 py-2 text-main placeholder:text-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-fast"
@@ -1847,65 +1910,67 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                   )}
                 </div>
 
-                <div className="relative">
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none flex items-center">
-                    {form.hieu_luc === 'CON_HIEU_LUC' && (
-                      <span className="relative flex h-2.5 w-2.5">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
-                      </span>
-                    )}
-                    {form.hieu_luc === 'CON_HIEU_LUC_1_PHAN' && (
-                      <span className="relative flex h-2.5 w-2.5">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75" />
-                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-purple-500" />
-                      </span>
-                    )}
-                    {(form.hieu_luc === 'HET_HIEU_LUC' || form.hieu_luc === 'HET_VA_THAY_THE') && (
-                      <span className="inline-flex rounded-full h-2.5 w-2.5 bg-rose-500" />
-                    )}
-                  </div>
+                <div>
+                  <div className="relative">
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none flex items-center">
+                      {form.hieu_luc === 'CON_HIEU_LUC' && (
+                        <span className="relative flex h-2.5 w-2.5">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+                        </span>
+                      )}
+                      {form.hieu_luc === 'CON_HIEU_LUC_1_PHAN' && (
+                        <span className="relative flex h-2.5 w-2.5">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75" />
+                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-purple-500" />
+                        </span>
+                      )}
+                      {(form.hieu_luc === 'HET_HIEU_LUC' || form.hieu_luc === 'HET_VA_THAY_THE') && (
+                        <span className="inline-flex rounded-full h-2.5 w-2.5 bg-rose-500" />
+                      )}
+                    </div>
 
-                  <select
-                    disabled={!hasHieuLucPerm}
-                    title={!hasHieuLucPerm ? (t('documents_ui.formModal.noHieuLucPermission') || 'Chỉ Quản trị viên hoặc Văn thư mới có quyền thay đổi hiệu lực') : undefined}
-                    value={form.hieu_luc === 'HET_VA_THAY_THE' ? 'HET_HIEU_LUC' : form.hieu_luc}
-                    onChange={e => {
-                      const newHieuLuc = e.target.value as FormState['hieu_luc'];
-                      setForm(prev => ({
-                        ...prev,
-                        hieu_luc: newHieuLuc,
-                        ngay_het_hieu_luc: newHieuLuc === 'CON_HIEU_LUC' ? '' : prev.ngay_het_hieu_luc,
-                        link_thay_the: (newHieuLuc === 'CON_HIEU_LUC' && !isReplacingOther) ? '' : prev.link_thay_the,
-                      }));
-                      if (newHieuLuc === 'CON_HIEU_LUC' && !isReplacingOther) {
-                        setShowReplacementDropdown(false);
-                      }
-                    }}
-                    className={`w-full text-sm rounded-xl pl-8 pr-8 py-2 font-semibold transition-all duration-200 border ${
-                      !hasHieuLucPerm
-                        ? 'opacity-65 cursor-not-allowed bg-slate-100 dark:bg-slate-800 border-border-subtle text-muted'
-                        : form.hieu_luc === 'CON_HIEU_LUC'
-                        ? 'cursor-pointer bg-emerald-500/10 border-emerald-500/40 text-emerald-700 dark:text-emerald-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 shadow-xs'
-                        : form.hieu_luc === 'CON_HIEU_LUC_1_PHAN'
-                        ? 'cursor-pointer bg-purple-500/10 border-purple-500/40 text-purple-700 dark:text-purple-400 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 shadow-xs'
-                        : 'cursor-pointer bg-rose-500/10 border-rose-500/40 text-rose-700 dark:text-rose-400 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 shadow-xs'
-                    }`}
-                  >
-                    <option value="CON_HIEU_LUC" className="bg-surface text-emerald-600 font-semibold">
-                      {t('documents_ui.formModal.statusActive') || 'Còn hiệu lực'}
-                    </option>
-                    <option value="CON_HIEU_LUC_1_PHAN" className="bg-surface text-purple-600 font-semibold">
-                      {t('documents_ui.formModal.statusPartiallyActive') || 'Còn hiệu lực 1 phần'}
-                    </option>
-                    <option value="HET_HIEU_LUC" className="bg-surface text-rose-600 font-semibold">
-                      {t('documents_ui.formModal.statusInactive') || 'Hết hiệu lực'}
-                    </option>
-                  </select>
-                  {!hasHieuLucPerm && (
+                    <select
+                      disabled={!canModifyHieuLuc}
+                      title={!canModifyHieuLuc ? (t('documents_ui.formModal.noHieuLucPermission') || 'Chỉ Quản trị viên hoặc người có quyền sửa/đổi hiệu lực mới được phép thay đổi') : undefined}
+                      value={form.hieu_luc === 'HET_VA_THAY_THE' ? 'HET_HIEU_LUC' : form.hieu_luc}
+                      onChange={e => {
+                        const newHieuLuc = e.target.value as FormState['hieu_luc'];
+                        setForm(prev => ({
+                          ...prev,
+                          hieu_luc: newHieuLuc,
+                          ngay_het_hieu_luc: newHieuLuc === 'CON_HIEU_LUC' ? '' : prev.ngay_het_hieu_luc,
+                          link_thay_the: (newHieuLuc === 'CON_HIEU_LUC' && !isReplacingOther) ? '' : prev.link_thay_the,
+                        }));
+                        if (newHieuLuc === 'CON_HIEU_LUC' && !isReplacingOther) {
+                          setShowReplacementDropdown(false);
+                        }
+                      }}
+                      className={`w-full text-sm rounded-xl pl-8 pr-8 py-2 font-semibold transition-all duration-200 border ${
+                        !canModifyHieuLuc
+                          ? 'opacity-65 cursor-not-allowed bg-slate-100 dark:bg-slate-800 border-border-subtle text-muted'
+                          : form.hieu_luc === 'CON_HIEU_LUC'
+                          ? 'cursor-pointer bg-emerald-500/10 border-emerald-500/40 text-emerald-700 dark:text-emerald-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 shadow-xs'
+                          : form.hieu_luc === 'CON_HIEU_LUC_1_PHAN'
+                          ? 'cursor-pointer bg-purple-500/10 border-purple-500/40 text-purple-700 dark:text-purple-400 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 shadow-xs'
+                          : 'cursor-pointer bg-rose-500/10 border-rose-500/40 text-rose-700 dark:text-rose-400 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 shadow-xs'
+                      }`}
+                    >
+                      <option value="CON_HIEU_LUC" className="bg-surface text-emerald-600 font-semibold">
+                        {t('documents_ui.formModal.statusActive') || 'Còn hiệu lực'}
+                      </option>
+                      <option value="CON_HIEU_LUC_1_PHAN" className="bg-surface text-purple-600 font-semibold">
+                        {t('documents_ui.formModal.statusPartiallyActive') || 'Còn hiệu lực 1 phần'}
+                      </option>
+                      <option value="HET_HIEU_LUC" className="bg-surface text-rose-600 font-semibold">
+                        {t('documents_ui.formModal.statusInactive') || 'Hết hiệu lực'}
+                      </option>
+                    </select>
+                  </div>
+                  {!canModifyHieuLuc && (
                     <p className="text-[11px] text-muted mt-1 italic flex items-center gap-1">
                       <i className="fa-solid fa-lock text-[10px]" />
-                      {t('documents_ui.formModal.noHieuLucPermission') || 'Chỉ Quản trị viên hoặc Văn thư mới có quyền thay đổi trạng thái hiệu lực'}
+                      {t('documents_ui.formModal.noHieuLucPermission') || 'Chỉ Quản trị viên hoặc người có quyền sửa/đổi hiệu lực mới được phép thay đổi'}
                     </p>
                   )}
                 </div>
@@ -1918,12 +1983,12 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                 </label>
                 <input
                   type="date"
-                  disabled={!hasHieuLucPerm}
-                  title={!hasHieuLucPerm ? (t('documents_ui.formModal.noHieuLucPermission') || 'Chỉ Quản trị viên hoặc Văn thư mới có quyền thay đổi hiệu lực') : undefined}
+                  disabled={!canModifyHieuLuc}
+                  title={!canModifyHieuLuc ? (t('documents_ui.formModal.noHieuLucPermission') || 'Chỉ Quản trị viên hoặc người có quyền sửa/đổi hiệu lực mới được phép thay đổi') : undefined}
                   value={form.ngay_het_hieu_luc}
                   onChange={e => setForm({ ...form, ngay_het_hieu_luc: e.target.value })}
                   className={`w-full text-sm bg-surface border border-border-subtle rounded-xl px-3 py-2 text-main focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-fast ${
-                    !hasHieuLucPerm ? 'opacity-65 cursor-not-allowed bg-slate-100 dark:bg-slate-800' : ''
+                    !canModifyHieuLuc ? 'opacity-65 cursor-not-allowed bg-slate-100 dark:bg-slate-800' : ''
                   }`}
                 />
               </div>
@@ -1931,10 +1996,10 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
               {/* Tùy chọn thay thế cho văn bản khác khi trạng thái Còn hiệu lực hoặc Còn hiệu lực 1 phần */}
               {(form.hieu_luc === 'CON_HIEU_LUC' || form.hieu_luc === 'CON_HIEU_LUC_1_PHAN') && (
                 <div className="col-span-12 pt-1">
-                  <label className={`inline-flex items-center gap-2 select-none ${!hasHieuLucPerm && !isReplacingOther ? 'opacity-65 cursor-not-allowed' : 'cursor-pointer'}`}>
+                  <label className={`inline-flex items-center gap-2 select-none ${!canModifyHieuLuc && !isReplacingOther ? 'opacity-65 cursor-not-allowed' : 'cursor-pointer'}`}>
                     <input
                       type="checkbox"
-                      disabled={!hasHieuLucPerm && !isReplacingOther}
+                      disabled={!canModifyHieuLuc && !isReplacingOther}
                       checked={isReplacingOther}
                       onChange={e => {
                         setIsReplacingOther(e.target.checked);
@@ -2243,7 +2308,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
           </div>
 
           {/* PHẦN 4: PHÂN PHỐI XỬ LÝ & TỆP ĐÍNH KÈM */}
-          <div className="bg-canvas/40 border border-border-subtle rounded-xl p-4 sm:p-5 space-y-4">
+          <fieldset disabled={isOnlyHieuLuc} className={`bg-canvas/40 border border-border-subtle rounded-xl p-4 sm:p-5 space-y-4 ${isOnlyHieuLuc ? 'opacity-70' : ''}`}>
             <div className="flex items-center justify-between pb-2.5 border-b border-border-subtle/60 gap-4">
               <div className="flex items-center gap-2 min-w-0">
                 <span className="w-6 h-6 rounded-md bg-amber-500/10 text-amber-600 flex items-center justify-center text-xs font-bold shrink-0">
@@ -2670,7 +2735,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                 )}
               </div>
             </div>
-          </div>
+          </fieldset>
         </div>
 
         {/* Sticky Footer */}
@@ -2698,6 +2763,8 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
             >
               {loading 
                 ? (t('documents_ui.formModal.saving') || 'Đang lưu...') 
+                : isOnlyHieuLuc
+                ? (t('documents_ui.formModal.saveHieuLuc') || 'Lưu hiệu lực')
                 : initial?.id 
                 ? (t('documents_ui.formModal.update') || 'Cập nhật') 
                 : (t('documents_ui.formModal.save') || 'Lưu văn bản')}

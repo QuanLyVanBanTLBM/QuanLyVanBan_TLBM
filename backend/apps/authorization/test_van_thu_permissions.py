@@ -1,7 +1,8 @@
 """
-Nhóm Văn thư đúng 32 quyền (release_DDL.sql [VTQ], [XHHL]): DB dựng bằng migration, rbac_seed và DDL khớp nhau;
+Nhóm Văn thư đúng 34 quyền (release_DDL.sql [VTQ], [XHHL], [TVHC]): DB dựng bằng migration, rbac_seed và DDL khớp nhau;
 Văn thư không sửa/xóa văn bản đến của người khác; migration 0014 đặt lại đúng 30 quyền lúc đó, gỡ quyền gán tay,
-chạy lại không đổi thêm, không đụng nhóm khác, reverse trả về seed cũ; 0016 thêm 2 quyền xem văn bản hết hiệu lực.
+chạy lại không đổi thêm, không đụng nhóm khác, reverse trả về seed cũ; 0016 thêm 2 quyền xem văn bản hết hiệu lực,
+0017 thêm 2 quyền thêm văn bản hạn chế.
 """
 import re
 from importlib import import_module
@@ -37,8 +38,11 @@ REMOVED = {
     "change_vanbandi", "delete_vanbandi", "export_vanbandi", "send_mail_all_vanbandi",
     "add_hoso", "change_hoso", "toggle_status_hoso", "manage_documents_hoso", "add_tailieu", "change_tailieu",
 }
-# Quyền thêm sau 0014 (migration 0016_het_hieu_luc_permissions).
-AFTER_0014 = {"view_het_hieu_luc_vanbanden", "view_het_hieu_luc_vanbandi"}
+# Quyền thêm sau 0014 (migration 0016_het_hieu_luc_permissions, 0017_them_van_ban_han_che_permissions).
+AFTER_0014 = {
+    "view_het_hieu_luc_vanbanden", "view_het_hieu_luc_vanbandi",
+    "add_han_che_vanbanden", "add_han_che_vanbandi",
+}
 EXPECTED = EXPECTED_0014 | AFTER_0014
 # Quyền tạo sau 0002 nên không nằm trong rbac_seed, được gán bởi migration riêng.
 LATER_MIGRATION_GRANTS = {"change_hieu_luc_vanbanden", "change_hieu_luc_vanbandi", "view_all_trinhky"} | AFTER_0014
@@ -64,10 +68,10 @@ def ddl_codenames_of(code):
 
 
 class VanThuPermissionTest(TestCase):
-    def test_database_after_migrate_has_exactly_thirty_two_permissions(self):
+    def test_database_after_migrate_has_exactly_thirty_four_permissions(self):
         self.assertEqual(codenames_of("VT"), EXPECTED)
         self.assertEqual(len(EXPECTED_0014), 30)
-        self.assertEqual(len(EXPECTED), 32)
+        self.assertEqual(len(EXPECTED), 34)
 
     def test_release_ddl_seeds_the_same_list(self):
         self.assertEqual(ddl_codenames_of("VT"), EXPECTED)

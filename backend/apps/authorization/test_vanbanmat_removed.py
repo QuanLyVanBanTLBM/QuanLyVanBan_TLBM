@@ -37,8 +37,9 @@ class VanBanMatRemovedTest(TestCase):
             cursor.execute("SELECT COUNT(*) FROM auth_permission WHERE module_ten <> ''")
             # 78 quyền (76 của rbac_seed + export_cbnv) + 2 quyền đổi hiệu lực văn bản (migration 0011)
             # + view_all_trinhky (migration 0013) - delegate_trinhky (migration 0015)
-            # + 4 quyền xem, xử lý văn bản hết hiệu lực (migration 0016).
-            self.assertEqual(cursor.fetchone()[0], 84)
+            # + 4 quyền xem, xử lý văn bản hết hiệu lực (migration 0016)
+            # + 2 quyền thêm văn bản hạn chế (migration 0017).
+            self.assertEqual(cursor.fetchone()[0], 86)
 
     def test_migration_removes_existing_vanbanmat_permissions_and_grants(self):
         with connection.cursor() as cursor:
