@@ -132,12 +132,34 @@ def anh_chu_ky(nguoi_dung):
     return _anh_tu_ho_so_nhom_7(nguoi_dung) or _anh_tu_trinh_ky(nguoi_dung)
 
 
-def co_anh_chu_ky(nguoi_dung):
-    """Người dùng đã có ảnh chữ ký (không đọc nội dung ảnh)."""
-    from ..models import SigningUserSignature
+def _tep_ho_so_ton_tai(nguoi_dung):
+    tep = getattr(nguoi_dung, "anh_chu_ky", None)
+    if not tep:
+        return False
+    try:
+        return bool(tep.storage.exists(tep.name))
+    except Exception:  # noqa: BLE001 — lỗi lưu trữ coi như chưa có ảnh
+        return False
 
-    return bool(getattr(nguoi_dung, "anh_chu_ky", None)) or SigningUserSignature.objects.filter(
-        nguoi_dung=nguoi_dung).exists()
+
+def tep_trinh_ky_ton_tai(nguoi_dung):
+    from ..models import SigningUserSignature
+    from ..storage import get_storage
+
+    vi_tri = SigningUserSignature.objects.filter(nguoi_dung=nguoi_dung).values_list("vi_tri_tep", flat=True).first()
+    if not vi_tri:
+        return False
+    try:
+        get_storage().metadata(vi_tri)
+    except Exception:  # noqa: BLE001 — bản ghi còn nhưng tệp mất/không đọc được: coi như chưa có ảnh
+        logger.warning("Bản ghi ảnh chữ ký của người dùng %s trỏ tới tệp không tồn tại", nguoi_dung.pk)
+        return False
+    return True
+
+
+def co_anh_chu_ky(nguoi_dung):
+    """Người dùng đã có ảnh chữ ký: bản ghi có giá trị và tệp tồn tại trong kho lưu trữ (không đọc nội dung ảnh)."""
+    return _tep_ho_so_ton_tai(nguoi_dung) or tep_trinh_ky_ton_tai(nguoi_dung)
 
 
 def ma_nhom_cua(nguoi_dung):

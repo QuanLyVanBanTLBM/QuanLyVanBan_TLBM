@@ -10,7 +10,7 @@ import CropChuKyModal from '@components/signing/CropChuKyModal';
 import DatLaiPinDialog from '@components/signing/DatLaiPinDialog';
 import { signingApi } from '@lib/signing/api';
 import { GIOI_HAN, LOP_O_NHAP } from '@lib/signing/dinhDang';
-import { coQuyen, useTai, useToi } from '@lib/signing/hooks';
+import { coQuyen, useAnhChuKyCaNhan, useTai, useToi } from '@lib/signing/hooks';
 import { useSigningT } from '@lib/signing/i18n';
 import { hoTroEd25519, kiemTraPin } from '@lib/signing/khoaKy';
 import { dangKyKhoaThietBi, doiPin, khoaHoatDong } from '@lib/signing/luongKhoa';
@@ -43,11 +43,9 @@ export default function KhoaPage() {
   const [thongBao, setThongBao] = useState<{ loai: 'loi' | 'thanh_cong'; noi_dung: string } | null>(null);
   const [thongBaoChuKy, setThongBaoChuKy] = useState<{ loai: 'loi' | 'thanh_cong'; noi_dung: string } | null>(null);
   const [anhChuKyTuyChinh, setAnhChuKyTuyChinh] = useState<string | null | undefined>(undefined);
-  const anhChuKyServer = toi?.co_anh_chu_ky ? `/api/signing/anh-chu-ky-ca-nhan/tep/?v=${toi.id}` : null;
-  // Nguồn ảnh vừa tải lỗi (bản ghi còn nhưng tệp không đọc được): coi như chưa có ảnh để người dùng tải lại
-  const [nguonAnhLoi, setNguonAnhLoi] = useState<string | null>(null);
-  const anhChuKyGoc = anhChuKyTuyChinh !== undefined ? anhChuKyTuyChinh : anhChuKyServer;
-  const anhChuKy = anhChuKyGoc && anhChuKyGoc !== nguonAnhLoi ? anhChuKyGoc : null;
+  // Ảnh từ máy chủ tải qua Bearer; chưa có ảnh/đang tải/lỗi thì null và hiện trạng thái trống
+  const anhChuKyServer = useAnhChuKyCaNhan(toi?.co_anh_chu_ky, toi?.id);
+  const anhChuKy = anhChuKyTuyChinh !== undefined ? anhChuKyTuyChinh : anhChuKyServer;
   const [tepChon, setTepChon] = useState<File | null>(null);
   const [moCrop, setMoCrop] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -242,7 +240,6 @@ export default function KhoaPage() {
                 <img
                   src={anhChuKy}
                   alt={t('khoa.chuKyCaNhan')}
-                  onError={() => setNguonAnhLoi(anhChuKy)}
                   className="max-h-32 object-contain rounded drop-shadow-sm"
                 />
               </div>
