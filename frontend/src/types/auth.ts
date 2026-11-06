@@ -1,4 +1,4 @@
-﻿export type AuthRole = 'admin' | 'staff';
+export type AuthRole = 'admin' | 'staff';
 
 export interface UserSession {
   id?: number;
@@ -9,6 +9,7 @@ export interface UserSession {
   avatar?: string;
   token?: string;
   don_vi_id?: number;
+  donViId?: number;
   department?: string;
   unit?: string;
 }
@@ -26,4 +27,3 @@ export interface QuickLoginProfile {
   password: string;
   subtitle: string;
 }
-

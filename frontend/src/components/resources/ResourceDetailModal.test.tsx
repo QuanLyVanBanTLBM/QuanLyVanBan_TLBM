@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ResourceDetailModal } from './ResourceDetailModal';
 import { ResourceItem } from '@app-types/resource';
-import { apiClientBlob, downloadBlob } from '@lib/apiClient';
+import { downloadBlob } from '@lib/apiClient';
 
 vi.mock('@lib/apiClient', () => ({
   default: {

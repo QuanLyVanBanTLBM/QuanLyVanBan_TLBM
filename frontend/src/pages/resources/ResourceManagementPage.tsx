@@ -774,7 +774,7 @@ export default function ResourceManagementPage() {
     if (isCreator) return true;
 
     if (can('change_tailieu')) {
-      const userDonViId = sess.don_vi_id || (sess as any).donViId;
+      const userDonViId = sess.don_vi_id || sess.donViId;
       const userDept = sess.department || sess.unit;
       if (item.don_vi_id && userDonViId && item.don_vi_id === userDonViId) return true;
       if (item.noi_ban_hanh && userDept && item.noi_ban_hanh.trim().toLowerCase() === userDept.trim().toLowerCase()) return true;
@@ -797,7 +797,7 @@ export default function ResourceManagementPage() {
     if (isCreator) return true;
 
     if (can('delete_tailieu')) {
-      const userDonViId = sess.don_vi_id || (sess as any).donViId;
+      const userDonViId = sess.don_vi_id || sess.donViId;
       const userDept = sess.department || sess.unit;
       if (item.don_vi_id && userDonViId && item.don_vi_id === userDonViId) return true;
       if (item.noi_ban_hanh && userDept && item.noi_ban_hanh.trim().toLowerCase() === userDept.trim().toLowerCase()) return true;
