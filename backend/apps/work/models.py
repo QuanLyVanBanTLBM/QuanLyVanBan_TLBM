@@ -6,6 +6,7 @@ from django.db import models, transaction
 from django.db.models import Case, CharField, Exists, F, IntegerField, OuterRef, Q, Value, When
 from django.utils import timezone
 
+from authorization.permissions import is_system_admin
 from document_storage import build_dated_path, get_document_storage
 
 
@@ -570,9 +571,9 @@ class Task(models.Model):
             )
 
     def check_comment(self, user):
-        if not self.roles_of(user):
+        if not self.roles_of(user) and not is_system_admin(user):
             raise TaskRuleError(
-                "Chỉ người liên quan đến công việc mới được ghi ý kiến. "
+                "Chỉ người liên quan đến công việc hoặc quản trị hệ thống mới được ghi ý kiến. "
                 "Nếu bạn cần góp ý, hãy đề nghị người tạo thêm bạn vào công việc."
             )
         if self.get_status() in FROZEN_STATUSES:
