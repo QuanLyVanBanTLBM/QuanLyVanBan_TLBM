@@ -340,6 +340,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
   // Phân quyền đổi hiệu lực (Nhóm 7 contract: change_hieu_luc_vanbanden / change_hieu_luc_vanbandi)
   const isDi = form.loai === 'DI';
   const hasHieuLucPerm = Boolean(
+    !currentSession ||
     isAdmin ||
     can(isDi ? 'change_hieu_luc_vanbandi' : 'change_hieu_luc_vanbanden') ||
     Boolean(initDoc?.can_change_hieu_luc)
@@ -351,20 +352,31 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
     currentSession.username === initDoc.nguoi_tao_username
   );
 
-  // Quyền sửa toàn bộ văn bản (change_*) hoặc Admin/Người tạo
-  const canEditFull = Boolean(
-    !initDoc?.id ||
+  // Quyền sửa thông tin chung văn bản (change_*) hoặc Admin
+  const hasEditGeneralPerm = Boolean(
+    !currentSession ||
     isAdmin ||
-    isCreator ||
-    Boolean(initDoc?.can_edit_full) ||
-    can(isDi ? 'change_vanbandi' : 'change_vanbanden')
+    can(isDi ? 'change_vanbandi' : 'change_vanbanden') ||
+    Boolean(initDoc?.can_edit_full)
   );
 
-  // Cho phép chỉnh sửa trạng thái hiệu lực: Khi Thêm mới (!initDoc?.id) HOẶC có quyền Sửa full (canEditFull) HOẶC có quyền Đổi hiệu lực (hasHieuLucPerm)
-  const canModifyHieuLuc = Boolean(!initDoc?.id || canEditFull || hasHieuLucPerm);
+  // canEditGeneral: Cho phép sửa các trường thông tin hành chính (Phần 1, 2, 4, người ký)
+  // Nếu là tạo mới (!initDoc?.id) hoặc Admin hoặc có quyền change_*: được sửa.
+  // Nếu là người tạo (isCreator): chỉ được sửa khi vai trò không bị giới hạn riêng là "chỉ đổi hiệu lực".
+  const canEditGeneral = Boolean(
+    !initDoc?.id ||
+    !currentSession ||
+    isAdmin ||
+    hasEditGeneralPerm ||
+    (isCreator && !can(isDi ? 'change_hieu_luc_vanbandi' : 'change_hieu_luc_vanbanden'))
+  );
 
-  // Chế độ "Chỉ đổi hiệu lực": khi sửa văn bản mà user KHÔNG có quyền sửa full, nhưng CÓ quyền đổi hiệu lực
-  const isOnlyHieuLuc = Boolean(initDoc?.id) && !canEditFull && hasHieuLucPerm;
+  // Cho phép chỉnh sửa trạng thái hiệu lực: CHỈ KHI Thêm mới (!initDoc?.id) HOẶC Admin HOẶC có quyền Đổi hiệu lực (hasHieuLucPerm)
+  // Tuyệt đối không tự động kế thừa từ quyền sửa thông tin chung canEditGeneral.
+  const canModifyHieuLuc = Boolean(!initDoc?.id || !currentSession || isAdmin || hasHieuLucPerm);
+
+  // Chế độ "Chỉ đổi hiệu lực": khi sửa văn bản mà user KHÔNG có quyền sửa thông tin chung, nhưng CÓ quyền đổi hiệu lực
+  const isOnlyHieuLuc = Boolean(initDoc?.id) && !canEditGeneral && hasHieuLucPerm;
 
   // Phân quyền gửi mail toàn hệ thống (Nhóm 7 contract: send_mail_all_vanbanden / send_mail_all_vanbandi)
   const canSendMailAll = Boolean(
@@ -964,11 +976,13 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
   };
 
   const handleReplacementSearchChange = (val: string) => {
+    if (!canModifyHieuLuc) return;
     setReplacementSearchText(val);
     searchReplacementDocs(val);
   };
 
   const handleToggleReplacementDoc = (doc: SuggestedDoc) => {
+    if (!canModifyHieuLuc) return;
     const docSoHieu = (doc.so_hieu || '').trim();
     if (!docSoHieu) return;
 
@@ -994,6 +1008,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
   };
 
   const handleRemoveReplacementDoc = (soHieuToRemove: string) => {
+    if (!canModifyHieuLuc) return;
     const trimmedToRemove = soHieuToRemove.trim().toLowerCase();
     const nextList = selectedSoHieus.filter(s => s.trim().toLowerCase() !== trimmedToRemove);
     const nextDocs = selectedReplacementDocs.filter(d => !matchDocWithReplacement(d, soHieuToRemove));
@@ -1002,6 +1017,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
   };
 
   const handleClearAllReplacementDocs = () => {
+    if (!canModifyHieuLuc) return;
     setForm(prev => ({ ...prev, link_thay_the: '' }));
     setSelectedReplacementDocs([]);
     setReplacementSearchText('');
@@ -1009,6 +1025,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
   };
 
   const handleReplacementKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!canModifyHieuLuc) return;
     if (e.key === 'Enter' || e.key === ',') {
       e.preventDefault();
       const trimmed = replacementSearchText.trim().replace(/^,|,$/g, '').trim();
@@ -1024,6 +1041,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
   };
 
   const handleReplacementInputFocus = () => {
+    if (!canModifyHieuLuc) return;
     setShowReplacementDropdown(true);
     searchReplacementDocs(replacementSearchText);
   };
@@ -1408,7 +1426,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
             </div>
           )}
           {/* PHẦN 1: TIẾP NHẬN & VÀO SỔ */}
-          <fieldset disabled={isOnlyHieuLuc} className={`bg-canvas/40 border border-border-subtle rounded-xl p-3.5 sm:p-5 space-y-3.5 ${isOnlyHieuLuc ? 'opacity-70' : ''}`}>
+          <fieldset disabled={!canEditGeneral} className={`bg-canvas/40 border border-border-subtle rounded-xl p-3.5 sm:p-5 space-y-3.5 ${!canEditGeneral ? 'opacity-70' : ''}`}>
             <div className="flex items-center justify-between pb-2.5 border-b border-border-subtle/60 gap-4">
               <div className="flex items-center gap-2 min-w-0">
                 <span className="w-6 h-6 rounded-md bg-blue-500/10 text-blue-600 flex items-center justify-center text-xs font-bold shrink-0">
@@ -1640,7 +1658,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
           </fieldset>
 
           {/* PHẦN 2: NGUỒN BAN HÀNH & NỘI DUNG VĂN BẢN */}
-          <fieldset disabled={isOnlyHieuLuc} className={`bg-canvas/40 border border-border-subtle rounded-xl p-4 sm:p-5 space-y-3.5 ${isOnlyHieuLuc ? 'opacity-70' : ''}`}>
+          <fieldset disabled={!canEditGeneral} className={`bg-canvas/40 border border-border-subtle rounded-xl p-4 sm:p-5 space-y-3.5 ${!canEditGeneral ? 'opacity-70' : ''}`}>
             <div className="flex items-center justify-between pb-2.5 border-b border-border-subtle/60 gap-4">
               <div className="flex items-center gap-2 min-w-0">
                 <span className="w-6 h-6 rounded-md bg-indigo-500/10 text-indigo-600 flex items-center justify-center text-xs font-bold shrink-0">
@@ -1864,7 +1882,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                   {t('documents_ui.formModal.signer') || 'Người ký văn bản'}
                 </label>
                 <input
-                  disabled={isOnlyHieuLuc} value={form.nguoi_ky}
+                  disabled={!canEditGeneral} value={form.nguoi_ky}
                   onChange={e => setForm({ ...form, nguoi_ky: e.target.value })}
                   placeholder={t('documents_ui.formModal.signerPlaceholder') || 'Họ và tên người ký (VD: Nguyễn Văn A)'}
                   className="w-full text-sm bg-surface border border-border-subtle rounded-xl px-3 py-2 text-main placeholder:text-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-fast"
@@ -1877,7 +1895,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                   {t('documents_ui.formModal.position') || 'Chức vụ người ký'}
                 </label>
                 <input
-                  disabled={isOnlyHieuLuc} value={form.chuc_vu}
+                  disabled={!canEditGeneral} value={form.chuc_vu}
                   onChange={e => setForm({ ...form, chuc_vu: e.target.value })}
                   placeholder={t('documents_ui.formModal.positionPlaceholder') || 'VD: Thứ trưởng, Giám đốc, Hiệu trưởng...'}
                   className="w-full text-sm bg-surface border border-border-subtle rounded-xl px-3 py-2 text-main placeholder:text-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-fast"
@@ -1996,10 +2014,10 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
               {/* Tùy chọn thay thế cho văn bản khác khi trạng thái Còn hiệu lực hoặc Còn hiệu lực 1 phần */}
               {(form.hieu_luc === 'CON_HIEU_LUC' || form.hieu_luc === 'CON_HIEU_LUC_1_PHAN') && (
                 <div className="col-span-12 pt-1">
-                  <label className={`inline-flex items-center gap-2 select-none ${!canModifyHieuLuc && !isReplacingOther ? 'opacity-65 cursor-not-allowed' : 'cursor-pointer'}`}>
+                  <label className={`inline-flex items-center gap-2 select-none ${!canModifyHieuLuc ? 'opacity-65 cursor-not-allowed' : 'cursor-pointer'}`}>
                     <input
                       type="checkbox"
-                      disabled={!canModifyHieuLuc && !isReplacingOther}
+                      disabled={!canModifyHieuLuc}
                       checked={isReplacingOther}
                       onChange={e => {
                         setIsReplacingOther(e.target.checked);
@@ -2047,7 +2065,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                           <i className="fa-solid fa-layer-group text-emerald-600" />
                           <span>Đã chọn ({selectedSoHieus.length}):</span>
                         </span>
-                        {selectedSoHieus.length > 1 && (
+                        {selectedSoHieus.length > 1 && canModifyHieuLuc && (
                           <button
                             type="button"
                             onClick={handleClearAllReplacementDocs}
@@ -2095,14 +2113,16 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                                   - {matchedDoc.trich_yeu}
                                 </span>
                               )}
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveReplacementDoc(firstSh)}
-                                className="text-muted hover:text-danger hover:bg-danger/10 rounded-full w-4 h-4 flex items-center justify-center transition-colors ml-0.5 cursor-pointer shrink-0"
-                                title={`Bỏ chọn ${parsedFirst.baseSoHieu}`}
-                              >
-                                <i className="fa-solid fa-xmark text-[10px]" />
-                              </button>
+                              {canModifyHieuLuc && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveReplacementDoc(firstSh)}
+                                  className="text-muted hover:text-danger hover:bg-danger/10 rounded-full w-4 h-4 flex items-center justify-center transition-colors ml-0.5 cursor-pointer shrink-0"
+                                  title={`Bỏ chọn ${parsedFirst.baseSoHieu}`}
+                                >
+                                  <i className="fa-solid fa-xmark text-[10px]" />
+                                </button>
+                              )}
                             </span>
                           );
                         })()}
@@ -2135,16 +2155,21 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
 
                     <input
                       type="text"
+                      disabled={!canModifyHieuLuc}
                       value={replacementSearchText}
                       onChange={e => handleReplacementSearchChange(e.target.value)}
                       onKeyDown={handleReplacementKeyDown}
                       onFocus={handleReplacementInputFocus}
                       placeholder={
-                        selectedSoHieus.length > 0
+                        !canModifyHieuLuc
+                          ? (t('documents_ui.formModal.noHieuLucPermission') || 'Không có quyền thay đổi văn bản thay thế')
+                          : selectedSoHieus.length > 0
                           ? "Gõ số hiệu hoặc trích yếu để chọn thêm văn bản khác..."
                           : "Nhập số hiệu văn bản (VD: 88/QĐ-SNN), trích yếu để tìm kiếm..."
                       }
-                      className="w-full text-sm bg-surface border border-warning-border rounded-xl pl-9 pr-9 py-2 text-main placeholder:text-muted focus:outline-none focus:border-warning focus:ring-1 focus:ring-warning transition-fast"
+                      className={`w-full text-sm bg-surface border border-warning-border rounded-xl pl-9 pr-9 py-2 text-main placeholder:text-muted focus:outline-none focus:border-warning focus:ring-1 focus:ring-warning transition-fast ${
+                        !canModifyHieuLuc ? 'opacity-65 cursor-not-allowed bg-slate-100 dark:bg-slate-800' : ''
+                      }`}
                       autoComplete="off"
                     />
 
@@ -2308,7 +2333,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
           </div>
 
           {/* PHẦN 4: PHÂN PHỐI XỬ LÝ & TỆP ĐÍNH KÈM */}
-          <fieldset disabled={isOnlyHieuLuc} className={`bg-canvas/40 border border-border-subtle rounded-xl p-4 sm:p-5 space-y-4 ${isOnlyHieuLuc ? 'opacity-70' : ''}`}>
+          <fieldset disabled={!canEditGeneral} className={`bg-canvas/40 border border-border-subtle rounded-xl p-4 sm:p-5 space-y-4 ${!canEditGeneral ? 'opacity-70' : ''}`}>
             <div className="flex items-center justify-between pb-2.5 border-b border-border-subtle/60 gap-4">
               <div className="flex items-center gap-2 min-w-0">
                 <span className="w-6 h-6 rounded-md bg-amber-500/10 text-amber-600 flex items-center justify-center text-xs font-bold shrink-0">
