@@ -29,12 +29,10 @@ def _provision_alpaca_employee(username, user_info):
     pos_name = user_info.get("positionName") or ""
     dept_name = user_info.get("departmentName") or ""
 
+    # Chỉ khớp đúng tên (không phân biệt hoa thường): khớp một phần có thể gán nhầm chức vụ cao hơn và nhóm quyền cao hơn.
     position = None
     if pos_name:
-        position = (
-            Position.objects.filter(name__iexact=pos_name.strip()).first()
-            or Position.objects.filter(name__icontains=pos_name.strip()).first()
-        )
+        position = Position.objects.filter(name__iexact=pos_name.strip()).first()
     if not position:
         position = Position.objects.filter(name="Chuyên viên").first() or Position.objects.first()
 
