@@ -283,16 +283,16 @@ export default function FloatingAIBox({ onNavigate }: FloatingAIBoxProps) {
   return (
     <>
       {!isOpen && (
-        <div className="fixed bottom-[72px] right-6 sm:right-8 z-[9998]">
+        <div className="fixed bottom-24 sm:bottom-28 right-5 sm:right-6 z-[9998] pointer-events-auto">
           <button
             type="button"
-            className="relative w-16 h-16 rounded-full bg-gradient-to-tr from-purple-600 via-primary to-cyan-400 p-[2.5px] shadow-xl hover:shadow-2xl shadow-primary/25 cursor-pointer flex items-center justify-center transition-all duration-200 hover:scale-110 active:scale-95 group"
+            className="relative w-12 h-12 sm:w-13 sm:h-13 rounded-full bg-gradient-to-tr from-purple-600 via-primary to-cyan-400 p-[2px] shadow-xl hover:shadow-2xl shadow-primary/25 cursor-pointer flex items-center justify-center transition-all duration-200 hover:scale-110 active:scale-95 group"
             onClick={() => { setIsOpen(true); setIsMinimized(false); }}
             title={t('floatingAI.openTitle')}
             aria-label={t('floatingAI.openTitle')}
           >
             <div className="absolute inset-0 rounded-full bg-primary/30 animate-ping -z-10" />
-            <div className="w-full h-full rounded-full bg-surface-elevated flex items-center justify-center text-primary text-2xl shadow-inner group-hover:bg-primary group-hover:text-white transition-colors duration-fast">
+            <div className="w-full h-full rounded-full bg-surface-elevated flex items-center justify-center text-primary text-lg sm:text-xl shadow-inner group-hover:bg-primary group-hover:text-white transition-colors duration-fast">
               <i className="fa-solid fa-robot" />
             </div>
             <span className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-emerald-500 border-2 border-surface" />
@@ -303,7 +303,7 @@ export default function FloatingAIBox({ onNavigate }: FloatingAIBoxProps) {
       {isOpen && (
         <div
           ref={windowRef}
-          className={`fixed bottom-[68px] right-6 z-[9999] w-[390px] max-w-[calc(100vw-32px)] rounded-2xl bg-surface-elevated/95 backdrop-blur-xl border border-subtle shadow-2xl flex flex-col overflow-hidden transition-all duration-fast animate-in fade-in slide-in-from-bottom-4 ${
+          className={`fixed bottom-24 sm:bottom-28 right-5 sm:right-6 z-[9999] w-[390px] max-w-[calc(100vw-32px)] rounded-2xl bg-surface-elevated/95 backdrop-blur-xl border border-subtle shadow-2xl flex flex-col overflow-hidden transition-all duration-fast animate-in fade-in slide-in-from-bottom-4 ${
             isMinimized ? 'h-14' : 'h-fit max-h-[calc(100vh-120px)]'
           }`}
         >

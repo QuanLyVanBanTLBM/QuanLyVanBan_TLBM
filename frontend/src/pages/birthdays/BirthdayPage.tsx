@@ -620,7 +620,7 @@ export default function BirthdayPage() {
 
       </div>
 
-      <BirthdayEmailLogs month={displayMonth} year={displayYear} />
+      <BirthdayEmailLogs />
     </main>
   );
 }

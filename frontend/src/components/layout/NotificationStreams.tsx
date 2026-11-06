@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { SAMPLE_STREAMS } from '@lib/constants';
 import { NotificationStreamType, NotificationItem, StreamData } from '@app-types/notification';
 import { useTranslation } from '@i18n/translate';
+import { formatUserName } from '@lib/roleUtils';
 import DocumentPreviewModal from '@components/dashboard/DocumentPreviewModal';
 import { DocumentItem } from '@components/dashboard/ModernDashboardView';
 
@@ -52,9 +53,28 @@ interface DashboardOverviewApiResponse {
 
 export default function NotificationStreams() {
   const navigate = useNavigate();
-  const { t } = useTranslation();
+  const { t, currentLang } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<NotificationStreamType>('incoming');
+
+  // Quản lý danh sách ID thông báo đã đọc lưu trữ cục bộ
+  const [readIds, setReadIds] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem('tlbm_read_notifications');
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+
+  const saveReadIds = (newSet: Set<string>) => {
+    setReadIds(newSet);
+    try {
+      localStorage.setItem('tlbm_read_notifications', JSON.stringify(Array.from(newSet)));
+    } catch {
+      // ignore
+    }
+  };
   const [previewDoc, setPreviewDoc] = useState<DocumentItem | null>(null);
   const [streams, setStreams] = useState<StreamData[]>(SAMPLE_STREAMS);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -70,45 +90,53 @@ export default function NotificationStreams() {
         const recentIncoming = data.recentIncoming || [];
         const recentOutgoing = data.recentOutgoing || [];
         const recentSigning = data.recentSigning || [];
-        const signingCount = data.kpis?.signingCount ?? recentSigning.length;
 
         const inItems: NotificationItem[] = recentIncoming
           .filter((d: ApiDocumentItem) => d.scope !== 'HAN_CHE')
-          .map((d: ApiDocumentItem) => ({
-            id: `in-${d.id}`,
-            code: d.code || '',
-            title: d.title || '',
-            senderOrDept: d.sender || 'Cơ quan ban hành',
-            time: d.date || '',
-            isRead: false,
-            scope: (d.scope === 'HAN_CHE' ? 'HAN_CHE' : 'NOI_BO') as 'NOI_BO' | 'HAN_CHE',
-          }));
+          .map((d: ApiDocumentItem) => {
+            const id = `in-${d.id}`;
+            return {
+              id,
+              code: d.code || '',
+              title: d.title || '',
+              senderOrDept: d.sender || 'Cơ quan ban hành',
+              time: d.date || '',
+              isRead: readIds.has(id),
+              scope: (d.scope === 'HAN_CHE' ? 'HAN_CHE' : 'NOI_BO') as 'NOI_BO' | 'HAN_CHE',
+            };
+          });
 
         const outItems: NotificationItem[] = recentOutgoing
           .filter((d: ApiDocumentItem) => d.scope !== 'HAN_CHE')
-          .map((d: ApiDocumentItem) => ({
-            id: `out-${d.id}`,
-            code: d.code || '',
-            title: d.title || '',
-            senderOrDept: d.recipient || 'Nơi nhận',
-            time: d.date || '',
-            isRead: false,
-            scope: (d.scope === 'HAN_CHE' ? 'HAN_CHE' : 'NOI_BO') as 'NOI_BO' | 'HAN_CHE',
-          }));
+          .map((d: ApiDocumentItem) => {
+            const id = `out-${d.id}`;
+            return {
+              id,
+              code: d.code || '',
+              title: d.title || '',
+              senderOrDept: d.recipient || 'Nơi nhận',
+              time: d.date || '',
+              isRead: readIds.has(id),
+              scope: (d.scope === 'HAN_CHE' ? 'HAN_CHE' : 'NOI_BO') as 'NOI_BO' | 'HAN_CHE',
+            };
+          });
 
         const confItems: NotificationItem[] = [
           ...recentIncoming.filter((d: ApiDocumentItem) => d.scope === 'HAN_CHE'),
           ...recentOutgoing.filter((d: ApiDocumentItem) => d.scope === 'HAN_CHE'),
-        ].map((d: ApiDocumentItem) => ({
-          id: `conf-${d.id}`,
-          code: d.code || '',
-          title: d.title || '',
-          senderOrDept: d.sender || d.recipient || 'Mật / Hạn chế',
-          time: d.date || '',
-          isRead: false,
-          priority: 'confidential',
-          scope: 'HAN_CHE',
-        }));
+        ].map((d: ApiDocumentItem) => {
+          const id = `conf-${d.id}`;
+          return {
+            id,
+            code: d.code || '',
+            title: d.title || '',
+            senderOrDept: d.sender || d.recipient || 'Mật / Hạn chế',
+            time: d.date || '',
+            isRead: readIds.has(id),
+            priority: 'confidential',
+            scope: 'HAN_CHE',
+          };
+        });
 
         // Đọc cờ can_toi_ky: chỉ đưa phiếu người dùng có quyền ký vào danh sách chuông
         const hasCanToiKyFlag = recentSigning.some((s: ApiSigningItem) => s.can_toi_ky !== undefined);
@@ -121,15 +149,43 @@ export default function NotificationStreams() {
         const pendingSigningLabel = t('notifications.signingPendingLabel') || 'Chờ ký';
 
         const approvalItems: NotificationItem[] = actionableSigning.length > 0
-          ? actionableSigning.map((s: ApiSigningItem) => ({
-              id: `sign-${s.id}`,
-              code: s.ma_trinh_ky || `TK-${s.id}`,
-              title: s.tieu_de || defaultSigningTitle,
-              senderOrDept: s.nguoi_trinh ? `${submitterPrefix}: ${s.nguoi_trinh}` : pendingSigningLabel,
-              time: s.ngay_gui || '',
-              isRead: false,
-            }))
+          ? actionableSigning.map((s: ApiSigningItem) => {
+              const id = `sign-${s.id}`;
+              return {
+                id,
+                code: s.ma_trinh_ky || `TK-${s.id}`,
+                title: s.tieu_de || defaultSigningTitle,
+                senderOrDept: s.nguoi_trinh ? `${submitterPrefix}: ${formatUserName(s.nguoi_trinh, currentLang)}` : pendingSigningLabel,
+                time: s.ngay_gui || '',
+                isRead: readIds.has(id),
+              };
+            })
           : [];
+
+        const sortByTimeDesc = (a: NotificationItem, b: NotificationItem): number => {
+          const parseDate = (d?: string): number => {
+            if (!d) return 0;
+            const match = d.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+            if (match) {
+              return new Date(parseInt(match[3], 10), parseInt(match[2], 10) - 1, parseInt(match[1], 10)).getTime();
+            }
+            const parsed = Date.parse(d);
+            return isNaN(parsed) ? 0 : parsed;
+          };
+          const timeA = parseDate(a.time);
+          const timeB = parseDate(b.time);
+          if (timeB !== timeA) {
+            return timeB - timeA;
+          }
+          const idNumA = parseInt(String(a.id).replace(/\D/g, ''), 10) || 0;
+          const idNumB = parseInt(String(b.id).replace(/\D/g, ''), 10) || 0;
+          return idNumB - idNumA;
+        };
+
+        inItems.sort(sortByTimeDesc);
+        outItems.sort(sortByTimeDesc);
+        confItems.sort(sortByTimeDesc);
+        approvalItems.sort(sortByTimeDesc);
 
         setStreams([
           {
@@ -137,7 +193,7 @@ export default function NotificationStreams() {
             label: 'Văn Bản Đến',
             icon: 'fa-inbox',
             color: 'blue',
-            unreadCount: inItems.length,
+            unreadCount: inItems.filter((i) => !i.isRead).length,
             items: inItems,
           },
           {
@@ -145,7 +201,7 @@ export default function NotificationStreams() {
             label: 'Văn Bản Đi',
             icon: 'fa-paper-plane',
             color: 'emerald',
-            unreadCount: outItems.length,
+            unreadCount: outItems.filter((i) => !i.isRead).length,
             items: outItems,
           },
           {
@@ -153,7 +209,7 @@ export default function NotificationStreams() {
             label: 'Mật / Hạn Chế',
             icon: 'fa-shield-halved',
             color: 'rose',
-            unreadCount: confItems.length,
+            unreadCount: confItems.filter((i) => !i.isRead).length,
             items: confItems,
           },
           {
@@ -161,7 +217,7 @@ export default function NotificationStreams() {
             label: 'Chờ Duyệt',
             icon: 'fa-signature',
             color: 'amber',
-            unreadCount: signingCount !== undefined ? signingCount : approvalItems.length,
+            unreadCount: approvalItems.filter((i) => !i.isRead).length,
             items: approvalItems,
           },
         ]);
@@ -169,22 +225,41 @@ export default function NotificationStreams() {
       .catch(() => {
         // Dự phòng giữ mảng mặc định nếu chưa đăng nhập hoặc lỗi mạng
       });
-  }, [t]);
+  }, [t, currentLang, readIds]);
 
   const handleOpenDoc = (item: NotificationItem) => {
+    // 1. Đánh dấu thông báo cụ thể này đã đọc và trừ số đếm chưa đọc trên từng mục
+    if (!readIds.has(item.id)) {
+      const newReadIds = new Set(readIds);
+      newReadIds.add(item.id);
+      saveReadIds(newReadIds);
+
+      setStreams((prev) =>
+        prev.map((stream) => {
+          const hasItem = stream.items.some((i) => i.id === item.id);
+          if (!hasItem) return stream;
+          const target = stream.items.find((i) => i.id === item.id);
+          const wasUnread = target && !target.isRead;
+          return {
+            ...stream,
+            unreadCount: wasUnread ? Math.max(0, stream.unreadCount - 1) : stream.unreadCount,
+            items: stream.items.map((i) => (i.id === item.id ? { ...i, isRead: true } : i)),
+          };
+        })
+      );
+    }
+
     setIsOpen(false);
-    // 1. Nếu là thông báo hồ sơ trình ký cụ thể: mở đúng trang chi tiết hồ sơ đó
+    // 2. Chuyển hướng hoặc mở xem trước
     if (item.id.startsWith('sign-')) {
       const signingId = item.id.replace('sign-', '');
       navigate(`/approvals/${signingId}`);
       return;
     }
-    // 2. Nếu ở tab trình ký
     if (activeTab === 'approvals') {
       navigate('/approvals');
       return;
     }
-    // 3. Xem trước văn bản thường
     setPreviewDoc({
       code: item.code,
       title: item.title,
@@ -194,6 +269,12 @@ export default function NotificationStreams() {
   };
 
   const handleMarkAllRead = () => {
+    const allIds = new Set(readIds);
+    streams.forEach((s) => {
+      s.items.forEach((item) => allIds.add(item.id));
+    });
+    saveReadIds(allIds);
+
     setStreams((prev) =>
       prev.map((s) => ({
         ...s,
@@ -330,9 +411,14 @@ export default function NotificationStreams() {
                   <div
                     key={item.id}
                     onClick={() => handleOpenDoc(item)}
-                    className="p-3 hover:bg-surface-hover rounded-lg transition-colors duration-fast cursor-pointer flex flex-col"
+                    className={`p-3 hover:bg-surface-hover rounded-lg transition-colors duration-fast cursor-pointer flex flex-col relative ${
+                      item.isRead ? 'opacity-75' : 'bg-surface/50 font-medium'
+                    }`}
                   >
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      {!item.isRead && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" title="Chưa đọc" />
+                      )}
                       <span className="px-1.5 py-0.5 rounded text-[11px] font-mono font-medium bg-surface border border-subtle text-text-secondary">
                         {item.code}
                       </span>

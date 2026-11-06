@@ -70,6 +70,7 @@
     "emailLogs": {
       "title": "Birthday email log",
       "description": "The system automatically emails every active employee whose birthday falls on the day, using email, name, position, and department from the employee record.",
+      "filterByDate": "Viewing date",
       "filterByStatus": "Filter by status",
       "allStatuses": "All statuses",
       "statusPending": "Pending",
@@ -77,10 +78,13 @@
       "statusSuccess": "Sent successfully",
       "statusFailed": "Failed",
       "statusRetry": "Waiting to retry",
+      "today": "Today",
       "refresh": "Refresh log",
       "loading": "Loading email log...",
       "loadError": "Could not load the email log.",
-      "empty": "No email log entries for this month.",
+      "emptyToday": "No birthday email log entries for today.",
+      "emptyDate": "No birthday email log entries for {date}.",
+      "viewingDate": "Viewing date: {date}",
       "total": "Total records: {count}",
       "employee": "Employee",
       "email": "Recipient email",
@@ -100,7 +104,8 @@
   "birthdays": {
     "messages": {
       "permissionDenied": "You do not have permission to view birthday email logs.",
-      "invalidStatus": "The birthday email log status is invalid."
+      "invalidStatus": "The birthday email log status is invalid.",
+      "invalidDate": "The birthday email log date is invalid."
     }
   }
 }

@@ -54,17 +54,15 @@ beforeEach(() => {
 });
 
 describe('Ký duyệt dùng ảnh chữ ký ở máy chủ', () => {
-  it('hiện ảnh từ máy chủ và không gửi ảnh kèm yêu cầu ký', async () => {
+  it('không gửi ảnh kèm yêu cầu ký (máy chủ tự áp dụng snapshot)', async () => {
     moHopKy();
-    const anh = await screen.findByAltText('Chữ ký cá nhân');
-    expect(anh).toHaveAttribute('src', '/api/signing/anh-chu-ky-ca-nhan/tep/?v=7');
     const oPin = await screen.findByLabelText(/Nhập PIN ký/);
     await waitFor(() => expect(oPin).toBeEnabled());
-    fireEvent.change(oPin, { target: { value: '48271593' } });
+    fireEvent.change(oPin, { target: { value: '482739' } });
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /Ký duyệt/ }));
     await waitFor(() => expect(api.ky).toHaveBeenCalledTimes(1));
     expect(api.ky.mock.calls[0][2]).toEqual({
-      khoa_ky: 4, hash_tai_lieu: MA_BAM, chu_ky_so: 'chu-ky-so', ghi_chu_ky: '',
+      khoa_ky: 4, hash_tai_lieu: MA_BAM, pin: '482739', ghi_chu_ky: '',
     });
   });
 

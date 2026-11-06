@@ -28,7 +28,7 @@ const mockEmployeeData = [
   {
     id: 1,
     username: 'binhnv',
-    email: 'binhnv@donvi.gov.vn',
+    email: 'binhnv@baolong.vn',
     ho_ten: 'Nguyễn Văn Bình',
     ngay_sinh: '20/05/19xx',
     is_birthday_masked: true,
@@ -55,6 +55,14 @@ const mockEmployeeData = [
         chuc_vu_ten: 'Phó phòng',
         chuc_danh: 'Phó phòng kiêm nhiệm',
       },
+      {
+        id: 11,
+        don_vi_id: 3,
+        don_vi_ten: 'Phòng Nhân sự',
+        chuc_vu_id: 3,
+        chuc_vu_ten: 'Trưởng ban',
+        chuc_danh: 'Trưởng ban kiêm nhiệm',
+      },
     ],
     created_at: '2026-01-15T08:00:00Z',
     updated_at: '2026-01-15T08:00:00Z',
@@ -62,7 +70,7 @@ const mockEmployeeData = [
   {
     id: 2,
     username: 'hungtv',
-    email: 'hungtv@donvi.gov.vn',
+    email: 'hungtv@baolong.vn',
     ho_ten: 'Trần Văn Hùng',
     ngay_sinh: '15/10/1988',
     is_birthday_masked: false,
@@ -308,7 +316,7 @@ describe('EmployeesPage Component (Issue #24)', () => {
       target: { value: 'Nhân viên kiểm tra chức vụ' },
     });
     fireEvent.change(container.querySelector('input[name="email"]')!, {
-      target: { value: 'position-required@donvi.gov.vn' },
+      target: { value: 'position-required@baolong.vn' },
     });
     fireEvent.change(container.querySelector('input[name="ngay_sinh"]')!, {
       target: { value: '01/01/1990' },
@@ -318,6 +326,54 @@ describe('EmployeesPage Component (Issue #24)', () => {
     fireEvent.submit(container.querySelector('form')!);
 
     expect(await screen.findByText('Vui lòng chọn chức vụ cho cán bộ nhân viên.')).toBeInTheDocument();
+    expect(mockedApiClient.post).not.toHaveBeenCalled();
+  });
+
+  it('rejects an email outside the company domain before calling the API', async () => {
+    const { container } = render(
+      <MemoryRouter>
+        <EmployeesPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Nguyễn Văn Bình')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Thêm nhân viên/i }));
+    await screen.findByText('Thêm Mới Cán Bộ Nhân Viên');
+
+    fireEvent.change(container.querySelector('input[name="ho_ten"]')!, { target: { value: 'Nhân viên email ngoài' } });
+    fireEvent.change(container.querySelector('input[name="email"]')!, { target: { value: 'nhanvien@yahoo.com' } });
+    fireEvent.submit(container.querySelector('form')!);
+
+    expect(await screen.findByText('Email phải thuộc tên miền công ty (@baolong.vn).')).toBeInTheDocument();
+    expect(mockedApiClient.post).not.toHaveBeenCalled();
+  });
+
+  it('rejects a phone number that is not exactly 10 digits before calling the API', async () => {
+    const { container } = render(
+      <MemoryRouter>
+        <EmployeesPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Nguyễn Văn Bình')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Thêm nhân viên/i }));
+    await screen.findByText('Thêm Mới Cán Bộ Nhân Viên');
+
+    fireEvent.change(container.querySelector('input[name="ho_ten"]')!, { target: { value: 'Nhân viên sai số' } });
+    fireEvent.change(container.querySelector('input[name="email"]')!, { target: { value: 'sai.so@baolong.vn' } });
+    fireEvent.change(container.querySelector('input[name="ngay_sinh"]')!, { target: { value: '01/01/1990' } });
+    fireEvent.change(container.querySelector('input[name="sdt"]')!, { target: { value: '023243423' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Đơn vị / Phòng ban' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Văn phòng Viện' }));
+    fireEvent.submit(container.querySelector('form')!);
+
+    expect(
+      await screen.findByText('Số điện thoại phải gồm đúng 10 chữ số, bắt đầu bằng 0 (ví dụ: 0912345678).')
+    ).toBeInTheDocument();
     expect(mockedApiClient.post).not.toHaveBeenCalled();
   });
 
@@ -338,7 +394,7 @@ describe('EmployeesPage Component (Issue #24)', () => {
       target: { value: 'Nhân viên kiểm tra đơn vị' },
     });
     fireEvent.change(container.querySelector('input[name="email"]')!, {
-      target: { value: 'unit-required@donvi.gov.vn' },
+      target: { value: 'unit-required@baolong.vn' },
     });
     fireEvent.change(container.querySelector('input[name="ngay_sinh"]')!, {
       target: { value: '01/01/1990' },
@@ -689,8 +745,8 @@ describe('EmployeesPage Component (Issue #24)', () => {
             row: 3,
             field: 'email',
             code: 'employees.messages.emailExists',
-            value: 'trung@donvi.gov.vn',
-            message: "Email 'trung@donvi.gov.vn' đã tồn tại trên hệ thống.",
+            value: 'trung@baolong.vn',
+            message: "Email 'trung@baolong.vn' đã tồn tại trên hệ thống.",
           },
           {
             row: 4,
@@ -747,8 +803,8 @@ describe('EmployeesPage Component (Issue #24)', () => {
             row: 4,
             field: 'email',
             code: 'employees.messages.emailExists',
-            value: 'dup@donvi.gov.vn',
-            message: "Email 'dup@donvi.gov.vn' đã tồn tại trong hệ thống.",
+            value: 'dup@baolong.vn',
+            message: "Email 'dup@baolong.vn' đã tồn tại trong hệ thống.",
           },
         ],
       },
@@ -938,7 +994,7 @@ describe('EmployeesPage Component (Issue #24)', () => {
     );
   });
 
-  it('renders concurrent assignments badge on employee unit cell', async () => {
+  it('renders the main and one concurrent position with a badge for remaining positions', async () => {
     render(
       <MemoryRouter>
         <EmployeesPage />
@@ -949,8 +1005,14 @@ describe('EmployeesPage Component (Issue #24)', () => {
       expect(screen.getByText('Nguyễn Văn Bình')).toBeInTheDocument();
     });
 
-    // Cán bộ 1 có 1 phòng ban kiêm nhiệm -> hiển thị badge '+1 kiêm nhiệm'
-    expect(screen.getByText('+1 kiêm nhiệm')).toBeInTheDocument();
+    expect(screen.getByText('+2 kiêm nhiệm')).toBeInTheDocument();
+    expect(screen.getByText('Chức vụ')).toBeInTheDocument();
+    expect(screen.getByText('kiêm Phó phòng')).toBeInTheDocument();
+    const positionBadge = screen.getByText('+1 chức vụ');
+    expect(positionBadge.parentElement).toHaveClass('mt-1');
+    expect(positionBadge.parentElement?.querySelector('i')).toHaveClass('fa-solid', 'fa-briefcase');
+    expect(screen.queryByText('Chuyên viên tổng hợp')).not.toBeInTheDocument();
+    expect(screen.queryByText('Trưởng ban')).not.toBeInTheDocument();
   });
 
   it('triggers export excel download on clicking Export Excel button', async () => {

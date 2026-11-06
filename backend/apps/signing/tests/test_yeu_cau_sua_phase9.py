@@ -122,7 +122,7 @@ class YeuCauSuaTests(KyBase):
 
 
 @unittest.skipUnless(connection.vendor == "postgresql", "Cần PostgreSQL để kiểm tra khóa dòng đồng thời")
-@override_settings(SIGNING_PIN_SECRET="bi-mat-test")
+@override_settings(SIGNING_PIN_SECRET="bi-mat-test", SIGNING_KEY_PEPPER="pepper-test")
 class TraSuaDongThoiTests(TransactionTestCase):
     """Hai người cùng cấp thao tác cùng lúc: không có chữ ký nào được ghi trên lượt đã dừng."""
 
@@ -163,7 +163,7 @@ class TraSuaDongThoiTests(TransactionTestCase):
     def test_sign_racing_return_never_signs_paused_attempt(self):
         loi = chay_song_song(
             lambda: hanh_dong_service.ky(self.ho_so, self.ky1, khoa_ky=self.key.pk, hash_tai_lieu=HASH,
-                                         chu_ky_so=ky_so(self.private), khoa_chong_trung="ky"),
+                                         pin="123456", khoa_chong_trung="ky"),
             self.tra_sua,
         )
         self.assertEqual(self.kiem_luot_dung(), ("YEU_CAU_SUA", "TAM_DUNG"))

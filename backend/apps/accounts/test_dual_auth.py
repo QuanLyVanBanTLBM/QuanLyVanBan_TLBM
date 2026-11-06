@@ -307,4 +307,32 @@ class DualAuthenticationTests(TestCase):
         self.assertEqual(result["status"], 6)
         self.assertEqual(result["status_name"], "PASSWORD_INCORRECT")
 
+    def test_jit_provisioning_for_authenticated_alpaca_user(self):
+        """Kiểm tra cơ chế Just-In-Time Provisioning: khi API Bảo Long trả về hồ sơ CBNV thật, tự động kích hoạt tài khoản."""
+        self.provider.side_effect = None
+        self.provider.return_value.__enter__.return_value.read.return_value = json.dumps({
+            "Success": True,
+            "Data": [{
+                "userName": "duytp",
+                "fullName": "Trần Phương Duy",
+                "email": "duy_tp@baohiembaolong.vn",
+                "phoneNumber": "0989433920",
+                "departmentName": "Công nghệ thông tin",
+                "positionName": "Trưởng Bộ phận",
+            }],
+            "StatusCode": "200",
+        }).encode()
 
+        # Đảm bảo trước khi login chưa có tài khoản duytp
+        User.objects.filter(username="duytp").delete()
+
+        response = self.client.post(
+            "/api/auth/login/",
+            {"username": "duytp", "password": "Phong!@#$"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data["success"])
+        self.assertEqual(response.data["auth_provider"], "alpaca_api")
+        self.assertEqual(response.data["user"]["fullName"], "Trần Phương Duy")
+        self.assertTrue(User.objects.filter(username="duytp").exists())

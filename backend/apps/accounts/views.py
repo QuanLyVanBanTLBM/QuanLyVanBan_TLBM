@@ -13,6 +13,58 @@ from .serializers import ChangePasswordSerializer
 from .alpaca_auth import check_alpaca_auth
 
 
+def _provision_alpaca_employee(username, user_info):
+    """
+    Tự động khởi tạo và đồng bộ hồ sơ CBNV từ API Bảo Long (Just-In-Time Provisioning).
+    Gán chức vụ, đơn vị và nhóm quyền mặc định tương ứng với vị trí công tác.
+    """
+    UserModel = get_user_model()
+    from accounts.models import Position
+    from organizations.models import DonVi
+    from .serializers import get_default_groups_for_position
+
+    full_name = user_info.get("fullName") or username
+    email = user_info.get("email") or f"{username}@baolong.vn"
+    phone = user_info.get("phoneNumber") or ""
+    pos_name = user_info.get("positionName") or ""
+    dept_name = user_info.get("departmentName") or ""
+
+    position = None
+    if pos_name:
+        position = (
+            Position.objects.filter(name__iexact=pos_name.strip()).first()
+            or Position.objects.filter(name__icontains=pos_name.strip()).first()
+        )
+    if not position:
+        position = Position.objects.filter(name="Chuyên viên").first() or Position.objects.first()
+
+    don_vi = None
+    if dept_name:
+        don_vi = (
+            DonVi.objects.filter(ten__iexact=dept_name.strip()).first()
+            or DonVi.objects.filter(ten__icontains=dept_name.strip()).first()
+        )
+    if not don_vi:
+        don_vi = DonVi.objects.filter(ten__icontains="Công nghệ thông tin").first() or DonVi.objects.first()
+
+    target_user = UserModel.objects.create_user(
+        username=username,
+        ho_ten=full_name,
+        email=email,
+        sdt=phone,
+        chuc_vu=position,
+        don_vi=don_vi,
+        is_active=True,
+    )
+
+    if position:
+        default_groups = get_default_groups_for_position(position)
+        if default_groups:
+            target_user.groups.set(default_groups)
+
+    return target_user
+
+
 def _build_user_payload(user):
     """Trả về dict thông tin user dùng chung cho login & profile response, hỗ trợ cả camelCase lẫn snake_case."""
     full_name = user.ho_ten or user.username
@@ -20,6 +72,7 @@ def _build_user_payload(user):
     position = user.chuc_vu.name if user.chuc_vu_id else ("Quản trị viên tối cao" if user.is_superuser else "Chuyên viên văn thư")
     date_joined_str = user.created_at.strftime("%Y-%m-%d") if user.created_at else ""
 
+    user_don_vi_id = getattr(user, "don_vi_id", None)
     return {
         "id": user.id,
         "username": user.username,
@@ -27,11 +80,13 @@ def _build_user_payload(user):
         # CamelCase (theo API Contract Hieu.md)
         "fullName": full_name,
         "unit": department,
+        "donViId": user_don_vi_id,
         "roleTitle": position,
         "dateJoined": date_joined_str,
         # Snake_case (tương thích backward)
         "full_name": full_name,
         "department": department,
+        "don_vi_id": user_don_vi_id,
         "position": position,
         "role": "admin" if user.is_superuser else "staff",
         "phone": user.sdt,
@@ -119,14 +174,22 @@ def login_view(request):
 
     if alpaca_res.get("success"):
         # [Điểm 3 & Điểm 4 từ Nhóm 7]:
-        # Nếu tài khoản chưa có trong hệ thống QLVB, TUYỆT ĐỐI KHÔNG tự động tạo hồ sơ CBNV.
-        # CBNV bắt buộc phải được Quản trị viên khởi tạo và phân quyền trước trong CSDL.
+        # Nếu tài khoản chưa có trong hệ thống QLVB:
+        # - Trường hợp 1: Không có hồ sơ cán bộ thật (mock SIT Data=7) -> 403 Forbidden.
+        # - Trường hợp 2: Có hồ sơ CBNV thật từ máy chủ Bảo Long -> Kích hoạt Just-In-Time (JIT) Provisioning
+        #   để đồng bộ hồ sơ cán bộ vào CSDL và tự động gán quyền tương ứng.
         if not target_user:
-            msg = "Tài khoản chưa được phân quyền trong hệ thống. Vui lòng liên hệ Quản trị viên."
-            return Response(
-                {"success": False, "error": msg, "detail": msg},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+            user_info = alpaca_res.get("user_info") or {}
+            full_name = user_info.get("fullName", "").strip()
+
+            if not full_name:
+                msg = "Tài khoản chưa được phân quyền trong hệ thống. Vui lòng liên hệ Quản trị viên."
+                return Response(
+                    {"success": False, "error": msg, "detail": msg},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+            target_user = _provision_alpaca_employee(username, user_info)
 
         if not target_user.is_active:
             msg = "Tài khoản đã bị vô hiệu hóa. Vui lòng liên hệ Quản trị viên."

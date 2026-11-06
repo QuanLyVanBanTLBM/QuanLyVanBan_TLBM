@@ -348,6 +348,78 @@ describe('OrganizationsPage Component (Issue #19)', () => {
     expect(endpoint).toContain('unit_id=2');
   });
 
+  describe('Xuất danh bạ ở tab Khối', () => {
+    const unitA = { id: 1, khoi: 1, khoi_ten: 'Khối A', stt_uu_tien: 1, ten: 'Phòng Kế toán', is_public: true };
+    const unitC = { id: 3, khoi: 2, khoi_ten: 'Khối B', stt_uu_tien: 3, ten: 'Phòng Kỹ thuật', is_public: true };
+
+    function mockApi(permissions: string[]) {
+      mockedApiClient.mockImplementation(async (endpoint: string) => {
+        if (endpoint.includes('/auth/me/permissions/')) return { is_superuser: false, permissions };
+        if (endpoint.includes('/regions/')) {
+          return [
+            { id: 1, ten: 'Khối A', thu_tu_hien_thi: 1, don_vi_count: 1 },
+            { id: 2, ten: 'Khối B', thu_tu_hien_thi: 2, don_vi_count: 1 },
+          ];
+        }
+        if (endpoint.includes('/units/') && endpoint.includes('all=true')) return [unitA, unitC];
+        if (endpoint.includes('/units/')) return { count: 2, next: null, previous: null, results: [unitA, unitC] };
+        return [];
+      });
+    }
+
+    const renderRegionsTab = () =>
+      render(
+        <MemoryRouter>
+          <OrganizationsPage />
+        </MemoryRouter>
+      );
+
+    it('người có quyền xuất thấy nút trên thanh công cụ và trên từng dòng Khối', async () => {
+      mockApi(['view_donvi', 'export_donvi']);
+      renderRegionsTab();
+      await screen.findByRole('button', { name: 'Khối A' });
+      expect(screen.getByRole('button', { name: /^Xuất danh bạ$/ })).toBeInTheDocument();
+      expect(screen.getAllByRole('button', { name: 'Xuất danh bạ Khối này' })).toHaveLength(2);
+    });
+
+    it('nút trên thanh công cụ xuất toàn bộ, nút trên dòng xuất đúng Khối đó', async () => {
+      mockApi(['view_donvi', 'export_donvi']);
+      renderRegionsTab();
+      await screen.findByRole('button', { name: 'Khối A' });
+
+      fireEvent.click(screen.getByRole('button', { name: /^Xuất danh bạ$/ }));
+      await waitFor(() => expect(apiClientModule.downloadBlob).toHaveBeenCalledTimes(1));
+      const all = vi.mocked(apiClientModule.downloadBlob).mock.calls[0][0];
+      expect(all).toContain('lang=vi');
+      expect(all).not.toContain('region_id=');
+      expect(all).not.toContain('unit_id=');
+
+      // Dòng thứ hai là Khối B (id 2); bấm nút xuất không làm sổ danh sách Đơn vị của dòng
+      const rowButtons = screen.getAllByRole('button', { name: 'Xuất danh bạ Khối này' });
+      fireEvent.click(rowButtons[1]);
+      await waitFor(() => expect(apiClientModule.downloadBlob).toHaveBeenCalledTimes(2));
+      const one = vi.mocked(apiClientModule.downloadBlob).mock.calls[1][0];
+      expect(one).toContain('region_id=2');
+      expect(one).not.toContain('unit_id=');
+      expect(screen.getByRole('button', { name: 'Khối B' })).toHaveAttribute('aria-expanded', 'false');
+    });
+
+    it('người không có quyền xuất không thấy nút nào; người chỉ có quyền xuất vẫn thấy nút trên dòng', async () => {
+      mockApi(['view_donvi']);
+      const first = renderRegionsTab();
+      await screen.findByRole('button', { name: 'Khối A' });
+      expect(screen.queryByRole('button', { name: /Xuất danh bạ/ })).not.toBeInTheDocument();
+      first.unmount();
+      resetPermissionsCache();
+
+      mockApi(['view_donvi', 'export_donvi']);
+      renderRegionsTab();
+      await screen.findByRole('button', { name: 'Khối A' });
+      expect(screen.queryByTitle('Chỉnh sửa')).not.toBeInTheDocument();
+      expect(screen.getAllByRole('button', { name: 'Xuất danh bạ Khối này' })).toHaveLength(2);
+    });
+  });
+
   it('bấm vào Khối thì lọc theo Khối và mở luôn danh sách Đơn vị của Khối đó', async () => {
     const unitA = { id: 1, khoi: 1, khoi_ten: 'Khối A', stt_uu_tien: 1, ten: 'Phòng Kế toán', is_public: true };
     const unitB = { id: 2, khoi: 1, khoi_ten: 'Khối A', stt_uu_tien: 2, ten: 'Phòng Nhân sự', is_public: true };
@@ -668,5 +740,121 @@ describe('OrganizationsPage Component (Issue #19)', () => {
     const regionA = await screen.findByRole('button', { name: 'Khối A' });
     expect(regionA.closest('tr')!.textContent).toContain('1 đơn vị');
     expect(screen.queryByText('Đang tải dữ liệu...')).not.toBeInTheDocument();
+  });
+  describe('lỗi hiển thị và thao tác (trang Phòng ban)', () => {
+    const unit = {
+      id: 1,
+      khoi: 1,
+      khoi_ten: 'Khối A',
+      stt_uu_tien: 1,
+      ten: 'Phòng Kế toán',
+      dien_thoai: '02838123456',
+      email: 'ketoan@itc.edu.vn',
+      dia_chi: 'Tầng 2',
+      is_public: true,
+    };
+
+    function mockApi(permissions: string[] = ['view_donvi', 'change_donvi'], regionsPage?: unknown) {
+      mockedApiClient.mockImplementation(async (endpoint: string) => {
+        if (endpoint.includes('/auth/me/permissions/')) return { is_superuser: false, permissions };
+        if (endpoint.includes('/regions/') && endpoint.includes('page=') && regionsPage) return regionsPage;
+        if (endpoint.includes('/regions/')) return [{ id: 1, ten: 'Khối A', thu_tu_hien_thi: 1, don_vi_count: 1 }];
+        if (endpoint.includes('/units/') && endpoint.includes('all=true')) return [unit];
+        if (endpoint.includes('/units/')) return { count: 1, next: null, previous: null, results: [unit] };
+        return [];
+      });
+    }
+
+    function renderPage() {
+      return render(
+        <MemoryRouter>
+          <OrganizationsPage />
+        </MemoryRouter>
+      );
+    }
+
+    it('hủy sửa Khối rồi mở lại cùng Khối: form về tên gốc, không giữ phần đã gõ dở', async () => {
+      mockApi();
+      renderPage();
+      const row = (await screen.findByRole('button', { name: 'Khối A' })).closest('tr')!;
+
+      fireEvent.click(within(row).getByTitle('Chỉnh sửa'));
+      const nameInput = await screen.findByPlaceholderText(/Nhập tên khối hoặc khu vực/);
+      fireEvent.change(nameInput, { target: { value: 'Khối A đã sửa QA' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Hủy bỏ' }));
+
+      fireEvent.click(within(row).getByTitle('Chỉnh sửa'));
+      expect(await screen.findByPlaceholderText(/Nhập tên khối hoặc khu vực/)).toHaveValue('Khối A');
+    });
+
+    it('hủy sửa Đơn vị rồi mở lại cùng Đơn vị: form về tên gốc, không giữ phần đã gõ dở', async () => {
+      mockApi();
+      renderPage();
+      await screen.findByRole('button', { name: 'Khối A' });
+      openUnitsTab();
+      const row = (await screen.findByText('Phòng Kế toán')).closest('tr')!;
+
+      fireEvent.click(within(row).getByTitle('Chỉnh sửa'));
+      const nameInput = await screen.findByPlaceholderText(/Nhập tên đơn vị hoặc phòng ban/);
+      fireEvent.change(nameInput, { target: { value: 'Phòng Kế toán đã sửa QA' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Hủy bỏ' }));
+
+      fireEvent.click(within(row).getByTitle('Chỉnh sửa'));
+      expect(await screen.findByPlaceholderText(/Nhập tên đơn vị hoặc phòng ban/)).toHaveValue('Phòng Kế toán');
+    });
+
+    it('thiếu quyền xem (403): báo thiếu quyền một lần, không báo lỗi mạng, không hiện số 0 hay "chưa có dữ liệu"', async () => {
+      mockedApiClient.mockImplementation(async (endpoint: string) => {
+        if (endpoint.includes('/auth/me/permissions/')) return { is_superuser: false, permissions: [] };
+        throw new apiClientModule.ApiError(403, { detail: 'organizations.messages.permissionDenied' });
+      });
+      renderPage();
+
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent('Bạn không có quyền thực hiện thao tác này.');
+      expect(screen.getAllByText('Bạn không có quyền thực hiện thao tác này.')).toHaveLength(1);
+      expect(screen.queryByText(/kết nối mạng/i)).not.toBeInTheDocument();
+      expect(screen.queryByText('Chưa có dữ liệu nào.')).not.toBeInTheDocument();
+      const tabs = screen.getAllByRole('button').filter((b) => /Khối \/ Khu vực|Đơn vị \/ Phòng ban/i.test(b.textContent || ''));
+      expect(tabs.length).toBeGreaterThan(0);
+      // Huy hiệu số đếm (span) biến mất khi không có quyền, không hiện số 0 gây hiểu lầm.
+      tabs.forEach((tab) => expect(tab.querySelector('span')).toBeNull());
+    });
+
+    it('lỗi khác 403 vẫn báo không tải được danh sách', async () => {
+      mockedApiClient.mockImplementation(async (endpoint: string) => {
+        if (endpoint.includes('/auth/me/permissions/')) return { is_superuser: false, permissions: [] };
+        throw new apiClientModule.ApiError(500, { detail: 'server error' });
+      });
+      renderPage();
+
+      expect((await screen.findAllByText(/Không thể tải danh sách dữ liệu/)).length).toBeGreaterThan(0);
+      expect(screen.queryByText('Bạn không có quyền thực hiện thao tác này.')).not.toBeInTheDocument();
+    });
+
+    it('nút phân trang chỉ có biểu tượng nên phải có nhãn cho trình đọc màn hình (cả hai tab)', async () => {
+      const regions = Array.from({ length: 10 }, (_, i) => ({ id: i + 1, ten: `Khối ${i + 1}`, thu_tu_hien_thi: i + 1, don_vi_count: 0 }));
+      mockApi(['view_donvi'], { count: 12, next: null, previous: null, results: regions });
+      renderPage();
+
+      expect(await screen.findByRole('button', { name: 'Trang trước' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Trang sau' })).toBeEnabled();
+    });
+
+    it('bảng Đơn vị có móc cho dạng thẻ trên điện thoại: nhãn từng ô, ô thao tác, chừa chỗ dưới cho nút AI', async () => {
+      mockApi();
+      const { container } = renderPage();
+      await screen.findByRole('button', { name: 'Khối A' });
+      openUnitsTab();
+      const row = (await screen.findByText('Phòng Kế toán')).closest('tr')!;
+
+      expect(row.className).toContain('units-table__row');
+      expect(row.querySelector('.units-table__cell--region')).toHaveAttribute('data-label', 'Khối trực thuộc');
+      expect(row.querySelector('.units-table__cell--phone')).toHaveAttribute('data-label', 'Điện thoại');
+      expect(row.querySelector('.units-table__cell--email')).toHaveAttribute('data-label', 'Email');
+      expect(row.querySelector('.units-table__cell--actions')).toBeInTheDocument();
+      expect(container.querySelector('table')!.className).toContain('units-table');
+      expect((container.firstElementChild as HTMLElement).className).toContain('pb-24');
+    });
   });
 });

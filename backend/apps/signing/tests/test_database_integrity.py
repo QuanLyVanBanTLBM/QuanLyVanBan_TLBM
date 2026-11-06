@@ -219,7 +219,7 @@ class SigningDatabaseIntegrityTests(TestCase):
         SigningKeyUnlock.objects.create(
             khoa=self.key,
             ma_bam_xac_minh_pin="verifier",
-            manh_bi_mat_ma_hoa="encrypted-fragment",
+            khoa_bi_mat_ma_hoa="encrypted-private-key",
             tham_so_kdf={"algorithm": "test"},
         )
         with connection.cursor() as cursor:

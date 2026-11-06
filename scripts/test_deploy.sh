@@ -317,6 +317,11 @@ DB_USER=deploy_test
 DB_PASSWORD=test-only
 DJANGO_SECRET_KEY=test-only
 SIGNING_PIN_SECRET=synthetic-test-only
+SIGNING_FRONTEND_URL=https://staging-quanlyvanban.bhbl.vn:8088
+DJANGO_CSRF_TRUSTED_ORIGINS=https://staging-quanlyvanban.bhbl.vn:8088,http://127.0.0.1:8088
+DJANGO_SECURE_PROXY_SSL_HEADER=true
+DJANGO_SECURE_SSL_REDIRECT=true
+DJANGO_SECURE_COOKIES=true
 DJANGO_MEDIA_ROOT=$CASE_ROOT/shared/media
 SIGNING_DOCUMENT_ROOT=$CASE_ROOT/shared/signing
 AI_DATA_DIR=$CASE_ROOT/shared/ai
@@ -657,6 +662,28 @@ assert_event_absent nginx-install
 assert_event_absent stop
 assert_event_absent backup
 pass "missing nginx config fails before nginx or service changes"
+
+make_case insecure-backend-env
+sed -i 's/^DJANGO_SECURE_PROXY_SSL_HEADER=true$/DJANGO_SECURE_PROXY_SSL_HEADER=false/' "$QLVB_ENVF"
+expect_failure
+expect_state "$QLVB_BASE/releases/previous" active
+assert_event_absent nginx-install
+assert_event_absent stop
+assert_event_absent backup
+grep -q 'DJANGO_SECURE_PROXY_SSL_HEADER phai dat true' "$CASE_ROOT/output.log" \
+  || fail "missing secure proxy setting did not report a useful error"
+pass "insecure backend settings fail before nginx or service changes"
+
+make_case missing-https-origin
+sed -i 's#^DJANGO_CSRF_TRUSTED_ORIGINS=.*#DJANGO_CSRF_TRUSTED_ORIGINS=http://127.0.0.1:8088#' "$QLVB_ENVF"
+expect_failure
+expect_state "$QLVB_BASE/releases/previous" active
+assert_event_absent nginx-install
+assert_event_absent stop
+assert_event_absent backup
+grep -q 'DJANGO_CSRF_TRUSTED_ORIGINS phai co origin HTTPS staging' "$CASE_ROOT/output.log" \
+  || fail "missing HTTPS CSRF origin did not report a useful error"
+pass "missing HTTPS origin fails before nginx or service changes"
 
 make_case nginx-invalid-restored
 echo 'server { MOCK_INVALID; }' > "$HOME/deploy/qlvb-frontend.nginx"

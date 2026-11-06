@@ -392,9 +392,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         ordering = self.request.query_params.get("ordering")
         if ordering:
             allowed = set(SAFE_ORDERING_FIELDS)
-            user = getattr(self.request, "user", None)
-            if user and (user.is_superuser or user.has_perm("view_full_cbnv")):
-                allowed.update({"ngay_sinh", "-ngay_sinh"})
             if ordering not in allowed:
                 raise ValidationError({"detail": "employees.messages.invalidOrdering"})
             queryset = queryset.order_by(ordering)
@@ -456,7 +453,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                     {"detail": "roles.messages.permissionDenied"},
                     status=status.HTTP_403_FORBIDDEN,
                 )
-
         # Chốt nghiệp vụ khóa tài khoản / chuyển trạng thái nghỉ việc:
         new_status = request.data.get("trang_thai")
         raw_is_active = request.data.get("is_active")

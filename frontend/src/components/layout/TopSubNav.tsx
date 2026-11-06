@@ -128,10 +128,10 @@ export function SubNavContent({
     );
   }
 
-  // Các trang phân hệ nghiệp vụ khác
+  // Các trang phân hệ nghiệp vụ khác (Đã loại bỏ cụm nút tab con thừa thãi góc phải theo yêu cầu QA)
   return (
     <div className="flex items-center justify-between gap-3 w-full min-w-0">
-      <div className="flex items-center gap-2 sm:gap-2.5 shrink-0 min-w-0">
+      <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 flex-1">
         <div
           onClick={isCompact && onScrollToTop ? onScrollToTop : () => onNavigate(activeModule.defaultPage)}
           className={`${
@@ -141,7 +141,7 @@ export function SubNavContent({
         >
           <i className={`fa-solid ${activeModule.icon}`} />
         </div>
-        <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-text-secondary min-w-0">
+        <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-text-secondary min-w-0 truncate">
           <button
             type="button"
             className="hover:text-primary transition-colors cursor-pointer font-medium shrink-0 hidden sm:inline"
@@ -174,40 +174,7 @@ export function SubNavContent({
             </>
           )}
         </div>
-        {activeModule.subItems.length > 1 && (
-          <div className="h-4 sm:h-5 w-px bg-subtle mx-1 sm:mx-2 shrink-0" />
-        )}
       </div>
-
-      {activeModule.subItems.length > 1 && (
-        <div className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto min-w-0">
-          {activeModule.subItems.map((sub) => {
-            const isSelected = activePage === sub.id;
-            const subLabel = getSubItemLabel(sub.id, sub.label);
-            return (
-              <button
-                key={sub.id}
-                type="button"
-                className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-md text-xs transition-colors duration-fast cursor-pointer shrink-0 ${
-                  isSelected
-                    ? 'bg-primary-subtle text-primary font-semibold shadow-xs'
-                    : 'text-text-secondary hover:text-text-main hover:bg-surface-hover'
-                }`}
-                onClick={() => onNavigate(sub.id)}
-                title={subLabel}
-              >
-                <i className={`fa-solid ${sub.icon} text-[11px] sm:text-xs`} />
-                <span className="hidden xs:inline">{subLabel}</span>
-                {sub.badge !== undefined && (
-                  <span className="ml-0.5 sm:ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-primary text-white">
-                    {sub.badge}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }

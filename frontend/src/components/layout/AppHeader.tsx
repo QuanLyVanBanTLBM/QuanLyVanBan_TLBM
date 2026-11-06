@@ -42,24 +42,24 @@ export default function AppHeader({
   return (
     <header className="h-16 px-4 bg-header border-b border-subtle flex items-center justify-between shrink-0 z-30 backdrop-blur-md transition-colors duration-normal">
       {/* 1. Left Section: 3-bar Menu Trigger & Bao Long Logo (Ẩn khi Sidebar mở rộng để chống trùng lặp trên cùng khung hình) */}
-      <div className="flex items-center gap-3.5 shrink-0">
+      <div className="flex items-center gap-2 sm:gap-3.5 shrink min-w-0">
         {!isSidebarOpen && (
           <>
             <button
               type="button"
-              className="header-menu-btn lg:hidden w-10 h-10 rounded-xl flex items-center justify-center text-text-secondary hover:text-text-main hover:bg-surface-hover transition-colors duration-fast cursor-pointer shrink-0"
+              className="header-menu-btn lg:hidden w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center text-text-secondary hover:text-text-main hover:bg-surface-hover transition-colors duration-fast cursor-pointer shrink-0"
               onClick={onToggleSidebar}
               title={t('header.menuTooltip')}
               aria-label={t('header.menuAria')}
             >
-              <i className="fa-solid fa-bars text-lg" />
+              <i className="fa-solid fa-bars text-base sm:text-lg" />
             </button>
             <div
-              className="flex items-center cursor-pointer transition-transform hover:scale-[1.03]"
+              className="flex items-center cursor-pointer transition-transform hover:scale-[1.03] shrink min-w-0"
               onClick={() => onNavigate?.('dashboard')}
               title="Bảo Long Insurance - Về Trang Chủ"
             >
-              <Logo size="xl" className="h-11 sm:h-12" />
+              <Logo size="xl" className="h-7 xs:h-8 sm:h-12 max-w-[110px] xs:max-w-[140px] sm:max-w-none object-contain" />
             </div>
           </>
         )}
@@ -80,7 +80,7 @@ export default function AppHeader({
       </div>
 
       {/* 3. Right Section: Notifications, Theme, Language, User */}
-      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+      <div className="flex items-center gap-1 sm:gap-2.5 shrink-0">
         {/* Thông báo 3 luồng: Đến, Đi, Mật */}
         <NotificationStreams />
 

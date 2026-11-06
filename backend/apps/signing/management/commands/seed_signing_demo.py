@@ -22,8 +22,9 @@ trình lại) nên lịch sử, bằng chứng, tệp hoàn tất và thông bá
 - `--email-domain <miền>`: gán email <username>@<miền> cho tài khoản mẫu chưa có email; không có email thì chỉ có
   thông báo trong ứng dụng, không có email.
 
-Ký mẫu dùng khóa Ed25519 tạm sinh trong bộ nhớ (khóa bí mật không lưu); xong thì thu hồi khóa tạm, người dùng tự tạo
-khóa ký của mình ở trang Cấu hình khóa ký (file khóa + PIN). Hồ sơ nhận diện qua ghi chú "Dữ liệu mẫu <mã>:".
+Ký mẫu dùng khóa Ed25519 tạm sinh trong bộ nhớ; private key được lưu mã hóa để gọi service ký rồi xóa cùng PIN khi
+thu hồi khóa tạm. Người dùng tự tạo khóa ký của mình ở trang Cấu hình khóa ký. Hồ sơ nhận diện qua ghi chú
+"Dữ liệu mẫu <mã>:".
 """
 
 import base64
@@ -51,7 +52,7 @@ from signing.models import (
     SigningAttempt, SigningKey, SigningProcess, SigningRequest, SigningRequestStep, SigningUserSignature,
 )
 from signing.pdf_hoan_tat import tim_phong_chu
-from signing.services import hanh_dong_ky, keys, process, thong_bao, trinh_ky, yeu_cau_sua
+from signing.services import hanh_dong_ky, keys, pin as pin_service, process, thong_bao, trinh_ky, yeu_cau_sua
 from signing.storage import get_storage
 
 TIEN_TO = "Dữ liệu mẫu"
@@ -143,6 +144,7 @@ class KhoaTam:
 
     def __init__(self, nguoi):
         self.nguoi = nguoi
+        self.pin = f"{int.from_bytes(os.urandom(4), 'big') % 1_000_000:06d}"
         self.rieng = Ed25519PrivateKey.generate()
         cong_khai = self.rieng.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
         bay_gio = timezone.now()
@@ -151,6 +153,19 @@ class KhoaTam:
                                  ngay_hieu_luc=bay_gio - timedelta(minutes=1), ghi_chu=f"{TIEN_TO}: khóa tạm")
         thach_thuc = keys.thach_thuc_so_huu(self.khoa)
         keys.xac_minh_so_huu(self.khoa, nguoi, thach_thuc, self.ky(thach_thuc.encode()))
+        private_pkcs8 = self.rieng.private_bytes(
+            serialization.Encoding.DER,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+        tham_so_kdf = {
+            "thuat_toan": pin_service.KDF_THUAT_TOAN,
+            **pin_service.KDF_SAN,
+            "salt": base64.b64encode(os.urandom(pin_service.KDF_SALT_BYTES)).decode("ascii"),
+        }
+        pin_service.dat_pin(
+            self.khoa, nguoi, self.pin, base64.b64encode(private_pkcs8).decode("ascii"), tham_so_kdf,
+        )
         cu = SigningKey.objects.filter(nguoi_so_huu=nguoi, trang_thai=enums.TrangThaiKhoa.HOAT_DONG).first()
         self.khoa = keys.xoay_vong(cu, self.khoa, nguoi) if cu else keys.kich_hoat(self.khoa, nguoi)
 
@@ -353,8 +368,8 @@ class Command(BaseCommand):
     def _ky(self, ho_so, nguoi, ghi_chu=""):
         k = self.khoa_tam[nguoi.pk]
         ma_bam = trinh_ky.luot_hien_hanh(SigningRequest.objects.get(pk=ho_so.pk)).ma_bam_tai_lieu
-        return hanh_dong_ky.ky(ho_so, nguoi, khoa_ky=k.khoa.pk, hash_tai_lieu=ma_bam,
-                               chu_ky_so=k.ky(bytes.fromhex(ma_bam)), ghi_chu_ky=ghi_chu,
+        return hanh_dong_ky.ky(ho_so, nguoi, pin=k.pin, khoa_ky=k.khoa.pk, hash_tai_lieu=ma_bam,
+                               ghi_chu_ky=ghi_chu,
                                khoa_chong_trung=self._khoa(ho_so.pk, f"ky-{nguoi.pk}-{timezone.now().timestamp()}"))
 
     def _tao(self, ma, mo_ta, nguoi_tao, quy_trinh, gui=True, han_gio=72):

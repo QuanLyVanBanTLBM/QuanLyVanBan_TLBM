@@ -12,6 +12,8 @@ from django.db import models
 from django.utils import timezone
 from rest_framework import serializers
 
+from authorization.permissions import is_system_admin
+
 from .models import (
     HieuLuc,
     LoaiVanBan,
@@ -175,7 +177,9 @@ class DocumentListSerializer(serializers.Serializer):
     hien_thi = serializers.BooleanField(read_only=True)
     nguoi_tao_name = serializers.SerializerMethodField()
     nguoi_tao_username = serializers.CharField(source="nguoi_tao.username", read_only=True, default=None)
+    can_view = serializers.SerializerMethodField()
     can_edit = serializers.SerializerMethodField()
+    can_edit_full = serializers.SerializerMethodField()
     can_delete = serializers.SerializerMethodField()
     can_change_hieu_luc = serializers.SerializerMethodField()
     can_view_read_log = serializers.SerializerMethodField()
@@ -249,7 +253,21 @@ class DocumentListSerializer(serializers.Serializer):
         # Với Văn bản Đến và Văn bản Đi: Giữ nguyên 100% logic cũ, lấy trực tiếp trường so_thu_tu có sẵn
         return getattr(obj, "so_thu_tu", None)
 
+    def get_can_view(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user or not request.user.is_authenticated:
+            return False
+        from .selectors import la_nguoi_xem_duoc
+        return la_nguoi_xem_duoc(request.user, obj)
+
     def get_can_edit(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user or not request.user.is_authenticated:
+            return False
+        from .views import can_edit_document
+        return can_edit_document(request.user, obj)
+
+    def get_can_edit_full(self, obj):
         request = self.context.get("request")
         if not request or not request.user or not request.user.is_authenticated:
             return False
@@ -385,7 +403,9 @@ class DocumentDetailSerializer(serializers.Serializer):
     attachments = serializers.SerializerMethodField()
     nguoi_tao_name = serializers.SerializerMethodField()
     nguoi_tao_username = serializers.CharField(source="nguoi_tao.username", read_only=True, default=None)
+    can_view = serializers.SerializerMethodField()
     can_edit = serializers.SerializerMethodField()
+    can_edit_full = serializers.SerializerMethodField()
     can_delete = serializers.SerializerMethodField()
     can_change_hieu_luc = serializers.SerializerMethodField()
     can_view_read_log = serializers.SerializerMethodField()
@@ -476,7 +496,21 @@ class DocumentDetailSerializer(serializers.Serializer):
             return 1
         return getattr(obj, "so_thu_tu", None)
 
+    def get_can_view(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user or not request.user.is_authenticated:
+            return False
+        from .selectors import la_nguoi_xem_duoc
+        return la_nguoi_xem_duoc(request.user, obj)
+
     def get_can_edit(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user or not request.user.is_authenticated:
+            return False
+        from .views import can_edit_document
+        return can_edit_document(request.user, obj)
+
+    def get_can_edit_full(self, obj):
         request = self.context.get("request")
         if not request or not request.user or not request.user.is_authenticated:
             return False
@@ -817,16 +851,7 @@ class DocumentCreateUpdateSerializer(serializers.Serializer):
         if self.instance and "pham_vi" in attrs and attrs["pham_vi"] != self.instance.pham_vi:
             request = self.context.get("request")
             user = getattr(request, "user", None) if request else None
-            profile = getattr(user, "profile", None) if user else None
-            is_admin = bool(
-                user
-                and (
-                    user.is_superuser
-                    or (profile and getattr(profile, "role", None) == "admin")
-                    or getattr(user, "username", "") in ("admin", "quantri")
-                )
-            )
-            if not is_admin:
+            if not is_system_admin(user):
                 raise serializers.ValidationError(
                     {"pham_vi": "Chỉ Quản trị viên (Admin) mới có quyền thay đổi phạm vi lưu hành của văn bản."}
                 )
@@ -1084,16 +1109,7 @@ class DocumentCreateUpdateSerializer(serializers.Serializer):
         if "pham_vi" in validated_data and validated_data["pham_vi"] != instance.pham_vi:
             req = self.context.get("request")
             user = getattr(req, "user", None) if req else None
-            profile = getattr(user, "profile", None) if user else None
-            is_admin = bool(
-                user
-                and (
-                    user.is_superuser
-                    or (profile and getattr(profile, "role", None) == "admin")
-                    or getattr(user, "username", "") in ("admin", "quantri")
-                )
-            )
-            if not is_admin:
+            if not is_system_admin(user):
                 raise serializers.ValidationError({"pham_vi": "Chỉ Quản trị viên (Admin) mới có quyền thay đổi phạm vi lưu hành của văn bản."})
             instance._allow_scope_change = True
 

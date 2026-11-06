@@ -24,11 +24,11 @@ class ChuyenVienSendTrinhKyTest(TestCase):
 
     def test_seed_grants_send_trinhky_to_cv(self):
         self.assertIn("send_trinhky", GROUP_PERMISSIONS["Chuyên viên"])
-        self.assertEqual(len(GROUP_PERMISSIONS["Chuyên viên"]), 22)
+        self.assertEqual(len(GROUP_PERMISSIONS["Chuyên viên"]), 21)
 
     def test_database_after_migrate_matches_ddl(self):
         self.assertTrue(self.cv.permissions.filter(pk=self.perm.pk).exists())
-        self.assertEqual(self.cv.permissions.count(), 22)
+        self.assertEqual(self.cv.permissions.count(), 21)
 
     def test_migration_grants_missing_permission_once(self):
         self.cv.permissions.remove(self.perm)
@@ -37,7 +37,7 @@ class ChuyenVienSendTrinhKyTest(TestCase):
         grant_cv.grant_cv_send_trinhky(None, SchemaEditorStub)
 
         self.assertEqual(self.cv.permissions.filter(pk=self.perm.pk).count(), 1)
-        self.assertEqual(self.cv.permissions.count(), 22)
+        self.assertEqual(self.cv.permissions.count(), 21)
 
     def test_reverse_revokes_only_cv_grant(self):
         tp = Group.objects.get(name="Trưởng phòng")
@@ -45,5 +45,5 @@ class ChuyenVienSendTrinhKyTest(TestCase):
         grant_cv.revoke_cv_send_trinhky(None, SchemaEditorStub)
 
         self.assertFalse(self.cv.permissions.filter(pk=self.perm.pk).exists())
-        self.assertEqual(self.cv.permissions.count(), 21)
+        self.assertEqual(self.cv.permissions.count(), 20)
         self.assertTrue(tp.permissions.filter(pk=self.perm.pk).exists())

@@ -79,7 +79,7 @@ class NoPasswordExposureTests(APITestCase):
             "/api/accounts/employees/",
             {
                 "ho_ten": "Nhân viên mới",
-                "email": "newbie_nopw@example.com",
+                "email": "newbie_nopw@baolong.vn",
                 "ngay_sinh": "1995-05-05",
                 "don_vi_id": self.don_vi.id,
                 "chuc_vu_id": self.chuc_vu.id,

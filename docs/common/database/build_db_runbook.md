@@ -146,6 +146,7 @@ Readiness lấy release ID một lần khi process nạp settings từ đường
   <user deploy> ALL=(root) NOPASSWD: /usr/bin/systemctl reload nginx
   ```
 - `/etc/nginx/sites-enabled/qlvb-frontend` là symlink tới `/etc/nginx/sites-available/qlvb-frontend`; ngoài `default`, `sites-enabled` không có site nào khác nghe cổng 8088.
+- Chứng chỉ hợp lệ cho `staging-quanlyvanban.bhbl.vn` và khóa riêng được đơn vị vận hành cấp trước tại `/etc/qlvb/tls/fullchain.pem` và `/etc/qlvb/tls/privkey.pem`. Không commit hai tệp này, không chép khóa riêng vào thư mục release. Khóa riêng chỉ root đọc; nginx master process đọc khi kiểm tra/nạp cấu hình. Thiếu hoặc hết hạn chứng chỉ thì `nginx -t` phải thất bại và deploy khôi phục cấu hình trước.
 - Mọi deploy dừng `qlvb-backend` trước khi tạo full backup; user deploy cần quyền `systemctl stop` và phải đọc được ba data root tuyệt đối nằm ngoài thư mục release. Với `rebuild`, `ADMIN_PASSWORD` cũng phải có trong `/etc/qlvb/backend.env`:
 
 ```
@@ -214,7 +215,9 @@ Dùng khi `DB_MODE=rebuild` lỗi từ bước 6 trở đi. `<dump>` là đườ
 
 ## Đường vào staging và nginx
 
-Đường vào duy nhất: `http://staging-quanlyvanban.bhbl.vn:8088`. Router NAT cổng 8088 về host; nginx nghe `8088` (IPv4 và IPv6), phục vụ SPA từ `/var/www/qlvb` và chuyển `/api/` tới Gunicorn `127.0.0.1:8001`. Tên miền cũ `quanlyvanban.duckdns.org` và IP host được điều hướng HTTP 301 về đường vào này. Không có tunnel hay site nginx thứ hai.
+Đường vào duy nhất: `https://staging-quanlyvanban.bhbl.vn:8088`. Router NAT cổng 8088 về host; nginx nghe TLS trên `8088` (IPv4 và IPv6), phục vụ SPA từ `/var/www/qlvb` và chuyển `/api/` tới Gunicorn `127.0.0.1:8001`. HTTP thuần gửi vào cùng cổng được nginx nhận diện bằng mã nội bộ 497 và điều hướng 301 sang origin HTTPS. Tên miền cũ `quanlyvanban.duckdns.org` và IP host cũng được điều hướng về origin này; truy cập HTTPS bằng các tên cũ vẫn có thể bị trình duyệt từ chối trước redirect vì chứng chỉ chỉ cấp cho domain công ty.
+
+Cổng 443 công khai hiện do Apache của hạ tầng công ty quản lý và không phục vụ QLVB; không dùng `https://staging-quanlyvanban.bhbl.vn` không kèm `:8088` làm URL ứng dụng. Điểm kết thúc TLS của QLVB là nginx cổng 8088, dùng chứng chỉ được cấp riêng tại `/etc/qlvb/tls`.
 
 Nguồn duy nhất của cấu hình là `deploy/nginx/qlvb-frontend.conf`; không sửa tay `/etc/nginx` trên host. Thay đổi cấu hình đi qua PR, CI kiểm cú pháp bằng `nginx -t` (image `nginx:1.24`, cùng phiên bản Ubuntu 24.04), deploy cài vào `/etc/nginx/sites-available/qlvb-frontend`.
 
@@ -225,9 +228,10 @@ Nguồn duy nhất của cấu hình là `deploy/nginx/qlvb-frontend.conf`; khô
 | `/api/`, `/api`, `/health/ai` | proxy `127.0.0.1:8001` |
 | `/static/` | alias `/srv/qlvb/current/backend/staticfiles/` |
 | `/media/` | 404 |
-| `/admin` | chỉ `127.0.0.1`/`::1`; từ internet 403 |
+| `/admin` trên cổng công khai 8088 | luôn trả 403 |
+| `/admin` trên listener `127.0.0.1:8089` | chuyển tới Django admin, chỉ dùng qua SSH tunnel |
 
-Header chuyển tiếp (`Host`, `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto`) do nginx ghi đè từ kết nối thực tế, không giữ giá trị client gửi; `X-Forwarded-Proto` là `$scheme` (hiện tại `http`). Giới hạn body 50 MB (ứng dụng giới hạn 20 MB mỗi tệp).
+Header chuyển tiếp (`Host`, `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto`) do nginx ghi đè từ kết nối thực tế, không giữ giá trị client gửi; trên cổng công khai `X-Forwarded-Proto` là `$scheme` và có giá trị `https`. Listener admin loopback đặt cố định `https` vì chặng từ máy dev tới host được SSH tunnel bảo vệ. Giới hạn body 50 MB (ứng dụng giới hạn 20 MB mỗi tệp).
 
 Bước 4 của deploy:
 
@@ -240,12 +244,24 @@ Bước này chạy trước khi dừng `qlvb-backend`: lỗi nginx chỉ xóa r
 Truy cập `/admin` từ máy dev qua SSH tunnel (alias `qlvb-staging` như mục [Chạy tay](#chạy-tay-không-qua-ci)):
 
 ```bash
-ssh -L 8088:127.0.0.1:8088 qlvb-staging
+ssh -L 8088:127.0.0.1:8089 qlvb-staging
 ```
 
-rồi mở `http://127.0.0.1:8088/admin/`. Đăng nhập admin dùng session và CSRF cookie qua HTTP, nên cần `DJANGO_ALLOWED_HOSTS` có `127.0.0.1`, `DJANGO_CSRF_TRUSTED_ORIGINS` có `http://127.0.0.1:8088`, và trình duyệt chấp nhận cookie `Secure` trên `http://127.0.0.1` khi `DJANGO_SECURE_COOKIES` bật.
+rồi mở `http://127.0.0.1:8088/admin/`. Listener remote chỉ gắn với loopback, không mở cổng 8089 ra Internet. Đăng nhập admin dùng session và CSRF cookie qua HTTP localhost, nên cần `DJANGO_ALLOWED_HOSTS` có `127.0.0.1`, `DJANGO_CSRF_TRUSTED_ORIGINS` có `http://127.0.0.1:8088`, và trình duyệt chấp nhận cookie `Secure` trên `http://127.0.0.1` khi `DJANGO_SECURE_COOKIES` bật.
 
-Biến môi trường backend tương ứng với đường vào HTTP (`/etc/qlvb/backend.env`): `DJANGO_ALLOWED_HOSTS` gồm `staging-quanlyvanban.bhbl.vn`, `quanlyvanban.duckdns.org`, IP host và `127.0.0.1`; `DJANGO_CSRF_TRUSTED_ORIGINS` gồm `http://staging-quanlyvanban.bhbl.vn:8088` và `http://127.0.0.1:8088`; `DJANGO_SECURE_SSL_REDIRECT=False` (không có HTTPS, bật sẽ chuyển hướng tới địa chỉ không phục vụ).
+Biến môi trường backend tương ứng với đường vào HTTPS (`/etc/qlvb/backend.env`):
+
+```dotenv
+DJANGO_ALLOWED_HOSTS=staging-quanlyvanban.bhbl.vn,127.0.0.1
+DJANGO_CSRF_TRUSTED_ORIGINS=https://staging-quanlyvanban.bhbl.vn:8088,http://127.0.0.1:8088
+DJANGO_SECURE_PROXY_SSL_HEADER=true
+DJANGO_SECURE_SSL_REDIRECT=true
+DJANGO_SECURE_COOKIES=true
+DJANGO_SECURE_HSTS_SECONDS=0
+SIGNING_FRONTEND_URL=https://staging-quanlyvanban.bhbl.vn:8088
+```
+
+Chỉ tăng `DJANGO_SECURE_HSTS_SECONDS` sau khi HTTPS đã vận hành ổn định và quy trình gia hạn chứng chỉ đã được kiểm chứng. Không đặt chứng chỉ, khóa riêng hoặc mật khẩu vào `backend.env` hay repository.
 
 ## Dọn instance PostgreSQL thừa trên host staging
 

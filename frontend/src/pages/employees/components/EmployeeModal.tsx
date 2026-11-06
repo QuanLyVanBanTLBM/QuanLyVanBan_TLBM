@@ -7,6 +7,7 @@ import { Button } from '@components/common/Button';
 import { Badge } from '@components/common/Badge';
 import { Select } from '@components/common/Select';
 import { ApiError } from '@lib/apiClient';
+import { isCompanyEmail, isValidEmployeePhone } from '../employeeContactRules';
 
 interface EmployeeModalProps {
   isOpen: boolean;
@@ -160,10 +161,13 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
   const [errorKey, setErrorKey] = useState<string | null>(null);
   const [createdPassword, setCreatedPassword] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState<boolean>(false);
+  const [usernameEditEmployeeId, setUsernameEditEmployeeId] = useState<number | null>(null);
   const [copyFailed, setCopyFailed] = useState<boolean>(false);
   const [isPasswordFormOpen, setIsPasswordFormOpen] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
+
+  const isUsernameEditMode = Boolean(initialData && usernameEditEmployeeId === initialData.id);
   const [passwordResetReason, setPasswordResetReason] = useState('');
   const [passwordResetReasonDetail, setPasswordResetReasonDetail] = useState('');
   const [passwordError, setPasswordError] = useState<string | null>(null);
@@ -361,6 +365,12 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
       formRef.current?.scrollTo?.({ top: 0, behavior: 'smooth' });
       return;
     }
+    if (!isCompanyEmail(formData.email)) {
+      const msg = t('employees.validation.emailDomainInvalid');
+      setErrorKey(msg);
+      formRef.current?.scrollTo?.({ top: 0, behavior: 'smooth' });
+      return;
+    }
     if (!initialData && !formData.don_vi_id) {
       const msg = t('employees.import.errors.unitRequired');
       setErrorKey(msg);
@@ -384,7 +394,7 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
       return;
     }
 
-    if (formData.sdt && !/^(0|\+84)[1-9][0-9]{7,9}$/.test(formData.sdt.replace(/\s+/g, ''))) {
+    if (formData.sdt && !isValidEmployeePhone(formData.sdt)) {
       const msg = t('employees.validation.phoneInvalid');
       setErrorKey(msg);
       formRef.current?.scrollTo?.({ top: 0, behavior: 'smooth' });
@@ -400,7 +410,7 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
         payload = {
           email: formData.email.trim(),
           sdt: formData.sdt.trim(),
-          ngay_sinh: isoBirthday || formData.ngay_sinh,
+          ...(formData.ngay_sinh ? { ngay_sinh: isoBirthday || formData.ngay_sinh } : {}),
         };
       } else {
         if (!initialData && !formData.chuc_vu_id) {
@@ -445,7 +455,7 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
         payload = {
           ho_ten: formData.ho_ten.trim(),
           email: formData.email.trim(),
-          ngay_sinh: isoBirthday || formData.ngay_sinh,
+          ...(formData.ngay_sinh ? { ngay_sinh: isoBirthday || formData.ngay_sinh } : {}),
           don_vi_id: formData.don_vi_id ? Number(formData.don_vi_id) : null,
           chuc_vu_id: formData.chuc_vu_id ? Number(formData.chuc_vu_id) : null,
           chuc_danh: formData.chuc_danh.trim(),
@@ -460,6 +470,12 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
             chuc_danh: a.chuc_danh.trim(),
           })),
         };
+        if (
+          initialData && isAdmin && isUsernameEditMode &&
+          formData.username.trim() !== initialData.username
+        ) {
+          payload.username = formData.username.trim();
+        }
 
         if (!initialData) {
           if (formData.username.trim()) {
@@ -825,25 +841,45 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                 />
               </div>
 
-              {/* Username (chỉ khi tạo mới hoặc hiển thị readonly) */}
-              {!initialData ? (
-                <div>
+              {/* Username */}
+              <div>
                   <label className="block text-sm font-semibold text-secondary mb-1.5">
                     {t('employees.fields.username')}
                   </label>
-                  <input
-                    type="text"
-                    name="username"
-                    value={formData.username}
-                    onChange={handleChange}
-                    placeholder={t('employees.placeholders.username')}
-                    className="w-full px-3.5 py-2 text-sm bg-surface-elevated border border-border rounded-lg text-main placeholder-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
-                  />
-                  <span className="text-xs text-muted block mt-1">
-                    {t('employees.hints.usernameAuto')}
-                  </span>
-                </div>
-              ) : null}
+                  <div className="relative">
+                    <input
+                      type="text"
+                      name="username"
+                      value={formData.username}
+                      onChange={handleChange}
+                      placeholder={t('employees.placeholders.username')}
+                      disabled={Boolean(initialData && (!isAdmin || !isUsernameEditMode))}
+                      className="w-full px-3.5 py-2 pr-11 text-sm bg-surface-elevated border border-border rounded-lg text-main placeholder-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+                    />
+                    {initialData && isAdmin && (
+                      <button
+                        type="button"
+                        aria-label={t(isUsernameEditMode ? 'employees.actions.cancelUsernameEdit' : 'employees.actions.editUsername')}
+                        title={t(isUsernameEditMode ? 'employees.actions.cancelUsernameEdit' : 'employees.actions.editUsername')}
+                        onClick={() => {
+                          if (isUsernameEditMode) {
+                            setFormData((prev) => ({ ...prev, username: initialData.username }));
+                          }
+                          setUsernameEditEmployeeId(isUsernameEditMode ? null : initialData.id);
+                        }}
+                        disabled={isLoading}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded"
+                      >
+                        <i aria-hidden="true" className={`fa-solid ${isUsernameEditMode ? 'fa-xmark' : 'fa-pen'}`} />
+                      </button>
+                    )}
+                  </div>
+                  {!initialData && (
+                    <span className="text-xs text-muted block mt-1">
+                      {t('employees.hints.usernameAuto')}
+                    </span>
+                  )}
+              </div>
 
               {/* Password (khi tạo mới) */}
               {!initialData ? (

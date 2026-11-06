@@ -13,7 +13,8 @@ from rest_framework.test import APIClient
 
 from signing import enums
 from signing.models import (
-    SigningAttempt, SigningAuditLog, SigningKey, SigningNotification, SigningProcess, SigningRequest,
+    SigningAttempt, SigningAuditLog, SigningKey, SigningKeyUnlock, SigningNotification, SigningProcess,
+    SigningRequest,
     SigningRequestStepSigner,
 )
 from signing.services import trinh_ky
@@ -35,7 +36,12 @@ def chay(test, *args, **env):
 class DuLieuMauTests(TestCase):
     def setUp(self):
         self.thu_muc = tempfile.mkdtemp()
-        self._cai_dat = override_settings(SIGNING_DOCUMENT_ROOT=self.thu_muc, DOCUMENT_STORAGE_ROOT=self.thu_muc)
+        self._cai_dat = override_settings(
+            SIGNING_DOCUMENT_ROOT=self.thu_muc,
+            DOCUMENT_STORAGE_ROOT=self.thu_muc,
+            SIGNING_PIN_SECRET="test-only-pin-secret",
+            SIGNING_KEY_PEPPER="test-only-signing-key-pepper",
+        )
         self._cai_dat.enable()
         tao_don_vi()
 
@@ -81,6 +87,7 @@ class DuLieuMauTests(TestCase):
                          "QUA_HAN"} <= loai, loai)
         # Khóa tạm đã thu hồi: không ai còn khóa hoạt động do lệnh tạo
         self.assertFalse(SigningKey.objects.filter(trang_thai=enums.TrangThaiKhoa.HOAT_DONG).exists())
+        self.assertFalse(SigningKeyUnlock.objects.exists())
 
         dem = (SigningRequest.objects.count(), SigningAttempt.objects.count(), SigningNotification.objects.count(),
                SigningKey.objects.count(), User.objects.count())

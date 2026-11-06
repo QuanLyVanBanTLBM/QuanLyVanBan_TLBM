@@ -35,12 +35,17 @@ def store_template_file(file):
 
 def template_disk_path(path):
     """Đường dẫn trên đĩa của giá trị cột `path`; None nếu ngoài kho lưu trữ."""
+    if not path:
+        return None
+    from urllib.parse import urlparse
+    if path.startswith(('http://', 'https://')):
+        path = urlparse(path).path
     storage = get_document_storage()
     prefix = storage.base_url
     name = path[len(prefix):] if path.startswith(prefix) else path
     try:
-        return storage.path(name)
-    except SuspiciousFileOperation:
+        return storage.path(name.lstrip('/'))
+    except (SuspiciousFileOperation, ValueError):
         return None
 
 

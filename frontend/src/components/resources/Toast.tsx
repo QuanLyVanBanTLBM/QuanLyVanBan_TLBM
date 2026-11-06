@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { t, getLanguage } from '@i18n/translate';
 
 export interface ToastNotification {
   id: number;
@@ -39,11 +40,42 @@ export const Toast: React.FC<ToastProps> = ({ toast, onClose }) => {
   if (!toast) return null;
   if (typeof document === 'undefined') return null;
 
-  const type = toast.type || 'success';
+  const rawMessage = toast.message || '';
+  const isPermissionDenied =
+    rawMessage === 'roles.messages.permissionDenied' ||
+    rawMessage.includes('roles.messages.permissionDenied') ||
+    rawMessage.toLowerCase().includes('permissiondenied');
+
+  let displayMessage = rawMessage;
+  if (isPermissionDenied) {
+    displayMessage = t('roles.messages.permissionDenied');
+  } else if (rawMessage.startsWith('roles.') || rawMessage.startsWith('common.') || rawMessage.startsWith('documents.')) {
+    const translated = t(rawMessage as never);
+    if (translated && translated !== rawMessage) {
+      displayMessage = translated;
+    }
+  }
+
+  const isStorageErrorTitle =
+    Boolean(toast.title) &&
+    (toast.title === 'Lỗi lưu trữ' ||
+      toast.title === 'LỖI LƯU TRỮ' ||
+      toast.title?.toLowerCase() === 'lỗi lưu trữ' ||
+      toast.title?.toLowerCase() === 'storage error');
+
+  const defaultPermissionDeniedTitle =
+    getLanguage() === 'en' ? 'Permission Denied' : 'Từ chối quyền hạn';
+
+  const displayTitle =
+    isPermissionDenied && (isStorageErrorTitle || !toast.title)
+      ? defaultPermissionDeniedTitle
+      : toast.title;
+
+  const type = toast.type || (isPermissionDenied ? 'danger' : 'success');
   const isDeleteAction =
     type === 'danger' &&
-    ((toast.title && /xóa|delete/i.test(toast.title)) ||
-      (toast.message && /đã xóa|xóa thành công|deleted/i.test(toast.message)));
+    ((displayTitle && /xóa|delete/i.test(displayTitle)) ||
+      (displayMessage && /đã xóa|xóa thành công|deleted/i.test(displayMessage)));
 
   const config = {
     success: {
@@ -78,7 +110,7 @@ export const Toast: React.FC<ToastProps> = ({ toast, onClose }) => {
 
   return createPortal(
     <div
-      className="fixed top-5 right-5 sm:top-6 sm:right-6 z-[999999] max-w-sm sm:max-w-md w-[calc(100%-2.5rem)] sm:w-full pointer-events-auto animate-fade-in"
+      className="fixed top-5 left-1/2 -translate-x-1/2 sm:top-6 z-[999999] max-w-sm sm:max-w-md w-[calc(100%-2.5rem)] sm:w-full pointer-events-auto animate-fade-in"
       role="status"
       aria-live="polite"
     >
@@ -100,11 +132,11 @@ export const Toast: React.FC<ToastProps> = ({ toast, onClose }) => {
               <span
                 className={`inline-flex items-center text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border ${config.badge}`}
               >
-                {toast.title || config.defaultTitle}
+                {displayTitle || config.defaultTitle}
               </span>
             </div>
             <p className="text-xs sm:text-[13.5px] text-slate-700 dark:text-slate-200 font-medium leading-relaxed break-words">
-              {toast.message}
+              {displayMessage}
             </p>
           </div>
 
