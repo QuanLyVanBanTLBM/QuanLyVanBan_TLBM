@@ -206,15 +206,23 @@ $PY manage.py collectstatic --noinput | tail -1
 step "4/9 Cau hinh nginx"
 if [ -z "${CASE_ROOT:-}" ]; then
   TLS_DIR="/etc/qlvb/tls"
-  if [ ! -f "$TLS_DIR/fullchain.pem" ] || [ ! -f "$TLS_DIR/privkey.pem" ]; then
-    if mkdir -p "$TLS_DIR" 2>/dev/null && [ -w "$TLS_DIR" ]; then
+  if [ ! -e "$TLS_DIR/fullchain.pem" ] || [ ! -e "$TLS_DIR/privkey.pem" ]; then
+    if ! (mkdir -p "$TLS_DIR" 2>/dev/null && [ -w "$TLS_DIR" ]); then
+      TLS_DIR="$BASE/shared/tls"
+      mkdir -p "$TLS_DIR"
+    fi
+    if [ ! -s "$TLS_DIR/fullchain.pem" ] || [ ! -s "$TLS_DIR/privkey.pem" ]; then
       echo "Chung chi TLS chua ton tai; tu dong khoi tao chung chi tu ky cho staging tai $TLS_DIR..."
       openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
         -subj "/CN=staging-quanlyvanban.bhbl.vn" \
+        -addext "subjectAltName=DNS:staging-quanlyvanban.bhbl.vn" \
         -keyout "$TLS_DIR/privkey.pem" \
-        -out "$TLS_DIR/fullchain.pem" >/dev/null 2>&1 || true
-      chmod 644 "$TLS_DIR/fullchain.pem" 2>/dev/null || true
-      chmod 644 "$TLS_DIR/privkey.pem" 2>/dev/null || true
+        -out "$TLS_DIR/fullchain.pem" >/dev/null 2>&1
+      chmod 644 "$TLS_DIR/fullchain.pem"
+      chmod 600 "$TLS_DIR/privkey.pem"
+    fi
+    if [ "$TLS_DIR" != "/etc/qlvb/tls" ]; then
+      sed -i "s#/etc/qlvb/tls/#$TLS_DIR/#g" "$NGINX_NEW"
     fi
   fi
 fi

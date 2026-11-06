@@ -426,19 +426,6 @@ jobs:
           REMOTE="$DEPLOY_USER@$DEPLOY_HOST"
           $SSH "$REMOTE" 'mkdir -p ~/deploy'
           $SSH "$REMOTE" '
-            TLS_DIR=/etc/qlvb/tls
-            if [ ! -f "$TLS_DIR/fullchain.pem" ] || [ ! -f "$TLS_DIR/privkey.pem" ]; then
-              mkdir -p "$TLS_DIR" 2>/dev/null || true
-              if [ -w "$TLS_DIR" ]; then
-                echo "Khoi tao TLS cert tai $TLS_DIR..."
-                openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
-                  -subj "/CN=staging-quanlyvanban.bhbl.vn" \
-                  -keyout "$TLS_DIR/privkey.pem" \
-                  -out "$TLS_DIR/fullchain.pem" 2>/dev/null || true
-                chmod 644 "$TLS_DIR/fullchain.pem" 2>/dev/null || true
-                chmod 644 "$TLS_DIR/privkey.pem" 2>/dev/null || true
-              fi
-            fi
             ENVF=/etc/qlvb/backend.env
             if [ -f "$ENVF" ] && [ -w "$ENVF" ]; then
               for var in DJANGO_SECURE_PROXY_SSL_HEADER DJANGO_SECURE_SSL_REDIRECT DJANGO_SECURE_COOKIES; do
