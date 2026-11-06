@@ -754,9 +754,8 @@ export default function ResourceManagementPage() {
   }, [searchParams, documents]);
 
   // Phân quyền người dùng (RBAC contract Issue #21)
-  const currentSession = authService.getSession();
-  const isSessionAdmin = currentSession?.role === 'admin' || currentSession?.username === 'admin';
-  const { can, isSuperuser } = usePermissions();
+  const { can, isSuperuser, isSystemAdmin } = usePermissions();
+  const isSessionAdmin = isSystemAdmin;
   const canAdd = isSuperuser || isSessionAdmin || can('add_tailieu');
   const canManageCategory = isSuperuser || isSessionAdmin || can('add_loaitailieubieumau') || can('change_loaitailieubieumau') || can('delete_loaitailieubieumau');
   const canEditItem = useCallback((item: ResourceItem) => {

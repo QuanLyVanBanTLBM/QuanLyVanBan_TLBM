@@ -142,8 +142,8 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
   const isEditMode = Boolean(initialData);
 
   const currentSession = authService.getSession();
-  const isSessionAdmin = currentSession?.role === 'admin' || currentSession?.username === 'admin';
-  const { can, isSuperuser } = usePermissions();
+  const { can, isSuperuser, isSystemAdmin } = usePermissions();
+  const isSessionAdmin = isSystemAdmin;
   const canAdd = isSuperuser || isSessionAdmin || can('add_tailieu');
   const canEdit = isSuperuser || isSessionAdmin || (initialData ? Boolean(initialData.can_edit) : false) || Boolean(
     initialData && (
