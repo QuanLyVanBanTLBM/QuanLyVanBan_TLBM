@@ -11,7 +11,7 @@ import KhoaPage from './KhoaPage';
 
 vi.mock('@lib/signing/api', async () => {
   const actual = await vi.importActual<typeof import('@lib/signing/api')>('@lib/signing/api');
-  return { ...actual, signingApi: { khoa: vi.fn(), taiLenAnhChuKy: vi.fn() } };
+  return { ...actual, signingApi: { khoa: vi.fn(), taiLenAnhChuKy: vi.fn(), tepAnhChuKyCaNhan: vi.fn() } };
 });
 // Hộp cắt thật cần canvas; thay bằng bản giả cho phép chọn dung lượng ảnh sau cắt
 vi.mock('@components/signing/CropChuKyModal', () => ({
@@ -91,17 +91,60 @@ describe('KhoaPage: giới hạn dung lượng ảnh chữ ký', () => {
     expect(await screen.findByText(/Đã lưu ảnh chữ ký cá nhân/)).toBeInTheDocument();
   });
 
-  it('ảnh đang lưu không tải được thì hiển thị trạng thái trống kèm nút tải lên', async () => {
-    render(
-      <MemoryRouter>
-        <SigningContext.Provider value={{ toi: { ...TOI, co_anh_chu_ky: true }, taiLaiToi: () => undefined }}>
-          <KhoaPage />
-        </SigningContext.Provider>
-      </MemoryRouter>,
-    );
-    fireEvent.error(await screen.findByRole('img', { name: 'Ảnh chữ ký cá nhân' }));
-    expect(await screen.findByText('Chưa thiết lập ảnh chữ ký cá nhân')).toBeInTheDocument();
-    expect(screen.queryByRole('img', { name: 'Ảnh chữ ký cá nhân' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Tải lên ảnh chữ ký/ })).toBeInTheDocument();
+  describe('ảnh chữ ký từ máy chủ (tải qua Bearer)', () => {
+    const moVoiAnh = () =>
+      render(
+        <MemoryRouter>
+          <SigningContext.Provider value={{ toi: { ...TOI, co_anh_chu_ky: true }, taiLaiToi: () => undefined }}>
+            <KhoaPage />
+          </SigningContext.Provider>
+        </MemoryRouter>,
+      );
+    const kiemTraTrong = () => {
+      expect(screen.getByText('Chưa thiết lập ảnh chữ ký cá nhân')).toBeInTheDocument();
+      expect(screen.queryByRole('img', { name: 'Ảnh chữ ký cá nhân' })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Tải lên ảnh chữ ký/ })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Thay đổi ảnh chữ ký/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Xóa ảnh chữ ký/ })).not.toBeInTheDocument();
+    };
+
+    beforeEach(() => {
+      URL.createObjectURL = vi.fn(() => 'blob:anh-chu-ky');
+      URL.revokeObjectURL = vi.fn();
+    });
+
+    it('chưa tải xong thì hiển thị trạng thái trống, không có thẻ img', async () => {
+      api.tepAnhChuKyCaNhan.mockReturnValue(new Promise(() => undefined));
+      moVoiAnh();
+      await screen.findByText('Chưa thiết lập ảnh chữ ký cá nhân');
+      kiemTraTrong();
+    });
+
+    it('tải lỗi (401/404) thì hiển thị trạng thái trống kèm nút tải lên', async () => {
+      api.tepAnhChuKyCaNhan.mockRejectedValue(new Error('404'));
+      moVoiAnh();
+      await waitFor(() => expect(api.tepAnhChuKyCaNhan).toHaveBeenCalled());
+      kiemTraTrong();
+    });
+
+    it('tải thành công thì hiển thị ảnh từ object URL và thu hồi khi gỡ trang', async () => {
+      api.tepAnhChuKyCaNhan.mockResolvedValue(new Blob(['x'], { type: 'image/png' }));
+      const { unmount } = moVoiAnh();
+      const img = await screen.findByRole('img', { name: 'Ảnh chữ ký cá nhân' });
+      expect(img).toHaveAttribute('src', 'blob:anh-chu-ky');
+      expect(screen.getByRole('button', { name: /Thay đổi ảnh chữ ký/ })).toBeInTheDocument();
+      unmount();
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:anh-chu-ky');
+    });
+
+    it('cờ co_anh_chu_ky=false thì không gọi tải tệp', async () => {
+      render(
+        <MemoryRouter>
+          <SigningContext.Provider value={{ toi: TOI, taiLaiToi: () => undefined }}><KhoaPage /></SigningContext.Provider>
+        </MemoryRouter>,
+      );
+      await screen.findByText('Chưa thiết lập ảnh chữ ký cá nhân');
+      expect(api.tepAnhChuKyCaNhan).not.toHaveBeenCalled();
+    });
   });
 });
