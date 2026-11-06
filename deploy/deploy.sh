@@ -38,6 +38,11 @@ NGINX_SITE=${QLVB_NGINX_SITE:-/etc/nginx/sites-available/qlvb-frontend}
 
 exec > >(exec 9>&-; exec tee -a "$LOG") 2>&1
 step() { echo; echo "[$(date -u +%H:%M:%S)] $*"; }
+require_true_env() {
+  local name=$1 value=${!1:-}
+  [ "${value,,}" = true ] \
+    || { echo "$name phai dat true trong $ENVF truoc khi bat HTTPS staging."; exit 1; }
+}
 
 exec 9>"$BASE/.deploy.lock"
 flock -n 9 || { echo "Dang co deploy khac chay."; exit 1; }
@@ -149,6 +154,18 @@ DDL="$REL/docs/common/database/release_DDL.sql"
 
 step "3/9 Nap cau hinh, check, collectstatic"
 set -a; . "$ENVF"; set +a
+require_true_env "DJANGO_SECURE_PROXY_SSL_HEADER"
+require_true_env "DJANGO_SECURE_SSL_REDIRECT"
+require_true_env "DJANGO_SECURE_COOKIES"
+TRUSTED_ORIGINS=${DJANGO_CSRF_TRUSTED_ORIGINS//[[:space:]]/}
+case ",$TRUSTED_ORIGINS," in
+  *,https://staging-quanlyvanban.bhbl.vn:8088,*) ;;
+  *) echo "DJANGO_CSRF_TRUSTED_ORIGINS phai co origin HTTPS staging trong $ENVF."; exit 1 ;;
+esac
+case ${SIGNING_FRONTEND_URL:-} in
+  https://staging-quanlyvanban.bhbl.vn:8088|https://staging-quanlyvanban.bhbl.vn:8088/) ;;
+  *) echo "SIGNING_FRONTEND_URL phai tro den origin HTTPS staging trong $ENVF."; exit 1 ;;
+esac
 if [ "$DB_MODE" = rebuild ] && [ -z "${ADMIN_PASSWORD//[[:space:]]/}" ]; then
   echo "Thieu ADMIN_PASSWORD trong $ENVF; tu choi rebuild truoc khi dung service hoac xoa DB."
   exit 1
