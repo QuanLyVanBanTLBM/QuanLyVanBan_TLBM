@@ -14,7 +14,7 @@ import { FolderManagerModal } from '@components/folders/FolderManagerModal';
 import { Button } from '@components/common/Button';
 import { Toast, ToastNotification } from '@components/resources/Toast';
 import { useTranslation } from '@i18n/translate';
-import { apiClient, downloadBlob } from '@lib/apiClient';
+import { apiClient, downloadBlob, ApiError } from '@lib/apiClient';
 import { getAbsoluteFileUrl } from '@lib/fileUtils';
 import { authService } from '@lib/authService';
 import { usePermissions } from '@lib/permissions';
@@ -719,6 +719,93 @@ export default function ResourceManagementPage() {
     });
   };
 
+  const formatApiError = useCallback(
+    (
+      error: unknown,
+      defaultTitle = currentLang === 'en' ? 'Operation Error' : 'Lỗi thao tác',
+      defaultMessage = currentLang === 'en' ? 'Failed to process request on server.' : 'Không thể lưu dữ liệu lên hệ thống máy chủ'
+    ): { title: string; message: string; type: 'danger' } => {
+      let status: number | undefined;
+      let detail: string | undefined;
+
+      if (error instanceof ApiError) {
+        status = error.status;
+        if (typeof error.data === 'object' && error.data !== null) {
+          if ('detail' in error.data && typeof error.data.detail === 'string') {
+            detail = error.data.detail;
+          } else if ('message' in error.data && typeof error.data.message === 'string') {
+            detail = error.data.message;
+          } else if ('error' in error.data && typeof error.data.error === 'string') {
+            detail = error.data.error;
+          } else {
+            const entries = Object.entries(error.data);
+            if (entries.length > 0) {
+              detail = entries
+                .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : String(v)}`)
+                .join(' | ');
+            }
+          }
+        }
+        if (!detail && error.message) {
+          detail = error.message;
+        }
+      } else if (typeof error === 'object' && error !== null) {
+        const errObj = error as {
+          status?: number;
+          response?: { status?: number; data?: Record<string, unknown> | string };
+          data?: Record<string, unknown> | string;
+          message?: string;
+        };
+        status = errObj.status ?? errObj.response?.status;
+        const data = errObj.data ?? errObj.response?.data;
+        if (typeof data === 'object' && data !== null && 'detail' in data) {
+          detail = String(data.detail);
+        } else if (typeof data === 'string') {
+          detail = data;
+        } else if (typeof data === 'object' && data !== null) {
+          const entries = Object.entries(data);
+          if (entries.length > 0) {
+            detail = entries
+              .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : String(v)}`)
+              .join(' | ');
+          }
+        } else if (errObj.message) {
+          detail = errObj.message;
+        }
+      }
+
+      const isPermissionDenied =
+        status === 403 ||
+        detail === 'roles.messages.permissionDenied' ||
+        detail?.toLowerCase().includes('permissiondenied') ||
+        detail?.toLowerCase().includes('không có quyền') ||
+        detail?.toLowerCase().includes('permission denied');
+
+      if (isPermissionDenied) {
+        return {
+          title: currentLang === 'en' ? 'Permission Denied' : 'Từ chối quyền hạn',
+          message: t('roles.messages.permissionDenied'),
+          type: 'danger',
+        };
+      }
+
+      let finalMessage = detail || defaultMessage;
+      if (finalMessage.includes('.')) {
+        const translated = t(finalMessage as never);
+        if (translated && translated !== finalMessage) {
+          finalMessage = translated;
+        }
+      }
+
+      return {
+        title: defaultTitle,
+        message: finalMessage,
+        type: 'danger',
+      };
+    },
+    [currentLang, t]
+  );
+
   // Danh sách năm trích xuất từ dữ liệu thực tế kết hợp sinh động năm hiện tại
   const availableYears = useMemo(() => {
     const yearsSet = new Set<string>();
@@ -1071,9 +1158,7 @@ export default function ResourceManagementPage() {
       setIsDeleting(true);
 
       // Gọi API Backend xóa tài liệu
-      await apiClient.delete(`/api/resources/documents/${deleteItem.id}/`).catch((e) => {
-        console.warn('Lỗi khi xóa tài liệu trên backend:', e);
-      });
+      await apiClient.delete(`/api/resources/documents/${deleteItem.id}/`);
 
       // Xóa khỏi danh sách tài liệu (instant UI feedback)
       const targetId = deleteItem.id;
@@ -1085,7 +1170,11 @@ export default function ResourceManagementPage() {
       setDeleteItem(null);
 
       // Hiển thị Toast thông báo thành công
-      showToast(`Đã xóa thành công tài liệu: "${targetTitle}"`, 'danger', 'Xóa tài liệu');
+      showToast(
+        currentLang === 'en' ? `Deleted document: "${targetTitle}"` : `Đã xóa thành công tài liệu: "${targetTitle}"`,
+        'danger',
+        currentLang === 'en' ? 'Delete Document' : 'Xóa tài liệu'
+      );
 
       // Tự động điều chỉnh trang nếu trang hiện tại bị trống
       const remainingDocs = documents.filter((d) => d.id !== targetId);
@@ -1097,6 +1186,14 @@ export default function ResourceManagementPage() {
       // Đồng bộ ngầm với server và thông báo cho các tab/client khác
       await fetchResources(true, true);
       notifyMutation();
+    } catch (error: unknown) {
+      console.error('Lỗi khi xóa tài liệu trên backend:', error);
+      const errInfo = formatApiError(
+        error,
+        currentLang === 'en' ? 'Delete Document' : 'Xóa tài liệu',
+        currentLang === 'en' ? 'Failed to delete document from server.' : 'Không thể xóa tài liệu trên hệ thống máy chủ'
+      );
+      showToast(errInfo.message, errInfo.type, errInfo.title);
     } finally {
       setIsDeleting(false);
     }
@@ -1165,19 +1262,15 @@ export default function ResourceManagementPage() {
       notifyMutation();
     } catch (error: unknown) {
       console.error('Lỗi khi lưu tài liệu lên server:', error);
-      const err = error as { response?: { data?: Record<string, unknown> | string }; message?: string };
-      const serverMsg =
-        (typeof err?.response?.data === 'object' && err?.response?.data !== null && 'detail' in err.response.data
-          ? String(err.response.data.detail)
-          : null) ||
-        (typeof err?.response?.data === 'string' ? err.response.data : null) ||
-        (err?.response?.data && typeof err?.response?.data === 'object'
-          ? Object.entries(err.response.data)
-              .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
-              .join(' | ')
-          : null) ||
-        err?.message;
-      showToast(serverMsg || 'Không thể lưu tài liệu lên hệ thống máy chủ', 'danger', 'Lỗi lưu trữ');
+      const isEdit = Boolean(formInitialData);
+      const errInfo = formatApiError(
+        error,
+        isEdit
+          ? (currentLang === 'en' ? 'Update Document' : 'Cập nhật tài liệu')
+          : (currentLang === 'en' ? 'Add Document' : 'Thêm mới tài liệu'),
+        currentLang === 'en' ? 'Failed to save document to server.' : 'Không thể lưu tài liệu lên hệ thống máy chủ'
+      );
+      showToast(errInfo.message, errInfo.type, errInfo.title);
     } finally {
       setIsSubmittingDoc(false);
     }
@@ -1257,7 +1350,14 @@ export default function ResourceManagementPage() {
       notifyMutation();
     } catch (e) {
       console.error('Lỗi khi lưu thư mục lên máy chủ:', e);
-      showToast('Không thể lưu thư mục lên hệ thống máy chủ', 'danger', 'Lỗi lưu trữ');
+      const errInfo = formatApiError(
+        e,
+        isEdit
+          ? (currentLang === 'en' ? 'Update Folder' : 'Cập nhật Thư mục')
+          : (currentLang === 'en' ? 'Add Folder' : 'Thêm mới Thư mục'),
+        currentLang === 'en' ? 'Failed to save folder to server.' : 'Không thể lưu thư mục lên hệ thống máy chủ'
+      );
+      showToast(errInfo.message, errInfo.type, errInfo.title);
       throw e;
     }
   };
@@ -1280,7 +1380,12 @@ export default function ResourceManagementPage() {
       notifyMutation();
     } catch (e) {
       console.error('Lỗi khi xóa danh mục trên máy chủ:', e);
-      showToast('Không thể xóa thư mục trên hệ thống máy chủ', 'danger', 'Lỗi thao tác');
+      const errInfo = formatApiError(
+        e,
+        currentLang === 'en' ? 'Delete Folder' : 'Xóa Thư mục',
+        currentLang === 'en' ? 'Failed to delete folder from server.' : 'Không thể xóa thư mục trên hệ thống máy chủ'
+      );
+      showToast(errInfo.message, errInfo.type, errInfo.title);
       throw e;
     }
   };
@@ -1333,7 +1438,14 @@ export default function ResourceManagementPage() {
       notifyMutation();
     } catch (e) {
       console.error('Lỗi khi lưu loại tài liệu lên máy chủ:', e);
-      showToast('Không thể lưu loại tài liệu lên hệ thống máy chủ', 'danger', 'Lỗi lưu trữ');
+      const errInfo = formatApiError(
+        e,
+        isEdit
+          ? (currentLang === 'en' ? 'Update Document Type' : 'Cập nhật Loại tài liệu')
+          : (currentLang === 'en' ? 'Add Document Type' : 'Thêm mới Loại tài liệu'),
+        currentLang === 'en' ? 'Failed to save document type to server.' : 'Không thể lưu loại tài liệu lên hệ thống máy chủ'
+      );
+      showToast(errInfo.message, errInfo.type, errInfo.title);
       throw e;
     }
   };
@@ -1363,7 +1475,12 @@ export default function ResourceManagementPage() {
       notifyMutation();
     } catch (e) {
       console.error('Lỗi khi xóa loại tài liệu trên máy chủ:', e);
-      showToast('Không thể xóa loại tài liệu trên hệ thống máy chủ', 'danger', 'Lỗi thao tác');
+      const errInfo = formatApiError(
+        e,
+        currentLang === 'en' ? 'Delete Document Type' : 'Xóa Loại tài liệu',
+        currentLang === 'en' ? 'Failed to delete document type from server.' : 'Không thể xóa loại tài liệu trên hệ thống máy chủ'
+      );
+      showToast(errInfo.message, errInfo.type, errInfo.title);
       throw e;
     }
   };
