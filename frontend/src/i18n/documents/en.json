@@ -304,6 +304,7 @@
       "statusActive": "Active",
       "statusPartiallyActive": "Partially Active",
       "statusInactive": "Expired",
+      "noHieuLucPermission": "Only Administrators or users with edit/validity change permissions can change validity",
       "expirationDate": "Expiration date",
       "optional": "(Optional)",
       "replacesOtherCheckbox": "This document replaces another document in the system",

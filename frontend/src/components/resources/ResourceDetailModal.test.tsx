@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ResourceDetailModal } from './ResourceDetailModal';
 import { ResourceItem } from '@app-types/resource';
-import { apiClientBlob, downloadBlob } from '@lib/apiClient';
+import { downloadBlob } from '@lib/apiClient';
 
 vi.mock('@lib/apiClient', () => ({
   default: {
@@ -114,11 +114,7 @@ describe('ResourceDetailModal Component', () => {
       ],
     };
 
-    const mockBlob = new Blob(['pdf-data'], { type: 'application/pdf' });
-    vi.mocked(apiClientBlob).mockResolvedValueOnce(mockBlob);
-    const originalCreateObjectURL = window.URL.createObjectURL;
     const originalOpen = window.open;
-    window.URL.createObjectURL = vi.fn(() => 'blob:http://localhost:5173/uuid-pdf');
     window.open = vi.fn();
 
     render(
@@ -133,13 +129,11 @@ describe('ResourceDetailModal Component', () => {
     fireEvent.click(previewBtn);
 
     await waitFor(() => {
-      expect(apiClientBlob).toHaveBeenCalledWith('/api/resources/attachments/1/view/');
-      expect(window.URL.createObjectURL).toHaveBeenCalled();
-      expect(window.open).toHaveBeenCalledWith('blob:http://localhost:5173/uuid-pdf', '_blank');
+      expect(window.open).toHaveBeenCalledWith(expect.stringContaining('/api/resources/attachments/1/view/'), '_blank');
+      expect(window.open).not.toHaveBeenCalledWith(expect.stringMatching(/^blob:/), '_blank');
       expect(downloadBlob).not.toHaveBeenCalled();
     });
 
-    window.URL.createObjectURL = originalCreateObjectURL;
     window.open = originalOpen;
   });
 
@@ -206,5 +200,24 @@ describe('ResourceDetailModal Component', () => {
     await waitFor(() => {
       expect(downloadBlob).toHaveBeenCalledWith('/api/resources/attachments/3/download/', 'tai_lieu_2.pdf');
     });
+  });
+
+  it('renders "Hết hiệu lực và thay thế" badge correctly when hieu_luc is HET_VA_THAY_THE', () => {
+    const replacedDoc: ResourceItem = {
+      ...baseDoc,
+      hieu_luc: 'HET_VA_THAY_THE',
+      link_thay_the: 'https://example.com/replacement.pdf',
+    };
+
+    render(
+      <ResourceDetailModal
+        isOpen={true}
+        onClose={vi.fn()}
+        item={replacedDoc}
+      />
+    );
+
+    expect(screen.getByText('Hết hiệu lực và thay thế')).toBeInTheDocument();
+    expect(screen.queryByText('Hết hiệu lực')).not.toBeInTheDocument();
   });
 });
