@@ -146,8 +146,6 @@ Văn bản mật đã bỏ khỏi DDL base (PR #81). Bốn quyền `*_vanbanmat`
 | `add_hoso` | Lập/Thêm hồ sơ |
 | `change_hoso` | Sửa hồ sơ |
 | `delete_hoso` | Xóa hồ sơ |
-| `toggle_status_hoso` | Mở/Đóng danh mục hồ sơ |
-| `manage_documents_hoso` | Đưa văn bản vào / loại ra khỏi hồ sơ điện tử |
 
 ### Tài liệu, biểu mẫu
 
@@ -204,7 +202,6 @@ Văn bản mật đã bỏ khỏi DDL base (PR #81). Bốn quyền `*_vanbanmat`
 | Codename | Mô tả |
 |---|---|
 | `view_sinhnhat` | Xem danh sách sinh nhật |
-| `send_wish_sinhnhat` | Gửi lời chúc (thủ công) |
 
 ### Chatbox AI
 

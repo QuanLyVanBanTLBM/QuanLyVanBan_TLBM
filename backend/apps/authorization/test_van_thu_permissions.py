@@ -1,5 +1,5 @@
 """
-Nhóm Văn thư đúng 34 quyền (release_DDL.sql [VTQ], [XHHL], [TVHC]): DB dựng bằng migration, rbac_seed và DDL khớp nhau;
+Nhóm Văn thư đúng 33 quyền (release_DDL.sql [VTQ], [XHHL], [TVHC]): DB dựng bằng migration, rbac_seed và DDL khớp nhau;
 Văn thư không sửa/xóa văn bản đến của người khác; migration 0014 đặt lại đúng 30 quyền lúc đó, gỡ quyền gán tay,
 chạy lại không đổi thêm, không đụng nhóm khác, reverse trả về seed cũ; 0016 thêm 2 quyền xem văn bản hết hiệu lực,
 0017 thêm 2 quyền thêm văn bản hạn chế.
@@ -43,7 +43,10 @@ AFTER_0014 = {
     "view_het_hieu_luc_vanbanden", "view_het_hieu_luc_vanbandi",
     "add_han_che_vanbanden", "add_han_che_vanbandi",
 }
-EXPECTED = EXPECTED_0014 | AFTER_0014
+# send_wish_sinhnhat đã bị migration 0018 gỡ khỏi DB, chỉ còn trong danh sách lịch sử của migration 0014.
+CURRENT_0014 = EXPECTED_0014 - {"send_wish_sinhnhat"}
+GONE_BY_0018 = {"toggle_status_hoso", "manage_documents_hoso"}
+EXPECTED = CURRENT_0014 | AFTER_0014
 # Quyền tạo sau 0002 nên không nằm trong rbac_seed, được gán bởi migration riêng.
 LATER_MIGRATION_GRANTS = {"change_hieu_luc_vanbanden", "change_hieu_luc_vanbandi", "view_all_trinhky"} | AFTER_0014
 
@@ -68,10 +71,10 @@ def ddl_codenames_of(code):
 
 
 class VanThuPermissionTest(TestCase):
-    def test_database_after_migrate_has_exactly_thirty_four_permissions(self):
+    def test_database_after_migrate_has_exactly_thirty_three_permissions(self):
         self.assertEqual(codenames_of("VT"), EXPECTED)
         self.assertEqual(len(EXPECTED_0014), 30)
-        self.assertEqual(len(EXPECTED), 34)
+        self.assertEqual(len(EXPECTED), 33)
 
     def test_release_ddl_seeds_the_same_list(self):
         self.assertEqual(ddl_codenames_of("VT"), EXPECTED)
@@ -95,15 +98,15 @@ class VanThuPermissionTest(TestCase):
         migration.apply_van_thu_permissions(None, SchemaEditorStub)
         migration.apply_van_thu_permissions(None, SchemaEditorStub)
 
-        self.assertEqual(codenames_of("VT"), EXPECTED_0014)
+        self.assertEqual(codenames_of("VT"), CURRENT_0014)
         for code, before in others.items():
             self.assertEqual(codenames_of(code), before, code)
 
     def test_reverse_restores_previous_seed(self):
         migration.restore_old_van_thu_permissions(None, SchemaEditorStub)
-        self.assertEqual(codenames_of("VT"), EXPECTED_0014 | REMOVED)
+        self.assertEqual(codenames_of("VT"), CURRENT_0014 | (REMOVED - GONE_BY_0018))
         migration.apply_van_thu_permissions(None, SchemaEditorStub)
-        self.assertEqual(codenames_of("VT"), EXPECTED_0014)
+        self.assertEqual(codenames_of("VT"), CURRENT_0014)
 
 
 class VanThuDocumentApiTest(TestCase):

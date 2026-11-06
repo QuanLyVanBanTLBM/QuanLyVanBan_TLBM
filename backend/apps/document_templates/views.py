@@ -22,7 +22,7 @@ class StandardResourcePagination(PageNumberPagination):
     max_page_size = 100
 
 
-from authorization.permissions import require_permission
+from authorization.permissions import is_system_admin, require_permission
 from .selectors import visible_resources
 from .filters import TaiLieuChiTietFilter
 from .models import DanhMucTaiLieu, LoaiTaiLieu, TaiLieuChiTiet, ChiTietTaiLieuAttachment, template_disk_path
@@ -88,7 +88,7 @@ class TicketOrJWTAuthentication(JWTAuthentication):
 def can_user_modify_document(user, doc, perm_codename):
     """
     Kiểm tra quyền sở hữu (RBAC) khi Cập nhật, Xóa và Đổi hiệu lực tài liệu:
-    - Quản trị viên tối cao (is_superuser, is_staff, role='admin', username in ('admin', 'quantri')) có toàn quyền.
+    - Quản trị hệ thống (superuser, is_staff hoặc nhóm ADMIN) có toàn quyền.
     - Người trực tiếp tạo ra tài liệu (nguoi_tao == user hoặc nguoi_tao_id == user.id) luôn có quyền trên tài liệu của mình.
     - Cán bộ có quyền perm_codename ('change_tailieu' hoặc 'delete_tailieu'):
       + Chỉ có quyền trên tài liệu thuộc cùng phòng ban / đơn vị của mình.
@@ -98,12 +98,7 @@ def can_user_modify_document(user, doc, perm_codename):
         return False
 
     # 1. Quản trị viên tối cao / Admin
-    if getattr(user, 'is_superuser', False) or getattr(user, 'is_staff', False):
-        return True
-    if getattr(user, 'username', '') in ('admin', 'quantri'):
-        return True
-    user_role = getattr(getattr(user, 'profile', None), 'role', None)
-    if user_role == 'admin':
+    if getattr(user, 'is_staff', False) or is_system_admin(user):
         return True
 
     # 2. Người trực tiếp tạo tài liệu
