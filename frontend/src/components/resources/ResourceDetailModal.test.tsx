@@ -201,4 +201,23 @@ describe('ResourceDetailModal Component', () => {
       expect(downloadBlob).toHaveBeenCalledWith('/api/resources/attachments/3/download/', 'tai_lieu_2.pdf');
     });
   });
+
+  it('renders "Hết hiệu lực và thay thế" badge correctly when hieu_luc is HET_VA_THAY_THE', () => {
+    const replacedDoc: ResourceItem = {
+      ...baseDoc,
+      hieu_luc: 'HET_VA_THAY_THE',
+      link_thay_the: 'https://example.com/replacement.pdf',
+    };
+
+    render(
+      <ResourceDetailModal
+        isOpen={true}
+        onClose={vi.fn()}
+        item={replacedDoc}
+      />
+    );
+
+    expect(screen.getByText('Hết hiệu lực và thay thế')).toBeInTheDocument();
+    expect(screen.queryByText('Hết hiệu lực')).not.toBeInTheDocument();
+  });
 });

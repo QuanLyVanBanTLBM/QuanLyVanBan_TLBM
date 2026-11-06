@@ -1673,7 +1673,7 @@ export default function ResourceManagementPage() {
             ? (currentLang === 'en' ? 'Partially Active' : 'Còn hiệu lực một phần')
             : doc.hieu_luc === 'HET_HIEU_LUC'
               ? (currentLang === 'en' ? 'Expired' : 'Hết hiệu lực')
-              : (currentLang === 'en' ? 'Expired & Replaced' : 'Hết và thay thế'),
+              : (currentLang === 'en' ? 'Expired & Replaced' : 'Hết hiệu lực và thay thế'),
         doc.hien_thi === 'TAT_CA'
           ? (currentLang === 'en' ? 'Public / All' : 'Tất cả')
           : (currentLang === 'en' ? 'Internal department' : 'Nội bộ phòng ban'),

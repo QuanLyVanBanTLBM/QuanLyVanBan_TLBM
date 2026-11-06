@@ -232,7 +232,7 @@ export const ResourceDetailModal: React.FC<ResourceDetailModalProps> = ({
       case 'HET_VA_THAY_THE':
         return (
           <Badge variant="warning" size="md" withDot>
-            {t('resourceManagement.statusExpired')}
+            {t('resourceManagement.statusReplaced')}
           </Badge>
         );
       default:
