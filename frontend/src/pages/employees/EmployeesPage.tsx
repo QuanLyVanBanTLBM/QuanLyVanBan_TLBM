@@ -22,7 +22,7 @@ import { DeleteConfirmModal } from './components/DeleteConfirmModal';
 
 export default function EmployeesPage() {
   const { t } = useTranslation();
-  const { can, isSystemAdmin } = usePermissions();
+  const { can, isSuperuser, isSystemAdmin } = usePermissions();
   const currentSession = authService.getSession();
   const canEditEmployee = (employee: Employee) =>
     isSystemAdmin ||
@@ -598,7 +598,7 @@ export default function EmployeesPage() {
                           )}
 
                           {/* Xóa */}
-                          {can('delete_cbnv') && (
+                          {isSuperuser && (
                             <button
                               type="button"
                               onClick={() => {

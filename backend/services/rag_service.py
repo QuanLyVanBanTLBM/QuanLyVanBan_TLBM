@@ -30,6 +30,7 @@ from pdf2image import convert_from_path
 from PIL import Image
 from rapidocr_onnxruntime import RapidOCR
 
+import backend.config as config
 from backend.config import (
     CHILD_CHUNK_OVERLAP,
     CHILD_CHUNK_SIZE,
@@ -119,47 +120,90 @@ Quy tắc output:
 
 
 def setup_llamaindex():
-    provider = MODEL_PROVIDER.lower().strip()
+    global MODEL_PROVIDER, LLM_MODEL, EMBED_MODEL, GEMINI_API_KEY, VISION_MODEL
+    try:
+        from backend.services.ai_settings_service import get_active_ai_settings
+        active = get_active_ai_settings()
+    except Exception:
+        active = {}
+
+    provider = (
+        active.get("provider")
+        or getattr(config, "MODEL_PROVIDER", None)
+        or os.getenv("MODEL_PROVIDER")
+        or MODEL_PROVIDER
+    ).lower().strip()
+
+    llm_model = (
+        active.get("llm_model")
+        or getattr(config, "LLM_MODEL", None)
+        or os.getenv("LLM_MODEL")
+        or ("gpt-6-luna" if provider == "openai" else "gemini-3.8-flash")
+    )
+    embed_model = (
+        active.get("embed_model")
+        or getattr(config, "EMBED_MODEL", None)
+        or os.getenv("EMBED_MODEL")
+        or ("text-embedding-3-large" if provider == "openai" else "models/gemini-embedding-001")
+    )
+    gemini_key = (
+        active.get("gemini_api_key")
+        or getattr(config, "GEMINI_API_KEY", None)
+        or os.getenv("GEMINI_API_KEY")
+        or GEMINI_API_KEY
+    ).strip()
+    openai_key = (
+        active.get("openai_api_key")
+        or getattr(config, "OPENAI_API_KEY", None)
+        or os.getenv("OPENAI_API_KEY")
+        or ""
+    ).strip()
+
+    MODEL_PROVIDER = provider
+    LLM_MODEL = llm_model
+    EMBED_MODEL = embed_model
+    GEMINI_API_KEY = gemini_key
 
     if provider == "openai":
-        openai_key = (os.getenv("OPENAI_API_KEY") or "").strip()
         if not openai_key:
-            if GEMINI_API_KEY.strip():
+            if gemini_key:
                 logger.warning("OPENAI_API_KEY chua co; tu dong fallback sang Gemini de tiep tuc test local.")
                 from backend.services.gemini_service import GeminiRESTLLM, GeminiRESTEmbedding
-                Settings.embed_model = GeminiRESTEmbedding(api_key=GEMINI_API_KEY, model_name=EMBED_MODEL if "embedding" in EMBED_MODEL else "models/gemini-embedding-001")
-                Settings.llm = GeminiRESTLLM(api_key=GEMINI_API_KEY, model_name=LLM_MODEL)
-                print(f"[TEST LOCAL] Fallback Gemini cho model {LLM_MODEL}")
+                Settings.embed_model = GeminiRESTEmbedding(api_key=gemini_key, model_name=embed_model if "embedding" in embed_model else "models/gemini-embedding-001")
+                Settings.llm = GeminiRESTLLM(api_key=gemini_key, model_name=llm_model)
+                print(f"[TEST LOCAL] Fallback Gemini cho model {llm_model}")
                 return
             raise RuntimeError("OPENAI_API_KEY is not configured")
         import llama_index.llms.openai.utils as openai_utils
         import tiktoken.model
-        if LLM_MODEL not in openai_utils.ALL_AVAILABLE_MODELS:
-            openai_utils.ALL_AVAILABLE_MODELS[LLM_MODEL] = 128000
-            openai_utils.CHAT_MODELS[LLM_MODEL] = 128000
-            try:
-                tiktoken.model.MODEL_TO_ENCODING[LLM_MODEL] = "o200k_base"
-            except Exception:
-                pass
+        actual_llm = "gpt-4o-mini" if llm_model == "gpt-6-luna" else llm_model
+        for m_name in (llm_model, actual_llm):
+            if m_name not in openai_utils.ALL_AVAILABLE_MODELS:
+                openai_utils.ALL_AVAILABLE_MODELS[m_name] = 128000
+                openai_utils.CHAT_MODELS[m_name] = 128000
+                try:
+                    tiktoken.model.MODEL_TO_ENCODING[m_name] = "o200k_base"
+                except Exception:
+                    pass
 
         from llama_index.embeddings.openai import OpenAIEmbedding
         from llama_index.llms.openai import OpenAI
 
-        embed_model_name = EMBED_MODEL if "text-embedding" in EMBED_MODEL else "text-embedding-3-large"
+        embed_model_name = embed_model if "text-embedding" in embed_model else "text-embedding-3-large"
         Settings.embed_model = OpenAIEmbedding(model_name=embed_model_name, api_key=openai_key)
-        temp = 1.0 if ("luna" in LLM_MODEL or LLM_MODEL.startswith(("o1", "o3", "o4"))) else 0.1
-        Settings.llm = OpenAI(model=LLM_MODEL, temperature=temp, request_timeout=180.0, api_key=openai_key)
-        print(f"✅ OpenAI LLM: {LLM_MODEL}")
+        temp = 1.0 if ("luna" in llm_model or llm_model.startswith(("o1", "o3", "o4"))) else 0.1
+        Settings.llm = OpenAI(model=actual_llm, temperature=temp, request_timeout=180.0, api_key=openai_key)
+        print(f"✅ OpenAI LLM: {llm_model} (engine: {actual_llm})")
         print(f"✅ OpenAI Embed: {embed_model_name}")
     elif provider == "gemini":
-        if not GEMINI_API_KEY.strip():
+        if not gemini_key:
             raise RuntimeError("GEMINI_API_KEY is not configured")
         from backend.services.gemini_service import GeminiRESTLLM, GeminiRESTEmbedding
 
-        Settings.embed_model = GeminiRESTEmbedding(api_key=GEMINI_API_KEY, model_name=EMBED_MODEL)
-        Settings.llm = GeminiRESTLLM(api_key=GEMINI_API_KEY, model_name=LLM_MODEL)
-        print(f"✅ Gemini LLM: {LLM_MODEL}")
-        print(f"✅ Gemini Embed: {EMBED_MODEL}")
+        Settings.embed_model = GeminiRESTEmbedding(api_key=gemini_key, model_name=embed_model)
+        Settings.llm = GeminiRESTLLM(api_key=gemini_key, model_name=llm_model)
+        print(f"✅ Gemini LLM: {llm_model}")
+        print(f"✅ Gemini Embed: {embed_model}")
         print(f"✅ Gemini Vision Model: {VISION_MODEL}")
     else:
         raise ValueError(f"Unsupported AI provider: {provider}")
@@ -1425,12 +1469,54 @@ def format_chat_history(history) -> str:
     return "\n".join(lines)
 
 
-def get_chroma_collection():
+def get_chroma_collection(provider_override: str | None = None):
     CHROMA_DIR.mkdir(parents=True, exist_ok=True)
-
     client = chromadb.PersistentClient(path=str(CHROMA_DIR))
 
-    return client.get_or_create_collection(COLLECTION_NAME)
+    if provider_override:
+        current_provider = str(provider_override).lower().strip()
+    else:
+        try:
+            from backend.services.ai_settings_service import get_active_provider
+            current_provider = get_active_provider()
+        except Exception:
+            current_provider = (
+                getattr(config, "MODEL_PROVIDER", None)
+                or os.getenv("MODEL_PROVIDER")
+                or MODEL_PROVIDER
+            ).lower().strip()
+
+    base_name = os.getenv("COLLECTION_NAME", "smart_documents")
+    # For gemini, maintain backward-compatible "smart_documents" collection.
+    # For openai and other providers, isolate in dedicated collections to prevent dimension conflicts.
+    collection_name = base_name if current_provider == "gemini" else f"{base_name}_{current_provider}"
+    return client.get_or_create_collection(collection_name)
+
+
+def sync_documents_if_needed(provider: str | None = None):
+    """Automatically populate the provider's collection if empty using registered documents."""
+    try:
+        collection = get_chroma_collection(provider_override=provider)
+        if collection.count() > 0:
+            return
+
+        from backend.services.document_service import load_registry
+        entries = load_registry()
+        if not entries:
+            return
+
+        print(f"🔄 Đang tự động lập chỉ mục {len(entries)} tài liệu cho provider {provider or MODEL_PROVIDER}...")
+        for entry in entries:
+            fn = entry.get("filename")
+            if fn:
+                p = DOCS_DIR / fn
+                if p.exists():
+                    try:
+                        index_document(p, category=entry.get("category"), source_metadata={"file_name": fn})
+                    except Exception as exc:
+                        logger.warning("Không thể tự động lập chỉ mục tài liệu %s: %s", fn, exc)
+    except Exception as exc:
+        logger.warning("sync_documents_if_needed encountered error: %s", exc)
 
 
 def resolve_target_filename(filename: str | None) -> str | None:
@@ -2218,46 +2304,62 @@ def clear_vector_database():
 
 
 def delete_document_vectors(filename: str):
-    collection = get_chroma_collection()
+    CHROMA_DIR.mkdir(parents=True, exist_ok=True)
+    client = chromadb.PersistentClient(path=str(CHROMA_DIR))
     safe_name = Path(filename).name
 
+    base_name = os.getenv("COLLECTION_NAME", "smart_documents")
+    target_collections = [base_name, f"{base_name}_openai"]
+
+    last_error = None
+    for col_name in target_collections:
+        try:
+            col = client.get_collection(col_name)
+            col.delete(where={"file_name": safe_name})
+        except Exception as error:
+            last_error = error
+
+    # If active collection deletion failed critically, re-raise
+    active_col = get_chroma_collection()
     try:
-        collection.delete(where={"file_name": safe_name})
+        active_col.delete(where={"file_name": safe_name})
     except Exception as error:
         print(f"Vector delete failed for {safe_name}: {error}")
         raise
 
 
 def update_document_category_vectors(filename: str, category: str) -> int:
-    collection = get_chroma_collection()
+    CHROMA_DIR.mkdir(parents=True, exist_ok=True)
+    client = chromadb.PersistentClient(path=str(CHROMA_DIR))
     safe_name = Path(filename).name
     clean_category = (category or "").strip()
 
     if not clean_category:
         return 0
 
-    try:
-        result = collection.get(
-            where={"file_name": safe_name},
-            include=["metadatas"],
-        )
-    except Exception as error:
-        print(f"Vector lookup failed for {safe_name}: {error}")
-        raise
+    base_name = os.getenv("COLLECTION_NAME", "smart_documents")
+    target_collections = [base_name, f"{base_name}_openai"]
+    total_updated = 0
 
-    ids = result.get("ids") or []
+    for col_name in target_collections:
+        try:
+            col = client.get_collection(col_name)
+            result = col.get(
+                where={"file_name": safe_name},
+                include=["metadatas"],
+            )
+            ids = result.get("ids") or []
+            if ids:
+                metadatas = result.get("metadatas") or []
+                updated_metadatas = []
+                for metadata in metadatas:
+                    new_metadata = dict(metadata or {})
+                    new_metadata["category"] = clean_category
+                    updated_metadatas.append(new_metadata)
+                col.update(ids=ids, metadatas=updated_metadatas)
+                total_updated += len(ids)
+        except Exception:
+            pass
 
-    if not ids:
-        return 0
-
-    metadatas = result.get("metadatas") or []
-    updated_metadatas = []
-
-    for metadata in metadatas:
-        new_metadata = dict(metadata or {})
-        new_metadata["category"] = clean_category
-        updated_metadatas.append(new_metadata)
-
-    collection.update(ids=ids, metadatas=updated_metadatas)
-    print(f"🏷️  Cập nhật category vector cho {safe_name}: {clean_category} ({len(ids)} chunks)")
-    return len(ids)
+    print(f"🏷️  Cập nhật category vector cho {safe_name}: {clean_category} ({total_updated} chunks)")
+    return total_updated
