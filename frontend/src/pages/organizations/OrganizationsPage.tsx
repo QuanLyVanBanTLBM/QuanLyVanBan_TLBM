@@ -53,6 +53,9 @@ export default function OrganizationsPage() {
   const [isRegionsLoading, setIsRegionsLoading] = useState<boolean>(true);
   const [isAllUnitsLoading, setIsAllUnitsLoading] = useState<boolean>(true);
   const [isExporting, setIsExporting] = useState<boolean>(false);
+  // Chọn nhiều Khối và Đơn vị để xuất chung một file; giữ nguyên khi đổi tab hoặc trang
+  const [pickedRegionIds, setPickedRegionIds] = useState<Set<number>>(new Set());
+  const [pickedUnitIds, setPickedUnitIds] = useState<Set<number>>(new Set());
   const [toastMessage, setToastMessage] = useState<{ textKey: string; isError?: boolean } | null>(null);
 
   // Quản lý Modal Khối
@@ -321,7 +324,13 @@ export default function OrganizationsPage() {
   };
 
   // Xử lý Xuất file Excel: scope là phạm vi của file (Khối, Đơn vị, từ khóa), rỗng nghĩa là không lọc
-  const exportDirectory = async (scope: { regionId: string; unitId: string; search: string }) => {
+  const exportDirectory = async (scope: {
+    regionId: string;
+    unitId: string;
+    search: string;
+    regionIds?: number[];
+    unitIds?: number[];
+  }) => {
     setIsExporting(true);
     try {
       const params = new URLSearchParams();
@@ -330,6 +339,9 @@ export default function OrganizationsPage() {
       // Đã chọn một Đơn vị thì file chỉ gồm Đơn vị đó, khớp với bảng đang hiển thị
       if (scope.unitId) params.append('unit_id', scope.unitId);
       if (scope.search) params.append('search', scope.search);
+      // Danh sách Khối và Đơn vị đã tích: một file gồm hợp của hai danh sách
+      if (scope.regionIds?.length) params.append('region_ids', scope.regionIds.join(','));
+      if (scope.unitIds?.length) params.append('unit_ids', scope.unitIds.join(','));
 
       await downloadBlob(
         `/api/organizations/units/export/?${params.toString()}`,
@@ -354,6 +366,24 @@ export default function OrganizationsPage() {
   const handleExportAll = () => exportDirectory({ regionId: '', unitId: '', search: '' });
   const handleExportRegion = (regionId: number) =>
     exportDirectory({ regionId: String(regionId), unitId: '', search: '' });
+  // Xuất các Khối và Đơn vị đã tích vào một file
+  const pickedCount = pickedRegionIds.size + pickedUnitIds.size;
+  const handleExportPicked = () =>
+    exportDirectory({
+      regionId: '',
+      unitId: '',
+      search: '',
+      regionIds: Array.from(pickedRegionIds),
+      unitIds: Array.from(pickedUnitIds),
+    });
+  const clearPicked = () => {
+    setPickedRegionIds(new Set());
+    setPickedUnitIds(new Set());
+  };
+  const canExport = can('export_donvi');
+  const allRegionsPicked = regions.length > 0 && regions.every((r) => pickedRegionIds.has(r.id));
+  const toggleAllRegions = () =>
+    setPickedRegionIds(allRegionsPicked ? new Set() : new Set(regions.map((r) => r.id)));
 
   // Chọn đơn vị cấp 2 cụ thể thì bảng chỉ hiển thị đơn vị đó
   const dropdownUnits = selectedRegionId ? allUnits.filter((u) => String(u.khoi) === selectedRegionId) : [];
@@ -367,6 +397,13 @@ export default function OrganizationsPage() {
   const shownUnits = pickedUnit ? (pickedMatches ? [pickedUnit] : []) : units;
   const shownTotal = pickedUnit ? shownUnits.length : unitsTotal;
   const totalPages = Math.ceil(shownTotal / pageSize) || 1;
+  const allShownUnitsPicked = shownUnits.length > 0 && shownUnits.every((u) => pickedUnitIds.has(u.id));
+  const toggleAllShownUnits = () =>
+    setPickedUnitIds((s) => {
+      const next = new Set(s);
+      shownUnits.forEach((u) => (allShownUnitsPicked ? next.delete(u.id) : next.add(u.id)));
+      return next;
+    });
 
   return (
     <div className="space-y-6 pb-24 md:pb-0">
@@ -395,7 +432,17 @@ export default function OrganizationsPage() {
         </div>
 
         {/* Nút hành động thêm mới theo Tab */}
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          {canExport && pickedCount > 0 && (
+            <>
+              <Button variant="primary" icon="fa-file-excel" onClick={handleExportPicked} isLoading={isExporting}>
+                {t('organizations.actions.exportSelected', { count: String(pickedCount) })}
+              </Button>
+              <Button variant="secondary" onClick={clearPicked} disabled={isExporting}>
+                {t('organizations.actions.clearSelection')}
+              </Button>
+            </>
+          )}
           {activeTab === 'units' ? (
             <>
               {can('export_donvi') && (
@@ -570,7 +617,19 @@ export default function OrganizationsPage() {
               <table className="units-table w-full text-left text-sm border-collapse">
                 <thead className="units-table__head bg-surface-elevated text-secondary text-xs uppercase font-bold border-b border-border">
                   <tr>
-                    <th className="px-4 py-3 text-center w-16">{t('organizations.table.priority')}</th>
+                    <th className="px-4 py-3 text-center w-16">
+                      <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                        {canExport && (
+                          <input
+                            type="checkbox"
+                            aria-label={t('organizations.actions.selectAllUnits')}
+                            checked={allShownUnitsPicked}
+                            onChange={toggleAllShownUnits}
+                          />
+                        )}
+                        {t('organizations.table.priority')}
+                      </label>
+                    </th>
                     <th className="px-4 py-3">{t('organizations.table.unitName')}</th>
                     <th className="px-4 py-3">{t('organizations.table.parentRegion')}</th>
                     <th className="px-4 py-3">{t('organizations.table.phone')}</th>
@@ -607,7 +666,19 @@ export default function OrganizationsPage() {
                             isInternal ? 'bg-warning-subtle/20 border-l-4 border-l-warning' : ''
                           }`}
                         >
-                          <td className="units-table__cell units-table__cell--order px-4 py-3 text-center font-bold text-main">{unit.stt_uu_tien}</td>
+                          <td className="units-table__cell units-table__cell--order px-4 py-3 text-center font-bold text-main">
+                            <label className="inline-flex items-center gap-2 cursor-pointer">
+                              {canExport && (
+                                <input
+                                  type="checkbox"
+                                  aria-label={t('organizations.actions.selectUnit', { name: unit.ten })}
+                                  checked={pickedUnitIds.has(unit.id)}
+                                  onChange={() => setPickedUnitIds((s) => toggleInSet(s, unit.id))}
+                                />
+                              )}
+                              {unit.stt_uu_tien}
+                            </label>
+                          </td>
                           <td className="units-table__cell units-table__cell--name px-4 py-3 font-semibold text-main min-w-[14rem]">
                             <div>{unit.ten}</div>
                             {unit.dia_chi && (
@@ -749,10 +820,20 @@ export default function OrganizationsPage() {
               <thead className="bg-surface-elevated text-secondary text-xs uppercase font-bold border-b border-border">
                 <tr>
                   <th className="hidden sm:table-cell px-4 py-3 text-center w-16">{t('organizations.table.id')}</th>
-                  <th className="px-2 sm:px-4 py-3 text-center w-12 sm:w-32">
-                    {/* Màn hình hẹp dùng nhãn ngắn để tiêu đề cột không xuống nhiều dòng */}
-                    <span className="sm:hidden">{t('organizations.table.priority')}</span>
-                    <span className="hidden sm:inline">{t('organizations.table.displayOrder')}</span>
+                  <th className="px-2 sm:px-4 py-3 text-center w-16 sm:w-32">
+                    <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                      {canExport && (
+                        <input
+                          type="checkbox"
+                          aria-label={t('organizations.actions.selectAllRegions')}
+                          checked={allRegionsPicked}
+                          onChange={toggleAllRegions}
+                        />
+                      )}
+                      {/* Màn hình hẹp dùng nhãn ngắn để tiêu đề cột không xuống nhiều dòng */}
+                      <span className="sm:hidden">{t('organizations.table.priority')}</span>
+                      <span className="hidden sm:inline">{t('organizations.table.displayOrder')}</span>
+                    </label>
                   </th>
                   <th className="px-3 sm:px-4 py-3">{t('organizations.table.regionName')}</th>
                   <th className="px-2 sm:px-4 py-3 text-center">{t('organizations.table.unitsCount')}</th>
@@ -792,7 +873,19 @@ export default function OrganizationsPage() {
                           }`}
                         >
                           <td className="hidden sm:table-cell px-4 py-3 text-center font-mono text-xs text-muted">{region.id}</td>
-                          <td className="px-2 sm:px-4 py-3 text-center font-mono text-xs text-secondary">{region.thu_tu_hien_thi ?? 0}</td>
+                          <td className="px-2 sm:px-4 py-3 text-center font-mono text-xs text-secondary" onClick={(e) => e.stopPropagation()}>
+                            <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                              {canExport && (
+                                <input
+                                  type="checkbox"
+                                  aria-label={t('organizations.actions.selectRegion', { name: region.ten })}
+                                  checked={pickedRegionIds.has(region.id)}
+                                  onChange={() => setPickedRegionIds((s) => toggleInSet(s, region.id))}
+                                />
+                              )}
+                              {region.thu_tu_hien_thi ?? 0}
+                            </label>
+                          </td>
                           <td className="px-3 sm:px-4 py-3 font-bold text-main">
                             {children.length > 0 ? (
                               <button
@@ -875,7 +968,17 @@ export default function OrganizationsPage() {
                             <tr key={`unit-${unit.id}`} data-unit-row className="bg-surface-hover border-dashed">
                               <td className="hidden sm:table-cell px-4 py-3 shadow-[inset_4px_0_0_var(--color-primary)]" />
                               <td className="px-2 sm:px-4 py-3 text-center font-mono text-xs text-secondary shadow-[inset_4px_0_0_var(--color-primary)] sm:shadow-none">
-                                {index + 1}
+                                <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                                  {canExport && (
+                                    <input
+                                      type="checkbox"
+                                      aria-label={t('organizations.actions.selectUnit', { name: unit.ten })}
+                                      checked={pickedUnitIds.has(unit.id)}
+                                      onChange={() => setPickedUnitIds((s) => toggleInSet(s, unit.id))}
+                                    />
+                                  )}
+                                  {index + 1}
+                                </label>
                               </td>
                               <td className="px-3 sm:px-4 py-3">
                                 <div className="flex items-start gap-2">
