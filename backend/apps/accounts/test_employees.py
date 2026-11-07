@@ -1493,7 +1493,7 @@ class EmployeePermissionSecurityTests(EmployeeBaseTestCase):
             format="json",
         )
         self.assertEqual(res_del_su.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(res_del_su.data["detail"], "employees.messages.cannotDeleteSuperuser")
+        self.assertEqual(res_del_su.data["detail"], "roles.messages.permissionDenied")
 
         # 4. User có change_full_cbnv (nhưng không phải superuser) cố chuyển superuser thành nghỉ việc -> 403
         hr_user = User.objects.create_user(
