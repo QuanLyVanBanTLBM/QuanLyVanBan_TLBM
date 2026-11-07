@@ -224,6 +224,7 @@
   },
   "floatingAI": {
     "title": "Trợ lý AI TLBM",
+    "dragTooltip": "Kéo thả để di chuyển (Nhấp đúp để đặt lại vị trí)",
     "subtitle": "Hỗ trợ quy trình và nghiệp vụ",
     "welcome": "**Xin chào Quý Cán bộ!**\n\nTôi là **Trợ lý AI TLBM**, hỗ trợ tra cứu tài liệu và thông tin nghiệp vụ được cấp quyền.",
     "suggestionIncoming": "Quy trình tiếp nhận văn bản đến?",
