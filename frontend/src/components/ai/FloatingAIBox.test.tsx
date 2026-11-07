@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { askQuestion, getAISettings } from '../../api';
 import FloatingAIBox from './FloatingAIBox';
@@ -59,5 +59,45 @@ describe('FloatingAIBox', () => {
     await waitFor(() => expect(mockedGetAISettings).toHaveBeenCalled());
     expect(screen.queryByText('gemini-3.8-flash')).not.toBeInTheDocument();
     expect(screen.queryByText('gpt-4o')).not.toBeInTheDocument();
+  });
+
+  it('allows dragging the chat box window and resets on double click', async () => {
+    render(<FloatingAIBox />);
+    fireEvent.click(screen.getByRole('button', { name: 'floatingAI.openTitle' }));
+
+    const header = screen.getByTitle('floatingAI.dragTooltip');
+    expect(header).toBeInTheDocument();
+
+    const win = header.closest('div.fixed') as HTMLElement;
+    vi.spyOn(win, 'getBoundingClientRect').mockReturnValue({
+      left: 100,
+      top: 100,
+      width: 390,
+      height: 400,
+      right: 490,
+      bottom: 500,
+      x: 100,
+      y: 100,
+      toJSON: () => {},
+    });
+
+    act(() => {
+      fireEvent.mouseDown(header, { clientX: 120, clientY: 120 });
+    });
+    act(() => {
+      fireEvent.mouseMove(window, { clientX: 220, clientY: 260 });
+    });
+    act(() => {
+      fireEvent.mouseUp(window);
+    });
+
+    expect(win.style.left).toBe('200px');
+    expect(win.style.top).toBe('240px');
+
+    act(() => {
+      fireEvent.doubleClick(header);
+    });
+    expect(win.style.left).toBe('');
+    expect(win.style.top).toBe('');
   });
 });
