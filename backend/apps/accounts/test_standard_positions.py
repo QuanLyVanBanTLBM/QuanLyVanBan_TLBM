@@ -1,4 +1,4 @@
-"""Danh mục 25 chức vụ chuẩn: thứ tự, một danh sách ở ba nơi, migration cho DB đã có dữ liệu, seed_db."""
+"""Danh mục 27 chức vụ chuẩn: thứ tự, danh sách đồng bộ, migration và seed_db."""
 import importlib
 import os
 import re
@@ -23,7 +23,7 @@ from accounts.standard_positions import (
 )
 from organizations.models import DonVi, KhoiKhuVuc
 
-migration = importlib.import_module("accounts.migrations.0009_standard_positions")
+migration = importlib.import_module("accounts.migrations.0015_standard_ban_positions")
 DDL_PATH = Path(settings.BASE_DIR).parent / "docs" / "common" / "database" / "release_DDL.sql"
 
 
@@ -32,7 +32,7 @@ class SchemaEditorStub:
 
 
 def run_migration():
-    migration.apply_standard_positions(django_apps, SchemaEditorStub())
+    migration.update_standard_positions(django_apps, SchemaEditorStub())
 
 
 def ordered_names():
@@ -40,32 +40,34 @@ def ordered_names():
 
 
 class StandardPositionListTest(TestCase):
-    def test_25_positions_numbered_1_to_25_without_duplicates(self):
-        self.assertEqual([order for order, _ in STANDARD_POSITIONS], list(range(1, 26)))
+    def test_27_positions_numbered_1_to_27_without_duplicates(self):
+        self.assertEqual([order for order, _ in STANDARD_POSITIONS], list(range(1, 28)))
         names = [name for _, name in STANDARD_POSITIONS]
-        self.assertEqual(len(set(n.casefold() for n in names)), 25)
+        self.assertEqual(len(set(n.casefold() for n in names)), 27)
 
     def test_teacher_order_kept_and_old_positions_inserted_by_rank(self):
         names = [name for _, name in STANDARD_POSITIONS]
         self.assertEqual([n for n in names if n in TEACHER_POSITIONS], TEACHER_POSITIONS)
-        self.assertEqual(len(TEACHER_POSITIONS), 22)
+        self.assertEqual(len(TEACHER_POSITIONS), 24)
+        self.assertEqual(names.index("Giám đốc Ban"), names.index("Phó Giám đốc") + 1)
+        self.assertEqual(names.index("Phụ trách Ban"), names.index("Giám đốc Ban") + 1)
         self.assertEqual(names[0], ADMIN_POSITION)
         self.assertEqual(names.index(AGENCY_LEADER_POSITION), names.index("Tổng Giám đốc") + 1)
         self.assertEqual(names.index(CLERK_POSITION), names.index("Chuyên viên") + 1)
 
-    def test_migration_keeps_a_frozen_copy_of_the_same_list(self):
+    def test_latest_migration_keeps_a_frozen_copy_of_the_same_list(self):
         self.assertEqual([tuple(x) for x in migration.STANDARD_POSITIONS], STANDARD_POSITIONS)
 
     def test_release_ddl_seeds_the_same_list(self):
         ddl = DDL_PATH.read_text(encoding="utf-8")
-        block = ddl[ddl.index("-- 3) Seed 25 Chức vụ chuẩn"):]
+        block = ddl[ddl.index("-- 3) Seed 27 Chức vụ chuẩn"):]
         block = block[: block.index("ORDER BY x.stt;")]
         seeded = [(int(order), name) for order, name in re.findall(r"\((\d+), '([^']+)'\)", block)]
         self.assertEqual(seeded, STANDARD_POSITIONS)
 
 
 class MigratedDatabaseTest(TestCase):
-    def test_database_built_by_migrations_has_the_25_positions_of_release_ddl(self):
+    def test_database_built_by_migrations_has_the_27_positions_of_release_ddl(self):
         self.assertEqual(ordered_names(), STANDARD_POSITIONS)
         admin = get_user_model().objects.get(username="admin")
         self.assertEqual(admin.chuc_vu.name, ADMIN_POSITION)
@@ -92,26 +94,26 @@ class StandardPositionMigrationTest(TestCase):
         legacy_position.save(update_fields=["name"])
 
         run_migration()
-        self.assertEqual(ordered_names()[:25], STANDARD_POSITIONS)
+        self.assertEqual(ordered_names()[:27], STANDARD_POSITIONS)
         legacy_position.refresh_from_db()
         self.assertEqual(legacy_position.name, "Trưởng phòng cũ")
-        self.assertGreater(legacy_position.display_order, 25)
+        self.assertGreater(legacy_position.display_order, 27)
 
     def test_nothing_is_deleted_and_staff_keep_their_position_rows(self):
         ids_before = set(Position.objects.values_list("id", flat=True))
         run_migration()
         self.assertTrue(ids_before <= set(Position.objects.values_list("id", flat=True)))
-        self.assertEqual(Position.objects.count(), 25 + 2)
+        self.assertEqual(Position.objects.count(), 27 + 2)
         for user, position in ((self.clerk, self.old["Văn thư"]), (self.leader, self.old["Lãnh đạo cơ quan"]), (self.helper, self.custom)):
             user.refresh_from_db()
             self.assertEqual(user.chuc_vu_id, position.pk)
-        self.assertEqual(Position.objects.get(pk=self.old["Văn thư"].pk).display_order, 22)
+        self.assertEqual(Position.objects.get(pk=self.old["Văn thư"].pk).display_order, 24)
         self.assertEqual(Position.objects.get(pk=self.old["Lãnh đạo cơ quan"].pk).display_order, 6)
         self.assertEqual(Position.objects.get(pk=self.old["Quản trị viên"].pk).display_order, 1)
 
-    def test_user_added_positions_follow_after_25_in_their_old_order(self):
+    def test_user_added_positions_follow_after_27_in_their_old_order(self):
         run_migration()
-        self.assertEqual(ordered_names()[25:], [(26, "Cộng tác viên"), (27, "Thực tập sinh")])
+        self.assertEqual(ordered_names()[27:], [(28, "Cộng tác viên"), (29, "Thực tập sinh")])
 
     def test_running_twice_gives_the_same_result(self):
         run_migration()
@@ -127,7 +129,7 @@ class StandardPositionMigrationTest(TestCase):
 
 
 class SeedDbPositionsTest(TestCase):
-    def test_seed_db_creates_the_25_positions_once(self):
+    def test_seed_db_creates_the_27_positions_once(self):
         with mock.patch.dict(os.environ, {"ADMIN_PASSWORD": "test-admin-password"}, clear=False):
             call_command("seed_db", verbosity=0)
             call_command("seed_db", verbosity=0)
