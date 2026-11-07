@@ -6,6 +6,12 @@ import { setLanguage } from '@i18n/translate';
 import { ApiError } from '@lib/apiClient';
 import DocumentTypesPage from './DocumentTypesPage';
 
+const perms = vi.hoisted(() => ({ list: [] as string[] }));
+vi.mock('@lib/permissions', () => ({
+  usePermissions: () => ({ loaded: true, isSuperuser: false, isSystemAdmin: false, can: (code: string) => perms.list.includes(code) }),
+}));
+const ALL_HOSO_PERMS = ['view_hoso', 'add_hoso', 'change_hoso', 'delete_hoso'];
+
 vi.mock('@lib/recordsService', () => ({ recordsService: {
   getDossier: vi.fn(), getDocumentType: vi.fn(), listDocumentTypes: vi.fn(), listDocumentTypeCatalog: vi.fn(),
   listDossiers: vi.fn(), createDocumentType: vi.fn(), updateDocumentType: vi.fn(), deleteDocumentType: vi.fn(),
@@ -20,7 +26,7 @@ async function show(path = '/records/document-types') {
   </Routes></MemoryRouter>); });
 }
 describe('DocumentTypesPage shared-list handoff', () => {
-  beforeEach(() => { vi.clearAllMocks(); setLanguage('en');
+  beforeEach(() => { vi.clearAllMocks(); perms.list = [...ALL_HOSO_PERMS]; setLanguage('en');
     vi.mocked(recordsService.listDocumentTypeCatalog).mockResolvedValue(categories);
     vi.mocked(recordsService.listDocumentTypes).mockResolvedValue(categories);
     vi.mocked(recordsService.getDossier).mockResolvedValue({ id: 9, ten_ho_so: 'Parent', so_ky_hieu: 'HS' });
@@ -31,6 +37,14 @@ describe('DocumentTypesPage shared-list handoff', () => {
     vi.mocked(recordsService.deleteDocumentType).mockResolvedValue(undefined);
   });
   afterEach(() => { cleanup(); setLanguage('vi'); });
+  it('hides add, edit and delete when the account only has view_hoso', async () => {
+    perms.list = ['view_hoso'];
+    await show('/records/9/document-types');
+    await screen.findByRole('button', { name: 'Category A' });
+    expect(screen.queryByRole('button', { name: /^Add/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Edit/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Delete/i })).not.toBeInTheDocument();
+  });
   it('waits for filter submission before changing the year in a dossier', async () => {
     await show('/records/9/document-types');
     const request = vi.mocked(recordsService.listDocumentTypes);
