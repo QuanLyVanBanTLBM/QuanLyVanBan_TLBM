@@ -5,7 +5,7 @@ import { ActivePageId } from '@app-types/navigation';
 import { UserSession } from '@app-types/auth';
 import { useTranslation } from '@i18n/translate';
 import LanguageSwitcher from '@components/layout/LanguageSwitcher';
-import LoginCharacters from '@components/auth/LoginCharacters';
+import LoginBanner from '@components/auth/LoginBanner';
 import LoginForm from '@components/auth/LoginForm';
 import authService from '@lib/authService';
 import { ApiError } from '@lib/apiClient';
@@ -127,17 +127,10 @@ export default function LoginPage({ onNavigate, onLoginSuccess }: LoginPageProps
         <LanguageSwitcher />
       </div>
 
-      {/* 3. Thẻ chứa Form và Nhân vật Hoạt hình (Container) */}
+      {/* 3. Thẻ chứa Form và Banner thương hiệu Bảo Long */}
       <div className="login-card-container w-full max-w-4xl bg-surface rounded-2xl overflow-hidden shadow-lg flex flex-col md:flex-row relative z-10 md:my-auto border border-border-subtle animate-fade-in">
-        {/* Nửa trái: Sân khấu 4 nhân vật hoạt họa */}
-        <LoginCharacters
-          isUsernameFocused={isUsernameFocused}
-          isPasswordFocused={isPasswordFocused}
-          showPassword={showPassword}
-          isTyping={isTyping}
-          isSuccess={isSuccess}
-          isError={Boolean(activeError)}
-        />
+        {/* Nửa trái: Khung nhận diện thương hiệu Bảo Long */}
+        <LoginBanner />
 
         {/* Nửa phải: Form đăng nhập */}
         <LoginForm
