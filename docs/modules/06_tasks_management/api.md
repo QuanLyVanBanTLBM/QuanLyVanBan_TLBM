@@ -94,7 +94,7 @@ Tham số (đều không bắt buộc):
 | `page` | `1` | Trang, bắt đầu từ 1 |
 | `pageSize` | `10` | Số dòng mỗi trang, tối đa 100 (giao diện dùng 10/20/50) |
 
-Chỉ trả về công việc người gọi được xem, mới nhất trước.
+Chỉ trả về công việc người gọi được xem. Mặc định xếp theo bậc ưu tiên (việc đang chờ chính người gọi hành động lên đầu), cùng bậc thì hạn xử lý gần trước. Bậc 2 gồm việc **Chờ duyệt** mà người gọi là chỉ đạo, chủ trì **hoặc người tạo**.
 
 ```json
 {
@@ -171,7 +171,7 @@ Gồm toàn bộ trường của danh sách, cộng thêm:
       "id": 5, "kind": "GIAO_VIEC", "fileName": "Kế hoạch.pdf", "size": 8,
       "uploadedBy": { "id": 2, "fullName": "Trần Phương Duy", "position": "Nhân viên" },
       "uploadedAt": "2026-09-19T11:17:27.649702+07:00", "commentId": null,
-      "downloadUrl": "http://127.0.0.1:8000/api/work/attachments/5/download/",
+      "downloadUrl": "/api/work/attachments/5/download/",
       "canDelete": false, "deleteBlockedReason": null
     }
   ],
@@ -180,7 +180,7 @@ Gồm toàn bộ trường của danh sách, cộng thêm:
       "id": 6, "kind": "BANG_CHUNG", "fileName": "Kết quả.pdf", "size": 11,
       "uploadedBy": { "id": 4, "fullName": "Nguyễn Bình Minh", "position": "Nhân viên" },
       "uploadedAt": "2026-09-19T11:17:27.840724+07:00", "commentId": 5,
-      "downloadUrl": "http://127.0.0.1:8000/api/work/attachments/6/download/",
+      "downloadUrl": "/api/work/attachments/6/download/",
       "canDelete": true, "deleteBlockedReason": null
     }
   ],
@@ -193,6 +193,7 @@ Gồm toàn bộ trường của danh sách, cộng thêm:
 
 - `attachments`: file giao việc. `evidences`: toàn bộ file kết quả (mỗi file thuộc một ý kiến qua `commentId`).
 - `canSubmitEvidence`: được kèm file kết quả khi ghi ý kiến.
+- `downloadUrl`: **đường dẫn tương đối** (`/api/work/attachments/{id}/download/`), không kèm domain/cổng, vì proxy có thể chuyển `Host` mất cổng. Frontend dựng URL đầy đủ từ `API_BASE_URL`/origin trang (`resolveDownloadUrl` trong `api/taskActions.ts`, vẫn chấp nhận URL tuyệt đối cũ).
 - `deleteBlockedReason`: chỉ có với **người đã tải file**, khi họ chưa xóa được file đó (đã duyệt, hoặc là file kết quả cuối cùng sau hạn), để giao diện hiện lý do và cách xử lý.
 
 ### 4.4. `PATCH /api/work/tasks/{id}/` — Sửa
@@ -232,7 +233,7 @@ Mọi người xem được công việc đều đọc được. Sắp xếp cũ
         "id": 6, "kind": "BANG_CHUNG", "fileName": "Kết quả.pdf", "size": 11,
         "uploadedBy": { "id": 4, "fullName": "Nguyễn Bình Minh", "position": "Nhân viên" },
         "uploadedAt": "2026-09-19T11:17:27.840724+07:00", "commentId": 5,
-        "downloadUrl": "http://127.0.0.1:8000/api/work/attachments/6/download/",
+        "downloadUrl": "/api/work/attachments/6/download/",
         "canDelete": true, "deleteBlockedReason": null
       }
     ]
@@ -299,7 +300,7 @@ Trả nội dung file, tên tải về là tên gốc. Người không xem đư�
 
 ### 8.3. `GET /api/work/employees/?search=`
 
-Danh sách cán bộ đang hoạt động, tìm theo họ, tên hoặc tên đăng nhập:
+Danh sách cán bộ đang hoạt động, tìm theo họ tên, tên đăng nhập, **tên đơn vị (phòng ban)** hoặc **tên chức vụ**:
 `[{ "id": 3, "fullName": "Phan Quốc Dũng", "position": "Nhân viên", "username": "chutri" }]`
 
 ### 8.4. `GET /api/work/me/`
