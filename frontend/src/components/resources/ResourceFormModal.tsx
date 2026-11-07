@@ -621,6 +621,7 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
   // Xem trước tệp hiện có: PDF/Ảnh -> xin vé dùng 1 lần (Burn on Read) và mở tab mới; ZIP/DOCX/EXCEL -> tải về máy
   const handlePreviewExistingFile = async (file: { id?: number; name: string; size?: number; path?: string }) => {
     const isPreviewable = isDirectPreviewable(file.name);
+    const isPdf = file.name.toLowerCase().endsWith('.pdf');
     const targetUrl = file.id
       ? `/api/resources/attachments/${file.id}/view/`
       : (file.path || '');
@@ -647,7 +648,8 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
     }
 
     const absUrl = getAbsoluteFileUrl(targetUrl);
-    window.open(absUrl, '_blank');
+    const finalUrl = isPdf && !absUrl.includes('#') ? `${absUrl}#view=Fit&navpanes=0` : absUrl;
+    window.open(finalUrl, '_blank');
   };
 
   // Xem trước tệp mới tải lên: PDF/Ảnh -> mở tab mới; ZIP/DOCX/EXCEL -> tải về máy

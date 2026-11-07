@@ -658,7 +658,9 @@ class ChiTietTaiLieuAttachmentViewSet(viewsets.ModelViewSet):
         raw_ticket = signer.sign_object(payload)
         ticket = f"vt_{raw_ticket}"
 
-        view_url = f"/api/resources/attachments/{att.id}/view/?ticket={ticket}"
+        ext = att.name.split('.')[-1].lower() if '.' in att.name else ''
+        pdf_hash = "#view=Fit&navpanes=0" if ext == 'pdf' else ""
+        view_url = f"/api/resources/attachments/{att.id}/view/?ticket={ticket}{pdf_hash}"
         download_url = f"/api/resources/attachments/{att.id}/download/?ticket={ticket}"
 
         return Response({
