@@ -271,6 +271,34 @@ describe('ResourceTable Component', () => {
     expect(screen.queryByRole('button', { name: 'Trang 7' })).not.toBeInTheDocument();
   });
 
+  it('renders clean pagination (1 ... 3 ... 13) without page 2 and with static ••• ellipsis on page 3', () => {
+    const { container } = render(
+      <ResourceTable
+        items={mockItems}
+        currentPage={3}
+        totalPages={13}
+        pageSize={5}
+        totalCount={65}
+        onPageChange={vi.fn()}
+        onViewDetail={vi.fn()}
+      />
+    );
+
+    // Kiểm tra có các nút trang 1, 3 và trang cuối 13
+    expect(screen.getByRole('button', { name: 'Trang 1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Trang 3' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Trang 13' })).toBeInTheDocument();
+
+    // Không hiển thị trang 2 (rút gọn thành ...)
+    expect(screen.queryByRole('button', { name: 'Trang 2' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Trang 4' })).not.toBeInTheDocument();
+
+    // Nút ba chấm không chứa icon fa-angles-left / fa-angles-right khi hover
+    const ellipsisButtons = screen.getAllByText('•••');
+    expect(ellipsisButtons.length).toBe(2);
+    expect(container.querySelectorAll('.fa-angles-left').length).toBe(1); // Chỉ có nút << về trang đầu
+  });
+
   it('renders spacer rows on the last page to stabilize table height', () => {
     const { container } = render(
       <ResourceTable

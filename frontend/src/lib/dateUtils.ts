@@ -31,6 +31,12 @@ export function formatDateTime(dateStr?: string | null): string {
 export function formatDate(dateStr?: string | null): string {
   if (!dateStr) return '—';
 
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateStr);
+  if (match) {
+    const [, y, m, d] = match;
+    return `${d}/${m}/${y}`;
+  }
+
   const date = new Date(dateStr);
   if (isNaN(date.getTime())) return '—';
 

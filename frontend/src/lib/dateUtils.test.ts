@@ -28,6 +28,12 @@ describe('Date & File Utility Functions (dateUtils)', () => {
   });
 
   describe('formatDate()', () => {
+    it('formats YYYY-MM-DD date string directly to dd/MM/yyyy without timezone shift', () => {
+      expect(formatDate('2026-10-24')).toBe('24/10/2026');
+      expect(formatDate('2026-11-05')).toBe('05/11/2026');
+      expect(formatDate('2026-01-01')).toBe('01/01/2026');
+    });
+
     it('formats valid date to dd/MM/yyyy', () => {
       const testDate = new Date(2026, 8, 23, 14, 30, 45);
       const formatted = formatDate(testDate.toISOString());

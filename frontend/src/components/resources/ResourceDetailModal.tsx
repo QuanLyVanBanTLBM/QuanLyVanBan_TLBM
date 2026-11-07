@@ -85,6 +85,7 @@ export const ResourceDetailModal: React.FC<ResourceDetailModalProps> = ({
   // Xem trước tệp: PDF/Ảnh -> xin vé dùng 1 lần (Burn on Read) và mở tab mới; ZIP/DOCX/EXCEL -> tải về máy
   const handlePreviewAttachment = async (file: { id?: number; name: string; path?: string; file_size?: number; mime_type?: string }) => {
     const isPreviewable = isDirectPreviewable(file.name);
+    const isPdf = file.name.toLowerCase().endsWith('.pdf');
     const targetUrl = file.id
       ? `/api/resources/attachments/${file.id}/view/`
       : (file.path || item?.file_dinh_kem);
@@ -120,7 +121,8 @@ export const ResourceDetailModal: React.FC<ResourceDetailModalProps> = ({
 
     // Fallback cho URL trực tiếp / blob URL
     const absUrl = getAbsoluteFileUrl(targetUrl);
-    window.open(absUrl, '_blank');
+    const finalUrl = isPdf && !absUrl.includes('#') ? `${absUrl}#view=Fit&navpanes=0` : absUrl;
+    window.open(finalUrl, '_blank');
   };
 
   // Lắng nghe phím ESC để đóng Modal
