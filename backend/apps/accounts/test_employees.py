@@ -2174,6 +2174,8 @@ class EmployeeDefaultGroupAssignmentTests(EmployeeBaseTestCase):
             ("Tổng Giám đốc", "BGD"),
             ("Chủ tịch HĐQT", "BGD"),
             ("Giám đốc Khối", "TP"),
+            ("Giám đốc Ban", "TP"),
+            ("Phụ trách Ban", "TP"),
             ("Trưởng phòng", "TP"),
             ("Chuyên viên", "CV"),
             ("Nhân viên", "CV"),
