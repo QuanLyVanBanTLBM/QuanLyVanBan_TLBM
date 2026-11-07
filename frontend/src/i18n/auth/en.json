@@ -30,6 +30,8 @@
     "invalidCredentials": "Incorrect username or password!",
     "networkError": "Cannot connect to authentication server. Please check Backend service!",
     "sessionExpired": "Your login session has expired. Please sign in again!",
+    "enterpriseTagline": "Bao Long Insurance",
+    "securityBadge": "Security & Authentication System",
     "characters": {
       "purple": "Click to make me jump!",
       "black": "Click to make me bounce!",
