@@ -1,4 +1,11 @@
 -- =====================================================================
+-- CHO QUẢN TRỊ VIÊN XÓA VĂN BẢN HẠN CHẾ (Nhóm 7; đánh dấu [XVHC] tại vị trí)
+-- Căn cứ: Quản trị viên xóa được văn bản hạn chế hết hiệu lực (issue #610); trigger prevent_delete_van_ban_han_che
+--   chặn mọi lệnh xóa nên API trả 403 dù cờ can_delete đúng. Hàm chỉ chặn khi phiên không đặt
+--   app.allow_delete_han_che = 'on'. Không đổi bảng, cột, trigger; chỉ đổi thân hàm.
+--   Migration documents 0013_cho_admin_xoa_van_ban_han_che cập nhật hàm trên DB đã dựng từ trước.
+-- =====================================================================
+-- =====================================================================
 -- GỠ 3 MÃ QUYỀN KHÔNG CÓ CHỨC NĂNG DÙNG (Nhóm 7; đánh dấu [GQVC] tại vị trí)
 -- Căn cứ: audit phân quyền 05/11/2026, không có API hoặc giao diện nào kiểm các mã này:
 --   toggle_status_hoso (Mở/Đóng danh mục hồ sơ), manage_documents_hoso (Đưa văn bản vào/loại ra khỏi hồ sơ điện tử),
@@ -1196,11 +1203,13 @@ CREATE TRIGGER trg_documents_access_log_immutable
     BEFORE UPDATE OR DELETE ON documents_access_log
     FOR EACH ROW EXECUTE FUNCTION prevent_modify_documents_access_log();
 
--- MVP: văn bản HAN_CHE không được xóa (chưa có cơ chế xóa mềm); chặn xóa để không mất dấu vết truy cập.
+-- Văn bản HAN_CHE chỉ xóa được khi phiên làm việc đặt app.allow_delete_han_che = 'on' ([XVHC]: ứng dụng đặt SET LOCAL
+-- khi Quản trị viên xóa); lệnh DELETE trực tiếp trong SQL vẫn bị chặn. Nhật ký documents_access_log không có khóa ngoại
+-- tới văn bản nên dòng nhật ký được giữ lại.
 CREATE OR REPLACE FUNCTION prevent_delete_van_ban_han_che()
 RETURNS TRIGGER AS $$
 BEGIN
-    IF OLD.pham_vi = 'HAN_CHE' THEN
+    IF OLD.pham_vi = 'HAN_CHE' AND COALESCE(current_setting('app.allow_delete_han_che', true), '') <> 'on' THEN
         RAISE EXCEPTION 'Văn bản hạn chế (id=%) không được xóa.', OLD.id;
     END IF;
     RETURN OLD;

@@ -225,6 +225,7 @@
   },
   "floatingAI": {
     "title": "TLBM AI Assistant",
+    "dragTooltip": "Drag to move (Double-click to reset position)",
     "subtitle": "Workflow and business support",
     "welcome": "**Hello!**\n\nI am the **TLBM AI Assistant**, here to look up documents and authorized operational information.",
     "suggestionIncoming": "What is the incoming document process?",

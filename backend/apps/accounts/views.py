@@ -29,12 +29,10 @@ def _provision_alpaca_employee(username, user_info):
     pos_name = user_info.get("positionName") or ""
     dept_name = user_info.get("departmentName") or ""
 
+    # Chỉ khớp đúng tên (không phân biệt hoa thường): khớp một phần có thể gán nhầm chức vụ cao hơn và nhóm quyền cao hơn.
     position = None
     if pos_name:
-        position = (
-            Position.objects.filter(name__iexact=pos_name.strip()).first()
-            or Position.objects.filter(name__icontains=pos_name.strip()).first()
-        )
+        position = Position.objects.filter(name__iexact=pos_name.strip()).first()
     if not position:
         position = Position.objects.filter(name="Chuyên viên").first() or Position.objects.first()
 
@@ -266,6 +264,13 @@ def admin_set_password_view(request):
         return Response(
             {"success": False, "error": f"Không tìm thấy tài khoản '{target_username}'."},
             status=status.HTTP_404_NOT_FOUND,
+        )
+
+    # Mật khẩu superuser chỉ superuser mới đặt lại được (nhóm ADMIN có approve_password_reset_cbnv nhưng không đủ).
+    if target_user.is_superuser and not request.user.is_superuser:
+        return Response(
+            {"success": False, "error": "roles.messages.permissionDenied"},
+            status=status.HTTP_403_FORBIDDEN,
         )
 
     # [Điểm 5]: Kiểm tra chất lượng mật khẩu bằng password validation chuẩn Django

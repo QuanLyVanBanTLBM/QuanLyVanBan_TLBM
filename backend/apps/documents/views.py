@@ -9,7 +9,7 @@ Hỗ trợ 2 tầng ViewSets:
    - DocumentViewSet:   /api/documents/      (Hỗ trợ nguyên vẹn 100% frontend React và test suite)
 """
 
-from django.db import models
+from django.db import connection, models, transaction
 from django.db.models import Max, Q
 from django.http import HttpResponse
 import os
@@ -685,18 +685,30 @@ class DocumentViewSet(viewsets.ViewSet):
         instance = self._get_object_across_models(pk, record_log=False)
         user = request.user
 
-        if getattr(instance, "pham_vi", None) == PhamVi.HAN_CHE:
-            raise PermissionDenied("Văn bản hạn chế không được phép xóa.")
-
+        is_han_che = getattr(instance, "pham_vi", None) == PhamVi.HAN_CHE
         if not can_delete_document(user, instance):
+            if is_han_che:
+                raise PermissionDenied("Văn bản hạn chế không được phép xóa.")
             raise PermissionDenied("Bạn không có quyền xóa văn bản này. Quyền xóa chỉ dành cho Quản trị viên (Admin) hoặc Cán bộ được phân quyền.")
 
-        cleanup_replacement_links_on_delete(instance)
-        if hasattr(instance, "danhmuc"):
-            instance.danhmuc.all().delete()
-        if hasattr(instance, "hoso"):
-            instance.hoso.all().delete()
-        instance.delete()
+        with transaction.atomic():
+            if is_han_che:
+                # Văn bản hạn chế: Quản trị viên (can_delete_document) được xóa; trigger CSDL chỉ mở trong giao dịch này.
+                instance._allow_delete_han_che = True
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT set_config('app.allow_delete_han_che', 'on', true)")
+            cleanup_replacement_links_on_delete(instance)
+            if hasattr(instance, "danhmuc"):
+                instance.danhmuc.all().delete()
+            if hasattr(instance, "hoso"):
+                instance.hoso.all().delete()
+            try:
+                instance.delete()
+            finally:
+                if is_han_che:
+                    # Đóng lại ngay sau lệnh xóa, kể cả khi giao dịch ngoài (ATOMIC_REQUESTS, test) còn mở.
+                    with connection.cursor() as cursor:
+                        cursor.execute("SELECT set_config('app.allow_delete_han_che', 'off', true)")
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=["get"], url_path=r"attachments/(?P<tep_id>[0-9]+)/download")
