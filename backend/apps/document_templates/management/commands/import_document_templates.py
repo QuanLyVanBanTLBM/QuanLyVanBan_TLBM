@@ -177,11 +177,23 @@ class Command(BaseCommand):
                 if hien_thi not in dict(TaiLieuChiTiet.HIEN_THI_CHOICES):
                     hien_thi = "TAT_CA"
 
+                noi_ban_hanh = d.get("noi_ban_hanh") or None
+                don_vi_id = d.get("don_vi_id")
+                if not don_vi_id and noi_ban_hanh:
+                    try:
+                        from organizations.models import DonVi
+                        u = DonVi.objects.filter(ten__iexact=str(noi_ban_hanh).strip()).first()
+                        if u:
+                            don_vi_id = u.id
+                    except Exception:
+                        pass
+
                 defaults = {
                     "ky_hieu": d.get("ky_hieu") or None,
                     "tieu_de": tieu_de,
                     "ngay_dang": parse_date(d.get("ngay_dang")) or date.today(),
-                    "noi_ban_hanh": d.get("noi_ban_hanh") or None,
+                    "noi_ban_hanh": noi_ban_hanh,
+                    "don_vi_id": don_vi_id,
                     "hieu_luc": hieu_luc,
                     "ngay_het_hieu_luc": parse_date(d.get("ngay_het_hieu_luc")),
                     "link_thay_the": d.get("link_thay_the") or "",

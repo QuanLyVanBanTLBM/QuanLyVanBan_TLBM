@@ -348,7 +348,7 @@ class TaiLieuChiTietViewSet(viewsets.ModelViewSet):
         kwargs = {}
         if self.request.user and self.request.user.is_authenticated:
             kwargs['nguoi_tao'] = self.request.user
-            if 'don_vi_id' not in serializer.validated_data and hasattr(self.request.user, 'don_vi_id'):
+            if serializer.validated_data.get('don_vi_id') is None and hasattr(self.request.user, 'don_vi_id'):
                 kwargs['don_vi_id'] = getattr(self.request.user, 'don_vi_id')
         serializer.save(**kwargs)
 
