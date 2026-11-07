@@ -64,10 +64,52 @@ class TaiLieuChiTietFilter(django_filters.FilterSet):
             return queryset
         val = value.strip()
         search_field = self.data.get('search_field', 'all')
+
+        import re
+        from datetime import datetime
+
+        def parse_date_q(s):
+            clean = s.replace('-', '/').strip()
+            m_full = re.match(r'^(\d{1,2})/(\d{1,2})/(\d{4})$', clean)
+            if m_full:
+                d, m, y = int(m_full.group(1)), int(m_full.group(2)), int(m_full.group(3))
+                try:
+                    return Q(ngay_dang=datetime(y, m, d).date())
+                except ValueError:
+                    pass
+            m_iso = re.match(r'^(\d{4})-(\d{1,2})-(\d{1,2})$', s)
+            if m_iso:
+                y, m, d = int(m_iso.group(1)), int(m_iso.group(2)), int(m_iso.group(3))
+                try:
+                    return Q(ngay_dang=datetime(y, m, d).date())
+                except ValueError:
+                    pass
+            m_my = re.match(r'^(\d{1,2})/(\d{4})$', clean)
+            if m_my:
+                m, y = int(m_my.group(1)), int(m_my.group(2))
+                if 1 <= m <= 12:
+                    return Q(ngay_dang__month=m, ngay_dang__year=y)
+            m_dm = re.match(r'^(\d{1,2})/(\d{1,2})$', clean)
+            if m_dm:
+                d, m = int(m_dm.group(1)), int(m_dm.group(2))
+                if 1 <= m <= 12 and 1 <= d <= 31:
+                    return Q(ngay_dang__day=d, ngay_dang__month=m)
+            if re.match(r'^\d{4}$', s):
+                return Q(ngay_dang__year=int(s))
+            return None
+
+        date_q = parse_date_q(val)
+
         if search_field == 'title':
             return queryset.filter(tieu_de__icontains=val)
         elif search_field == 'code':
             return queryset.filter(ky_hieu__icontains=val)
+        elif search_field == 'date':
+            if date_q:
+                return queryset.filter(date_q)
+            from django.db.models.functions import Cast
+            from django.db.models import CharField
+            return queryset.annotate(ngay_dang_str=Cast('ngay_dang', output_field=CharField())).filter(ngay_dang_str__icontains=val)
         elif search_field == 'authority':
             return queryset.filter(noi_ban_hanh__icontains=val)
         elif search_field == 'author':
@@ -77,7 +119,8 @@ class TaiLieuChiTietFilter(django_filters.FilterSet):
             ).distinct()
         elif search_field == 'attachment':
             return queryset.filter(attachments__name__icontains=val, attachments__is_deleted=False).distinct()
-        return queryset.filter(
+
+        base_q = (
             Q(tieu_de__icontains=val) |
             Q(ky_hieu__icontains=val) |
             Q(noi_ban_hanh__icontains=val) |
@@ -85,4 +128,7 @@ class TaiLieuChiTietFilter(django_filters.FilterSet):
             Q(nguoi_tao__ho_ten__icontains=val) |
             Q(nguoi_tao__username__icontains=val) |
             Q(attachments__name__icontains=val, attachments__is_deleted=False)
-        ).distinct()
+        )
+        if date_q:
+            base_q = base_q | date_q
+        return queryset.filter(base_q).distinct()

@@ -43,7 +43,7 @@ const notifyMutation = () => {
   }
 };
 
-export type SearchScopeType = 'all' | 'title' | 'code' | 'authority' | 'author' | 'attachment';
+export type SearchScopeType = 'all' | 'title' | 'code' | 'date' | 'authority' | 'author' | 'attachment';
 
 interface PersistedResourceState {
   category?: string;
@@ -70,6 +70,7 @@ const SEARCH_FIELD_OPTIONS: { value: SearchScopeType; labelKey: string; icon: st
   { value: 'all', labelKey: 'searchScopeAll', icon: 'fa-solid fa-layer-group', placeholderKey: 'searchPlaceholderAll' },
   { value: 'title', labelKey: 'searchScopeTitle', icon: 'fa-solid fa-heading', placeholderKey: 'searchPlaceholderTitle' },
   { value: 'code', labelKey: 'searchScopeCode', icon: 'fa-solid fa-hashtag', placeholderKey: 'searchPlaceholderCode' },
+  { value: 'date', labelKey: 'searchScopeDate', icon: 'fa-regular fa-calendar-days', placeholderKey: 'searchPlaceholderDate' },
   { value: 'authority', labelKey: 'searchScopeAuthority', icon: 'fa-solid fa-building-columns', placeholderKey: 'searchPlaceholderAuthority' },
   { value: 'author', labelKey: 'searchScopeAuthor', icon: 'fa-solid fa-user-pen', placeholderKey: 'searchPlaceholderAuthor' },
   { value: 'attachment', labelKey: 'searchScopeAttachment', icon: 'fa-solid fa-paperclip', placeholderKey: 'searchPlaceholderAttachment' },
@@ -1157,10 +1158,38 @@ export default function ResourceManagementPage() {
           return normalizeSearchText(val).includes(normTerm);
         };
 
+        const checkDateMatch = (dateStr?: string | null) => {
+          if (!dateStr) return false;
+          const cleanDate = dateStr.trim();
+          const cleanTerm = rawTerm.replace(/-/g, '/');
+          const parts = cleanDate.split('-');
+          if (parts.length === 3) {
+            const [y, m, d] = parts;
+            const mNum = parseInt(m, 10);
+            const dNum = parseInt(d, 10);
+            const candidates = [
+              `${d}/${m}/${y}`,
+              `${dNum}/${mNum}/${y}`,
+              `${y}-${m}-${d}`,
+              `${m}/${y}`,
+              `${mNum}/${y}`,
+              `${d}/${m}`,
+              `${dNum}/${mNum}`,
+              y,
+            ];
+            if (candidates.some((c) => c.includes(cleanTerm) || cleanTerm.includes(c))) {
+              return true;
+            }
+          }
+          return cleanDate.includes(rawTerm);
+        };
+
         if (searchField === 'title') {
           if (!checkMatch(doc.tieu_de)) return false;
         } else if (searchField === 'code') {
           if (!checkMatch(doc.ky_hieu)) return false;
+        } else if (searchField === 'date') {
+          if (!checkDateMatch(doc.ngay_dang)) return false;
         } else if (searchField === 'authority') {
           if (!checkMatch(doc.noi_ban_hanh)) return false;
         } else if (searchField === 'author') {
@@ -1173,12 +1202,13 @@ export default function ResourceManagementPage() {
           // 'all': Tìm trên mọi trường
           const matchTitle = checkMatch(doc.tieu_de);
           const matchCode = checkMatch(doc.ky_hieu);
+          const matchDate = checkDateMatch(doc.ngay_dang);
           const matchAuthority = checkMatch(doc.noi_ban_hanh);
           const matchAuthor = checkMatch(doc.nguoi_tao_name);
           const matchNote = checkMatch(doc.ghi_chu);
           const matchSingle = checkMatch(doc.file_dinh_kem);
           const matchMultiple = (doc.attachments || []).some((att) => checkMatch(att.name));
-          if (!matchTitle && !matchCode && !matchAuthority && !matchAuthor && !matchNote && !matchSingle && !matchMultiple) {
+          if (!matchTitle && !matchCode && !matchDate && !matchAuthority && !matchAuthor && !matchNote && !matchSingle && !matchMultiple) {
             return false;
           }
         }
