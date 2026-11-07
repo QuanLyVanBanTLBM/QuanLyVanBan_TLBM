@@ -6,6 +6,8 @@ import TopSubNav from '@components/layout/TopSubNav';
 import MobileAssistiveTouch from '@components/layout/MobileAssistiveTouch';
 import FloatingAIBox from '@components/ai/FloatingAIBox';
 import AppFooter from '@components/layout/AppFooter';
+import ScreenLockModal from '@components/auth/ScreenLockModal';
+import useIdleTimer from '@hooks/useIdleTimer';
 import { ActivePageId } from '@app-types/navigation';
 import { ThemeMode } from '@app-types/theme';
 import { pathToPageId, pageIdToPath } from '@lib/routes';
@@ -47,6 +49,9 @@ export default function MainLayout({
 
   const currentActivePage = activePage || pathToPageId(location.pathname);
   const effectiveCommittedPage = committedPage || currentActivePage;
+
+  // Quản lý khóa màn hình bảo mật khi không thao tác
+  const { isLocked, unlock } = useIdleTimer();
 
   const handleNavigate = (pageId: ActivePageId) => {
     if (onNavigate) {
@@ -468,6 +473,9 @@ export default function MainLayout({
       {canUseAI && currentActivePage !== 'ai_assistant' && location.pathname !== '/ai-assistant' && (
         <FloatingAIBox onNavigate={handleNavigate} />
       )}
+
+      {/* 6. Màn hình khóa bảo mật phiên làm việc khi không thao tác */}
+      <ScreenLockModal isLocked={isLocked} onUnlock={unlock} />
     </div>
   );
 }
