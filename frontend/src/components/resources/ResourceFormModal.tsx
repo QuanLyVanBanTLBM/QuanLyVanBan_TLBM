@@ -1077,10 +1077,10 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
                   </div>
                   <input
                     id="field-ngay_dang"
-                    type="date"
+                    type="text"
                     readOnly
                     disabled
-                    value={formData.ngay_dang}
+                    value={formatDate(formData.ngay_dang)}
                     title={t('resourceManagement.postedDateFixedTooltip')}
                     className="w-full pl-8 pr-3 py-2 bg-surface-elevated/70 border border-border-subtle rounded-lg text-sm text-secondary cursor-not-allowed select-none font-medium opacity-90"
                   />

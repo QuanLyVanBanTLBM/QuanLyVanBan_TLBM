@@ -183,4 +183,30 @@ describe('ResourceFormModal Component', () => {
     // Kiểm tra thông báo phạm vi nội bộ hiển thị đúng đơn vị ban hành
     expect(screen.getByText(/Tài liệu chỉ hiển thị cho cán bộ nhân viên thuộc đơn vị: Ban Kiểm toán nội bộ/i)).toBeInTheDocument();
   });
+
+  it('formats posted date (ngay_dang) as dd/mm/yyyy in read-only input', () => {
+    render(
+      <ResourceFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+        categories={mockCategories}
+        types={mockTypes}
+        initialData={{
+          id: 100,
+          dm_tai_lieu: 1,
+          loai_tai_lieu: [1],
+          tieu_de: 'Tài liệu test ngày',
+          ngay_dang: '2026-10-24',
+          hieu_luc: 'CON_HIEU_LUC',
+          file_dinh_kem: '/media/test.pdf',
+          hien_thi: 'TAT_CA',
+        }}
+      />
+    );
+
+    const postedDateInput = document.getElementById('field-ngay_dang') as HTMLInputElement;
+    expect(postedDateInput).toBeInTheDocument();
+    expect(postedDateInput.value).toBe('24/10/2026');
+  });
 });

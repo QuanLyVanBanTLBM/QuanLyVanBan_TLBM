@@ -7,6 +7,7 @@ import { useTranslation } from '@i18n/translate';
 import { ConfirmationModal } from './ConfirmationModal';
 import { authService } from '@lib/authService';
 import { usePermissions } from '@lib/permissions';
+import { formatDate } from '@lib/dateUtils';
 
 export interface CategoryManagementModalProps {
   isOpen: boolean;
@@ -1204,7 +1205,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                                 </div>
                               </div>
                             </td>
-                            <td className="hidden md:table-cell px-3 py-3 text-secondary">{cat.ngay_lap || '-'}</td>
+                            <td className="hidden md:table-cell px-3 py-3 text-secondary">{formatDate(cat.ngay_lap)}</td>
                             <td className="hidden sm:table-cell px-3 py-3 text-center">
                               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-surface-elevated text-secondary border border-border-subtle">
                                 {t('resourceManagement.subtypesCount', { count: childCount })}
