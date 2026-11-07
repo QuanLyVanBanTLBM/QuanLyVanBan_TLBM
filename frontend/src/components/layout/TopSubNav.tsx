@@ -1,6 +1,6 @@
 import React from 'react';
 import { ActivePageId } from '@app-types/navigation';
-import { MAIN_MODULES } from '@lib/constants';
+import { useVisibleModules } from '@lib/navPermissions';
 import { useTranslation } from '@i18n/translate';
 
 export interface SubNavContentProps {
@@ -17,11 +17,12 @@ export function SubNavContent({
   isCompact = false,
 }: SubNavContentProps) {
   const { t } = useTranslation();
+  const visibleModules = useVisibleModules();
 
   // Phân hệ cha tương ứng với trang đang hiển thị
   const activeModule =
-    MAIN_MODULES.find((mod) => mod.subItems.some((item) => item.id === activePage)) ||
-    MAIN_MODULES[0];
+    visibleModules.find((mod) => mod.subItems.some((item) => item.id === activePage)) ||
+    visibleModules[0];
 
   const currentSubItem =
     activeModule.subItems.find((item) => item.id === activePage) || activeModule.subItems[0];
