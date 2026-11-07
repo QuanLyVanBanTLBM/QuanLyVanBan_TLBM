@@ -130,7 +130,6 @@ export default function ModernDashboardView({
   signingCount = 0,
   selectedYear = new Date().getFullYear(),
   availableYears = [2024, 2025, 2026],
-  yearlyComparison = [],
   onYearChange,
   incomingDocuments = [],
   outgoingDocuments = [],
