@@ -47,6 +47,8 @@ backend/media/
 media/
 storage/
 data/chroma_db/
+data/ai_settings.json
+data/pgdata/
 data/docs/*
 !data/docs/.gitkeep
 !data/docs/Folder_*
