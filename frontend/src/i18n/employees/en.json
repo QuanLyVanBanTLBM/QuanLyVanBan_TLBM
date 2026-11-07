@@ -30,7 +30,9 @@
       "exporting": "Exporting...",
       "changePassword": "Change Password",
       "editUsername": "Edit username",
-      "cancelUsernameEdit": "Cancel username editing"
+      "cancelUsernameEdit": "Cancel username editing",
+      "editBirthday": "Enter a new birthday",
+      "cancelBirthdayEdit": "Cancel birthday edit"
     },
     "table": {
       "employee": "Employee",
@@ -101,6 +103,7 @@
       "statusNotice": "Note: Changing to 'Resigned' automatically deactivates the login account.",
       "birthdayFormat": "Format: DD/MM/YYYY (Example: 15/06/2003)",
       "birthdayMaskedTooltip": "Other employees' birth years are hidden to protect personal information.",
+      "birthdayEditMasked": "The current birth year remains hidden. Enter a new birthday to update it.",
       "masked": "Masked",
       "groupsHidden": "Permission groups hidden due to privacy policy.",
       "selfEditNotice": "You are updating your own profile. Only contact info and birthday can be edited; organizational attributes are managed by Administrators."
