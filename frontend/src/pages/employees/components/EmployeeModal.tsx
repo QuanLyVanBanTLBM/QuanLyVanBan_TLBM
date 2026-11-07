@@ -80,6 +80,7 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
   const birthdayDateInputRef = useRef<HTMLInputElement>(null);
   const birthdayDateButtonRef = useRef<HTMLButtonElement>(null);
   const isSelfEditOnly = Boolean(initialData && !isAdmin);
+  const isBirthdayMasked = Boolean(initialData?.is_birthday_masked);
 
   const toDisplayDateString = (dateStr?: string | null): string => {
     if (!dateStr) return '';
@@ -121,7 +122,7 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
         username: initialData.username || '',
         password: '',
         ngay_sinh: initialData.is_birthday_masked
-          ? ''
+          ? initialData.ngay_sinh || ''
           : toDisplayDateString(initialData.ngay_sinh_iso || initialData.ngay_sinh),
         don_vi_id: initialData.don_vi_id ? String(initialData.don_vi_id) : '',
         chuc_vu_id: initialData.chuc_vu_id ? String(initialData.chuc_vu_id) : '',
@@ -373,7 +374,7 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
     }
 
     let isoBirthday: string | null = null;
-    if (formData.ngay_sinh) {
+    if (formData.ngay_sinh && !isBirthdayMasked) {
       isoBirthday = parseToIso(formData.ngay_sinh);
       if (!isoBirthday) {
         const msg = t('employees.import.errors.invalidBirthday', { value: formData.ngay_sinh });
@@ -404,7 +405,7 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
         payload = {
           email: formData.email.trim(),
           sdt: formData.sdt.trim(),
-          ...(formData.ngay_sinh ? { ngay_sinh: isoBirthday || formData.ngay_sinh } : {}),
+          ...(formData.ngay_sinh && !isBirthdayMasked ? { ngay_sinh: isoBirthday || formData.ngay_sinh } : {}),
         };
       } else {
         if (!initialData && !formData.chuc_vu_id) {
@@ -449,7 +450,7 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
         payload = {
           ho_ten: formData.ho_ten.trim(),
           email: formData.email.trim(),
-          ...(formData.ngay_sinh ? { ngay_sinh: isoBirthday || formData.ngay_sinh } : {}),
+          ...(formData.ngay_sinh && !isBirthdayMasked ? { ngay_sinh: isoBirthday || formData.ngay_sinh } : {}),
           don_vi_id: formData.don_vi_id ? Number(formData.don_vi_id) : null,
           chuc_vu_id: formData.chuc_vu_id ? Number(formData.chuc_vu_id) : null,
           chuc_danh: formData.chuc_danh.trim(),
@@ -916,6 +917,8 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                     type="text"
                     name="ngay_sinh"
                     value={formData.ngay_sinh}
+                    readOnly={isBirthdayMasked}
+                    title={isBirthdayMasked ? t('employees.hints.birthdayMaskedTooltip') : undefined}
                     onChange={(e) => {
                       let val = e.target.value.replace(/[^\d/]/g, '');
                       if (/^\d{2}$/.test(val) && !formData.ngay_sinh.endsWith('/')) {
@@ -930,11 +933,11 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                     }}
                     placeholder="DD/MM/YYYY"
                     maxLength={10}
-                    className="w-full pl-3.5 pr-10 py-2 text-sm bg-surface-elevated border border-border rounded-lg text-main placeholder-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+                    className={`w-full pl-3.5 pr-10 py-2 text-sm border border-border rounded-lg placeholder-muted transition-all ${isBirthdayMasked ? 'bg-surface text-muted cursor-not-allowed' : 'bg-surface-elevated text-main focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary'}`}
                     required={!initialData}
                   />
                   <div className="pointer-events-none absolute inset-y-0 left-0 flex w-full items-center justify-end text-muted">
-                    <button
+                    {!isBirthdayMasked ? <button
                       ref={birthdayDateButtonRef}
                       type="button"
                       aria-label={t('employees.fields.birthday')}
@@ -943,11 +946,18 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                       className="pointer-events-auto z-10 mr-2.5 inline-flex h-8 w-8 items-center justify-center rounded-md hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                     >
                       <i aria-hidden="true" className="fa-solid fa-calendar-days text-sm" />
-                    </button>
+                    </button> : <span
+                      className="pointer-events-auto z-10 mr-2.5 inline-flex h-8 w-8 items-center justify-center text-warning"
+                      title={t('employees.hints.birthdayMaskedTooltip')}
+                      aria-label={t('employees.hints.birthdayMaskedTooltip')}
+                    >
+                      <i aria-hidden="true" className="fa-solid fa-lock text-sm" />
+                    </span>}
                     <input
                       ref={birthdayDateInputRef}
                       type="date"
                       value={parseToIso(formData.ngay_sinh) || ''}
+                      disabled={isBirthdayMasked}
                       onChange={(e) => {
                         const iso = e.target.value;
                         if (iso) {
