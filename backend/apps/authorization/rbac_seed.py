@@ -74,9 +74,10 @@ PERMISSIONS = [('Xem danh sách đơn vị/phòng ban', 'view_donvi', 'Đơn v�
 GROUPS = [('Văn thư', 'VT'), ('Chuyên viên', 'CV'), ('Trưởng phòng', 'TP'), ('Ban Giám đốc', 'BGD'), ('Quản trị hệ thống', 'ADMIN')]
 
 # tên nhóm -> danh sách codename
-# Văn thư: 26 quyền ở đây + change_hieu_luc_vanbanden/vanbandi (0011) + view_all_trinhky (0013)
+# Văn thư: 28 quyền ở đây + change_hieu_luc_vanbanden/vanbandi (0011) + view_all_trinhky (0013)
 # + view_het_hieu_luc_vanbanden/vanbandi (0016_het_hieu_luc_permissions)
-# + add_han_che_vanbanden/vanbandi (0017_them_van_ban_han_che_permissions) = 33 quyền;
+# + add_han_che_vanbanden/vanbandi (0017_them_van_ban_han_che_permissions) = 35 quyền
+# (28 gồm add_hoso, change_hoso theo bảng Nhóm 3; migration 0019_van_thu_them_sua_ho_so bổ sung cho DB đã seed);
 # không sửa/xóa văn bản đến/đi, không gửi mail toàn hệ thống. Migration 0014_van_thu_permissions đặt lại nhóm VT trên DB đã seed.
 GROUP_PERMISSIONS = {'Văn thư': ['view_donvi',
              'view_chucvu',
@@ -91,6 +92,8 @@ GROUP_PERMISSIONS = {'Văn thư': ['view_donvi',
              'add_vanbandi',
              'import_vanbandi',
              'view_hoso',
+             'add_hoso',
+             'change_hoso',
              'view_tailieu',
              'view_trinhky',
              'add_trinhky',
