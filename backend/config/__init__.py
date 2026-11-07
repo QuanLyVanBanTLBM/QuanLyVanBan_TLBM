@@ -22,6 +22,7 @@ COLLECTION_NAME = os.getenv("COLLECTION_NAME", "smart_documents")
 
 MODEL_PROVIDER = os.getenv("MODEL_PROVIDER", "gemini")  # options: gemini, openai
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "models/gemini-embedding-001")
 LLM_MODEL = os.getenv("LLM_MODEL", "gemini-3.8-flash")
 VISION_MODEL = os.getenv("VISION_MODEL", LLM_MODEL)
@@ -72,3 +73,10 @@ SOURCE_SCORE_THRESHOLD = 0.15
 
 CHAT_HISTORY_MAX_TURNS = int(os.getenv("CHAT_HISTORY_MAX_TURNS", "4"))
 CHAT_HISTORY_MAX_CHARS = int(os.getenv("CHAT_HISTORY_MAX_CHARS", "800"))
+
+try:
+    from .celery import app as celery_app
+    __all__ = ("celery_app",)
+except ImportError:
+    celery_app = None
+    __all__ = ()

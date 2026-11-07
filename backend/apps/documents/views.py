@@ -9,7 +9,7 @@ Hỗ trợ 2 tầng ViewSets:
    - DocumentViewSet:   /api/documents/      (Hỗ trợ nguyên vẹn 100% frontend React và test suite)
 """
 
-from django.db import models
+from django.db import connection, models, transaction
 from django.db.models import Max, Q
 from django.http import HttpResponse
 import os
@@ -29,6 +29,7 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
+from authorization.permissions import is_system_admin
 from .filters import (
     DocumentFilter,
     VanBanDenFilter,
@@ -60,6 +61,7 @@ from .selectors import (
     van_ban_xem_duoc,
     la_nguoi_xem_duoc,
     log_access,
+    co_quyen_them_han_che,
     co_quyen_xu_ly_het_hieu_luc,
 )
 from .serializers import (
@@ -117,12 +119,7 @@ def is_admin_user(user):
     """Kiểm tra người dùng có quyền Quản trị viên (Admin) hay không."""
     if not user or not user.is_authenticated:
         return False
-    if user.is_staff or user.is_superuser:
-        return True
-    profile = getattr(user, "profile", None)
-    if profile and profile.role == "admin":
-        return True
-    return False
+    return bool(user.is_staff or is_system_admin(user))
 
 
 def can_edit_document(user, instance):
@@ -132,25 +129,22 @@ def can_edit_document(user, instance):
 
     is_mat = getattr(instance, "loai", None) == "MAT" or (getattr(instance, "_meta", None) and instance._meta.model_name == "vanbanmat")
 
-    # Văn bản Đến/Đi đã hết hiệu lực (cả NOI_BO lẫn HAN_CHE): CHỈ superuser hoặc quyền manage_het_hieu_luc_*
-    # (nhóm ADMIN có sẵn) mới có quyền chỉnh sửa; người tạo, cán bộ chỉ định không có quyền thì không sửa được.
+    model_name = instance._meta.model_name
     is_expired = getattr(instance, "hieu_luc", None) in (HieuLuc.HET_HIEU_LUC, HieuLuc.HET_VA_THAY_THE)
     if is_expired and not is_mat:
-        return co_quyen_xu_ly_het_hieu_luc(user, instance._meta.model_name)
+        from .selectors import co_quyen_xu_ly_het_hieu_luc
+        return co_quyen_xu_ly_het_hieu_luc(user, model_name)
 
-    # Văn bản Mật / Hạn chế: CHỈ Quản trị viên (Admin) hoặc Người tạo mới có quyền chỉnh sửa. Cán bộ nhận chỉ có quyền Xem (Read-Only).
     if is_mat or getattr(instance, "pham_vi", None) == PhamVi.HAN_CHE:
         is_real_admin = is_admin_user(user)
         is_creator = (getattr(instance, "nguoi_tao_id", None) == user.pk) or (getattr(instance, "nguoi_tao", None) == user)
         return bool(is_real_admin or is_creator)
-
     # Văn bản Đến/Đi còn hiệu lực: Admin hoặc Cán bộ được chỉ định (người tạo) có quyền chỉnh sửa.
     if is_admin_user(user):
         return True
     if getattr(instance, "nguoi_tao_id", None) == user.pk or getattr(instance, "nguoi_tao", None) == user:
         return True
 
-    model_name = instance._meta.model_name
     try:
         if (
             user.has_perm(f"documents.change_{model_name}")
@@ -258,6 +252,20 @@ def can_change_hieu_luc(user, loai="DEN"):
     except Exception:
         pass
 
+    profile = getattr(user, "profile", None)
+    if profile and getattr(profile, "role", None) in ("admin", "vt", "vanthu", "van_thu"):
+        return True
+
+    if getattr(user, "role", None) in ("admin", "vt", "vanthu", "van_thu"):
+        return True
+
+    try:
+        user_groups = {g.name.upper() for g in user.groups.all()}
+        if "ADMIN" in user_groups:
+            return True
+    except Exception:
+        pass
+
     return False
 
 
@@ -277,12 +285,13 @@ def can_view_read_log(user, instance):
     if getattr(instance, "nguoi_tao_id", None) == user.pk or getattr(instance, "nguoi_tao", None) == user:
         return True
 
-    # Cán bộ là người nhận được chỉ định tiếp cận văn bản hạn chế / mật
-    try:
-        if hasattr(instance, "nguoi_nhan") and instance.nguoi_nhan.filter(id=user.pk).exists():
-            return True
-    except Exception:
-        pass
+    # Với văn bản hạn chế / mật: CHỈ Quản trị viên, Người tạo, hoặc Cán bộ có quyền thêm/quản lý vb hạn chế mới được xem lịch sử người đọc.
+    # Cán bộ được chỉ định (nguoi_nhan) chỉ có duy nhất quyền đọc nội dung văn bản, tuyệt đối không được xem lịch sử người đọc.
+    is_mat = getattr(instance, "loai", None) == "MAT" or (getattr(instance, "_meta", None) and instance._meta.model_name == "vanbanmat")
+    model_name = getattr(instance, "document_kind", None) or getattr(getattr(instance, "_meta", None), "model_name", "vanbanden")
+    if is_mat or getattr(instance, "pham_vi", None) == PhamVi.HAN_CHE:
+        from .selectors import co_quyen_them_han_che
+        return bool(co_quyen_them_han_che(user, model_name))
 
     model_name = getattr(instance, "document_kind", None) or getattr(getattr(instance, "_meta", None), "model_name", "vanbanden")
     perm_code = "view_read_log_vanbandi" if str(model_name).lower() in ("vanbandi", "di") else "view_read_log_vanbanden"
@@ -321,8 +330,8 @@ def can_send_mail_all(user, loai="DEN"):
         return True
 
     try:
-        user_groups = {g.name.lower() for g in user.groups.all()}
-        if any(vt in user_groups for vt in ("vt", "văn thư", "van thu", "vanthu", "admin", "quản trị")):
+        user_groups = {g.name.upper() for g in user.groups.all()}
+        if "ADMIN" in user_groups:
             return True
     except Exception:
         pass
@@ -351,16 +360,14 @@ def can_delete_document(user, instance):
 
     is_mat = getattr(instance, "loai", None) == "MAT" or (getattr(instance, "_meta", None) and instance._meta.model_name == "vanbanmat")
 
-    # Văn bản Đến/Đi đã hết hiệu lực (cả NOI_BO lẫn HAN_CHE): CHỈ superuser hoặc quyền manage_het_hieu_luc_*
-    # (nhóm ADMIN có sẵn) mới có quyền xóa; người tạo, cán bộ chỉ định không có quyền thì không xóa được.
+    model_name = instance._meta.model_name
     is_expired = getattr(instance, "hieu_luc", None) in (HieuLuc.HET_HIEU_LUC, HieuLuc.HET_VA_THAY_THE)
     if is_expired and not is_mat:
-        return co_quyen_xu_ly_het_hieu_luc(user, instance._meta.model_name)
+        from .selectors import co_quyen_xu_ly_het_hieu_luc
+        return co_quyen_xu_ly_het_hieu_luc(user, model_name)
 
-    # Văn bản Hạn chế (HAN_CHE) hoặc Văn bản Mật: CHỈ Quản trị viên (Admin) mới có quyền xóa. Cán bộ thường / Cán bộ chỉ định / Người tạo không được phép xóa.
     if is_mat or getattr(instance, "pham_vi", None) == PhamVi.HAN_CHE:
-        return is_admin_user(user)
-
+        return False
     # Văn bản Đến/Đi còn hiệu lực: Admin hoặc Cán bộ được chỉ định (người tạo) có quyền xóa
     if is_admin_user(user):
         return True
@@ -555,6 +562,16 @@ class DocumentViewSet(viewsets.ViewSet):
         if not can_create_document(request.user, loai):
             raise PermissionDenied("Bạn không có quyền tạo văn bản mới. Vui lòng liên hệ Quản trị viên để được cấp quyền.")
 
+        # Văn bản Đến/Đi phạm vi Hạn chế cần quyền riêng add_han_che_vanbanden/vanbandi (Văn bản Mật có luồng riêng).
+        if (
+            serializer.validated_data.get("pham_vi") == PhamVi.HAN_CHE
+            and str(loai).upper() not in ("MAT", "VANBANMAT")
+            and not co_quyen_them_han_che(
+                request.user, "vanbandi" if str(loai).upper() in ("DI", "VANBANDI") else "vanbanden"
+            )
+        ):
+            raise PermissionDenied("Bạn không có quyền thêm văn bản hạn chế. Vui lòng liên hệ Quản trị viên để được cấp quyền.")
+
         nam = serializer.validated_data.get("nam", timezone.now().year)
 
         if str(loai).upper() in ("MAT", "VANBANMAT"):
@@ -602,14 +619,20 @@ class DocumentViewSet(viewsets.ViewSet):
         validate_attachment_files(request)
         instance = self._get_object_across_models(pk, record_log=False)
         user = request.user
-        profile = getattr(user, "profile", None)
-        is_real_admin = bool(user.is_superuser or (profile and getattr(profile, "role", None) == "admin") or getattr(user, "username", "") in ("admin", "quantri"))
+        is_real_admin = is_system_admin(user)
 
         if getattr(instance, "pham_vi", None) == PhamVi.HAN_CHE and not is_real_admin and instance.nguoi_tao != user:
             raise PermissionDenied("Người được chỉ định xem văn bản hạn chế chỉ có quyền xem, không được phép chỉnh sửa.")
 
-        if not can_edit_document(user, instance):
+        has_full_edit = can_edit_document(user, instance)
+        has_hieu_luc_only = can_change_hieu_luc(user, getattr(instance, "loai", "DEN"))
+        if not has_full_edit and not has_hieu_luc_only:
             raise PermissionDenied("Bạn không có quyền chỉnh sửa văn bản này. Chỉ Quản trị viên, Người tạo hoặc Cán bộ được cấp quyền mới được phép chỉnh sửa.")
+        if not has_full_edit and has_hieu_luc_only:
+            allowed_fields = {"hieu_luc", "ngay_het_hieu_luc", "link_thay_the", "id", "loai"}
+            modified_fields = set(request.data.keys()) - allowed_fields
+            if modified_fields:
+                raise PermissionDenied("Bạn chỉ có quyền thay đổi trạng thái hiệu lực của văn bản.")
 
         old_link = (instance.link_thay_the or "").strip()
         old_so_hieu = (instance.so_hieu or "").strip()
@@ -662,18 +685,30 @@ class DocumentViewSet(viewsets.ViewSet):
         instance = self._get_object_across_models(pk, record_log=False)
         user = request.user
 
-        if getattr(instance, "pham_vi", None) == PhamVi.HAN_CHE:
-            raise PermissionDenied("Văn bản hạn chế không được phép xóa.")
-
+        is_han_che = getattr(instance, "pham_vi", None) == PhamVi.HAN_CHE
         if not can_delete_document(user, instance):
+            if is_han_che:
+                raise PermissionDenied("Văn bản hạn chế không được phép xóa.")
             raise PermissionDenied("Bạn không có quyền xóa văn bản này. Quyền xóa chỉ dành cho Quản trị viên (Admin) hoặc Cán bộ được phân quyền.")
 
-        cleanup_replacement_links_on_delete(instance)
-        if hasattr(instance, "danhmuc"):
-            instance.danhmuc.all().delete()
-        if hasattr(instance, "hoso"):
-            instance.hoso.all().delete()
-        instance.delete()
+        with transaction.atomic():
+            if is_han_che:
+                # Văn bản hạn chế: Quản trị viên (can_delete_document) được xóa; trigger CSDL chỉ mở trong giao dịch này.
+                instance._allow_delete_han_che = True
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT set_config('app.allow_delete_han_che', 'on', true)")
+            cleanup_replacement_links_on_delete(instance)
+            if hasattr(instance, "danhmuc"):
+                instance.danhmuc.all().delete()
+            if hasattr(instance, "hoso"):
+                instance.hoso.all().delete()
+            try:
+                instance.delete()
+            finally:
+                if is_han_che:
+                    # Đóng lại ngay sau lệnh xóa, kể cả khi giao dịch ngoài (ATOMIC_REQUESTS, test) còn mở.
+                    with connection.cursor() as cursor:
+                        cursor.execute("SELECT set_config('app.allow_delete_han_che', 'off', true)")
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=["get"], url_path=r"attachments/(?P<tep_id>[0-9]+)/download")
@@ -956,8 +991,15 @@ class VanBanDenViewSet(viewsets.ModelViewSet):
         obj = VanBanDen.objects.filter(pk=pk).first()
         if not obj:
             raise NotFound(f"Không tìm thấy văn bản với ID {pk}.")
-        if not can_edit_document(request.user, obj):
-            raise PermissionDenied("Bạn không có quyền chỉnh sửa văn bản này.")
+        has_full_edit = can_edit_document(request.user, obj)
+        has_hieu_luc_only = can_change_hieu_luc(request.user, "DEN")
+        if not has_full_edit and not has_hieu_luc_only:
+            raise PermissionDenied("Bạn không có quyền chỉnh sửa văn bản này. Chỉ Quản trị viên, Người tạo hoặc Cán bộ được cấp quyền mới được phép chỉnh sửa.")
+        if not has_full_edit and has_hieu_luc_only:
+            allowed_fields = {"hieu_luc", "ngay_het_hieu_luc", "link_thay_the", "id", "loai"}
+            modified_fields = set(request.data.keys()) - allowed_fields
+            if modified_fields:
+                raise PermissionDenied("Bạn chỉ có quyền thay đổi trạng thái hiệu lực của văn bản.")
         return super().update(request, *args, **kwargs)
 
     def partial_update(self, request, *args, **kwargs):
@@ -965,8 +1007,15 @@ class VanBanDenViewSet(viewsets.ModelViewSet):
         obj = VanBanDen.objects.filter(pk=pk).first()
         if not obj:
             raise NotFound(f"Không tìm thấy văn bản với ID {pk}.")
-        if not can_edit_document(request.user, obj):
-            raise PermissionDenied("Bạn không có quyền chỉnh sửa văn bản này.")
+        has_full_edit = can_edit_document(request.user, obj)
+        has_hieu_luc_only = can_change_hieu_luc(request.user, "DEN")
+        if not has_full_edit and not has_hieu_luc_only:
+            raise PermissionDenied("Bạn không có quyền chỉnh sửa văn bản này. Chỉ Quản trị viên, Người tạo hoặc Cán bộ được cấp quyền mới được phép chỉnh sửa.")
+        if not has_full_edit and has_hieu_luc_only:
+            allowed_fields = {"hieu_luc", "ngay_het_hieu_luc", "link_thay_the", "id", "loai"}
+            modified_fields = set(request.data.keys()) - allowed_fields
+            if modified_fields:
+                raise PermissionDenied("Bạn chỉ có quyền thay đổi trạng thái hiệu lực của văn bản.")
         return super().partial_update(request, *args, **kwargs)
 
     def create(self, request, *args, **kwargs):
@@ -1035,8 +1084,15 @@ class VanBanDiViewSet(viewsets.ModelViewSet):
         obj = VanBanDi.objects.filter(pk=pk).first()
         if not obj:
             raise NotFound(f"Không tìm thấy văn bản với ID {pk}.")
-        if not can_edit_document(request.user, obj):
-            raise PermissionDenied("Bạn không có quyền chỉnh sửa văn bản này.")
+        has_full_edit = can_edit_document(request.user, obj)
+        has_hieu_luc_only = can_change_hieu_luc(request.user, "DI")
+        if not has_full_edit and not has_hieu_luc_only:
+            raise PermissionDenied("Bạn không có quyền chỉnh sửa văn bản này. Chỉ Quản trị viên, Người tạo hoặc Cán bộ được cấp quyền mới được phép chỉnh sửa.")
+        if not has_full_edit and has_hieu_luc_only:
+            allowed_fields = {"hieu_luc", "ngay_het_hieu_luc", "link_thay_the", "id", "loai"}
+            modified_fields = set(request.data.keys()) - allowed_fields
+            if modified_fields:
+                raise PermissionDenied("Bạn chỉ có quyền thay đổi trạng thái hiệu lực của văn bản.")
         return super().update(request, *args, **kwargs)
 
     def partial_update(self, request, *args, **kwargs):
@@ -1044,8 +1100,15 @@ class VanBanDiViewSet(viewsets.ModelViewSet):
         obj = VanBanDi.objects.filter(pk=pk).first()
         if not obj:
             raise NotFound(f"Không tìm thấy văn bản với ID {pk}.")
-        if not can_edit_document(request.user, obj):
-            raise PermissionDenied("Bạn không có quyền chỉnh sửa văn bản này.")
+        has_full_edit = can_edit_document(request.user, obj)
+        has_hieu_luc_only = can_change_hieu_luc(request.user, "DI")
+        if not has_full_edit and not has_hieu_luc_only:
+            raise PermissionDenied("Bạn không có quyền chỉnh sửa văn bản này. Chỉ Quản trị viên, Người tạo hoặc Cán bộ được cấp quyền mới được phép chỉnh sửa.")
+        if not has_full_edit and has_hieu_luc_only:
+            allowed_fields = {"hieu_luc", "ngay_het_hieu_luc", "link_thay_the", "id", "loai"}
+            modified_fields = set(request.data.keys()) - allowed_fields
+            if modified_fields:
+                raise PermissionDenied("Bạn chỉ có quyền thay đổi trạng thái hiệu lực của văn bản.")
         return super().partial_update(request, *args, **kwargs)
 
     def create(self, request, *args, **kwargs):

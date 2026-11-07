@@ -45,8 +45,6 @@ PERMISSIONS = [('Xem danh sách đơn vị/phòng ban', 'view_donvi', 'Đơn v�
  ('Lập/Thêm hồ sơ', 'add_hoso', 'Hồ sơ'),
  ('Sửa hồ sơ', 'change_hoso', 'Hồ sơ'),
  ('Xóa hồ sơ', 'delete_hoso', 'Hồ sơ'),
- ('Mở/Đóng danh mục hồ sơ', 'toggle_status_hoso', 'Hồ sơ'),
- ('Đưa văn bản vào / loại ra khỏi hồ sơ điện tử', 'manage_documents_hoso', 'Hồ sơ'),
  ('Xem tài liệu, biểu mẫu', 'view_tailieu', 'Tài liệu, biểu mẫu'),
  ('Thêm tài liệu, biểu mẫu', 'add_tailieu', 'Tài liệu, biểu mẫu'),
  ('Sửa tài liệu, biểu mẫu', 'change_tailieu', 'Tài liệu, biểu mẫu'),
@@ -70,15 +68,15 @@ PERMISSIONS = [('Xem danh sách đơn vị/phòng ban', 'view_donvi', 'Đơn v�
  ('Sửa/Hủy lịch do chính mình đặt', 'change_own_datphonghop', 'Đặt phòng họp'),
  ('Sửa/Hủy mọi lịch đặt phòng (QT)', 'change_any_datphonghop', 'Đặt phòng họp'),
  ('Xem danh sách sinh nhật', 'view_sinhnhat', 'Sinh nhật'),
- ('Gửi lời chúc (thủ công)', 'send_wish_sinhnhat', 'Sinh nhật'),
  ('Sử dụng chatbot (chỉ trả lời nội dung người hỏi có quyền Xem)', 'use_aiassistant', 'Chatbox AI')]
 
 # (name, ma_nhom_quyen)
 GROUPS = [('Văn thư', 'VT'), ('Chuyên viên', 'CV'), ('Trưởng phòng', 'TP'), ('Ban Giám đốc', 'BGD'), ('Quản trị hệ thống', 'ADMIN')]
 
 # tên nhóm -> danh sách codename
-# Văn thư: 27 quyền ở đây + change_hieu_luc_vanbanden/vanbandi (0011) + view_all_trinhky (0013)
-# + view_het_hieu_luc_vanbanden/vanbandi (0016_het_hieu_luc_permissions) = 32 quyền;
+# Văn thư: 26 quyền ở đây + change_hieu_luc_vanbanden/vanbandi (0011) + view_all_trinhky (0013)
+# + view_het_hieu_luc_vanbanden/vanbandi (0016_het_hieu_luc_permissions)
+# + add_han_che_vanbanden/vanbandi (0017_them_van_ban_han_che_permissions) = 33 quyền;
 # không sửa/xóa văn bản đến/đi, không gửi mail toàn hệ thống. Migration 0014_van_thu_permissions đặt lại nhóm VT trên DB đã seed.
 GROUP_PERMISSIONS = {'Văn thư': ['view_donvi',
              'view_chucvu',
@@ -105,7 +103,6 @@ GROUP_PERMISSIONS = {'Văn thư': ['view_donvi',
              'add_datphonghop',
              'change_own_datphonghop',
              'view_sinhnhat',
-             'send_wish_sinhnhat',
              'use_aiassistant'],
  'Chuyên viên': ['view_donvi',
                  'view_chucvu',
@@ -127,7 +124,6 @@ GROUP_PERMISSIONS = {'Văn thư': ['view_donvi',
                  'add_datphonghop',
                  'change_own_datphonghop',
                  'view_sinhnhat',
-                 'send_wish_sinhnhat',
                  'use_aiassistant'],
  'Trưởng phòng': ['view_donvi',
                   'view_chucvu',
@@ -153,7 +149,6 @@ GROUP_PERMISSIONS = {'Văn thư': ['view_donvi',
                   'add_datphonghop',
                   'change_own_datphonghop',
                   'view_sinhnhat',
-                  'send_wish_sinhnhat',
                   'use_aiassistant'],
  'Ban Giám đốc': ['view_donvi',
                   'view_chucvu',
@@ -181,7 +176,6 @@ GROUP_PERMISSIONS = {'Văn thư': ['view_donvi',
                   'add_datphonghop',
                   'change_own_datphonghop',
                   'view_sinhnhat',
-                  'send_wish_sinhnhat',
                   'use_aiassistant'],
  'Quản trị hệ thống': ['view_donvi',
                        'add_donvi',
@@ -224,8 +218,6 @@ GROUP_PERMISSIONS = {'Văn thư': ['view_donvi',
                        'add_hoso',
                        'change_hoso',
                        'delete_hoso',
-                       'toggle_status_hoso',
-                       'manage_documents_hoso',
                        'view_tailieu',
                        'add_tailieu',
                        'change_tailieu',
@@ -249,7 +241,6 @@ GROUP_PERMISSIONS = {'Văn thư': ['view_donvi',
                        'change_own_datphonghop',
                        'change_any_datphonghop',
                        'view_sinhnhat',
-                       'send_wish_sinhnhat',
                        'use_aiassistant']}
 
 # Quyền SQL_Fix4 chưa có nhưng Issue #20/#21/#22 yêu cầu: bổ sung qua migration (idempotent), gán cho nhóm Quản trị hệ thống.

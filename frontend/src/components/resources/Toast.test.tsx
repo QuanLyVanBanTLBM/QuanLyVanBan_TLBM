@@ -38,4 +38,20 @@ describe('Toast Component', () => {
 
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it('translates raw roles.messages.permissionDenied and replaces storage error title with permission denied title', () => {
+    const mockToast: ToastNotification = {
+      id: 3,
+      message: 'roles.messages.permissionDenied',
+      title: 'Lỗi lưu trữ',
+      type: 'danger',
+    };
+
+    render(<Toast toast={mockToast} onClose={vi.fn()} />);
+
+    expect(screen.queryByText('roles.messages.permissionDenied')).not.toBeInTheDocument();
+    expect(screen.getByText('Bạn không có quyền thực hiện thao tác này.')).toBeInTheDocument();
+    expect(screen.queryByText('Lỗi lưu trữ')).not.toBeInTheDocument();
+    expect(screen.getByText('Từ chối quyền hạn')).toBeInTheDocument();
+  });
 });

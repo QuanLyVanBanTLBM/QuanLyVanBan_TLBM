@@ -96,3 +96,34 @@ class AnhChuKyCaNhanApiTests(TrinhKyBase):
         self.assertEqual(res_del.status_code, 204)
         self.assertFalse(SigningUserSignature.objects.filter(nguoi_dung=self.u).exists())
         self.assertIsNone(to_chuc.anh_chu_ky(self.u))
+
+
+class AnhChuKyTepMatTests(TrinhKyBase):
+    """Bản ghi ảnh chữ ký còn nhưng tệp không còn: cờ có ảnh phải là False, khớp với 404 của tệp preview."""
+
+    def setUp(self):
+        super().setUp()
+        self.u = User.objects.create_user("user_ky_2")
+        cap_quyen(self.u, "sign_trinhky", "view_trinhky")
+        self.client_u = self.client_cua(self.u)
+
+    def test_ban_ghi_con_nhung_tep_mat(self):
+        from signing.storage import get_storage
+
+        png = _anh_png_bytes()
+        f = SimpleUploadedFile("chuky.png", png, content_type="image/png")
+        self.client_u.post(f"{BASE}/", {"tep": f}, format="multipart")
+        sig = SigningUserSignature.objects.get(nguoi_dung=self.u)
+        self.assertTrue(to_chuc.co_anh_chu_ky(self.u))
+        get_storage().delete(sig.vi_tri_tep)
+
+        self.assertFalse(to_chuc.co_anh_chu_ky(self.u))
+        self.assertFalse(self.client_u.get("/api/v1/signing/toi/").data["co_anh_chu_ky"])
+        self.assertFalse(self.client_u.get(f"{BASE}/").data["co_anh"])
+        self.assertEqual(self.client_u.get(f"{BASE}/tep/").status_code, 404)
+
+    def test_ban_ghi_tro_toi_vi_tri_khong_ton_tai(self):
+        SigningUserSignature.objects.create(
+            nguoi_dung=self.u, vi_tri_tep="anh_chu_ky_nguoi_dung/khong/ton/tai.png", ma_bam="0" * 64, dung_luong_bytes=1)
+        self.assertFalse(to_chuc.co_anh_chu_ky(self.u))
+        self.assertFalse(self.client_u.get("/api/v1/signing/toi/").data["co_anh_chu_ky"])

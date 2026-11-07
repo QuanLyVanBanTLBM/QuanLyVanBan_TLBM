@@ -1,5 +1,6 @@
 import calendar
-from datetime import date
+from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 from django.conf import settings
 from django.core import signing
 from django.core.paginator import Paginator
@@ -9,10 +10,12 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
-from authorization.permissions import require_permission
+from authorization.permissions import is_system_admin, require_permission
 from accounts.models import Employee
 from .models import BirthdayEmailLog, BirthdayEmailStatus
 from .services import is_birthday_on_date, load_birthday_card_token, serialize_staff_birthday
+
+VIETNAM_TIME_ZONE = ZoneInfo("Asia/Ho_Chi_Minh")
 
 
 def serialize_email_log(log: BirthdayEmailLog) -> dict:
@@ -23,7 +26,7 @@ def serialize_email_log(log: BirthdayEmailLog) -> dict:
         "position": log.employee.chuc_vu.name if log.employee.chuc_vu else "",
         "department": log.employee.don_vi.ten if log.employee.don_vi else "",
         "sent_date": log.sent_date.strftime("%d/%m/%Y"),
-        "sent_at": timezone.localtime(log.sent_at).strftime("%d/%m/%Y %H:%M:%S") if log.sent_at else None,
+        "sent_at": timezone.localtime(log.sent_at, VIETNAM_TIME_ZONE).strftime("%d/%m/%Y %H:%M:%S") if log.sent_at else None,
         "recipient_email": log.recipient_email,
         "subject": log.subject,
         "card_template": log.card_template,
@@ -33,6 +36,15 @@ def serialize_email_log(log: BirthdayEmailLog) -> dict:
         "error_message": log.error_message or "",
         "smtp_response_code": log.smtp_response_code or "",
     }
+
+
+def _local_day_bounds(target_date: date) -> tuple[datetime, datetime]:
+    start = timezone.make_aware(datetime.combine(target_date, time.min), VIETNAM_TIME_ZONE)
+    end = timezone.make_aware(
+        datetime.combine(target_date + timedelta(days=1), time.min),
+        VIETNAM_TIME_ZONE,
+    )
+    return start, end
 
 
 @api_view(["GET"])
@@ -205,31 +217,64 @@ def birthday_card_api(request):
 def birthday_email_logs_api(request):
     """
     API xem nhật ký gửi email chúc mừng sinh nhật tự động.
-    Tạm thời chỉ superuser được xem cho đến khi DDL có quyền riêng.
+    `date=YYYY-MM-DD` lọc theo khoảng `sent_at` của ngày tại múi giờ dự án; mặc định là ngày hiện tại.
+    `month`/`year` tiếp tục được hỗ trợ cho các client cũ.
+    Tạm thời chỉ quản trị hệ thống (superuser, nhóm ADMIN) được xem cho đến khi DDL có quyền riêng.
     """
-    if not request.user.is_superuser:
+    if not is_system_admin(request.user):
         return Response(
             {"success": False, "error": "birthdays.messages.permissionDenied"},
             status=403,
         )
 
-    logs = BirthdayEmailLog.objects.all().select_related("employee", "employee__don_vi", "employee__chuc_vu")
-
+    logs = (
+        BirthdayEmailLog.objects.all()
+        .select_related("employee", "employee__don_vi", "employee__chuc_vu")
+        .order_by("-sent_at", "-pk")
+    )
+    selected_date = None
+    date_raw = request.GET.get("date")
     month_raw = request.GET.get("month")
     year_raw = request.GET.get("year")
     trang_thai_raw = request.GET.get("trang_thai")
 
-    if month_raw:
+    if date_raw:
         try:
-            logs = logs.filter(sent_date__month=int(month_raw))
-        except ValueError:
-            pass
+            selected_date = date.fromisoformat(date_raw)
+        except (TypeError, ValueError):
+            return Response(
+                {"success": False, "error": "birthdays.messages.invalidDate"},
+                status=400,
+            )
 
-    if year_raw:
-        try:
-            logs = logs.filter(sent_date__year=int(year_raw))
-        except ValueError:
-            pass
+        start, end = _local_day_bounds(selected_date)
+        logs = logs.filter(sent_at__gte=start, sent_at__lt=end)
+    elif month_raw or year_raw:
+        # Keep the existing month/year API contract, but filter by send time rather than birthday date.
+        if month_raw:
+            try:
+                month = int(month_raw)
+            except ValueError:
+                return Response(
+                    {"success": False, "error": "Tham số tháng phải là số nguyên."},
+                    status=400,
+                )
+            if month < 1 or month > 12:
+                return Response(
+                    {"success": False, "error": "Tháng không hợp lệ (1-12)."},
+                    status=400,
+                )
+            logs = logs.filter(sent_at__month=month)
+
+        if year_raw:
+            try:
+                logs = logs.filter(sent_at__year=int(year_raw))
+            except ValueError:
+                pass
+    else:
+        selected_date = timezone.localdate(timezone=VIETNAM_TIME_ZONE)
+        start, end = _local_day_bounds(selected_date)
+        logs = logs.filter(sent_at__gte=start, sent_at__lt=end)
 
     if trang_thai_raw:
         normalized_trang_thai = trang_thai_raw.upper()
@@ -245,6 +290,7 @@ def birthday_email_logs_api(request):
 
     return Response({
         "success": True,
+        "date": selected_date.isoformat() if selected_date else None,
         "total": paginator.count,
         "page": page_obj.number,
         "total_pages": paginator.num_pages,

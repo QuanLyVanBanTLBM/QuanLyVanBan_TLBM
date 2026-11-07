@@ -22,10 +22,10 @@ import { DeleteConfirmModal } from './components/DeleteConfirmModal';
 
 export default function EmployeesPage() {
   const { t } = useTranslation();
-  const { can, isSuperuser } = usePermissions();
+  const { can, isSystemAdmin } = usePermissions();
   const currentSession = authService.getSession();
   const canEditEmployee = (employee: Employee) =>
-    isSuperuser ||
+    isSystemAdmin ||
     (can('change_self_cbnv') && Boolean(currentSession?.username && currentSession.username === employee.username));
 
   // Dữ liệu danh sách & phân trang
@@ -247,7 +247,7 @@ export default function EmployeesPage() {
             </Button>
           )}
 
-          {can('import_cbnv') && (
+          {isSystemAdmin && can('import_cbnv') && (
             <Button
               type="button"
               variant="secondary"
@@ -259,7 +259,7 @@ export default function EmployeesPage() {
             </Button>
           )}
 
-          {can('add_cbnv') && (
+          {isSystemAdmin && can('add_cbnv') && (
             <Button
               type="button"
               variant="primary"
@@ -429,6 +429,10 @@ export default function EmployeesPage() {
                     .toUpperCase();
                   const isWorking = emp.trang_thai === 'LAM_VIEC';
                   const rowNumber = (currentPage - 1) * pageSize + idx + 1;
+                  const concurrentPositions = (emp.assignments ?? []).filter(
+                    (assignment) => Boolean(assignment.chuc_vu_ten)
+                  );
+                  const hiddenConcurrentPositionCount = Math.max(concurrentPositions.length - 1, 0);
 
                   return (
                     <tr key={emp.id} className="employees-page__employee-row hover:bg-surface-hover transition-colors">
@@ -490,15 +494,37 @@ export default function EmployeesPage() {
                         )}
                       </td>
 
-                      {/* Chức vụ & Chức danh */}
+                      {/* Chức vụ chính và tối đa một chức vụ kiêm nhiệm */}
                       <td className="employees-page__cell employees-page__cell--position py-3.5 px-4" data-label={t('employees.table.position')}>
                         <span className="font-medium text-main block">
                           {emp.chuc_vu_ten || '—'}
                         </span>
-                        {emp.chuc_danh && (
-                          <span className="text-[11px] text-muted block">
-                            {emp.chuc_danh}
-                          </span>
+                        {concurrentPositions.length > 0 && (
+                          <>
+                            <div className="mt-0.5">
+                              <span className="text-[11px] text-muted">
+                                {t('employees.fields.concurrentPosition', {
+                                  name: concurrentPositions[0].chuc_vu_ten,
+                                })}
+                              </span>
+                            </div>
+                            {hiddenConcurrentPositionCount > 0 && (
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                <span
+                                  className="inline-flex items-center gap-1 rounded bg-primary-subtle px-1.5 py-0.5 text-[10px] font-medium text-primary"
+                                  title={concurrentPositions
+                                    .slice(1)
+                                    .map((assignment) => assignment.chuc_vu_ten)
+                                    .join(', ')}
+                                >
+                                  <i aria-hidden="true" className="fa-solid fa-briefcase text-[9px]" />
+                                  {t('employees.fields.concurrentPositionBadge', {
+                                    count: hiddenConcurrentPositionCount,
+                                  })}
+                                </span>
+                              </div>
+                            )}
+                          </>
                         )}
                       </td>
 
@@ -645,7 +671,7 @@ export default function EmployeesPage() {
         positions={positions}
         groups={groups}
         isLoading={isSubmitting}
-        isAdmin={isSuperuser}
+        isAdmin={isSystemAdmin}
         onChangePassword={async (employeeId, newPassword, confirmPassword, reasonCode, reasonDetail) => {
           await apiClient.post(`/api/accounts/employees/${employeeId}/change-password/`, {
             new_password: newPassword,

@@ -29,12 +29,10 @@ def _provision_alpaca_employee(username, user_info):
     pos_name = user_info.get("positionName") or ""
     dept_name = user_info.get("departmentName") or ""
 
+    # Chỉ khớp đúng tên (không phân biệt hoa thường): khớp một phần có thể gán nhầm chức vụ cao hơn và nhóm quyền cao hơn.
     position = None
     if pos_name:
-        position = (
-            Position.objects.filter(name__iexact=pos_name.strip()).first()
-            or Position.objects.filter(name__icontains=pos_name.strip()).first()
-        )
+        position = Position.objects.filter(name__iexact=pos_name.strip()).first()
     if not position:
         position = Position.objects.filter(name="Chuyên viên").first() or Position.objects.first()
 
@@ -72,6 +70,7 @@ def _build_user_payload(user):
     position = user.chuc_vu.name if user.chuc_vu_id else ("Quản trị viên tối cao" if user.is_superuser else "Chuyên viên văn thư")
     date_joined_str = user.created_at.strftime("%Y-%m-%d") if user.created_at else ""
 
+    user_don_vi_id = getattr(user, "don_vi_id", None)
     return {
         "id": user.id,
         "username": user.username,
@@ -79,11 +78,13 @@ def _build_user_payload(user):
         # CamelCase (theo API Contract Hieu.md)
         "fullName": full_name,
         "unit": department,
+        "donViId": user_don_vi_id,
         "roleTitle": position,
         "dateJoined": date_joined_str,
         # Snake_case (tương thích backward)
         "full_name": full_name,
         "department": department,
+        "don_vi_id": user_don_vi_id,
         "position": position,
         "role": "admin" if user.is_superuser else "staff",
         "phone": user.sdt,
@@ -263,6 +264,13 @@ def admin_set_password_view(request):
         return Response(
             {"success": False, "error": f"Không tìm thấy tài khoản '{target_username}'."},
             status=status.HTTP_404_NOT_FOUND,
+        )
+
+    # Mật khẩu superuser chỉ superuser mới đặt lại được (nhóm ADMIN có approve_password_reset_cbnv nhưng không đủ).
+    if target_user.is_superuser and not request.user.is_superuser:
+        return Response(
+            {"success": False, "error": "roles.messages.permissionDenied"},
+            status=status.HTTP_403_FORBIDDEN,
         )
 
     # [Điểm 5]: Kiểm tra chất lượng mật khẩu bằng password validation chuẩn Django

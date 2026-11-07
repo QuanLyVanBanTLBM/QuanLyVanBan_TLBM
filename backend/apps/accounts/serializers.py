@@ -14,6 +14,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import Q
 from rest_framework import serializers
 
+from authorization.permissions import is_system_admin
 from organizations.models import DonVi
 from .models import (
     MAX_DISPLAY_ORDER,
@@ -21,6 +22,7 @@ from .models import (
     EmployeeAssignment,
     EmployeePasswordResetAudit,
     Position,
+    validate_company_email,
     vietnam_phone_regex,
 )
 
@@ -288,6 +290,11 @@ class EmployeeSerializer(serializers.ModelSerializer):
             return True
         return user_can_view_sensitive(user)
 
+    def _is_own_profile(self, obj) -> bool:
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        return bool(user and user.is_authenticated and user.id == obj.id)
+
     def get_temporary_password(self, obj):
         return getattr(obj, "raw_temporary_password", None)
 
@@ -297,19 +304,19 @@ class EmployeeSerializer(serializers.ModelSerializer):
     def get_ngay_sinh(self, obj):
         if not obj.ngay_sinh:
             return None
-        if self._can_view_sensitive(obj):
+        if self._is_own_profile(obj):
             return obj.ngay_sinh.strftime("%d/%m/%Y")
         return obj.ngay_sinh.strftime("%d/%m/----")
 
     def get_ngay_sinh_iso(self, obj):
         if not obj.ngay_sinh:
             return None
-        if self._can_view_sensitive(obj):
+        if self._is_own_profile(obj):
             return obj.ngay_sinh.isoformat()
         return None
 
     def get_is_birthday_masked(self, obj) -> bool:
-        return not self._can_view_sensitive(obj)
+        return not self._is_own_profile(obj)
 
     def get_nhom_quyen(self, obj):
         if not self._can_view_sensitive(obj):
@@ -371,12 +378,7 @@ def _admin_group_ids():
 
 def requester_can_grant_admin(request):
     """Chỉ superuser hoặc thành viên nhóm ADMIN mới được gán hoặc gỡ nhóm Quản trị hệ thống."""
-    user = getattr(request, "user", None)
-    if not user or not user.is_authenticated:
-        return False
-    if user.is_superuser:
-        return True
-    return user.groups.filter(id__in=_admin_group_ids()).exists()
+    return is_system_admin(getattr(request, "user", None))
 
 
 def check_admin_group_assignment(request, requested_groups, current_group_ids=()):
@@ -429,6 +431,7 @@ class EmployeeCreateSerializer(serializers.Serializer):
     )
     email = serializers.EmailField(
         required=True,
+        validators=[validate_company_email],
         error_messages={
             "required": "employees.validation.emailRequired",
             "blank": "employees.validation.emailRequired",
@@ -637,6 +640,13 @@ class EmployeeCreateSerializer(serializers.Serializer):
 class EmployeeUpdateSerializer(serializers.Serializer):
     """Cập nhật thông tin CBNV."""
 
+    username = serializers.CharField(
+        max_length=150,
+        required=False,
+        allow_blank=False,
+        error_messages={"blank": "employees.validation.usernameRequired"},
+    )
+
     ho_ten = serializers.CharField(
         max_length=150,
         required=False,
@@ -647,6 +657,7 @@ class EmployeeUpdateSerializer(serializers.Serializer):
     )
     email = serializers.EmailField(
         required=False,
+        validators=[validate_company_email],
         error_messages={
             "blank": "employees.validation.emailRequired",
             "invalid": "employees.messages.invalidEmail",
@@ -730,6 +741,15 @@ class EmployeeUpdateSerializer(serializers.Serializer):
             raise serializers.ValidationError("employees.messages.emailExists")
         return normalized
 
+    def validate_username(self, value):
+        normalized = value.strip()
+        if not normalized:
+            raise serializers.ValidationError("employees.validation.usernameRequired")
+        duplicated = get_user_model().objects.filter(username__iexact=normalized).exclude(pk=self.instance.pk)
+        if duplicated.exists():
+            raise serializers.ValidationError("employees.messages.usernameExists")
+        return normalized
+
     def validate_assignments(self, value):
         if value is None:
             return None
@@ -785,6 +805,8 @@ class EmployeeUpdateSerializer(serializers.Serializer):
 
     def update(self, instance, validated_data):
         with transaction.atomic():
+            if "username" in validated_data:
+                instance.username = validated_data["username"]
             if "ho_ten" in validated_data:
                 instance.ho_ten = validated_data["ho_ten"].strip()
             if "email" in validated_data:

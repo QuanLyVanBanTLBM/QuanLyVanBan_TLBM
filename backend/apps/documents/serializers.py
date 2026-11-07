@@ -12,6 +12,8 @@ from django.db import models
 from django.utils import timezone
 from rest_framework import serializers
 
+from authorization.permissions import is_system_admin
+
 from .models import (
     HieuLuc,
     LoaiVanBan,
@@ -175,7 +177,9 @@ class DocumentListSerializer(serializers.Serializer):
     hien_thi = serializers.BooleanField(read_only=True)
     nguoi_tao_name = serializers.SerializerMethodField()
     nguoi_tao_username = serializers.CharField(source="nguoi_tao.username", read_only=True, default=None)
+    can_view = serializers.SerializerMethodField()
     can_edit = serializers.SerializerMethodField()
+    can_edit_full = serializers.SerializerMethodField()
     can_delete = serializers.SerializerMethodField()
     can_change_hieu_luc = serializers.SerializerMethodField()
     can_view_read_log = serializers.SerializerMethodField()
@@ -249,7 +253,21 @@ class DocumentListSerializer(serializers.Serializer):
         # Với Văn bản Đến và Văn bản Đi: Giữ nguyên 100% logic cũ, lấy trực tiếp trường so_thu_tu có sẵn
         return getattr(obj, "so_thu_tu", None)
 
+    def get_can_view(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user or not request.user.is_authenticated:
+            return False
+        from .selectors import la_nguoi_xem_duoc
+        return la_nguoi_xem_duoc(request.user, obj)
+
     def get_can_edit(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user or not request.user.is_authenticated:
+            return False
+        from .views import can_edit_document
+        return can_edit_document(request.user, obj)
+
+    def get_can_edit_full(self, obj):
         request = self.context.get("request")
         if not request or not request.user or not request.user.is_authenticated:
             return False
@@ -385,7 +403,9 @@ class DocumentDetailSerializer(serializers.Serializer):
     attachments = serializers.SerializerMethodField()
     nguoi_tao_name = serializers.SerializerMethodField()
     nguoi_tao_username = serializers.CharField(source="nguoi_tao.username", read_only=True, default=None)
+    can_view = serializers.SerializerMethodField()
     can_edit = serializers.SerializerMethodField()
+    can_edit_full = serializers.SerializerMethodField()
     can_delete = serializers.SerializerMethodField()
     can_change_hieu_luc = serializers.SerializerMethodField()
     can_view_read_log = serializers.SerializerMethodField()
@@ -476,7 +496,21 @@ class DocumentDetailSerializer(serializers.Serializer):
             return 1
         return getattr(obj, "so_thu_tu", None)
 
+    def get_can_view(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user or not request.user.is_authenticated:
+            return False
+        from .selectors import la_nguoi_xem_duoc
+        return la_nguoi_xem_duoc(request.user, obj)
+
     def get_can_edit(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user or not request.user.is_authenticated:
+            return False
+        from .views import can_edit_document
+        return can_edit_document(request.user, obj)
+
+    def get_can_edit_full(self, obj):
         request = self.context.get("request")
         if not request or not request.user or not request.user.is_authenticated:
             return False
@@ -730,9 +764,12 @@ class DocumentCreateUpdateSerializer(serializers.Serializer):
         if raw_link_str:
             from .services import parse_replacement_target, find_replacement_target_document
             targets = [t.strip() for t in raw_link_str.split(",") if t.strip()]
-            target_model = VanBanDi if str(loai).upper() in ("DI", "VANBANDI") else (VanBanMat if str(loai).upper() in ("MAT", "VANBANMAT") else VanBanDen)
+            is_di = str(loai).upper() in ("DI", "VANBANDI")
+            target_model = VanBanDi if is_di else VanBanDen
+            other_model = VanBanDen if is_di else VanBanDi
+            loai_label = "Văn bản Đi" if is_di else "Văn bản Đến"
+            other_label = "Văn bản Đến" if is_di else "Văn bản Đi"
             current_pham_vi = attrs.get("pham_vi") or (getattr(self.instance, "pham_vi", PhamVi.NOI_BO) if self.instance else PhamVi.NOI_BO)
-            loai_label = "Văn bản Đi" if str(loai).upper() in ("DI", "VANBANDI") else ("Văn bản Mật" if str(loai).upper() in ("MAT", "VANBANMAT") else "Văn bản Đến")
 
             for target in targets:
                 parsed = parse_replacement_target(target)
@@ -748,39 +785,40 @@ class DocumentCreateUpdateSerializer(serializers.Serializer):
                             {"link_thay_the": "Văn bản không thể tự thiết lập thay thế chính nó."}
                         )
 
-                # 2. Khóa nghiệp vụ: Bắt buộc văn bản mục tiêu phải cùng phân hệ (loai)
-                for other_model, other_label in ((VanBanDen, "Văn bản Đến"), (VanBanDi, "Văn bản Đi"), (VanBanMat, "Văn bản Mật")):
-                    if other_model != target_model:
-                        other_match = find_replacement_target_document(target, target_model=other_model)
-                        if other_match:
-                            raise serializers.ValidationError(
-                                {"link_thay_the": f"Văn bản mục tiêu '{target}' là {other_label}. {loai_label} chỉ được phép thay thế cho văn bản cùng phân hệ ({loai_label})."}
-                            )
-
-                # Tìm trong đúng model mục tiêu và khớp theo định danh (loại trừ chính bản ghi đang sửa)
+                # 2. Ưu tiên 1: Tìm trong đúng phân hệ hiện tại (target_model) và phạm vi hiện tại (current_pham_vi)
                 target_doc = find_replacement_target_document(
                     target,
                     current_doc=self.instance,
                     target_model=target_model,
                     current_pham_vi=current_pham_vi,
                 )
+
+                # 3. Ưu tiên 2: Nếu KHÔNG tìm thấy trong phân hệ hiện tại
                 if not target_doc:
                     # Nếu không tìm thấy văn bản khác và số hiệu trùng nhau, người dùng đang cố ý thay thế chính nó
                     if self.instance and so_hieu and base_target.lower() == so_hieu.lower():
                         raise serializers.ValidationError(
                             {"link_thay_the": "Văn bản không thể tự thiết lập thay thế chính nó."}
                         )
+
+                    # Quét phân hệ còn lại để kiểm tra người dùng có chọn nhầm văn bản khác phân hệ hay không
+                    other_match = find_replacement_target_document(target, target_model=other_model)
+                    if other_match:
+                        raise serializers.ValidationError(
+                            {"link_thay_the": f"Văn bản mục tiêu '{target}' là {other_label}. {loai_label} chỉ được phép thay thế cho văn bản cùng phân hệ ({loai_label})."}
+                        )
+
                     raise serializers.ValidationError(
                         {"link_thay_the": f"Văn bản mục tiêu '{target}' không tồn tại trong hệ thống {loai_label}. Vui lòng chọn văn bản hợp lệ từ danh sách gợi ý."}
                     )
 
-                # Nếu tìm thấy nhưng lại trùng đúng PK của bản ghi đang sửa
+                # 4. Nếu tìm thấy: Kiểm tra không tự thay thế chính mình theo ID
                 if self.instance and target_doc.pk == self.instance.pk:
                     raise serializers.ValidationError(
                         {"link_thay_the": "Văn bản không thể tự thiết lập thay thế chính nó."}
                     )
 
-                # 3. Khóa nghiệp vụ: Bắt buộc cùng phạm vi (Nội bộ chỉ thay thế Nội bộ, Hạn chế chỉ thay thế Hạn chế)
+                # 5. Khóa nghiệp vụ: Bắt buộc cùng phạm vi (Nội bộ chỉ thay thế Nội bộ, Hạn chế chỉ thay thế Hạn chế)
                 if getattr(target_doc, "pham_vi", PhamVi.NOI_BO) != current_pham_vi:
                     scope_curr_label = "Văn bản nội bộ" if current_pham_vi == PhamVi.NOI_BO else "Văn bản hạn chế"
                     scope_target_label = "nội bộ" if target_doc.pham_vi == PhamVi.NOI_BO else "hạn chế"
@@ -817,16 +855,7 @@ class DocumentCreateUpdateSerializer(serializers.Serializer):
         if self.instance and "pham_vi" in attrs and attrs["pham_vi"] != self.instance.pham_vi:
             request = self.context.get("request")
             user = getattr(request, "user", None) if request else None
-            profile = getattr(user, "profile", None) if user else None
-            is_admin = bool(
-                user
-                and (
-                    user.is_superuser
-                    or (profile and getattr(profile, "role", None) == "admin")
-                    or getattr(user, "username", "") in ("admin", "quantri")
-                )
-            )
-            if not is_admin:
+            if not is_system_admin(user):
                 raise serializers.ValidationError(
                     {"pham_vi": "Chỉ Quản trị viên (Admin) mới có quyền thay đổi phạm vi lưu hành của văn bản."}
                 )
@@ -1084,16 +1113,7 @@ class DocumentCreateUpdateSerializer(serializers.Serializer):
         if "pham_vi" in validated_data and validated_data["pham_vi"] != instance.pham_vi:
             req = self.context.get("request")
             user = getattr(req, "user", None) if req else None
-            profile = getattr(user, "profile", None) if user else None
-            is_admin = bool(
-                user
-                and (
-                    user.is_superuser
-                    or (profile and getattr(profile, "role", None) == "admin")
-                    or getattr(user, "username", "") in ("admin", "quantri")
-                )
-            )
-            if not is_admin:
+            if not is_system_admin(user):
                 raise serializers.ValidationError({"pham_vi": "Chỉ Quản trị viên (Admin) mới có quyền thay đổi phạm vi lưu hành của văn bản."})
             instance._allow_scope_change = True
 

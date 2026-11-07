@@ -597,3 +597,72 @@ class UnitAllParamAndInternalVisibilityTest(TestCase):
                     self.assertEqual(response.data["key"], "organizations.messages.unitNotFound")
                 else:
                     self.assertEqual(export_unit_names(response.content), ["ĐƠN VỊ NỘI BỘ"])
+
+    def test_export_several_regions_and_units_in_one_file(self):
+        """?region_ids= và ?unit_ids= xuất chung một file: hợp của các Khối và các Đơn vị đã chọn."""
+        second = KhoiKhuVuc.objects.create(ten="Khối thứ hai")
+        third = KhoiKhuVuc.objects.create(ten="Khối thứ ba")
+        priority = next_unit_priority()
+        DonVi.objects.create(khoi=second, stt_uu_tien=priority, ten="Ban hai A")
+        DonVi.objects.create(khoi=second, stt_uu_tien=priority + 1, ten="Ban hai B")
+        DonVi.objects.create(khoi=third, stt_uu_tien=priority + 2, ten="Ban ba A")
+        lone = DonVi.objects.create(khoi=third, stt_uu_tien=priority + 3, ten="Ban ba B")
+        url = "/api/organizations/units/export/"
+
+        regions = self.viewer.get(f"{url}?region_ids={second.id},{third.id}")
+        self.assertEqual(regions.status_code, status.HTTP_200_OK)
+        self.assertEqual(sorted(export_unit_names(regions.content)), ["BAN BA A", "BAN BA B", "BAN HAI A", "BAN HAI B"])
+
+        mixed = self.viewer.get(f"{url}?region_ids={second.id}&unit_ids={lone.id}")
+        self.assertEqual(sorted(export_unit_names(mixed.content)), ["BAN BA B", "BAN HAI A", "BAN HAI B"])
+
+        units = self.viewer.get(f"{url}?unit_ids={lone.id},{DonVi.objects.get(ten='Ban hai A').id}")
+        self.assertEqual(sorted(export_unit_names(units.content)), ["BAN BA B", "BAN HAI A"])
+
+        # Trùng id không làm lặp dòng; ô tìm kiếm vẫn áp dụng lên phần đã chọn.
+        repeated = self.viewer.get(f"{url}?region_ids={second.id},{second.id}&unit_ids={lone.id},{lone.id}")
+        self.assertEqual(len(export_unit_names(repeated.content)), 3)
+        searched = self.viewer.get(f"{url}?region_ids={second.id},{third.id}&search=Ban ba A")
+        self.assertEqual(export_unit_names(searched.content), ["BAN BA A"])
+
+    def test_export_selection_keeps_single_filters_and_visibility(self):
+        """region_id, unit_id cũ giữ nguyên; Đơn vị nội bộ trong danh sách chọn bị chặn với người không có quyền xem."""
+        picked = DonVi.objects.get(ten="Đơn vị công khai 3")
+        both = self.viewer.get(
+            f"/api/organizations/units/export/?{self.in_region}&unit_ids={picked.id}"
+        )
+        self.assertEqual(export_unit_names(both.content).count("ĐƠN VỊ CÔNG KHAI 3"), 1)
+        hidden = self.viewer.get(f"/api/organizations/units/export/?unit_ids={picked.id},{self.internal.id}")
+        self.assertEqual(hidden.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(hidden.data["key"], "organizations.messages.unitNotFound")
+        for client in (self.manager, self.root):
+            allowed = client.get(f"/api/organizations/units/export/?unit_ids={picked.id},{self.internal.id}")
+            self.assertEqual(
+                sorted(export_unit_names(allowed.content)), ["ĐƠN VỊ CÔNG KHAI 3", "ĐƠN VỊ NỘI BỘ"]
+            )
+
+    def test_export_selection_rejects_malformed_lists(self):
+        url = "/api/organizations/units/export/"
+        cases = (
+            ("region_ids=1,abc", "organizations.messages.regionNotFound"),
+            ("region_ids=1,,2", "organizations.messages.regionNotFound"),
+            ("region_ids=-1", "organizations.messages.regionNotFound"),
+            ("region_ids=9223372036854775808", "organizations.messages.regionNotFound"),
+            ("region_ids=" + ",".join(str(i) for i in range(1, 502)), "organizations.messages.regionNotFound"),
+            ("unit_ids=1;2", "organizations.messages.unitNotFound"),
+            ("unit_ids=9223372036854775808", "organizations.messages.unitNotFound"),
+        )
+        for query, key in cases:
+            with self.subTest(query=query[:40]):
+                response = self.viewer.get(f"{url}?{query}")
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                self.assertEqual(response.data["key"], key)
+        # Danh sách rỗng không lọc gì; Khối không tồn tại cho file rỗng, giống region_id.
+        empty = self.viewer.get(f"{url}?region_ids=&unit_ids=")
+        self.assertEqual(empty.status_code, status.HTTP_200_OK)
+        self.assertGreaterEqual(len(export_unit_names(empty.content)), 12)
+        missing = self.viewer.get(f"{url}?region_ids=987654321")
+        self.assertEqual(export_unit_names(missing.content), [])
+        self.assertEqual(
+            self.viewer.get(f"{url}?unit_ids=987654321").status_code, status.HTTP_404_NOT_FOUND
+        )

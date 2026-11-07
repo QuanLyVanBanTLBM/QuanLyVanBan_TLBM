@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, time as dt_time, timedelta, timezone as dt_timezone
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier, Lock
 import time
@@ -53,7 +53,7 @@ class BirthdaySystemTests(TestCase):
         self.don_vi = DonVi.objects.create(khoi=khoi, stt_uu_tien=latest_stt + 1, ten="Khoa CNTT")
         self.chuc_vu = Position.objects.create(display_order=Position.get_next_display_order(), name="Giảng viên")
 
-        # 1. Nhân viên thường (có quyền view_sinhnhat, send_wish_sinhnhat)
+        # 1. Nhân viên thường (có quyền xem danh sách sinh nhật)
         self.emp_staff = Employee.objects.create_user(
             username="staff1",
             password="password123",
@@ -65,8 +65,7 @@ class BirthdaySystemTests(TestCase):
             is_active=True,
         )
         perm_view = Permission.objects.get(codename="view_sinhnhat")
-        perm_wish = Permission.objects.get(codename="send_wish_sinhnhat")
-        self.emp_staff.user_permissions.add(perm_view, perm_wish)
+        self.emp_staff.user_permissions.add(perm_view)
 
         # 2. Quản trị viên (superuser)
         self.emp_admin = Employee.objects.create_superuser(
@@ -200,6 +199,56 @@ class BirthdaySystemTests(TestCase):
         self.assertEqual(first.json()["employees"][0]["id"], high.id)
         self.assertEqual(second.json()["employees"][0]["id"], low.id)
 
+    def test_calendar_and_day_apis_validate_month_and_day_ranges(self):
+        """Tháng phải từ 1–12, ngày phải hợp lệ theo từng tháng và năm nhuận."""
+        self.client.force_authenticate(user=self.emp_staff)
+
+        invalid_calendar_month = self.client.get(
+            reverse("birthdays:calendar"), {"month": 13, "year": 2026}
+        )
+        self.assertEqual(invalid_calendar_month.status_code, status.HTTP_400_BAD_REQUEST)
+
+        invalid_day_month = self.client.get(
+            reverse("birthdays:day_birthdays"),
+            {"month": 13, "day": 1, "year": 2026},
+        )
+        self.assertEqual(invalid_day_month.status_code, status.HTTP_400_BAD_REQUEST)
+
+        url = reverse("birthdays:day_birthdays")
+        valid_days = (
+            {"month": 1, "day": 31, "year": 2026},
+            {"month": 2, "day": 28, "year": 2025},
+            {"month": 2, "day": 29, "year": 2024},
+        )
+        for params in valid_days:
+            with self.subTest(params=params):
+                response = self.client.get(url, params)
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        invalid_days = (
+            {"month": 4, "day": 31, "year": 2026},
+            {"month": 2, "day": 29, "year": 2025},
+        )
+        for params in invalid_days:
+            with self.subTest(params=params):
+                response = self.client.get(url, params)
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_birthday_email_logs_api_rejects_invalid_month(self):
+        """Nhật ký phải từ chối tháng ngoài 1–12 và tham số tháng không phải số."""
+        self.client.force_authenticate(user=self.emp_admin)
+        url = reverse("birthdays:logs")
+
+        for month in ("0", "13"):
+            with self.subTest(month=month):
+                response = self.client.get(url, {"month": month, "year": 2026})
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                self.assertEqual(response.json()["error"], "Tháng không hợp lệ (1-12).")
+
+        non_numeric_month = self.client.get(url, {"month": "invalid", "year": 2026})
+        self.assertEqual(non_numeric_month.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(non_numeric_month.json()["error"], "Tham số tháng phải là số nguyên.")
+
     def test_birthday_email_logs_api(self):
         """API nhật ký chỉ cho superuser xem và chuẩn hóa trang_thai không phân biệt hoa thường."""
         log = BirthdayEmailLog.objects.create(
@@ -209,6 +258,21 @@ class BirthdaySystemTests(TestCase):
             subject="Chúc mừng sinh nhật",
             trang_thai=BirthdayEmailStatus.SUCCESS,
         )
+        today = timezone.localdate()
+        today_start = timezone.make_aware(
+            datetime.combine(today, dt_time.min),
+            timezone.get_current_timezone(),
+        )
+        log.sent_at = today_start + timedelta(hours=12)
+        log.save(update_fields=["sent_at"])
+        BirthdayEmailLog.objects.create(
+            employee=self.emp_admin,
+            sent_date=date(1985, 5, 20),
+            sent_at=today_start - timedelta(microseconds=1),
+            recipient_email=self.emp_admin.email,
+            subject="Chúc mừng sinh nhật",
+            trang_thai=BirthdayEmailStatus.FAILED,
+        )
 
         url = reverse("birthdays:logs")
         self.client.force_authenticate(user=self.emp_staff)
@@ -217,21 +281,76 @@ class BirthdaySystemTests(TestCase):
         self.assertEqual(response.json()["error"], "birthdays.messages.permissionDenied")
 
         self.client.force_authenticate(user=self.emp_admin)
-        response = self.client.get(url)
+        with patch("birthdays.views.timezone.localdate", return_value=today):
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            data = response.json()
+            self.assertTrue(data["success"])
+            self.assertEqual(data["date"], today.isoformat())
+            self.assertEqual(data["total"], 1)
+            self.assertEqual(data["logs"][0]["employee_name"], self.emp_staff.ho_ten)
+            self.assertEqual(data["logs"][0]["trang_thai"], BirthdayEmailStatus.SUCCESS)
+
+            lowercase_status = self.client.get(url, {"trang_thai": "success"})
+            self.assertEqual(lowercase_status.status_code, status.HTTP_200_OK)
+            self.assertEqual(lowercase_status.json()["total"], 1)
+
+            invalid_status = self.client.get(url, {"trang_thai": "bogus"})
+            self.assertEqual(invalid_status.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertEqual(invalid_status.json()["error"], "birthdays.messages.invalidStatus")
+
+    def test_birthday_email_logs_api_filters_vietnam_day_boundaries_and_status(self):
+        self.client.force_authenticate(user=self.emp_admin)
+        requested_date = date(2026, 11, 5)
+        entries = [
+            (self.emp_staff, datetime(2026, 11, 4, 16, 59, 59, 999999, tzinfo=dt_timezone.utc), BirthdayEmailStatus.SUCCESS),
+            (self.emp_admin, datetime(2026, 11, 4, 17, 0, tzinfo=dt_timezone.utc), BirthdayEmailStatus.SUCCESS),
+            (self.emp_leap, datetime(2026, 11, 5, 16, 59, 59, 999999, tzinfo=dt_timezone.utc), BirthdayEmailStatus.PENDING),
+            (self.emp_no_perm, datetime(2026, 11, 5, 17, 0, tzinfo=dt_timezone.utc), BirthdayEmailStatus.FAILED),
+        ]
+        created_logs = []
+        for index, (employee, sent_at, email_status) in enumerate(entries):
+            created_logs.append(BirthdayEmailLog.objects.create(
+                employee=employee,
+                sent_date=date(1990 + index, 1, 1),
+                sent_at=sent_at,
+                recipient_email=employee.email or "unknown@example.test",
+                subject="Chúc mừng sinh nhật",
+                trang_thai=email_status,
+            ))
+
+        url = reverse("birthdays:logs")
+        response = self.client.get(url, {"date": requested_date.isoformat()})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.json()
-        self.assertTrue(data["success"])
-        self.assertEqual(data["total"], 1)
-        self.assertEqual(data["logs"][0]["employee_name"], self.emp_staff.ho_ten)
-        self.assertEqual(data["logs"][0]["trang_thai"], BirthdayEmailStatus.SUCCESS)
+        self.assertEqual(data["date"], requested_date.isoformat())
+        self.assertEqual(data["total"], 2)
+        self.assertEqual(
+            {entry["id"] for entry in data["logs"]},
+            {created_logs[1].id, created_logs[2].id},
+        )
 
-        lowercase_status = self.client.get(url, {"trang_thai": "success"})
-        self.assertEqual(lowercase_status.status_code, status.HTTP_200_OK)
-        self.assertEqual(lowercase_status.json()["total"], 1)
+        valid_month_filter = self.client.get(url, {"month": 11, "year": 2026})
+        self.assertEqual(valid_month_filter.status_code, status.HTTP_200_OK)
+        self.assertEqual(valid_month_filter.json()["total"], 4)
 
-        invalid_status = self.client.get(url, {"trang_thai": "bogus"})
-        self.assertEqual(invalid_status.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(invalid_status.json()["error"], "birthdays.messages.invalidStatus")
+        filtered_response = self.client.get(
+            url,
+            {"date": requested_date.isoformat(), "trang_thai": "pending"},
+        )
+        self.assertEqual(filtered_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(filtered_response.json()["total"], 1)
+        self.assertEqual(filtered_response.json()["logs"][0]["id"], created_logs[2].id)
+
+        legacy_response = self.client.get(url, {"month": 11, "year": 2026})
+        self.assertEqual(legacy_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(legacy_response.json()["total"], 4)
+
+    def test_birthday_email_logs_api_rejects_invalid_date(self):
+        self.client.force_authenticate(user=self.emp_admin)
+        response = self.client.get(reverse("birthdays:logs"), {"date": "2026-02-30"})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.json()["error"], "birthdays.messages.invalidDate")
 
     def test_public_birthday_card_api_returns_only_signed_card_fields(self):
         token = generate_birthday_card_token(self.emp_staff)
