@@ -628,22 +628,9 @@ export default function ResourceManagementPage() {
     if (currentPage > 1) newParams.set('page', String(currentPage));
     if (pageSize !== 5) newParams.set('pageSize', String(pageSize));
 
-    // Đồng bộ trạng thái Modal lên URL
+    // Đồng bộ trạng thái Modal xem chi tiết lên URL (nếu có)
     if (isDetailOpen && detailItem) {
       newParams.set('detail', String(detailItem.id));
-    }
-    if (isFormOpen) {
-      if (formInitialData) {
-        newParams.set('edit', String(formInitialData.id));
-      } else {
-        newParams.set('action', 'create');
-      }
-    }
-    if (isCategoryModalOpen) {
-      newParams.set('action', 'categories');
-    }
-    if (isFolderManagerOpen) {
-      newParams.set('action', 'folder_tree');
     }
 
     // Chỉ cập nhật nếu query string thực sự có sự thay đổi
@@ -661,13 +648,15 @@ export default function ResourceManagementPage() {
     pageSize,
     isDetailOpen,
     detailItem,
-    isFormOpen,
-    formInitialData,
-    isCategoryModalOpen,
-    isFolderManagerOpen,
     searchParams,
     setSearchParams,
   ]);
+
+  // Ref giữ documents mới nhất để tránh effect bị re-trigger liên tục khi polling/refetch
+  const documentsRef = useRef(documents);
+  useEffect(() => {
+    documentsRef.current = documents;
+  }, [documents]);
 
   // Lắng nghe URL query params để tự động cập nhật bộ lọc hoặc mở modal tương ứng khi truy cập link trực tiếp/back/forward
   useEffect(() => {
@@ -695,7 +684,7 @@ export default function ResourceManagementPage() {
 
     if (detailParam && !isNaN(Number(detailParam))) {
       const docId = Number(detailParam);
-      const found = documents.find((d) => d.id === docId);
+      const found = documentsRef.current.find((d) => d.id === docId);
       if (found) {
         setDetailItem((prev) => (prev?.id === docId ? prev : found));
         setIsDetailOpen(true);
@@ -717,18 +706,28 @@ export default function ResourceManagementPage() {
       setDetailItem((prev) => (prev ? null : prev));
     }
 
+    // Xử lý deep-link một lần (one-shot) khi truy cập trực tiếp từ URL bên ngoài
     if (actionParam === 'create') {
       setFormInitialData(null);
       setIsFormOpen(true);
+      const next = new URLSearchParams(searchParams);
+      next.delete('action');
+      setSearchParams(next, { replace: true });
     } else if (actionParam === 'categories') {
       setIsCategoryModalOpen(true);
+      const next = new URLSearchParams(searchParams);
+      next.delete('action');
+      setSearchParams(next, { replace: true });
     } else if (actionParam === 'folder_tree') {
       setIsFolderManagerOpen(true);
+      const next = new URLSearchParams(searchParams);
+      next.delete('action');
+      setSearchParams(next, { replace: true });
     } else if (editParam && !isNaN(Number(editParam))) {
       const editId = Number(editParam);
-      const found = documents.find((d) => d.id === editId);
+      const found = documentsRef.current.find((d) => d.id === editId);
       if (found) {
-        setFormInitialData((prev) => (prev?.id === editId ? prev : found));
+        setFormInitialData(found);
         setIsFormOpen(true);
       } else {
         apiClient<ResourceItem>(`/api/resources/documents/${editId}/`)
@@ -742,17 +741,11 @@ export default function ResourceManagementPage() {
             /* ignore if not found */
           });
       }
-    } else if (!actionParam && !editParam) {
-      setIsFormOpen((prev) => (prev ? false : prev));
-      setFormInitialData((prev) => (prev ? null : prev));
-      if (actionParam !== 'categories') {
-        setIsCategoryModalOpen((prev) => (prev ? false : prev));
-      }
-      if (actionParam !== 'folder_tree') {
-        setIsFolderManagerOpen((prev) => (prev ? false : prev));
-      }
+      const next = new URLSearchParams(searchParams);
+      next.delete('edit');
+      setSearchParams(next, { replace: true });
     }
-  }, [searchParams, documents]);
+  }, [searchParams, setSearchParams]);
 
   // Phân quyền người dùng (RBAC contract Issue #21)
   const { can, isSuperuser, isSystemAdmin } = usePermissions();
