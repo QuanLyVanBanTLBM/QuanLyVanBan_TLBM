@@ -170,6 +170,7 @@
     },
     "uncategorized": "Chưa phân loại",
     "defaultModel": "Gemini",
+    "modelLoading": "Đang tải cấu hình...",
     "duplicateUploadError": "Tài liệu cùng tên đã được thêm trong lúc tải lên. Tải lại danh sách và thử lại.",
     "replaceExistingTitle": "Tài liệu đã tồn tại",
     "replaceExistingConfirm": "Tệp \"{filename}\" đã có trong kho. Chỉ thay thế sau khi lập chỉ mục thành công. Tiếp tục tải lên?"

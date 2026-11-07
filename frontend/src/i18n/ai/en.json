@@ -170,6 +170,7 @@
     },
     "uncategorized": "Uncategorized",
     "defaultModel": "Gemini",
+    "modelLoading": "Loading model...",
     "duplicateUploadError": "A document with this name was added during upload. Refresh the list and try again.",
     "replaceExistingTitle": "Document already exists",
     "replaceExistingConfirm": "\"{filename}\" already exists in the library. It will only be replaced after indexing succeeds. Continue with the upload?"
