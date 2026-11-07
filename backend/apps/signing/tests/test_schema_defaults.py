@@ -14,16 +14,17 @@ from signing.models import (
     SigningAuditLog,
     SigningChangeMessage,
     SigningChangeThread,
-    SigningKey,
-    SigningKeyUnlock,
     SigningManifest,
     SigningNotification,
+    SigningPinCredential,
+    SigningPinOtpChallenge,
     SigningProcess,
     SigningProcessStep,
     SigningProcessStepSigner,
     SigningRequest,
     SigningRequestStep,
     SigningRequestStepSigner,
+    SigningRightLock,
     SigningSignature,
 )
 
@@ -41,16 +42,17 @@ class SigningSchemaDefaultsTests(TestCase):
             SigningAuditLog,
             SigningChangeMessage,
             SigningChangeThread,
-            SigningKey,
-            SigningKeyUnlock,
             SigningManifest,
             SigningNotification,
+            SigningPinCredential,
+            SigningPinOtpChallenge,
             SigningProcess,
             SigningProcessStep,
             SigningProcessStepSigner,
             SigningRequest,
             SigningRequestStep,
             SigningRequestStepSigner,
+            SigningRightLock,
             SigningSignature,
         )
         with connection.cursor() as cursor:
@@ -99,30 +101,18 @@ class SigningSchemaDefaultsTests(TestCase):
             self.assertGreater(request_updated.year, 2000)
 
             cursor.execute(
-                "INSERT INTO signing_key "
-                "(nguoi_so_huu_id, ma_khoa, dau_van_tay, khoa_cong_khai, ngay_hieu_luc) "
-                "VALUES (%s, %s, %s, %s, %s) "
-                "RETURNING id, thuat_toan, trang_thai, ghi_chu, created_at",
-                [self.user.pk, "C2B-KEY", "C2B-FINGERPRINT", "public-key", timezone.now()],
+                "INSERT INTO signing_pin_credential (nguoi_dung_id, ma_bam_xac_minh_pin) "
+                "VALUES (%s, %s) RETURNING so_lan_sai_ngay, so_lan_sai_chu_ky, created_at, updated_at, khoa_den",
+                [self.user.pk, "pbkdf2_sha256$verifier"],
             )
-            key_id, algorithm, key_state, key_note, key_created = cursor.fetchone()
-            self.assertEqual((algorithm, key_state, key_note), ("Ed25519", "CHO_KICH_HOAT", ""))
-            self.assertGreater(key_created.year, 2000)
+            failed_today, failed_cycle, pin_created, pin_updated, locked_until = cursor.fetchone()
+            self.assertEqual((failed_today, failed_cycle, locked_until), (0, 0, None))
+            self.assertGreater(pin_created.year, 2000)
+            self.assertGreater(pin_updated.year, 2000)
 
             cursor.execute(
-                "INSERT INTO signing_key_unlock "
-                "(khoa_id, ma_bam_xac_minh_pin, khoa_bi_mat_ma_hoa, tham_so_kdf) "
-                "VALUES (%s, %s, %s, %s::jsonb) RETURNING so_lan_sai, created_at, updated_at",
-                [key_id, "verifier", "encrypted-share", "{}"],
-            )
-            failed_attempts, unlock_created, unlock_updated = cursor.fetchone()
-            self.assertEqual(failed_attempts, 0)
-            self.assertGreater(unlock_created.year, 2000)
-            self.assertGreater(unlock_updated.year, 2000)
-
-            cursor.execute(
-                "UPDATE signing_key_unlock SET updated_at = %s WHERE khoa_id = %s RETURNING updated_at",
-                ["2000-01-01T00:00:00+00:00", key_id],
+                "UPDATE signing_pin_credential SET updated_at = %s WHERE nguoi_dung_id = %s RETURNING updated_at",
+                ["2000-01-01T00:00:00+00:00", self.user.pk],
             )
             self.assertGreater(cursor.fetchone()[0].year, 2000)
 
@@ -134,12 +124,16 @@ class SigningSchemaDefaultsTests(TestCase):
             )
             self.assertEqual(cursor.fetchone()[0], "document_kind")
 
-    def test_enum_catalog_and_adopted_schema_path_are_idempotent(self):
+    def test_current_enum_catalog_excludes_removed_key_verification_enum(self):
         migration = import_module("signing.migrations.0012_db_defaults_document_kind")
         schema_editor = SimpleNamespace(connection=connection)
+        expected_enums = {
+            name: labels for name, labels in migration.SIGNING_ENUMS.items()
+            if name != "signing_verify_status"
+        }
 
         with connection.cursor() as cursor:
-            for name, expected_labels in migration.SIGNING_ENUMS.items():
+            for name, expected_labels in expected_enums.items():
                 cursor.execute(
                     "SELECT enum.enumlabel FROM pg_type AS typ "
                     "JOIN pg_namespace AS namespace ON namespace.oid = typ.typnamespace "
@@ -151,12 +145,22 @@ class SigningSchemaDefaultsTests(TestCase):
                 self.assertEqual(tuple(row[0] for row in cursor.fetchall()), expected_labels, name)
 
             cursor.execute(
-                "SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'signing_kieuky')"
+                "SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname IN ('signing_kieuky', 'signing_verify_status'))"
             )
             self.assertFalse(cursor.fetchone()[0])
 
-        migration.ensure_signing_enums_and_document_kind(None, schema_editor)
-        migration.ensure_signing_key_unlock_updated_at_trigger(None, schema_editor)
+        class RollbackAdoptedSchema(Exception):
+            pass
+
+        with self.assertRaises(RollbackAdoptedSchema):
+            with transaction.atomic():
+                migration.ensure_signing_enums_and_document_kind(None, schema_editor)
+                migration.ensure_signing_enums_and_document_kind(None, schema_editor)
+                raise RollbackAdoptedSchema
+
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'signing_verify_status')")
+            self.assertFalse(cursor.fetchone()[0])
 
     def test_noncanonical_enum_labels_are_rejected_without_rewrite(self):
         migration = import_module("signing.migrations.0012_db_defaults_document_kind")
@@ -178,54 +182,6 @@ class SigningSchemaDefaultsTests(TestCase):
                 "ORDER BY enum.enumsortorder"
             )
             self.assertEqual(tuple(row[0] for row in cursor.fetchall()), ("DEPARTMENT", "COMPANY"))
-
-    def test_noncanonical_key_unlock_trigger_is_rejected_without_rewrite(self):
-        migration = import_module("signing.migrations.0012_db_defaults_document_kind")
-        schema_editor = SimpleNamespace(connection=connection)
-
-        with self.assertRaisesRegex(RuntimeError, r"Existing signing_key_unlock updated_at trigger is not canonical"):
-            with transaction.atomic():
-                with connection.cursor() as cursor:
-                    cursor.execute(
-                        "ALTER TABLE public.signing_key_unlock "
-                        "DISABLE TRIGGER trg_signing_key_unlock_updated_at"
-                    )
-                migration.ensure_signing_key_unlock_updated_at_trigger(None, schema_editor)
-
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT trg.tgenabled FROM pg_trigger AS trg "
-                "JOIN pg_class AS pg_table ON pg_table.oid = trg.tgrelid "
-                "WHERE pg_table.oid = 'public.signing_key_unlock'::regclass "
-                "AND trg.tgname = 'trg_signing_key_unlock_updated_at'"
-            )
-            self.assertEqual(cursor.fetchone()[0], "O")
-
-    def test_conditional_key_unlock_trigger_is_rejected_without_rewrite(self):
-        migration = import_module("signing.migrations.0012_db_defaults_document_kind")
-        schema_editor = SimpleNamespace(connection=connection)
-
-        with self.assertRaisesRegex(RuntimeError, r"Existing signing_key_unlock updated_at trigger is not canonical"):
-            with transaction.atomic():
-                with connection.cursor() as cursor:
-                    cursor.execute(
-                        "DROP TRIGGER trg_signing_key_unlock_updated_at ON public.signing_key_unlock"
-                    )
-                    cursor.execute(
-                        "CREATE TRIGGER trg_signing_key_unlock_updated_at "
-                        "BEFORE UPDATE ON public.signing_key_unlock FOR EACH ROW "
-                        "WHEN (NEW.so_lan_sai >= 0) EXECUTE FUNCTION public.set_updated_at()"
-                    )
-                migration.ensure_signing_key_unlock_updated_at_trigger(None, schema_editor)
-
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT trg.tgqual IS NULL FROM pg_trigger AS trg "
-                "JOIN pg_class AS pg_table ON pg_table.oid = trg.tgrelid "
-                "WHERE pg_table.oid = 'public.signing_key_unlock'::regclass "
-                "AND trg.tgname = 'trg_signing_key_unlock_updated_at'"
-            )
-            self.assertTrue(cursor.fetchone()[0])
 
     def test_supported_document_kind_values_convert_without_row_loss(self):
         with connection.cursor() as cursor:

@@ -15,7 +15,7 @@ vi.mock('@lib/signing/api', async () => {
   const actual = await vi.importActual<typeof import('@lib/signing/api')>('@lib/signing/api');
   return { ...actual, signingApi: {
     chiTiet: vi.fn(), ungVienThayNguoiKy: vi.fn(), thayNguoiKy: vi.fn(), tepCuaLuot: vi.fn(), tepGoc: vi.fn(),
-    tepHoanTat: vi.fn(), bangChung: vi.fn(), khoa: vi.fn(), tepTaiLieu: vi.fn(), anhChuKy: vi.fn(),
+    tepHoanTat: vi.fn(), bangChung: vi.fn(), tepTaiLieu: vi.fn(), anhChuKy: vi.fn(),
   } };
 });
 const api = vi.mocked(signingApi);
@@ -102,7 +102,6 @@ describe('Nút "Thay người ký" ở trang chi tiết hồ sơ', () => {
     api.chiTiet.mockResolvedValue(hoSo(nguoi));
     api.tepCuaLuot.mockResolvedValue({ buf: new ArrayBuffer(8), maBam: 'a'.repeat(64) } as never);
     api.tepGoc.mockResolvedValue({ buf: new ArrayBuffer(8), maBam: 'a'.repeat(64) } as never);
-    api.khoa.mockResolvedValue([]);
     render(
       <MemoryRouter initialEntries={['/approvals/12']}>
         <SigningContext.Provider value={{ toi: TOI, taiLaiToi: () => undefined }}>

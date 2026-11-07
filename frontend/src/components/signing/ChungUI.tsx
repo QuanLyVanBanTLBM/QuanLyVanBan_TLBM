@@ -371,7 +371,7 @@ export function OChonFileKhoa({
         ref={fileInputRef}
         type="file"
         accept={accept}
-        aria-label={nhan || t('hanhDong.fileKhoa')}
+        aria-label={nhan || t('chung.chonTep')}
         className="sr-only"
         disabled={disabled}
         onChange={(e) => {

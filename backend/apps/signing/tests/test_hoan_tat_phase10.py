@@ -92,10 +92,10 @@ class TepHoanTatTests(HoanTatBase):
         xm = self.c.get(f"{BASE}/{self.pk}/bang-chung/").data["xac_minh"]
         self.assertEqual((xm["tep_goc_khop"], xm["hop_le"]), (False, False))
 
-    def test_new_manifest_has_no_muc_do_and_version_2(self):
+    def test_new_manifest_has_no_muc_do_and_version_3(self):
         luot = self.ky_het()
         manifest = SigningManifest.objects.get(luot_trinh=luot)
-        self.assertEqual((manifest.phien_ban_bang_chung, manifest.noi_dung_chuan_hoa["phien_ban"]), (2, 2))
+        self.assertEqual((manifest.phien_ban_bang_chung, manifest.noi_dung_chuan_hoa["phien_ban"]), (3, 3))
         self.assertNotIn("muc_do", manifest.noi_dung_chuan_hoa["ho_so"])
 
     def test_version_1_manifest_with_muc_do_still_verifies_and_builds_result_file(self):

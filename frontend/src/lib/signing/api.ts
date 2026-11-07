@@ -6,17 +6,11 @@
 import apiClient, { ApiError } from '@lib/apiClient';
 import { resolveDocumentApiUrl } from '@lib/routes';
 import type {
-  BangChung, BoLocHoSo, BoLocTaiLieu, CanBo, CanBoChucVu, ChucVu, DonViApDungHoSo, DonViLuaChon, TepTaiLieu, ThongKeHoSo, UngVienThayNguoiKy, HoSo, HoSoChiTiet, KhoaKy, LoiNghiepVu, NguoiDungHienTai, QuanTriNguoiDung, QuyTrinh, ThoiHanKhoaQuyenKy, ThongTinAnhChuKyCaNhan,
-  ThamSoKdf, TinNhan, TrangKetQua, TraoDoi, VanBanDi, VanBanDiTepDinhKem, ViTriKy,
+  BangChung, BoLocHoSo, BoLocTaiLieu, CanBo, CanBoChucVu, ChucVu, DonViApDungHoSo, DonViLuaChon, KenhOtpPin, TepTaiLieu, ThongKeHoSo, UngVienThayNguoiKy, HoSo, HoSoChiTiet, LoiNghiepVu, NguoiDungHienTai, PinOtpYeuCau, QuanTriNguoiDung, QuyTrinh, ThoiHanKhoaQuyenKy, ThongTinAnhChuKyCaNhan,
+  TinNhan, TrangKetQua, TrangThaiPin, TraoDoi, VanBanDi, VanBanDiTepDinhKem, ViTriKy,
 } from './types';
 
 export const SIGNING_BASE = '/api/v1/signing';
-
-function yeuCauKenhKyAnToan() {
-  // A server-side guard cannot undo credentials already sent over HTTP.
-  // Browsers treat HTTPS and loopback origins as secure contexts.
-  if (typeof window === 'undefined' || !window.isSecureContext) throw new Error('https_bat_buoc');
-}
 
 /** Số hồ sơ (hoặc thông báo) mỗi trang danh sách (server mặc định 10, tối đa 100). */
 export const SO_HO_SO_MOI_TRANG = 10;
@@ -129,8 +123,7 @@ export const signingApi = {
     apiClient.post<HoSoChiTiet>(`${SIGNING_BASE}/trinh-ky/${id}/trinh-lai/`, {}, tieuDe(khoa)),
 
   // ── Hành động người ký ───────────────────────────────────────────────────
-  ky: (id: number, khoa: string, body: { khoa_ky: number; hash_tai_lieu: string; pin: string; ghi_chu_ky: string }) => {
-    yeuCauKenhKyAnToan();
+  ky: (id: number, khoa: string, body: { hash_tai_lieu: string; pin: string; ghi_chu_ky: string }) => {
     return apiClient.post<HoSoChiTiet>(`${SIGNING_BASE}/trinh-ky/${id}/ky/`, body, tieuDe(khoa));
   },
   tuChoi: (id: number, khoa: string, ly_do_tu_choi: string) =>
@@ -254,7 +247,17 @@ export const signingApi = {
   },
   timVanBanDi: (q: string) => apiClient.get<VanBanDi[]>(`${SIGNING_BASE}/van-ban-di/?q=${encodeURIComponent(q)}`),
 
-  // ── Khóa ký, PIN ─────────────────────────────────────────────────────────
+  // ── PIN ký ────────────────────────────────────────────────────────────────
+  pinTrangThai: () => apiClient.get<TrangThaiPin>(`${SIGNING_BASE}/pin/`),
+  pinOtpYeuCau: (pin_moi: string, pin_xac_nhan: string, kenh: KenhOtpPin = 'SMS') => {
+    return apiClient.post<PinOtpYeuCau>(`${SIGNING_BASE}/pin/yeu-cau/`, { pin_moi, pin_xac_nhan, kenh });
+  },
+  pinOtpXacNhan: (challenge_id: number, ma: string) => {
+    return apiClient.post<{ da_dat_pin: boolean }>(`${SIGNING_BASE}/pin/xac-nhan/`, { challenge_id, ma });
+  },
+  pinOtpHuy: (challenge_id: number) =>
+    apiClient.post<{ da_huy: boolean }>(`${SIGNING_BASE}/pin/huy/`, { challenge_id }),
+
   // ── Ảnh chữ ký cá nhân (Issue #424) ──────────────────────────────────────
   /** Tệp ảnh chữ ký cá nhân (có Bearer); 404 khi chưa có ảnh hoặc tệp không còn. */
   tepAnhChuKyCaNhan: () => layBlob('/anh-chu-ky-ca-nhan/tep/'),
@@ -271,47 +274,11 @@ export const signingApi = {
   },
   xoaAnhChuKy: () => apiClient.delete<void>(`${SIGNING_BASE}/anh-chu-ky-ca-nhan/`),
 
-  // ── Quản trị khóa ký và quyền ký của tài khoản khác (quản trị viên) ──────────
+  // ── Quản trị PIN và quyền ký của tài khoản khác (quản trị viên) ───────────
   quanTriNguoiDung: (q = '') =>
     apiClient.get<QuanTriNguoiDung[]>(`${SIGNING_BASE}/quan-tri/nguoi-dung/?${new URLSearchParams({ q })}`),
   quanTriKhoaQuyenKy: (id: number, thoi_han: ThoiHanKhoaQuyenKy, ly_do: string) =>
     apiClient.post<QuanTriNguoiDung>(`${SIGNING_BASE}/quan-tri/nguoi-dung/${id}/khoa-quyen-ky/`, { thoi_han, ly_do }),
   quanTriBatLaiQuyenKy: (id: number, ly_do: string) =>
     apiClient.post<QuanTriNguoiDung>(`${SIGNING_BASE}/quan-tri/nguoi-dung/${id}/bat-lai-quyen-ky/`, { ly_do }),
-  quanTriThuHoiKhoa: (id: number, ly_do: string) =>
-    apiClient.post<QuanTriNguoiDung>(`${SIGNING_BASE}/quan-tri/nguoi-dung/${id}/thu-hoi-khoa/`, { ly_do }),
-
-  khoa: () => apiClient.get<KhoaKy[]>(`${SIGNING_BASE}/khoa/`),
-  dangKyKhoa: (ma_khoa: string, khoa_cong_khai: string) =>
-    apiClient.post<KhoaKy>(`${SIGNING_BASE}/khoa/`, { ma_khoa, khoa_cong_khai, ngay_hieu_luc: new Date().toISOString() }),
-  thachThuc: (id: number) => apiClient.get<{ thach_thuc: string }>(`${SIGNING_BASE}/khoa/${id}/thach-thuc/`),
-  xacMinhKhoa: (id: number, thach_thuc: string, chu_ky_so: string) =>
-    apiClient.post<KhoaKy>(`${SIGNING_BASE}/khoa/${id}/xac-minh/`, { thach_thuc, chu_ky_so }),
-  datLaiPinYeuCau: () =>
-    apiClient.post<{ het_han: string; gian_cach_giay: number }>(`${SIGNING_BASE}/dat-lai-pin/yeu-cau/`, {}),
-  datLaiPinXacNhan: (ma: string, pin_moi: string) => {
-    yeuCauKenhKyAnToan();
-    return apiClient.post<{ da_dat_lai_pin: boolean; khoa: number }>(
-      `${SIGNING_BASE}/dat-lai-pin/xac-nhan/`, { ma, pin_moi });
-  },
-  /** MFA khi ký (#509): gửi mã 6 chữ số tới email; `gian_cach_giay` là thời gian tối thiểu giữa hai lần gửi. */
-  mfaKyYeuCau: () =>
-    apiClient.post<{ het_han: string; gian_cach_giay: number }>(`${SIGNING_BASE}/mfa/yeu-cau/`, {}),
-  mfaKyXacMinh: (ma: string) =>
-    apiClient.post<{ da_xac_thuc: boolean; het_han: string }>(`${SIGNING_BASE}/mfa/xac-minh/`, { ma }),
-  kichHoatKhoa: (id: number) => apiClient.post<KhoaKy>(`${SIGNING_BASE}/khoa/${id}/kich-hoat/`, {}),
-  /** Đổi thiết bị: khóa cũ DA_XOAY_VONG, khóa mới (đã xác minh) thành HOAT_DONG. */
-  xoayVongKhoa: (id: number, khoa_moi: number) =>
-    apiClient.post<KhoaKy>(`${SIGNING_BASE}/khoa/${id}/xoay-vong/`, { khoa_moi }),
-  thuHoiKhoa: (id: number, ly_do: string) => apiClient.post<KhoaKy>(`${SIGNING_BASE}/khoa/${id}/thu-hoi/`, { ly_do }),
-  datPin: (id: number, pin: string, khoa_bi_mat_pkcs8: string, tham_so_kdf: ThamSoKdf) => {
-    yeuCauKenhKyAnToan();
-    return apiClient.post<{ khoa: number; da_dat_pin: boolean }>(
-      `${SIGNING_BASE}/khoa/${id}/dat-pin/`, { pin, khoa_bi_mat_pkcs8, tham_so_kdf });
-  },
-  doiPin: (id: number, pin_cu: string, pin_moi: string, tham_so_kdf: ThamSoKdf) => {
-    yeuCauKenhKyAnToan();
-    return apiClient.post<{ khoa: number; da_dat_pin: boolean }>(
-      `${SIGNING_BASE}/khoa/${id}/doi-pin/`, { pin_cu, pin_moi, tham_so_kdf });
-  },
 };

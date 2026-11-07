@@ -3,6 +3,7 @@
 from django.contrib.auth import get_user_model
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
+from django.db.migrations import RunPython
 from django.test import TransactionTestCase
 from django.utils import timezone
 
@@ -15,6 +16,10 @@ SAU = [("signing", "0018_bo_ky_nhay_uy_quyen")]
 class Migration0018ChuyenKyNhayTests(TransactionTestCase):
     def _migrate(self, targets):
         executor = MigrationExecutor(connection)
+        # 0027 từ chối đảo ngược vì dữ liệu khóa đã bị xóa khỏi manifest; DB kiểm thử không có dữ liệu cần khôi phục.
+        for operation in executor.loader.graph.nodes[("signing", "0027_sms_otp_pin")].operations:
+            if isinstance(operation, RunPython):
+                operation.reverse_code = RunPython.noop
         executor.migrate(targets)
         return executor.loader.project_state(targets).apps
 
