@@ -80,3 +80,15 @@ describe('TaskFilterBar — tìm kiếm tự động (debounce)', () => {
     expect(onSearch).toHaveBeenCalledWith(expect.objectContaining({ status: 'QUA_HAN' }));
   });
 });
+
+describe('TaskFilterBar — nút Thêm công việc theo quyền', () => {
+  it('hiện nút khi có quyền (mặc định)', () => {
+    render(<TaskFilterBar value={EMPTY} onSearch={vi.fn()} onCreate={vi.fn()} />);
+    expect(screen.getByRole('button', { name: /Thêm công việc/i })).toBeInTheDocument();
+  });
+
+  it('ẩn hẳn nút khi canCreate=false', () => {
+    render(<TaskFilterBar value={EMPTY} onSearch={vi.fn()} onCreate={vi.fn()} canCreate={false} />);
+    expect(screen.queryByRole('button', { name: /Thêm công việc/i })).not.toBeInTheDocument();
+  });
+});
