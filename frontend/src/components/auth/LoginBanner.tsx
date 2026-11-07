@@ -21,15 +21,13 @@ export const LoginBanner: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. Hình ảnh trung tâm thay thế: Logo Bảo Long theo yêu cầu của Thầy Duy */}
-      <div className="my-auto py-6 sm:py-8 flex flex-col items-center justify-center text-center z-10">
-        <div className="w-full max-w-[280px] sm:max-w-[320px] p-5 bg-surface rounded-2xl border border-border-subtle shadow-sm flex items-center justify-center transition-fast hover:shadow-md">
-          <img
-            src="/baolong-logo-color.png"
-            alt="Bảo Long Insurance"
-            className="w-full h-auto max-h-[150px] sm:max-h-[170px] object-contain"
-          />
-        </div>
+      {/* 2. Hình ảnh trung tâm: Logo Bảo Long tự nhiên, không đóng khung viền */}
+      <div className="my-auto py-6 sm:py-8 flex flex-col items-center justify-center text-center z-10 w-full px-2 sm:px-4">
+        <img
+          src="/baolong-logo-color.png"
+          alt="Bảo Long Insurance"
+          className="w-full max-w-[260px] sm:max-w-[300px] h-auto max-h-[160px] sm:max-h-[180px] object-contain"
+        />
       </div>
 
       {/* 3. Footer chứng chỉ / cam kết bảo mật */}

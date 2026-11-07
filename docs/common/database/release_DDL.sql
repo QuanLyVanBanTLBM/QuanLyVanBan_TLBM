@@ -2206,7 +2206,7 @@ FROM (
 ) AS source (stt_uu_tien, dia_chi, dien_thoai, is_public)
 WHERE unit.stt_uu_tien = source.stt_uu_tien;
 
--- 3) Seed 25 Chức vụ chuẩn (STT 1 = cao nhất: 22 chức vụ của đặc tả, giữ "Quản trị viên",
+-- 3) Seed 27 Chức vụ chuẩn (STT 1 = cao nhất: 24 chức vụ của đặc tả, giữ "Quản trị viên",
 --    "Lãnh đạo cơ quan", "Văn thư" chèn theo cấp bậc) và Tài khoản quản trị hệ thống mẫu
 --    (Idempotent, không hard-code ID)
 INSERT INTO
@@ -2232,17 +2232,19 @@ FROM (
         (12, 'Trợ lý TGĐ'),
         (13, 'Giám đốc'),
         (14, 'Phó Giám đốc'),
-        (15, 'Trưởng Ban'),
-        (16, 'Phó Ban'),
-        (17, 'Trưởng Bộ phận'),
-        (18, 'Trưởng nhóm'),
-        (19, 'Trưởng phòng'),
-        (20, 'Phó phòng'),
-        (21, 'Chuyên viên'),
-        (22, 'Văn thư'),
-        (23, 'Kiểm toán viên'),
-        (24, 'Nhân viên'),
-        (25, 'Thành viên')
+        (15, 'Giám đốc Ban'),
+        (16, 'Phụ trách Ban'),
+        (17, 'Trưởng Ban'),
+        (18, 'Phó Ban'),
+        (19, 'Trưởng Bộ phận'),
+        (20, 'Trưởng nhóm'),
+        (21, 'Trưởng phòng'),
+        (22, 'Phó phòng'),
+        (23, 'Chuyên viên'),
+        (24, 'Văn thư'),
+        (25, 'Kiểm toán viên'),
+        (26, 'Nhân viên'),
+        (27, 'Thành viên')
     ) AS x (stt, ten)
 WHERE
     NOT EXISTS (

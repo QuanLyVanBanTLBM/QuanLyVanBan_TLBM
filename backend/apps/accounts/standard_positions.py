@@ -24,6 +24,8 @@ TEACHER_POSITIONS = [
     "Trợ lý TGĐ",
     "Giám đốc",
     "Phó Giám đốc",
+    "Giám đốc Ban",
+    "Phụ trách Ban",
     "Trưởng Ban",
     "Phó Ban",
     "Trưởng Bộ phận",
@@ -47,9 +49,9 @@ STANDARD_POSITIONS = list(
             ADMIN_POSITION,
             *TEACHER_POSITIONS[:4],  # Chủ tịch HĐQT ... Tổng Giám đốc
             AGENCY_LEADER_POSITION,
-            *TEACHER_POSITIONS[4:19],  # Phó Tổng Giám đốc điều hành ... Chuyên viên
+            *TEACHER_POSITIONS[4:21],  # Phó Tổng Giám đốc điều hành ... Chuyên viên
             CLERK_POSITION,
-            *TEACHER_POSITIONS[19:],  # Kiểm toán viên, Nhân viên, Thành viên
+            *TEACHER_POSITIONS[21:],  # Kiểm toán viên, Nhân viên, Thành viên
         ],
         start=1,
     )

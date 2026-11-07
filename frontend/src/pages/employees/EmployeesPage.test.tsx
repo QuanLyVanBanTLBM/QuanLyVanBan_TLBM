@@ -30,7 +30,7 @@ const mockEmployeeData = [
     username: 'binhnv',
     email: 'binhnv@baolong.vn',
     ho_ten: 'Nguyễn Văn Bình',
-    ngay_sinh: '20/05/19xx',
+    ngay_sinh: '20/05/----',
     is_birthday_masked: true,
     don_vi_id: 1,
     don_vi_ten: 'Văn phòng Viện',
@@ -175,9 +175,58 @@ describe('EmployeesPage Component (Issue #24)', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('20/05/19xx')).toBeInTheDocument();
+      expect(screen.getByText('20/05/----')).toBeInTheDocument();
       expect(screen.getByText('15/10/1988')).toBeInTheDocument();
     });
+  });
+
+  it('lets an admin enter a replacement birthday without preloading the hidden year', async () => {
+    const { container } = render(
+      <MemoryRouter>
+        <EmployeesPage />
+      </MemoryRouter>
+    );
+
+    await screen.findByText('Nguyễn Văn Bình');
+    fireEvent.click((await screen.findAllByTitle('Chỉnh sửa'))[0]);
+    await screen.findByText('Chỉnh Sửa Hồ Sơ Nhân Viên');
+
+    const birthdayInput = container.querySelector<HTMLInputElement>('input[name="ngay_sinh"]');
+    expect(birthdayInput).toHaveValue('20/05/----');
+    expect(birthdayInput).toHaveAttribute('readonly');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Nhập ngày sinh mới' }));
+    expect(birthdayInput).toHaveValue('');
+    expect(birthdayInput).not.toHaveAttribute('readonly');
+
+    fireEvent.change(birthdayInput!, { target: { value: '21/06/1985' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu thay đổi' }));
+
+    await waitFor(() => {
+      expect(mockedApiClient.patch).toHaveBeenCalledWith(
+        '/api/accounts/employees/1/',
+        expect.objectContaining({ ngay_sinh: '1985-06-21' }),
+      );
+    });
+  });
+
+  it('does not submit a masked birthday unless the admin explicitly replaces it', async () => {
+    const { container } = render(
+      <MemoryRouter>
+        <EmployeesPage />
+      </MemoryRouter>
+    );
+
+    await screen.findByText('Nguyễn Văn Bình');
+    fireEvent.click((await screen.findAllByTitle('Chỉnh sửa'))[0]);
+    await screen.findByText('Chỉnh Sửa Hồ Sơ Nhân Viên');
+    expect(container.querySelector<HTMLInputElement>('input[name="ngay_sinh"]')).toHaveValue('20/05/----');
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu thay đổi' }));
+
+    await waitFor(() => expect(mockedApiClient.patch).toHaveBeenCalled());
+    const payload = mockedApiClient.patch.mock.calls[0][1] as Record<string, unknown>;
+    expect(payload).not.toHaveProperty('ngay_sinh');
+    expect(payload).not.toHaveProperty('ngay_sinh_iso');
   });
 
   it('opens employee modal on clicking Add Employee button', async () => {
