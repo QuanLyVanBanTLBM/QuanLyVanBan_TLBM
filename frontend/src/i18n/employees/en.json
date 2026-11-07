@@ -30,7 +30,9 @@
       "exporting": "Exporting...",
       "changePassword": "Change Password",
       "editUsername": "Edit username",
-      "cancelUsernameEdit": "Cancel username editing"
+      "cancelUsernameEdit": "Cancel username editing",
+      "editBirthday": "Enter a new birthday",
+      "cancelBirthdayEdit": "Cancel birthday edit"
     },
     "table": {
       "employee": "Employee",
@@ -86,7 +88,7 @@
     "placeholders": {
       "search": "Search by name, username, email, phone...",
       "fullName": "Enter full name...",
-      "email": "Enter company email (e.g. first.last@baolong.vn)...",
+      "email": "Enter email (e.g. first.last@gmail.com)...",
       "username": "Enter username (leave blank to auto-generate)...",
       "initialPassword": "Enter password (leave blank to generate random 10-char password)...",
       "phone": "Enter 10-digit phone number (e.g. 0912345678)...",
@@ -101,6 +103,7 @@
       "statusNotice": "Note: Changing to 'Resigned' automatically deactivates the login account.",
       "birthdayFormat": "Format: DD/MM/YYYY (Example: 15/06/2003)",
       "birthdayMaskedTooltip": "Other employees' birth years are hidden to protect personal information.",
+      "birthdayEditMasked": "The current birth year remains hidden. Enter a new birthday to update it.",
       "masked": "Masked",
       "groupsHidden": "Permission groups hidden due to privacy policy.",
       "selfEditNotice": "You are updating your own profile. Only contact info and birthday can be edited; organizational attributes are managed by Administrators."
@@ -201,7 +204,6 @@
       "emailRequired": "Email address is required.",
       "birthdayRequired": "Birthday is required.",
       "phoneInvalid": "Phone number must be exactly 10 digits starting with 0 (e.g. 0912345678).",
-      "emailDomainInvalid": "Email must use the company domain (@baolong.vn).",
       "roleRequired": "Please select at least one role/group for the employee.",
       "positionRequired": "Please select a position for the employee.",
       "passwordRequired": "Enter and confirm the new password.",
@@ -231,7 +233,7 @@
       "invalidEmail": "Invalid email address format.",
       "nameTooLong": "Full name cannot exceed 150 characters.",
       "invalidPhone": "Phone number must be exactly 10 digits starting with 0 (e.g. 0912345678).",
-      "emailDomainNotAllowed": "Email must use the company domain (@baolong.vn).",
+      "emailDomainNotAllowed": "The email domain is not in the allowed list.",
       "cannotDeactivateSelf": "You cannot deactivate or set resigned status for your own account.",
       "cannotDeactivateSuperuser": "Permission denied to deactivate a Superuser account.",
       "cannotDeactivateLastSuperuser": "Cannot deactivate the last active Superuser account.",

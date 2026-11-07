@@ -22,10 +22,10 @@ import { DeleteConfirmModal } from './components/DeleteConfirmModal';
 
 export default function EmployeesPage() {
   const { t } = useTranslation();
-  const { can, isSuperuser } = usePermissions();
+  const { can, isSuperuser, isSystemAdmin } = usePermissions();
   const currentSession = authService.getSession();
   const canEditEmployee = (employee: Employee) =>
-    isSuperuser ||
+    isSystemAdmin ||
     (can('change_self_cbnv') && Boolean(currentSession?.username && currentSession.username === employee.username));
 
   // Dữ liệu danh sách & phân trang
@@ -247,7 +247,7 @@ export default function EmployeesPage() {
             </Button>
           )}
 
-          {can('import_cbnv') && (
+          {isSystemAdmin && can('import_cbnv') && (
             <Button
               type="button"
               variant="secondary"
@@ -259,7 +259,7 @@ export default function EmployeesPage() {
             </Button>
           )}
 
-          {can('add_cbnv') && (
+          {isSystemAdmin && can('add_cbnv') && (
             <Button
               type="button"
               variant="primary"
@@ -598,7 +598,7 @@ export default function EmployeesPage() {
                           )}
 
                           {/* Xóa */}
-                          {can('delete_cbnv') && (
+                          {isSuperuser && (
                             <button
                               type="button"
                               onClick={() => {
@@ -671,7 +671,7 @@ export default function EmployeesPage() {
         positions={positions}
         groups={groups}
         isLoading={isSubmitting}
-        isAdmin={isSuperuser}
+        isAdmin={isSystemAdmin}
         onChangePassword={async (employeeId, newPassword, confirmPassword, reasonCode, reasonDetail) => {
           await apiClient.post(`/api/accounts/employees/${employeeId}/change-password/`, {
             new_password: newPassword,

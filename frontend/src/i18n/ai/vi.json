@@ -170,6 +170,7 @@
     },
     "uncategorized": "Chưa phân loại",
     "defaultModel": "Gemini",
+    "modelLoading": "Đang tải cấu hình...",
     "duplicateUploadError": "Tài liệu cùng tên đã được thêm trong lúc tải lên. Tải lại danh sách và thử lại.",
     "replaceExistingTitle": "Tài liệu đã tồn tại",
     "replaceExistingConfirm": "Tệp \"{filename}\" đã có trong kho. Chỉ thay thế sau khi lập chỉ mục thành công. Tiếp tục tải lên?"
@@ -224,6 +225,7 @@
   },
   "floatingAI": {
     "title": "Trợ lý AI TLBM",
+    "dragTooltip": "Kéo thả để di chuyển (Nhấp đúp để đặt lại vị trí)",
     "subtitle": "Hỗ trợ quy trình và nghiệp vụ",
     "welcome": "**Xin chào Quý Cán bộ!**\n\nTôi là **Trợ lý AI TLBM**, hỗ trợ tra cứu tài liệu và thông tin nghiệp vụ được cấp quyền.",
     "suggestionIncoming": "Quy trình tiếp nhận văn bản đến?",

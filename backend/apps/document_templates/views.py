@@ -22,7 +22,7 @@ class StandardResourcePagination(PageNumberPagination):
     max_page_size = 100
 
 
-from authorization.permissions import require_permission
+from authorization.permissions import is_system_admin, require_permission
 from .selectors import visible_resources
 from .filters import TaiLieuChiTietFilter
 from .models import DanhMucTaiLieu, LoaiTaiLieu, TaiLieuChiTiet, ChiTietTaiLieuAttachment, template_disk_path
@@ -38,38 +38,56 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.authentication import SessionAuthentication
 
 
-class JWTQueryParamAuthentication(JWTAuthentication):
+class TicketOrJWTAuthentication(JWTAuthentication):
     """
-    Xác thực JWT hỗ trợ cả Authorization Header và query parameter `token`.
-    Phục vụ cho các hành động mở trực tiếp URL máy chủ trong tab mới (window.open, iframe, <a>)
-    mà trình duyệt không thể tự động đính kèm Authorization header, tránh việc phải dùng
-    URL bộ nhớ tạm blob:... gây lỗi ERR_FILE_NOT_FOUND trên Chromium.
+    Xác thực kép bảo mật cho phân hệ tài liệu:
+    1. Chuẩn REST API: HTTP Header Authorization: Bearer <token>
+    2. Vé xem tạm thời dùng 1 lần (Single-Use Short-Lived Ticket, Burn on Read) qua query parameter `ticket`.
+       Vé chỉ có hiệu lực tối đa 60 giây và bị hủy ngay lập tức khi sử dụng.
+    Tuyệt đối KHÔNG chấp nhận access token qua query parameter `token` để ngăn chặn rò rỉ token trên URL!
     """
     def authenticate(self, request):
+        # 1. Thử xác thực qua Authorization Header
         header = self.get_header(request)
         if header is not None:
             raw_token = self.get_raw_token(header)
-        else:
-            query_dict = getattr(request, 'query_params', None)
-            if query_dict is None:
-                query_dict = getattr(request, 'GET', {})
-            raw_token = query_dict.get('token')
-            if not raw_token:
-                return None
-            if isinstance(raw_token, str):
-                raw_token = raw_token.encode('utf-8')
+            if raw_token:
+                validated_token = self.get_validated_token(raw_token)
+                return self.get_user(validated_token), validated_token
 
-        if raw_token is None:
-            return None
+        # 2. Thử xác thực qua vé dùng có chữ ký số `ticket` (Cryptographically Signed Short-Lived Ticket)
+        query_dict = getattr(request, 'query_params', None)
+        if query_dict is None:
+            query_dict = getattr(request, 'GET', {})
 
-        validated_token = self.get_validated_token(raw_token)
-        return self.get_user(validated_token), validated_token
+        ticket = query_dict.get('ticket')
+        if ticket:
+            from django.core.signing import TimestampSigner, BadSignature, SignatureExpired
+            signer = TimestampSigner(salt='doc_view_ticket')
+            raw_ticket = ticket[3:] if ticket.startswith('vt_') else ticket
+            try:
+                ticket_data = signer.unsign_object(raw_ticket, max_age=60)
+            except (BadSignature, SignatureExpired):
+                raise exceptions.PermissionDenied("Vé xem tài liệu không hợp lệ hoặc đã hết hạn.")
+
+            from django.contrib.auth import get_user_model
+            UserModel = get_user_model()
+            user_id = ticket_data.get('user_id')
+            user = UserModel.objects.filter(id=user_id, is_active=True).first()
+            if not user:
+                raise exceptions.PermissionDenied("Tài khoản liên kết với vé không còn hoạt động.")
+
+            # Gắn metadata vé vào request để view kiểm tra attachment ID
+            request._view_ticket_data = ticket_data
+            return (user, None)
+
+        return None
 
 
 def can_user_modify_document(user, doc, perm_codename):
     """
     Kiểm tra quyền sở hữu (RBAC) khi Cập nhật, Xóa và Đổi hiệu lực tài liệu:
-    - Quản trị viên tối cao (is_superuser, is_staff, role='admin', username in ('admin', 'quantri')) có toàn quyền.
+    - Quản trị hệ thống (superuser, is_staff hoặc nhóm ADMIN) có toàn quyền.
     - Người trực tiếp tạo ra tài liệu (nguoi_tao == user hoặc nguoi_tao_id == user.id) luôn có quyền trên tài liệu của mình.
     - Cán bộ có quyền perm_codename ('change_tailieu' hoặc 'delete_tailieu'):
       + Chỉ có quyền trên tài liệu thuộc cùng phòng ban / đơn vị của mình.
@@ -79,12 +97,7 @@ def can_user_modify_document(user, doc, perm_codename):
         return False
 
     # 1. Quản trị viên tối cao / Admin
-    if getattr(user, 'is_superuser', False) or getattr(user, 'is_staff', False):
-        return True
-    if getattr(user, 'username', '') in ('admin', 'quantri'):
-        return True
-    user_role = getattr(getattr(user, 'profile', None), 'role', None)
-    if user_role == 'admin':
+    if getattr(user, 'is_staff', False) or is_system_admin(user):
         return True
 
     # 2. Người trực tiếp tạo tài liệu
@@ -176,7 +189,7 @@ class DanhMucTaiLieuViewSet(viewsets.ModelViewSet):
     - Tìm kiếm theo tên tài liệu, số ký hiệu
     - Xuất Excel danh mục Cấp 1
     """
-    authentication_classes = [JWTQueryParamAuthentication, SessionAuthentication]
+    authentication_classes = [JWTAuthentication, SessionAuthentication]
     queryset = DanhMucTaiLieu.objects.select_related('nguoi_lap').all()
     serializer_class = DanhMucTaiLieuSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -305,7 +318,7 @@ class TaiLieuChiTietViewSet(viewsets.ModelViewSet):
     - Bộ lọc đa tiêu chí: dm_tai_lieu, loai_tai_lieu, nam, hieu_luc, search
     - Xuất Excel danh sách tài liệu theo đúng bộ lọc tìm kiếm
     """
-    authentication_classes = [JWTQueryParamAuthentication, SessionAuthentication]
+    authentication_classes = [JWTAuthentication, SessionAuthentication]
     serializer_class = TaiLieuChiTietSerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardResourcePagination
@@ -335,7 +348,7 @@ class TaiLieuChiTietViewSet(viewsets.ModelViewSet):
         kwargs = {}
         if self.request.user and self.request.user.is_authenticated:
             kwargs['nguoi_tao'] = self.request.user
-            if 'don_vi_id' not in serializer.validated_data and hasattr(self.request.user, 'don_vi_id'):
+            if serializer.validated_data.get('don_vi_id') is None and hasattr(self.request.user, 'don_vi_id'):
                 kwargs['don_vi_id'] = getattr(self.request.user, 'don_vi_id')
         serializer.save(**kwargs)
 
@@ -581,7 +594,7 @@ class ChiTietTaiLieuAttachmentViewSet(viewsets.ModelViewSet):
     - Chống lỗ hổng IDOR rò rỉ tệp nội bộ: lọc tệp theo visible_resources của tài liệu cha
     - Kiểm soát chặt quyền xóa mềm và upload tệp
     """
-    authentication_classes = [JWTQueryParamAuthentication, SessionAuthentication]
+    authentication_classes = [TicketOrJWTAuthentication, SessionAuthentication]
     serializer_class = ChiTietTaiLieuAttachmentSerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardResourcePagination
@@ -592,7 +605,7 @@ class ChiTietTaiLieuAttachmentViewSet(viewsets.ModelViewSet):
     ordering = ['id']
 
     def get_permissions(self):
-        if self.action in ['create', 'destroy']:
+        if self.action in ['create', 'destroy', 'issue_view_ticket']:
             return [permissions.IsAuthenticated()]
         return [permissions.IsAuthenticated(), require_permission("view_tailieu")()]
 
@@ -624,6 +637,39 @@ class ChiTietTaiLieuAttachmentViewSet(viewsets.ModelViewSet):
         instance.is_deleted = True
         instance.save()
 
+    @action(detail=True, methods=['post'], url_path='ticket')
+    def issue_view_ticket(self, request, pk=None):
+        """
+        Cấp vé xem tài liệu tạm thời dùng 1 lần (Single-Use Short-Lived Ticket).
+        Chỉ dành cho người dùng đã đăng nhập hợp lệ.
+        Vé có thời hạn tối đa 60 giây và sẽ bị hủy ngay lập tức khi tệp được tải (Burn on Read).
+        """
+        user = request.user
+        if not user or not user.is_authenticated:
+            raise exceptions.NotAuthenticated("Yêu cầu đăng nhập để lấy vé xem tài liệu.")
+
+        att = self.get_object()
+        from django.core.signing import TimestampSigner
+        signer = TimestampSigner(salt='doc_view_ticket')
+        payload = {
+            "att_id": att.id,
+            "user_id": user.id,
+        }
+        raw_ticket = signer.sign_object(payload)
+        ticket = f"vt_{raw_ticket}"
+
+        ext = att.name.split('.')[-1].lower() if '.' in att.name else ''
+        pdf_hash = "#view=Fit&navpanes=0" if ext == 'pdf' else ""
+        view_url = f"/api/resources/attachments/{att.id}/view/?ticket={ticket}{pdf_hash}"
+        download_url = f"/api/resources/attachments/{att.id}/download/?ticket={ticket}"
+
+        return Response({
+            "ticket": ticket,
+            "expires_in": 60,
+            "view_url": view_url,
+            "download_url": download_url,
+        })
+
     @action(detail=True, methods=['get'], url_path='view')
     def view_file(self, request, pk=None):
         """
@@ -634,6 +680,11 @@ class ChiTietTaiLieuAttachmentViewSet(viewsets.ModelViewSet):
         from django.http import FileResponse, Http404
 
         att = self.get_object()
+        if hasattr(request, '_view_ticket_data'):
+            allowed_att_id = request._view_ticket_data.get('att_id')
+            if allowed_att_id and allowed_att_id != att.id:
+                raise exceptions.PermissionDenied("Vé không áp dụng cho tài liệu này.")
+
         disk_path = template_disk_path(att.path)
         if not disk_path or not os.path.exists(disk_path):
             raise Http404("Tệp không tồn tại trên máy chủ")
@@ -666,6 +717,11 @@ class ChiTietTaiLieuAttachmentViewSet(viewsets.ModelViewSet):
         from django.http import FileResponse, Http404
 
         att = self.get_object()
+        if hasattr(request, '_view_ticket_data'):
+            allowed_att_id = request._view_ticket_data.get('att_id')
+            if allowed_att_id and allowed_att_id != att.id:
+                raise exceptions.PermissionDenied("Vé không áp dụng cho tài liệu này.")
+
         disk_path = template_disk_path(att.path)
         if not disk_path or not os.path.exists(disk_path):
             raise Http404("Tệp không tồn tại trên máy chủ")

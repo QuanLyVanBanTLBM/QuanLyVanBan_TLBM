@@ -33,6 +33,7 @@ from .serializers import (
     user_can_view_sensitive,
 )
 from .excel_cbnv import generate_cbnv_template, import_cbnv_from_excel, export_cbnv_to_excel
+from authorization.permissions import is_system_admin
 from .permissions import CanChangeEmployeePermission, CanViewGroupPermission, IsEmployeeAdminOnly, require_permission
 
 
@@ -322,15 +323,16 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         elif self.action == "export":
             permission_classes = [IsAuthenticated, require_permission("export_cbnv")]
         elif self.action == "create":
-            permission_classes = [IsAuthenticated, require_permission("add_cbnv")]
+            # Chỉ quản trị hệ thống tạo CBNV; quyền add_cbnv không đủ nếu không phải superuser hoặc nhóm ADMIN.
+            permission_classes = [IsAuthenticated, IsEmployeeAdminOnly, require_permission("add_cbnv")]
         elif self.action in ["update", "partial_update"]:
             permission_classes = [IsAuthenticated, CanChangeEmployeePermission]
         elif self.action == "change_password":
             permission_classes = [IsAuthenticated, IsEmployeeAdminOnly]
         elif self.action == "destroy":
-            permission_classes = [IsAuthenticated, require_permission("delete_cbnv")]
+            permission_classes = [IsAuthenticated, IsEmployeeAdminOnly]
         elif self.action in ["import_excel", "import_excel_async", "import_job_status"]:
-            permission_classes = [IsAuthenticated, require_permission("import_cbnv")]
+            permission_classes = [IsAuthenticated, IsEmployeeAdminOnly, require_permission("import_cbnv")]
         else:
             permission_classes = [IsAuthenticated]
         return [permission() for permission in permission_classes]
@@ -444,8 +446,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         instance = self.get_object()
         user = request.user
 
-        # Người không phải admin chỉ được sửa hồ sơ của chính mình và các trường cá nhân.
-        if not user.is_superuser:
+        # Người không phải quản trị hệ thống chỉ được sửa hồ sơ của chính mình và các trường cá nhân.
+        if not is_system_admin(user):
             allowed_self_fields = {"sdt", "email", "ngay_sinh"}
             disallowed_fields = set(request.data.keys()) - allowed_self_fields
             if disallowed_fields:
@@ -508,6 +510,12 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="change-password")
     def change_password(self, request, pk=None):
         employee = self.get_object()
+        # Tài khoản superuser chỉ superuser mới đổi được mật khẩu, tránh nhóm ADMIN chiếm quyền tối cao.
+        if employee.is_superuser and not request.user.is_superuser:
+            return Response(
+                {"detail": "roles.messages.permissionDenied"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         serializer = EmployeeAdminPasswordChangeSerializer(
             data=request.data,
             context={"employee": employee},

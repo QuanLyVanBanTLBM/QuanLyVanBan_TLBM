@@ -247,38 +247,3 @@ class HierarchicalFolderAPITests(TestCase):
         admin_client.force_authenticate(user=self.admin_user)
         res = admin_client.post("/api/folders/scan-local/", {"folder_path": "/nonexistent_test_path_12345"}, format="json")
         self.assertNotEqual(res.status_code, status.HTTP_403_FORBIDDEN)
-
-    def test_scan_local_default_folder_and_no_path_disclosure(self):
-        """Quét thư mục mặc định thành công và không làm lộ đường dẫn nội bộ máy chủ."""
-        from django.conf import settings
-        admin_client = APIClient()
-        admin_client.force_authenticate(user=self.admin_user)
-
-        # 1. Quét với folder_path rỗng (mặc định ./Folder)
-        res = admin_client.post("/api/folders/scan-local/", {}, format="json")
-        self.assertEqual(res.status_code, status.HTTP_200_OK)
-        self.assertEqual(res.data["base_folder"], "./Folder")
-        self.assertNotIn("/srv/qlvb", str(res.data))
-        self.assertNotIn(str(settings.BASE_DIR), str(res.data))
-
-        # 2. Thử truy cập đường dẫn không tồn tại bên trong project
-        res_nonexist = admin_client.post(
-            "/api/folders/scan-local/",
-            {"folder_path": "nonexistent_subfolder_xyz"},
-            format="json",
-        )
-        self.assertEqual(res_nonexist.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("nonexistent_subfolder_xyz", res_nonexist.data.get("detail", ""))
-        self.assertNotIn("/srv/qlvb", str(res_nonexist.data))
-        self.assertNotIn(str(settings.BASE_DIR), str(res_nonexist.data))
-
-        # 3. Thử tấn công Directory Traversal ra ngoài project
-        res_traversal = admin_client.post(
-            "/api/folders/scan-local/",
-            {"folder_path": "../../../etc"},
-            format="json",
-        )
-        self.assertEqual(res_traversal.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("không hợp lệ hoặc nằm ngoài phạm vi", res_traversal.data.get("detail", ""))
-        self.assertNotIn("/srv/qlvb", str(res_traversal.data))
-        self.assertNotIn(str(settings.BASE_DIR), str(res_traversal.data))

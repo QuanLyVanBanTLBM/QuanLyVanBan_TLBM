@@ -9,12 +9,14 @@ import {
   HienThiType,
 } from '@app-types/resource';
 import { Button } from '@components/common/Button';
+import { Select, SelectOption } from '@components/common/Select';
+import { Unit } from '@app-types/organization';
 import { useTranslation } from '@i18n/translate';
 import { authService } from '@lib/authService';
 import { usePermissions } from '@lib/permissions';
 import { formatDate } from '@lib/dateUtils';
 import { ConfirmationModal } from './ConfirmationModal';
-import { downloadBlob } from '@lib/apiClient';
+import { downloadBlob, apiClient } from '@lib/apiClient';
 import { getAbsoluteFileUrl } from '@lib/fileUtils';
 import { FilePreviewModal } from './FilePreviewModal';
 
@@ -25,6 +27,7 @@ export interface ResourceFormData {
   tieu_de: string;
   ngay_dang: string;
   noi_ban_hanh: string;
+  don_vi_id?: number | null;
   nguoi_tao_name?: string;
   hieu_luc: HieuLucType;
   ngay_het_hieu_luc: string;
@@ -46,6 +49,7 @@ export interface ResourceFormModalProps {
   initialData?: ResourceItem | null;
   categories?: ResourceCategory[];
   types?: ResourceType[];
+  units?: Unit[];
   isLoading?: boolean;
   defaultCategoryId?: number;
 }
@@ -135,6 +139,7 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
   initialData,
   categories = [],
   types = [],
+  units: propUnits = [],
   isLoading = false,
   defaultCategoryId,
 }) => {
@@ -142,8 +147,8 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
   const isEditMode = Boolean(initialData);
 
   const currentSession = authService.getSession();
-  const isSessionAdmin = currentSession?.role === 'admin' || currentSession?.username === 'admin';
-  const { can, isSuperuser } = usePermissions();
+  const { can, isSuperuser, isSystemAdmin } = usePermissions();
+  const isSessionAdmin = isSystemAdmin;
   const canAdd = isSuperuser || isSessionAdmin || can('add_tailieu');
   const canEdit = isSuperuser || isSessionAdmin || (initialData ? Boolean(initialData.can_edit) : false) || Boolean(
     initialData && (
@@ -162,6 +167,28 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
     currentSession?.fullName ||
     currentSession?.username ||
     'Quản trị hệ thống';
+
+  const defaultDonViId = (currentSession?.don_vi_id || currentSession?.donViId) as number | null || null;
+  const defaultNoiBanHanh = (currentSession?.department || currentSession?.unit) as string || '';
+
+  const [internalUnits, setInternalUnits] = useState<Unit[]>([]);
+
+  useEffect(() => {
+    if (propUnits && propUnits.length > 0) return;
+    let isMounted = true;
+    apiClient<Unit[]>('/api/organizations/units/?all=true')
+      .then((data) => {
+        if (isMounted && Array.isArray(data)) {
+          setInternalUnits(data);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
+  }, [propUnits]);
+
+  const unitsList = propUnits && propUnits.length > 0 ? propUnits : internalUnits;
 
   const prevIsOpenRef = useRef(false);
   const prevInitialDataIdRef = useRef<number | undefined>(undefined);
@@ -228,7 +255,8 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
       ky_hieu: '',
       tieu_de: '',
       ngay_dang: new Date().toISOString().split('T')[0],
-      noi_ban_hanh: '',
+      noi_ban_hanh: defaultNoiBanHanh,
+      don_vi_id: defaultDonViId,
       nguoi_tao_name: defaultAuthor,
       hieu_luc: 'CON_HIEU_LUC',
       ngay_het_hieu_luc: '',
@@ -252,7 +280,6 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
   const [isConfirmDiscardOpen, setIsConfirmDiscardOpen] = useState(false);
   const [previewAttachment, setPreviewAttachment] = useState<ResourceAttachment | null>(null);
 
-
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Khởi tạo form khi mở modal - CHỈ chạy một lần khi modal vừa mở, KHÔNG ghi đè khi polling nạp lại categories
@@ -272,6 +299,7 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
             tieu_de: initialData.tieu_de || '',
             ngay_dang: initialData.ngay_dang || getTodayLocalDateString(),
             noi_ban_hanh: initialData.noi_ban_hanh || '',
+            don_vi_id: initialData.don_vi_id ?? null,
             nguoi_tao_name: initialData.nguoi_tao_name || defaultAuthor,
             hieu_luc: initialData.hieu_luc || 'CON_HIEU_LUC',
             ngay_het_hieu_luc:
@@ -318,7 +346,8 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
             ky_hieu: '',
             tieu_de: '',
             ngay_dang: getTodayLocalDateString(),
-            noi_ban_hanh: '',
+            noi_ban_hanh: defaultNoiBanHanh,
+            don_vi_id: defaultDonViId,
             nguoi_tao_name: defaultAuthor,
             hieu_luc: 'CON_HIEU_LUC',
             ngay_het_hieu_luc: '',
@@ -353,7 +382,45 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
       prevIsOpenRef.current = false;
       prevInitialDataIdRef.current = undefined;
     }
-  }, [isOpen, initialData, categories, defaultAuthor, defaultCategoryId]);
+  }, [isOpen, initialData, categories, defaultAuthor, defaultCategoryId, defaultDonViId, defaultNoiBanHanh]);
+
+  // Tự động đồng bộ tên phòng ban và id phòng ban khi danh sách đơn vị được nạp
+  useEffect(() => {
+    if (unitsList.length > 0) {
+      if (formData.don_vi_id && !formData.noi_ban_hanh) {
+        const u = unitsList.find((unit) => unit.id === formData.don_vi_id);
+        if (u) {
+          setFormData((prev) => ({ ...prev, noi_ban_hanh: u.ten }));
+        }
+      } else if (!formData.don_vi_id && formData.noi_ban_hanh) {
+        const u = unitsList.find(
+          (unit) => unit.ten.trim().toLowerCase() === formData.noi_ban_hanh.trim().toLowerCase()
+        );
+        if (u) {
+          setFormData((prev) => ({ ...prev, don_vi_id: u.id }));
+        }
+      }
+    }
+  }, [unitsList, formData.don_vi_id, formData.noi_ban_hanh]);
+
+  const unitSelectOptions = useMemo<SelectOption[]>(() => {
+    const opts: SelectOption[] = unitsList.map((u) => ({
+      value: String(u.id),
+      label: u.ten,
+      group: u.khoi_ten || undefined,
+    }));
+    if (
+      formData.noi_ban_hanh &&
+      !formData.don_vi_id &&
+      !unitsList.some((u) => u.ten.trim().toLowerCase() === formData.noi_ban_hanh.trim().toLowerCase())
+    ) {
+      opts.unshift({
+        value: 'custom',
+        label: `${formData.noi_ban_hanh} (Khác)`,
+      });
+    }
+    return opts;
+  }, [unitsList, formData.noi_ban_hanh, formData.don_vi_id]);
 
 
   // Đóng an toàn có xác nhận nếu đã chỉnh sửa dữ liệu
@@ -579,9 +646,49 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
     return ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'svg', 'bmp'].includes(ext);
   };
 
-  // Xem trước tệp hiện có: PDF/Ảnh -> mở tab mới theo đường dẫn máy chủ; ZIP/DOCX/EXCEL -> tải về máy
+  // Tải tệp đính kèm hiện có về máy
+  const handleDownloadExistingFile = async (file: { id?: number; name: string; size?: number; path?: string }) => {
+    const downloadUrl = file.id
+      ? `/api/resources/attachments/${file.id}/download/`
+      : (file.path || '');
+    if (!downloadUrl) return;
+
+    try {
+      await downloadBlob(downloadUrl, file.name);
+    } catch (err) {
+      console.warn('Lỗi downloadBlob:', err);
+      if (file.id) {
+        try {
+          const res = await apiClient.post<{ ticket: string; download_url: string }>(
+            `/api/resources/attachments/${file.id}/ticket/`
+          );
+          if (res?.download_url) {
+            const a = document.createElement('a');
+            a.href = getAbsoluteFileUrl(res.download_url);
+            a.download = file.name;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            return;
+          }
+        } catch (ticketErr) {
+          console.error('Lỗi lấy vé tải tệp:', ticketErr);
+        }
+      }
+      const absUrl = getAbsoluteFileUrl(downloadUrl);
+      const a = document.createElement('a');
+      a.href = absUrl;
+      a.download = file.name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+  };
+
+  // Xem trước tệp hiện có: PDF/Ảnh -> xin vé dùng 1 lần (Burn on Read) và mở tab mới; ZIP/DOCX/EXCEL -> tải về máy
   const handlePreviewExistingFile = async (file: { id?: number; name: string; size?: number; path?: string }) => {
     const isPreviewable = isDirectPreviewable(file.name);
+    const isPdf = file.name.toLowerCase().endsWith('.pdf');
     const targetUrl = file.id
       ? `/api/resources/attachments/${file.id}/view/`
       : (file.path || '');
@@ -589,39 +696,27 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
     if (!targetUrl) return;
 
     if (!isPreviewable) {
-      const downloadUrl = file.id
-        ? `/api/resources/attachments/${file.id}/download/`
-        : targetUrl;
-      try {
-        await downloadBlob(downloadUrl, file.name);
-      } catch (err) {
-        console.warn('Lỗi downloadBlob:', err);
-        const token = typeof window !== 'undefined'
-          ? (localStorage.getItem('tlbm_access_token') || localStorage.getItem('tlbm_token') || '')
-          : '';
-        const absUrl = getAbsoluteFileUrl(downloadUrl);
-        const serverUrl = token
-          ? `${absUrl}${absUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`
-          : absUrl;
-        const a = document.createElement('a');
-        a.href = serverUrl;
-        a.download = file.name;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-      }
+      await handleDownloadExistingFile(file);
       return;
     }
 
-    // Mở trực tiếp đường dẫn máy chủ trong tab mới (không dùng URL blob: bộ nhớ tạm)
-    const token = typeof window !== 'undefined'
-      ? (localStorage.getItem('tlbm_access_token') || localStorage.getItem('tlbm_token') || '')
-      : '';
+    if (file.id) {
+      try {
+        const res = await apiClient.post<{ ticket: string; view_url: string }>(
+          `/api/resources/attachments/${file.id}/ticket/`
+        );
+        if (res?.view_url) {
+          window.open(getAbsoluteFileUrl(res.view_url), '_blank');
+          return;
+        }
+      } catch (err) {
+        console.error('Lỗi cấp vé xem tài liệu:', err);
+      }
+    }
+
     const absUrl = getAbsoluteFileUrl(targetUrl);
-    const serverUrl = token
-      ? `${absUrl}${absUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`
-      : absUrl;
-    window.open(serverUrl, '_blank');
+    const finalUrl = isPdf && !absUrl.includes('#') ? `${absUrl}#view=Fit&navpanes=0` : absUrl;
+    window.open(finalUrl, '_blank');
   };
 
   // Xem trước tệp mới tải lên: PDF/Ảnh -> mở tab mới; ZIP/DOCX/EXCEL -> tải về máy
@@ -717,6 +812,9 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
     data.append('ky_hieu', formData.ky_hieu.trim());
     data.append('tieu_de', formData.tieu_de.trim());
     data.append('ngay_dang', effectiveDate);
+    if (formData.don_vi_id) {
+      data.append('don_vi_id', String(formData.don_vi_id));
+    }
     data.append('noi_ban_hanh', formData.noi_ban_hanh.trim());
     data.append('hieu_luc', formData.hieu_luc);
     data.append('hien_thi', formData.hien_thi);
@@ -749,6 +847,8 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
       formData: data,
       payload: {
         ...formData,
+        don_vi_id: formData.don_vi_id ?? null,
+        noi_ban_hanh: formData.noi_ban_hanh.trim(),
         ngay_dang: effectiveDate,
         ngay_het_hieu_luc: effectiveExpDate,
         link_thay_the: effectiveReplLink,
@@ -977,10 +1077,10 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
                   </div>
                   <input
                     id="field-ngay_dang"
-                    type="date"
+                    type="text"
                     readOnly
                     disabled
-                    value={formData.ngay_dang}
+                    value={formatDate(formData.ngay_dang)}
                     title={t('resourceManagement.postedDateFixedTooltip')}
                     className="w-full pl-8 pr-3 py-2 bg-surface-elevated/70 border border-border-subtle rounded-lg text-sm text-secondary cursor-not-allowed select-none font-medium opacity-90"
                   />
@@ -1023,16 +1123,35 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
                 >
                   {t('resourceManagement.fieldIssuingAuthority')}
                 </label>
-                <input
+                <Select
                   id="field-noi_ban_hanh"
-                  type="text"
-                  placeholder={t('resourceManagement.placeholderAuthority')}
-                  value={formData.noi_ban_hanh}
-                  onChange={(e) => {
+                  value={
+                    formData.don_vi_id
+                      ? String(formData.don_vi_id)
+                      : (formData.noi_ban_hanh
+                        ? (unitsList.find((u) => u.ten.trim().toLowerCase() === formData.noi_ban_hanh.trim().toLowerCase())?.id
+                          ? String(unitsList.find((u) => u.ten.trim().toLowerCase() === formData.noi_ban_hanh.trim().toLowerCase())?.id)
+                          : 'custom')
+                        : '')
+                  }
+                  onChange={(val) => {
                     setIsDirty(true);
-                    setFormData((prev) => ({ ...prev, noi_ban_hanh: e.target.value }));
+                    if (val === 'custom') return;
+                    const selected = unitsList.find((u) => String(u.id) === val);
+                    setFormData((prev) => ({
+                      ...prev,
+                      don_vi_id: selected ? selected.id : null,
+                      noi_ban_hanh: selected ? selected.ten : '',
+                    }));
                   }}
-                  className="w-full px-3 py-2 bg-surface border border-border-subtle rounded-lg text-sm text-main focus:outline-hidden focus:border-primary transition-colors"
+                  placeholder={t('resourceManagement.placeholderAuthoritySelect')}
+                  options={[
+                    { value: '', label: `-- ${t('resourceManagement.placeholderAuthoritySelect')} --` },
+                    ...unitSelectOptions,
+                  ]}
+                  leftIcon="fa-building"
+                  searchable
+                  clearable
                 />
               </div>
 
@@ -1314,6 +1433,16 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
                   <span>{t('resourceManagement.scopeInternalDept')}</span>
                 </label>
               </div>
+              {formData.hien_thi === 'NOI_BO_PHONG_BAN' && (
+                <div className="mt-2.5 px-3 py-2 bg-primary-subtle/50 border border-primary/25 rounded-lg text-xs text-secondary flex items-start gap-2 animate-fade-in">
+                  <i className="fa-solid fa-circle-info text-primary mt-0.5 shrink-0" />
+                  <span>
+                    {formData.noi_ban_hanh
+                      ? t('resourceManagement.scopeInternalDeptHelp', { unit: formData.noi_ban_hanh })
+                      : t('resourceManagement.scopeInternalDeptHelpEmpty')}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1427,22 +1556,15 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
                             <i className="fa-solid fa-eye text-xs" />
                           </button>
                           {file.id && (
-                            <a
-                              href={(() => {
-                                const token = typeof window !== 'undefined'
-                                  ? (localStorage.getItem('tlbm_access_token') || localStorage.getItem('tlbm_token') || '')
-                                  : '';
-                                const raw = `/api/resources/attachments/${file.id}/download/`;
-                                const abs = getAbsoluteFileUrl(raw);
-                                return token ? `${abs}${abs.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}` : abs;
-                              })()}
-                              download={file.name}
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadExistingFile(file)}
                               className="p-1 text-muted hover:text-primary rounded transition-colors cursor-pointer inline-flex items-center justify-center"
                               title={t('resourceManagement.downloadAttachment')}
                               aria-label={t('resourceManagement.downloadAttachment')}
                             >
                               <i className="fa-solid fa-download text-xs" />
-                            </a>
+                            </button>
                           )}
                           <button
                             type="button"

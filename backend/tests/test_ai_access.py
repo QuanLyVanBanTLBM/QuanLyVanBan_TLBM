@@ -103,6 +103,20 @@ class AIAccessTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(ask.call_args.kwargs["employee_id"], self.ai_user.pk)
 
+    def test_chat_passes_language_to_ask_document(self):
+        self.client.force_authenticate(self.ai_user)
+        ask = MagicMock(return_value={"answer": "ok"})
+        fake_rag = SimpleNamespace(ask_document=ask)
+        with patch.dict(sys.modules, {"backend.services.rag_service": fake_rag}):
+            response = self.client.post(
+                "/api/ai/chat",
+                {"question": "Hello", "language": "en"},
+                format="json",
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(ask.call_args.kwargs["language"], "en")
+        self.assertEqual(response.json()["language"], "en")
+
     def test_openai_settings_use_bearer_auth_and_supported_models(self):
         self.client.force_authenticate(self.superuser)
         fake_rag = SimpleNamespace(setup_llamaindex=MagicMock())
@@ -110,6 +124,7 @@ class AIAccessTests(TestCase):
             "data": [
                 {"id": "gpt-4o-mini"},
                 {"id": "text-embedding-3-small"},
+                {"id": "text-embedding-3-large"},
             ]
         }
         mock_response = MagicMock()
@@ -120,7 +135,7 @@ class AIAccessTests(TestCase):
             (Path(temp_dir) / "backend").mkdir()
             with (
                 patch.dict(sys.modules, {"backend.services.rag_service": fake_rag}),
-                patch("backend.services.rag_service", fake_rag),
+                patch("backend.services.rag_service", fake_rag, create=True),
                 patch.dict("os.environ", {}, clear=False),
                 patch("backend.api.views.config.OPENAI_API_KEY", "", create=True),
                 patch("backend.api.views.urllib.request.urlopen", return_value=mock_response) as urlopen,
@@ -128,6 +143,7 @@ class AIAccessTests(TestCase):
                     "backend.api.views.config",
                     MODEL_PROVIDER="openai",
                     BASE_DIR=Path(temp_dir),
+                    DATA_DIR=Path(temp_dir) / "data",
                     LLM_MODEL="gemini-3.8-flash",
                     EMBED_MODEL="models/gemini-embedding-001",
                     VISION_MODEL="gemini-3.8-flash",
@@ -146,3 +162,53 @@ class AIAccessTests(TestCase):
         self.assertEqual(response.status_code, 200)
         request = urlopen.call_args.args[0]
         self.assertEqual(request.get_header("Authorization"), "Bearer test-openai-key")
+
+    def test_switch_from_gemini_to_openai_succeeds_without_409_conflict(self):
+        self.client.force_authenticate(self.superuser)
+        fake_rag = SimpleNamespace(
+            setup_llamaindex=MagicMock(),
+            sync_documents_if_needed=MagicMock(),
+        )
+        response_body = {
+            "data": [
+                {"id": "gpt-4o-mini"},
+                {"id": "text-embedding-3-large"},
+            ]
+        }
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(response_body).encode()
+        mock_response.__enter__.return_value = mock_response
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            (temp_path / "backend").mkdir()
+            (temp_path / "data").mkdir()
+            with (
+                patch.dict(sys.modules, {"backend.services.rag_service": fake_rag}),
+                patch("backend.services.rag_service", fake_rag, create=True),
+                patch.dict("os.environ", {}, clear=False),
+                patch("backend.api.views.config.OPENAI_API_KEY", "", create=True),
+                patch("backend.api.views.urllib.request.urlopen", return_value=mock_response),
+                patch.multiple(
+                    "backend.api.views.config",
+                    MODEL_PROVIDER="gemini",
+                    BASE_DIR=temp_path,
+                    DATA_DIR=temp_path / "data",
+                    LLM_MODEL="gemini-3.8-flash",
+                    EMBED_MODEL="models/gemini-embedding-001",
+                    VISION_MODEL="gemini-3.8-flash",
+                ),
+            ):
+                response = self.client.post(
+                    "/api/ai/settings",
+                    {
+                        "provider": "openai",
+                        "api_key": "sk-mock-key-1234567890",
+                        "llm_model": "gpt-4o-mini",
+                    },
+                    format="json",
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["provider"], "openai")
+        self.assertEqual(response.json()["llm_model"], "gpt-4o-mini")

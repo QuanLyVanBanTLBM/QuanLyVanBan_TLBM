@@ -13,6 +13,11 @@ vi.mock('@lib/authService', () => ({
   },
 }));
 
+const permissionState = vi.hoisted(() => ({ isSystemAdmin: true }));
+vi.mock('@lib/permissions', () => ({
+  usePermissions: () => ({ loaded: true, isSuperuser: false, isSystemAdmin: permissionState.isSystemAdmin, can: () => false }),
+}));
+
 const mockCategories: ResourceCategory[] = [
   {
     id: 1,
@@ -48,6 +53,27 @@ describe('CategoryManagementModal Component (Issue #233)', () => {
 
   afterEach(() => {
     cleanup();
+    permissionState.isSystemAdmin = true;
+  });
+
+  it('does not grant admin rights from the session role or the username "admin"', () => {
+    // Session giả lập role 'admin', username 'admin' nhưng không phải quản trị hệ thống và không có quyền nào.
+    permissionState.isSystemAdmin = false;
+    render(
+      <CategoryManagementModal
+        isOpen={true}
+        onClose={onClose}
+        categories={mockCategories}
+        types={mockTypes}
+        onSaveCategory={onSaveCategory}
+        onDeleteCategory={onDeleteCategory}
+        onSaveType={onSaveType}
+        onDeleteType={onDeleteType}
+      />
+    );
+
+    expect(screen.getByText('Biểu mẫu chung')).toBeInTheDocument();
+    expect(screen.getAllByText(/Chế độ chỉ xem/).length).toBeGreaterThan(0);
   });
 
   it('renders modal when isOpen is true', () => {
@@ -65,6 +91,24 @@ describe('CategoryManagementModal Component (Issue #233)', () => {
     );
 
     expect(screen.getByText('Biểu mẫu chung')).toBeInTheDocument();
+  });
+
+  it('formats category creation date (ngay_lap) as dd/mm/yyyy in the category table', () => {
+    render(
+      <CategoryManagementModal
+        isOpen={true}
+        onClose={onClose}
+        categories={mockCategories}
+        types={mockTypes}
+        onSaveCategory={onSaveCategory}
+        onDeleteCategory={onDeleteCategory}
+        onSaveType={onSaveType}
+        onDeleteType={onDeleteType}
+      />
+    );
+
+    // mockCategories[0].ngay_lap is '2026-01-01', which should be formatted as '01/01/2026'
+    expect(screen.getByText('01/01/2026')).toBeInTheDocument();
   });
 
   it('submits category creation and awaits onSaveCategory', async () => {

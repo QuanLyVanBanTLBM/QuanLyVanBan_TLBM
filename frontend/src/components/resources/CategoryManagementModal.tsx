@@ -7,6 +7,7 @@ import { useTranslation } from '@i18n/translate';
 import { ConfirmationModal } from './ConfirmationModal';
 import { authService } from '@lib/authService';
 import { usePermissions } from '@lib/permissions';
+import { formatDate } from '@lib/dateUtils';
 
 export interface CategoryManagementModalProps {
   isOpen: boolean;
@@ -95,28 +96,17 @@ const ModalPagination: React.FC<ModalPaginationProps> = ({
       items.push({ type: 'page', num: totalPages });
     } else {
       items.push({ type: 'page', num: 1 });
-      if (currentPage - 1 > 2) {
-        items.push({
-          type: 'ellipsis',
-          direction: 'prev',
-          targetPage: Math.max(1, currentPage - 2),
-        });
-      } else {
-        items.push({ type: 'page', num: 2 });
-      }
-
+      items.push({
+        type: 'ellipsis',
+        direction: 'prev',
+        targetPage: Math.max(2, currentPage - 2),
+      });
       items.push({ type: 'page', num: currentPage });
-
-      if (currentPage + 1 < totalPages - 1) {
-        items.push({
-          type: 'ellipsis',
-          direction: 'next',
-          targetPage: Math.min(totalPages, currentPage + 2),
-        });
-      } else {
-        items.push({ type: 'page', num: totalPages - 1 });
-      }
-
+      items.push({
+        type: 'ellipsis',
+        direction: 'next',
+        targetPage: Math.min(totalPages - 1, currentPage + 2),
+      });
       items.push({ type: 'page', num: totalPages });
     }
 
@@ -191,7 +181,7 @@ const ModalPagination: React.FC<ModalPaginationProps> = ({
                   key={`ellipsis-${idx}`}
                   type="button"
                   onClick={() => onPageChange(item.targetPage)}
-                  className="group min-w-[28px] sm:min-w-[30px] h-7 sm:h-7.5 px-1 text-xs font-medium rounded-lg border border-transparent hover:border-border-subtle hover:bg-surface-elevated text-muted hover:text-primary transition-all cursor-pointer flex items-center justify-center"
+                  className="min-w-[28px] sm:min-w-[30px] h-7 sm:h-7.5 px-1 text-xs font-medium rounded-lg border border-transparent hover:border-border-subtle hover:bg-surface-elevated text-muted hover:text-primary transition-all cursor-pointer flex items-center justify-center"
                   title={
                     item.direction === 'prev'
                       ? t('resourceManagement.jumpBackPages', { page: item.targetPage })
@@ -199,12 +189,7 @@ const ModalPagination: React.FC<ModalPaginationProps> = ({
                   }
                   aria-label={item.direction === 'prev' ? t('resourceManagement.jumpBackAria') : t('resourceManagement.jumpForwardAria')}
                 >
-                  <span className="group-hover:hidden tracking-widest text-[10px] font-bold">•••</span>
-                  <i
-                    className={`hidden group-hover:inline fa-solid text-[9px] ${
-                      item.direction === 'prev' ? 'fa-angles-left' : 'fa-angles-right'
-                    }`}
-                  />
+                  <span className="tracking-widest text-[10px] font-bold">•••</span>
                 </button>
               );
             }
@@ -340,8 +325,8 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
   const [isSubmittingUnified, setIsSubmittingUnified] = useState(false);
 
   const currentSession = authService.getSession();
-  const isSessionAdmin = currentSession?.role === 'admin' || currentSession?.username === 'admin';
-  const { can, isSuperuser } = usePermissions();
+  const { can, isSuperuser, isSystemAdmin } = usePermissions();
+  const isSessionAdmin = isSystemAdmin;
   const canAdd = isSuperuser || isSessionAdmin || can('add_loaitailieubieumau');
   const canEdit = isSuperuser || isSessionAdmin || can('change_loaitailieubieumau');
   const canDelete = isSuperuser || isSessionAdmin || can('delete_loaitailieubieumau');
@@ -1220,7 +1205,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                                 </div>
                               </div>
                             </td>
-                            <td className="hidden md:table-cell px-3 py-3 text-secondary">{cat.ngay_lap || '-'}</td>
+                            <td className="hidden md:table-cell px-3 py-3 text-secondary">{formatDate(cat.ngay_lap)}</td>
                             <td className="hidden sm:table-cell px-3 py-3 text-center">
                               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-surface-elevated text-secondary border border-border-subtle">
                                 {t('resourceManagement.subtypesCount', { count: childCount })}

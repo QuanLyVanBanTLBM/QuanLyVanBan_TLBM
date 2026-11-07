@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { ResourceAttachment } from '@app-types/resource';
 import { getAbsoluteFileUrl } from '@lib/fileUtils';
+import { apiClient, downloadBlob } from '@lib/apiClient';
 
 export interface FilePreviewModalProps {
   isOpen: boolean;
@@ -37,6 +38,8 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
   const [excelData, setExcelData] = useState<ExcelSheet[] | null>(null);
   const [isLoadingExcel, setIsLoadingExcel] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [ticketViewUrl, setTicketViewUrl] = useState<string | null>(null);
+  const [isLoadingFile, setIsLoadingFile] = useState(false);
 
   // Trích xuất đuôi tệp
   const getFileExt = (fileNameOrPath?: string) => {
@@ -67,6 +70,35 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
+  // Lấy vé xem trực tiếp cho PDF / Ảnh (Burn on Read - dùng 1 lần)
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
+    if (!isOpen || !file) {
+      setTicketViewUrl(null);
+      setIsLoadingFile(false);
+      return;
+    }
+
+    if (file.id && (isPdf || isImage)) {
+      setIsLoadingFile(true);
+      apiClient
+        .post<{ ticket: string; view_url: string }>(`/api/resources/attachments/${file.id}/ticket/`)
+        .then((res) => {
+          if (res?.view_url) {
+            setTicketViewUrl(getAbsoluteFileUrl(res.view_url));
+          }
+        })
+        .catch((err) => {
+          console.error('Lỗi cấp vé xem tài liệu:', err);
+        })
+        .finally(() => {
+          setIsLoadingFile(false);
+        });
+    } else if (file.path) {
+      setTicketViewUrl(getAbsoluteFileUrl(file.path));
+    }
+  }, [isOpen, file, isPdf, isImage]);
+
   // Nếu là file Excel, gọi API backend để lấy cấu trúc dữ liệu các sheet
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect */
@@ -80,15 +112,8 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
     if (file.id) {
       setIsLoadingExcel(true);
       setLoadError(null);
-      const token = typeof window !== 'undefined' ? (localStorage.getItem('tlbm_access_token') || localStorage.getItem('tlbm_token') || '') : '';
-      const previewUrl = `/api/resources/attachments/${file.id}/preview/${token ? `?token=${encodeURIComponent(token)}` : ''}`;
-      fetch(previewUrl, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      })
-        .then((res) => {
-          if (!res.ok) throw new Error('Không thể tải cấu trúc bảng tính');
-          return res.json() as Promise<PreviewApiResponse>;
-        })
+      apiClient
+        .get<PreviewApiResponse>(`/api/resources/attachments/${file.id}/preview/`)
         .then((data) => {
           if (data.sheets && data.sheets.length > 0) {
             setExcelData(data.sheets);
@@ -109,27 +134,74 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
     }
   }, [isOpen, file, isExcel]);
 
+  const handleOpenNewTab = async () => {
+    if (!file) return;
+    if (file.id) {
+      try {
+        const res = await apiClient.post<{ ticket: string; view_url: string }>(
+          `/api/resources/attachments/${file.id}/ticket/`
+        );
+        if (res?.view_url) {
+          window.open(getAbsoluteFileUrl(res.view_url), '_blank');
+          return;
+        }
+      } catch (err) {
+        console.error('Lỗi cấp vé mở tab mới:', err);
+      }
+    }
+    if (file.path) {
+      window.open(getAbsoluteFileUrl(file.path), '_blank');
+    }
+  };
+
+  const handleDownloadClick = async () => {
+    if (!file) return;
+    if (onDownload) {
+      onDownload();
+      return;
+    }
+    if (file.id) {
+      try {
+        await downloadBlob(`/api/resources/attachments/${file.id}/download/`, file.name);
+      } catch (err) {
+        console.warn('Lỗi downloadBlob:', err);
+        try {
+          const res = await apiClient.post<{ ticket: string; download_url: string }>(
+            `/api/resources/attachments/${file.id}/ticket/`
+          );
+          if (res?.download_url) {
+            const a = document.createElement('a');
+            a.href = getAbsoluteFileUrl(res.download_url);
+            a.download = file.name;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            return;
+          }
+        } catch (ticketErr) {
+          console.error('Lỗi lấy vé tải file:', ticketErr);
+        }
+        if (file.path) {
+          const a = document.createElement('a');
+          a.href = getAbsoluteFileUrl(file.path);
+          a.download = file.name;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        }
+      }
+    } else if (file.path) {
+      const a = document.createElement('a');
+      a.href = getAbsoluteFileUrl(file.path);
+      a.download = file.name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+  };
+
   if (!isOpen || !file) return null;
   if (typeof document === 'undefined') return null;
-
-  const token = typeof window !== 'undefined' ? (localStorage.getItem('tlbm_access_token') || localStorage.getItem('tlbm_token') || '') : '';
-  const rawViewUrl = file.id
-    ? `/api/resources/attachments/${file.id}/view/`
-    : (file.path || '');
-  const absViewUrl = getAbsoluteFileUrl(rawViewUrl);
-  const serverViewUrl = rawViewUrl
-    ? (token ? `${absViewUrl}${absViewUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}` : absViewUrl)
-    : '';
-
-  const rawDownloadUrl = file.id
-    ? `/api/resources/attachments/${file.id}/download/`
-    : (file.path || '');
-  const absDownloadUrl = getAbsoluteFileUrl(rawDownloadUrl);
-  const serverDownloadUrl = rawDownloadUrl
-    ? (token ? `${absDownloadUrl}${absDownloadUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}` : absDownloadUrl)
-    : '';
-
-  const fileUrl = serverViewUrl;
 
   const getBadgeStyle = (extension: string) => {
     switch (extension) {
@@ -219,40 +291,25 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
 
           {/* Action buttons */}
           <div className="flex items-center gap-2 shrink-0">
-            {fileUrl && (
-              <a
-                href={fileUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-surface hover:bg-surface-elevated text-secondary hover:text-main border border-border-subtle transition-colors cursor-pointer"
-                title="Mở trong tab trình duyệt mới"
-              >
-                <i className="fa-solid fa-arrow-up-right-from-square text-[11px]" />
-                <span className="hidden sm:inline">Mở tab mới</span>
-              </a>
-            )}
+            <button
+              type="button"
+              onClick={handleOpenNewTab}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-surface hover:bg-surface-elevated text-secondary hover:text-main border border-border-subtle transition-colors cursor-pointer"
+              title="Mở trong tab trình duyệt mới"
+            >
+              <i className="fa-solid fa-arrow-up-right-from-square text-[11px]" />
+              <span className="hidden sm:inline">Mở tab mới</span>
+            </button>
 
-            {onDownload ? (
-              <button
-                type="button"
-                onClick={onDownload}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary text-white hover:bg-primary-hover shadow-2xs transition-colors cursor-pointer"
-                title="Tải tệp này về máy"
-              >
-                <i className="fa-solid fa-download text-[11px]" />
-                <span className="hidden sm:inline">Tải về</span>
-              </button>
-            ) : (serverDownloadUrl || fileUrl) ? (
-              <a
-                href={serverDownloadUrl || fileUrl}
-                download={file.name}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary text-white hover:bg-primary-hover shadow-2xs transition-colors cursor-pointer"
-                title="Tải tệp này về máy"
-              >
-                <i className="fa-solid fa-download text-[11px]" />
-                <span className="hidden sm:inline">Tải về</span>
-              </a>
-            ) : null}
+            <button
+              type="button"
+              onClick={handleDownloadClick}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary text-white hover:bg-primary-hover shadow-2xs transition-colors cursor-pointer"
+              title="Tải tệp này về máy"
+            >
+              <i className="fa-solid fa-download text-[11px]" />
+              <span className="hidden sm:inline">Tải về</span>
+            </button>
 
             <button
               type="button"
@@ -270,9 +327,14 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
           {/* TRƯỜNG HỢP 1: Tệp PDF */}
           {isPdf && (
             <div className="w-full h-full flex flex-col">
-              {fileUrl ? (
+              {isLoadingFile ? (
+                <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+                  <i className="fa-solid fa-circle-notch fa-spin text-3xl text-rose-500 mb-3" />
+                  <p className="text-sm font-semibold text-main">Đang nạp xem trước PDF...</p>
+                </div>
+              ) : ticketViewUrl ? (
                 <iframe
-                  src={`${fileUrl}#toolbar=1&navpanes=1`}
+                  src={ticketViewUrl.includes("#") ? `${ticketViewUrl}&toolbar=1` : `${ticketViewUrl}#view=Fit&navpanes=0&toolbar=1`}
                   className="w-full h-full border-0 bg-white"
                   title={file.name}
                 />
@@ -388,36 +450,22 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
                     {loadError || 'Định dạng bảng tính cần được tải về hoặc mở trực tiếp bằng phần mềm chuyên dụng (Microsoft Excel, Google Trang tính) để trải nghiệm tốt nhất.'}
                   </p>
                   <div className="flex items-center gap-2">
-                    {fileUrl && (
-                      <a
-                        href={fileUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-surface-elevated hover:bg-border-subtle/50 text-main border border-border-subtle transition-colors cursor-pointer"
-                      >
-                        <i className="fa-solid fa-arrow-up-right-from-square text-xs" />
-                        <span>Mở tệp trực tiếp</span>
-                      </a>
-                    )}
-                    {onDownload ? (
-                      <button
-                        type="button"
-                        onClick={onDownload}
-                        className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition-colors cursor-pointer"
-                      >
-                        <i className="fa-solid fa-download text-xs" />
-                        <span>Tải về máy</span>
-                      </button>
-                    ) : fileUrl ? (
-                      <a
-                        href={fileUrl}
-                        download={file.name}
-                        className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition-colors cursor-pointer"
-                      >
-                        <i className="fa-solid fa-download text-xs" />
-                        <span>Tải về máy</span>
-                      </a>
-                    ) : null}
+                    <button
+                      type="button"
+                      onClick={handleOpenNewTab}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-surface-elevated hover:bg-border-subtle/50 text-main border border-border-subtle transition-colors cursor-pointer"
+                    >
+                      <i className="fa-solid fa-arrow-up-right-from-square text-xs" />
+                      <span>Mở tệp trực tiếp</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDownloadClick}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition-colors cursor-pointer"
+                    >
+                      <i className="fa-solid fa-download text-xs" />
+                      <span>Tải về máy</span>
+                    </button>
                   </div>
                 </div>
               )}
@@ -427,9 +475,14 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
           {/* TRƯỜNG HỢP 3: Tệp Hình ảnh */}
           {isImage && (
             <div className="w-full h-full flex items-center justify-center p-4 overflow-auto bg-black/10">
-              {fileUrl ? (
+              {isLoadingFile ? (
+                <div className="flex flex-col items-center justify-center p-6 text-center">
+                  <i className="fa-solid fa-circle-notch fa-spin text-3xl text-purple-500 mb-3" />
+                  <p className="text-sm font-semibold text-main">Đang nạp hình ảnh...</p>
+                </div>
+              ) : ticketViewUrl ? (
                 <img
-                  src={fileUrl}
+                  src={ticketViewUrl}
                   alt={file.name}
                   className="max-w-full max-h-full object-contain rounded-xl shadow-lg border border-border-subtle bg-surface"
                 />
@@ -454,36 +507,22 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
               </p>
 
               <div className="flex items-center gap-2.5">
-                {fileUrl && (
-                  <a
-                    href={fileUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-surface-elevated hover:bg-border-subtle/50 text-main border border-border-subtle transition-colors cursor-pointer"
-                  >
-                    <i className="fa-solid fa-arrow-up-right-from-square text-xs" />
-                    <span>Mở tệp trực tiếp</span>
-                  </a>
-                )}
-                {onDownload ? (
-                  <button
-                    type="button"
-                    onClick={onDownload}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-primary hover:bg-primary-hover text-white shadow-2xs transition-colors cursor-pointer"
-                  >
-                    <i className="fa-solid fa-download text-xs" />
-                    <span>Tải về máy</span>
-                  </button>
-                ) : fileUrl ? (
-                  <a
-                    href={fileUrl}
-                    download={file.name}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-primary hover:bg-primary-hover text-white shadow-2xs transition-colors cursor-pointer"
-                  >
-                    <i className="fa-solid fa-download text-xs" />
-                    <span>Tải về máy</span>
-                  </a>
-                ) : null}
+                <button
+                  type="button"
+                  onClick={handleOpenNewTab}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-surface-elevated hover:bg-border-subtle/50 text-main border border-border-subtle transition-colors cursor-pointer"
+                >
+                  <i className="fa-solid fa-arrow-up-right-from-square text-xs" />
+                  <span>Mở tệp trực tiếp</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadClick}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-primary hover:bg-primary-hover text-white shadow-2xs transition-colors cursor-pointer"
+                >
+                  <i className="fa-solid fa-download text-xs" />
+                  <span>Tải về máy</span>
+                </button>
               </div>
             </div>
           )}

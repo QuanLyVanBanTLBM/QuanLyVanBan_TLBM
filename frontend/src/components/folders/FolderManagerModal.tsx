@@ -65,14 +65,12 @@ export const FolderManagerModal: React.FC<FolderManagerModalProps> = ({
   const [scanUnderCurrentFolder, setScanUnderCurrentFolder] = useState(false);
   const [isScanningLocal, setIsScanningLocal] = useState(false);
   const [scanResult, setScanResult] = useState<string | null>(null);
-  const [scanError, setScanError] = useState<string | null>(null);
 
   const handleScanLocal = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       setIsScanningLocal(true);
       setScanResult(null);
-      setScanError(null);
       const res = await folderService.scanLocal({
         folder_path: scanFolderPath.trim() || undefined,
         parent_id: scanUnderCurrentFolder && selectedFolder ? selectedFolder.id : null,
@@ -85,11 +83,10 @@ export const FolderManagerModal: React.FC<FolderManagerModalProps> = ({
       setTimeout(() => {
         setIsScanModalOpen(false);
         setScanResult(null);
-        setScanError(null);
         setScanFolderPath('');
       }, 1500);
     } catch (err: unknown) {
-      setScanError(err instanceof Error ? err.message : t('folders.modal.syncError'));
+      alert(err instanceof Error ? err.message : 'Local folder scan failed.');
     } finally {
       setIsScanningLocal(false);
     }
@@ -273,8 +270,6 @@ export const FolderManagerModal: React.FC<FolderManagerModalProps> = ({
               icon="fa-laptop"
               onClick={() => {
                 setScanUnderCurrentFolder(Boolean(selectedFolder));
-                setScanError(null);
-                setScanResult(null);
                 setIsScanModalOpen(true);
               }}
               title={t('folders.modal.syncLocalHint')}
@@ -746,11 +741,7 @@ export const FolderManagerModal: React.FC<FolderManagerModalProps> = ({
               </div>
               <button
                 type="button"
-                onClick={() => {
-                  setIsScanModalOpen(false);
-                  setScanError(null);
-                  setScanResult(null);
-                }}
+                onClick={() => setIsScanModalOpen(false)}
                 className="text-secondary hover:text-main"
               >
                 <i className="fa-solid fa-xmark text-sm" />
@@ -766,10 +757,7 @@ export const FolderManagerModal: React.FC<FolderManagerModalProps> = ({
                   type="text"
                   placeholder={t('folders.modal.localPathPlaceholder')}
                   value={scanFolderPath}
-                  onChange={(e) => {
-                    setScanFolderPath(e.target.value);
-                    if (scanError) setScanError(null);
-                  }}
+                  onChange={(e) => setScanFolderPath(e.target.value)}
                   className="w-full px-3 py-2 text-xs rounded-xl border border-border-subtle bg-surface focus:outline-none focus:border-primary text-main font-mono"
                   autoFocus
                 />
@@ -793,13 +781,6 @@ export const FolderManagerModal: React.FC<FolderManagerModalProps> = ({
                 </div>
               )}
 
-              {scanError && (
-                <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-600 text-xs flex items-center gap-2">
-                  <i className="fa-solid fa-circle-exclamation text-sm shrink-0" />
-                  <span>{scanError}</span>
-                </div>
-              )}
-
               {scanResult && (
                 <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 text-xs flex items-center gap-2">
                   <i className="fa-solid fa-circle-check text-sm" />
@@ -812,11 +793,7 @@ export const FolderManagerModal: React.FC<FolderManagerModalProps> = ({
                   variant="secondary"
                   size="sm"
                   type="button"
-                  onClick={() => {
-                    setIsScanModalOpen(false);
-                    setScanError(null);
-                    setScanResult(null);
-                  }}
+                  onClick={() => setIsScanModalOpen(false)}
                   disabled={isScanningLocal}
                 >
                   {t('folders.modal.close')}

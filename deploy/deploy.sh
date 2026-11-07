@@ -154,29 +154,29 @@ DDL="$REL/docs/common/database/release_DDL.sql"
 
 step "3/9 Nap cau hinh, check, collectstatic"
 if [ -z "${CASE_ROOT:-}" ] && [ -w "$ENVF" ]; then
-  if grep -q '^DJANGO_SECURE_SSL_REDIRECT=false' "$ENVF"; then
-    sed -i 's/^DJANGO_SECURE_SSL_REDIRECT=false/DJANGO_SECURE_SSL_REDIRECT=true/' "$ENVF"
-  elif ! grep -q '^DJANGO_SECURE_SSL_REDIRECT=' "$ENVF"; then
+  if grep -q '^[[:space:]]*DJANGO_SECURE_SSL_REDIRECT[[:space:]]*=[[:space:]]*false' "$ENVF"; then
+    sed -i 's/^[[:space:]]*DJANGO_SECURE_SSL_REDIRECT[[:space:]]*=.*/DJANGO_SECURE_SSL_REDIRECT=true/' "$ENVF"
+  elif ! grep -q '^[[:space:]]*DJANGO_SECURE_SSL_REDIRECT[[:space:]]*=' "$ENVF"; then
     echo 'DJANGO_SECURE_SSL_REDIRECT=true' >> "$ENVF"
   fi
-  if ! grep -q '^DJANGO_SECURE_PROXY_SSL_HEADER=' "$ENVF"; then
+  if ! grep -q '^[[:space:]]*DJANGO_SECURE_PROXY_SSL_HEADER[[:space:]]*=' "$ENVF"; then
     echo 'DJANGO_SECURE_PROXY_SSL_HEADER=true' >> "$ENVF"
   fi
-  if grep -q '^DJANGO_SECURE_COOKIES=false' "$ENVF"; then
-    sed -i 's/^DJANGO_SECURE_COOKIES=false/DJANGO_SECURE_COOKIES=true/' "$ENVF"
-  elif ! grep -q '^DJANGO_SECURE_COOKIES=' "$ENVF"; then
+  if grep -q '^[[:space:]]*DJANGO_SECURE_COOKIES[[:space:]]*=[[:space:]]*false' "$ENVF"; then
+    sed -i 's/^[[:space:]]*DJANGO_SECURE_COOKIES[[:space:]]*=.*/DJANGO_SECURE_COOKIES=true/' "$ENVF"
+  elif ! grep -q '^[[:space:]]*DJANGO_SECURE_COOKIES[[:space:]]*=' "$ENVF"; then
     echo 'DJANGO_SECURE_COOKIES=true' >> "$ENVF"
   fi
-  if grep -q '^SIGNING_FRONTEND_URL=' "$ENVF"; then
-    if grep -q '^SIGNING_FRONTEND_URL=http://' "$ENVF"; then
-      sed -i 's#^SIGNING_FRONTEND_URL=.*#SIGNING_FRONTEND_URL=https://staging-quanlyvanban.bhbl.vn:8088#' "$ENVF"
+  if grep -q '^[[:space:]]*SIGNING_FRONTEND_URL[[:space:]]*=' "$ENVF"; then
+    if ! grep -q '^[[:space:]]*SIGNING_FRONTEND_URL=.*https://staging-quanlyvanban\.bhbl\.vn:8088' "$ENVF"; then
+      sed -i 's#^[[:space:]]*SIGNING_FRONTEND_URL=.*#SIGNING_FRONTEND_URL=https://staging-quanlyvanban.bhbl.vn:8088#' "$ENVF"
     fi
   else
     echo 'SIGNING_FRONTEND_URL=https://staging-quanlyvanban.bhbl.vn:8088' >> "$ENVF"
   fi
-  if grep -q '^DJANGO_CSRF_TRUSTED_ORIGINS=' "$ENVF"; then
-    if ! grep -q 'https://staging-quanlyvanban.bhbl.vn:8088' "$ENVF"; then
-      sed -i 's#^DJANGO_CSRF_TRUSTED_ORIGINS=\(.*\)#DJANGO_CSRF_TRUSTED_ORIGINS=https://staging-quanlyvanban.bhbl.vn:8088,\1#' "$ENVF"
+  if grep -q '^[[:space:]]*DJANGO_CSRF_TRUSTED_ORIGINS[[:space:]]*=' "$ENVF"; then
+    if ! grep -q '^[[:space:]]*DJANGO_CSRF_TRUSTED_ORIGINS=.*https://staging-quanlyvanban\.bhbl\.vn:8088' "$ENVF"; then
+      sed -i 's#^[[:space:]]*DJANGO_CSRF_TRUSTED_ORIGINS=.*#DJANGO_CSRF_TRUSTED_ORIGINS=https://staging-quanlyvanban.bhbl.vn:8088,http://127.0.0.1:8088#' "$ENVF"
     fi
   else
     echo 'DJANGO_CSRF_TRUSTED_ORIGINS=https://staging-quanlyvanban.bhbl.vn:8088,http://127.0.0.1:8088' >> "$ENVF"
@@ -204,6 +204,28 @@ $PY manage.py check
 $PY manage.py collectstatic --noinput | tail -1
 
 step "4/9 Cau hinh nginx"
+if [ -z "${CASE_ROOT:-}" ]; then
+  TLS_DIR="/etc/qlvb/tls"
+  if [ ! -e "$TLS_DIR/fullchain.pem" ] || [ ! -e "$TLS_DIR/privkey.pem" ]; then
+    if ! (mkdir -p "$TLS_DIR" 2>/dev/null && [ -w "$TLS_DIR" ]); then
+      TLS_DIR="$BASE/shared/tls"
+      mkdir -p "$TLS_DIR"
+    fi
+    if [ ! -s "$TLS_DIR/fullchain.pem" ] || [ ! -s "$TLS_DIR/privkey.pem" ]; then
+      echo "Chung chi TLS chua ton tai; tu dong khoi tao chung chi tu ky cho staging tai $TLS_DIR..."
+      openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
+        -subj "/CN=staging-quanlyvanban.bhbl.vn" \
+        -addext "subjectAltName=DNS:staging-quanlyvanban.bhbl.vn" \
+        -keyout "$TLS_DIR/privkey.pem" \
+        -out "$TLS_DIR/fullchain.pem" >/dev/null 2>&1
+      chmod 644 "$TLS_DIR/fullchain.pem"
+      chmod 600 "$TLS_DIR/privkey.pem"
+    fi
+    if [ "$TLS_DIR" != "/etc/qlvb/tls" ]; then
+      sed -i "s#/etc/qlvb/tls/#$TLS_DIR/#g" "$NGINX_NEW"
+    fi
+  fi
+fi
 # Cau hinh khong phu thuoc release (/static/ tro qua current). Lam truoc khi dung service de loi nginx
 # chi can khoi phuc file cu; nginx dang chay giu cau hinh cu vi chua reload.
 if cmp -s -- "$NGINX_NEW" "$NGINX_SITE"; then
@@ -400,7 +422,7 @@ step "8/9 Kiem tra sau deploy"
 ok=0; code=000; actual_release=""
 for _ in $(seq 1 15); do
   sleep 2
-  response=$(curl -sS -m 5 -w $'\n%{http_code}' -H 'Host: 127.0.0.1' \
+  response=$(curl -sS -m 5 -w $'\n%{http_code}' -H 'Host: 127.0.0.1' -H 'X-Forwarded-Proto: https' \
     "http://127.0.0.1:$PORT/api/health/ready/" 2>/dev/null || true)
   code=${response##*$'\n'}
   body=${response%$'\n'*}

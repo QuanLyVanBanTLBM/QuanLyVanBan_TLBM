@@ -30,7 +30,7 @@ const mockEmployeeData = [
     username: 'binhnv',
     email: 'binhnv@baolong.vn',
     ho_ten: 'Nguyễn Văn Bình',
-    ngay_sinh: '20/05/19xx',
+    ngay_sinh: '20/05/----',
     is_birthday_masked: true,
     don_vi_id: 1,
     don_vi_ten: 'Văn phòng Viện',
@@ -175,9 +175,58 @@ describe('EmployeesPage Component (Issue #24)', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('20/05/19xx')).toBeInTheDocument();
+      expect(screen.getByText('20/05/----')).toBeInTheDocument();
       expect(screen.getByText('15/10/1988')).toBeInTheDocument();
     });
+  });
+
+  it('lets an admin enter a replacement birthday without preloading the hidden year', async () => {
+    const { container } = render(
+      <MemoryRouter>
+        <EmployeesPage />
+      </MemoryRouter>
+    );
+
+    await screen.findByText('Nguyễn Văn Bình');
+    fireEvent.click((await screen.findAllByTitle('Chỉnh sửa'))[0]);
+    await screen.findByText('Chỉnh Sửa Hồ Sơ Nhân Viên');
+
+    const birthdayInput = container.querySelector<HTMLInputElement>('input[name="ngay_sinh"]');
+    expect(birthdayInput).toHaveValue('20/05/----');
+    expect(birthdayInput).toHaveAttribute('readonly');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Nhập ngày sinh mới' }));
+    expect(birthdayInput).toHaveValue('');
+    expect(birthdayInput).not.toHaveAttribute('readonly');
+
+    fireEvent.change(birthdayInput!, { target: { value: '21/06/1985' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu thay đổi' }));
+
+    await waitFor(() => {
+      expect(mockedApiClient.patch).toHaveBeenCalledWith(
+        '/api/accounts/employees/1/',
+        expect.objectContaining({ ngay_sinh: '1985-06-21' }),
+      );
+    });
+  });
+
+  it('does not submit a masked birthday unless the admin explicitly replaces it', async () => {
+    const { container } = render(
+      <MemoryRouter>
+        <EmployeesPage />
+      </MemoryRouter>
+    );
+
+    await screen.findByText('Nguyễn Văn Bình');
+    fireEvent.click((await screen.findAllByTitle('Chỉnh sửa'))[0]);
+    await screen.findByText('Chỉnh Sửa Hồ Sơ Nhân Viên');
+    expect(container.querySelector<HTMLInputElement>('input[name="ngay_sinh"]')).toHaveValue('20/05/----');
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu thay đổi' }));
+
+    await waitFor(() => expect(mockedApiClient.patch).toHaveBeenCalled());
+    const payload = mockedApiClient.patch.mock.calls[0][1] as Record<string, unknown>;
+    expect(payload).not.toHaveProperty('ngay_sinh');
+    expect(payload).not.toHaveProperty('ngay_sinh_iso');
   });
 
   it('opens employee modal on clicking Add Employee button', async () => {
@@ -329,7 +378,7 @@ describe('EmployeesPage Component (Issue #24)', () => {
     expect(mockedApiClient.post).not.toHaveBeenCalled();
   });
 
-  it('rejects an email outside the company domain before calling the API', async () => {
+  it('does not block an email outside the company domain in the form', async () => {
     const { container } = render(
       <MemoryRouter>
         <EmployeesPage />
@@ -343,10 +392,13 @@ describe('EmployeesPage Component (Issue #24)', () => {
     await screen.findByText('Thêm Mới Cán Bộ Nhân Viên');
 
     fireEvent.change(container.querySelector('input[name="ho_ten"]')!, { target: { value: 'Nhân viên email ngoài' } });
-    fireEvent.change(container.querySelector('input[name="email"]')!, { target: { value: 'nhanvien@yahoo.com' } });
+    fireEvent.change(container.querySelector('input[name="email"]')!, { target: { value: 'nhanvien@gmail.com' } });
+    fireEvent.change(container.querySelector('input[name="ngay_sinh"]')!, { target: { value: '01/01/1990' } });
     fireEvent.submit(container.querySelector('form')!);
 
-    expect(await screen.findByText('Email phải thuộc tên miền công ty (@baolong.vn).')).toBeInTheDocument();
+    // Form chỉ dừng ở lỗi thiếu đơn vị (bước kiểm kế tiếp), không còn báo sai tên miền email
+    expect(await screen.findByText('Tên Đơn vị / Phòng ban không được để trống.')).toBeInTheDocument();
+    expect(screen.queryByText(/tên miền/i)).not.toBeInTheDocument();
     expect(mockedApiClient.post).not.toHaveBeenCalled();
   });
 
@@ -487,6 +539,61 @@ describe('EmployeesPage Component (Issue #24)', () => {
 
     // View detail button should still be visible
     expect(screen.getAllByTitle('Xem chi tiết').length).toBeGreaterThan(0);
+  });
+
+  function mockPermissions(me: { is_superuser: boolean; is_system_admin?: boolean; permissions: string[] }) {
+    mockedApiClient.mockImplementation(async (endpoint: string) => {
+      if (endpoint.includes('/api/auth/me/permissions/')) return me;
+      if (endpoint.includes('/organizations/units/')) return [];
+      if (endpoint.includes('/api/positions/')) return [];
+      if (endpoint.includes('/accounts/groups/')) return [];
+      if (endpoint.includes('/accounts/employees/')) {
+        return { count: 2, next: null, previous: null, results: mockEmployeeData };
+      }
+      return [];
+    });
+  }
+
+  it('hides add and import buttons for a non-admin who holds add_cbnv and import_cbnv', async () => {
+    mockPermissions({
+      is_superuser: false,
+      is_system_admin: false,
+      permissions: ['view_list_cbnv', 'add_cbnv', 'import_cbnv', 'change_full_cbnv'],
+    });
+
+    render(
+      <MemoryRouter>
+        <EmployeesPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Nguyễn Văn Bình')).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('button', { name: /Thêm nhân viên/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Nhập từ Excel/i })).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Chỉnh sửa')).not.toBeInTheDocument();
+  });
+
+  it('shows add, import and edit buttons for an ADMIN group member who is not a superuser', async () => {
+    mockPermissions({
+      is_superuser: false,
+      is_system_admin: true,
+      permissions: ['view_list_cbnv', 'add_cbnv', 'import_cbnv', 'change_full_cbnv'],
+    });
+
+    render(
+      <MemoryRouter>
+        <EmployeesPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Nguyễn Văn Bình')).toBeInTheDocument();
+    });
+    expect(screen.getByRole('button', { name: /Thêm nhân viên/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Nhập từ Excel/i })).toBeInTheDocument();
+    expect(screen.getAllByTitle('Chỉnh sửa').length).toBeGreaterThan(0);
   });
 
   it('allows self-edit for own record with change_self_cbnv and disables administrative fields', async () => {

@@ -1,4 +1,4 @@
-﻿import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AlertModal from '@components/common/AlertModal';
 import { ActivePageId } from '@app-types/navigation';
@@ -56,7 +56,7 @@ interface ChatMessage {
 interface ChatSession {
   id: string;
   title: string;
-  timeLabel: 'Hﾃｴm nay' | 'Hﾃｴm qua' | '7 ngﾃy trﾆｰ盻嫩';
+  timeLabel: 'Hôm nay' | 'Hôm qua' | '7 ngày trước';
   snippet: string;
   messages: ChatMessage[];
 }
@@ -124,6 +124,8 @@ interface SpeechRecognitionInstance {
   onerror: (() => void) | null;
   onresult: ((event: SpeechRecognitionResultEvent) => void) | null;
   start: () => void;
+  stop: () => void;
+  abort?: () => void;
 }
 
 interface SpeechRecognitionConstructor {
@@ -142,7 +144,7 @@ function createDefaultSession(id: string = 'session-default', lang: SupportedLan
   return {
     id,
     title: tr('aiAssistant.defaultSession.title'),
-    timeLabel: 'Hﾃｴm nay',
+    timeLabel: 'Hôm nay',
     snippet: tr('aiAssistant.defaultSession.snippet'),
     messages: [
       {
@@ -160,12 +162,12 @@ function isDefaultSessionTitle(title: string): boolean {
   const defaultTitles = [
     translate('aiAssistant.defaultSession.title', undefined, 'vi'),
     translate('aiAssistant.defaultSession.title', undefined, 'en'),
-    'Tra c盻ｩu quy trﾃｬnh & vﾄハ b蘯｣n',
-    'Cu盻冂 trﾃｲ chuy盻㌻ m盻嬖',
+    'Tra cứu quy trình & văn bản',
+    'Cuộc trò chuyện mới',
     'New Conversation',
     'New Chat',
   ];
-  return defaultTitles.includes(title) || title.startsWith('H盻冓 tho蘯｡i m盻嬖');
+  return defaultTitles.includes(title) || title.startsWith('Hội thoại mới');
 }
 
 function isDefaultSessionSnippet(snippet: string): boolean {
@@ -175,7 +177,7 @@ function isDefaultSessionSnippet(snippet: string): boolean {
   ].includes(snippet);
 }
 
-// 4 Th蘯ｻ g盻｣i ﾃｽ chu蘯ｩn nh蘯ｭn di盻㌻ thﾆｰﾆ｡ng hi盻㎡ TLBM; n盻冓 dung d盻議h n蘯ｱm 盻・aiAssistant.templates.<key>
+// 4 Thẻ gợi ý chuẩn nhận diện thương hiệu TLBM; nội dung dịch nằm ở aiAssistant.templates.<key>
 const PROMPT_TEMPLATES = [
   {
     key: 'incoming',
@@ -271,7 +273,7 @@ function formatInline(str: string = ''): React.ReactNode[] {
   return parts.length > 0 ? parts : [str];
 }
 
-// Formatter Markdown ﾄ疎 dﾃｲng
+// Formatter Markdown đa dòng
 function FormattedMessage({ text = '' }: { text: string }) {
   const lines = text.split('\n');
   const elements: React.ReactNode[] = [];
@@ -350,7 +352,7 @@ function FormattedMessage({ text = '' }: { text: string }) {
   return <div className="message-content">{elements}</div>;
 }
 
-// Modal Xem Trﾆｰ盻嫩 Tﾃi Li盻㎡
+// Modal Xem Trước Tài Liệu
 interface PreviewModalProps {
   filename: string;
   onClose: () => void;
@@ -466,7 +468,7 @@ function DocumentPreviewModal({ filename, onClose }: PreviewModalProps) {
         className={`preview-panel ${isPdf ? 'preview-panel-pdf' : ''}`}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header Thanh Cﾃｴng C盻･ */}
+        {/* Header Thanh Công Cụ */}
         <div className="preview-header">
           <div className="preview-title-area">
             <div className={`preview-title-icon ${iconClass}`}>
@@ -541,7 +543,7 @@ function DocumentPreviewModal({ filename, onClose }: PreviewModalProps) {
           </div>
         </div>
 
-        {/* Tab chuy盻ハ ﾄ黛ｻ品 toﾃn vﾄハ vs phﾃ｢n ﾄ双蘯｡n */}
+        {/* Tab chuyển đổi toàn văn vs phân đoạn */}
         {data && !isPdf && (data.total_pages || 0) > 1 && (
           <div className="preview-tabs">
             <button
@@ -563,7 +565,7 @@ function DocumentPreviewModal({ filename, onClose }: PreviewModalProps) {
           </div>
         )}
 
-        {/* Khung n盻冓 dung tﾃi li盻㎡ */}
+        {/* Khung nội dung tài liệu */}
         <div className="preview-body">
           {loading && (
             <div className="d-flex align-items-center justify-content-center p-5 text-secondary flex-1">
@@ -614,7 +616,7 @@ function DocumentPreviewModal({ filename, onClose }: PreviewModalProps) {
   );
 }
 
-// Component H盻冪 Trﾃｭch D蘯ｫn Vﾄハ B蘯｣n
+// Component Chính AiAssistantPage
 function CitationsBox({
   sources,
   onPreview,
@@ -652,7 +654,7 @@ function CitationsBox({
             const targetPage = src.targetPage || sourcePage[src.source_type || ''];
             if (targetPage && onNavigate) {
               onNavigate(targetPage);
-            } else if (!src.source_type && src.file_name && onPreview) {
+            } else if (src.file_name && onPreview) {
               onPreview(src.file_name);
             }
           };
@@ -688,7 +690,7 @@ function CitationsBox({
   );
 }
 
-// Component Chﾃｭnh AiAssistantPage
+// Component Chính AiAssistantPage
 export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
   const { t, currentLang } = useTranslation();
   const currentUser = getSessionUser();
@@ -699,7 +701,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
   };
   const { loaded: aiPermissionLoaded, can } = usePermissions();
   const canUseAI = aiPermissionLoaded && can('use_aiassistant');
-  // Sidebar & Responsive states (T盻ｱ ﾄ黛ｻ冢g thu g盻肱 trﾃｪn thi蘯ｿt b盻・di ﾄ黛ｻ冢g <= 860px)
+  // Chat input states
   const [isMobile, setIsMobile] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       return window.innerWidth <= 860;
@@ -716,7 +718,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
   const sidebarRef = useRef<HTMLElement>(null);
   const sidebarOpenButtonRef = useRef<HTMLButtonElement>(null);
 
-  // T盻ｱ ﾄ黛ｻ冢g ﾄ妥ｳng m盻・sidebar vﾃ c蘯ｭp nh蘯ｭt isMobile khi chuy盻ハ ﾄ黛ｻ品 gi盻ｯa Desktop vﾃ Mobile
+  // Tự động đóng mở sidebar và cập nhật isMobile khi chuyển đổi giữa Desktop và Mobile
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const mql = window.matchMedia('(max-width: 860px)');
@@ -783,12 +785,25 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     }));
   };
 
-  // Khﾃｳa lﾆｰu tr盻ｯ c盻･c b盻・riﾃｪng bi盻㏄ theo tﾃi kho蘯｣n ﾄ黛ｻ・cﾃ｡ch ly d盻ｯ li盻㎡
+  // Khóa lưu trữ cục bộ riêng biệt theo tài khoản để cách ly dữ liệu
   const storageKey = getChatStorageKey(currentUser.username);
 
-  // Sessions state (ﾄ雪ｻ皇 t盻ｫ localStorage v盻嬖 fallback thﾃｴng minh)
+  // Sessions state (Đọc từ localStorage với fallback thông minh)
   const [chatHistoryState, setChatHistoryState] = useState(() => {
-    const initialSessions = [createDefaultSession('session-default', currentLang)];
+    let initialSessions = [createDefaultSession('session-default', currentLang)];
+    if (storageKey) {
+      try {
+        const saved = localStorage.getItem(storageKey);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            initialSessions = parsed;
+          }
+        }
+      } catch {
+        // fallback to default
+      }
+    }
     return {
       storageKey,
       sessions: initialSessions,
@@ -798,7 +813,20 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
   const activeChatHistoryState = chatHistoryState.storageKey === storageKey
     ? chatHistoryState
     : (() => {
-        const nextSessions = [createDefaultSession('session-default', currentLang)];
+        let nextSessions = [createDefaultSession('session-default', currentLang)];
+        if (storageKey) {
+          try {
+            const saved = localStorage.getItem(storageKey);
+            if (saved) {
+              const parsed = JSON.parse(saved);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                nextSessions = parsed;
+              }
+            }
+          } catch {
+            // fallback
+          }
+        }
         return { storageKey, sessions: nextSessions, activeSessionId: nextSessions[0].id };
       })();
   const isChatHistoryReady = chatHistoryState.storageKey === storageKey;
@@ -813,17 +841,20 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
   };
 
   const setActiveSessionId = (id: string) => {
-    setChatHistoryState({ ...activeChatHistoryState, activeSessionId: id });
+    setChatHistoryState((current) => {
+      if (current.storageKey !== storageKey) return current;
+      return { ...current, activeSessionId: id };
+    });
   };
 
-  // T盻ｱ ﾄ黛ｻ冢g ﾄ黛ｻ渡g b盻・vﾃ lﾆｰu sessions vﾃo localStorage khi cﾃｳ thay ﾄ黛ｻ品
+  // Tự động đồng bộ và lưu sessions vào localStorage khi có thay đổi
   useEffect(() => {
     if (storageKey && isChatHistoryReady && activeChatHistoryState.sessions.length > 0) {
       localStorage.setItem(storageKey, JSON.stringify(activeChatHistoryState.sessions));
     }
   }, [activeChatHistoryState, storageKey, isChatHistoryReady]);
 
-  // Luﾃｴn ﾄ黛ｺ｣m b蘯｣o activeSession tr盻・ﾄ妥ｺng t盻嬖 phiﾃｪn ﾄ疎ng ch盻肱 (ho蘯ｷc phiﾃｪn ﾄ黛ｺｧu tiﾃｪn)
+  // Luôn đảm bảo activeSession trỏ đúng tới phiên đang chọn (hoặc phiên đầu tiên)
   const activeSession = isChatHistoryReady
     ? sessions.find((s) => s.id === activeSessionId) || sessions[0] || null
     : null;
@@ -856,18 +887,27 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const restoreInputFocusRef = useRef(false);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
 
-  // Gi蘯｣i phﾃｳng pollTimerRef khi unmount trﾃ｡nh rﾃｲ r盻・b盻・nh盻・
+  // Giải phóng pollTimerRef và recognitionRef khi unmount tránh rò rỉ bộ nhớ
   useEffect(() => {
     return () => {
       if (pollTimerRef.current !== null) {
         clearInterval(pollTimerRef.current);
         pollTimerRef.current = null;
       }
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {
+          // ignore
+        }
+        recognitionRef.current = null;
+      }
     };
   }, []);
 
-  // T盻ｱ ﾄ黛ｻ冢g co giﾃ｣n chi盻「 cao textarea theo n盻冓 dung, lo蘯｡i b盻・thanh cu盻冢
+  // Tự động co giãn chiều cao textarea theo nội dung, loại bỏ thanh cuộn
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -885,13 +925,13 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     }
   }, [isGenerating]);
 
-  // Load tﾃi li盻㎡ & c蘯･u hﾃｬnh ban ﾄ黛ｺｧu
+  // Load tài liệu & cấu hình ban đầu
   const loadDocuments = useCallback(async () => {
     try {
       const data = await getDocuments();
       setDocuments(data.documents || []);
     } catch (err) {
-      console.error('L盻擁 t蘯｣i danh sﾃ｡ch tﾃi li盻㎡:', err);
+      console.error('Lỗi tải danh sách tài liệu:', err);
     }
   }, []);
 
@@ -939,14 +979,22 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isGenerating]);
 
-  // T蘯｡o phiﾃｪn chat m盻嬖
+  // Tạo phiên chat mới
   const handleNewChat = () => {
     if (!isChatHistoryReady) return;
     const newId = `session-${Date.now()}`;
     const newSession = createDefaultSession(newId, currentLang);
-    updateChatHistory((prev) => [newSession, ...prev]);
-    setActiveSessionId(newId);
+    setChatHistoryState((current) => {
+      if (current.storageKey !== storageKey) return current;
+      return {
+        ...current,
+        sessions: [newSession, ...current.sessions],
+        activeSessionId: newId,
+      };
+    });
+    setSidebarTab('sessions');
     setInputVal('');
+    setSelectedCategory('');
     if (typeof window !== 'undefined' && window.innerWidth <= 860) {
       setIsSidebarOpen(false);
     }
@@ -956,23 +1004,32 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     if (!isChatHistoryReady) return;
     e.stopPropagation();
     if (confirm(t('aiAssistant.deleteSessionConfirm'))) {
-      updateChatHistory((prev) => {
-        const updated = prev.filter((s) => s.id !== id);
+      setChatHistoryState((current) => {
+        if (current.storageKey !== storageKey) return current;
+        const updated = current.sessions.filter((s) => s.id !== id);
         if (updated.length === 0) {
           const freshId = `session-${Date.now()}`;
           const freshSession = createDefaultSession(freshId, currentLang);
-          setActiveSessionId(freshId);
-          return [freshSession];
+          return {
+            ...current,
+            sessions: [freshSession],
+            activeSessionId: freshId,
+          };
         }
-        if (activeSessionId === id) {
-          setActiveSessionId(updated[0].id);
+        let nextActiveId = current.activeSessionId;
+        if (current.activeSessionId === id) {
+          nextActiveId = updated[0].id;
         }
-        return updated;
+        return {
+          ...current,
+          sessions: updated,
+          activeSessionId: nextActiveId,
+        };
       });
     }
   };
 
-  // Upload file vﾃ theo dﾃｵi ti蘯ｿn ﾄ黛ｻ・
+  // Xuất file Markdown
   const handleFileUpload = async (file: File) => {
     if (!file) return;
 
@@ -982,7 +1039,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
       : false;
     if (existingDocument && !replaceExisting) return;
 
-    // H盻ｧy b盻・polling timer cﾅｩ n蘯ｿu ﾄ疎ng ch蘯｡y
+    // Hủy bỏ polling timer cũ nếu đang chạy
     if (pollTimerRef.current !== null) {
       clearInterval(pollTimerRef.current);
       pollTimerRef.current = null;
@@ -1013,14 +1070,14 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
               }
 
               if (isSuccess) {
-                // T盻ｱ ﾄ黛ｻ冢g t蘯｣i l蘯｡i danh sﾃ｡ch tﾃi li盻㎡ NGAY L蘯ｬP T盻ｨC
+                // Tự động tải lại danh sách tài liệu NGAY LẬP TỨC
                 await refreshDocuments();
-                // Gi盻ｯ badge bﾃ｡o thﾃnh cﾃｴng trong 2.5s r盻妬 t盻ｱ ﾄ妥ｳng
+                // Giữ badge báo thành công trong 2.5s rồi tự đóng
                 setTimeout(() => {
                   setUploadProgress(null);
                 }, 2500);
               } else {
-                // Bﾃ｡o l盻擁 vﾃ t盻ｱ ﾄ妥ｳng sau 4s
+                // Báo lỗi và tự đóng sau 4s
                 setTimeout(() => {
                   setUploadProgress(null);
                 }, 4000);
@@ -1069,6 +1126,9 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     if (confirm(t('aiAssistant.deleteDocConfirm', { filename }))) {
       try {
         await deleteDocument(filename);
+        if (targetDocument?.filename === filename) {
+          setTargetDocument(null);
+        }
         await refreshDocuments();
       } catch {
         alert(t('aiAssistant.inline.failedToDeleteDocument'));
@@ -1081,6 +1141,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
         prompt(t('aiAssistant.clearAllDocsTypeConfirm')) === 'DELETE') {
       try {
         await deleteDocuments('DELETE');
+        setTargetDocument(null);
         await refreshDocuments();
       } catch {
         alert(t('aiAssistant.inline.failedToClearDocuments'));
@@ -1088,7 +1149,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     }
   };
 
-  // G盻ｭi cﾃ｢u h盻淑 ﾄ黛ｺｿn AI
+  // Gửi câu hỏi đến AI
   const handleSend = async (overrideText?: string) => {
     if (isGeneratingRef.current || !canUseAI || !isChatHistoryReady) return;
     const text = (overrideText ?? inputVal).trim();
@@ -1131,7 +1192,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
         .filter((message) => !message.id.startsWith('msg-welcome'))
         .slice(-8)
         .map((message) => ({ role: message.sender === 'user' ? 'user' : 'assistant', content: message.text }));
-      const response = await askQuestion(text, history, selectedCategory || null, targetDocument?.filename || null);
+      const response = await askQuestion(text, history, selectedCategory || null, targetDocument?.filename || null, currentLang);
       const aiText = response.answer || response.text;
       if (typeof aiText !== 'string' || !aiText.trim()) throw new Error('Empty AI response');
 
@@ -1169,7 +1230,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // ﾄ雪ｻ皇 to cﾃ｢u tr蘯｣ l盻拱 b蘯ｱng gi盻肱g nﾃｳi ti蘯ｿng Vi盻㏄
+  // Đọc to câu trả lời bằng giọng nói tiếng Việt
   const handleSpeakText = (text: string) => {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
@@ -1183,7 +1244,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     }
   };
 
-  // Nh蘯ｭn di盻㌻ gi盻肱g nﾃｳi ti蘯ｿng Vi盻㏄ (Web Speech API)
+  // Nhận diện giọng nói tiếng Việt (Web Speech API)
   const handleToggleVoice = () => {
     const speechWindow = window as Window & {
       SpeechRecognition?: SpeechRecognitionConstructor;
@@ -1196,18 +1257,33 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     }
 
     if (isListening) {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {
+          // ignore if already stopped
+        }
+        recognitionRef.current = null;
+      }
       setIsListening(false);
       return;
     }
 
     const recognition = new SpeechRecognition();
+    recognitionRef.current = recognition;
     recognition.lang = currentLang === 'en' ? 'en-US' : 'vi-VN';
     recognition.continuous = false;
     recognition.interimResults = false;
 
     recognition.onstart = () => setIsListening(true);
-    recognition.onend = () => setIsListening(false);
-    recognition.onerror = () => setIsListening(false);
+    recognition.onend = () => {
+      setIsListening(false);
+      recognitionRef.current = null;
+    };
+    recognition.onerror = () => {
+      setIsListening(false);
+      recognitionRef.current = null;
+    };
 
     recognition.onresult = (event: SpeechRecognitionResultEvent) => {
       const transcript = event.results[0][0].transcript;
@@ -1217,7 +1293,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     recognition.start();
   };
 
-  // Xu蘯･t file Markdown
+  // Formatter Markdown Inline
   const handleExportChat = () => {
     if (!isChatHistoryReady) return;
     const transcript = sessions.map((session) => {
@@ -1262,18 +1338,18 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     URL.revokeObjectURL(url);
   };
 
-  // L盻皇 danh sﾃ｡ch phiﾃｪn h盻冓 tho蘯｡i theo t盻ｫ khﾃｳa (Tiﾃｪu ﾄ黛ｻ・ Cﾃ｢u h盻淑 user, N盻冓 dung tin nh蘯ｯn)
+  // Lọc danh sách phiên hội thoại theo từ khóa (Tiêu đề, Câu hỏi user, Nội dung tin nhắn)
   const filteredSessions = (isChatHistoryReady ? sessions : []).filter((s) => {
     if (!sessionSearch.trim()) return true;
     const query = sessionSearch.trim().toLowerCase();
 
-    // 1. Tﾃｬm theo tiﾃｪu ﾄ黛ｻ・cu盻冂 trﾃｲ chuy盻㌻
+    // 1. Tìm theo tiêu đề cuộc trò chuyện
     if (s.title && s.title.toLowerCase().includes(query)) return true;
 
-    // 2. Tﾃｬm theo ﾄ双蘯｡n trﾃｭch xem trﾆｰ盻嫩 (snippet)
+    // 2. Tìm theo đoạn trích xem trước (snippet)
     if (s.snippet && s.snippet.toLowerCase().includes(query)) return true;
 
-    // 3. Tﾃｬm theo n盻冓 dung cﾃ｡c tin nh蘯ｯn (cﾃ｢u h盻淑 vﾃ cﾃ｢u tr蘯｣ l盻拱) trong phiﾃｪn
+    // 3. Tìm theo nội dung các tin nhắn (câu hỏi và câu trả lời) trong phiên
     if (s.messages && Array.isArray(s.messages)) {
       return s.messages.some((m) => m.text && m.text.toLowerCase().includes(query));
     }
@@ -1281,7 +1357,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     return false;
   });
 
-  // L盻皇 vﾃ gom nhﾃｳm tﾃi li盻㎡ theo thﾆｰ m盻･c
+  // Lọc và gom nhóm tài liệu theo thư mục
   const filteredDocs = documents.filter((d) => {
     if (!docSearch.trim()) return true;
     const q = docSearch.toLowerCase();
@@ -1330,7 +1406,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
 
   return (
     <div className="ai-chat-page-root">
-      {/* Backdrop overlay khi m盻・Sidebar trﾃｪn ﾄ訴盻㌻ tho蘯｡i */}
+      {/* Sidebar Footer */}
       {isSidebarOpen && (
         <button
           className="ai-sidebar-mobile-backdrop"
@@ -1341,7 +1417,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
       )}
 
       {/* ====================================================================
-         1. SIDEBAR (L盻海H S盻ｬ CHAT & KHO TﾃI LI盻・)
+         1. SIDEBAR (LỊCH SỬ CHAT & KHO TÀI LIỆU)
          ==================================================================== */}
       <aside
         ref={sidebarRef}
@@ -1350,7 +1426,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
         aria-modal={isMobile && isSidebarOpen ? true : undefined}
         aria-label={t('aiAssistant.inline.chatHistory')}
       >
-        {/* Nﾃｺt T蘯｡o ﾄ双蘯｡n chat m盻嬖 & Thu g盻肱 */}
+        {/* Nút Tạo Đoạn chat mới & Thu gọn */}
         <div className="ai-sidebar-top">
           <button type="button" className="new-chat-btn" onClick={handleNewChat}>
             <i className="fa-solid fa-plus" />
@@ -1368,7 +1444,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
           </button>
         </div>
 
-        {/* Tab Switcher: H盻冓 tho蘯｡i vs Kho tﾃi li盻㎡ */}
+        {/* Tab Switcher: Hội thoại vs Kho tài liệu */}
         {isSidebarOpen && (
           <div className="sidebar-tab-switcher">
             <button
@@ -1391,7 +1467,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
           </div>
         )}
 
-        {/* Tab 1: Danh sﾃ｡ch cﾃ｡c phiﾃｪn trﾃｲ chuy盻㌻ */}
+        {/* Tab 1: Danh sách các phiên trò chuyện */}
         {isSidebarOpen && sidebarTab === 'sessions' && (
           <>
             <div className="ai-sidebar-search">
@@ -1481,7 +1557,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
           </>
         )}
 
-        {/* Tab 2: Qu蘯｣n lﾃｽ kho tﾃi li盻㎡ */}
+        {/* Tab 2: Quản lý kho tài liệu */}
         {isSidebarOpen && sidebarTab === 'docs' && (
           <>
             <div className="ai-sidebar-search">
@@ -1506,7 +1582,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
             </div>
 
             <div className="ai-sidebar-docs-list">
-              {/* Drag & Drop Upload Zone - Ch盻・hi盻ハ th盻・cho Qu蘯｣n tr盻・viﾃｪn */}
+              {/* Drag & Drop Upload Zone - Chỉ hiển thị cho Quản trị viên */}
               {currentUser.isAdmin && (
                 <button
                   ref={dropZoneRef}
@@ -1551,7 +1627,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                 </div>
               )}
 
-              {/* Danh m盻･c tﾃi li盻㎡ theo c蘯･u trﾃｺc Thﾆｰ m盻･c nhi盻「 c蘯･p */}
+              {/* Danh mục tài liệu theo cấu trúc Thư mục nhiều cấp */}
               {Object.keys(hierarchicalDocs).length === 0 ? (
                 <div className="sidebar-empty-state">
                   <i className="fa-regular fa-folder-open sidebar-empty-icon" />
@@ -1562,7 +1638,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                   const isRootCollapsed = !!collapsedRoots[root.name];
                   return (
                     <div key={root.name} className={`sidebar-doc-category ${isRootCollapsed ? 'is-collapsed' : ''}`}>
-                      {/* Thﾆｰ m盻･c g盻祖 duy nh蘯･t (Level 1) */}
+                      {/* Thư mục gốc duy nhất (Level 1) */}
                       <button
                         type="button"
                         className="sidebar-category-header"
@@ -1590,7 +1666,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                         </span>
                       </button>
 
-                      {/* Danh sﾃ｡ch cﾃ｡c Folder nh盻・bﾃｪn trong Thﾆｰ m盻･c g盻祖 */}
+                      {/* Danh sách Item bên trong Folder nhỏ */}
                       {!isRootCollapsed && (
                         <div className="sidebar-root-content">
                           {Object.values(root.subFolders).map((sub: SubFolderGroup) => {
@@ -1601,7 +1677,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                                 key={sub.name}
                                 className={`sidebar-subfolder-card ${isSubCollapsed ? 'is-collapsed' : ''}`}
                               >
-                                {/* Header c盻ｧa Folder nh盻・*/}
+                                {/* Top Header */}
                                 <button
                                   type="button"
                                   className="sidebar-subfolder-header"
@@ -1633,7 +1709,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                                   </span>
                                 </button>
 
-                                {/* Danh sﾃ｡ch Item bﾃｪn trong Folder nh盻・*/}
+                                {/* Danh sách Item bên trong Folder nhỏ */}
                                 {!isSubCollapsed && (
                                   <div className="sidebar-doc-list">
                                     {sub.docs.map((d) => {
@@ -1668,7 +1744,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                                             </span>
                                           </div>
                                           <div className="sidebar-doc-actions">
-                                            {/* Nﾃｺt ch盻・ﾄ黛ｻ杵h nhanh */}
+                                            {/* Nút chỉ định nhanh */}
                                             <button
                                               type="button"
                                               className={`sidebar-doc-btn pin-btn ${targetDocument?.filename === d.filename ? 'is-active text-primary' : ''}`}
@@ -1711,7 +1787,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                             );
                           })}
 
-                          {/* Tﾃi li盻㎡ c蘯･p tr盻ｱc ti蘯ｿp (n蘯ｿu cﾃｳ) */}
+                          {/* Tài liệu cấp trực tiếp (nếu có) */}
                           {root.directDocs.length > 0 && (
                             <div className="sidebar-doc-list">
                               {root.directDocs.map((d) => (
@@ -1811,7 +1887,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
       </aside>
 
       {/* ====================================================================
-         2. MAIN CHAT STAGE (KHUNG TRﾃ・CHUY盻・ CHﾃ康H)
+         2. MAIN CHAT STAGE (KHUNG TRÒ CHUYỆN CHÍNH)
          ==================================================================== */}
       <main className="ai-chat-main-stage">
         {/* Top Header */}
@@ -1837,7 +1913,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
               <div>
                 <div className="ai-brand-title">
                   <span>{t('aiAssistant.pageTitle')}</span>
-                  <span className="team-badge">LlamaIndex ﾂｷ ChromaDB</span>
+                  <span className="team-badge">LlamaIndex · ChromaDB</span>
                 </div>
                 <div className="ai-brand-sub">
                   {t('aiAssistant.pageSubtitle')}
@@ -1847,7 +1923,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
           </div>
 
           <div className="top-header-actions">
-            {/* B盻・l盻皇 ch盻ｧ ﾄ黛ｻ・*/}
+            {/* Bộ lọc chủ đề */}
             {categories.length > 0 && (
               <div className="model-selector-wrapper category-filter-wrapper">
                 <i className="fa-solid fa-filter text-primary" />
@@ -1883,7 +1959,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
               </div>
             )}
 
-            {/* Nﾃｺt Cﾃi ﾄ黛ｺｷt AI */}
+            {/* Nút Cài đặt AI */}
             {currentUser.isAdmin && (
               <button
                 type="button"
@@ -1896,7 +1972,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
               </button>
             )}
 
-            {/* Nﾃｺt Xu蘯･t file */}
+            {/* Nút Xuất file */}
             <button
               type="button"
               className="chat-action-btn"
@@ -1908,7 +1984,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
               <span className="hidden xl:inline">{t('aiAssistant.inline.export')}</span>
             </button>
 
-            {/* Nﾃｺt Lﾃm m盻嬖 */}
+            {/* Nút Làm mới */}
             <button
               type="button"
               className="chat-action-btn"
@@ -1920,6 +1996,8 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                       s.id === activeSessionId ? createDefaultSession(s.id, currentLang) : s
                     )
                   );
+                  setTargetDocument(null);
+                  setInputVal('');
                 }
               }}
               title={t('aiAssistant.inline.resetConversation')}
@@ -1929,7 +2007,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
           </div>
         </header>
 
-        {/* Vﾃｹng hi盻ハ th盻・tin nh蘯ｯn (Scrollable) */}
+        {/* Vùng hiển thị tin nhắn (Scrollable) */}
         <div
           className={`ai-chat-viewport ${isChatDragOver ? 'is-chat-dragover-viewport' : ''}`}
           onDragOver={(e) => {
@@ -1960,7 +2038,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
             }
           }}
         >
-          {/* Lﾆｰ盻嬖 th蘯ｻ Prompt g盻｣i ﾃｽ ban ﾄ黛ｺｧu */}
+          {/* Lưới thẻ Prompt gợi ý ban đầu */}
           {messages.length <= 1 && (
             <div className="ai-prompt-grid-container">
               <div className="prompt-grid-header">
@@ -1992,7 +2070,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
             </div>
           )}
 
-          {/* Danh sﾃ｡ch cﾃ｡c tin nh蘯ｯn */}
+          {/* Danh sách các tin nhắn */}
           <div className="ai-messages-list" role="log" aria-live="polite" aria-relevant="additions text" aria-label={t('aiAssistant.inline.chatHistory')}>
             {messages.map((msg) => {
               const isWelcomeMessage = msg.id.startsWith('msg-welcome-');
@@ -2014,7 +2092,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                   )}
                 </div>
 
-                {/* Bong bﾃｳng tin nh蘯ｯn */}
+                {/* Bong bóng tin nhắn */}
                 <div className="message-content-wrapper">
                   <div className="message-header-meta">
                     <span className="sender-name">
@@ -2034,7 +2112,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                     )}
                     <FormattedMessage text={displayedText} />
 
-                    {/* D蘯ｫn link web & vﾄハ b蘯｣n trﾃｭch d蘯ｫn */}
+                    {/* Dẫn link web & văn bản trích dẫn */}
                     {msg.citations && msg.citations.length > 0 && (
                       <CitationsBox
                         sources={msg.citations}
@@ -2043,7 +2121,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                       />
                     )}
 
-                    {/* Cﾃ｢u h盻淑 g盻｣i ﾃｽ ti蘯ｿp theo (Follow-up prompts) */}
+                    {/* Câu hỏi gợi ý tiếp theo (Follow-up prompts) */}
                     {displayedQuickPrompts && displayedQuickPrompts.length > 0 && (
                       <div className="ai-followup-prompts">
                         {displayedQuickPrompts.map((qPrompt, pIdx) => (
@@ -2062,7 +2140,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                     )}
                   </div>
 
-                  {/* Thanh cﾃｴng c盻･ hﾃnh ﾄ黛ｻ冢g dﾆｰ盻嬖 ph蘯｣n h盻妬 AI */}
+                  {/* Thanh công cụ hành động dưới phản hồi AI */}
                   {msg.sender === 'ai' && (
                     <div className="message-toolbar">
                       <button
@@ -2091,7 +2169,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
               );
             })}
 
-            {/* Tr蘯｡ng thﾃ｡i AI ﾄ疎ng suy nghﾄｩ / tra c盻ｩu */}
+            {/* Trạng thái AI đang suy nghĩ / tra cứu */}
             {isGenerating && (
               <div className="ai-chat-message-row is-ai">
                 <div className="message-avatar">
@@ -2112,7 +2190,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
           </div>
         </div>
 
-        {/* 3. THANH NH蘯ｬP LI盻・ 盻・ﾄ静〆 */}
+        {/* 3. THANH NHẬP LIỆU Ở ĐÁY */}
         <footer
           className={`ai-chat-bottom-input ${isChatDragOver ? 'is-chat-dragover' : ''}`}
           onDragOver={(e) => {
@@ -2143,7 +2221,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
             }
           }}
         >
-          {/* Huy hi盻㎡ ch盻・ﾄ黛ｻ杵h tﾃi li盻㎡ tra c盻ｩu riﾃｪng (Target Document) */}
+          {/* Huy hiệu chỉ định tài liệu tra cứu riêng (Target Document) */}
           {targetDocument && (
             <div className="target-doc-pinned-badge">
               <div className="target-doc-badge-left">
@@ -2172,7 +2250,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
             </div>
           )}
 
-          {/* G盻｣i ﾃｽ khi ﾄ疎ng kﾃｩo t盻㎝ qua thanh chat */}
+          {/* Gợi ý khi đang kéo tệp qua thanh chat */}
           {isChatDragOver && (
             <div className="chat-drag-cue">
               <i className="fa-solid fa-crosshairs text-primary fa-bounce" />
@@ -2182,7 +2260,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
             </div>
           )}
 
-          {/* Thﾃｴng bﾃ｡o ti蘯ｿn ﾄ黛ｻ・khi upload t盻㎝ tr盻ｱc ti蘯ｿp */}
+          {/* Thông báo tiến độ khi upload tệp trực tiếp */}
           {uploadProgress && (
             <div
               className={`chat-upload-indicator ${
@@ -2212,13 +2290,13 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
           <div
             className="input-box-container"
             onClick={(e) => {
-              // Ch蘯｡m vﾃo b蘯･t k盻ｳ kho蘯｣ng tr盻創g nﾃo trong thanh chat s蘯ｽ t盻ｱ ﾄ黛ｻ冢g focus vﾃo textarea ﾄ黛ｻ・b蘯ｭt bﾃn phﾃｭm 蘯｣o
+              // Chạm vào bất kỳ khoảng trống nào trong thanh chat sẽ tự động focus vào textarea để bật bàn phím ảo
               if (!(e.target as HTMLElement).closest('button')) {
                 textareaRef.current?.focus();
               }
             }}
           >
-            {/* Input file 蘯ｩn: T蘯｣i lﾃｪn ngay l蘯ｭp t盻ｩc khi v盻ｫa ch盻肱 t盻㎝ */}
+            {/* Input file ẩn: Tải lên ngay lập tức khi vừa chọn tệp */}
             {currentUser.isAdmin && (
               <input
                 ref={fileInputRef}
@@ -2234,7 +2312,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
               />
             )}
 
-            {/* Nﾃｺt ﾄ静ｭnh kﾃｨm file (icon k蘯ｹp gi蘯･y) - Gi盻ｯ nguyﾃｪn theo yﾃｪu c蘯ｧu */}
+            {/* Nút Đính kèm file (icon kẹp giấy) - Giữ nguyên theo yêu cầu */}
             {currentUser.isAdmin && (
               <button
                 type="button"
@@ -2246,7 +2324,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
               </button>
             )}
 
-            {/* Khung gﾃｵ cﾃ｢u h盻淑 */}
+            {/* Khung gõ câu hỏi */}
             <textarea
               ref={textareaRef}
               className="chat-textarea"
@@ -2265,7 +2343,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
               value={inputVal}
               onChange={(e) => setInputVal(e.target.value)}
               onFocus={() => {
-                // Trﾃｪn ﾄ訴盻㌻ tho蘯｡i, t盻ｱ ﾄ黛ｻ冢g cu盻冢 nh蘯ｹ ﾄ黛ｻ・gi盻ｯ thanh chat n蘯ｱm ngay trﾃｪn bﾃn phﾃｭm 蘯｣o
+                // Trên điện thoại, tự động cuộn nhẹ để giữ thanh chat nằm ngay trên bàn phím ảo
                 if (isMobile) {
                   setTimeout(() => {
                     textareaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -2274,6 +2352,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
               }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
+                  if (e.nativeEvent.isComposing) return;
                   e.preventDefault();
                   handleSend();
                 }
@@ -2284,7 +2363,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
               autoComplete="on"
             />
 
-            {/* Nﾃｺt Nh蘯ｭp gi盻肱g nﾃｳi */}
+            {/* Nút Nhập giọng nói */}
             <button
               type="button"
               className={`input-tool-btn voice-btn ${isListening ? 'listening' : ''}`}
@@ -2296,7 +2375,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
               <i className="fa-solid fa-microphone" />
             </button>
 
-            {/* Nﾃｺt G盻ｭi */}
+            {/* Nút Gửi */}
             <button
               type="button"
               className="send-message-btn"
@@ -2311,7 +2390,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
         </footer>
       </main>
 
-      {/* Modal Xem Trﾆｰ盻嫩 Tﾃi Li盻㎡ */}
+      {/* Modal Xem Trước Tài Liệu */}
       {previewFilename && (
         <DocumentPreviewModal
           filename={previewFilename}
@@ -2319,7 +2398,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
         />
       )}
 
-      {/* Modal Cﾃi ﾄ雪ｺｷt AI */}
+      {/* Modal Cài Đặt AI */}
       {showSettingsModal && (
         <AISettingsModal
           onClose={() => setShowSettingsModal(false)}

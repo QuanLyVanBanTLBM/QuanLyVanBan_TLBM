@@ -9,7 +9,7 @@ Hỗ trợ 2 tầng ViewSets:
    - DocumentViewSet:   /api/documents/      (Hỗ trợ nguyên vẹn 100% frontend React và test suite)
 """
 
-from django.db import models
+from django.db import connection, models, transaction
 from django.db.models import Max, Q
 from django.http import HttpResponse
 import os
@@ -29,6 +29,7 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
+from authorization.permissions import is_system_admin
 from .filters import (
     DocumentFilter,
     VanBanDenFilter,
@@ -118,12 +119,7 @@ def is_admin_user(user):
     """Kiểm tra người dùng có quyền Quản trị viên (Admin) hay không."""
     if not user or not user.is_authenticated:
         return False
-    if user.is_staff or user.is_superuser:
-        return True
-    profile = getattr(user, "profile", None)
-    if profile and profile.role == "admin":
-        return True
-    return False
+    return bool(user.is_staff or is_system_admin(user))
 
 
 def can_edit_document(user, instance):
@@ -623,8 +619,7 @@ class DocumentViewSet(viewsets.ViewSet):
         validate_attachment_files(request)
         instance = self._get_object_across_models(pk, record_log=False)
         user = request.user
-        profile = getattr(user, "profile", None)
-        is_real_admin = bool(user.is_superuser or (profile and getattr(profile, "role", None) == "admin") or getattr(user, "username", "") in ("admin", "quantri"))
+        is_real_admin = is_system_admin(user)
 
         if getattr(instance, "pham_vi", None) == PhamVi.HAN_CHE and not is_real_admin and instance.nguoi_tao != user:
             raise PermissionDenied("Người được chỉ định xem văn bản hạn chế chỉ có quyền xem, không được phép chỉnh sửa.")
@@ -690,18 +685,30 @@ class DocumentViewSet(viewsets.ViewSet):
         instance = self._get_object_across_models(pk, record_log=False)
         user = request.user
 
-        if getattr(instance, "pham_vi", None) == PhamVi.HAN_CHE:
-            raise PermissionDenied("Văn bản hạn chế không được phép xóa.")
-
+        is_han_che = getattr(instance, "pham_vi", None) == PhamVi.HAN_CHE
         if not can_delete_document(user, instance):
+            if is_han_che:
+                raise PermissionDenied("Văn bản hạn chế không được phép xóa.")
             raise PermissionDenied("Bạn không có quyền xóa văn bản này. Quyền xóa chỉ dành cho Quản trị viên (Admin) hoặc Cán bộ được phân quyền.")
 
-        cleanup_replacement_links_on_delete(instance)
-        if hasattr(instance, "danhmuc"):
-            instance.danhmuc.all().delete()
-        if hasattr(instance, "hoso"):
-            instance.hoso.all().delete()
-        instance.delete()
+        with transaction.atomic():
+            if is_han_che:
+                # Văn bản hạn chế: Quản trị viên (can_delete_document) được xóa; trigger CSDL chỉ mở trong giao dịch này.
+                instance._allow_delete_han_che = True
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT set_config('app.allow_delete_han_che', 'on', true)")
+            cleanup_replacement_links_on_delete(instance)
+            if hasattr(instance, "danhmuc"):
+                instance.danhmuc.all().delete()
+            if hasattr(instance, "hoso"):
+                instance.hoso.all().delete()
+            try:
+                instance.delete()
+            finally:
+                if is_han_che:
+                    # Đóng lại ngay sau lệnh xóa, kể cả khi giao dịch ngoài (ATOMIC_REQUESTS, test) còn mở.
+                    with connection.cursor() as cursor:
+                        cursor.execute("SELECT set_config('app.allow_delete_han_che', 'off', true)")
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=["get"], url_path=r"attachments/(?P<tep_id>[0-9]+)/download")
@@ -1547,87 +1554,32 @@ class FolderViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_404_NOT_FOUND,
                 )
 
-        project_root = os.path.abspath(os.path.dirname(str(settings.BASE_DIR)))
-        backend_root = os.path.abspath(str(settings.BASE_DIR))
-
         # Mặc định quét thư mục 'Folder' ở root project nếu không truyền đường dẫn
         if not req_path:
-            display_path = "./Folder"
-            candidate_parent = os.path.join(project_root, "Folder")
-            candidate_base = os.path.join(backend_root, "Folder")
+            candidate_parent = os.path.join(os.path.dirname(str(settings.BASE_DIR)), "Folder")
+            candidate_base = os.path.join(str(settings.BASE_DIR), "Folder")
             if os.path.exists(candidate_parent):
                 base_folder = os.path.abspath(candidate_parent)
             elif os.path.exists(candidate_base):
                 base_folder = os.path.abspath(candidate_base)
             else:
                 base_folder = os.path.abspath(candidate_parent)
-                os.makedirs(base_folder, exist_ok=True)
-
-            # Tự động nạp cấu trúc mẫu nếu thư mục trống
-            try:
-                has_entries = bool(os.listdir(base_folder))
-            except OSError:
-                has_entries = False
-
-            if not has_entries:
-                f1 = os.path.join(base_folder, "folder1")
-                f2 = os.path.join(base_folder, "folder2")
-                os.makedirs(f1, exist_ok=True)
-                os.makedirs(f2, exist_ok=True)
-                data_docs = os.path.join(project_root, "data", "docs")
-                if os.path.exists(data_docs):
-                    import shutil
-                    sample_map = {
-                        "Folder_folder1_item1.docx": os.path.join(f1, "item1.docx"),
-                        "Folder_folder1_item2.docx": os.path.join(f1, "item2.docx"),
-                        "Folder_folder1_item3.docx": os.path.join(f1, "item3.docx"),
-                        "Folder_folder2_item1.docx": os.path.join(f2, "item1.docx"),
-                        "Folder_folder2_item2.docx": os.path.join(f2, "item2.docx"),
-                        "Folder_folder2_item3.docx": os.path.join(f2, "item3.docx"),
-                    }
-                    for src_name, dst_file in sample_map.items():
-                        src_file = os.path.join(data_docs, src_name)
-                        if os.path.exists(src_file) and not os.path.exists(dst_file):
-                            try:
-                                shutil.copy2(src_file, dst_file)
-                            except OSError:
-                                pass
         else:
-            display_path = req_path
             if not os.path.isabs(req_path):
-                c_parent = os.path.join(project_root, req_path)
-                c_base = os.path.join(backend_root, req_path)
+                c_parent = os.path.join(os.path.dirname(str(settings.BASE_DIR)), req_path)
+                c_base = os.path.join(str(settings.BASE_DIR), req_path)
                 if os.path.exists(c_parent):
                     base_folder = os.path.abspath(c_parent)
                 elif os.path.exists(c_base):
                     base_folder = os.path.abspath(c_base)
                 else:
-                    base_folder = os.path.abspath(c_parent)
+                    base_folder = os.path.abspath(req_path)
             else:
                 base_folder = os.path.abspath(req_path)
-                try:
-                    rel = os.path.relpath(base_folder, project_root)
-                    if not rel.startswith(".."):
-                        display_path = f"./{rel}".replace("\\", "/")
-                except (ValueError, OSError):
-                    pass
-
-        # Bảo mật: Ngăn chặn Path Traversal ngoài phạm vi project root
-        try:
-            common = os.path.commonpath([project_root, base_folder])
-            is_inside = (common == project_root)
-        except (ValueError, OSError):
-            is_inside = False
-
-        if not is_inside:
-            return Response(
-                {"detail": f"Đường dẫn thư mục '{display_path}' không hợp lệ hoặc nằm ngoài phạm vi cho phép."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
 
         if not os.path.exists(base_folder) or not os.path.isdir(base_folder):
             return Response(
-                {"detail": f"Đường dẫn thư mục '{display_path}' không tồn tại hoặc không phải là thư mục."},
+                {"detail": f"Đường dẫn thư mục '{base_folder}' không tồn tại hoặc không phải là thư mục."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -1637,12 +1589,6 @@ class FolderViewSet(viewsets.ModelViewSet):
         file_count = 0
         dir_to_folder = {}
 
-        try:
-            rel_root = os.path.relpath(base_folder, project_root).replace("\\", "/")
-            safe_root_path = f"./{rel_root}" if not rel_root.startswith(".") else rel_root
-        except (ValueError, OSError):
-            safe_root_path = display_path
-
         # Tạo hoặc lấy thư mục gốc cho lần đồng bộ này
         root_name = os.path.basename(os.path.normpath(base_folder)) or "Folder"
         root_folder, created = Folder.objects.get_or_create(
@@ -1650,14 +1596,14 @@ class FolderViewSet(viewsets.ModelViewSet):
             parent=target_parent,
             defaults={
                 "is_local": True,
-                "local_path": safe_root_path,
-                "description": f"Thư mục đồng bộ từ local: {safe_root_path}",
+                "local_path": base_folder,
+                "description": f"Thư mục đồng bộ từ local: {base_folder}",
                 "created_by": user,
             },
         )
         if not created and not root_folder.is_local:
             root_folder.is_local = True
-            root_folder.local_path = safe_root_path
+            root_folder.local_path = base_folder
             root_folder.save(update_fields=["is_local", "local_path"])
 
         dir_to_folder[os.path.normpath(base_folder)] = root_folder
@@ -1670,25 +1616,19 @@ class FolderViewSet(viewsets.ModelViewSet):
             # Tạo các thư mục con
             for dir_name in dir_names:
                 sub_path = os.path.normpath(os.path.join(current_root, dir_name))
-                try:
-                    rel_sub = os.path.relpath(sub_path, project_root).replace("\\", "/")
-                    safe_sub_path = f"./{rel_sub}" if not rel_sub.startswith(".") else rel_sub
-                except (ValueError, OSError):
-                    safe_sub_path = dir_name
-
                 sub_folder, s_created = Folder.objects.get_or_create(
                     name=dir_name,
                     parent=parent_folder,
                     defaults={
                         "is_local": True,
-                        "local_path": safe_sub_path,
+                        "local_path": sub_path,
                         "description": f"Thư mục con local: {dir_name}",
                         "created_by": user,
                     },
                 )
                 if not s_created and not sub_folder.is_local:
                     sub_folder.is_local = True
-                    sub_folder.local_path = safe_sub_path
+                    sub_folder.local_path = sub_path
                     sub_folder.save(update_fields=["is_local", "local_path"])
 
                 dir_to_folder[sub_path] = sub_folder
@@ -1706,21 +1646,15 @@ class FolderViewSet(viewsets.ModelViewSet):
                 if "." in filename:
                     ext = filename.rsplit(".", 1)[-1].lower()
 
-                try:
-                    rel_file = os.path.relpath(file_full_path, project_root).replace("\\", "/")
-                    safe_file_path = rel_file
-                except (ValueError, OSError):
-                    safe_file_path = filename
-
                 FolderFile.objects.update_or_create(
                     folder=parent_folder,
                     file_name=filename,
                     defaults={
-                        "file_path": safe_file_path,
+                        "file_path": file_full_path,
                         "file_size": file_size,
                         "file_type": ext,
                         "is_local": True,
-                        "description": f"File cục bộ: {filename}",
+                        "description": f"File cục bộ từ: {file_full_path}",
                         "uploaded_by": user,
                     },
                 )
@@ -1728,8 +1662,8 @@ class FolderViewSet(viewsets.ModelViewSet):
 
         return Response({
             "status": "success",
-            "message": f"Đồng bộ thành công từ '{display_path}'! Đã lập chỉ mục {folder_count} thư mục và {file_count} tệp.",
-            "base_folder": display_path,
+            "message": f"Đồng bộ thành công từ '{base_folder}'! Đã lập chỉ mục {folder_count} thư mục và {file_count} tệp.",
+            "base_folder": base_folder,
             "root_folder_id": root_folder.id,
             "folder_count": folder_count,
             "file_count": file_count,
@@ -1771,8 +1705,6 @@ class FolderFileViewSet(viewsets.ModelViewSet):
             safe_roots.append(Path(settings.MEDIA_ROOT).resolve())
         safe_roots.append((Path(str(settings.BASE_DIR)) / "media").resolve())
         safe_roots.append((Path(str(settings.BASE_DIR)) / "Folder").resolve())
-        safe_roots.append((Path(str(settings.BASE_DIR)).parent / "Folder").resolve())
-        safe_roots.append(Path(str(settings.BASE_DIR)).parent.resolve())
 
         file_disk_path = None
         for root in safe_roots:

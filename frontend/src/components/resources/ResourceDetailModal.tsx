@@ -5,7 +5,7 @@ import { Badge } from '@components/common/Badge';
 import { Button } from '@components/common/Button';
 import { useTranslation } from '@i18n/translate';
 import { computeEffectiveStatus, getTodayLocalDateString } from '@lib/resourceValidity';
-import { downloadBlob } from '@lib/apiClient';
+import { downloadBlob, apiClient } from '@lib/apiClient';
 import { getAbsoluteFileUrl } from '@lib/fileUtils';
 import { FilePreviewModal } from './FilePreviewModal';
 
@@ -52,16 +52,26 @@ export const ResourceDetailModal: React.FC<ResourceDetailModalProps> = ({
       console.warn('Lỗi downloadBlob, chuyển sang fallback tải file:', err);
       if (item && onDownloadFile) {
         onDownloadFile(item, file.name, file.path);
+      } else if (file.id) {
+        try {
+          const res = await apiClient.post<{ ticket: string; download_url: string }>(
+            `/api/resources/attachments/${file.id}/ticket/`
+          );
+          if (res?.download_url) {
+            const a = document.createElement('a');
+            a.href = getAbsoluteFileUrl(res.download_url);
+            a.download = file.name;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+          }
+        } catch (ticketErr) {
+          console.error('Lỗi lấy vé tải tệp:', ticketErr);
+        }
       } else {
-        const token = typeof window !== 'undefined'
-          ? (localStorage.getItem('tlbm_access_token') || localStorage.getItem('tlbm_token') || '')
-          : '';
         const absUrl = getAbsoluteFileUrl(downloadUrl);
-        const serverUrl = token
-          ? `${absUrl}${absUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`
-          : absUrl;
         const a = document.createElement('a');
-        a.href = serverUrl;
+        a.href = absUrl;
         a.download = file.name;
         document.body.appendChild(a);
         a.click();
@@ -72,9 +82,10 @@ export const ResourceDetailModal: React.FC<ResourceDetailModalProps> = ({
     }
   };
 
-  // Xem trước tệp: PDF/Ảnh -> mở tab mới trực tiếp theo đường dẫn máy chủ; ZIP/DOCX/EXCEL -> tải về máy
+  // Xem trước tệp: PDF/Ảnh -> xin vé dùng 1 lần (Burn on Read) và mở tab mới; ZIP/DOCX/EXCEL -> tải về máy
   const handlePreviewAttachment = async (file: { id?: number; name: string; path?: string; file_size?: number; mime_type?: string }) => {
     const isPreviewable = isDirectPreviewable(file.name);
+    const isPdf = file.name.toLowerCase().endsWith('.pdf');
     const targetUrl = file.id
       ? `/api/resources/attachments/${file.id}/view/`
       : (file.path || item?.file_dinh_kem);
@@ -87,15 +98,31 @@ export const ResourceDetailModal: React.FC<ResourceDetailModalProps> = ({
       return;
     }
 
-    // Đối với PDF hoặc Ảnh -> Mở đường dẫn máy chủ trực tiếp trong tab mới (chống lỗi ERR_FILE_NOT_FOUND do blob:)
-    const token = typeof window !== 'undefined'
-      ? (localStorage.getItem('tlbm_access_token') || localStorage.getItem('tlbm_token') || '')
-      : '';
+    // Đối với PDF hoặc Ảnh có file.id:
+    // Xin vé dùng 1 lần (Single-Use Ticket) từ backend để mở trực tiếp trong tab mới.
+    // Vé sẽ bị backend hủy ngay (Burn on Read) sau khi tab tải xong tệp.
+    // Ngăn chặn hoàn toàn việc lộ token trên URL và ngăn không cho truy cập trái phép qua tab ẩn danh.
+    if (file.id) {
+      try {
+        setLoadingFileId(file.id);
+        const res = await apiClient.post<{ ticket: string; view_url: string }>(
+          `/api/resources/attachments/${file.id}/ticket/`
+        );
+        if (res?.view_url) {
+          window.open(getAbsoluteFileUrl(res.view_url), '_blank');
+          return;
+        }
+      } catch (err) {
+        console.error('Lỗi cấp vé xem tài liệu:', err);
+      } finally {
+        setLoadingFileId(null);
+      }
+    }
+
+    // Fallback cho URL trực tiếp / blob URL
     const absUrl = getAbsoluteFileUrl(targetUrl);
-    const serverUrl = token
-      ? `${absUrl}${absUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`
-      : absUrl;
-    window.open(serverUrl, '_blank');
+    const finalUrl = isPdf && !absUrl.includes('#') ? `${absUrl}#view=Fit&navpanes=0` : absUrl;
+    window.open(finalUrl, '_blank');
   };
 
   // Lắng nghe phím ESC để đóng Modal

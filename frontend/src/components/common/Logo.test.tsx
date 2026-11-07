@@ -1,4 +1,4 @@
-﻿import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { Logo } from './Logo';
 
@@ -8,7 +8,7 @@ describe('Logo Component', () => {
     const images = container.querySelectorAll('img');
     expect(images).toHaveLength(2);
     expect(images[0]).toHaveAttribute('src', '/baolong-logo.png');
-    expect(images[1]).toHaveAttribute('src', '/baolong-logo-black.png');
+    expect(images[1]).toHaveAttribute('src', '/baolong-logo-color.png');
   });
 
   it('renders single white variant image', () => {
@@ -18,11 +18,18 @@ describe('Logo Component', () => {
     expect(img).toHaveAttribute('alt', 'Bảo Long Trắng');
   });
 
-  it('renders single dark variant image', () => {
-    render(<Logo variant="dark" alt="Bảo Long Đen" />);
+  it('renders single dark variant image (color logo for light mode)', () => {
+    render(<Logo variant="dark" alt="Bảo Long Xanh Vàng" />);
     const img = screen.getByRole('img');
-    expect(img).toHaveAttribute('src', '/baolong-logo-black.png');
-    expect(img).toHaveAttribute('alt', 'Bảo Long Đen');
+    expect(img).toHaveAttribute('src', '/baolong-logo-color.png');
+    expect(img).toHaveAttribute('alt', 'Bảo Long Xanh Vàng');
+  });
+
+  it('renders single color variant image', () => {
+    render(<Logo variant="color" alt="Bảo Long Xanh Vàng" />);
+    const img = screen.getByRole('img');
+    expect(img).toHaveAttribute('src', '/baolong-logo-color.png');
+    expect(img).toHaveAttribute('alt', 'Bảo Long Xanh Vàng');
   });
 
   it('renders icon only mode correctly', () => {

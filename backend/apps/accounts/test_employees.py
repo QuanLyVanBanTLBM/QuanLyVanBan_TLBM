@@ -37,6 +37,7 @@ from accounts.models import (
 )
 from accounts.excel_cbnv import import_cbnv_from_excel
 from accounts.views_employee import _run_employee_import_job
+from accounts.standard_positions import STANDARD_POSITIONS
 
 User = get_user_model()
 
@@ -496,13 +497,13 @@ class EmployeeExcelImportExportTests(EmployeeBaseTestCase):
 
     def test_import_excel_missing_file(self):
         """Gửi request import không có tệp đính kèm trả về mã 400."""
-        self.client.force_authenticate(user=self.sensitive_user)
+        self.client.force_authenticate(user=self.admin_user)
         res = self.client.post(self.import_url, {}, format="multipart")
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_import_excel_with_validation_errors(self):
         """Nhập Excel có lỗi định dạng: báo lỗi chi tiết theo từng dòng."""
-        self.client.force_authenticate(user=self.sensitive_user)
+        self.client.force_authenticate(user=self.admin_user)
 
         wb = openpyxl.Workbook()
         ws = wb.active
@@ -527,7 +528,7 @@ class EmployeeExcelImportExportTests(EmployeeBaseTestCase):
 
     def test_import_excel_success(self):
         """Nhập Excel hợp lệ: tạo nhân viên và user thành công trong DB."""
-        self.client.force_authenticate(user=self.sensitive_user)
+        self.client.force_authenticate(user=self.admin_user)
 
         wb = openpyxl.Workbook()
         ws = wb.active
@@ -586,7 +587,7 @@ class EmployeeExcelImportExportTests(EmployeeBaseTestCase):
 
     def test_import_excel_async_returns_owned_job_and_deduplicates_retry(self):
         """Endpoint nền nhận nhanh, giới hạn xem trạng thái theo chủ job và chống gửi lặp."""
-        self.client.force_authenticate(user=self.sensitive_user)
+        self.client.force_authenticate(user=self.admin_user)
         upload = BytesIO(b"queued test payload")
         upload.name = "danh_sach.xlsx"
         idempotency_key = "9a04c357-e2fa-4b04-89da-6f459f8c367b"
@@ -602,7 +603,7 @@ class EmployeeExcelImportExportTests(EmployeeBaseTestCase):
             self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
             job_id = response.json()["job_id"]
             job = EmployeeImportJob.objects.get(pk=job_id)
-            self.assertEqual(job.owner_id, self.sensitive_user.pk)
+            self.assertEqual(job.owner_id, self.admin_user.pk)
             self.assertEqual(job.status, EmployeeImportJob.Status.QUEUED)
             self.assertEqual(job.active_key, "cbnv-import")
             file_path = Path(settings.MEDIA_ROOT) / job.file_path
@@ -631,11 +632,15 @@ class EmployeeExcelImportExportTests(EmployeeBaseTestCase):
         self.assertEqual(status_response.json()["status"], "queued")
         self.assertNotIn("file_path", status_response.json())
 
-        self.client.force_authenticate(user=self.admin_user)
+        other_admin = User.objects.create_superuser(
+            username="other_import_admin", email="other_import_admin@baolong.vn", password="OtherAdmin12345",
+            ho_ten="Quản trị khác", don_vi=self.don_vi_1, chuc_vu=self.cv_truong_phong,
+        )
+        self.client.force_authenticate(user=other_admin)
         self.assertEqual(self.client.get(status_url).status_code, status.HTTP_404_NOT_FOUND)
 
     def test_import_excel_async_rejects_files_over_template_limit(self):
-        self.client.force_authenticate(user=self.sensitive_user)
+        self.client.force_authenticate(user=self.admin_user)
         upload = BytesIO(b"x" * (5 * 1024 * 1024 + 1))
         upload.name = "too-large.xlsx"
         response = self.client.post(
@@ -649,7 +654,7 @@ class EmployeeExcelImportExportTests(EmployeeBaseTestCase):
 
     def test_import_excel_xls_format_rejected(self):
         """Tệp Excel định dạng cũ (.xls) bị từ chối 400 fileInvalidType (hệ thống chuẩn hóa chỉ hỗ trợ .xlsx)."""
-        self.client.force_authenticate(user=self.sensitive_user)
+        self.client.force_authenticate(user=self.admin_user)
         bio = BytesIO(b"fake .xls binary content")
         bio.name = "danh_sach_hop_le.xls"
         res = self.client.post(self.import_url, {"file": bio}, format="multipart")
@@ -658,7 +663,7 @@ class EmployeeExcelImportExportTests(EmployeeBaseTestCase):
 
     def test_import_excel_invalid_extension_rejected(self):
         """Tải tệp không có phần mở rộng .xlsx hoặc .xls bị từ chối 400."""
-        self.client.force_authenticate(user=self.sensitive_user)
+        self.client.force_authenticate(user=self.admin_user)
         bio = BytesIO(b"fake content")
         bio.name = "tai_lieu.pdf"
         res = self.client.post(self.import_url, {"file": bio}, format="multipart")
@@ -667,7 +672,7 @@ class EmployeeExcelImportExportTests(EmployeeBaseTestCase):
 
     def test_import_excel_does_not_create_position_on_error(self):
         """Review PR #71: Không tự ý tạo Chức vụ mới khi import nếu không tồn tại; phải báo lỗi dòng."""
-        self.client.force_authenticate(user=self.sensitive_user)
+        self.client.force_authenticate(user=self.admin_user)
 
         wb = openpyxl.Workbook()
         ws = wb.active
@@ -690,7 +695,7 @@ class EmployeeExcelImportExportTests(EmployeeBaseTestCase):
 
     def test_import_excel_duplicate_unit_name_fails(self):
         """Review PR #71: Đơn vị trùng tên giữa nhiều Khối/Khu vực phải báo lỗi yêu cầu ghi rõ."""
-        self.client.force_authenticate(user=self.sensitive_user)
+        self.client.force_authenticate(user=self.admin_user)
 
         # Tạo thêm 1 khối và 1 đơn vị cùng tên "Văn phòng Viện"
         khoi2 = KhoiKhuVuc.objects.create(ten="Khối Cơ quan phía Nam")
@@ -717,7 +722,7 @@ class EmployeeExcelImportExportTests(EmployeeBaseTestCase):
 
     def test_import_excel_duplicate_unit_name_resolves_by_block(self):
         """Đơn vị trùng tên được phân biệt chính xác khi file có cột Khối/Khu vực."""
-        self.client.force_authenticate(user=self.sensitive_user)
+        self.client.force_authenticate(user=self.admin_user)
 
         khoi2 = KhoiKhuVuc.objects.create(ten="Khối Cơ quan phía Nam")
         max_stt = DonVi.objects.aggregate(Max("stt_uu_tien"))["stt_uu_tien__max"] or 0
@@ -1366,9 +1371,8 @@ class EmployeePermissionSecurityTests(EmployeeBaseTestCase):
             chuc_vu=self.cv_chuyen_vien,
         )
         creator_user.user_permissions.add(self.perm_add)
-        self.client.force_authenticate(user=creator_user)
 
-        # 1. Có quyền add_cbnv -> POST thành công
+        # 1. Chỉ có add_cbnv mà không phải quản trị hệ thống -> POST bị từ chối 403
         payload = {
             "ho_ten": "Nhân viên mới do Creator tạo",
             "email": "newbie@baolong.vn",
@@ -1376,16 +1380,24 @@ class EmployeePermissionSecurityTests(EmployeeBaseTestCase):
             "don_vi_id": self.don_vi_1.id,
             "chuc_vu_id": self.cv_chuyen_vien.id,
         }
+        self.client.force_authenticate(user=creator_user)
+        res_create_denied = self.client.post(self.employee_list_url, payload, format="json")
+        self.assertEqual(res_create_denied.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(User.objects.filter(email="newbie@baolong.vn").exists())
+
+        # Quản trị hệ thống có add_cbnv -> POST thành công
+        self.client.force_authenticate(user=self.admin_user)
         res_create = self.client.post(self.employee_list_url, payload, format="json")
         self.assertEqual(res_create.status_code, status.HTTP_201_CREATED)
         new_emp_id = res_create.json()["id"]
 
-        # 2. Không có quyền delete_cbnv -> DELETE bị từ chối 403
+        # 2. Có add_cbnv nhưng không có delete_cbnv -> DELETE bị từ chối 403
+        self.client.force_authenticate(user=creator_user)
         del_url = f"{self.employee_list_url}{new_emp_id}/"
         res_delete_denied = self.client.delete(del_url)
         self.assertEqual(res_delete_denied.status_code, status.HTTP_403_FORBIDDEN)
 
-        # 3. User có quyền delete_cbnv -> DELETE thành công 204
+        # 3. RBAC delete_cbnv không cấp quyền xóa CBNV cho user không phải superuser.
         deleter_user = User.objects.create_user(
             username="deleter_user",
             email="deleter@baolong.vn",
@@ -1396,8 +1408,13 @@ class EmployeePermissionSecurityTests(EmployeeBaseTestCase):
         )
         deleter_user.user_permissions.add(self.perm_delete)
         self.client.force_authenticate(user=deleter_user)
-        res_delete_ok = self.client.delete(del_url, {"password": "DeleterPassword123"}, format="json")
-        self.assertEqual(res_delete_ok.status_code, status.HTTP_204_NO_CONTENT)
+        res_delete_denied = self.client.delete(del_url, {"password": "DeleterPassword123"}, format="json")
+        self.assertEqual(res_delete_denied.status_code, status.HTTP_403_FORBIDDEN)
+
+        # Chỉ superuser mới được xóa hồ sơ nhân viên.
+        self.client.force_authenticate(user=self.admin_user)
+        res_delete_admin = self.client.delete(del_url, {"password": "SuperPassword123"}, format="json")
+        self.assertEqual(res_delete_admin.status_code, status.HTTP_204_NO_CONTENT)
 
     def test_superuser_bypasses_all_permission_gates(self):
         """Superuser không cần gán quyền lẻ tẻ, luôn vượt qua tất cả các chốt kiểm tra."""
@@ -1477,7 +1494,7 @@ class EmployeePermissionSecurityTests(EmployeeBaseTestCase):
             format="json",
         )
         self.assertEqual(res_del_su.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(res_del_su.data["detail"], "employees.messages.cannotDeleteSuperuser")
+        self.assertEqual(res_del_su.data["detail"], "roles.messages.permissionDenied")
 
         # 4. User có change_full_cbnv (nhưng không phải superuser) cố chuyển superuser thành nghỉ việc -> 403
         hr_user = User.objects.create_user(
@@ -1529,6 +1546,9 @@ class EmployeePermissionSecurityTests(EmployeeBaseTestCase):
             chuc_vu=self.cv_truong_phong,
             trang_thai=Employee.Status.NGHI_VIEC,
         )
+        # Tài khoản đã nghỉ việc nhưng còn đăng nhập được (is_active) để thử thao tác; không tính là superuser đang làm việc.
+        User.objects.filter(pk=third_admin.pk).update(is_active=True)
+        third_admin.refresh_from_db()
         self.client.force_authenticate(user=third_admin)
         res_last = self.client.patch(
             f"{self.employee_list_url}{second_admin.id}/",
@@ -1785,7 +1805,7 @@ class ReviewRound4FixesTests(EmployeeBaseTestCase):
 
     def test_excel_import_birthday_validations(self):
         """Review Vòng 4: Import Excel kiểm tra ngày sinh tương lai và khoảng tuổi [18, 100]."""
-        self.client.force_authenticate(user=self.sensitive_user)
+        self.client.force_authenticate(user=self.admin_user)
         today = date.today()
         fut_date = (today + timedelta(days=5)).isoformat()
         u18_date = date(today.year - 16, today.month, today.day).isoformat()
@@ -1844,7 +1864,7 @@ class SeedDbCommandTests(APITestCase):
         }):
             call_command("seed_db", demo_data=True, verbosity=0)
         self.assertEqual(DonVi.objects.count(), 82)
-        self.assertEqual(Position.objects.count(), 25)
+        self.assertEqual(Position.objects.count(), len(STANDARD_POSITIONS))
         self.assertEqual(User.objects.get(username="admin").password, first_password_hash)
         preserved_demo = User.objects.get(username="truongphong_cntt")
         self.assertEqual(preserved_demo.password, existing_demo_hash)
@@ -2160,6 +2180,8 @@ class EmployeeDefaultGroupAssignmentTests(EmployeeBaseTestCase):
             ("Tổng Giám đốc", "BGD"),
             ("Chủ tịch HĐQT", "BGD"),
             ("Giám đốc Khối", "TP"),
+            ("Giám đốc Ban", "TP"),
+            ("Phụ trách Ban", "TP"),
             ("Trưởng phòng", "TP"),
             ("Chuyên viên", "CV"),
             ("Nhân viên", "CV"),
@@ -2293,15 +2315,26 @@ class EmployeeDefaultGroupAssignmentTests(EmployeeBaseTestCase):
         admin_group = Group.objects.get(name="Quản trị hệ thống")
         cv_group = Group.objects.get(name="Chuyên viên")
         pos = self._create_position("Chuyên viên")
-        _, client = self._manager_client()
+        manager, client = self._manager_client()
 
-        denied = client.post(self.employee_list_url, self._create_payload("deny_admin@baolong.vn", pos, [admin_group.id]), format="json")
-        self.assertEqual(denied.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("employees.messages.adminGroupForbidden", str(denied.data))
-        self.assertFalse(User.objects.filter(email="deny_admin@baolong.vn").exists())
+        # Người không phải quản trị hệ thống bị view chặn 403 trước khi tới serializer.
+        for email, group in (("deny_admin@baolong.vn", admin_group), ("deny_cv@baolong.vn", cv_group)):
+            denied = client.post(self.employee_list_url, self._create_payload(email, pos, [group.id]), format="json")
+            self.assertEqual(denied.status_code, status.HTTP_403_FORBIDDEN)
+            self.assertFalse(User.objects.filter(email=email).exists())
 
-        allowed = client.post(self.employee_list_url, self._create_payload("allow_cv@baolong.vn", pos, [cv_group.id]), format="json")
-        self.assertEqual(allowed.status_code, status.HTTP_201_CREATED)
+        # Serializer vẫn chặn riêng việc gán nhóm ADMIN như lớp bảo vệ thứ hai.
+        from rest_framework.test import APIRequestFactory
+
+        from accounts.serializers import EmployeeCreateSerializer
+
+        request = APIRequestFactory().post(self.employee_list_url)
+        request.user = manager
+        serializer = EmployeeCreateSerializer(
+            data=self._create_payload("deny_admin2@baolong.vn", pos, [admin_group.id]), context={"request": request}
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("nhom_quyen_ids", serializer.errors)
 
     def test_admin_group_member_and_superuser_can_grant_admin_group(self):
         admin_group = Group.objects.get(name="Quản trị hệ thống")
@@ -2402,7 +2435,7 @@ class EmployeeImportWorkerIntegrationTests(TransactionTestCase):
         self.client = APIClient()
 
     def test_worker_persists_success_and_removes_private_file(self):
-        self.client.force_authenticate(user=self.sensitive_user)
+        self.client.force_authenticate(user=self.admin_user)
         workbook = openpyxl.Workbook()
         sheet = workbook.active
         sheet.append([

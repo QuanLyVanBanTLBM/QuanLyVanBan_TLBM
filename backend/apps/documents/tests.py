@@ -3213,6 +3213,87 @@ class HieuLucPermissionTests(APITestCase):
         self.assertEqual(res2.status_code, status.HTTP_200_OK)
         self.assertTrue(res2.data.get("can_change_hieu_luc"))
 
+    def test_outbound_replacement_priority_over_inbound_same_so_hieu(self):
+        """Ưu tiên tìm trong Văn bản Đi trước: khi cả Đến và Đi đều có số hiệu 'tttttt', Văn bản Đi thay thế Văn bản Đi thành công."""
+        # 1. Tạo Văn bản Đến có số hiệu tttttt
+        VanBanDen.objects.create(
+            nam=2026,
+            so_hieu="tttttt",
+            so_thu_tu=901,
+            pham_vi=PhamVi.NOI_BO,
+            trich_yeu="Văn bản đến trùng số hiệu",
+            hieu_luc=HieuLuc.CON_HIEU_LUC,
+            nguoi_tao=self.admin,
+        )
+
+        # 2. Tạo Văn bản Đi có số hiệu tttttt
+        target_di = VanBanDi.objects.create(
+            nam=2026,
+            so_hieu="tttttt",
+            so_thu_tu=902,
+            pham_vi=PhamVi.NOI_BO,
+            trich_yeu="Văn bản đi mục tiêu cần thay thế",
+            hieu_luc=HieuLuc.CON_HIEU_LUC,
+            nguoi_tao=self.admin,
+        )
+
+        # 3. Tạo Văn bản Đi mới thay thế cho 'tttttt'
+        client = APIClient()
+        client.force_authenticate(user=self.admin)
+        res = client.post(
+            "/api/documents/",
+            {
+                "loai": "DI",
+                "nam": 2026,
+                "so_hieu": "7777/TEST",
+                "trich_yeu": "Văn bản đi thay thế văn bản đi",
+                "ngay_ban_hanh": "2026-11-07",
+                "pham_vi": "NOI_BO",
+                "hieu_luc": "CON_HIEU_LUC",
+                "link_thay_the": "tttttt",
+            },
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        new_doc = VanBanDi.objects.get(so_hieu="7777/TEST")
+        self.assertEqual(new_doc.link_thay_the, "tttttt")
+
+    def test_cross_module_replacement_strictly_prohibited(self):
+        """Khóa nghiệp vụ tuyệt đối: Không cho phép Văn bản Đi thay thế Văn bản Đến (hoặc ngược lại)."""
+        # Tạo văn bản Đến độc nhất
+        VanBanDen.objects.create(
+            nam=2026,
+            so_hieu="DEN_EXCLUSIVE_123",
+            so_thu_tu=903,
+            pham_vi=PhamVi.NOI_BO,
+            trich_yeu="Chỉ có ở văn bản đến",
+            hieu_luc=HieuLuc.CON_HIEU_LUC,
+            nguoi_tao=self.admin,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=self.admin)
+
+        # Văn bản Đi cố tình thay thế Văn bản Đến -> Bị chặn 400 kèm thông báo rõ ràng
+        res = client.post(
+            "/api/documents/",
+            {
+                "loai": "DI",
+                "nam": 2026,
+                "so_hieu": "DI_CROSS_TEST",
+                "trich_yeu": "Cố tình thay thế văn bản đến",
+                "ngay_ban_hanh": "2026-11-07",
+                "pham_vi": "NOI_BO",
+                "hieu_luc": "CON_HIEU_LUC",
+                "link_thay_the": "DEN_EXCLUSIVE_123",
+            },
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("link_thay_the", res.data)
+        self.assertIn("Văn bản Đến", str(res.data["link_thay_the"]))
+        self.assertIn("chỉ được phép thay thế cho văn bản cùng phân hệ", str(res.data["link_thay_the"]))
+
 
 
 

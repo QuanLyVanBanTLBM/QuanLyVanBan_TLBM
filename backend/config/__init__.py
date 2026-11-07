@@ -22,9 +22,38 @@ COLLECTION_NAME = os.getenv("COLLECTION_NAME", "smart_documents")
 
 MODEL_PROVIDER = os.getenv("MODEL_PROVIDER", "gemini")  # options: gemini, openai
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "models/gemini-embedding-001")
 LLM_MODEL = os.getenv("LLM_MODEL", "gemini-3.8-flash")
 VISION_MODEL = os.getenv("VISION_MODEL", LLM_MODEL)
+
+# Load persisted AI settings from DATA_DIR if present across workers/restarts
+_settings_file = DATA_DIR / "ai_settings.json"
+if _settings_file.exists():
+    try:
+        import json as _json
+        _stored = _json.loads(_settings_file.read_text(encoding="utf-8"))
+        if isinstance(_stored, dict):
+            if _stored.get("provider"):
+                MODEL_PROVIDER = _stored["provider"]
+                os.environ["MODEL_PROVIDER"] = MODEL_PROVIDER
+            if _stored.get("llm_model"):
+                LLM_MODEL = _stored["llm_model"]
+                os.environ["LLM_MODEL"] = LLM_MODEL
+            if _stored.get("embed_model"):
+                EMBED_MODEL = _stored["embed_model"]
+                os.environ["EMBED_MODEL"] = EMBED_MODEL
+            if _stored.get("vision_model"):
+                VISION_MODEL = _stored["vision_model"]
+                os.environ["VISION_MODEL"] = VISION_MODEL
+            if _stored.get("gemini_api_key"):
+                GEMINI_API_KEY = _stored["gemini_api_key"]
+                os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
+            if _stored.get("openai_api_key"):
+                OPENAI_API_KEY = _stored["openai_api_key"]
+                os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
+    except Exception:
+        pass
 
 VISION_OCR_ENABLED = os.getenv("VISION_OCR_ENABLED", "true").lower() in {
     "1",

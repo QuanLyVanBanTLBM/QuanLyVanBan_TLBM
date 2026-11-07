@@ -14,6 +14,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import Q
 from rest_framework import serializers
 
+from authorization.permissions import is_system_admin
 from organizations.models import DonVi
 from .models import (
     MAX_DISPLAY_ORDER,
@@ -346,6 +347,8 @@ POSITION_DEFAULT_GROUP_CODES = {
     "Giám đốc Vùng": ["TP"],
     "Giám đốc": ["TP"],
     "Phó Giám đốc": ["TP"],
+    "Giám đốc Ban": ["TP"],
+    "Phụ trách Ban": ["TP"],
     "Trưởng Ban": ["TP"],
     "Phó Ban": ["TP"],
     "Trưởng Bộ phận": ["TP"],
@@ -377,12 +380,7 @@ def _admin_group_ids():
 
 def requester_can_grant_admin(request):
     """Chỉ superuser hoặc thành viên nhóm ADMIN mới được gán hoặc gỡ nhóm Quản trị hệ thống."""
-    user = getattr(request, "user", None)
-    if not user or not user.is_authenticated:
-        return False
-    if user.is_superuser:
-        return True
-    return user.groups.filter(id__in=_admin_group_ids()).exists()
+    return is_system_admin(getattr(request, "user", None))
 
 
 def check_admin_group_assignment(request, requested_groups, current_group_ids=()):

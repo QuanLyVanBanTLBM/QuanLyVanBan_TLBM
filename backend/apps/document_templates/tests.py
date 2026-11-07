@@ -1098,50 +1098,112 @@ class DocumentTemplatesRBACPermissionsTests(TestCase):
         self.assertTrue(res_root.data.get('can_edit'))
         self.assertTrue(res_root.data.get('can_delete'))
 
-def test_view_and_download_attachment_with_query_param_token(self):
-        """Xác thực qua query param ?token=... khi mở tab mới xem hoặc tải tệp trực tiếp từ server"""
-        import os
-        from rest_framework_simplejwt.tokens import RefreshToken
-        from django.contrib.auth.models import Permission
-        from document_templates.models import template_disk_path
-
-        viewer = User.objects.create_user(username="query_token_viewer", password="password123")
-        perm_view = Permission.objects.get(codename="view_tailieu")
-        viewer.user_permissions.add(perm_view)
-        token = str(RefreshToken.for_user(viewer).access_token)
-
-        # Tạo file đính kèm trên self.doc_by_creator (TAT_CA)
-        att = ChiTietTaiLieuAttachment.objects.create(
-            document=self.doc_by_creator,
-            name="huong_dan.pdf",
-            path="mau-van-ban/2026/03/10/huong_dan.pdf",
-            file_size=1024,
-            mime_type="application/pdf",
-            nguoi_tao=self.creator_user,
-        )
-
-        self.client.logout()  # Đảm bảo không còn Authorization header
-        # 1. Truy cập không có token -> 401
-        res_no_token = self.client.get(f'/api/resources/attachments/{att.id}/view/')
-        self.assertEqual(res_no_token.status_code, status.HTTP_401_UNAUTHORIZED)
-
-        # 2. Chuẩn bị file trên đĩa
-        disk_path = template_disk_path(att.path)
-        if disk_path:
-            os.makedirs(os.path.dirname(disk_path), exist_ok=True)
-            with open(disk_path, 'wb') as f:
-                f.write(b"%PDF-1.4 sample file")
-
-        # 3. Truy cập với query param token hợp lệ -> 200 OK và inline disposition
-        res_token = self.client.get(f'/api/resources/attachments/{att.id}/view/?token={token}')
-        self.assertEqual(res_token.status_code, status.HTTP_200_OK)
-        self.assertIn('inline', res_token.headers.get('Content-Disposition', ''))
-
-        # 4. Tải về với query param token -> 200 OK và attachment disposition
-        res_download = self.client.get(f'/api/resources/attachments/{att.id}/download/?token={token}')
-        self.assertEqual(res_download.status_code, status.HTTP_200_OK)
-        self.assertIn('attachment', res_download.headers.get('Content-Disposition', ''))
-
-        # 5. Token sai -> 401
-        res_bad_token = self.client.get(f'/api/resources/attachments/{att.id}/view/?token=invalid_token_xyz')
-        self.assertEqual(res_bad_token.status_code, status.HTTP_401_UNAUTHORIZED)
+def test_view_and_download_attachment_with_query_param_token(self):
+
+        """Xác thực qua query param ?token=... khi mở tab mới xem hoặc tải tệp trực tiếp từ server"""
+
+        import os
+
+        from rest_framework_simplejwt.tokens import RefreshToken
+
+        from django.contrib.auth.models import Permission
+
+        from document_templates.models import template_disk_path
+
+
+
+        viewer = User.objects.create_user(username="query_token_viewer", password="password123")
+
+        perm_view = Permission.objects.get(codename="view_tailieu")
+
+        viewer.user_permissions.add(perm_view)
+
+        token = str(RefreshToken.for_user(viewer).access_token)
+
+
+
+        # Tạo file đính kèm trên self.doc_by_creator (TAT_CA)
+
+        att = ChiTietTaiLieuAttachment.objects.create(
+
+            document=self.doc_by_creator,
+
+            name="huong_dan.pdf",
+
+            path="mau-van-ban/2026/03/10/huong_dan.pdf",
+
+            file_size=1024,
+
+            mime_type="application/pdf",
+
+            nguoi_tao=self.creator_user,
+
+        )
+
+
+
+        self.client.logout()  # Đảm bảo không còn Authorization header
+
+        # 1. Truy cập không có vé / không đăng nhập -> 401 Unauthorized
+        res_no_token = self.client.get(f'/api/resources/attachments/{att.id}/view/')
+        self.assertEqual(res_no_token.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        # 2. Truy cập bằng query param token cũ -> 401 Unauthorized (đã chặn hoàn toàn việc truyền access token qua URL)
+        res_old_token = self.client.get(f'/api/resources/attachments/{att.id}/view/?token={token}')
+        self.assertEqual(res_old_token.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        # 3. Chuẩn bị file trên đĩa
+        disk_path = template_disk_path(att.path)
+        if disk_path:
+            os.makedirs(os.path.dirname(disk_path), exist_ok=True)
+            with open(disk_path, 'wb') as f:
+                f.write(b"%PDF-1.4 sample file")
+
+        # 4. Người dùng đăng nhập hợp lệ xin vé xem tạm thời có chữ ký số (Signed Short-Lived Ticket)
+        from rest_framework.test import APIClient
+        auth_client = APIClient()
+        auth_client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+        res_ticket = auth_client.post(f'/api/resources/attachments/{att.id}/ticket/')
+        self.assertEqual(res_ticket.status_code, status.HTTP_200_OK)
+        ticket = res_ticket.data['ticket']
+        self.assertTrue(ticket.startswith('vt_'))
+
+        # 5. Mở xem tệp với vé hợp lệ -> 200 OK và inline disposition
+        res_view = self.client.get(f'/api/resources/attachments/{att.id}/view/?ticket={ticket}')
+        self.assertEqual(res_view.status_code, status.HTTP_200_OK)
+        self.assertIn('inline', res_view.headers.get('Content-Disposition', ''))
+
+        # 6. Trình duyệt tải các khối dữ liệu (chunks/range requests) trong thời hạn vé -> 200 OK
+        res_stream = self.client.get(f'/api/resources/attachments/{att.id}/view/?ticket={ticket}')
+        self.assertEqual(res_stream.status_code, status.HTTP_200_OK)
+
+        # 7. Vé giả mạo / sai chữ ký mật mã -> 403 Forbidden
+        res_bad_ticket = self.client.get(f'/api/resources/attachments/{att.id}/view/?ticket=vt_fake_xyz')
+        self.assertEqual(res_bad_ticket.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn('không hợp lệ hoặc đã hết hạn', res_bad_ticket.data.get('detail', ''))
+
+        # 8. Vé tạo cho tệp đính kèm khác -> 403 Forbidden ("Vé không áp dụng cho tài liệu này.")
+        from django.core.signing import TimestampSigner
+        signer = TimestampSigner(salt='doc_view_ticket')
+        diff_payload = {'att_id': att.id + 9999, 'user_id': user.id}
+        diff_ticket = f"vt_{signer.sign_object(diff_payload)}"
+        res_diff = self.client.get(f'/api/resources/attachments/{att.id}/view/?ticket={diff_ticket}')
+        self.assertEqual(res_diff.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn('không áp dụng', res_diff.data.get('detail', ''))
+
+        # 9. Vé hết hạn (quá 60s) -> 403 Forbidden
+        from unittest.mock import patch
+        from django.core.signing import SignatureExpired
+        with patch.object(TimestampSigner, 'unsign_object', side_effect=SignatureExpired('Signature expired')):
+            res_expired = self.client.get(f'/api/resources/attachments/{att.id}/view/?ticket={ticket}')
+            self.assertEqual(res_expired.status_code, status.HTTP_403_FORBIDDEN)
+            self.assertIn('không hợp lệ hoặc đã hết hạn', res_expired.data.get('detail', ''))
+
+        # 10. Cấp vé tải về và tải tệp thành công
+        res_dl_ticket = auth_client.post(f'/api/resources/attachments/{att.id}/ticket/')
+        self.assertEqual(res_dl_ticket.status_code, status.HTTP_200_OK)
+        dl_ticket = res_dl_ticket.data['ticket']
+
+        res_dl = self.client.get(f'/api/resources/attachments/{att.id}/download/?ticket={dl_ticket}')
+        self.assertEqual(res_dl.status_code, status.HTTP_200_OK)
+        self.assertIn('attachment', res_dl.headers.get('Content-Disposition', ''))

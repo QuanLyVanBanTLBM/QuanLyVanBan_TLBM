@@ -30,6 +30,8 @@
     "invalidCredentials": "Tên đăng nhập hoặc mật khẩu không chính xác!",
     "networkError": "Không thể kết nối đến máy chủ xác thực. Vui lòng kiểm tra lại dịch vụ Backend!",
     "sessionExpired": "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại!",
+    "enterpriseTagline": "Bảo hiểm Bảo Long",
+    "securityBadge": "Hệ thống Bảo mật & Xác thực",
     "characters": {
       "purple": "Click để tớ nhảy!",
       "black": "Click để tớ nhún nhảy!",
