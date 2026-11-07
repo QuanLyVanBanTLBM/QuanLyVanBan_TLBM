@@ -110,7 +110,7 @@ export const Toast: React.FC<ToastProps> = ({ toast, onClose }) => {
 
   return createPortal(
     <div
-      className="fixed top-5 left-1/2 -translate-x-1/2 sm:top-6 z-[999999] max-w-sm sm:max-w-md w-[calc(100%-2.5rem)] sm:w-full pointer-events-auto animate-fade-in"
+      className="fixed top-5 right-5 sm:top-6 sm:right-6 z-[999999] max-w-sm sm:max-w-md w-[calc(100%-2.5rem)] sm:w-full pointer-events-auto animate-fade-in"
       role="status"
       aria-live="polite"
     >

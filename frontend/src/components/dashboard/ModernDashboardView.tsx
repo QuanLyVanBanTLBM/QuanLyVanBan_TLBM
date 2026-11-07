@@ -130,7 +130,6 @@ export default function ModernDashboardView({
   signingCount = 0,
   selectedYear = new Date().getFullYear(),
   availableYears = [2024, 2025, 2026],
-  yearlyComparison = [],
   onYearChange,
   incomingDocuments = [],
   outgoingDocuments = [],
@@ -398,32 +397,26 @@ export default function ModernDashboardView({
         </button>
       </div>
 
-      {/* Khối Thống kê theo năm & Đối chiếu nhiều năm (Bug 2) */}
-      <div className="bg-surface border border-border-subtle rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col gap-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-primary-subtle text-primary flex items-center justify-center text-sm font-bold">
-              <i className="fa-solid fa-chart-simple" />
-            </div>
-            <div>
-              <h3 className="text-base font-bold text-main leading-tight">
-                Thống Kê Số Lượng Văn Bản Đi & Đến Theo Năm ({availableYears.length > 0 ? `${availableYears[0]} - ${availableYears[availableYears.length - 1]}` : '2024 - 2026'})
-              </h3>
-              <span className="text-xs text-secondary">
-                Dữ liệu đồng bộ trực tiếp từ CSDL PostgreSQL (Nhóm 1 & Nhóm 2)
-              </span>
-            </div>
+      {/* 2. Modern KPI Deck (4 cards cân đối: Đến, Đi, Nhiệm vụ, Chờ Ký) */}
+      <div className="flex flex-col gap-2.5 sm:gap-3">
+        {/* Thanh chọn năm đồng bộ số liệu KPI */}
+        <div className="flex items-center justify-between gap-3 px-1">
+          <div className="flex items-center gap-2">
+            <span className="w-1.5 h-4 rounded-full bg-primary" />
+            <h3 className="text-xs sm:text-sm font-bold text-main uppercase tracking-wider">
+              {t('dashboardDetails.kpiOverview') || 'Tổng quan số liệu văn bản & nhiệm vụ'}
+            </h3>
           </div>
 
           <div className="flex items-center gap-2">
             <label htmlFor="dashboard-year-select" className="text-xs font-semibold text-secondary whitespace-nowrap">
-              Chọn năm:
+              {t('dashboardDetails.selectYear') || 'Chọn năm:'}
             </label>
             <select
               id="dashboard-year-select"
               value={selectedYear}
               onChange={(e) => onYearChange?.(Number(e.target.value))}
-              className="px-3 py-1.5 rounded-xl border border-border-subtle bg-surface-elevated text-main text-sm font-bold focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary cursor-pointer transition-all shadow-2xs"
+              className="px-2.5 sm:px-3 py-1.5 rounded-xl border border-border-subtle bg-surface text-main text-xs sm:text-sm font-bold focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary cursor-pointer transition-all shadow-2xs hover:border-primary"
             >
               {availableYears.map((y) => (
                 <option key={y} value={y}>
@@ -434,71 +427,41 @@ export default function ModernDashboardView({
           </div>
         </div>
 
-        {yearlyComparison.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-border-subtle">
-            {yearlyComparison.map((item) => (
-              <div
-                key={item.year}
-                onClick={() => onYearChange?.(item.year)}
-                className={`p-3 rounded-xl border transition-all cursor-pointer ${
-                  item.year === selectedYear
-                    ? 'bg-primary-subtle/40 border-primary/40 shadow-xs'
-                    : 'bg-surface-elevated border-border-subtle hover:bg-surface-hover'
-                }`}
-              >
-                <div className="flex items-center justify-between text-xs font-bold text-secondary mb-1.5">
-                  <span className={item.year === selectedYear ? 'text-primary' : ''}>Năm {item.year}</span>
-                  {item.year === selectedYear && (
-                    <span className="px-1.5 py-0.5 rounded text-[10px] bg-primary text-white font-semibold">Đang chọn</span>
-                  )}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-1.5 sm:gap-3 md:gap-5">
+          {/* Card 1: VB Đến */}
+          <div
+            onClick={() => onNavigate('documents_incoming')}
+            className="bg-surface border border-border-subtle rounded-xl md:rounded-2xl p-2 sm:p-3 md:p-5 flex flex-col justify-between shadow-2xs md:shadow-sm cursor-pointer hover:border-primary-border transition-all"
+          >
+            <div>
+              <div className="text-[10px] sm:text-xs md:text-sm uppercase tracking-tight sm:tracking-normal md:tracking-wider font-semibold text-muted leading-tight md:leading-normal truncate">
+                <span className="md:hidden">{t('dashboardDetails.incomingCardShort') || 'VĂN BẢN ĐẾN'} ({selectedYear})</span>
+                <span className="hidden md:inline">{t('dashboardDetails.incomingCard')} ({selectedYear})</span>
+              </div>
+              <div className="flex items-center gap-1.5 sm:gap-2.5 mt-1 sm:mt-1.5 md:mt-2">
+                <div className="w-6 h-6 sm:w-8 sm:h-8 md:w-12 md:h-12 rounded-md md:rounded-2xl bg-primary-subtle text-primary flex items-center justify-center text-xs sm:text-base md:text-2xl shrink-0 shadow-2xs">
+                  <i className="fa-solid fa-inbox" />
                 </div>
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-primary font-medium">Đến: <b>{item.incoming}</b></span>
-                  <span className="text-success font-medium">Đi: <b>{item.outgoing}</b></span>
-                  <span className="text-main font-bold">Tổng: {item.incoming + item.outgoing}</span>
+                <div className="text-base sm:text-2xl md:text-4xl font-extrabold text-main leading-none">
+                  {incomingCount.toLocaleString()}
                 </div>
               </div>
-            ))}
+            </div>
+            <div className="hidden md:block text-sm text-secondary md:mt-1 truncate">
+              {incomingCount > 0 ? `+${incomingCount} ${t('dashboardDetails.newIncomingToday')}` : t('dashboardDetails.noIncomingToday')}
+            </div>
           </div>
-        )}
-      </div>
 
-      {/* 2. Modern KPI Deck (4 cards cân đối: Đến, Đi, Nhiệm vụ, Chờ Ký) */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-1.5 sm:gap-3 md:gap-5">
-        {/* Card 1: VB Đến */}
-        <div
-          onClick={() => onNavigate('documents_incoming')}
-          className="bg-surface border border-border-subtle rounded-xl md:rounded-2xl p-2 sm:p-3 md:p-5 flex flex-col justify-between shadow-2xs md:shadow-sm cursor-pointer hover:border-primary-border transition-all"
-        >
-          <div>
-            <div className="text-[10px] sm:text-xs md:text-sm uppercase tracking-tight sm:tracking-normal md:tracking-wider font-semibold text-muted leading-tight md:leading-normal truncate">
-              <span className="md:hidden">{t('dashboardDetails.incomingCardShort') || 'VĂN BẢN ĐẾN'}</span>
-              <span className="hidden md:inline">{t('dashboardDetails.incomingCard')} ({new Date().getFullYear()})</span>
-            </div>
-            <div className="flex items-center gap-1.5 sm:gap-2.5 mt-1 sm:mt-1.5 md:mt-2">
-              <div className="w-6 h-6 sm:w-8 sm:h-8 md:w-12 md:h-12 rounded-md md:rounded-2xl bg-primary-subtle text-primary flex items-center justify-center text-xs sm:text-base md:text-2xl shrink-0 shadow-2xs">
-                <i className="fa-solid fa-inbox" />
+          {/* Card 2: VB Đi */}
+          <div
+            onClick={() => onNavigate('documents_outgoing')}
+            className="bg-surface border border-border-subtle rounded-xl md:rounded-2xl p-2 sm:p-3 md:p-5 flex flex-col justify-between shadow-2xs md:shadow-sm cursor-pointer hover:border-success-border transition-all"
+          >
+            <div>
+              <div className="text-[10px] sm:text-xs md:text-sm uppercase tracking-tight sm:tracking-normal md:tracking-wider font-semibold text-muted leading-tight md:leading-normal truncate">
+                <span className="md:hidden">{t('dashboardDetails.outgoingCardShort') || 'VĂN BẢN ĐI'} ({selectedYear})</span>
+                <span className="hidden md:inline">{t('dashboardDetails.outgoingCard')} ({selectedYear})</span>
               </div>
-              <div className="text-base sm:text-2xl md:text-4xl font-extrabold text-main leading-none">
-                {incomingCount.toLocaleString()}
-              </div>
-            </div>
-          </div>
-          <div className="hidden md:block text-sm text-secondary md:mt-1 truncate">
-            {incomingCount > 0 ? `+${incomingCount} ${t('dashboardDetails.newIncomingToday')}` : t('dashboardDetails.noIncomingToday')}
-          </div>
-        </div>
-
-        {/* Card 2: VB Đi */}
-        <div
-          onClick={() => onNavigate('documents_outgoing')}
-          className="bg-surface border border-border-subtle rounded-xl md:rounded-2xl p-2 sm:p-3 md:p-5 flex flex-col justify-between shadow-2xs md:shadow-sm cursor-pointer hover:border-success-border transition-all"
-        >
-          <div>
-            <div className="text-[10px] sm:text-xs md:text-sm uppercase tracking-tight sm:tracking-normal md:tracking-wider font-semibold text-muted leading-tight md:leading-normal truncate">
-              <span className="md:hidden">{t('dashboardDetails.outgoingCardShort') || 'VĂN BẢN ĐI'}</span>
-              <span className="hidden md:inline">{t('dashboardDetails.outgoingCard')}</span>
-            </div>
             <div className="flex items-center gap-1.5 sm:gap-2.5 mt-1 sm:mt-1.5 md:mt-2">
               <div className="w-6 h-6 sm:w-8 sm:h-8 md:w-12 md:h-12 rounded-md md:rounded-2xl bg-success-subtle text-success flex items-center justify-center text-xs sm:text-base md:text-2xl shrink-0 shadow-2xs">
                 <i className="fa-solid fa-paper-plane" />
@@ -560,6 +523,7 @@ export default function ModernDashboardView({
             {signingCount > 0 ? `${signingCount} ${t('dashboardDetails.signingToProcess')}` : t('dashboardDetails.noSigningPending')}
           </div>
         </div>
+      </div>
       </div>
 
       {/* Dải Marquee Chúc Mừng Sinh Nhật CBNV */}
