@@ -148,6 +148,8 @@ class TaiLieuChiTietSerializer(serializers.ModelSerializer):
                     data['ngay_het_hieu_luc'] = None
                 if data.get('link_thay_the') is None:
                     data['link_thay_the'] = ''
+                if data.get('don_vi_id') in ('', 'null'):
+                    data['don_vi_id'] = None
                 return super().to_internal_value(data)
             finally:
                 data._mutable = orig_mutable
@@ -158,6 +160,8 @@ class TaiLieuChiTietSerializer(serializers.ModelSerializer):
                 data['ngay_het_hieu_luc'] = None
             if data.get('link_thay_the') is None:
                 data['link_thay_the'] = ''
+            if data.get('don_vi_id') in ('', 'null'):
+                data['don_vi_id'] = None
             return super().to_internal_value(data)
 
     def get_loai_tai_lieu_names(self, obj):
@@ -222,6 +226,26 @@ class TaiLieuChiTietSerializer(serializers.ModelSerializer):
                 except DjangoValidationError as exc:
                     msg = exc.messages if hasattr(exc, 'messages') else [str(exc)]
                     raise serializers.ValidationError({'files': msg})
+
+        # Tự động đồng bộ giữa don_vi_id và noi_ban_hanh
+        don_vi_id = attrs.get('don_vi_id') if 'don_vi_id' in attrs else (self.instance.don_vi_id if self.instance else None)
+        noi_ban_hanh = attrs.get('noi_ban_hanh') if 'noi_ban_hanh' in attrs else (self.instance.noi_ban_hanh if self.instance else '')
+        if not don_vi_id and noi_ban_hanh:
+            try:
+                from organizations.models import DonVi
+                matched_unit = DonVi.objects.filter(ten__iexact=str(noi_ban_hanh).strip()).first()
+                if matched_unit:
+                    attrs['don_vi_id'] = matched_unit.id
+            except Exception:
+                pass
+        elif don_vi_id and not noi_ban_hanh:
+            try:
+                from organizations.models import DonVi
+                matched_unit = DonVi.objects.filter(id=don_vi_id).first()
+                if matched_unit:
+                    attrs['noi_ban_hanh'] = matched_unit.ten
+            except Exception:
+                pass
 
         return attrs
 

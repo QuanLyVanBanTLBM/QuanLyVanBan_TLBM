@@ -1,5 +1,7 @@
 {
   "dashboardDetails": {
+    "selectYear": "Chọn năm:",
+    "kpiOverview": "Tổng quan số liệu văn bản & nhiệm vụ",
     "greeting": "Xin chào, Cán bộ nhân viên",
     "roleBadge": "Cán bộ nghiệp vụ",
     "leadDescription": "Bàn làm việc tổng quan · Hệ thống Quản lý Văn bản & Tài liệu Biểu Mẫu (TLBM).",

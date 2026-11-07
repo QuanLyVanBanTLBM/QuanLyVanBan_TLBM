@@ -411,28 +411,17 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
       // Đang ở giữa: 1 ... currentPage ... totalPages
       items.push({ type: 'page', num: 1 });
 
-      if (currentPage - 1 > 2) {
-        items.push({
-          type: 'ellipsis',
-          direction: 'prev',
-          targetPage: Math.max(1, currentPage - 2),
-        });
-      } else {
-        items.push({ type: 'page', num: 2 });
-      }
-
+      items.push({
+        type: 'ellipsis',
+        direction: 'prev',
+        targetPage: Math.max(2, currentPage - 2),
+      });
       items.push({ type: 'page', num: currentPage });
-
-      if (currentPage + 1 < totalPages - 1) {
-        items.push({
-          type: 'ellipsis',
-          direction: 'next',
-          targetPage: Math.min(totalPages, currentPage + 2),
-        });
-      } else {
-        items.push({ type: 'page', num: totalPages - 1 });
-      }
-
+      items.push({
+        type: 'ellipsis',
+        direction: 'next',
+        targetPage: Math.min(totalPages - 1, currentPage + 2),
+      });
       items.push({ type: 'page', num: totalPages });
     }
 
@@ -825,7 +814,7 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
                       type="button"
                       disabled={isLoading}
                       onClick={() => handlePageChange(item.targetPage)}
-                      className="group min-w-[28px] sm:min-w-[32px] h-7 sm:h-8 px-1 text-xs font-medium rounded-lg border border-transparent hover:border-border-subtle hover:bg-surface-elevated text-muted hover:text-primary transition-all cursor-pointer flex items-center justify-center"
+                      className="min-w-[28px] sm:min-w-[32px] h-7 sm:h-8 px-1 text-xs font-medium rounded-lg border border-transparent hover:border-border-subtle hover:bg-surface-elevated text-muted hover:text-primary transition-all cursor-pointer flex items-center justify-center"
                       title={
                         item.direction === 'prev'
                           ? t('resourceManagement.jumpBackPages', { page: item.targetPage })
@@ -833,12 +822,7 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
                       }
                       aria-label={item.direction === 'prev' ? t('resourceManagement.jumpBackAria') : t('resourceManagement.jumpForwardAria')}
                     >
-                      <span className="group-hover:hidden tracking-widest text-[10px] sm:text-[11px] font-bold">•••</span>
-                      <i
-                        className={`hidden group-hover:inline fa-solid text-[9px] sm:text-[10px] ${
-                          item.direction === 'prev' ? 'fa-angles-left' : 'fa-angles-right'
-                        }`}
-                      />
+                      <span className="tracking-widest text-[10px] sm:text-[11px] font-bold">•••</span>
                     </button>
                   );
                 }

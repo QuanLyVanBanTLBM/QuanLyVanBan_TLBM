@@ -682,7 +682,7 @@ export default function OrganizationsPage() {
                           <td className="units-table__cell units-table__cell--name px-4 py-3 font-semibold text-main min-w-[14rem]">
                             <div>{unit.ten}</div>
                             {unit.dia_chi && (
-                              <div className="text-xs text-secondary font-normal flex items-center gap-1 mt-0.5">
+                              <div className="units-table__address text-xs text-secondary font-normal hidden md:flex items-center gap-1 mt-0.5">
                                 <i className="fa-solid fa-location-dot text-muted text-[0.65rem]" />
                                 {unit.dia_chi}
                               </div>

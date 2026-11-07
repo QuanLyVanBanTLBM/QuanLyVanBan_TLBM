@@ -1,5 +1,7 @@
 {
   "dashboardDetails": {
+    "selectYear": "Select year:",
+    "kpiOverview": "Documents & Tasks Statistics Overview",
     "greeting": "Welcome, Staff Member",
     "roleBadge": "Specialist Officer",
     "leadDescription": "Executive Workplace · Document & Archive Management System (TLBM).",
