@@ -345,9 +345,6 @@ export default function AISettingsModal({ onClose, onSaved }) {
                         </span>
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
                           <strong className="text-main text-sm block">OpenAI</strong>
-                          <span className="inline-block bg-secondary-subtle text-secondary text-[10px] font-bold px-2 py-0.5 rounded-full">
-                            {t("aiSettingsModal.openaiBadge")}
-                          </span>
                         </div>
                       </div>
                       <div className="pt-0.5">

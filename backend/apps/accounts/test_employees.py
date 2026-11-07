@@ -37,6 +37,7 @@ from accounts.models import (
 )
 from accounts.excel_cbnv import import_cbnv_from_excel
 from accounts.views_employee import _run_employee_import_job
+from accounts.standard_positions import STANDARD_POSITIONS
 
 User = get_user_model()
 
@@ -1863,7 +1864,7 @@ class SeedDbCommandTests(APITestCase):
         }):
             call_command("seed_db", demo_data=True, verbosity=0)
         self.assertEqual(DonVi.objects.count(), 82)
-        self.assertEqual(Position.objects.count(), 25)
+        self.assertEqual(Position.objects.count(), len(STANDARD_POSITIONS))
         self.assertEqual(User.objects.get(username="admin").password, first_password_hash)
         preserved_demo = User.objects.get(username="truongphong_cntt")
         self.assertEqual(preserved_demo.password, existing_demo_hash)
@@ -2179,6 +2180,8 @@ class EmployeeDefaultGroupAssignmentTests(EmployeeBaseTestCase):
             ("Tổng Giám đốc", "BGD"),
             ("Chủ tịch HĐQT", "BGD"),
             ("Giám đốc Khối", "TP"),
+            ("Giám đốc Ban", "TP"),
+            ("Phụ trách Ban", "TP"),
             ("Trưởng phòng", "TP"),
             ("Chuyên viên", "CV"),
             ("Nhân viên", "CV"),
