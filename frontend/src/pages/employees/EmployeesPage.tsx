@@ -598,7 +598,7 @@ export default function EmployeesPage() {
                           )}
 
                           {/* Xóa */}
-                          {can('delete_cbnv') && (
+                          {isSuperuser && (
                             <button
                               type="button"
                               onClick={() => {
