@@ -330,7 +330,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         elif self.action == "change_password":
             permission_classes = [IsAuthenticated, IsEmployeeAdminOnly]
         elif self.action == "destroy":
-            permission_classes = [IsAuthenticated, require_permission("delete_cbnv")]
+            permission_classes = [IsAuthenticated, IsEmployeeAdminOnly]
         elif self.action in ["import_excel", "import_excel_async", "import_job_status"]:
             permission_classes = [IsAuthenticated, IsEmployeeAdminOnly, require_permission("import_cbnv")]
         else:
