@@ -1,0 +1,254 @@
+{
+  "_huong_dan": {
+    "mo_ta": "File dữ liệu mẫu Phân hệ Tài liệu & Biểu mẫu. Bạn có thể tự chỉnh sửa, thêm/bớt danh mục, loại tài liệu và tài liệu chi tiết tùy theo nhu cầu thực tế.",
+    "cac_gia_tri_hop_le": {
+      "hieu_luc": [
+        "CON_HIEU_LUC (Còn hiệu lực)",
+        "CON_HIEU_LUC_1_PHAN (Còn hiệu lực một phần)",
+        "HET_HIEU_LUC (Hết hiệu lực)",
+        "HET_VA_THAY_THE (Hết hiệu lực và thay thế - cần điền link_thay_the)"
+      ],
+      "hien_thi": [
+        "TAT_CA (Tất cả)",
+        "NOI_BO_PHONG_BAN (Nội bộ phòng ban)"
+      ],
+      "dinh_dang_ngay": "YYYY-MM-DD (Ví dụ: 2026-01-15)"
+    }
+  },
+  "danh_muc": [
+    {
+      "id": 1,
+      "stt_uu_tien": 1,
+      "ky_hieu": "TLBM-CHUNG",
+      "ten_tai_lieu": "Tài liệu, Biểu mẫu chung",
+      "ngay_lap": "2026-01-02",
+      "ghi_chu": "Toàn bộ quy chế, văn bản biểu mẫu áp dụng chung toàn Tổng công ty"
+    },
+    {
+      "id": 2,
+      "stt_uu_tien": 2,
+      "ky_hieu": "HS-BNS",
+      "ten_tai_lieu": "Hồ sơ Ban Nhân sự",
+      "ngay_lap": "2026-01-05",
+      "ghi_chu": "Hồ sơ quản trị nhân sự, quy trình tuyển dụng và chế độ chính sách"
+    },
+    {
+      "id": 3,
+      "stt_uu_tien": 3,
+      "ky_hieu": "HS-BLBT",
+      "ten_tai_lieu": "Hồ sơ Bảo Long Bến Thành",
+      "ngay_lap": "2026-01-10",
+      "ghi_chu": "Hồ sơ tài liệu nghiệp vụ chi nhánh Bảo Long Bến Thành"
+    },
+    {
+      "id": 4,
+      "stt_uu_tien": 4,
+      "ky_hieu": "DV-PB2",
+      "ten_tai_lieu": "Các đơn vị phòng ban cấp 2",
+      "ngay_lap": "2026-01-12",
+      "ghi_chu": "Tài liệu hành chính lưu hành nội bộ phòng ban đơn vị thành viên cấp 2"
+    },
+    {
+      "id": 5,
+      "stt_uu_tien": 5,
+      "ky_hieu": "DM-MAU-MOI",
+      "ten_tai_lieu": "[MẪU] Tên danh mục cấp 1 của bạn",
+      "ngay_lap": "2026-02-01",
+      "ghi_chu": "Chỉnh sửa hoặc thay thế bằng thông tin danh mục thực tế của bạn"
+    }
+  ],
+  "loai_tai_lieu": [
+    {
+      "id": 1,
+      "dm_id": 1,
+      "ten_loai": "Tài liệu bảo hiểm",
+      "is_public": true,
+      "ghi_chu": "Tài liệu quy tắc và biểu phí bảo hiểm"
+    },
+    {
+      "id": 2,
+      "dm_id": 1,
+      "ten_loai": "Biểu mẫu bảo hiểm",
+      "is_public": true,
+      "ghi_chu": "Mẫu đơn yêu cầu bảo hiểm và hướng dẫn"
+    },
+    {
+      "id": 3,
+      "dm_id": 1,
+      "ten_loai": "Tờ trình",
+      "is_public": true,
+      "ghi_chu": "Mẫu tờ trình phê duyệt công việc"
+    },
+    {
+      "id": 4,
+      "dm_id": 1,
+      "ten_loai": "Quy định & Quy chế",
+      "is_public": true,
+      "ghi_chu": "Quy định nội bộ và an toàn thông tin"
+    },
+    {
+      "id": 5,
+      "dm_id": 2,
+      "ten_loai": "Hồ sơ tuyển dụng & HĐLĐ",
+      "is_public": true,
+      "ghi_chu": "Mẫu đánh giá ứng viên, mẫu HĐLĐ"
+    },
+    {
+      "id": 6,
+      "dm_id": 2,
+      "ten_loai": "Quyết định bổ nhiệm & Khen thưởng",
+      "is_public": true,
+      "ghi_chu": "Mẫu quyết định nhân sự và thi đua"
+    },
+    {
+      "id": 7,
+      "dm_id": 3,
+      "ten_loai": "Báo cáo kinh doanh chi nhánh",
+      "is_public": true,
+      "ghi_chu": "Báo cáo định kỳ chi nhánh Bến Thành"
+    },
+    {
+      "id": 8,
+      "dm_id": 3,
+      "ten_loai": "Hồ sơ giám định & Bồi thường",
+      "is_public": true,
+      "ghi_chu": "Hồ sơ giải quyết khiếu nại bồi thường"
+    },
+    {
+      "id": 9,
+      "dm_id": 4,
+      "ten_loai": "Biên bản họp phòng ban",
+      "is_public": true,
+      "ghi_chu": "Mẫu biên bản tổng kết nội bộ"
+    },
+    {
+      "id": 10,
+      "dm_id": 5,
+      "ten_loai": "[MẪU] Tên loại tài liệu cấp 2 của bạn",
+      "is_public": true,
+      "ghi_chu": "Thuộc danh mục cấp 1 tương ứng"
+    }
+  ],
+  "tai_lieu_chi_tiet": [
+    {
+      "id": 1,
+      "dm_id": 1,
+      "loai_tai_lieu_ids": [
+        1,
+        4
+      ],
+      "ky_hieu": "01/QĐ-BL-2026",
+      "tieu_de": "Quy định bảo hiểm xe cơ giới và quy tắc thẩm định rủi ro 2026",
+      "ngay_dang": "2026-01-15",
+      "noi_ban_hanh": "Ban Giám Đốc",
+      "hieu_luc": "CON_HIEU_LUC",
+      "ngay_het_hieu_luc": null,
+      "link_thay_the": "",
+      "hien_thi": "TAT_CA",
+      "ghi_chu": "Áp dụng cho toàn thể cán bộ nhân viên và đại lý trong toàn hệ thống.",
+      "file_name": "quy_dinh_bao_hiem_xe_2026.pdf"
+    },
+    {
+      "id": 2,
+      "dm_id": 1,
+      "loai_tai_lieu_ids": [
+        2
+      ],
+      "ky_hieu": "02/BM-BT-2026",
+      "tieu_de": "Biểu mẫu yêu cầu bồi thường thiệt hại xe cơ giới cá nhân",
+      "ngay_dang": "2026-01-20",
+      "noi_ban_hanh": "Khối Giám Định Bồi Thường",
+      "hieu_luc": "CON_HIEU_LUC",
+      "ngay_het_hieu_luc": null,
+      "link_thay_the": "",
+      "hien_thi": "TAT_CA",
+      "ghi_chu": "Mẫu dùng cho chủ xe khai báo hồ sơ bồi thường trực tuyến hoặc trực tiếp.",
+      "file_name": "bieu_mau_yeu_cau_boi_thuong_2026.docx"
+    },
+    {
+      "id": 3,
+      "dm_id": 1,
+      "loai_tai_lieu_ids": [
+        3
+      ],
+      "ky_hieu": "03/TTr-VP-2026",
+      "tieu_de": "Tờ trình phê duyệt kinh phí trang bị thiết bị văn phòng Q1/2026",
+      "ngay_dang": "2026-02-05",
+      "noi_ban_hanh": "Văn Phòng Tổng Công Ty",
+      "hieu_luc": "CON_HIEU_LUC",
+      "ngay_het_hieu_luc": null,
+      "link_thay_the": "",
+      "hien_thi": "TAT_CA",
+      "ghi_chu": "Đã được Ban Giám Đốc phê duyệt hạn mức 250 triệu đồng.",
+      "file_name": "to_trinh_kinh_phi_q1_2026.pdf"
+    },
+    {
+      "id": 4,
+      "dm_id": 1,
+      "loai_tai_lieu_ids": [
+        4
+      ],
+      "ky_hieu": "15/QĐ-CD-2020",
+      "tieu_de": "Quy định quản lý con dấu và phân cấp thẩm quyền ký văn bản cũ (2020)",
+      "ngay_dang": "2020-03-10",
+      "noi_ban_hanh": "Ban Kiểm Soát Nội Bộ",
+      "hieu_luc": "HET_VA_THAY_THE",
+      "ngay_het_hieu_luc": "2025-12-31",
+      "link_thay_the": "https://example.com/files/quy_dinh_con_dau_moi_2026.pdf",
+      "hien_thi": "TAT_CA",
+      "ghi_chu": "Đã được thay thế bởi Quyết định số 01/2026/QĐ-HĐQT từ 01/01/2026.",
+      "file_name": "quy_dinh_con_dau_2020_het_hieu_luc.pdf"
+    },
+    {
+      "id": 5,
+      "dm_id": 2,
+      "loai_tai_lieu_ids": [
+        5
+      ],
+      "ky_hieu": "04/HĐLĐ-NS-2026",
+      "tieu_de": "Mẫu hợp đồng lao động không xác định thời hạn chuẩn Bộ Luật Lao Động 2026",
+      "ngay_dang": "2026-01-08",
+      "noi_ban_hanh": "Ban Nhân Sự",
+      "hieu_luc": "CON_HIEU_LUC",
+      "ngay_het_hieu_luc": null,
+      "link_thay_the": "",
+      "hien_thi": "TAT_CA",
+      "ghi_chu": "Cập nhật mức đóng BHXH, BHYT và phụ cấp trách nhiệm mới nhất.",
+      "file_name": "mau_hop_dong_lao_dong_2026.docx"
+    },
+    {
+      "id": 6,
+      "dm_id": 2,
+      "loai_tai_lieu_ids": [
+        6
+      ],
+      "ky_hieu": "05/QĐ-BN-2026",
+      "tieu_de": "Quyết định bổ nhiệm Phó Giám đốc Phụ trách Kinh doanh Chi nhánh Bến Thành",
+      "ngay_dang": "2026-02-12",
+      "noi_ban_hanh": "Tổng Giám Đốc",
+      "hieu_luc": "CON_HIEU_LUC",
+      "ngay_het_hieu_luc": null,
+      "link_thay_the": "",
+      "hien_thi": "NOI_BO_PHONG_BAN",
+      "ghi_chu": "Có hiệu lực thi hành kể từ ngày ký. Thời hạn bổ nhiệm 03 năm.",
+      "file_name": "quyet_dinh_bo_nhiem_pgd_benthanh.pdf"
+    },
+    {
+      "id": 7,
+      "dm_id": 5,
+      "loai_tai_lieu_ids": [
+        10
+      ],
+      "ky_hieu": "99/QD-MAU-2026",
+      "tieu_de": "[MẪU] Tiêu đề tài liệu / biểu mẫu bạn muốn thêm mới",
+      "ngay_dang": "2026-02-15",
+      "noi_ban_hanh": "Phòng Ban Ban Hành",
+      "hieu_luc": "CON_HIEU_LUC",
+      "ngay_het_hieu_luc": null,
+      "link_thay_the": "",
+      "hien_thi": "TAT_CA",
+      "ghi_chu": "Ghi chú tài liệu mới của bạn",
+      "file_name": "tai_lieu_mau_moi.pdf"
+    }
+  ]
+}
