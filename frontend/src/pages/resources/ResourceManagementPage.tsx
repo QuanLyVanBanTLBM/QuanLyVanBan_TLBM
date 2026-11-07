@@ -43,7 +43,7 @@ const notifyMutation = () => {
   }
 };
 
-export type SearchScopeType = 'all' | 'title' | 'code' | 'authority' | 'author' | 'attachment';
+export type SearchScopeType = 'all' | 'title' | 'code' | 'date' | 'authority' | 'author' | 'attachment';
 
 interface PersistedResourceState {
   category?: string;
@@ -70,6 +70,7 @@ const SEARCH_FIELD_OPTIONS: { value: SearchScopeType; labelKey: string; icon: st
   { value: 'all', labelKey: 'searchScopeAll', icon: 'fa-solid fa-layer-group', placeholderKey: 'searchPlaceholderAll' },
   { value: 'title', labelKey: 'searchScopeTitle', icon: 'fa-solid fa-heading', placeholderKey: 'searchPlaceholderTitle' },
   { value: 'code', labelKey: 'searchScopeCode', icon: 'fa-solid fa-hashtag', placeholderKey: 'searchPlaceholderCode' },
+  { value: 'date', labelKey: 'searchScopeDate', icon: 'fa-regular fa-calendar-days', placeholderKey: 'searchPlaceholderDate' },
   { value: 'authority', labelKey: 'searchScopeAuthority', icon: 'fa-solid fa-building-columns', placeholderKey: 'searchPlaceholderAuthority' },
   { value: 'author', labelKey: 'searchScopeAuthor', icon: 'fa-solid fa-user-pen', placeholderKey: 'searchPlaceholderAuthor' },
   { value: 'attachment', labelKey: 'searchScopeAttachment', icon: 'fa-solid fa-paperclip', placeholderKey: 'searchPlaceholderAttachment' },
@@ -627,22 +628,9 @@ export default function ResourceManagementPage() {
     if (currentPage > 1) newParams.set('page', String(currentPage));
     if (pageSize !== 5) newParams.set('pageSize', String(pageSize));
 
-    // Đồng bộ trạng thái Modal lên URL
+    // Đồng bộ trạng thái Modal xem chi tiết lên URL (nếu có)
     if (isDetailOpen && detailItem) {
       newParams.set('detail', String(detailItem.id));
-    }
-    if (isFormOpen) {
-      if (formInitialData) {
-        newParams.set('edit', String(formInitialData.id));
-      } else {
-        newParams.set('action', 'create');
-      }
-    }
-    if (isCategoryModalOpen) {
-      newParams.set('action', 'categories');
-    }
-    if (isFolderManagerOpen) {
-      newParams.set('action', 'folder_tree');
     }
 
     // Chỉ cập nhật nếu query string thực sự có sự thay đổi
@@ -660,13 +648,15 @@ export default function ResourceManagementPage() {
     pageSize,
     isDetailOpen,
     detailItem,
-    isFormOpen,
-    formInitialData,
-    isCategoryModalOpen,
-    isFolderManagerOpen,
     searchParams,
     setSearchParams,
   ]);
+
+  // Ref giữ documents mới nhất để tránh effect bị re-trigger liên tục khi polling/refetch
+  const documentsRef = useRef(documents);
+  useEffect(() => {
+    documentsRef.current = documents;
+  }, [documents]);
 
   // Lắng nghe URL query params để tự động cập nhật bộ lọc hoặc mở modal tương ứng khi truy cập link trực tiếp/back/forward
   useEffect(() => {
@@ -694,7 +684,7 @@ export default function ResourceManagementPage() {
 
     if (detailParam && !isNaN(Number(detailParam))) {
       const docId = Number(detailParam);
-      const found = documents.find((d) => d.id === docId);
+      const found = documentsRef.current.find((d) => d.id === docId);
       if (found) {
         setDetailItem((prev) => (prev?.id === docId ? prev : found));
         setIsDetailOpen(true);
@@ -716,18 +706,28 @@ export default function ResourceManagementPage() {
       setDetailItem((prev) => (prev ? null : prev));
     }
 
+    // Xử lý deep-link một lần (one-shot) khi truy cập trực tiếp từ URL bên ngoài
     if (actionParam === 'create') {
       setFormInitialData(null);
       setIsFormOpen(true);
+      const next = new URLSearchParams(searchParams);
+      next.delete('action');
+      setSearchParams(next, { replace: true });
     } else if (actionParam === 'categories') {
       setIsCategoryModalOpen(true);
+      const next = new URLSearchParams(searchParams);
+      next.delete('action');
+      setSearchParams(next, { replace: true });
     } else if (actionParam === 'folder_tree') {
       setIsFolderManagerOpen(true);
+      const next = new URLSearchParams(searchParams);
+      next.delete('action');
+      setSearchParams(next, { replace: true });
     } else if (editParam && !isNaN(Number(editParam))) {
       const editId = Number(editParam);
-      const found = documents.find((d) => d.id === editId);
+      const found = documentsRef.current.find((d) => d.id === editId);
       if (found) {
-        setFormInitialData((prev) => (prev?.id === editId ? prev : found));
+        setFormInitialData(found);
         setIsFormOpen(true);
       } else {
         apiClient<ResourceItem>(`/api/resources/documents/${editId}/`)
@@ -741,17 +741,11 @@ export default function ResourceManagementPage() {
             /* ignore if not found */
           });
       }
-    } else if (!actionParam && !editParam) {
-      setIsFormOpen((prev) => (prev ? false : prev));
-      setFormInitialData((prev) => (prev ? null : prev));
-      if (actionParam !== 'categories') {
-        setIsCategoryModalOpen((prev) => (prev ? false : prev));
-      }
-      if (actionParam !== 'folder_tree') {
-        setIsFolderManagerOpen((prev) => (prev ? false : prev));
-      }
+      const next = new URLSearchParams(searchParams);
+      next.delete('edit');
+      setSearchParams(next, { replace: true });
     }
-  }, [searchParams, documents]);
+  }, [searchParams, setSearchParams]);
 
   // Phân quyền người dùng (RBAC contract Issue #21)
   const { can, isSuperuser, isSystemAdmin } = usePermissions();
@@ -1157,10 +1151,38 @@ export default function ResourceManagementPage() {
           return normalizeSearchText(val).includes(normTerm);
         };
 
+        const checkDateMatch = (dateStr?: string | null) => {
+          if (!dateStr) return false;
+          const cleanDate = dateStr.trim();
+          const cleanTerm = rawTerm.replace(/-/g, '/');
+          const parts = cleanDate.split('-');
+          if (parts.length === 3) {
+            const [y, m, d] = parts;
+            const mNum = parseInt(m, 10);
+            const dNum = parseInt(d, 10);
+            const candidates = [
+              `${d}/${m}/${y}`,
+              `${dNum}/${mNum}/${y}`,
+              `${y}-${m}-${d}`,
+              `${m}/${y}`,
+              `${mNum}/${y}`,
+              `${d}/${m}`,
+              `${dNum}/${mNum}`,
+              y,
+            ];
+            if (candidates.some((c) => c.includes(cleanTerm) || cleanTerm.includes(c))) {
+              return true;
+            }
+          }
+          return cleanDate.includes(rawTerm);
+        };
+
         if (searchField === 'title') {
           if (!checkMatch(doc.tieu_de)) return false;
         } else if (searchField === 'code') {
           if (!checkMatch(doc.ky_hieu)) return false;
+        } else if (searchField === 'date') {
+          if (!checkDateMatch(doc.ngay_dang)) return false;
         } else if (searchField === 'authority') {
           if (!checkMatch(doc.noi_ban_hanh)) return false;
         } else if (searchField === 'author') {
@@ -1173,12 +1195,13 @@ export default function ResourceManagementPage() {
           // 'all': Tìm trên mọi trường
           const matchTitle = checkMatch(doc.tieu_de);
           const matchCode = checkMatch(doc.ky_hieu);
+          const matchDate = checkDateMatch(doc.ngay_dang);
           const matchAuthority = checkMatch(doc.noi_ban_hanh);
           const matchAuthor = checkMatch(doc.nguoi_tao_name);
           const matchNote = checkMatch(doc.ghi_chu);
           const matchSingle = checkMatch(doc.file_dinh_kem);
           const matchMultiple = (doc.attachments || []).some((att) => checkMatch(att.name));
-          if (!matchTitle && !matchCode && !matchAuthority && !matchAuthor && !matchNote && !matchSingle && !matchMultiple) {
+          if (!matchTitle && !matchCode && !matchDate && !matchAuthority && !matchAuthor && !matchNote && !matchSingle && !matchMultiple) {
             return false;
           }
         }
