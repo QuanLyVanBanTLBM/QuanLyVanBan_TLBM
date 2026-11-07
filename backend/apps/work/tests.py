@@ -193,12 +193,11 @@ class TaskVisibilityTests(WorkTestBase):
             self.assertIn(task.pk, self.visible_ids(user))
         self.assertNotIn(task.pk, self.visible_ids(self.outsider))
 
-    def test_cong_viec_dang_an_chi_nguoi_tao_va_admin_thay(self):
+    def test_cong_viec_dang_an_chi_nguoi_lien_quan_va_admin_thay(self):
         task = self.make_task(is_public=False)
-        self.assertIn(task.pk, self.visible_ids(self.creator))
-        self.assertIn(task.pk, self.visible_ids(self.admin))
-        for user in (self.host, self.director, self.member, self.outsider):
-            self.assertNotIn(task.pk, self.visible_ids(user))
+        for user in (self.creator, self.admin, self.host, self.director, self.member):
+            self.assertIn(task.pk, self.visible_ids(user))
+        self.assertNotIn(task.pk, self.visible_ids(self.outsider))
 
     def test_khong_bi_trung_dong_khi_nguoi_tao_kiem_vai_tro(self):
         task = self.make_task()
@@ -447,7 +446,8 @@ class LatestTasksApiTests(WorkTestBase):
     def test_tra_toi_da_limit_cong_viec_moi_nhat_ma_user_duoc_xem(self):
         for index in range(7):
             self.make_task(title=f"Việc {index}", created_offset=index, due_offset=index + 3)
-        self.make_task(title="Việc bị ẩn", created_offset=10, due_offset=13, is_public=False)
+        hidden = self.make_task(title="Việc bị ẩn", created_offset=10, due_offset=13, is_public=False)
+        TaskParticipant.objects.filter(task=hidden, user=self.member).delete()
 
         self.login(self.member)
         response = self.client.get("/api/work/tasks/latest/")
@@ -856,6 +856,11 @@ class NewTaskMailTests(WorkTestBase):
         self.assertIn(f"Hạn xử lý: {self.days(5):%d/%m/%Y}", host_mail.body)
         self.assertIn("Trần Phương Duy vừa giao", host_mail.body)
 
+    def test_viec_an_van_gui_mail_cho_nguoi_duoc_giao(self):
+        self.create(isPublic=False)
+        recipients = sorted(message.to[0] for message in mail.outbox)
+        self.assertEqual(recipients, ["chidao@example.com", "chutri@example.com", "thamgia@example.com"])
+
     def test_nguoi_tao_kiem_chu_tri_thi_khong_tu_gui_cho_minh(self):
         self.create(hostId=self.creator.pk)
         self.assertNotIn("nguoitao@example.com", [m.to[0] for m in mail.outbox])
@@ -866,10 +871,6 @@ class NewTaskMailTests(WorkTestBase):
         self.member.save(update_fields=["email"])
         self.create()
         self.assertEqual(len(mail.outbox), 2)
-
-    def test_cong_viec_dang_an_thi_khong_gui(self):
-        self.create(isPublic="false")
-        self.assertEqual(mail.outbox, [])
 
     def test_sua_cong_viec_khong_gui_mail(self):
         response = self.create()
@@ -1076,9 +1077,11 @@ class TaskOpenApiTests(WorkTestBase):
         response = self.client.post(self.task_url(task, "open/"))
         self.assertEqual(response.data["status"], "QUA_HAN")
 
-    def test_cong_viec_dang_an_nguoi_lien_quan_nhan_404(self):
+    def test_cong_viec_dang_an_nguoi_lien_quan_mo_duoc_nguoi_ngoai_nhan_404(self):
         task = self.make_task(is_public=False)
         self.login(self.host)
+        self.assertEqual(self.client.post(self.task_url(task, "open/")).status_code, status.HTTP_200_OK)
+        self.login(self.outsider)
         self.assertEqual(self.client.post(self.task_url(task, "open/")).status_code, status.HTTP_404_NOT_FOUND)
 
 
@@ -1637,6 +1640,13 @@ class TaskReminderMailTests(WorkTestBase):
         self.assertNotIn(self.director.email, self.recipients())  # không gửi chỉ đạo
         self.assertTrue(all(len(m.to) == 1 for m in mail.outbox))  # đích danh từng người
         self.assertTrue(all("Sắp đến hạn" in m.subject for m in mail.outbox))
+
+    def test_nhac_viec_an_van_gui_nguoi_duoc_giao(self):
+        from work.services.email import send_overdue_reminders
+
+        self.make_task(created_offset=-10, due_offset=-5, is_public=False)
+        self.assertEqual(send_overdue_reminders(today=self.today), 2)
+        self.assertEqual(self.recipients(), sorted([self.host.email, self.member.email]))
 
     def test_nhac_qua_han_gui_host_va_tham_gia(self):
         from work.services.email import send_overdue_reminders

@@ -272,8 +272,9 @@ class TaskQuerySet(models.QuerySet):
         2. Quyền `view_all_congviec`: xem toàn bộ công việc.
         3. Quyền `view_dept_congviec`: xem công việc gắn với đơn vị của chính mình.
 
-        Công việc đang ẩn (hien_thi = false) chỉ người tạo, quản trị viên và người có
-        quyền xem toàn hệ thống mới thấy.
+        Công việc đang ẩn (hien_thi = false) chỉ người liên quan (người tạo và người được giao),
+        quản trị viên và người có quyền xem toàn hệ thống mới thấy; quyền xem theo phòng ban
+        không thấy việc ẩn.
         """
         if user is None or not user.is_authenticated:
             return self.none()
@@ -283,7 +284,7 @@ class TaskQuerySet(models.QuerySet):
         is_participant = Exists(
             TaskParticipant.objects.filter(task=OuterRef("pk"), user=user)
         )
-        condition = Q(created_by=user) | Q(is_public=True, is_participant=True)
+        condition = Q(created_by=user) | Q(is_participant=True)
 
         don_vi_id = user_don_vi_id(user)
         if don_vi_id and user_has_task_permission(user, PERM_VIEW_DEPT_TASK):
