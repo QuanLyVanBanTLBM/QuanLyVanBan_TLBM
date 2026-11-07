@@ -329,7 +329,7 @@ describe('EmployeesPage Component (Issue #24)', () => {
     expect(mockedApiClient.post).not.toHaveBeenCalled();
   });
 
-  it('rejects an email outside the company domain before calling the API', async () => {
+  it('does not block an email outside the company domain in the form', async () => {
     const { container } = render(
       <MemoryRouter>
         <EmployeesPage />
@@ -343,10 +343,13 @@ describe('EmployeesPage Component (Issue #24)', () => {
     await screen.findByText('Thêm Mới Cán Bộ Nhân Viên');
 
     fireEvent.change(container.querySelector('input[name="ho_ten"]')!, { target: { value: 'Nhân viên email ngoài' } });
-    fireEvent.change(container.querySelector('input[name="email"]')!, { target: { value: 'nhanvien@yahoo.com' } });
+    fireEvent.change(container.querySelector('input[name="email"]')!, { target: { value: 'nhanvien@gmail.com' } });
+    fireEvent.change(container.querySelector('input[name="ngay_sinh"]')!, { target: { value: '01/01/1990' } });
     fireEvent.submit(container.querySelector('form')!);
 
-    expect(await screen.findByText('Email phải thuộc tên miền công ty (@baolong.vn).')).toBeInTheDocument();
+    // Form chỉ dừng ở lỗi thiếu đơn vị (bước kiểm kế tiếp), không còn báo sai tên miền email
+    expect(await screen.findByText('Tên Đơn vị / Phòng ban không được để trống.')).toBeInTheDocument();
+    expect(screen.queryByText(/tên miền/i)).not.toBeInTheDocument();
     expect(mockedApiClient.post).not.toHaveBeenCalled();
   });
 
@@ -487,6 +490,61 @@ describe('EmployeesPage Component (Issue #24)', () => {
 
     // View detail button should still be visible
     expect(screen.getAllByTitle('Xem chi tiết').length).toBeGreaterThan(0);
+  });
+
+  function mockPermissions(me: { is_superuser: boolean; is_system_admin?: boolean; permissions: string[] }) {
+    mockedApiClient.mockImplementation(async (endpoint: string) => {
+      if (endpoint.includes('/api/auth/me/permissions/')) return me;
+      if (endpoint.includes('/organizations/units/')) return [];
+      if (endpoint.includes('/api/positions/')) return [];
+      if (endpoint.includes('/accounts/groups/')) return [];
+      if (endpoint.includes('/accounts/employees/')) {
+        return { count: 2, next: null, previous: null, results: mockEmployeeData };
+      }
+      return [];
+    });
+  }
+
+  it('hides add and import buttons for a non-admin who holds add_cbnv and import_cbnv', async () => {
+    mockPermissions({
+      is_superuser: false,
+      is_system_admin: false,
+      permissions: ['view_list_cbnv', 'add_cbnv', 'import_cbnv', 'change_full_cbnv'],
+    });
+
+    render(
+      <MemoryRouter>
+        <EmployeesPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Nguyễn Văn Bình')).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('button', { name: /Thêm nhân viên/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Nhập từ Excel/i })).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Chỉnh sửa')).not.toBeInTheDocument();
+  });
+
+  it('shows add, import and edit buttons for an ADMIN group member who is not a superuser', async () => {
+    mockPermissions({
+      is_superuser: false,
+      is_system_admin: true,
+      permissions: ['view_list_cbnv', 'add_cbnv', 'import_cbnv', 'change_full_cbnv'],
+    });
+
+    render(
+      <MemoryRouter>
+        <EmployeesPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Nguyễn Văn Bình')).toBeInTheDocument();
+    });
+    expect(screen.getByRole('button', { name: /Thêm nhân viên/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Nhập từ Excel/i })).toBeInTheDocument();
+    expect(screen.getAllByTitle('Chỉnh sửa').length).toBeGreaterThan(0);
   });
 
   it('allows self-edit for own record with change_self_cbnv and disables administrative fields', async () => {

@@ -1,25 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { isCompanyEmail, isValidEmployeePhone } from './employeeContactRules';
+import { isValidEmployeePhone } from './employeeContactRules';
 
 describe('employeeContactRules', () => {
-  it('chỉ nhận email thuộc tên miền công ty, không phân biệt hoa thường', () => {
-    expect(isCompanyEmail('an.nguyen@baolong.vn')).toBe(true);
-    expect(isCompanyEmail('  An.Nguyen@BaoLong.VN ')).toBe(true);
-  });
-
-  it.each([
-    'a@yahoo.com',
-    'a@gmail.com',
-    'a@baolong.vn.evil.com',
-    'a@mail.baolong.vn',
-    'a@notbaolong.vn',
-    '@baolong.vn',
-    'baolong.vn',
-    '',
-  ])('từ chối email ngoài tên miền công ty: %s', (value) => {
-    expect(isCompanyEmail(value)).toBe(false);
-  });
-
   it.each(['0912345678', '0387654321', '0587654321', '0712345678', '0812345678'])(
     'nhận số di động 10 chữ số: %s',
     (value) => {

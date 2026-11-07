@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 
 from django.contrib.auth import get_user_model
-from django.contrib.auth.models import Permission
+from django.contrib.auth.models import Group, Permission
 from django.core import mail
 from django.core.management import call_command
 from django.core.signals import request_finished
@@ -15,6 +15,7 @@ from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
+from authorization.models import GroupInfo
 from document_storage import get_document_storage
 from organizations.models import DonVi, KhoiKhuVuc
 from documents.models import PhamVi, VanBanDen, VanBanDi
@@ -1301,6 +1302,16 @@ class TaskApprovalApiTests(WorkTestBase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertIn("mới được duyệt công việc", response.data["detail"])
 
+    def test_nhom_admin_duyet_va_huy_duyet_du_khong_lien_quan(self):
+        task = self.waiting_task()
+        group_admin = User.objects.create_user("nhom_admin_duyet", don_vi=self.default_unit)
+        group_admin.groups.add(Group.objects.get(pk=GroupInfo.objects.get(ma_nhom_quyen="ADMIN").pk))
+        self.login(group_admin)
+        response = self.client.post(self.task_url(task, "approve/"))
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        response = self.client.post(self.task_url(task, "unapprove/"))
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+
     def test_co_quyen_approve_congviec_duyet_duoc_du_khong_lien_quan(self):
         # Vai trò như Ban Giám đốc: view_all_congviec + approve_congviec -> duyệt mọi việc xem được.
         task = self.waiting_task()
@@ -1398,11 +1409,22 @@ class TaskCommentApiTests(WorkTestBase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertFalse(TaskComment.objects.exists())
 
-    def test_admin_xem_duoc_nhung_khong_ghi_y_kien(self):
+    def test_admin_xem_va_ghi_y_kien_du_khong_lien_quan(self):
         task = self.make_task()
-        self.login(self.admin)
-        self.assertEqual(self.client.get(self.task_url(task, "comments/")).status_code, status.HTTP_200_OK)
-        response = self.client.post(self.task_url(task, "comments/"), {"content": "Admin góp ý"})
+        admin_group = Group.objects.get(pk=GroupInfo.objects.get(ma_nhom_quyen="ADMIN").pk)
+        group_admin = User.objects.create_user("nhom_admin", don_vi=self.default_unit)
+        group_admin.groups.add(admin_group)
+        for user in (self.admin, group_admin):
+            self.login(user)
+            self.assertEqual(self.client.get(self.task_url(task, "comments/")).status_code, status.HTTP_200_OK)
+            response = self.client.post(self.task_url(task, "comments/"), {"content": "Admin góp ý"})
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED, user.username)
+
+    def test_nguoi_ngoai_co_quyen_view_all_van_khong_ghi_y_kien(self):
+        task = self.make_task()
+        self.outsider.user_permissions.add(Permission.objects.get(codename="view_all_congviec"))
+        self.login(self.outsider)
+        response = self.client.post(self.task_url(task, "comments/"), {"content": "Góp ý"})
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_khong_co_api_sua_xoa_y_kien(self):
