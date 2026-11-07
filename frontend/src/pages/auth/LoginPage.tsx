@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import confetti from 'canvas-confetti';
 import { ActivePageId } from '@app-types/navigation';
@@ -24,22 +24,6 @@ export default function LoginPage({ onNavigate, onLoginSuccess }: LoginPageProps
   const [customError, setCustomError] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isSuccess, setIsSuccess] = useState<boolean>(false);
-
-  // Trạng thái tương tác điều phối giữa Form và Nhân vật hoạt hình
-  const [isUsernameFocused, setIsUsernameFocused] = useState<boolean>(false);
-  const [isPasswordFocused, setIsPasswordFocused] = useState<boolean>(false);
-  const [showPassword, setShowPassword] = useState<boolean>(false);
-  const [isTyping, setIsTyping] = useState<boolean>(false);
-
-  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const triggerTypingAnimation = () => {
-    setIsTyping(true);
-    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-    typingTimeoutRef.current = setTimeout(() => {
-      setIsTyping(false);
-    }, 300);
-  };
 
   const handleLoginSubmit = async ({ username, password }: { username: string; password: string }) => {
     setErrorKey('');
@@ -138,10 +122,10 @@ export default function LoginPage({ onNavigate, onLoginSuccess }: LoginPageProps
           isSuccess={isSuccess}
           error={activeError}
           onSubmit={handleLoginSubmit}
-          onUsernameFocusChange={setIsUsernameFocused}
-          onPasswordFocusChange={setIsPasswordFocused}
-          onShowPasswordChange={setShowPassword}
-          onTyping={triggerTypingAnimation}
+          onUsernameFocusChange={() => {}}
+          onPasswordFocusChange={() => {}}
+          onShowPasswordChange={() => {}}
+          onTyping={() => {}}
         />
       </div>
     </div>
