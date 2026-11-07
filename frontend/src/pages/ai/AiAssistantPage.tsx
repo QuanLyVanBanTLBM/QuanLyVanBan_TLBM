@@ -1,4 +1,4 @@
-﻿import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AlertModal from '@components/common/AlertModal';
 import { ActivePageId } from '@app-types/navigation';
@@ -788,7 +788,20 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
 
   // Sessions state (ﾄ雪ｻ皇 t盻ｫ localStorage v盻嬖 fallback thﾃｴng minh)
   const [chatHistoryState, setChatHistoryState] = useState(() => {
-    const initialSessions = [createDefaultSession('session-default', currentLang)];
+    let initialSessions = [createDefaultSession('session-default', currentLang)];
+    if (storageKey) {
+      try {
+        const saved = localStorage.getItem(storageKey);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            initialSessions = parsed;
+          }
+        }
+      } catch {
+        // fallback to default
+      }
+    }
     return {
       storageKey,
       sessions: initialSessions,
@@ -798,7 +811,20 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
   const activeChatHistoryState = chatHistoryState.storageKey === storageKey
     ? chatHistoryState
     : (() => {
-        const nextSessions = [createDefaultSession('session-default', currentLang)];
+        let nextSessions = [createDefaultSession('session-default', currentLang)];
+        if (storageKey) {
+          try {
+            const saved = localStorage.getItem(storageKey);
+            if (saved) {
+              const parsed = JSON.parse(saved);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                nextSessions = parsed;
+              }
+            }
+          } catch {
+            // fallback
+          }
+        }
         return { storageKey, sessions: nextSessions, activeSessionId: nextSessions[0].id };
       })();
   const isChatHistoryReady = chatHistoryState.storageKey === storageKey;
@@ -813,7 +839,10 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
   };
 
   const setActiveSessionId = (id: string) => {
-    setChatHistoryState({ ...activeChatHistoryState, activeSessionId: id });
+    setChatHistoryState((current) => {
+      if (current.storageKey !== storageKey) return current;
+      return { ...current, activeSessionId: id };
+    });
   };
 
   // T盻ｱ ﾄ黛ｻ冢g ﾄ黛ｻ渡g b盻・vﾃ lﾆｰu sessions vﾃo localStorage khi cﾃｳ thay ﾄ黛ｻ品
@@ -939,14 +968,22 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isGenerating]);
 
-  // T蘯｡o phiﾃｪn chat m盻嬖
+  // Tạo phiên chat mới
   const handleNewChat = () => {
     if (!isChatHistoryReady) return;
     const newId = `session-${Date.now()}`;
     const newSession = createDefaultSession(newId, currentLang);
-    updateChatHistory((prev) => [newSession, ...prev]);
-    setActiveSessionId(newId);
+    setChatHistoryState((current) => {
+      if (current.storageKey !== storageKey) return current;
+      return {
+        ...current,
+        sessions: [newSession, ...current.sessions],
+        activeSessionId: newId,
+      };
+    });
+    setSidebarTab('sessions');
     setInputVal('');
+    setSelectedCategory('');
     if (typeof window !== 'undefined' && window.innerWidth <= 860) {
       setIsSidebarOpen(false);
     }
@@ -956,18 +993,27 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     if (!isChatHistoryReady) return;
     e.stopPropagation();
     if (confirm(t('aiAssistant.deleteSessionConfirm'))) {
-      updateChatHistory((prev) => {
-        const updated = prev.filter((s) => s.id !== id);
+      setChatHistoryState((current) => {
+        if (current.storageKey !== storageKey) return current;
+        const updated = current.sessions.filter((s) => s.id !== id);
         if (updated.length === 0) {
           const freshId = `session-${Date.now()}`;
           const freshSession = createDefaultSession(freshId, currentLang);
-          setActiveSessionId(freshId);
-          return [freshSession];
+          return {
+            ...current,
+            sessions: [freshSession],
+            activeSessionId: freshId,
+          };
         }
-        if (activeSessionId === id) {
-          setActiveSessionId(updated[0].id);
+        let nextActiveId = current.activeSessionId;
+        if (current.activeSessionId === id) {
+          nextActiveId = updated[0].id;
         }
-        return updated;
+        return {
+          ...current,
+          sessions: updated,
+          activeSessionId: nextActiveId,
+        };
       });
     }
   };
