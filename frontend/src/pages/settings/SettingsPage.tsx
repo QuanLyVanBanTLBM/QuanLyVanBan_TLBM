@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from '@i18n/translate';
 import { Button } from '@components/common';
+import soundAlert from '@lib/soundAlert';
 
 // Component Toggle Switch phong cách Hiện đại (Modern UI)
 function ModernToggle({
@@ -74,20 +75,28 @@ export default function SettingsPage() {
 
   const [aiModel, setAiModel] = useState<'gemini'>('gemini');
 
-  // Trạng thái thông báo & bảo mật
-  const [notifIncoming, setNotifIncoming] = useState(true);
-  const [notifUrgent, setNotifUrgent] = useState(true);
-  const [notifDeadline, setNotifDeadline] = useState(true);
-  const [secAutoLock, setSecAutoLock] = useState(true);
-  const [sec2FA, setSec2FA] = useState(true);
+  // Trạng thái cấu hình âm thanh & bảo mật phiên làm việc (hoạt động thực tế)
+  const [notifUrgent, setNotifUrgent] = useState<boolean>(() => soundAlert.isUrgentSoundEnabled());
+  const [secAutoLock, setSecAutoLock] = useState<boolean>(() => {
+    return localStorage.getItem('tlbm_sec_auto_lock') !== 'false';
+  });
+  const [secLockTimeout, setSecLockTimeout] = useState<number>(() => {
+    return parseInt(localStorage.getItem('tlbm_sec_lock_timeout') || '15', 10);
+  });
   const [showSavedToast, setShowSavedToast] = useState(false);
 
   const handleSaveSettings = () => {
     localStorage.setItem('tlbm_interface_style', 'modern');
     document.documentElement.setAttribute('data-ui-style', 'modern');
     localStorage.setItem('tlbm_ai_model', aiModel);
+    localStorage.setItem('tlbm_notif_sound_urgent', String(notifUrgent));
+    soundAlert.setUrgentSoundEnabled(notifUrgent);
+    localStorage.setItem('tlbm_sec_auto_lock', String(secAutoLock));
+    localStorage.setItem('tlbm_sec_lock_timeout', String(secLockTimeout));
+
     window.dispatchEvent(new Event('tlbm_settings_updated'));
     window.dispatchEvent(new Event('tlbm_ai_model_updated'));
+    window.dispatchEvent(new Event('tlbm_sound_settings_updated'));
     setShowSavedToast(true);
     setTimeout(() => setShowSavedToast(false), 3500);
   };
@@ -96,14 +105,19 @@ export default function SettingsPage() {
     localStorage.setItem('tlbm_interface_style', 'modern');
     document.documentElement.setAttribute('data-ui-style', 'modern');
     setAiModel('gemini');
-    setNotifIncoming(true);
     setNotifUrgent(true);
-    setNotifDeadline(true);
     setSecAutoLock(true);
-    setSec2FA(true);
+    setSecLockTimeout(15);
+
     localStorage.setItem('tlbm_ai_model', 'gemini');
+    localStorage.setItem('tlbm_notif_sound_urgent', 'true');
+    localStorage.setItem('tlbm_sec_auto_lock', 'true');
+    localStorage.setItem('tlbm_sec_lock_timeout', '15');
+    soundAlert.setUrgentSoundEnabled(true);
+
     window.dispatchEvent(new Event('tlbm_settings_updated'));
     window.dispatchEvent(new Event('tlbm_ai_model_updated'));
+    window.dispatchEvent(new Event('tlbm_sound_settings_updated'));
     setShowSavedToast(true);
     setTimeout(() => setShowSavedToast(false), 3500);
   };
@@ -154,76 +168,106 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* 2. Cấu hình thông báo & Bảo mật */}
+      {/* 2. Cấu hình thông báo âm thanh & Bảo mật phiên làm việc */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Card: Cấu hình thông báo */}
-        <div className="bg-surface border border-border-subtle rounded-2xl p-6 shadow-xs space-y-3.5">
-          <div className="flex items-center gap-2.5 pb-2 border-b border-border-subtle">
-            <div className="w-8 h-8 rounded-lg bg-primary-subtle text-primary flex items-center justify-center text-sm">
-              <i className="fa-solid fa-bell" />
+        {/* Card: Cấu hình thông báo âm thanh */}
+        <div className="bg-surface border border-border-subtle rounded-2xl p-6 shadow-xs space-y-4 flex flex-col justify-between">
+          <div className="space-y-3.5">
+            <div className="flex items-center gap-2.5 pb-2 border-b border-border-subtle">
+              <div className="w-8 h-8 rounded-lg bg-primary-subtle text-primary flex items-center justify-center text-sm">
+                <i className="fa-solid fa-bell" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-main">
+                  {t('settings.notificationSectionTitle')}
+                </h3>
+                <p className="text-xs text-muted">{t('settings.notificationSectionDesc')}</p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-sm font-bold text-main">
-                {t('settings.notificationSectionTitle')}
-              </h3>
-              <p className="text-xs text-muted">{t('settings.notificationSectionDesc')}</p>
+
+            <div className="space-y-2.5 pt-1">
+              <ModernToggle
+                checked={notifUrgent}
+                onChange={setNotifUrgent}
+                label={t('settings.notifUrgent')}
+                description={t('settings.notifUrgentDesc')}
+                icon="fa-volume-high"
+              />
             </div>
           </div>
 
-          <div className="space-y-2.5 pt-1">
-            <ModernToggle
-              checked={notifIncoming}
-              onChange={setNotifIncoming}
-              label={t('settings.notifIncoming')}
-              description={t('settings.notifIncomingDesc')}
-              icon="fa-envelope"
-            />
-            <ModernToggle
-              checked={notifUrgent}
-              onChange={setNotifUrgent}
-              label={t('settings.notifUrgent')}
-              description={t('settings.notifUrgentDesc')}
-              icon="fa-triangle-exclamation"
-            />
-            <ModernToggle
-              checked={notifDeadline}
-              onChange={setNotifDeadline}
-              label={t('settings.notifDeadline')}
-              description={t('settings.notifDeadlineDesc')}
-              icon="fa-clock"
-            />
+          {/* Tiện ích nghe thử âm thanh chuông */}
+          <div className="pt-3 mt-1 flex items-center justify-between gap-3 border-t border-border-subtle/70">
+            <div className="flex items-center gap-1.5 text-xs text-muted">
+              <i className="fa-solid fa-circle-check text-primary text-[11px]" />
+              <span>Web Audio Chuông Hỏa Tốc</span>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => soundAlert.playUrgentChime(true)}
+              className="gap-2 shadow-2xs hover:border-primary/40 font-semibold"
+            >
+              <i className="fa-solid fa-volume-high text-primary text-xs" />
+              <span>{t('settings.testSound')}</span>
+            </Button>
           </div>
         </div>
 
         {/* Card: Bảo mật phiên làm việc */}
-        <div className="bg-surface border border-border-subtle rounded-2xl p-6 shadow-xs space-y-3.5">
-          <div className="flex items-center gap-2.5 pb-2 border-b border-border-subtle">
-            <div className="w-8 h-8 rounded-lg bg-primary-subtle text-primary flex items-center justify-center text-sm">
-              <i className="fa-solid fa-shield-halved" />
+        <div className="bg-surface border border-border-subtle rounded-2xl p-6 shadow-xs space-y-4 flex flex-col justify-between">
+          <div className="space-y-3.5">
+            <div className="flex items-center gap-2.5 pb-2 border-b border-border-subtle">
+              <div className="w-8 h-8 rounded-lg bg-primary-subtle text-primary flex items-center justify-center text-sm">
+                <i className="fa-solid fa-shield-halved" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-main">
+                  {t('settings.securitySectionTitle')}
+                </h3>
+                <p className="text-xs text-muted">{t('settings.securitySectionDesc')}</p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-sm font-bold text-main">
-                {t('settings.securitySectionTitle')}
-              </h3>
-              <p className="text-xs text-muted">{t('settings.securitySectionDesc')}</p>
+
+            <div className="space-y-2.5 pt-1">
+              <ModernToggle
+                checked={secAutoLock}
+                onChange={setSecAutoLock}
+                label={t('settings.secAutoLock')}
+                description={t('settings.secAutoLockDesc')}
+                icon="fa-lock"
+              />
             </div>
           </div>
 
-          <div className="space-y-2.5 pt-1">
-            <ModernToggle
-              checked={secAutoLock}
-              onChange={setSecAutoLock}
-              label={t('settings.secAutoLock')}
-              description={t('settings.secAutoLockDesc')}
-              icon="fa-lock"
-            />
-            <ModernToggle
-              checked={sec2FA}
-              onChange={setSec2FA}
-              label={t('settings.sec2FA')}
-              description={t('settings.sec2FADesc')}
-              icon="fa-key"
-            />
+          {/* Tùy chỉnh thời gian & Nút khóa màn hình ngay để demo */}
+          <div className="pt-3 mt-1 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-border-subtle/70">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-secondary font-medium whitespace-nowrap">
+                {t('settings.lockTimeout')}:
+              </span>
+              <select
+                value={secLockTimeout}
+                onChange={(e) => setSecLockTimeout(Number(e.target.value))}
+                disabled={!secAutoLock}
+                className="text-xs bg-surface border border-border-subtle rounded-lg px-2.5 py-1 text-main font-medium focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <option value={5}>5 phút</option>
+                <option value={15}>15 phút (Chuẩn)</option>
+                <option value={30}>30 phút</option>
+              </select>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => window.dispatchEvent(new Event('tlbm_lock_screen_now'))}
+              className="gap-2 shadow-2xs hover:border-amber-500/40 text-amber-600 dark:text-amber-400 font-semibold"
+            >
+              <i className="fa-solid fa-lock text-xs" />
+              <span>{t('settings.lockNow')}</span>
+            </Button>
           </div>
         </div>
       </div>

@@ -1,4 +1,13 @@
 -- =====================================================================
+-- CẤP QUYỀN THÊM, SỬA DANH MỤC HỒ SƠ VÀ LOẠI VĂN BẢN CHO VĂN THƯ (Nhóm 7; đánh dấu [VTHS] tại vị trí)
+-- Căn cứ: bảng phân quyền Danh mục hồ sơ và Loại văn bản do nhóm Hồ sơ (Nhóm 3) gửi, nhóm trưởng chốt làm theo (issue #647):
+--   BGD, CV, TP chỉ xem; VT xem, thêm, sửa, không xóa; ADMIN đủ 4. Hai màn hình dùng chung mã view/add/change/delete_hoso.
+--   Đảo lại quyết định 03/11 ([VTQ], issue #513) đã gỡ add_hoso, change_hoso khỏi VT. Không thêm mã quyền mới.
+--   Migration authorization 0019_van_thu_them_sua_ho_so bổ sung hai lượt gán cho nhóm VT trên DB đã seed từ trước.
+-- Quy mô sau [VTHS] (cộng sau [GQVC]): giữ 83 quyền thao tác; thêm 2 lượt phân quyền (VT +2): 201 -> 203;
+--   nhóm VT 33 -> 35 quyền.
+-- =====================================================================
+-- =====================================================================
 -- CHO QUẢN TRỊ VIÊN XÓA VĂN BẢN HẠN CHẾ (Nhóm 7; đánh dấu [XVHC] tại vị trí)
 -- Căn cứ: Quản trị viên xóa được văn bản hạn chế hết hiệu lực (issue #610); trigger prevent_delete_van_ban_han_che
 --   chặn mọi lệnh xóa nên API trả 403 dù cờ can_delete đúng. Hàm chỉ chặn khi phiên không đặt
@@ -2940,7 +2949,7 @@ WHERE
     ) ON CONFLICT (group_id, permission_id) DO NOTHING;
 
 -- [VTQ] Nhóm VT (Văn thư): xem, thêm, import văn bản đến/đi, xuất Excel văn bản đến, đổi hiệu lực;
--- [XHHL] xem văn bản đến/đi hết hiệu lực; [TVHC] thêm văn bản đến/đi hạn chế;
+-- [XHHL] xem văn bản đến/đi hết hiệu lực; [TVHC] thêm văn bản đến/đi hạn chế; [VTHS] thêm, sửa hồ sơ và loại văn bản;
 --   không sửa/xóa văn bản đến/đi, không gửi mail toàn hệ thống; xem hồ sơ, tài liệu biểu mẫu; quyền chung của CBNV
 INSERT INTO
     auth_group_permissions (group_id, permission_id)
@@ -2968,6 +2977,9 @@ WHERE
         'view_het_hieu_luc_vanbandi',
         'add_han_che_vanbandi',
         'view_hoso',
+        -- [VTHS]
+        'add_hoso',
+        'change_hoso',
         'view_tailieu',
         'view_trinhky',
         'send_trinhky',
