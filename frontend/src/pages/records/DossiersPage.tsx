@@ -7,6 +7,7 @@ import { Badge, Button, Card, Table, TableBody, TableCell, TableHead, TableHeade
 import ConfirmDialog from '@components/records/ConfirmDialog';
 import Pagination from '@components/records/Pagination';
 import RecordModal from '@components/records/RecordModal';
+import { usePermissions } from '@lib/permissions';
 import { useTranslation } from '@i18n/translate';
 import type { Dossier, DossierPayload } from '@app-types/records';
 
@@ -51,6 +52,10 @@ function sortedDossiers(items: Dossier[]): Dossier[] {
 export default function DossiersPage() {
   const navigate = useNavigate();
   const { currentLang, t } = useTranslation();
+  const { can } = usePermissions();
+  const canAdd = can('add_hoso');
+  const canEdit = can('change_hoso');
+  const canDelete = can('delete_hoso');
   const [items, setItems] = React.useState<Dossier[]>([]);
   const [count, setCount] = React.useState(0);
   const [page, setPage] = React.useState(1);
@@ -198,9 +203,11 @@ export default function DossiersPage() {
             {t('records.dossiers.description')}
           </p>
         </div>
-        <Button type="button" icon="fa-plus" onClick={() => { setSaveError(null); setEditing(null); }}>
-          {t('records.dossiers.add')}
-        </Button>
+        {canAdd && (
+          <Button type="button" icon="fa-plus" onClick={() => { setSaveError(null); setEditing(null); }}>
+            {t('records.dossiers.add')}
+          </Button>
+        )}
       </div>
 
       {notice && (
@@ -300,8 +307,8 @@ export default function DossiersPage() {
                       <TableCell>
                         <div className="flex justify-end gap-1">
                           <Button type="button" size="sm" variant="ghost" icon="fa-folder-open" onClick={(event) => { event.stopPropagation(); navigate(dossierDocumentTypesDestination(item)); }} aria-label={t('records.dossiers.viewDocumentTypesLabel', { name: item.ten_ho_so })}>{t('records.actions.view')}</Button>
-                          <Button type="button" size="sm" variant="ghost" icon="fa-pen" onClick={(event) => { event.stopPropagation(); setSaveError(null); setEditing(item); }} aria-label={t('records.dossiers.editLabel', { name: item.ten_ho_so })} />
-                          {!item.is_he_thong && (
+                          {canEdit && <Button type="button" size="sm" variant="ghost" icon="fa-pen" onClick={(event) => { event.stopPropagation(); setSaveError(null); setEditing(item); }} aria-label={t('records.dossiers.editLabel', { name: item.ten_ho_so })} />}
+                          {canDelete && !item.is_he_thong && (
                             <Button type="button" size="sm" variant="ghost" icon="fa-trash" className="text-danger hover:text-danger" onClick={(event) => { event.stopPropagation(); setDeleteError(null); setDeleting(item); }} aria-label={t('records.dossiers.deleteLabel', { name: item.ten_ho_so })} />
                           )}
                         </div>

@@ -1,19 +1,22 @@
 """Lệnh `seed_signing_demo`: đủ trạng thái hồ sơ, lịch sử, thông báo, dữ liệu Dashboard; chạy lại không nhân bản."""
 
 import io
+import importlib
 import os
 import shutil
 import tempfile
+from types import SimpleNamespace
 from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.core.management import CommandError, call_command
+from django.db import connection
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from signing import enums
 from signing.models import (
-    SigningAttempt, SigningAuditLog, SigningKey, SigningKeyUnlock, SigningNotification, SigningProcess,
+    SigningAttempt, SigningAuditLog, SigningNotification, SigningPinCredential, SigningProcess,
     SigningRequest,
     SigningRequestStepSigner,
 )
@@ -40,9 +43,11 @@ class DuLieuMauTests(TestCase):
             SIGNING_DOCUMENT_ROOT=self.thu_muc,
             DOCUMENT_STORAGE_ROOT=self.thu_muc,
             SIGNING_PIN_SECRET="test-only-pin-secret",
-            SIGNING_KEY_PEPPER="test-only-signing-key-pepper",
         )
         self._cai_dat.enable()
+        importlib.import_module("authorization.migrations.0002_rbac_standard_data").seed_rbac(
+            None, SimpleNamespace(connection=connection)
+        )
         tao_don_vi()
 
     def tearDown(self):
@@ -85,16 +90,14 @@ class DuLieuMauTests(TestCase):
         loai = set(SigningNotification.objects.values_list("loai_thong_bao", flat=True))
         self.assertTrue({"CAN_KY", "HOAN_THANH", "TU_CHOI", "YEU_CAU_SUA", "HUY", "TIN_NHAN",
                          "QUA_HAN"} <= loai, loai)
-        # Khóa tạm đã thu hồi: không ai còn khóa hoạt động do lệnh tạo
-        self.assertFalse(SigningKey.objects.filter(trang_thai=enums.TrangThaiKhoa.HOAT_DONG).exists())
-        self.assertFalse(SigningKeyUnlock.objects.exists())
+        self.assertEqual(SigningPinCredential.objects.count(), 3)  # PIN chỉ tạo cho ba tài khoản có ký mẫu
 
         dem = (SigningRequest.objects.count(), SigningAttempt.objects.count(), SigningNotification.objects.count(),
-               SigningKey.objects.count(), User.objects.count())
+               SigningPinCredential.objects.count(), User.objects.count())
         out = chay(self, DEMO_PASSWORD="")  # chạy lại: tài khoản đã có nên không cần mật khẩu, không tạo thêm gì
         self.assertIn("0 hồ sơ mẫu mới", out)
         self.assertEqual(dem, (SigningRequest.objects.count(), SigningAttempt.objects.count(),
-                               SigningNotification.objects.count(), SigningKey.objects.count(), User.objects.count()))
+                               SigningNotification.objects.count(), SigningPinCredential.objects.count(), User.objects.count()))
         self.assertTrue(User.objects.get(username="vanthu").check_password(MAT_KHAU))
 
     def test_existing_admin_password_is_kept(self):

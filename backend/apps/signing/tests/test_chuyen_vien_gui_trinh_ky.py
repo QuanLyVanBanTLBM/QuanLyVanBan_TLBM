@@ -3,8 +3,12 @@ Issue #226: tài khoản nhóm Chuyên viên (quyền lấy từ seed RBAC, khô
 người không có send_trinhky và người không phải người tạo vẫn bị chặn.
 """
 
+import importlib
+from types import SimpleNamespace
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
+from django.db import connection
 
 from .helpers import cap_quyen
 from .test_trinh_ky_phase7 import TrinhKyBase
@@ -13,6 +17,12 @@ User = get_user_model()
 
 
 class ChuyenVienGuiTrinhKyTests(TrinhKyBase):
+    def setUp(self):
+        super().setUp()
+        importlib.import_module("authorization.migrations.0002_rbac_standard_data").seed_rbac(
+            None, SimpleNamespace(connection=connection)
+        )
+
     def thanh_vien_cv(self, username):
         user = User.objects.create_user(username)
         user.groups.add(Group.objects.get(name="Chuyên viên"))

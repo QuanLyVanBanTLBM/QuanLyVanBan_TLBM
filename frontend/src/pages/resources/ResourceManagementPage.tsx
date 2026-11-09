@@ -1669,57 +1669,24 @@ export default function ResourceManagementPage() {
           currentLang === 'en' ? 'Export Excel' : 'Xuất dữ liệu Excel'
         );
       } else {
-        throw new Error(`Máy chủ phản hồi mã lỗi ${response.status}`);
+        // Không tải file rỗng và không báo thành công khi API từ chối (vd. 403): hiện đúng lỗi máy chủ trả về.
+        let data: Record<string, unknown> = {};
+        try {
+          const parsed: unknown = await response.json();
+          if (typeof parsed === 'object' && parsed !== null) data = parsed as Record<string, unknown>;
+        } catch {
+          data = {};
+        }
+        throw new ApiError(response.status, data);
       }
     } catch (error) {
-      console.warn(
-        'Backend API xuất Excel chưa sẵn sàng hoặc offline, kích hoạt cơ chế xuất file trực tiếp:',
-        error
+      console.error('Lỗi khi xuất Excel danh sách tài liệu:', error);
+      const errInfo = formatApiError(
+        error,
+        currentLang === 'en' ? 'Export Excel' : 'Xuất dữ liệu Excel',
+        currentLang === 'en' ? 'Failed to export the document list.' : 'Không thể xuất danh sách tài liệu.'
       );
-
-      // Fallback: Xuất dữ liệu bảng hiện tại sang file CSV/Excel UTF-8 có BOM để mở tiếng Việt không lỗi
-      const headers = currentLang === 'en'
-        ? ['No.', 'Code', 'Title', 'Category', 'Document Type', 'Issuing Authority', 'Published Date', 'Status', 'Scope']
-        : ['STT', 'Ký hiệu', 'Tiêu đề', 'Danh mục', 'Loại tài liệu', 'Nơi ban hành', 'Ngày đăng', 'Hiệu lực', 'Phạm vi'];
-      const rows = filteredDocuments.map((doc, idx) => [
-        idx + 1,
-        `"${doc.ky_hieu || ''}"`,
-        `"${doc.tieu_de.replace(/"/g, '""')}"`,
-        `"${doc.dm_tai_lieu_name || ''}"`,
-        `"${(doc.loai_tai_lieu_names || []).join('; ')}"`,
-        `"${doc.noi_ban_hanh || ''}"`,
-        doc.ngay_dang,
-        doc.hieu_luc === 'CON_HIEU_LUC'
-          ? (currentLang === 'en' ? 'Active' : 'Còn hiệu lực')
-          : doc.hieu_luc === 'CON_HIEU_LUC_1_PHAN'
-            ? (currentLang === 'en' ? 'Partially Active' : 'Còn hiệu lực một phần')
-            : doc.hieu_luc === 'HET_HIEU_LUC'
-              ? (currentLang === 'en' ? 'Expired' : 'Hết hiệu lực')
-              : (currentLang === 'en' ? 'Expired & Replaced' : 'Hết hiệu lực và thay thế'),
-        doc.hien_thi === 'TAT_CA'
-          ? (currentLang === 'en' ? 'Public / All' : 'Tất cả')
-          : (currentLang === 'en' ? 'Internal department' : 'Nội bộ phòng ban'),
-      ]);
-
-      const csvContent =
-        '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const downloadUrl = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = downloadUrl;
-      const filePrefix = currentLang === 'en' ? 'Document_List' : 'Danh_sach_tai_lieu';
-      a.download = `${filePrefix}_${new Date().toISOString().split('T')[0]}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(downloadUrl);
-      showToast(
-        currentLang === 'en'
-          ? 'Document list exported successfully!'
-          : 'Đã xuất thành công file danh sách tài liệu!',
-        'success',
-        currentLang === 'en' ? 'Export Excel' : 'Xuất dữ liệu Excel'
-      );
+      showToast(errInfo.message, errInfo.type, errInfo.title);
     } finally {
       setIsExporting(false);
     }

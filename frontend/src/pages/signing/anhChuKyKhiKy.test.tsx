@@ -8,25 +8,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import HanhDong from '@components/signing/HanhDong';
 import { signingApi } from '@lib/signing/api';
 import { SigningContext } from '@lib/signing/hooks';
-import type { HoSoChiTiet, KhoaKy, NguoiDungHienTai } from '@lib/signing/types';
+import type { HoSoChiTiet, NguoiDungHienTai } from '@lib/signing/types';
 
 vi.mock('@lib/signing/api', async () => {
   const actual = await vi.importActual<typeof import('@lib/signing/api')>('@lib/signing/api');
-  return { ...actual, signingApi: { khoa: vi.fn(), ky: vi.fn() } };
-});
-vi.mock('@lib/signing/luongKhoa', async () => {
-  const actual = await vi.importActual<typeof import('@lib/signing/luongKhoa')>('@lib/signing/luongKhoa');
-  return { ...actual, kyBangPin: vi.fn().mockResolvedValue('chu-ky-so') };
+  return { ...actual, signingApi: { ky: vi.fn() } };
 });
 const api = vi.mocked(signingApi);
 
 const TOI = {
   id: 7, ten: 'Người ký', don_vi_id: 1, la_quan_tri: false, la_lanh_dao_don_vi: false,
-  co_anh_chu_ky: true,
+  co_anh_chu_ky: true, da_dat_pin: true,
   quyen: { view_trinhky: true, add_trinhky: false, sign_trinhky: true, send_trinhky: false },
 } as NguoiDungHienTai;
-const KHOA = { id: 4, ma_khoa: 'TB-7-1', dau_van_tay: 'f'.repeat(64), thuat_toan: 'Ed25519',
-  khoa_cong_khai: 'pub', trang_thai: 'HOAT_DONG' } as KhoaKy;
 const MA_BAM = 'a'.repeat(64);
 
 const hoSo = {
@@ -49,7 +43,6 @@ const moHopKy = (nguoi: NguoiDungHienTai = TOI) => {
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.setItem('tlbm_lang', 'vi');
-  api.khoa.mockResolvedValue([KHOA]);
   api.ky.mockResolvedValue(hoSo);
 });
 
@@ -62,7 +55,7 @@ describe('Ký duyệt dùng ảnh chữ ký ở máy chủ', () => {
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /Ký duyệt/ }));
     await waitFor(() => expect(api.ky).toHaveBeenCalledTimes(1));
     expect(api.ky.mock.calls[0][2]).toEqual({
-      khoa_ky: 4, hash_tai_lieu: MA_BAM, pin: '482739', ghi_chu_ky: '',
+      hash_tai_lieu: MA_BAM, pin: '482739', ghi_chu_ky: '',
     });
   });
 

@@ -21,7 +21,7 @@ from signing.models import (
 from signing.services import thong_bao
 
 from .helpers import cap_quyen, tao_chuc_vu
-from .test_hanh_dong_ky_phase8 import KyBase, khoa_hoat_dong
+from .test_hanh_dong_ky_phase8 import KyBase
 from .test_trinh_ky_phase7 import BASE, PDF, tep_pdf
 
 User = get_user_model()
