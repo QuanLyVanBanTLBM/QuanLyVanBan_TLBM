@@ -178,7 +178,6 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
   const { t } = useTranslation();
   const isMobile = useIsMobile();
   const { can, isSuperuser, isSystemAdmin } = usePermissions();
-  const isDi = loai === 'DI';
 
   // Lấy thông tin phiên làm việc hiện tại để phân quyền hiển thị tác vụ
   const currentSession = useMemo(() => authService.getSession(), []);
