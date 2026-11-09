@@ -169,7 +169,7 @@ export default function PinPage() {
                   value={pinXacNhan} onChange={(e) => setPinXacNhan(e.target.value.replace(/\D/g, ''))} />
               </TruongNhap>
               {pinXacNhan && pin !== pinXacNhan && <ThongBao loai="canh_bao">{t('pin.pinKhongKhop')}</ThongBao>}
-              <TruongNhap nhan={t('pin.kenhNhan')} batBuoc>
+              <TruongNhap nhan={t('pin.kenhNhan')}>
                 <select className={LOP_O_NHAP} value={kenh} onChange={(e) => setKenh(e.target.value as KenhOtpPin)}>
                   <option value="SMS">{t('pin.sms')}</option>
                   <option value="EMAIL">{t('pin.email')}</option>

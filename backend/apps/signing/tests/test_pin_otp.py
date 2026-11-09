@@ -71,7 +71,7 @@ class PinOtpTests(TestCase):
         credential.refresh_from_db()
         self.assertEqual(credential.so_lan_sai_ngay, 5)
 
-    def test_each_lock_starts_a_new_five_attempt_cycle_but_daily_cap_is_fifteen(self):
+    def test_each_lock_starts_a_new_five_attempt_cycle_but_daily_cap_is_ten(self):
         credential = self.tao_pin_cho()
         for _ in range(5):
             with self.assertRaises(SigningError):
@@ -80,19 +80,16 @@ class PinOtpTests(TestCase):
         credential.khoa_den = timezone.now() - timedelta(seconds=1)
         credential.save(update_fields=["khoa_den"])
 
-        for _ in range(5):
-            with self.assertRaises(SigningError):
-                pin.xac_thuc(self.user, "999999")
-        credential.refresh_from_db()
-        credential.khoa_den = timezone.now() - timedelta(seconds=1)
-        credential.save(update_fields=["khoa_den"])
-
-        for _ in range(5):
+        for _ in range(4):
             with self.assertRaises(SigningError):
                 pin.xac_thuc(self.user, "999999")
 
+        with self.assertRaises(SigningError) as ctx:
+            pin.xac_thuc(self.user, "999999")
+        self.assertEqual(ctx.exception.get_codes(), "pin_het_luot_trong_ngay")
+
         credential.refresh_from_db()
-        self.assertEqual(credential.so_lan_sai_ngay, 15)
+        self.assertEqual(credential.so_lan_sai_ngay, 10)
         self.assertEqual(credential.so_lan_sai_chu_ky, 5)
         with self.assertRaises(SigningError) as ctx:
             pin.xac_thuc(self.user, PIN_CU)

@@ -18,7 +18,7 @@ from .audit import ghi_nhat_ky
 
 logger = logging.getLogger(__name__)
 PIN_HOP_LE = re.compile(r"^\d{6}$")
-SO_LAN_SAI_TOI_DA_MOI_NGAY = 15
+SO_LAN_SAI_TOI_DA_MOI_NGAY = 10
 SO_LAN_SAI_MOI_CHU_KY = 5
 THOI_GIAN_KHOA = timedelta(minutes=30)
 
@@ -189,7 +189,7 @@ def _xac_thuc_trong_giao_dich(nguoi_dung, pin, dia_chi_ip):
 
 
 def xac_thuc(nguoi_dung, pin, *, dia_chi_ip=None):
-    """Xác minh PIN, nối 5 lần sai thành chu kỳ khóa 30 phút, tối đa 15 lần/ngày."""
+    """Xác minh PIN, nối 5 lần sai thành chu kỳ khóa 30 phút, tối đa 10 lần/ngày."""
     kiem_tra_pin(pin)
     with transaction.atomic():
         ket_qua = _xac_thuc_trong_giao_dich(nguoi_dung, pin, dia_chi_ip)
