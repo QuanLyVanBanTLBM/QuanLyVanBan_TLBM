@@ -262,8 +262,9 @@ describe('DocumentFormModal', () => {
     expect(screen.getByText(/Trích yếu nội dung văn bản/i)).toBeInTheDocument();
     expect(screen.getByText(/Trạng thái hiệu lực/i)).toBeInTheDocument();
 
-    // Ở chế độ Thêm mới, người dùng có thể chọn Còn hiệu lực hoặc Hết hiệu lực
+    // Ở chế độ Thêm mới, người dùng thấy trạng thái mặc định Còn hiệu lực và có thể bấm mở dropdown
     expect(screen.getByText('Còn hiệu lực')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Còn hiệu lực/i }));
     expect(screen.getByText('Hết hiệu lực')).toBeInTheDocument();
     expect(screen.getByText(/Văn bản này thay thế cho văn bản khác trong hệ thống/i)).toBeInTheDocument();
 
@@ -305,16 +306,19 @@ describe('DocumentFormModal', () => {
     expect(noiBanHanhInput).not.toHaveAttribute('readonly');
 
     // Khi sửa văn bản: cho phép chọn "Còn hiệu lực", "Còn hiệu lực 1 phần" hoặc "Hết hiệu lực"
-    expect(screen.getByRole('option', { name: 'Còn hiệu lực' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'Còn hiệu lực 1 phần' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'Hết hiệu lực' })).toBeInTheDocument();
+    const hieuLucBtn = screen.getByRole('button', { name: /Còn hiệu lực/i });
+    expect(hieuLucBtn).toBeInTheDocument();
+    fireEvent.click(hieuLucBtn);
+
+    expect(screen.getAllByText('Còn hiệu lực').length).toBeGreaterThan(0);
+    expect(screen.getByText('Còn hiệu lực 1 phần')).toBeInTheDocument();
+    expect(screen.getByText('Hết hiệu lực')).toBeInTheDocument();
     // KHÔNG có mục chọn thủ công "Đã bị thay thế"
-    expect(screen.queryByRole('option', { name: 'Đã bị thay thế' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Đã bị thay thế')).not.toBeInTheDocument();
 
     // Đổi trạng thái sang "Hết hiệu lực"
-    const hieuLucSelect = screen.getByDisplayValue('Còn hiệu lực');
-    fireEvent.change(hieuLucSelect, { target: { value: 'HET_HIEU_LUC' } });
-    expect(hieuLucSelect).toHaveValue('HET_HIEU_LUC');
+    fireEvent.click(screen.getByRole('button', { name: /Hết hiệu lực/i }));
+    expect(screen.getByRole('button', { name: /Hết hiệu lực/i })).toBeInTheDocument();
 
     await waitFor(() => {
       expect(screen.getByText('-- Chọn đơn vị nhận --')).toBeInTheDocument();
@@ -516,7 +520,15 @@ describe('DocumentFormModal', () => {
     const targetUnitOption = await screen.findByRole('button', { name: /Phòng Hành chính - Tổng hợp/i });
     fireEvent.click(targetUnitOption);
 
-    // Sau khi chọn đơn vị: nạp và hiển thị cán bộ thuộc đơn vị đó
+    // Sau khi chọn đơn vị: nạp và hiển thị khung chọn cán bộ xử lý
+    await waitFor(() => {
+      expect(screen.getByText(/Chọn cán bộ xử lý/i)).toBeInTheDocument();
+    });
+
+    // Bấm mở dropdown cán bộ nhận
+    fireEvent.click(screen.getByText(/Chọn cán bộ xử lý/i));
+
+    // Hiển thị cán bộ thuộc đơn vị đó
     await waitFor(() => {
       expect(screen.getByText(/Trần Cán Bộ/i)).toBeInTheDocument();
       expect(screen.getByText(/@canbo/i)).toBeInTheDocument();
@@ -527,6 +539,13 @@ describe('DocumentFormModal', () => {
     expect(staffCheckbox).not.toBeChecked();
     fireEvent.click(staffCheckbox);
     expect(staffCheckbox).toBeChecked();
+
+    // 1 nút Chọn tất cả duy nhất: tự động đồng bộ trạng thái tick khi tất cả cán bộ được chọn
+    const selectAllCheckbox = screen.getByRole('checkbox', { name: /Chọn tất cả/i });
+    expect(selectAllCheckbox).toBeChecked(); // vì chỉ có 1 cán bộ và đã được tick
+    fireEvent.click(selectAllCheckbox); // hủy tick -> bỏ chọn tất cả
+    expect(staffCheckbox).not.toBeChecked();
+    expect(selectAllCheckbox).not.toBeChecked();
 
     // Khi bấm bỏ chọn đơn vị
     const clearUnitBtn = screen.getByTitle('Bỏ chọn đơn vị');
@@ -725,7 +744,11 @@ describe('DocumentFormModal', () => {
     const duplicateOption = screen.getByText('Lãnh đạo khối (KHỐI HỖ TRỢ)');
     fireEvent.click(duplicateOption);
 
-    // Xác nhận cán bộ được nạp bằng tên gốc đã chuẩn hóa
+    // Xác nhận cán bộ được nạp bằng tên gốc đã chuẩn hóa và hiển thị trong dropdown
+    await waitFor(() => {
+      expect(screen.getByText(/Chọn cán bộ xử lý/i)).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText(/Chọn cán bộ xử lý/i));
     await waitFor(() => {
       expect(screen.getByText('Nguyễn Văn Lãnh Đạo')).toBeInTheDocument();
     });
