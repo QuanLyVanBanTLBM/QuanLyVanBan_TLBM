@@ -168,7 +168,7 @@ class PostgreSQLBackupRestoreDrill(unittest.TestCase):
         cls._create_database(cls.wrong_confirmation_db)
         cls._prepare_source_database()
 
-        cls.private_key_bytes, cls.public_fingerprint = cls._prepare_signing_fixture()
+        cls.pin_code = "123456"
         cls._insert_signing_fixture()
 
         cls.archive_path = _backup(
@@ -251,67 +251,31 @@ class PostgreSQLBackupRestoreDrill(unittest.TestCase):
                 )
                 cursor.execute(
                     "CREATE TABLE signing_fixture ("
-                    "id integer PRIMARY KEY, fingerprint text NOT NULL, encrypted_share text NOT NULL, "
-                    "nonce bytea NOT NULL, wrapped_private_key bytea NOT NULL, file_path text NOT NULL)"
+                    "id integer PRIMARY KEY, pin_verifier text NOT NULL, salt bytea NOT NULL, file_path text NOT NULL)"
                 )
 
-    @classmethod
-    def _prepare_signing_fixture(cls):
-        from cryptography.hazmat.primitives import serialization
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-        from signing.crypto import sha256_hex
+    @staticmethod
+    def _pin_verifier(secret, pin, salt):
+        """Cùng hợp đồng với signing.services.pin: HMAC(SIGNING_PIN_SECRET, PIN) rồi PBKDF2-SHA256."""
+        import hashlib
+        import hmac
 
-        key = Ed25519PrivateKey.generate()
-        private_bytes = key.private_bytes(
-            encoding=serialization.Encoding.Raw,
-            format=serialization.PrivateFormat.Raw,
-            encryption_algorithm=serialization.NoEncryption(),
-        )
-        public_bytes = key.public_key().public_bytes(
-            encoding=serialization.Encoding.Raw,
-            format=serialization.PublicFormat.Raw,
-        )
-        return private_bytes, sha256_hex(public_bytes)
+        preimage = hmac.new(
+            secret.encode(), b"signing-pin-verifier-v1:" + pin.encode(), hashlib.sha256
+        ).hexdigest()
+        return hashlib.pbkdf2_hmac("sha256", preimage.encode(), salt, 1000).hex()
 
     @classmethod
     def _insert_signing_fixture(cls):
-        import base64
         import os as _os
-        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-        from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-        from cryptography.hazmat.primitives import hashes
-        from signing.crypto import derive_subkey, encrypt_server_share
 
-        cls.server_share = _os.urandom(32)
-        cls.client_pin_master = _os.urandom(32)
-        aad = f"signing_key:42:{cls.public_fingerprint}".encode()
-        encrypted_share = encrypt_server_share(
-            cls.server_share,
-            derive_subkey(cls.pin_secret.encode(), "server-share"),
-            aad,
-        )
-        wrap_key = HKDF(
-            algorithm=hashes.SHA256(), length=32, salt=cls.server_share, info=b"wrap"
-        ).derive(cls.client_pin_master)
-        nonce = _os.urandom(12)
-        wrapped = AESGCM(wrap_key).encrypt(nonce, cls.private_key_bytes, None)
-        cls.wrapped_fixture = wrapped
-        cls.nonce_fixture = nonce
-        cls.aad_fixture = aad
-        cls.encrypted_share_fixture = encrypted_share
+        salt = _os.urandom(16)
+        verifier = cls._pin_verifier(cls.pin_secret, cls.pin_code, salt)
         with cls._database_connection(cls.source_db) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
-                    "INSERT INTO signing_fixture "
-                    "(id,fingerprint,encrypted_share,nonce,wrapped_private_key,file_path) "
-                    "VALUES (42,%s,%s,%s,%s,%s)",
-                    (
-                        cls.public_fingerprint,
-                        encrypted_share,
-                        nonce,
-                        wrapped,
-                        "documents/synthetic.pdf",
-                    ),
+                    "INSERT INTO signing_fixture (id,pin_verifier,salt,file_path) VALUES (42,%s,%s,%s)",
+                    (verifier, salt, "documents/synthetic.pdf"),
                 )
 
     @classmethod
@@ -589,12 +553,9 @@ class PostgreSQLBackupRestoreDrill(unittest.TestCase):
             )
         self.assertEqual(_empty_state(self.wrong_confirmation_db)["relations"], 0)
 
-    def test_full_restore_recovers_db_marker_files_private_key_and_access(self):
-        from cryptography.hazmat.primitives import hashes, serialization
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-        from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-        from signing.crypto import decrypt_server_share, derive_subkey, sha256_hex, verify_signature
+    def test_full_restore_recovers_db_marker_files_pin_secret_and_access(self):
+        import hmac
+
         from signing.storage import FilesystemStorageAdapter, StorageError
 
         _restore(
@@ -610,11 +571,9 @@ class PostgreSQLBackupRestoreDrill(unittest.TestCase):
         with self._database_connection(self.restore_db) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
-                    "SELECT fingerprint,encrypted_share,nonce,wrapped_private_key,file_path "
-                    "FROM signing_fixture WHERE id=42"
+                    "SELECT pin_verifier,salt,file_path FROM signing_fixture WHERE id=42"
                 )
-                fingerprint, encrypted_share, nonce, wrapped, file_path = cursor.fetchone()
-        self.assertEqual(fingerprint, self.public_fingerprint)
+                pin_verifier, salt, file_path = cursor.fetchone()
         self.assertEqual(file_path, "documents/synthetic.pdf")
         self.assertEqual((self.restore_root / "media/records/synthetic.bin").read_bytes(), b"media-payload-only")
         self.assertEqual(
@@ -633,28 +592,18 @@ class PostgreSQLBackupRestoreDrill(unittest.TestCase):
         recovered_env = (self.restore_root / "private_config/backend.env").read_bytes()
         recovered_values, _ = _parse_private_config(recovered_env)
         recovered_secret = recovered_values["SIGNING_PIN_SECRET"]
-        aad = f"signing_key:42:{fingerprint}".encode()
-        server_share = decrypt_server_share(
-            encrypted_share,
-            derive_subkey(recovered_secret.encode(), "server-share"),
-            aad,
+        self.assertTrue(
+            hmac.compare_digest(
+                pin_verifier,
+                self._pin_verifier(recovered_secret, self.pin_code, bytes(salt)),
+            )
         )
-        wrap_key = HKDF(
-            algorithm=hashes.SHA256(), length=32, salt=server_share, info=b"wrap"
-        ).derive(self.client_pin_master)
-        recovered_private = AESGCM(wrap_key).decrypt(nonce, wrapped, None)
-        restored_key = Ed25519PrivateKey.from_private_bytes(recovered_private)
-        public_bytes = restored_key.public_key().public_bytes(
-            encoding=serialization.Encoding.Raw,
-            format=serialization.PublicFormat.Raw,
+        self.assertFalse(
+            hmac.compare_digest(
+                pin_verifier,
+                self._pin_verifier(recovered_secret, "654321", bytes(salt)),
+            )
         )
-        self.assertEqual(sha256_hex(public_bytes), fingerprint)
-        signed = b"restored synthetic signing payload"
-        self.assertTrue(verify_signature(
-            __import__("base64").b64encode(public_bytes).decode(),
-            signed,
-            __import__("base64").b64encode(restored_key.sign(signed)).decode(),
-        ))
         path_map = __import__("json").loads(
             (self.restore_root / "config/recovered-paths.json").read_text(encoding="utf-8")
         )

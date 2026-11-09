@@ -1,7 +1,7 @@
 """
 Hành động người ký — Phase 8 (#80; plan mục 3.2, 3.4 "Chữ ký", 5.3, 6.2).
 
-- ky: ký Ed25519 trên raw bytes của SHA-256 tệp đã khóa ở lượt trình; đóng cấp khi mọi người ký trong cấp
+- ky: xác nhận ký bằng PIN cho đúng bản tài liệu đã khóa ở lượt trình; đóng cấp khi mọi người ký trong cấp
   đã ký, mở cấp sau hoặc hoàn thành lượt trình và hồ sơ.
 - tu_choi: "không đồng ý ban hành", bắt buộc lý do; lượt trình và hồ sơ TU_CHOI (kết thúc).
 - thu_hoi: khi cấp của người ký còn mở và lượt chưa hoàn thành.
@@ -20,13 +20,11 @@ from rest_framework import status
 
 from .. import crypto, enums
 from ..errors import ConflictError, SigningError
-from ..models import (
-    SigningAttempt, SigningKey, SigningRequest, SigningRequestStep, SigningRequestStepSigner, SigningSignature,
-)
+from ..models import SigningAttempt, SigningRequest, SigningRequestStep, SigningRequestStepSigner, SigningSignature
 from ..permissions import KY_TRINH_KY, co_quyen
 from ..storage import StorageError, get_storage
 from ..tich_hop import to_chuc
-from . import keys, mfa_ky, pin as pin_service, quyen_ky, tep_hoan_tat, thong_bao
+from . import pin as pin_service, quyen_ky, tep_hoan_tat, thong_bao
 from .audit import ghi_nhat_ky
 from .bang_chung import chot_bang_chung
 from .trinh_ky import dung_cap_dang_mo, luot_hien_hanh, mo_cap, mo_nguoi_ky_trong_cap
@@ -128,45 +126,22 @@ def _chup_anh_chu_ky(nguoi):
     return meta.vi_tri_luu_tep, crypto.sha256_hex(anh)
 
 
-def _kiem_tra_khoa(nguoi, khoa_ky_id, thoi_diem):
-    khoa = SigningKey.objects.filter(pk=khoa_ky_id, nguoi_so_huu=nguoi).first()
-    if khoa is None:
-        raise SigningError(code="khoa_ky_khong_hop_le", detail="Khóa ký không thuộc người ký.",
-                           fields={"khoa_ky": ["Không phải khóa của bạn."]})
-    het_han = khoa.ngay_het_han is not None and khoa.ngay_het_han <= thoi_diem
-    if khoa.trang_thai != enums.TrangThaiKhoa.HOAT_DONG or khoa.ngay_hieu_luc > thoi_diem or het_han:
-        raise SigningError(code="khoa_ky_khong_hoat_dong", detail="Khóa ký không ở trạng thái hoạt động.",
-                           fields={"khoa_ky": ["Khóa chưa kích hoạt, đã thu hồi, xoay vòng hoặc hết hạn."]})
-    return khoa
-
-
-def ky(yeu_cau, nguoi, *, pin, khoa_ky, hash_tai_lieu, phien_mfa=None, ghi_chu_ky="", khoa_chong_trung,
-       dia_chi_ip=None):
-    # Cờ MFA bật thì phiên (access token) phải đã xác thực mã email; kiểm trước mọi thao tác ghi (#509).
-    mfa_ky.kiem_tra_da_xac_thuc(nguoi, phien_mfa)
-    # Chuyển HET_HAN ở transaction riêng để trạng thái vẫn được lưu khi bước ký bị từ chối (#488).
-    keys.chuyen_het_han(nguoi)
+def ky(yeu_cau, nguoi, *, pin, hash_tai_lieu, ghi_chu_ky="", khoa_chong_trung, dia_chi_ip=None):
     if _thao_tac_lap(yeu_cau, nguoi, khoa_chong_trung):
         return SigningRequest.objects.get(pk=yeu_cau.pk)
-    khoa = SigningKey.objects.filter(pk=khoa_ky, nguoi_so_huu=nguoi).first()
-    if khoa is None:
-        raise SigningError(code="khoa_ky_khong_hop_le", detail="Khóa ký không thuộc người ký.",
-                           fields={"khoa_ky": ["Không phải khóa của bạn."]})
-    _kiem_tra_khoa(nguoi, khoa.pk, timezone.now())
     luot = luot_hien_hanh(yeu_cau)
     if luot is None:
         raise ConflictError(code="ho_so_chua_gui", detail="Hồ sơ chưa được gửi.")
     if hash_tai_lieu != luot.ma_bam_tai_lieu:
         raise ConflictError(code="ma_bam_khong_khop",
                             detail="Mã băm tài liệu khác bản đã khóa của lượt trình; tải lại hồ sơ trước khi ký.")
-    private_key = pin_service.mo_khoa_ky(khoa, nguoi, pin, dia_chi_ip)
-    chu_ky_so = crypto.sign_with_private_key(private_key, bytes.fromhex(hash_tai_lieu))
-    return _ky(yeu_cau, nguoi, khoa_ky=khoa_ky, hash_tai_lieu=hash_tai_lieu, chu_ky_so=chu_ky_so,
-               khoa_chong_trung=khoa_chong_trung, ghi_chu_ky=ghi_chu_ky, dia_chi_ip=dia_chi_ip)
+    pin_service.xac_thuc(nguoi, pin, dia_chi_ip=dia_chi_ip)
+    return _ky(yeu_cau, nguoi, hash_tai_lieu=hash_tai_lieu, khoa_chong_trung=khoa_chong_trung,
+               ghi_chu_ky=ghi_chu_ky, dia_chi_ip=dia_chi_ip)
 
 
 @transaction.atomic
-def _ky(yeu_cau, nguoi, *, khoa_ky, hash_tai_lieu, chu_ky_so, khoa_chong_trung, ghi_chu_ky="", dia_chi_ip=None):
+def _ky(yeu_cau, nguoi, *, hash_tai_lieu, khoa_chong_trung, ghi_chu_ky="", dia_chi_ip=None):
     if _thao_tac_lap(yeu_cau, nguoi, khoa_chong_trung):
         return SigningRequest.objects.get(pk=yeu_cau.pk)  # ký lặp cùng khóa: trả kết quả lần trước
     luot = _khoa_luot_hien_hanh(yeu_cau)
@@ -175,21 +150,16 @@ def _ky(yeu_cau, nguoi, *, khoa_ky, hash_tai_lieu, chu_ky_so, khoa_chong_trung, 
     dong = _dong_cua_toi(luot, nguoi)
     nguoi = _nguoi_ky_hien_hanh(nguoi)
     thoi_diem = timezone.now()
-    khoa = _kiem_tra_khoa(nguoi, khoa_ky, thoi_diem)
     if hash_tai_lieu != luot.ma_bam_tai_lieu:
         raise ConflictError(code="ma_bam_khong_khop",
                             detail="Mã băm tài liệu khác bản đã khóa của lượt trình; tải lại hồ sơ trước khi ký.")
-    if not crypto.verify_signature(khoa.khoa_cong_khai, bytes.fromhex(hash_tai_lieu), chu_ky_so):
-        raise SigningError(code="chu_ky_khong_hop_le", detail="Chữ ký không hợp lệ với khóa và tài liệu.",
-                           fields={"chu_ky_so": ["Không xác minh được."]})
     cap = SigningRequestStep.objects.select_for_update().get(pk=dong.buoc_ky_id)
     tre = cap.han_xu_ly is not None and thoi_diem > cap.han_xu_ly
     vi_tri_anh, ma_bam_anh = _chup_anh_chu_ky(nguoi)
     chu_ky = SigningSignature.objects.create(
-        luot_trinh=luot, buoc_ky=dong, khoa_ky=khoa, hash_tai_lieu=hash_tai_lieu, thuat_toan=khoa.thuat_toan,
-        chu_ky_so=chu_ky_so, ghi_chu_ky=ghi_chu_ky, ky_tre_han=tre,
+        luot_trinh=luot, buoc_ky=dong, hash_tai_lieu=hash_tai_lieu, ghi_chu_ky=ghi_chu_ky, ky_tre_han=tre,
         so_giay_tre=int((thoi_diem - cap.han_xu_ly).total_seconds()) if tre else None,
-        ngay_ky=thoi_diem, trang_thai_xac_minh=enums.TrangThaiXacMinh.HOP_LE, thoi_diem_xac_minh=thoi_diem,
+        ngay_ky=thoi_diem,
         vi_tri_anh_chu_ky=vi_tri_anh, ma_bam_anh_chu_ky=ma_bam_anh,
     )
     dong.trang_thai = enums.TrangThaiNguoiKy.DA_KY
@@ -200,7 +170,7 @@ def _ky(yeu_cau, nguoi, *, khoa_ky, hash_tai_lieu, chu_ky_so, khoa_chong_trung, 
     ghi_nhat_ky(nguoi, LOAI, dong.pk, "KY", trinh_ky=luot.trinh_ky, luot_trinh=luot, buoc_ky=dong,
                 trang_thai_truoc=enums.TrangThaiNguoiKy.CHO_KY, trang_thai_sau=dong.trang_thai,
                 chi_tiet=ghi_chu_ky, dia_chi_ip=dia_chi_ip,
-                du_lieu_kem_theo={"chu_ky": chu_ky.pk, "khoa_ky": khoa.pk, "ky_tre_han": tre})
+                du_lieu_kem_theo={"xac_nhan_ky": chu_ky.pk, "phuong_thuc": "PIN", "ky_tre_han": tre})
     _hoan_tat_neu_du(luot, cap, nguoi, thoi_diem)
     return SigningRequest.objects.get(pk=yeu_cau.pk)
 

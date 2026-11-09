@@ -6,7 +6,7 @@ from signing.models import SigningAuditLog, SigningNotification, SigningRequestS
 from signing.services import quyen_ky
 
 from .helpers import cap_quyen, dat_anh_chu_ky, tao_chuc_vu
-from .test_hanh_dong_ky_phase8 import KyBase, khoa_hoat_dong
+from .test_hanh_dong_ky_phase8 import KyBase, tao_pin
 from .test_trinh_ky_phase7 import BASE
 
 User = get_user_model()
@@ -16,8 +16,8 @@ DUONG_DAN = "thay-nguoi-ky"
 class ThayNguoiKyTests(KyBase):
     def setUp(self):
         super().setUp()
-        self.quan_tri = User.objects.create_user("quan_tri")
-        cap_quyen(self.quan_tri, "manage_signing_process")
+        self.quan_tri = User.objects.create_user("quan_tri", is_staff=True, is_superuser=True)
+        cap_quyen(self.quan_tri, "manage_signing_process", "view_all_trinhky", "view_vanbandi")
         self.moi = User.objects.create_user("ky_moi")
         cap_quyen(self.moi, "sign_trinhky")
 
@@ -45,7 +45,7 @@ class ThayNguoiKyTests(KyBase):
     def test_new_signer_can_sign_and_old_signer_is_removed(self):
         self.khoa_quyen(self.ky1)
         self.assertEqual(self.thay(self.tao, self.ky1, self.moi).status_code, 200)
-        self.khoa[self.moi.pk] = khoa_hoat_dong(self.moi, "K-ky-moi")
+        tao_pin(self.moi)
         dat_anh_chu_ky(self.moi)
         self.assertEqual(self.ky(self.moi).status_code, 200)
 

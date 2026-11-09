@@ -14,10 +14,9 @@ import { signingApi } from '@lib/signing/api';
 import { hanChotDaQua, kiemTraTepPdf } from '@lib/signing/dinhDang';
 import { SigningContext } from '@lib/signing/hooks';
 import { dich, useSigningT } from '@lib/signing/i18n';
-import type { HoSoChiTiet, KhoaKy, NguoiDungHienTai, QuyTrinh } from '@lib/signing/types';
+import type { HoSoChiTiet, NguoiDungHienTai, QuyTrinh } from '@lib/signing/types';
 import ChiTietPage from './ChiTietPage';
 import DanhSachPage from './DanhSachPage';
-import KhoaPage from './KhoaPage';
 import QuyTrinhPage from './QuyTrinhPage';
 import SigningModule from './SigningModule';
 import TaiLieuPage from './TaiLieuPage';
@@ -27,7 +26,7 @@ vi.mock('@lib/signing/api', async () => {
   const actual = await vi.importActual<typeof import('@lib/signing/api')>('@lib/signing/api');
   return { ...actual, signingApi: {
     toi: vi.fn(), danhSach: vi.fn(), thongKe: vi.fn(), chiTiet: vi.fn(), tepGoc: vi.fn(), taiLieu: vi.fn(), huy: vi.fn(),
-    timVanBanDi: vi.fn(), chiTietVanBanDi: vi.fn(), lienKetVanBanDi: vi.fn(), quyTrinh: vi.fn(), taoNhap: vi.fn(), khoa: vi.fn(), thuHoiKhoa: vi.fn(), traoDoi: vi.fn(),
+    timVanBanDi: vi.fn(), chiTietVanBanDi: vi.fn(), lienKetVanBanDi: vi.fn(), quyTrinh: vi.fn(), taoNhap: vi.fn(), traoDoi: vi.fn(),
     guiTinNhan: vi.fn(), giaiQuyet: vi.fn(), thaoTacQuyTrinh: vi.fn(), taoQuyTrinh: vi.fn(), xoaQuyTrinh: vi.fn(),
     donVi: vi.fn(), donViApDungTheoHop: vi.fn(), chucVu: vi.fn(), danhBaCanBo: vi.fn(), nguoiKyCoQuyen: vi.fn(), canBoTheoChucVu: vi.fn(),
   } };
@@ -277,45 +276,9 @@ describe('TraoDoiPanel: Enter và tên người viết', () => {
   });
 });
 
-describe('KhoaPage: thu hồi khóa cần xác nhận', () => {
-  it('bấm Thu hồi chỉ mở hộp xác nhận; thu hồi khi bấm Thu hồi trong hộp', async () => {
-    const khoa = { id: 4, ma_khoa: 'TB-3-1', dau_van_tay: 'f'.repeat(64), thuat_toan: 'Ed25519',
-      khoa_cong_khai: 'pub', trang_thai: 'HOAT_DONG' } as KhoaKy;
-    api.khoa.mockResolvedValue([khoa]);
-    api.thuHoiKhoa.mockResolvedValue(khoa);
-    boc(<KhoaPage />);
-    fireEvent.change(await screen.findByLabelText('Lý do thu hồi'), { target: { value: 'Mất thiết bị' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Thu hồi khóa' }));
-    const hop = await screen.findByRole('dialog', { name: 'Thu hồi khóa' });
-    expect(within(hop).getByText(/Thu hồi khóa ký đang hoạt động|Thu hồi khóa ký “TB-3-1”/)).toBeInTheDocument();
-    expect(api.thuHoiKhoa).not.toHaveBeenCalled();
-    fireEvent.click(within(hop).getByRole('button', { name: 'Thu hồi khóa' }));
-    await waitFor(() => expect(api.thuHoiKhoa).toHaveBeenCalledWith(4, 'Mất thiết bị'));
-  });
-
-  it('Hủy bỏ trong hộp xác nhận thì không thu hồi', async () => {
-    const khoa = { id: 4, ma_khoa: 'TB-3-1', dau_van_tay: 'f'.repeat(64), thuat_toan: 'Ed25519',
-      khoa_cong_khai: 'pub', trang_thai: 'HOAT_DONG' } as KhoaKy;
-    api.khoa.mockResolvedValue([khoa]);
-    boc(<KhoaPage />);
-    fireEvent.change(await screen.findByLabelText('Lý do thu hồi'), { target: { value: 'Mất thiết bị' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Thu hồi khóa' }));
-    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Hủy bỏ' }));
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    expect(api.thuHoiKhoa).not.toHaveBeenCalled();
-  });
-});
-
 describe('Vào thẳng đường dẫn khi thiếu quyền', () => {
   const CHUYEN_VIEN: NguoiDungHienTai = { ...TOI, id: 9, la_quan_tri: false,
     quyen: { view_trinhky: true, add_trinhky: false, send_trinhky: true, sign_trinhky: false } };
-
-  it('Cấu hình khóa ký: không có quyền ký thì báo ngay, không hiện ô nhập PIN', async () => {
-    api.khoa.mockResolvedValue([]);
-    boc(<KhoaPage />, CHUYEN_VIEN);
-    expect(await screen.findByText(/chưa được cấp quyền ký nên không cần khóa ký/)).toBeInTheDocument();
-    expect(screen.queryByLabelText('PIN mới (6 chữ số)')).not.toBeInTheDocument();
-  });
 
   it('Tạo hồ sơ: không có quyền tạo thì báo ngay, không hiện form', async () => {
     api.timVanBanDi.mockResolvedValue([]);

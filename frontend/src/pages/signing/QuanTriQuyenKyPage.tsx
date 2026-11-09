@@ -1,6 +1,5 @@
 /**
- * Tab quản lý khóa ký và quyền ký của tài khoản khác (quản trị viên, phân vùng 3 của #447): xem trạng thái khóa ký,
- * PIN, quyền ký; khóa tạm thời hoặc bật lại quyền ký; thu hồi khẩn cấp khóa ký (người dùng cần đăng ký khóa mới để ký tiếp). Mọi thao tác bắt buộc nhập lý do;
+ * Quản lý trạng thái PIN và quyền ký của tài khoản khác: khóa tạm thời hoặc bật lại quyền ký. Mọi thao tác bắt buộc nhập lý do;
  * server kiểm quyền quản trị và ghi nhật ký.
  */
 import { useEffect, useState } from 'react';
@@ -13,7 +12,7 @@ import { useSigningT } from '@lib/signing/i18n';
 import type { QuanTriNguoiDung, ThoiHanKhoaQuyenKy } from '@lib/signing/types';
 import { useTranslation } from '@i18n/translate';
 
-type HanhDong = 'khoa' | 'bat_lai' | 'thu_hoi';
+type HanhDong = 'khoa' | 'bat_lai';
 
 const THOI_HAN: { gia_tri: ThoiHanKhoaQuyenKy; khoa: string }[] = [
   { gia_tri: '1_gio', khoa: 'thoiHan1Gio' },
@@ -22,7 +21,7 @@ const THOI_HAN: { gia_tri: ThoiHanKhoaQuyenKy; khoa: string }[] = [
   { gia_tri: 'den_khi_bat_lai', khoa: 'thoiHanDenKhiBatLai' },
 ];
 
-export default function QuanTriKhoaPage() {
+export default function QuanTriQuyenKyPage() {
   const { t, loi } = useSigningT();
   const { currentLang } = useTranslation();
   const { toi } = useToi();
@@ -35,12 +34,20 @@ export default function QuanTriKhoaPage() {
   const [loiLyDo, setLoiLyDo] = useState('');
   const [dangLam, setDangLam] = useState(false);
   const [thongBao, setThongBao] = useState<{ loai: 'loi' | 'thanh_cong'; noi_dung: string } | null>(null);
+  const [bayGio, setBayGio] = useState(0);
 
   // Gõ tìm kiếm: chờ ngắn rồi mới gọi server để không gửi yêu cầu theo từng phím
   useEffect(() => {
     const hen = setTimeout(() => setTuKhoaTim(tuKhoa.trim()), 300);
     return () => clearTimeout(hen);
   }, [tuKhoa]);
+
+  useEffect(() => {
+    const capNhat = () => setBayGio(Date.now());
+    capNhat();
+    const hen = window.setInterval(capNhat, 30_000);
+    return () => window.clearInterval(hen);
+  }, []);
 
   const ngayGio = (iso: string | null) => dinhDangNgay(iso, currentLang);
   const dongHopThoai = () => {
@@ -66,8 +73,7 @@ export default function QuanTriKhoaPage() {
       const { nguoi, hanhDong } = dong;
       if (hanhDong === 'khoa') await signingApi.quanTriKhoaQuyenKy(nguoi.id, thoiHan, lyDo.trim());
       else if (hanhDong === 'bat_lai') await signingApi.quanTriBatLaiQuyenKy(nguoi.id, lyDo.trim());
-      else await signingApi.quanTriThuHoiKhoa(nguoi.id, lyDo.trim());
-      const khoa = { khoa: 'daKhoa', bat_lai: 'daBatLai', thu_hoi: 'daThuHoi' }[hanhDong];
+      const khoa = hanhDong === 'khoa' ? 'daKhoa' : 'daBatLai';
       setThongBao({ loai: 'thanh_cong', noi_dung: t(`quanTri.${khoa}`, { ten: nguoi.ten }) });
       setDangLam(false);
       setDong(null);
@@ -84,7 +90,7 @@ export default function QuanTriKhoaPage() {
 
   if (!toi?.la_quan_tri) return <ThongBao loai="canh_bao">{t('quanTri.khongPhaiQuanTri')}</ThongBao>;
 
-  const khoaLoiHop = { khoa: 'KhoaQuyen', bat_lai: 'BatLai', thu_hoi: 'ThuHoi' } as const;
+  const khoaLoiHop = { khoa: 'KhoaQuyen', bat_lai: 'BatLai' } as const;
   const tieuDeHop = !dong ? '' : t(`quanTri.tieuDe${khoaLoiHop[dong.hanhDong]}`, { ten: dong.nguoi.ten });
   const moTaHop = !dong ? '' : t(`quanTri.moTa${khoaLoiHop[dong.hanhDong]}`);
 
@@ -113,7 +119,6 @@ export default function QuanTriKhoaPage() {
               <thead>
                 <tr className="border-b border-border-subtle bg-surface-subtle text-xs font-bold uppercase tracking-wider text-muted">
                   <th className="px-3 py-2">{t('quanTri.cotTaiKhoan')}</th>
-                  <th className="px-3 py-2">{t('quanTri.cotKhoaKy')}</th>
                   <th className="px-3 py-2">{t('quanTri.cotPin')}</th>
                   <th className="px-3 py-2">{t('quanTri.cotQuyenKy')}</th>
                   <th className="px-3 py-2">{t('quanTri.cotThaoTac')}</th>
@@ -129,15 +134,14 @@ export default function QuanTriKhoaPage() {
                       </div>
                     </td>
                     <td className="px-3 py-2.5">
-                      {u.khoa_ky
-                        ? <span className="font-mono text-xs text-main">{u.khoa_ky.ma_khoa}</span>
-                        : <span className="text-muted">{t('quanTri.chuaCoKhoa')}</span>}
-                    </td>
-                    <td className="px-3 py-2.5">
                       {!u.pin ? <span className="text-muted">{t('quanTri.chuaDatPin')}</span>
-                        : u.pin.so_lan_sai > 0
-                          ? <Badge variant="secondary" size="sm">{t('quanTri.pinSaiLan', { so: u.pin.so_lan_sai })}</Badge>
-                          : <span className="text-secondary">{t('quanTri.pinBinhThuong')}</span>}
+                        : <div className="space-y-1">
+                          <span className="text-secondary">{t('quanTri.pinSaiTrongNgay', { so: u.pin.so_lan_sai_ngay })}</span>
+                          {u.pin.so_lan_sai_chu_ky > 0 && <div className="text-xs text-muted">{t('quanTri.pinSaiTrongChuKy', { so: u.pin.so_lan_sai_chu_ky })}</div>}
+                          {u.pin.khoa_den && new Date(u.pin.khoa_den).getTime() > bayGio
+                            ? <Badge variant="danger" size="sm">{t('quanTri.pinBiKhoaDen', { han: ngayGio(u.pin.khoa_den) })}</Badge>
+                            : u.pin.so_lan_sai_ngay === 0 && <span className="text-xs text-muted">{t('quanTri.pinBinhThuong')}</span>}
+                        </div>}
                     </td>
                     <td className="px-3 py-2.5">
                       {u.khoa_quyen_ky
@@ -164,11 +168,6 @@ export default function QuanTriKhoaPage() {
                           : <Button size="sm" variant="secondary" icon="fa-user-lock" onClick={() => moHopThoai(u, 'khoa')}>
                             {t('quanTri.khoaQuyen')}
                           </Button>}
-                        {u.khoa_ky && u.id !== toi.id && (
-                          <Button size="sm" variant="danger" icon="fa-key" onClick={() => moHopThoai(u, 'thu_hoi')}>
-                            {t('quanTri.thuHoiKhoa')}
-                          </Button>
-                        )}
                       </div>
                     </td>
                   </tr>
