@@ -468,6 +468,8 @@ class EmployeeViewSet(WorkApiMixin, mixins.ListModelMixin, viewsets.GenericViewS
             queryset = queryset.filter(
                 Q(username__icontains=search)
                 | Q(ho_ten__icontains=search)
+                | Q(don_vi__ten__icontains=search)
+                | Q(chuc_vu__name__icontains=search)
             )
         return queryset
 
