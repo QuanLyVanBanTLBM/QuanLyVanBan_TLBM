@@ -471,6 +471,15 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
   const [isRecipientUnitDropdownOpen, setIsRecipientUnitDropdownOpen] = useState(false);
   const recipientUnitDropdownRef = useRef<HTMLDivElement | null>(null);
 
+  // Trạng thái hiệu lực (Custom Dropdown Popover đồng bộ UI)
+  const [isHieuLucDropdownOpen, setIsHieuLucDropdownOpen] = useState(false);
+  const hieuLucDropdownRef = useRef<HTMLDivElement | null>(null);
+
+  // Bộ chọn Cán bộ nhận / xử lý (Custom Popover Dropdown)
+  const [isStaffDropdownOpen, setIsStaffDropdownOpen] = useState(false);
+  const [staffSearch, setStaffSearch] = useState('');
+  const staffDropdownRef = useRef<HTMLDivElement | null>(null);
+
   const filePattern = /\.(pdf|docx?|png|jpe?g)$/i;
   const maxFiles = 10;
 
@@ -502,6 +511,9 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
       setIsUnitDropdownOpen(false);
       setRecipientUnitSearch('');
       setIsRecipientUnitDropdownOpen(false);
+      setIsHieuLucDropdownOpen(false);
+      setIsStaffDropdownOpen(false);
+      setStaffSearch('');
     }
   }
 
@@ -778,6 +790,8 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
 
   function handleUnitChange(unit: string) {
     setSelectedUnit(unit);
+    setIsStaffDropdownOpen(false);
+    setStaffSearch('');
     if (!unit) {
       setStaff([]);
       // Xóa cán bộ đã chọn khi hủy chọn đơn vị
@@ -823,6 +837,27 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
     u.toLowerCase().includes(recipientUnitSearch.trim().toLowerCase())
   );
 
+  // Lọc danh sách cán bộ theo từ khóa tìm kiếm
+  const filteredStaff = useMemo(() => {
+    if (!staffSearch.trim()) return staff;
+    const term = staffSearch.trim().toLowerCase();
+    return staff.filter(s => {
+      const name = (s.ho_ten || s.full_name || '').toLowerCase();
+      const username = (s.username || '').toLowerCase();
+      return name.includes(term) || username.includes(term);
+    });
+  }, [staff, staffSearch]);
+
+  const isAllStaffSelected = staff.length > 0 && staff.every(s => form.nguoi_nhan.includes(s.id));
+
+  function handleToggleSelectAllStaff() {
+    if (isAllStaffSelected) {
+      setForm(prev => ({ ...prev, nguoi_nhan: [] }));
+    } else {
+      setForm(prev => ({ ...prev, nguoi_nhan: staff.map(s => s.id) }));
+    }
+  }
+
   // Đóng dropdown gợi ý khi click ra ngoài
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -834,6 +869,12 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
       }
       if (recipientUnitDropdownRef.current && !recipientUnitDropdownRef.current.contains(e.target as Node)) {
         setIsRecipientUnitDropdownOpen(false);
+      }
+      if (hieuLucDropdownRef.current && !hieuLucDropdownRef.current.contains(e.target as Node)) {
+        setIsHieuLucDropdownOpen(false);
+      }
+      if (staffDropdownRef.current && !staffDropdownRef.current.contains(e.target as Node)) {
+        setIsStaffDropdownOpen(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -1929,61 +1970,111 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                 </div>
 
                 <div>
-                  <div className="relative">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none flex items-center">
-                      {form.hieu_luc === 'CON_HIEU_LUC' && (
-                        <span className="relative flex h-2.5 w-2.5">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
-                        </span>
-                      )}
-                      {form.hieu_luc === 'CON_HIEU_LUC_1_PHAN' && (
-                        <span className="relative flex h-2.5 w-2.5">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75" />
-                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-purple-500" />
-                        </span>
-                      )}
-                      {(form.hieu_luc === 'HET_HIEU_LUC' || form.hieu_luc === 'HET_VA_THAY_THE') && (
-                        <span className="inline-flex rounded-full h-2.5 w-2.5 bg-rose-500" />
-                      )}
-                    </div>
-
-                    <select
+                  <div className="relative" ref={hieuLucDropdownRef}>
+                    <button
+                      type="button"
                       disabled={!canModifyHieuLuc}
                       title={!canModifyHieuLuc ? (t('documents_ui.formModal.noHieuLucPermission') || 'Chỉ Quản trị viên hoặc người có quyền sửa/đổi hiệu lực mới được phép thay đổi') : undefined}
-                      value={form.hieu_luc === 'HET_VA_THAY_THE' ? 'HET_HIEU_LUC' : form.hieu_luc}
-                      onChange={e => {
-                        const newHieuLuc = e.target.value as FormState['hieu_luc'];
-                        setForm(prev => ({
-                          ...prev,
-                          hieu_luc: newHieuLuc,
-                          ngay_het_hieu_luc: newHieuLuc === 'CON_HIEU_LUC' ? '' : prev.ngay_het_hieu_luc,
-                          link_thay_the: (newHieuLuc === 'CON_HIEU_LUC' && !isReplacingOther) ? '' : prev.link_thay_the,
-                        }));
-                        if (newHieuLuc === 'CON_HIEU_LUC' && !isReplacingOther) {
-                          setShowReplacementDropdown(false);
+                      onClick={() => {
+                        if (canModifyHieuLuc) {
+                          setIsHieuLucDropdownOpen(prev => !prev);
                         }
                       }}
-                      className={`w-full text-sm rounded-xl pl-8 pr-8 py-2 font-semibold transition-all duration-200 border ${
+                      className={`w-full text-sm rounded-xl px-3 py-2 font-semibold transition-all duration-200 border flex items-center justify-between text-left ${
                         !canModifyHieuLuc
                           ? 'opacity-65 cursor-not-allowed bg-slate-100 dark:bg-slate-800 border-border-subtle text-muted'
                           : form.hieu_luc === 'CON_HIEU_LUC'
-                          ? 'cursor-pointer bg-emerald-500/10 border-emerald-500/40 text-emerald-700 dark:text-emerald-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 shadow-xs'
+                          ? `cursor-pointer bg-emerald-500/10 border-emerald-500/40 text-emerald-700 dark:text-emerald-400 focus:outline-none shadow-xs ${isHieuLucDropdownOpen ? 'ring-1 ring-emerald-500' : ''}`
                           : form.hieu_luc === 'CON_HIEU_LUC_1_PHAN'
-                          ? 'cursor-pointer bg-purple-500/10 border-purple-500/40 text-purple-700 dark:text-purple-400 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 shadow-xs'
-                          : 'cursor-pointer bg-rose-500/10 border-rose-500/40 text-rose-700 dark:text-rose-400 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 shadow-xs'
+                          ? `cursor-pointer bg-purple-500/10 border-purple-500/40 text-purple-700 dark:text-purple-400 focus:outline-none shadow-xs ${isHieuLucDropdownOpen ? 'ring-1 ring-purple-500' : ''}`
+                          : `cursor-pointer bg-rose-500/10 border-rose-500/40 text-rose-700 dark:text-rose-400 focus:outline-none shadow-xs ${isHieuLucDropdownOpen ? 'ring-1 ring-rose-500' : ''}`
                       }`}
                     >
-                      <option value="CON_HIEU_LUC" className="bg-surface text-emerald-600 font-semibold">
-                        {t('documents_ui.formModal.statusActive') || 'Còn hiệu lực'}
-                      </option>
-                      <option value="CON_HIEU_LUC_1_PHAN" className="bg-surface text-purple-600 font-semibold">
-                        {t('documents_ui.formModal.statusPartiallyActive') || 'Còn hiệu lực 1 phần'}
-                      </option>
-                      <option value="HET_HIEU_LUC" className="bg-surface text-rose-600 font-semibold">
-                        {t('documents_ui.formModal.statusInactive') || 'Hết hiệu lực'}
-                      </option>
-                    </select>
+                      <div className="flex items-center gap-2 truncate">
+                        <span className="relative flex h-2.5 w-2.5 shrink-0">
+                          {form.hieu_luc === 'CON_HIEU_LUC' && (
+                            <>
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+                            </>
+                          )}
+                          {form.hieu_luc === 'CON_HIEU_LUC_1_PHAN' && (
+                            <>
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75" />
+                              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-purple-500" />
+                            </>
+                          )}
+                          {(form.hieu_luc === 'HET_HIEU_LUC' || form.hieu_luc === 'HET_VA_THAY_THE') && (
+                            <span className="inline-flex rounded-full h-2.5 w-2.5 bg-rose-500" />
+                          )}
+                        </span>
+                        <span className="truncate">
+                          {form.hieu_luc === 'CON_HIEU_LUC'
+                            ? (t('documents_ui.formModal.statusActive') || 'Còn hiệu lực')
+                            : form.hieu_luc === 'CON_HIEU_LUC_1_PHAN'
+                            ? (t('documents_ui.formModal.statusPartiallyActive') || 'Còn hiệu lực 1 phần')
+                            : (t('documents_ui.formModal.statusInactive') || 'Hết hiệu lực')}
+                        </span>
+                      </div>
+                      <i className={`fa-solid fa-chevron-down text-xs transition-transform duration-200 ml-2 shrink-0 ${isHieuLucDropdownOpen ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {isHieuLucDropdownOpen && canModifyHieuLuc && (
+                      <div className="absolute left-0 right-0 top-full mt-1 bg-surface border border-border-subtle rounded-xl shadow-2xl z-30 overflow-hidden animate-fadeIn p-1 space-y-0.5">
+                        {[
+                          {
+                            val: 'CON_HIEU_LUC' as const,
+                            label: t('documents_ui.formModal.statusActive') || 'Còn hiệu lực',
+                            dot: 'bg-emerald-500',
+                            activeClass: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30',
+                            hoverClass: 'hover:bg-emerald-500/10 text-secondary hover:text-main',
+                          },
+                          {
+                            val: 'CON_HIEU_LUC_1_PHAN' as const,
+                            label: t('documents_ui.formModal.statusPartiallyActive') || 'Còn hiệu lực 1 phần',
+                            dot: 'bg-purple-500',
+                            activeClass: 'bg-purple-500/10 text-purple-700 dark:text-purple-400 border border-purple-500/30',
+                            hoverClass: 'hover:bg-purple-500/10 text-secondary hover:text-main',
+                          },
+                          {
+                            val: 'HET_HIEU_LUC' as const,
+                            label: t('documents_ui.formModal.statusInactive') || 'Hết hiệu lực',
+                            dot: 'bg-rose-500',
+                            activeClass: 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/30',
+                            hoverClass: 'hover:bg-rose-500/10 text-secondary hover:text-main',
+                          },
+                        ].map(opt => {
+                          const isSelected = (form.hieu_luc === 'HET_VA_THAY_THE' ? 'HET_HIEU_LUC' : form.hieu_luc) === opt.val;
+                          return (
+                            <button
+                              key={opt.val}
+                              type="button"
+                              onClick={() => {
+                                setForm(prev => ({
+                                  ...prev,
+                                  hieu_luc: opt.val,
+                                  ngay_het_hieu_luc: opt.val === 'CON_HIEU_LUC' ? '' : prev.ngay_het_hieu_luc,
+                                  link_thay_the: (opt.val === 'CON_HIEU_LUC' && !isReplacingOther) ? '' : prev.link_thay_the,
+                                }));
+                                if (opt.val === 'CON_HIEU_LUC' && !isReplacingOther) {
+                                  setShowReplacementDropdown(false);
+                                }
+                                setIsHieuLucDropdownOpen(false);
+                              }}
+                              className={`w-full text-left px-3 py-2 rounded-lg text-xs font-semibold flex items-center justify-between transition-fast cursor-pointer ${
+                                isSelected ? opt.activeClass : opt.hoverClass
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 truncate">
+                                <span className={`inline-flex rounded-full h-2.5 w-2.5 shrink-0 ${opt.dot}`} />
+                                <span className="truncate">{opt.label}</span>
+                              </div>
+                              {isSelected && <i className="fa-solid fa-check text-xs text-primary shrink-0" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                   {!canModifyHieuLuc && (
                     <p className="text-[11px] text-muted mt-1 italic flex items-center gap-1">
@@ -2493,54 +2584,191 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                 </div>
 
                 {!selectedUnit ? (
-                  <div className="h-[116px] w-full border border-dashed border-border-subtle/80 rounded-xl bg-canvas/30 p-3 flex flex-col items-center justify-center text-center transition-all select-none">
-                    <div className="w-8 h-8 rounded-full bg-surface border border-border-subtle/60 flex items-center justify-center mb-1.5 shadow-xs text-muted">
-                      <i className="fa-solid fa-lock text-xs" />
+                  <div
+                    className="w-full text-sm bg-slate-100/70 dark:bg-slate-800/60 border border-border-subtle rounded-xl px-3 py-2 text-muted flex items-center justify-between cursor-not-allowed select-none opacity-80"
+                    title="Vui lòng chọn đơn vị nhận trước"
+                  >
+                    <div className="flex items-center gap-2 truncate">
+                      <i className="fa-solid fa-lock text-xs text-muted/80" />
+                      <span className="text-xs truncate">Vui lòng chọn đơn vị nhận trước</span>
                     </div>
-                    <p className="text-xs font-semibold text-secondary m-0">Vui lòng chọn đơn vị nhận trước</p>
-                    <p className="text-[11px] text-muted m-0 mt-0.5">Danh sách cán bộ sẽ hiển thị theo đơn vị đã chọn</p>
+                    <i className="fa-solid fa-chevron-down text-muted/60 text-xs shrink-0" />
                   </div>
                 ) : isStaffLoading ? (
-                  <div className="h-[116px] w-full border border-border-subtle rounded-xl bg-surface p-3 flex items-center justify-center text-center gap-2 text-muted">
-                    <i className="fa-solid fa-circle-notch fa-spin text-primary text-sm" />
-                    <span className="text-xs">Đang tải danh sách cán bộ...</span>
+                  <div className="w-full text-sm bg-surface border border-border-subtle rounded-xl px-3 py-2 text-muted flex items-center justify-between select-none">
+                    <div className="flex items-center gap-2">
+                      <i className="fa-solid fa-circle-notch fa-spin text-primary text-xs" />
+                      <span className="text-xs">Đang tải danh sách cán bộ...</span>
+                    </div>
+                    <i className="fa-solid fa-chevron-down text-muted/60 text-xs shrink-0" />
                   </div>
                 ) : staff.length === 0 ? (
-                  <div className="h-[116px] w-full border border-border-subtle rounded-xl bg-surface p-3 flex flex-col items-center justify-center text-center text-muted select-none">
-                    <i className="fa-solid fa-user-slash text-base mb-1 text-muted/60" />
-                    <p className="text-xs font-medium text-secondary m-0">Đơn vị này hiện chưa có cán bộ nào</p>
-                    <p className="text-[11px] text-muted m-0 mt-0.5">Vui lòng chọn đơn vị khác hoặc liên hệ Quản trị viên</p>
+                  <div className="w-full text-sm bg-surface border border-border-subtle rounded-xl px-3 py-2 text-muted flex items-center justify-between select-none">
+                    <div className="flex items-center gap-2">
+                      <i className="fa-solid fa-user-slash text-xs text-muted/70" />
+                      <span className="text-xs">Đơn vị này hiện chưa có cán bộ nào</span>
+                    </div>
+                    <i className="fa-solid fa-chevron-down text-muted/60 text-xs shrink-0" />
                   </div>
                 ) : (
-                  <div className="h-[116px] overflow-y-auto border border-border-subtle rounded-xl p-2 bg-surface space-y-1 custom-scrollbar">
-                    {staff.map(s => {
-                      const isSelected = form.nguoi_nhan.includes(s.id);
-                      return (
-                        <label
-                          key={s.id}
-                          className={`flex items-center gap-2 p-1.5 rounded-lg cursor-pointer text-xs transition-colors ${
-                            isSelected ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-hover text-main'
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={e => {
-                              const checked = e.target.checked;
-                              setForm(prev => ({
-                                ...prev,
-                                nguoi_nhan: checked
-                                  ? [...prev.nguoi_nhan, s.id]
-                                  : prev.nguoi_nhan.filter(id => id !== s.id),
-                              }));
+                  <div className="relative" ref={staffDropdownRef}>
+                    <button
+                      type="button"
+                      onClick={() => setIsStaffDropdownOpen(prev => !prev)}
+                      className={`w-full text-sm bg-surface border rounded-xl px-3 py-2 flex items-center justify-between text-left focus:outline-none transition-fast cursor-pointer ${
+                        isStaffDropdownOpen
+                          ? 'border-primary ring-1 ring-primary'
+                          : 'border-border-subtle hover:border-border-subtle/80'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 truncate min-w-0">
+                        {form.nguoi_nhan.length > 0 ? (
+                          <>
+                            <span className="inline-flex items-center justify-center bg-primary/10 text-primary font-semibold text-xs px-2 py-0.5 rounded-full shrink-0">
+                              {form.nguoi_nhan.length}/{staff.length}
+                            </span>
+                            <span className="truncate text-main text-xs font-medium">
+                              {form.nguoi_nhan.length === staff.length
+                                ? 'Tất cả cán bộ trong đơn vị'
+                                : staff
+                                    .filter(s => form.nguoi_nhan.includes(s.id))
+                                    .map(s => s.ho_ten || s.full_name || s.username)
+                                    .join(', ')}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-muted text-xs truncate">
+                            -- Chọn cán bộ xử lý ({staff.length} cán bộ) --
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1.5 ml-2 shrink-0">
+                        {form.nguoi_nhan.length > 0 && (
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setForm(prev => ({ ...prev, nguoi_nhan: [] }));
                             }}
-                            className="rounded border-border-subtle text-primary focus:ring-primary cursor-pointer"
-                          />
-                          <span className="truncate">{s.ho_ten || s.full_name || s.username}</span>
-                          <span className="text-xs text-muted shrink-0">(@{s.username})</span>
-                        </label>
-                      );
-                    })}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.stopPropagation();
+                                setForm(prev => ({ ...prev, nguoi_nhan: [] }));
+                              }
+                            }}
+                            className="w-4 h-4 rounded-full flex items-center justify-center hover:bg-rose-500/20 text-muted hover:text-rose-500 transition-fast text-[11px] cursor-pointer"
+                            title="Bỏ chọn tất cả cán bộ"
+                          >
+                            <i className="fa-solid fa-xmark text-[10px]" />
+                          </span>
+                        )}
+                        <i className={`fa-solid fa-chevron-down text-muted text-xs transition-transform duration-200 ${isStaffDropdownOpen ? 'rotate-180' : ''}`} />
+                      </div>
+                    </button>
+
+                    {isStaffDropdownOpen && (
+                      <div className="absolute left-0 right-0 top-full mt-1 bg-surface border border-border-subtle rounded-xl shadow-2xl z-30 overflow-hidden animate-fadeIn">
+                        {/* 1 nút Chọn tất cả duy nhất (tick là chọn hết, hủy tick là bỏ chọn hết) */}
+                        <div className="flex items-center justify-between px-3 py-2 border-b border-border-subtle/70 bg-canvas/40">
+                          <label className="flex items-center gap-2 cursor-pointer select-none text-xs font-semibold text-main hover:text-primary transition-fast">
+                            <input
+                              type="checkbox"
+                              checked={isAllStaffSelected}
+                              onChange={handleToggleSelectAllStaff}
+                              className="rounded border-border-subtle text-primary focus:ring-primary cursor-pointer w-3.5 h-3.5"
+                            />
+                            <span>Chọn tất cả</span>
+                            <span className="text-[11px] text-muted font-normal">({staff.length} cán bộ)</span>
+                          </label>
+                          {form.nguoi_nhan.length > 0 && (
+                            <span className="text-[11px] font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+                              Đã chọn {form.nguoi_nhan.length}/{staff.length}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Ô tìm kiếm nhanh nếu có trên 4 cán bộ */}
+                        {staff.length > 4 && (
+                          <div className="p-2 border-b border-border-subtle/70 bg-canvas/20">
+                            <div className="relative">
+                              <i className="fa-solid fa-magnifying-glass absolute left-2.5 top-1/2 -translate-y-1/2 text-muted text-xs pointer-events-none" />
+                              <input
+                                type="text"
+                                value={staffSearch}
+                                onChange={e => setStaffSearch(e.target.value)}
+                                placeholder="Gõ tên hoặc @username để lọc..."
+                                className="w-full text-xs bg-surface border border-border-subtle rounded-lg pl-7 pr-7 py-1.5 text-main placeholder:text-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-fast"
+                              />
+                              {staffSearch && (
+                                <button
+                                  type="button"
+                                  onClick={() => setStaffSearch('')}
+                                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-main text-xs cursor-pointer"
+                                >
+                                  <i className="fa-solid fa-xmark text-[10px]" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Danh sách cuộn chọn từng người */}
+                        <div className="max-h-56 overflow-y-auto p-1 space-y-0.5 custom-scrollbar">
+                          {filteredStaff.map(s => {
+                            const isSelected = form.nguoi_nhan.includes(s.id);
+                            return (
+                              <label
+                                key={s.id}
+                                className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-fast cursor-pointer ${
+                                  isSelected ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-hover text-secondary hover:text-main'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2 min-w-0 pr-2">
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={e => {
+                                      const checked = e.target.checked;
+                                      setForm(prev => ({
+                                        ...prev,
+                                        nguoi_nhan: checked
+                                          ? [...prev.nguoi_nhan, s.id]
+                                          : prev.nguoi_nhan.filter(id => id !== s.id),
+                                      }));
+                                    }}
+                                    className="rounded border-border-subtle text-primary focus:ring-primary cursor-pointer shrink-0"
+                                  />
+                                  <span className="truncate">{s.ho_ten || s.full_name || s.username}</span>
+                                  <span className="text-[11px] text-muted shrink-0">(@{s.username})</span>
+                                </div>
+                                {isSelected && <i className="fa-solid fa-check text-xs text-primary shrink-0" />}
+                              </label>
+                            );
+                          })}
+                          {filteredStaff.length === 0 && (
+                            <div className="px-3 py-3 text-center text-xs text-muted">
+                              Không tìm thấy cán bộ nào khớp với "{staffSearch}"
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Footer bar */}
+                        <div className="p-2 border-t border-border-subtle/70 bg-canvas/40 flex items-center justify-between">
+                          <span className="text-[11px] text-muted">
+                            Đã chọn: <strong className="text-main font-semibold">{form.nguoi_nhan.length}</strong> / {staff.length}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setIsStaffDropdownOpen(false)}
+                            className="px-3 py-1 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary-hover transition-fast cursor-pointer shadow-xs"
+                          >
+                            Xong
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
