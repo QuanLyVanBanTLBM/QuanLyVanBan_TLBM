@@ -25,22 +25,55 @@ const CROP_Y = (VIEWPORT_H - CROP_H) / 2; // 35px
 const CROP_CENTER_X = VIEWPORT_W / 2; // 210px
 const CROP_CENTER_Y = VIEWPORT_H / 2; // 110px
 
-function lamSachNen(ctx: CanvasRenderingContext2D, width: number, height: number, mucDo: number) {
-  if (mucDo <= 0) return;
+function nguongScanChuKy(histogram: Uint32Array, total: number) {
+  let tongMucSang = 0;
+  for (let muc = 0; muc < histogram.length; muc += 1) tongMucSang += muc * histogram[muc];
+
+  let tongNen = 0;
+  let mucNen = 0;
+  let doPhanLopTotNhat = 0;
+  let nguong = 190;
+  for (let muc = 0; muc < histogram.length; muc += 1) {
+    tongNen += histogram[muc];
+    if (tongNen === 0) continue;
+    const tongTienCanh = total - tongNen;
+    if (tongTienCanh === 0) break;
+    mucNen += muc * histogram[muc];
+    const trungBinhNen = mucNen / tongNen;
+    const trungBinhTienCanh = (tongMucSang - mucNen) / tongTienCanh;
+    const doPhanLop = tongNen * tongTienCanh * (trungBinhNen - trungBinhTienCanh) ** 2;
+    if (doPhanLop > doPhanLopTotNhat) {
+      doPhanLopTotNhat = doPhanLop;
+      nguong = muc;
+    }
+  }
+  return Math.min(240, Math.max(150, nguong));
+}
+
+function scanChuKy(ctx: CanvasRenderingContext2D, width: number, height: number) {
   const imageData = ctx.getImageData(0, 0, width, height);
   const pixels = imageData.data;
-  const threshold = 255 - (40 * mucDo) / 100;
-  const fadeStart = threshold - 50;
+  const histogram = new Uint32Array(256);
+  let total = 0;
 
   for (let i = 0; i < pixels.length; i += 4) {
+    if (pixels[i + 3] === 0) continue;
     const red = pixels[i];
     const green = pixels[i + 1];
     const blue = pixels[i + 2];
     const luminance = (red * 299 + green * 587 + blue * 114) / 1000;
-    const chroma = Math.max(red, green, blue) - Math.min(red, green, blue);
-    const neutralWeight = Math.max(0, 1 - chroma / 80);
-    const backgroundWeight = Math.min(1, Math.max(0, (luminance - fadeStart) / (threshold - fadeStart)));
-    pixels[i + 3] = Math.round(pixels[i + 3] * (1 - backgroundWeight * neutralWeight));
+    histogram[Math.round(luminance)] += 1;
+    total += 1;
+  }
+
+  if (total === 0) return;
+  const threshold = nguongScanChuKy(histogram, total);
+  const softness = 24;
+  for (let i = 0; i < pixels.length; i += 4) {
+    if (pixels[i + 3] === 0) continue;
+    const luminance = (pixels[i] * 299 + pixels[i + 1] * 587 + pixels[i + 2] * 114) / 1000;
+    const inkCoverage = Math.min(1, Math.max(0, (threshold + softness - luminance) / (softness * 2)));
+    pixels[i + 3] = Math.round(pixels[i + 3] * inkCoverage);
   }
 
   ctx.putImageData(imageData, 0, 0);
@@ -48,11 +81,14 @@ function lamSachNen(ctx: CanvasRenderingContext2D, width: number, height: number
 
 export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = false }: CropChuKyModalProps) {
   const { t } = useSigningT();
+  const dichRef = useRef(t);
+  useEffect(() => {
+    dichRef.current = t;
+  }, [t]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const [rawImg, setRawImg] = useState<HTMLImageElement | null>(null);
-  const [mucLamSach, setMucLamSach] = useState(100);
 
   const [baseScale, setBaseScale] = useState(1);
   const [zoom, setZoom] = useState(1); // 1 = 100% kích thước fit khởi tạo
@@ -75,7 +111,7 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
   // Modal xác nhận kết quả cắt
   const [xacNhan, setXacNhan] = useState<{ blob: Blob; dataUrl: string } | null>(null);
 
-  // 1. Nạp ảnh khi chọn tệp mới và mặc định luôn tự động khử nền trắng
+  // 1. Nạp ảnh khi chọn tệp mới và tự động scan nét chữ ký khỏi nền giấy.
   useEffect(() => {
     if (!tep) {
       setRawImg(null);
@@ -86,7 +122,6 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
     setRawImg(null);
     setLoi('');
     setXacNhan(null);
-    setMucLamSach(100);
     const reader = new FileReader();
     reader.onload = (e) => {
       if (!dangHoatDong) return;
@@ -96,7 +131,6 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
         if (!dangHoatDong) return;
         setRawImg(img);
         setLoi('');
-        setMucLamSach(100);
         const fitW = CROP_W / img.width;
         const fitH = CROP_H / img.height;
         const initScale = Math.min(fitW, fitH);
@@ -105,19 +139,19 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
         setOffset({ x: 0, y: 0 });
       };
       img.onerror = () => {
-        if (dangHoatDong) setLoi(t('pin.chuaChonAnh'));
+        if (dangHoatDong) setLoi(dichRef.current('pin.chuaChonAnh'));
       };
       img.src = src;
     };
     reader.onerror = () => {
-      if (dangHoatDong) setLoi(t('pin.chuaChonAnh'));
+      if (dangHoatDong) setLoi(dichRef.current('pin.chuaChonAnh'));
     };
     reader.readAsDataURL(tep);
     return () => {
       dangHoatDong = false;
       if (reader.readyState === FileReader.LOADING) reader.abort();
     };
-  }, [tep, t]);
+  }, [tep]);
 
   const gioiHanViTriKeo = useCallback((x: number, y: number) => {
     if (!rawImg) return { x, y };
@@ -287,7 +321,7 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
     };
   }, []);
 
-  // 4. Vẽ ảnh vào viewport nhỏ rồi làm sạch nền trong preview.
+  // 4. Vẽ ảnh vào viewport rồi tự động tách nét chữ ký khỏi nền giấy.
   const veCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas || !rawImg) return;
@@ -303,8 +337,8 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
     const drawY = CROP_CENTER_Y + offset.y - drawH / 2;
 
     ctx.drawImage(rawImg, drawX, drawY, drawW, drawH);
-    lamSachNen(ctx, VIEWPORT_W, VIEWPORT_H, mucLamSach);
-  }, [baseScale, mucLamSach, offset.x, offset.y, rawImg, zoom]);
+    scanChuKy(ctx, VIEWPORT_W, VIEWPORT_H);
+  }, [baseScale, offset.x, offset.y, rawImg, zoom]);
 
   useEffect(() => {
     veCanvas();
@@ -329,7 +363,7 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
     const expY = drawY - CROP_Y;
 
     exportCtx.drawImage(rawImg, expX, expY, drawW, drawH);
-    lamSachNen(exportCtx, CROP_W, CROP_H, mucLamSach);
+    scanChuKy(exportCtx, CROP_W, CROP_H);
 
     exportCanvas.toBlob((blob) => {
       if (!blob) return;
@@ -429,18 +463,18 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
           {rawImg && (
             <label className="block space-y-1.5">
               <span className="flex items-center justify-between gap-2 text-sm font-medium text-main">
-                <span>{t('pin.mucLamSachNen')}</span>
-                <span className="text-secondary tabular-nums">{mucLamSach}%</span>
+                <span>{t('pin.thuPhong')}</span>
+                <span className="text-secondary tabular-nums">{Math.round(zoom * 100)}%</span>
               </span>
               <input
                 type="range"
                 min={0}
                 max={100}
                 step={1}
-                value={mucLamSach}
-                onChange={(e) => setMucLamSach(Number(e.target.value))}
-                aria-label={t('pin.mucLamSachNen')}
-                aria-valuetext={`${mucLamSach}%`}
+                value={Math.round(((zoom - 0.2) / (6 - 0.2)) * 100)}
+                onChange={(e) => setZoom(0.2 + (Number(e.target.value) / 100) * (6 - 0.2))}
+                aria-label={t('pin.thuPhong')}
+                aria-valuetext={`${Math.round(zoom * 100)}%`}
                 className="w-full cursor-pointer accent-primary"
               />
             </label>
