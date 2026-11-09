@@ -21,13 +21,15 @@ export const LoginBanner: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. Hình ảnh trung tâm: Logo Bảo Long tự nhiên, không đóng khung viền */}
-      <div className="my-auto py-6 sm:py-8 flex flex-col items-center justify-center text-center z-10 w-full px-2 sm:px-4">
-        <img
-          src="/baolong-logo-color.png"
-          alt="Bảo Long Insurance"
-          className="w-full max-w-[260px] sm:max-w-[300px] h-auto max-h-[160px] sm:max-h-[180px] object-contain"
-        />
+      {/* 2. Hình ảnh trung tâm: Banner thương hiệu Bảo Long to hơn, bo nhẹ, có viền tinh tế chống ăn góc */}
+      <div className="my-auto py-2 sm:py-4 flex flex-col items-center justify-center text-center z-10 w-full">
+        <div className="w-full overflow-hidden rounded-md border border-border-subtle shadow-sm">
+          <img
+            src="/baolong-banner.jpg"
+            alt="Bảo Long Insurance"
+            className="w-full h-auto object-cover block"
+          />
+        </div>
       </div>
 
       {/* 3. Footer chứng chỉ / cam kết bảo mật */}
