@@ -723,4 +723,122 @@ describe('MeetingsPage Component (Issue #22)', () => {
     expect(roomCard).toHaveTextContent('Nguyễn Giám Đốc');
     expect(roomCard).not.toHaveTextContent('Đang họp');
   });
+
+  it('sắp xếp danh sách lịch đặt theo thời gian tăng dần và đẩy lịch bị hủy xuống cuối danh sách', async () => {
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+    const mixedBookings = [
+      {
+        id: 1,
+        room: 1,
+        title: 'Cuộc họp 1 - Đã hủy sớm',
+        date: todayStr,
+        start_time: '08:00:00',
+        end_time: '09:00:00',
+        attendees_count: 5,
+        purpose: 'Họp sáng sớm',
+        trang_thai: 'CANCELLED',
+        organizer: 1,
+        organizer_detail: { id: 1, username: 'user1', ho_ten: 'Cán bộ A' },
+      },
+      {
+        id: 2,
+        room: 1,
+        title: 'Cuộc họp 2 - Chiều hợp lệ',
+        date: todayStr,
+        start_time: '14:00:00',
+        end_time: '15:30:00',
+        attendees_count: 5,
+        purpose: 'Họp chiều',
+        trang_thai: 'CONFIRMED',
+        organizer: 1,
+        organizer_detail: { id: 1, username: 'user1', ho_ten: 'Cán bộ A' },
+      },
+      {
+        id: 3,
+        room: 1,
+        title: 'Cuộc họp 3 - Sáng hợp lệ',
+        date: todayStr,
+        start_time: '09:30:00',
+        end_time: '11:00:00',
+        attendees_count: 5,
+        purpose: 'Họp giữa sáng',
+        trang_thai: 'CONFIRMED',
+        organizer: 1,
+        organizer_detail: { id: 1, username: 'user1', ho_ten: 'Cán bộ A' },
+      },
+      {
+        id: 4,
+        room: 1,
+        title: 'Cuộc họp 4 - Trưa hoàn thành',
+        date: todayStr,
+        start_time: '11:00:00',
+        end_time: '12:00:00',
+        attendees_count: 5,
+        purpose: 'Họp trưa',
+        trang_thai: 'COMPLETED',
+        organizer: 1,
+        organizer_detail: { id: 1, username: 'user1', ho_ten: 'Cán bộ A' },
+      },
+      {
+        id: 5,
+        room: 1,
+        title: 'Cuộc họp 5 - Đã hủy muộn',
+        date: todayStr,
+        start_time: '16:00:00',
+        end_time: '17:00:00',
+        attendees_count: 5,
+        purpose: 'Họp chiều muộn',
+        trang_thai: 'CANCELLED',
+        organizer: 1,
+        organizer_detail: { id: 1, username: 'user1', ho_ten: 'Cán bộ A' },
+      },
+    ];
+
+    apiClient.get = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/meeting-rooms/')) {
+        return Promise.resolve({ results: mockRooms });
+      }
+      if (url.includes('/api/meeting-bookings/')) {
+        return Promise.resolve({ results: mixedBookings });
+      }
+      if (url.includes('/api/auth/profile/')) {
+        return Promise.resolve(mockProfile);
+      }
+      return Promise.resolve({});
+    });
+
+    render(
+      <MemoryRouter>
+        <MeetingsPage />
+      </MemoryRouter>
+    );
+
+    // Chuyển sang Tab Lịch
+    const scheduleTabBtn = screen.getByRole('button', { name: /Lịch đặt phòng họp theo ngày/i });
+    fireEvent.click(scheduleTabBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText('Cuộc họp 3 - Sáng hợp lệ')).toBeInTheDocument();
+      expect(screen.getByText('Cuộc họp 1 - Đã hủy sớm')).toBeInTheDocument();
+    });
+
+    // Lấy danh sách các tiêu đề cuộc họp theo thứ tự xuất hiện trên giao diện
+    const renderedTitles = screen.getAllByText(/Cuộc họp \d/i).map((el) => el.textContent);
+
+    // Thứ tự mong đợi:
+    // 1. Cuộc họp 3 (09:30 - CONFIRMED)
+    // 2. Cuộc họp 4 (11:00 - COMPLETED)
+    // 3. Cuộc họp 2 (14:00 - CONFIRMED)
+    // 4. Cuộc họp 1 (08:00 - CANCELLED: Đẩy xuống cuối)
+    // 5. Cuộc họp 5 (16:00 - CANCELLED: Đẩy xuống cuối)
+    expect(renderedTitles).toEqual([
+      'Cuộc họp 3 - Sáng hợp lệ',
+      'Cuộc họp 4 - Trưa hoàn thành',
+      'Cuộc họp 2 - Chiều hợp lệ',
+      'Cuộc họp 1 - Đã hủy sớm',
+      'Cuộc họp 5 - Đã hủy muộn',
+    ]);
+  });
 });
