@@ -186,8 +186,6 @@ def _trang_phe_duyet(noi_dung, ma_bam_bang_chung, phong, phong_dam):
         for n in cap["nguoi_ky"]:
             ck = n["chu_ky"] or {}
             ten = escape(n["ten_nguoi_ky"]) + (f"<br/>{escape(n['ten_chuc_vu'])}" if n.get("ten_chuc_vu") else "")
-            if ck:
-                ten += f"<br/><font size=6.5>Khóa {escape(ck['dau_van_tay_khoa'][:16])}…</font>"
             ghi_chu = ("Trễ hạn. " if ck.get("ky_tre_han") else "") + (ck.get("ghi_chu_ky") or "")
             dong.append([p(f"{cap['cap_ky']}. {cap['ten_cap_ky']}"), Paragraph(ten, thuong),
                          p(VAI_TRO.get(n["vai_tro_ky"], n["vai_tro_ky"])), p(_gio_vn(ck.get("ngay_ky"))), p(ghi_chu)])
@@ -207,8 +205,8 @@ def _trang_phe_duyet(noi_dung, ma_bam_bang_chung, phong, phong_dam):
         p("Tệp này chưa cấp số, chưa ký số pháp lý và không thay cho văn bản ban hành.", nho), Spacer(1, 5 * mm),
         bang_tt, Spacer(1, 6 * mm), p("Các cấp ký duyệt", dam), Spacer(1, 2 * mm), bang_ky, Spacer(1, 6 * mm),
         p(f"Mã băm bằng chứng (SHA-256): {ma_bam_bang_chung}", nho),
-        p("Các trang trước là nguyên văn tệp gốc, chỉ thêm dòng nhận diện ở chân trang. Mỗi chữ ký Ed25519 được "
-          "ký trên mã băm SHA-256 của tệp gốc; bằng chứng đầy đủ (chữ ký, khóa công khai) đính kèm trong tệp "
+        p("Các trang trước là nguyên văn tệp gốc, chỉ thêm dòng nhận diện ở chân trang. Việc duyệt được xác nhận "
+          "bằng PIN của người ký; bản ghi xác nhận và ảnh chữ ký đính kèm trong tệp "
           f"bang-chung-{luot['id']}.json và xem được qua API /api/v1/signing/trinh-ky/{ho_so['id']}/bang-chung/.",
           nho),
     ])

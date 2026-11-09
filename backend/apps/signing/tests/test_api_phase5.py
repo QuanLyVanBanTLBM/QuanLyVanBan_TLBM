@@ -1,30 +1,18 @@
-import base64
-import os
-
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, Permission
-from django.test import TestCase, override_settings
+from django.test import TestCase
 from rest_framework.test import APIClient
 
 from accounts.models import Position
 from signing import enums
-from signing.models import SigningAuditLog, SigningKey, SigningProcess
+from signing.models import SigningAuditLog, SigningProcess
 from signing.permissions import co_quyen
-from signing.services import pin as pin_service
 
 from .helpers import cap_quyen, tao_chuc_vu, them_vao_nhom_quan_tri
 
 User = get_user_model()
 
 BASE = "/api/v1/signing"
-
-
-def new_keypair():
-    private = Ed25519PrivateKey.generate()
-    raw = private.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
-    return private, base64.b64encode(raw).decode()
 
 
 class ApiBase(TestCase):
@@ -63,7 +51,7 @@ class ProcessApiTests(ApiBase):
         return response.data
 
     def test_requires_authentication(self):
-        for method, url in [("get", "/quy-trinh/"), ("post", "/quy-trinh/"), ("get", "/khoa/"), ("post", "/khoa/")]:
+        for method, url in [("get", "/quy-trinh/"), ("post", "/quy-trinh/")]:
             self.assertEqual(getattr(self.anon, method)(f"{BASE}{url}").status_code, 401, url)
 
     def test_create_returns_nested_structure(self):
@@ -184,114 +172,6 @@ class ProcessApiTests(ApiBase):
         self.assertEqual(self.c1.get(f"{BASE}/quy-trinh/99999/").status_code, 404)
 
 
-@override_settings(SIGNING_PIN_SECRET="pin-test-secret", SIGNING_KEY_PEPPER="pepper-test")
-class KeyApiTests(ApiBase):
-    def register(self, client=None, ma="k1"):
-        private, public = new_keypair()
-        response = (client or self.c1).post(f"{BASE}/khoa/", {
-            "ma_khoa": ma, "khoa_cong_khai": public, "ngay_hieu_luc": "2026-10-01T00:00:00Z",
-        }, format="json")
-        self.assertEqual(response.status_code, 201, response.data)
-        return private, response.data
-
-    def prove(self, private, key_id, client=None):
-        client = client or self.c1
-        challenge = client.get(f"{BASE}/khoa/{key_id}/thach-thuc/").data["thach_thuc"]
-        signature = base64.b64encode(private.sign(challenge.encode())).decode()
-        return client.post(f"{BASE}/khoa/{key_id}/xac-minh/", {"thach_thuc": challenge, "chu_ky_so": signature}, format="json")
-
-    def set_pin(self, private, key_id, client=None):
-        client = client or self.c1
-        private_pkcs8 = private.private_bytes(
-            serialization.Encoding.DER,
-            serialization.PrivateFormat.PKCS8,
-            serialization.NoEncryption(),
-        )
-        kdf = {
-            "thuat_toan": pin_service.KDF_THUAT_TOAN,
-            **pin_service.KDF_SAN,
-            "salt": base64.b64encode(os.urandom(pin_service.KDF_SALT_BYTES)).decode("ascii"),
-        }
-        response = client.post(f"{BASE}/khoa/{key_id}/dat-pin/", {
-            "pin": "123456",
-            "khoa_bi_mat_pkcs8": base64.b64encode(private_pkcs8).decode("ascii"),
-            "tham_so_kdf": kdf,
-        }, format="json", secure=True)
-        self.assertEqual((response.status_code, response.data), (201, {"khoa": key_id, "da_dat_pin": True}))
-
-    def test_full_lifecycle(self):
-        private, key = self.register()
-        self.assertEqual(key["trang_thai"], "CHO_KICH_HOAT")
-        self.assertEqual(self.c1.post(f"{BASE}/khoa/{key['id']}/kich-hoat/").data["code"], "khoa_chua_xac_minh_so_huu")
-        self.assertEqual(self.prove(private, key["id"]).status_code, 200)
-        self.set_pin(private, key["id"])
-        r = self.c1.post(f"{BASE}/khoa/{key['id']}/kich-hoat/")
-        self.assertEqual((r.status_code, r.data["trang_thai"]), (200, "HOAT_DONG"))
-        r = self.c1.post(f"{BASE}/khoa/{key['id']}/thu-hoi/", {"ly_do": "Mất thiết bị"}, format="json")
-        self.assertEqual((r.status_code, r.data["trang_thai"]), (200, "THU_HOI"))
-
-    def test_replayed_challenge_rejected(self):
-        private, key = self.register()
-        challenge = self.c1.get(f"{BASE}/khoa/{key['id']}/thach-thuc/").data["thach_thuc"]
-        payload = {"thach_thuc": challenge, "chu_ky_so": base64.b64encode(private.sign(challenge.encode())).decode()}
-        self.assertEqual(self.c1.post(f"{BASE}/khoa/{key['id']}/xac-minh/", payload, format="json").status_code, 200)
-        response = self.c1.post(f"{BASE}/khoa/{key['id']}/xac-minh/", payload, format="json")
-        self.assertEqual((response.status_code, response.data["code"]), (409, "thach_thuc_da_dung"))
-
-    def test_bad_proof_rejected(self):
-        _, key = self.register()
-        other, _ = new_keypair()
-        response = self.prove(other, key["id"])
-        self.assertEqual((response.status_code, response.data["code"]), (400, "chung_minh_so_huu_that_bai"))
-
-    def test_invalid_public_key_rejected(self):
-        response = self.c1.post(f"{BASE}/khoa/", {
-            "ma_khoa": "k", "khoa_cong_khai": "abc", "ngay_hieu_luc": "2026-10-01T00:00:00Z",
-        }, format="json")
-        self.assertEqual((response.status_code, response.data["code"]), (400, "khoa_cong_khai_khong_hop_le"))
-
-    def test_keys_of_other_users_are_invisible(self):
-        private, key = self.register()
-        self.assertEqual(len(self.c2.get(f"{BASE}/khoa/").data), 0)
-        for method, path, body in [
-            ("get", "thach-thuc", None), ("post", "xac-minh", {"thach_thuc": "x", "chu_ky_so": "x"}),
-            ("post", "kich-hoat", None), ("post", "thu-hoi", {"ly_do": "x"}),
-            ("post", "xoay-vong", {"khoa_moi": key["id"]}),
-        ]:
-            response = getattr(self.c2, method)(f"{BASE}/khoa/{key['id']}/{path}/", body, format="json")
-            self.assertEqual(response.status_code, 404, path)
-        self.assertEqual(SigningKey.objects.get(pk=key["id"]).trang_thai, enums.TrangThaiKhoa.CHO_KICH_HOAT)
-
-    def test_rotation(self):
-        p1, k1 = self.register(ma="k1")
-        self.prove(p1, k1["id"])
-        self.set_pin(p1, k1["id"])
-        self.c1.post(f"{BASE}/khoa/{k1['id']}/kich-hoat/")
-        p2, k2 = self.register(ma="k2")
-        self.prove(p2, k2["id"])
-        self.set_pin(p2, k2["id"])
-        blocked = self.c1.post(f"{BASE}/khoa/{k2['id']}/kich-hoat/")
-        self.assertEqual((blocked.status_code, blocked.data["code"]), (409, "da_co_khoa_hoat_dong"))
-        r = self.c1.post(f"{BASE}/khoa/{k1['id']}/xoay-vong/", {"khoa_moi": k2["id"]}, format="json")
-        self.assertEqual((r.status_code, r.data["id"], r.data["trang_thai"]), (200, k2["id"], "HOAT_DONG"))
-        states = {k["ma_khoa"]: k["trang_thai"] for k in self.c1.get(f"{BASE}/khoa/").data}
-        self.assertEqual(states, {"k1": "DA_XOAY_VONG", "k2": "HOAT_DONG"})
-
-    def test_revoke_requires_reason(self):
-        _, key = self.register()
-        response = self.c1.post(f"{BASE}/khoa/{key['id']}/thu-hoi/", {}, format="json")
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("ly_do", response.data["fields"])
-
-    def test_response_never_contains_private_material(self):
-        _, key = self.register()
-        self.assertFalse([k for k in key if "rieng" in k or "private" in k or "bi_mat" in k])
-
-    def test_audit_log_records_client_ip(self):
-        _, key = self.register()
-        entry = SigningAuditLog.objects.get(hanh_dong="DANG_KY_KHOA", ma_doi_tuong=key["id"])
-        self.assertEqual(entry.dia_chi_ip, "127.0.0.1")
-        self.assertEqual(entry.nguoi_thuc_hien, self.u1)
 
 
 class PermissionApiTests(ApiBase):
@@ -340,27 +220,4 @@ class PermissionApiTests(ApiBase):
         self.u1.is_active = False
         self.u1.save(update_fields=["is_active"])
         self.assertFalse(co_quyen(self.u1, "manage_signing_process"))
-
-    def test_sign_permission_required_for_key_registration_and_pin(self):
-        _, public = new_keypair()
-        r = self.c3.post(f"{BASE}/khoa/", {
-            "ma_khoa": "k3", "khoa_cong_khai": public, "ngay_hieu_luc": "2026-10-01T00:00:00Z",
-        }, format="json")
-        self.assertEqual((r.status_code, r.data["fields"]), (403, {"quyen": ["sign_trinhky"]}))
-        self.assertFalse(SigningKey.objects.filter(nguoi_so_huu=self.u3).exists())
-
-    def test_revoke_own_key_allowed_after_sign_permission_removed(self):
-        cap_quyen(self.u3, "sign_trinhky")
-        _, public = new_keypair()
-        key = self.c3.post(f"{BASE}/khoa/", {
-            "ma_khoa": "k3", "khoa_cong_khai": public, "ngay_hieu_luc": "2026-10-01T00:00:00Z",
-        }, format="json").data
-        self.u3.user_permissions.clear()
-        u3 = User.objects.get(pk=self.u3.pk)  # bỏ cache quyền của backend
-        client = APIClient()
-        client.force_authenticate(u3)
-        self.assertEqual(client.post(f"{BASE}/khoa/{key['id']}/kich-hoat/").status_code, 403)
-        self.assertEqual(len(client.get(f"{BASE}/khoa/").data), 1)
-        r = client.post(f"{BASE}/khoa/{key['id']}/thu-hoi/", {"ly_do": "Chuyển công tác"}, format="json")
-        self.assertEqual((r.status_code, r.data["trang_thai"]), (200, "THU_HOI"))
 

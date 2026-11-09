@@ -2,12 +2,11 @@
 Bằng chứng tổng hợp của lượt trình — phần lõi Phase 10 (#80; plan mục 3.2, 5.2 `signing_manifest`).
 
 - chot_bang_chung: khi cấp cuối ký đủ, trong cùng transaction hoàn tất, chụp nội dung chuẩn hóa của lượt
-  (mã băm tệp, cấp, người ký, chữ ký hiện hành, khóa công khai, thời điểm) và lưu `DA_CHOT` (bất biến ở model
+  (mã băm tệp, cấp, người ký, bản xác nhận PIN, thời điểm) và lưu `DA_CHOT` (bất biến ở model
   và trigger PostgreSQL).
 - Mã băm bằng chứng = SHA-256 trên JSON chuẩn hóa (khóa sắp xếp, không khoảng trắng, UTF-8). JSONB không giữ
   thứ tự khóa nên luôn chuẩn hóa lại khi băm; nội dung chỉ dùng chuỗi, số nguyên, boolean, null.
-- xac_minh: băm lại nội dung, verify lại từng chữ ký Ed25519 bằng khóa công khai ghi trong bằng chứng
-  (xác minh được cả khi không tra CSDL khóa), đối chiếu tệp gốc và tệp hoàn tất đang lưu.
+- xac_minh: băm lại nội dung bằng chứng, đối chiếu xác nhận PIN và ảnh chữ ký, kiểm tra tệp gốc và tệp hoàn tất.
 """
 
 import json
@@ -22,7 +21,7 @@ from ..tich_hop.to_chuc import ten_hien_thi
 from ..tich_hop.van_ban import mo_ta_ho_so
 from .audit import ghi_nhat_ky
 
-PHIEN_BAN_BANG_CHUNG = 2
+PHIEN_BAN_BANG_CHUNG = 3
 NHAN_DIEN = "BẢN DUYỆT NỘI BỘ, CHƯA PHÁT HÀNH"
 
 
@@ -35,11 +34,9 @@ def ma_hoa_chuan(noi_dung) -> bytes:
 
 
 def _chu_ky(ck):
-    khoa = ck.khoa_ky
     return {
-        "id": ck.pk, "khoa_ky": khoa.pk, "ma_khoa": khoa.ma_khoa, "dau_van_tay_khoa": khoa.dau_van_tay,
-        "khoa_cong_khai": khoa.khoa_cong_khai, "thuat_toan": ck.thuat_toan, "hash_tai_lieu": ck.hash_tai_lieu,
-        "chu_ky_so": ck.chu_ky_so, "ngay_ky": _thoi_diem(ck.ngay_ky), "ky_tre_han": ck.ky_tre_han,
+        "id": ck.pk, "phuong_thuc": "PIN", "hash_tai_lieu": ck.hash_tai_lieu,
+        "ngay_ky": _thoi_diem(ck.ngay_ky), "ky_tre_han": ck.ky_tre_han,
         "so_giay_tre": ck.so_giay_tre, "ghi_chu_ky": ck.ghi_chu_ky,
         "ma_bam_anh_chu_ky": ck.ma_bam_anh_chu_ky or None,
     }
@@ -55,7 +52,7 @@ def _vi_tri(n):
 
 def noi_dung_bang_chung(luot):
     yeu_cau = luot.trinh_ky
-    nguoi_ky = SigningRequestStepSigner.objects.select_related("chu_ky_hien_hanh__khoa_ky").order_by("id")
+    nguoi_ky = SigningRequestStepSigner.objects.select_related("chu_ky_hien_hanh").order_by("id")
     cap_ky = SigningRequestStep.objects.filter(luot_trinh=luot).order_by("thu_tu").prefetch_related(
         Prefetch("nguoi_ky_set", queryset=nguoi_ky))
     return {
@@ -127,9 +124,7 @@ def xac_minh(manifest):
     for cap in noi_dung["cap_ky"]:
         for n in cap["nguoi_ky"]:
             ck = n["chu_ky"]
-            hop_le = ck is not None and ck["hash_tai_lieu"] == hash_tep and (
-                crypto.key_fingerprint(ck["khoa_cong_khai"]) == ck["dau_van_tay_khoa"]
-            ) and crypto.verify_signature(ck["khoa_cong_khai"], bytes.fromhex(ck["hash_tai_lieu"]), ck["chu_ky_so"])
+            hop_le = ck is not None and ck["phuong_thuc"] == "PIN" and ck["hash_tai_lieu"] == hash_tep
             anh_khop = _tep_khop(vi_tri_anh.get(ck["id"]), ck.get("ma_bam_anh_chu_ky")) if ck else None
             chu_ky.append({"nguoi_ky": n["id"], "ten_nguoi_ky": n["ten_nguoi_ky"],
                            "chu_ky": ck["id"] if ck else None, "hop_le": bool(hop_le), "anh_chu_ky_khop": anh_khop})
