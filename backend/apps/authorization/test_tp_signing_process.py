@@ -21,12 +21,12 @@ class TruongPhongSigningProcessTest(TestCase):
     def test_seed_grants_manage_signing_process_to_tp(self):
         self.assertIn("manage_signing_process", GROUP_PERMISSIONS["Trưởng phòng"])
 
-    def test_seed_has_172_group_permission_rows(self):
+    def test_seed_has_174_group_permission_rows(self):
         groups = {}
         for mapping in (GROUP_PERMISSIONS, EXTRA_GROUP_PERMISSIONS):
             for group_name, codenames in mapping.items():
                 groups.setdefault(group_name, set()).update(codenames)
-        self.assertEqual(sum(len(codenames) for codenames in groups.values()), 172)
+        self.assertEqual(sum(len(codenames) for codenames in groups.values()), 174)
         self.assertEqual(len(groups["Trưởng phòng"]), 25)
 
     def test_database_after_migrate_matches_ddl(self):
