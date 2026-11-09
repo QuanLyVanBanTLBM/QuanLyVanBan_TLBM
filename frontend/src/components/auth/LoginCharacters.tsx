@@ -86,7 +86,7 @@ export const LoginCharacters: React.FC<LoginCharactersProps> = ({
       {/* Tiêu đề thương hiệu phân hệ */}
       <div className="flex items-center gap-2.5 z-10">
         <div className="w-10 h-10 rounded-lg bg-surface border border-subtle flex items-center justify-center shadow-sm p-1.5 shrink-0">
-          <img src="/baolong-icon-black.png" alt="Bảo Long Icon" className="w-full h-full object-contain" />
+          <img src="/baolong-icon.png" alt="Bảo Long Icon" className="w-full h-full object-contain" />
         </div>
         <div>
           <div className="text-sm font-extrabold text-main leading-tight">
