@@ -25,13 +25,34 @@ const CROP_Y = (VIEWPORT_H - CROP_H) / 2; // 35px
 const CROP_CENTER_X = VIEWPORT_W / 2; // 210px
 const CROP_CENTER_Y = VIEWPORT_H / 2; // 110px
 
+function lamSachNen(ctx: CanvasRenderingContext2D, width: number, height: number, mucDo: number) {
+  if (mucDo <= 0) return;
+  const imageData = ctx.getImageData(0, 0, width, height);
+  const pixels = imageData.data;
+  const threshold = 255 - (40 * mucDo) / 100;
+  const fadeStart = threshold - 50;
+
+  for (let i = 0; i < pixels.length; i += 4) {
+    const red = pixels[i];
+    const green = pixels[i + 1];
+    const blue = pixels[i + 2];
+    const luminance = (red * 299 + green * 587 + blue * 114) / 1000;
+    const chroma = Math.max(red, green, blue) - Math.min(red, green, blue);
+    const neutralWeight = Math.max(0, 1 - chroma / 80);
+    const backgroundWeight = Math.min(1, Math.max(0, (luminance - fadeStart) / (threshold - fadeStart)));
+    pixels[i + 3] = Math.round(pixels[i + 3] * (1 - backgroundWeight * neutralWeight));
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+}
+
 export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = false }: CropChuKyModalProps) {
   const { t } = useSigningT();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const [rawImg, setRawImg] = useState<HTMLImageElement | null>(null);
-  const [cleanCanvas, setCleanCanvas] = useState<HTMLCanvasElement | null>(null);
+  const [mucLamSach, setMucLamSach] = useState(100);
 
   const [baseScale, setBaseScale] = useState(1);
   const [zoom, setZoom] = useState(1); // 1 = 100% kích thước fit khởi tạo
@@ -56,40 +77,26 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
 
   // 1. Nạp ảnh khi chọn tệp mới và mặc định luôn tự động khử nền trắng
   useEffect(() => {
-    if (!tep) return;
+    if (!tep) {
+      setRawImg(null);
+      setLoi('');
+      return undefined;
+    }
+    let dangHoatDong = true;
+    setRawImg(null);
+    setLoi('');
+    setXacNhan(null);
+    setMucLamSach(100);
     const reader = new FileReader();
     reader.onload = (e) => {
+      if (!dangHoatDong) return;
       const src = e.target?.result as string;
       const img = new Image();
       img.onload = () => {
+        if (!dangHoatDong) return;
         setRawImg(img);
-
-        // Tạo canvas khử nền trắng tiền xử lý 1 lần cho hiệu năng tối đa (luôn bật mặc định)
-        const offCanvas = document.createElement('canvas');
-        offCanvas.width = img.width;
-        offCanvas.height = img.height;
-        const offCtx = offCanvas.getContext('2d');
-        if (offCtx) {
-          offCtx.drawImage(img, 0, 0);
-          const imgData = offCtx.getImageData(0, 0, img.width, img.height);
-          const d = imgData.data;
-          for (let i = 0; i < d.length; i += 4) {
-            const r = d[i];
-            const g = d[i + 1];
-            const b = d[i + 2];
-            const brightness = (r + g + b) / 3;
-            if (brightness > 215) {
-              d[i + 3] = 0;
-            } else if (brightness >= 165) {
-              const factor = (215 - brightness) / (215 - 165);
-              d[i + 3] = Math.round(d[i + 3] * factor);
-            }
-          }
-          offCtx.putImageData(imgData, 0, 0);
-          setCleanCanvas(offCanvas);
-        }
-
-        // Tự động căn kích thước ban đầu sao cho vừa vặn dễ nhìn
+        setLoi('');
+        setMucLamSach(100);
         const fitW = CROP_W / img.width;
         const fitH = CROP_H / img.height;
         const initScale = Math.min(fitW, fitH);
@@ -97,60 +104,52 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
         setZoom(1);
         setOffset({ x: 0, y: 0 });
       };
-      img.onerror = () => setLoi(t('pin.chuaChonAnh'));
+      img.onerror = () => {
+        if (dangHoatDong) setLoi(t('pin.chuaChonAnh'));
+      };
       img.src = src;
     };
+    reader.onerror = () => {
+      if (dangHoatDong) setLoi(t('pin.chuaChonAnh'));
+    };
     reader.readAsDataURL(tep);
+    return () => {
+      dangHoatDong = false;
+      if (reader.readyState === FileReader.LOADING) reader.abort();
+    };
   }, [tep, t]);
 
-  // 2. Kéo di chuyển ảnh tự do (Pan) hỗ trợ chuột trái, chuột phải và touch
+  const gioiHanViTriKeo = useCallback((x: number, y: number) => {
+    if (!rawImg) return { x, y };
+    const currentScale = baseScale * zoom;
+    const imgW = rawImg.width * currentScale;
+    const imgH = rawImg.height * currentScale;
+    const maxDistX = Math.max(imgW / 2 + CROP_W / 2 - 20, CROP_W / 2);
+    const maxDistY = Math.max(imgH / 2 + CROP_H / 2 - 20, CROP_H / 2);
+    return {
+      x: Math.max(-maxDistX, Math.min(maxDistX, x)),
+      y: Math.max(-maxDistY, Math.min(maxDistY, y)),
+    };
+  }, [baseScale, rawImg, zoom]);
+
+  const keoAnhDen = useCallback((clientX: number, clientY: number) => {
+    const dx = clientX - dragStartRef.current.mouseX;
+    const dy = clientY - dragStartRef.current.mouseY;
+    setOffset(gioiHanViTriKeo(
+      dragStartRef.current.startOffsetX + dx,
+      dragStartRef.current.startOffsetY + dy,
+    ));
+  }, [gioiHanViTriKeo]);
+
+  // 2. Kéo ảnh bằng pointer capture; touch giữ luồng pinch hiện có.
   useEffect(() => {
     if (!isDragging) return;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!rawImg) return;
-      const dx = e.clientX - dragStartRef.current.mouseX;
-      const dy = e.clientY - dragStartRef.current.mouseY;
-
-      let nextX = dragStartRef.current.startOffsetX + dx;
-      let nextY = dragStartRef.current.startOffsetY + dy;
-
-      const currentScale = baseScale * zoom;
-      const imgW = rawImg.width * currentScale;
-      const imgH = rawImg.height * currentScale;
-      const maxDistX = Math.max(imgW / 2 + CROP_W / 2 - 20, CROP_W / 2);
-      const maxDistY = Math.max(imgH / 2 + CROP_H / 2 - 20, CROP_H / 2);
-
-      nextX = Math.max(-maxDistX, Math.min(maxDistX, nextX));
-      nextY = Math.max(-maxDistY, Math.min(maxDistY, nextY));
-
-      setOffset({ x: nextX, y: nextY });
-    };
-
-    const handleMouseUp = () => {
-      setIsDragging(false);
-    };
 
     const handleTouchMove = (e: TouchEvent) => {
       if (!rawImg) return;
       if (e.touches.length === 1) {
         const touch = e.touches[0];
-        const dx = touch.clientX - dragStartRef.current.mouseX;
-        const dy = touch.clientY - dragStartRef.current.mouseY;
-
-        let nextX = dragStartRef.current.startOffsetX + dx;
-        let nextY = dragStartRef.current.startOffsetY + dy;
-
-        const currentScale = baseScale * zoom;
-        const imgW = rawImg.width * currentScale;
-        const imgH = rawImg.height * currentScale;
-        const maxDistX = Math.max(imgW / 2 + CROP_W / 2 - 20, CROP_W / 2);
-        const maxDistY = Math.max(imgH / 2 + CROP_H / 2 - 20, CROP_H / 2);
-
-        nextX = Math.max(-maxDistX, Math.min(maxDistX, nextX));
-        nextY = Math.max(-maxDistY, Math.min(maxDistY, nextY));
-
-        setOffset({ x: nextX, y: nextY });
+        keoAnhDen(touch.clientX, touch.clientY);
       } else if (e.touches.length === 2 && touchStartDistRef.current) {
         // Pinch-to-zoom 2 ngón tay trên màn hình cảm ứng
         const dist = Math.hypot(
@@ -168,23 +167,19 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
       touchStartDistRef.current = null;
     };
 
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
     window.addEventListener('touchmove', handleTouchMove);
     window.addEventListener('touchend', handleTouchEnd);
 
     return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
       window.removeEventListener('touchmove', handleTouchMove);
       window.removeEventListener('touchend', handleTouchEnd);
     };
-  }, [isDragging, rawImg, baseScale, zoom]);
+  }, [isDragging, keoAnhDen, rawImg]);
 
-  // Cầm di chuyển bằng chuột: chấp nhận cả chuột trái (button 0) và chuột phải (button 2)
-  const onMouseDown = (e: React.MouseEvent) => {
-    if (e.button !== 0 && e.button !== 2) return;
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === 'touch' || (e.button !== 0 && e.button !== 2)) return;
     e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
     setIsDragging(true);
     dragStartRef.current = {
       mouseX: e.clientX,
@@ -192,6 +187,20 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
       startOffsetX: offset.x,
       startOffsetY: offset.y,
     };
+  };
+
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === 'touch' || !e.currentTarget.hasPointerCapture(e.pointerId)) return;
+    e.preventDefault();
+    keoAnhDen(e.clientX, e.clientY);
+  };
+
+  const onPointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === 'touch') return;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    setIsDragging(false);
   };
 
   const onTouchStart = (e: React.TouchEvent) => {
@@ -278,7 +287,7 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
     };
   }, []);
 
-  // 4. Vẽ Canvas Viewport (tốc độ cao nhờ GPU drawImage, mặc định luôn dùng cleanCanvas)
+  // 4. Vẽ ảnh vào viewport nhỏ rồi làm sạch nền trong preview.
   const veCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas || !rawImg) return;
@@ -293,9 +302,9 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
     const drawX = CROP_CENTER_X + offset.x - drawW / 2;
     const drawY = CROP_CENTER_Y + offset.y - drawH / 2;
 
-    const nguon = cleanCanvas ? cleanCanvas : rawImg;
-    ctx.drawImage(nguon, drawX, drawY, drawW, drawH);
-  }, [baseScale, cleanCanvas, offset.x, offset.y, rawImg, zoom]);
+    ctx.drawImage(rawImg, drawX, drawY, drawW, drawH);
+    lamSachNen(ctx, VIEWPORT_W, VIEWPORT_H, mucLamSach);
+  }, [baseScale, mucLamSach, offset.x, offset.y, rawImg, zoom]);
 
   useEffect(() => {
     veCanvas();
@@ -319,8 +328,8 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
     const expX = drawX - CROP_X;
     const expY = drawY - CROP_Y;
 
-    const nguon = cleanCanvas ? cleanCanvas : rawImg;
-    exportCtx.drawImage(nguon, expX, expY, drawW, drawH);
+    exportCtx.drawImage(rawImg, expX, expY, drawW, drawH);
+    lamSachNen(exportCtx, CROP_W, CROP_H, mucLamSach);
 
     exportCanvas.toBlob((blob) => {
       if (!blob) return;
@@ -373,7 +382,7 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
           <div className="flex justify-center">
             <div
               ref={containerRef}
-              className="relative overflow-hidden rounded-xl border border-border-subtle shadow-inner cursor-grab active:cursor-grabbing select-none"
+              className={`relative overflow-hidden rounded-xl border border-border-subtle shadow-inner select-none touch-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
               style={{
                 width: `${VIEWPORT_W}px`,
                 height: `${VIEWPORT_H}px`,
@@ -382,7 +391,11 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
                 backgroundSize: '16px 16px',
                 backgroundPosition: '0 0, 0 8px, 8px -8px, -8px 0px',
               }}
-              onMouseDown={onMouseDown}
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerEnd}
+              onPointerCancel={onPointerEnd}
+              onLostPointerCapture={() => setIsDragging(false)}
               onTouchStart={onTouchStart}
               onContextMenu={(e) => e.preventDefault()}
             >
@@ -413,6 +426,25 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
               </div>
             </div>
           </div>
+          {rawImg && (
+            <label className="block space-y-1.5">
+              <span className="flex items-center justify-between gap-2 text-sm font-medium text-main">
+                <span>{t('pin.mucLamSachNen')}</span>
+                <span className="text-secondary tabular-nums">{mucLamSach}%</span>
+              </span>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={1}
+                value={mucLamSach}
+                onChange={(e) => setMucLamSach(Number(e.target.value))}
+                aria-label={t('pin.mucLamSachNen')}
+                aria-valuetext={`${mucLamSach}%`}
+                className="w-full cursor-pointer accent-primary"
+              />
+            </label>
+          )}
         </div>
       </HopThoai>
 

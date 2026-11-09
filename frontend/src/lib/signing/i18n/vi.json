@@ -607,17 +607,18 @@
     "thayChuKy": "Thay đổi ảnh",
     "xoaChuKy": "Xóa ảnh",
     "chuaCoChuKy": "Chưa thiết lập ảnh chữ ký cá nhân",
-    "yeuCauAnh": "Hỗ trợ JPG, JPEG, PNG (tối đa 2 MB).",
+    "yeuCauAnh": "Hỗ trợ JPG, JPEG, PNG, WebP. Ảnh sau khi cắt tối đa 2 MB.",
     "taiLenChuKy": "Tải lên ảnh chữ ký",
     "anhQuaLon": "Ảnh chữ ký sau khi cắt vượt quá 2 MB. Hãy chọn ảnh khác hoặc thu nhỏ vùng cắt.",
     "daLuuChuKy": "Đã lưu ảnh chữ ký cá nhân.",
     "daXoaChuKy": "Đã xóa ảnh chữ ký cá nhân.",
-    "chuaChonAnh": "Vui lòng chọn tệp hình ảnh hợp lệ (PNG, JPG, JPEG).",
+    "chuaChonAnh": "Vui lòng chọn tệp hình ảnh hợp lệ (PNG, JPG, JPEG hoặc WebP).",
     "xacNhanCat": "Cắt và áp dụng",
     "xacNhanChuKyTieuDe": "Xác nhận ảnh chữ ký",
     "xacNhanChuKyNoiDung": "Kiểm tra ảnh chữ ký không bị cắt mất trước khi áp dụng.",
     "chinhSuaLai": "Chỉnh sửa lại",
     "dongYApDung": "Xác nhận áp dụng",
-    "ketQuaCat": "Ảnh sau khi cắt"
+    "ketQuaCat": "Ảnh sau khi cắt",
+    "mucLamSachNen": "Làm sạch nền"
   }
 }

@@ -152,7 +152,7 @@ export default function PinPage() {
 
   return (
     <div className="space-y-4">
-      <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={chonAnh} />
+      <input ref={fileInputRef} type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" className="hidden" onChange={chonAnh} />
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="min-w-0 space-y-3 p-4">
           <h3 className="text-base font-bold text-main">{t('pin.tieuDe')}</h3>

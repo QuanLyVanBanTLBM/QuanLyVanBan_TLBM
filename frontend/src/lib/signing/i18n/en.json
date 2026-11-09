@@ -607,17 +607,18 @@
     "thayChuKy": "Change image",
     "xoaChuKy": "Delete image",
     "chuaCoChuKy": "No personal signature image is set",
-    "yeuCauAnh": "JPG, JPEG, and PNG supported (up to 2 MB).",
+    "yeuCauAnh": "JPG, JPEG, PNG, and WebP supported. Cropped image limit: 2 MB.",
     "taiLenChuKy": "Upload signature image",
     "anhQuaLon": "The cropped signature image exceeds 2 MB. Choose another image or reduce the crop area.",
     "daLuuChuKy": "Personal signature image saved.",
     "daXoaChuKy": "Personal signature image deleted.",
-    "chuaChonAnh": "Choose a valid image file (PNG, JPG, JPEG).",
+    "chuaChonAnh": "Choose a valid image file (PNG, JPG, JPEG, or WebP).",
     "xacNhanCat": "Crop and apply",
     "xacNhanChuKyTieuDe": "Confirm signature image",
     "xacNhanChuKyNoiDung": "Check that the signature image is not cropped before applying it.",
     "chinhSuaLai": "Edit again",
     "dongYApDung": "Apply image",
-    "ketQuaCat": "Cropped image"
+    "ketQuaCat": "Cropped image",
+    "mucLamSachNen": "Clean background"
   }
 }
