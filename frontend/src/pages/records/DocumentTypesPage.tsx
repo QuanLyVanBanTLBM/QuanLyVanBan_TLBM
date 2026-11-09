@@ -2,6 +2,7 @@ import React from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ApiError } from '@lib/apiClient';
 import { recordsService } from '@lib/recordsService';
+import { usePermissions } from '@lib/permissions';
 import { useTranslation } from '@i18n/translate';
 import {
   Badge,
@@ -41,6 +42,10 @@ export default function DocumentTypesPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { currentLang, t } = useTranslation();
+  const { can } = usePermissions();
+  const canAdd = can('add_hoso');
+  const canEdit = can('change_hoso');
+  const canDelete = can('delete_hoso');
   const [parentContext, setParentContext] = React.useState<{ routeId: string; dossier: Dossier } | null>(null);
   const dossier = parentContext?.routeId === dossierId ? parentContext.dossier : null;
   const [items, setItems] = React.useState<DocumentType[]>([]);
@@ -248,7 +253,7 @@ export default function DocumentTypesPage() {
             {t('records.documentTypes.description')}
           </p>
         </div>
-        <Button type="button" icon="fa-plus" onClick={() => void openCreate()}>{t('records.documentTypes.add')}</Button>
+        {canAdd && <Button type="button" icon="fa-plus" onClick={() => void openCreate()}>{t('records.documentTypes.add')}</Button>}
       </div>
 
       {notice && <div className="flex items-center justify-between rounded-lg border border-success-border bg-success-subtle px-4 py-3 text-sm text-success" role="status">
@@ -406,16 +411,20 @@ export default function DocumentTypesPage() {
                         >
                           {t('records.actions.viewDocuments')}
                         </Button>
-                        <Button type="button" size="sm" variant="ghost" icon="fa-pen"
-                          aria-label={t('records.documentTypes.editLabel', { name: item.ten_loai })}
-                          onClick={(event) => { event.stopPropagation(); setSaveError(null); setEditing(item); }}>
-                          {t('records.actions.edit')}
-                        </Button>
-                        <Button type="button" size="sm" variant="ghost" icon="fa-trash"
-                          aria-label={t('records.documentTypes.deleteLabel', { name: item.ten_loai })}
-                          onClick={(event) => { event.stopPropagation(); setDeleteError(null); setDeleting(item); }}>
-                          {t('records.actions.delete')}
-                        </Button>
+                        {canEdit && (
+                          <Button type="button" size="sm" variant="ghost" icon="fa-pen"
+                            aria-label={t('records.documentTypes.editLabel', { name: item.ten_loai })}
+                            onClick={(event) => { event.stopPropagation(); setSaveError(null); setEditing(item); }}>
+                            {t('records.actions.edit')}
+                          </Button>
+                        )}
+                        {canDelete && (
+                          <Button type="button" size="sm" variant="ghost" icon="fa-trash"
+                            aria-label={t('records.documentTypes.deleteLabel', { name: item.ten_loai })}
+                            onClick={(event) => { event.stopPropagation(); setDeleteError(null); setDeleting(item); }}>
+                            {t('records.actions.delete')}
+                          </Button>
+                        )}
                         </div>
                       </TableCell>
                     </TableRow>

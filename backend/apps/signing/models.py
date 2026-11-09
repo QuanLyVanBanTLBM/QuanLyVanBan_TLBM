@@ -20,47 +20,6 @@ def sha256_or_null(field):
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class SigningKey(models.Model):
-    """Định danh và public key Ed25519; private key mã hóa nằm trong SigningKeyUnlock."""
-
-    nguoi_so_huu = models.ForeignKey(User, on_delete=models.PROTECT, related_name="signing_keys")
-    ma_khoa = models.CharField(max_length=100, unique=True)
-    dau_van_tay = models.CharField(max_length=64, unique=True)
-    thuat_toan = models.CharField(max_length=50, db_default="Ed25519", default="Ed25519")
-    khoa_cong_khai = models.TextField()
-    trang_thai = models.CharField(
-        max_length=20, choices=enums.TrangThaiKhoa.choices, db_default="CHO_KICH_HOAT", default=enums.TrangThaiKhoa.CHO_KICH_HOAT
-    )
-    thoi_diem_xac_minh_so_huu = models.DateTimeField(null=True, blank=True)
-    thoi_diem_kich_hoat = models.DateTimeField(null=True, blank=True)
-    ngay_hieu_luc = models.DateTimeField()
-    ngay_het_han = models.DateTimeField(null=True, blank=True)
-    ngay_thu_hoi = models.DateTimeField(null=True, blank=True)
-    khoa_thay_the = models.ForeignKey(
-        "self", null=True, blank=True, on_delete=models.PROTECT, related_name="+"
-    )
-    ghi_chu = models.TextField(blank=True, db_default="", default="")
-    created_at = models.DateTimeField(auto_now_add=True, db_default=DB_NOW)
-
-    class Meta:
-        db_table = "signing_key"
-        constraints = [
-            models.UniqueConstraint(
-                fields=["nguoi_so_huu"],
-                condition=Q(trang_thai=enums.TrangThaiKhoa.HOAT_DONG),
-                name="uq_signing_key_mot_khoa_hoat_dong",
-            ),
-            models.CheckConstraint(
-                condition=~Q(trang_thai=enums.TrangThaiKhoa.HOAT_DONG)
-                | Q(thoi_diem_xac_minh_so_huu__isnull=False),
-                name="chk_signing_key_hoat_dong_da_xac_minh",
-            ),
-        ]
-
-    def __str__(self):
-        return f"{self.ma_khoa} ({self.trang_thai})"
-
-
 class SigningProcess(models.Model):
     # Tên cột theo DDL chuẩn hóa (#96, quy ước #68): db_column giữ nguyên tên thuộc tính và API.
     ma_quy_trinh = models.CharField(max_length=50)
@@ -323,36 +282,19 @@ class EvidenceQuerySet(models.QuerySet):
         raise ImmutableEvidenceError()
 
 
-class SignatureQuerySet(EvidenceQuerySet):
-    VERIFY_FIELDS = {"trang_thai_xac_minh", "thoi_diem_xac_minh"}
-
-    def update(self, **kwargs):
-        if not set(kwargs) <= self.VERIFY_FIELDS:
-            raise ImmutableEvidenceError("bang_chung_bat_bien", "Chữ ký số chỉ được cập nhật kết quả xác minh.")
-        return super(EvidenceQuerySet, self).update(**kwargs)
-
-
 class SigningSignature(models.Model):
     luot_trinh = models.ForeignKey(SigningAttempt, on_delete=models.PROTECT, related_name="chu_ky_set")
     buoc_ky = models.ForeignKey(SigningRequestStepSigner, on_delete=models.PROTECT, related_name="chu_ky_set")
-    khoa_ky = models.ForeignKey(SigningKey, on_delete=models.PROTECT, related_name="+")
     hash_tai_lieu = models.CharField(max_length=64)
-    thuat_toan = models.CharField(max_length=50)
-    chu_ky_so = models.TextField()
     ghi_chu_ky = models.TextField(blank=True, db_default="", default="")
     ky_tre_han = models.BooleanField(db_default=False, default=False)
     so_giay_tre = models.PositiveIntegerField(null=True, blank=True)
     ngay_ky = models.DateTimeField(db_default=DB_NOW, default=timezone.now)
-    trang_thai_xac_minh = models.CharField(
-        max_length=20, choices=enums.TrangThaiXacMinh.choices, db_default="HOP_LE", default=enums.TrangThaiXacMinh.HOP_LE
-    )
-    thoi_diem_xac_minh = models.DateTimeField(null=True, blank=True)
     vi_tri_anh_chu_ky = models.CharField(max_length=500, blank=True, db_default="", default="")
     ma_bam_anh_chu_ky = models.CharField(max_length=64, blank=True, db_default="", default="")
     created_at = models.DateTimeField(auto_now_add=True, db_default=DB_NOW)
 
-    objects = SignatureQuerySet.as_manager()
-    VERIFY_FIELDS = SignatureQuerySet.VERIFY_FIELDS
+    objects = EvidenceQuerySet.as_manager()
 
     class Meta:
         db_table = "signing_signature"
@@ -364,14 +306,11 @@ class SigningSignature(models.Model):
 
     def save(self, *args, **kwargs):
         if not self._state.adding:
-            old = type(self).objects.get(pk=self.pk)
-            core = [f.attname for f in self._meta.concrete_fields if f.name not in self.VERIFY_FIELDS]
-            if any(getattr(old, f) != getattr(self, f) for f in core):
-                raise ImmutableEvidenceError("bang_chung_bat_bien", "Chữ ký số chỉ được cập nhật kết quả xác minh.")
+            raise ImmutableEvidenceError("bang_chung_bat_bien", "Bản ghi xác nhận ký chỉ được ghi thêm.")
         return super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
-        raise ImmutableEvidenceError("bang_chung_bat_bien", "Chữ ký số không được xóa.")
+        raise ImmutableEvidenceError("bang_chung_bat_bien", "Bản ghi xác nhận ký không được xóa.")
 
 
 class ManifestQuerySet(models.QuerySet):
@@ -516,34 +455,22 @@ class SigningNotification(models.Model):
         indexes = [models.Index(fields=["trang_thai", "hen_gio_gui"], name="idx_signing_notif_outbox")]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Phase 6 — mở khóa ký bằng PIN (signing-backend-plan.md mục 3.4, bảng signing_key_unlock)
-# ─────────────────────────────────────────────────────────────────────────────
+class SigningPinCredential(models.Model):
+    """Verifier PBKDF2 và bộ đếm sai PIN theo ngày/chu kỳ, độc lập với khóa ký."""
 
-
-class SigningKeyUnlock(models.Model):
-    """
-    Bản ghi khóa ký được mã hóa để backend giải mã trong bộ nhớ khi ký.
-    Lưu verifier Argon2id của PIN và ciphertext AES-GCM; ciphertext được mã hóa bằng khóa dẫn xuất
-    từ SIGNING_KEY_PEPPER, độc lập với PIN để email recovery thay PIN mà giữ nguyên khóa.
-    Đây là trạng thái có thể cập nhật, không phải bằng chứng; sự kiện ghi vào signing_audit_log.
-    """
-
-    khoa = models.OneToOneField(SigningKey, on_delete=models.PROTECT, related_name="mo_khoa_pin")
-    ma_bam_xac_minh_pin = models.TextField()  # Argon2id verifier, không lưu PIN
-    khoa_bi_mat_ma_hoa = models.TextField()  # AES-256-GCM PKCS#8; tuyệt đối không log/serialize
-    tham_so_kdf = models.JSONField()  # salt và tham số Argon2id dùng để xác minh PIN
-    so_lan_sai = models.PositiveIntegerField(db_default=0, default=0)
-    khoa_den = models.DateTimeField(null=True, blank=True)  # rỗng: không bị khóa tạm
+    nguoi_dung = models.OneToOneField(
+        User, on_delete=models.CASCADE, db_constraint=False, related_name="signing_pin"
+    )  # FK ON DELETE CASCADE is created by SQL to match release_DDL.sql
+    ma_bam_xac_minh_pin = models.TextField()
+    so_lan_sai_ngay = models.PositiveSmallIntegerField(db_default=0, default=0)
+    so_lan_sai_chu_ky = models.PositiveSmallIntegerField(db_default=0, default=0)
+    ngay_dem_sai = models.DateField(null=True, blank=True)
+    khoa_den = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_default=DB_NOW)
-    # DDL base dùng updated_at (trigger set_updated_at), khác update_at của các bảng signing_* khác
     updated_at = models.DateTimeField(auto_now=True, db_default=DB_NOW)
 
     class Meta:
-        db_table = "signing_key_unlock"
-
-    def __str__(self):
-        return f"PIN của khóa {self.khoa_id} (sai {self.so_lan_sai} lần)"
+        db_table = "signing_pin_credential"
 
 
 class SigningUserSignature(models.Model):
@@ -568,73 +495,24 @@ class SigningUserSignature(models.Model):
         return f"Chữ ký của user {self.nguoi_dung_id} ({self.ma_bam[:8]})"
 
 
-class SigningPinResetCode(models.Model):
-    """
-    Mã xác thực 6 chữ số gửi qua email để chủ khóa đặt PIN mới cho cùng khóa ký đang hoạt động.
-    Chỉ lưu mã đã băm; hết hạn sau vài phút; sai quá số lần cho phép thì hủy mã.
-    """
+class SigningPinOtpChallenge(models.Model):
+    """OTP dùng một lần để ghi PIN mới sau khi xác minh qua SMS hoặc email."""
 
     nguoi_dung = models.ForeignKey(
         User, on_delete=models.CASCADE, db_constraint=False, related_name="+"
-    )  # FK ON DELETE CASCADE tạo bằng SQL trong migration 0022 để khớp release_DDL.sql
-    khoa = models.ForeignKey(
-        SigningKey, on_delete=models.PROTECT, db_constraint=False, null=True, blank=True, related_name="+",
-    )  # Khóa đang hoạt động tại thời điểm gửi mã; NULL chỉ dành cho mã cũ đã hết hạn.
+    )  # FK ON DELETE CASCADE is created by SQL to match release_DDL.sql
+    pin_moi_verifier = models.TextField()
     ma_bam = models.CharField(max_length=64)
+    kenh = models.CharField(max_length=10, choices=(("SMS", "SMS"), ("EMAIL", "Email")))
     het_han = models.DateTimeField()
-    so_lan_sai = models.IntegerField(db_default=0, default=0)
+    so_lan_sai = models.PositiveSmallIntegerField(db_default=0, default=0)
     da_dung_luc = models.DateTimeField(null=True, blank=True)
+    da_huy_luc = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_default=DB_NOW)
 
     class Meta:
-        db_table = "signing_pin_reset_code"
-        indexes = [models.Index(fields=["nguoi_dung", "created_at"], name="idx_signing_pin_reset_user")]
-
-
-class SigningChallengeDaDung(models.Model):
-    """
-    Nonce của challenge chứng minh sở hữu khóa đã được dùng (#507). UNIQUE (nguoi_dung, nonce) bảo đảm mỗi challenge
-    chỉ xác minh thành công một lần kể cả khi hai request chạy đồng thời. Bản ghi hết hạn được xóa khi ghi bản ghi mới.
-    """
-
-    nguoi_dung = models.ForeignKey(
-        User, on_delete=models.CASCADE, db_constraint=False, related_name="+"
-    )  # FK ON DELETE CASCADE tạo bằng SQL trong migration 0023 để khớp release_DDL.sql
-    nonce = models.CharField(max_length=64)
-    het_han = models.DateTimeField()
-    created_at = models.DateTimeField(auto_now_add=True, db_default=DB_NOW)
-
-    class Meta:
-        db_table = "signing_challenge_da_dung"
-        constraints = [models.UniqueConstraint(fields=["nguoi_dung", "nonce"], name="uq_signing_challenge_da_dung")]
-        indexes = [models.Index(fields=["het_han"], name="idx_signing_challenge_het_han")]
-
-
-class SigningMfaOtp(models.Model):
-    """
-    Mã xác thực MFA (6 chữ số) gửi qua email trước khi ký, và phiên đã xác thực (issue #509, phân vùng 2 của #447).
-    Chỉ lưu mã đã băm (HMAC). Nhập đúng mã thì `da_dung_luc` được đặt và dòng gắn với access token hiện tại
-    (`phien_jti`, `phien_het_han` = hạn của token): ký chỉ được nhận khi tồn tại dòng như vậy còn hiệu lực.
-    """
-
-    nguoi_dung = models.ForeignKey(
-        User, on_delete=models.CASCADE, db_constraint=False, related_name="+"
-    )  # FK ON DELETE CASCADE tạo bằng SQL trong migration 0024 để khớp release_DDL.sql
-    muc_dich = models.CharField(max_length=20, db_default="KY", default="KY")
-    ma_bam = models.CharField(max_length=64)
-    het_han = models.DateTimeField()
-    so_lan_sai = models.IntegerField(db_default=0, default=0)
-    da_dung_luc = models.DateTimeField(null=True, blank=True)
-    phien_jti = models.CharField(max_length=64, null=True, blank=True)
-    phien_het_han = models.DateTimeField(null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True, db_default=DB_NOW)
-
-    class Meta:
-        db_table = "signing_mfa_otp"
-        indexes = [
-            models.Index(fields=["nguoi_dung", "muc_dich", "created_at"], name="idx_signing_mfa_otp_user"),
-            models.Index(fields=["nguoi_dung", "phien_jti"], name="idx_signing_mfa_otp_phien"),
-        ]
+        db_table = "signing_pin_otp_challenge"
+        indexes = [models.Index(fields=["nguoi_dung", "created_at"], name="idx_signing_pin_otp_user")]
 
 
 class SigningRightLock(models.Model):

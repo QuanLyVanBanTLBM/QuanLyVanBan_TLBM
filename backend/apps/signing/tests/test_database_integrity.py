@@ -1,4 +1,5 @@
 import importlib
+from datetime import timedelta
 from types import SimpleNamespace
 
 from django.contrib.auth import get_user_model
@@ -12,10 +13,10 @@ from signing import enums
 from signing.models import (
     SigningAttempt,
     SigningAuditLog,
-    SigningKey,
-    SigningKeyUnlock,
     SigningManifest,
     SigningNotification,
+    SigningPinCredential,
+    SigningPinOtpChallenge,
     SigningProcess,
     SigningProcessStep,
     SigningProcessStepSigner,
@@ -36,7 +37,8 @@ EXPECTED_FOREIGN_KEYS = {
     ("signing_attempt", "nguoi_cap_nhat_id"): ("accounts_employee", "id", "n"),
     ("signing_process", "nguoi_cap_nhat_id"): ("accounts_employee", "id", "n"),
     ("signing_request", "nguoi_cap_nhat_id"): ("accounts_employee", "id", "n"),
-    ("signing_key_unlock", "khoa_id"): ("signing_key", "id", "c"),
+    ("signing_pin_credential", "nguoi_dung_id"): ("accounts_employee", "id", "c"),
+    ("signing_pin_otp_challenge", "nguoi_dung_id"): ("accounts_employee", "id", "c"),
     ("signing_notification", "buoc_ky_id"): ("signing_request_step_signer", "id", "c"),
     ("signing_notification", "trinh_ky_id"): ("signing_request", "id", "c"),
     ("signing_process_step", "quy_trinh_id"): ("signing_process", "id", "c"),
@@ -84,14 +86,6 @@ class SigningDatabaseIntegrityTests(TestCase):
             ten_nguoi_ky="Integrity owner",
             vai_tro_ky=enums.VaiTroKy.KY_CHINH,
         )
-        self.key = SigningKey.objects.create(
-            nguoi_so_huu=self.user,
-            ma_khoa="integrity-key",
-            dau_van_tay=HASH,
-            khoa_cong_khai="public-key",
-            ngay_hieu_luc=timezone.now(),
-        )
-
     def _new_unit(self):
         region = KhoiKhuVuc.objects.create(ten="Integrity test region")
         latest_priority = DonVi.objects.order_by("-stt_uu_tien").values_list("stt_uu_tien", flat=True).first() or 0
@@ -216,15 +210,20 @@ class SigningDatabaseIntegrityTests(TestCase):
         self.process_step.refresh_from_db()
         self.assertIsNone(self.process_step.don_vi_id)
 
-        SigningKeyUnlock.objects.create(
-            khoa=self.key,
-            ma_bam_xac_minh_pin="verifier",
-            khoa_bi_mat_ma_hoa="encrypted-private-key",
-            tham_so_kdf={"algorithm": "test"},
+        pin_owner = User.objects.create_user("integrity-pin-owner")
+        SigningPinCredential.objects.create(nguoi_dung=pin_owner, ma_bam_xac_minh_pin="verifier")
+        SigningPinOtpChallenge.objects.create(
+            nguoi_dung=pin_owner,
+            pin_moi_verifier="verifier",
+            ma_bam="a" * 64,
+            kenh="SMS",
+            het_han=timezone.now() + timedelta(minutes=5),
         )
         with connection.cursor() as cursor:
-            cursor.execute("DELETE FROM signing_key WHERE id = %s", [self.key.pk])
-            cursor.execute("SELECT COUNT(*) FROM signing_key_unlock WHERE khoa_id = %s", [self.key.pk])
+            cursor.execute("DELETE FROM accounts_employee WHERE id = %s", [pin_owner.pk])
+            cursor.execute("SELECT COUNT(*) FROM signing_pin_credential WHERE nguoi_dung_id = %s", [pin_owner.pk])
+            self.assertEqual(cursor.fetchone()[0], 0)
+            cursor.execute("SELECT COUNT(*) FROM signing_pin_otp_challenge WHERE nguoi_dung_id = %s", [pin_owner.pk])
             self.assertEqual(cursor.fetchone()[0], 0)
 
         process = SigningProcess.objects.create(
@@ -268,37 +267,23 @@ class SigningDatabaseIntegrityTests(TestCase):
             cursor.execute("SELECT nguoi_cap_nhat_id FROM signing_process WHERE id = %s", [self.process.pk])
             self.assertIsNone(cursor.fetchone()[0])
 
-    def test_raw_sql_evidence_guards_reject_mutation_and_allow_the_declared_exceptions(self):
+    def test_raw_sql_evidence_guards_reject_mutation(self):
         signature = SigningSignature.objects.create(
             luot_trinh=self.attempt,
             buoc_ky=self.signer,
-            khoa_ky=self.key,
             hash_tai_lieu=HASH,
-            thuat_toan="Ed25519",
-            chu_ky_so="signature",
         )
         with self.assertRaises(DatabaseError):
             with transaction.atomic():
                 with connection.cursor() as cursor:
                     cursor.execute(
-                        "UPDATE signing_signature SET chu_ky_so = 'changed' WHERE id = %s",
-                        [signature.pk],
+                        "UPDATE signing_signature SET hash_tai_lieu = %s WHERE id = %s",
+                        ["b" * 64, signature.pk],
                     )
         with self.assertRaises(DatabaseError):
             with transaction.atomic():
                 with connection.cursor() as cursor:
                     cursor.execute("DELETE FROM signing_signature WHERE id = %s", [signature.pk])
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "UPDATE signing_signature SET trang_thai_xac_minh = 'KHONG_HOP_LE', "
-                "thoi_diem_xac_minh = NOW() WHERE id = %s",
-                [signature.pk],
-            )
-            cursor.execute(
-                "SELECT trang_thai_xac_minh FROM signing_signature WHERE id = %s", [signature.pk]
-            )
-            self.assertEqual(cursor.fetchone()[0], "KHONG_HOP_LE")
-
         draft = SigningManifest.objects.create(
             luot_trinh=self.attempt,
             noi_dung_chuan_hoa={"version": 1},
@@ -356,7 +341,7 @@ class SigningDatabaseIntegrityTests(TestCase):
                 "INSERT INTO signing_audit_log "
                 "(loai_doi_tuong, ma_doi_tuong, nguoi_thuc_hien_id, hanh_dong, "
                 "trang_thai_truoc, trang_thai_sau, chi_tiet, created_at) "
-                "VALUES ('signing_key', 1, %s, 'RAW_INSERT', '', '', '', NOW()) RETURNING id",
+                "VALUES ('signing_pin_credential', 1, %s, 'RAW_INSERT', '', '', '', NOW()) RETURNING id",
                 [self.user.pk],
             )
             audit_log_id = cursor.fetchone()[0]
@@ -399,6 +384,8 @@ class SigningMigrationPreflightTests(TransactionTestCase):
         with self.assertRaises(RuntimeError) as raised:
             with transaction.atomic():
                 with connection.cursor() as cursor:
+                    cursor.execute("CREATE TABLE public.signing_key (id BIGINT PRIMARY KEY)")
+                    cursor.execute("CREATE TABLE public.signing_key_unlock (khoa_id BIGINT)")
                     cursor.execute(
                         f"ALTER TABLE {quote('signing_process')} DROP CONSTRAINT {quote(fk_names[0])}"
                     )
