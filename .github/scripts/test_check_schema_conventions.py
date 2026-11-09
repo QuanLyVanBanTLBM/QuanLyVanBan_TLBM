@@ -6,6 +6,8 @@ import os
 import subprocess
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 
 import check_schema_conventions as chk
@@ -137,13 +139,15 @@ class GitCheckTest(unittest.TestCase):
     def test_changelog_ddl_changed_without_row_fails(self):
         self.write(chk.DDL_PATH, "CREATE TABLE a (id int, b int);\n")
         self.commit("pr")
-        self.assertEqual(chk.check_changelog("main"), 1)
+        with redirect_stdout(StringIO()):
+            self.assertEqual(chk.check_changelog("main"), 1)
 
     def test_changelog_ddl_changed_with_non_row_edit_fails(self):
         self.write(chk.DDL_PATH, "CREATE TABLE a (id int, b int);\n")
         self.write(chk.CHANGELOG_PATH, HEADER + ROW_OLD + "ghi chú thêm\n")
         self.commit("pr")
-        self.assertEqual(chk.check_changelog("main"), 1)
+        with redirect_stdout(StringIO()):
+            self.assertEqual(chk.check_changelog("main"), 1)
 
     def test_changelog_ddl_unchanged_passes(self):
         self.write("README.md", "x\n")
@@ -158,7 +162,8 @@ class GitCheckTest(unittest.TestCase):
     def test_baseline_new_object_fails(self):
         self.write(chk.BASELINE_PATH, BASELINE_BASE + "ENUM e2: thiếu (X)\n")
         self.commit("pr")
-        self.assertEqual(chk.check_baseline("main"), 1)
+        with redirect_stdout(StringIO()):
+            self.assertEqual(chk.check_baseline("main"), 1)
 
     def test_baseline_changed_detail_passes(self):
         self.write(chk.BASELINE_PATH, BASELINE_BASE.replace("#aaaa", "#bbbb"))
