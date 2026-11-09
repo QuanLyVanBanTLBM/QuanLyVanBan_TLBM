@@ -227,7 +227,7 @@ class TaskQuerySet(models.QuerySet):
 
         Bậc ưu tiên (cao → thấp):
           1. User là chủ trì/tham gia, việc còn phải làm (Chờ xử lý hoặc Đang xử lý).
-          2. User là chỉ đạo/chủ trì, việc đang Chờ duyệt (chờ chính user duyệt minh chứng).
+          2. User là chỉ đạo/chủ trì/người tạo, việc đang Chờ duyệt (chờ chính user duyệt minh chứng).
           3. User là chủ trì/tham gia, việc đã trễ (Quá hạn hoặc Chưa hoàn thành).
           4. Các việc còn lại user có quyền xem.
         Trong cùng một bậc: sắp theo due_date tăng dần (do view order_by đảm nhận).
@@ -252,7 +252,8 @@ class TaskQuerySet(models.QuerySet):
                     then=Value(1),
                 ),
                 When(
-                    (Q(_is_dir=True) | Q(_is_host=True)) & Q(status=TaskStatus.CHO_DUYET),
+                    (Q(_is_dir=True) | Q(_is_host=True) | Q(created_by=user))
+                    & Q(status=TaskStatus.CHO_DUYET),
                     then=Value(2),
                 ),
                 When(

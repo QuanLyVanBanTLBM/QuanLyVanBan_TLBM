@@ -641,6 +641,21 @@ class TaskPrioritySortTests(WorkTestBase):
         # dù việc chờ xử lý có hạn gần hơn.
         self.assertEqual(self.ids(response), [viec_cho_duyet.pk, viec_cho_xu_ly.pk])
 
+    def test_nguoi_tao_uu_tien_viec_cho_minh_duyet(self):
+        # Người tạo (không phải chủ trì/chỉ đạo) cũng là người duyệt: việc Chờ duyệt vào bậc 2.
+        viec_cho_duyet = self.make_task(due_offset=8, title="Chờ duyệt")
+        self.add_evidence(viec_cho_duyet)
+        viec_cho_xu_ly = self.make_task(due_offset=2, title="Chờ xử lý")
+        self.assertEqual(self.status_of(viec_cho_duyet), TaskStatus.CHO_DUYET)
+
+        self.assertEqual(self.bucket_of(viec_cho_duyet, self.creator), 2)
+        # Việc chưa nộp bằng chứng: người tạo không phải hành động nên về bậc 4.
+        self.assertEqual(self.bucket_of(viec_cho_xu_ly, self.creator), 4)
+
+        self.login(self.creator)
+        response = self.client.get("/api/work/tasks/")
+        self.assertEqual(self.ids(response), [viec_cho_duyet.pk, viec_cho_xu_ly.pk])
+
     def test_cung_bac_sap_theo_han_tang_dan(self):
         han_gan = self.make_task(due_offset=2, title="Bậc 1 - hạn gần")
         han_xa = self.make_task(due_offset=9, title="Bậc 1 - hạn xa")
@@ -689,6 +704,37 @@ class EmployeeInfoSerializerTests(WorkTestBase):
         # Không còn placeholder cứng "Nhân viên".
         self.assertNotEqual(me["position"], "")
 
+    def test_search_theo_ten_don_vi_va_chuc_vu(self):
+        from accounts.models import Position
+
+        phong = DonVi.objects.create(
+            khoi=self.default_unit.khoi,
+            stt_uu_tien=DonVi.objects.order_by("-stt_uu_tien").values_list("stt_uu_tien", flat=True).first() + 1,
+            ten="Phòng Kế toán Zeta",
+        )
+        chuc_vu = Position.objects.create(
+            display_order=(Position.objects.order_by("-display_order").values_list("display_order", flat=True).first() or 0) + 1,
+            name="Kế toán trưởng Zeta",
+        )
+        nguoi_phong = User.objects.create_user("nv_phong_zeta", ho_ten="An Nhiên", don_vi=phong)
+        nguoi_chuc_vu = User.objects.create_user(
+            "nv_chucvu_zeta", ho_ten="Bảo Châu", don_vi=self.default_unit, chuc_vu=chuc_vu
+        )
+
+        self.login(self.creator)
+
+        def ids(search):
+            response = self.client.get("/api/work/employees/", {"search": search})
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            return {item["id"] for item in response.data}
+
+        self.assertEqual(ids("Kế toán Zeta"), {nguoi_phong.pk})
+        self.assertEqual(ids("trưởng Zeta"), {nguoi_chuc_vu.pk})
+        # Tìm theo họ tên / username vẫn hoạt động như cũ.
+        self.assertEqual(ids("An Nhiên"), {nguoi_phong.pk})
+        self.assertEqual(ids("nv_chucvu_zeta"), {nguoi_chuc_vu.pk})
+        self.assertEqual(ids("khong-ton-tai-xyz"), set())
+
     def test_chi_tiet_cong_viec_co_chuc_vu_phong_ban(self):
         task = self.make_task()
         self.login(self.host)
@@ -735,6 +781,33 @@ class TaskCreateApiTests(WorkTestBase):
         self.assertEqual(response.data["creator"]["id"], self.creator.pk)
         self.assertEqual([f["fileName"] for f in response.data["attachments"]], ["Kế hoạch.pdf", "Phụ lục.pdf"])
         self.assertEqual(response.data["evidences"], [])
+
+    def test_tao_kem_mot_file_pdf_xem_va_tai_lai_duoc(self):
+        # Luồng "add file lúc tạo công việc": tạo kèm 1 pdf -> 201 -> tải lại đúng nội dung.
+        self.login(self.creator)
+        data = self.payload(attachments=[pdf_file("Kế hoạch.pdf")])
+        created = self.client.post("/api/work/tasks/", data, format="multipart")
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED, created.data)
+        self.assertEqual(len(created.data["attachments"]), 1)
+
+        attachment = created.data["attachments"][0]
+        # downloadUrl là đường dẫn tương đối, không kèm domain/cổng (proxy có thể làm mất cổng).
+        self.assertEqual(
+            attachment["downloadUrl"],
+            reverse("work:attachment-download", kwargs={"pk": attachment["id"]}),
+        )
+        self.assertNotIn("://", attachment["downloadUrl"])
+
+        detail = self.client.get(f"/api/work/tasks/{created.data['id']}/")
+        self.assertEqual(detail.status_code, status.HTTP_200_OK)
+        self.assertEqual(detail.data["attachments"][0]["downloadUrl"], attachment["downloadUrl"])
+
+        for user in (self.creator, self.member):
+            self.login(user)
+            response = self.client.get(attachment["downloadUrl"])
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(b"".join(response.streaming_content), b"%PDF-1.4 noi dung thu")
+            self.assertIn("attachment", response["Content-Disposition"])
 
     def test_tao_cong_viec_thieu_quyen_add_congviec_bi_chan(self):
         self.login(self.outsider)
