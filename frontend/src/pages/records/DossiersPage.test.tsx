@@ -9,6 +9,12 @@ import { setLanguage } from '@i18n/translate';
 import DossiersPage from './DossiersPage';
 
 
+const perms = vi.hoisted(() => ({ list: [] as string[] }));
+vi.mock('@lib/permissions', () => ({
+  usePermissions: () => ({ loaded: true, isSuperuser: false, isSystemAdmin: false, can: (code: string) => perms.list.includes(code) }),
+}));
+const ALL_HOSO_PERMS = ['view_hoso', 'add_hoso', 'change_hoso', 'delete_hoso'];
+
 vi.mock('@lib/recordsService', () => ({
   recordsService: {
     listDossiers: vi.fn(),
@@ -27,6 +33,7 @@ vi.mock('@lib/recordsService', () => ({
 describe('DossiersPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    perms.list = [...ALL_HOSO_PERMS];
     setLanguage('vi');
   });
 
@@ -52,6 +59,30 @@ describe('DossiersPage', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByRole('table')).toHaveTextContent('Hồ sơ liên kết');
     expect(recordsService.listDossiers).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides add, edit and delete for a view-only account', async () => {
+    perms.list = ['view_hoso'];
+    vi.mocked(recordsService.listDossiers).mockResolvedValue({ items: [
+      { id: 2, so_ky_hieu: 'HS', ten_ho_so: 'Hồ sơ A', is_he_thong: false },
+    ], count: 1, next: null, previous: null });
+    render(<MemoryRouter><DossiersPage /></MemoryRouter>);
+    await screen.findByText('Hồ sơ A');
+    expect(screen.queryByRole('button', { name: /Thêm hồ sơ/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Sửa Hồ sơ A')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Xóa Hồ sơ A')).not.toBeInTheDocument();
+  });
+
+  it('shows add and edit but not delete when only add and change are granted', async () => {
+    perms.list = ['view_hoso', 'add_hoso', 'change_hoso'];
+    vi.mocked(recordsService.listDossiers).mockResolvedValue({ items: [
+      { id: 2, so_ky_hieu: 'HS', ten_ho_so: 'Hồ sơ A', is_he_thong: false },
+    ], count: 1, next: null, previous: null });
+    render(<MemoryRouter><DossiersPage /></MemoryRouter>);
+    await screen.findByText('Hồ sơ A');
+    expect(screen.getByRole('button', { name: /Thêm hồ sơ/i })).toBeInTheDocument();
+    expect(screen.getByLabelText('Sửa Hồ sơ A')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Xóa Hồ sơ A')).not.toBeInTheDocument();
   });
 
   it('does not offer deletion for the system dossier', async () => {
