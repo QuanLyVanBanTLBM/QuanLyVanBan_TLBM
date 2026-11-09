@@ -376,7 +376,7 @@
     "pin_pho_bien": "This PIN is too common; choose another one.",
     "phien_khong_hop_le": "Invalid sign-in session. Please sign in again.",
     "pin_khong_dung": "The PIN is incorrect.",
-    "pin_het_luot_trong_ngay": "Fifteen wrong PIN attempts today. Try again tomorrow or contact an administrator.",
+    "pin_het_luot_trong_ngay": "Ten wrong PIN attempts today. Try again tomorrow or contact an administrator.",
     "ma_bam_khong_khop": "The file changed since this round started; reload the request before signing.",
     "chua_den_luot_ky": "It is not your turn because the previous signing level is not complete, or you have already acted.",
     "khong_phai_nguoi_ky_dang_mo": "You have no open signing step on this request.",
@@ -572,7 +572,7 @@
     "daBatLai": "Signing right of {ten} has been restored.",
     "khongCoKetQua": "No matching accounts.",
     "khongPhaiQuanTri": "Only administrators can use this function.",
-    "pinSaiTrongNgay": "{so}/15 wrong attempts today",
+    "pinSaiTrongNgay": "{so}/10 wrong attempts today",
     "pinSaiTrongChuKy": "Current cycle: {so}/5 wrong attempts",
     "pinBiKhoaDen": "PIN locked until {han}"
   },
