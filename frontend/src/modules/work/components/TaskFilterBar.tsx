@@ -19,6 +19,8 @@ interface TaskFilterBarProps {
   busy?: boolean;
   onSearch: (filters: FilterDraft) => void;
   onCreate: () => void;
+  /** Ẩn nút Thêm công việc khi tài khoản thiếu quyền add_congviec (backend chặn POST). */
+  canCreate?: boolean;
 }
 
 const STATUS_OPTIONS = Object.entries(TASK_STATUS_LABELS) as [TaskStatus, string][];
@@ -45,7 +47,7 @@ const inputStyle: React.CSSProperties = {
   outline: 'none',
 };
 
-export default function TaskFilterBar({ value, busy = false, onSearch, onCreate }: TaskFilterBarProps) {
+export default function TaskFilterBar({ value, busy = false, onSearch, onCreate, canCreate = true }: TaskFilterBarProps) {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
   const [draft, setDraft] = useState<FilterDraft>(value);
@@ -156,30 +158,32 @@ export default function TaskFilterBar({ value, busy = false, onSearch, onCreate 
           alignItems: isMobile ? 'stretch' : 'center',
         }}
       >
-        <button
-          type="button"
-          onClick={onCreate}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '8px',
-            padding: '10px 16px',
-            borderRadius: 'var(--radius-md)',
-            border: 'none',
-            background: 'var(--color-primary)',
-            color: '#ffffff',
-            fontWeight: 700,
-            fontSize: '0.86rem',
-            cursor: 'pointer',
-            boxShadow: '0 4px 12px var(--color-primary-glow)',
-            whiteSpace: 'nowrap',
-            width: isMobile ? '100%' : 'auto',
-          }}
-        >
-          <i className="fa-solid fa-plus" />
-          {t('work.filter.addTask')}
-        </button>
+        {canCreate && (
+          <button
+            type="button"
+            onClick={onCreate}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              padding: '10px 16px',
+              borderRadius: 'var(--radius-md)',
+              border: 'none',
+              background: 'var(--color-primary)',
+              color: '#ffffff',
+              fontWeight: 700,
+              fontSize: '0.86rem',
+              cursor: 'pointer',
+              boxShadow: '0 4px 12px var(--color-primary-glow)',
+              whiteSpace: 'nowrap',
+              width: isMobile ? '100%' : 'auto',
+            }}
+          >
+            <i className="fa-solid fa-plus" />
+            {t('work.filter.addTask')}
+          </button>
+        )}
 
         <div
           style={{

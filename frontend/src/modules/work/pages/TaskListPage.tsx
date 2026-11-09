@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { usePermissions } from '@lib/permissions';
 import { useTranslation } from '@i18n/translate';
 import { toMessage } from '../api/client';
 import { unapproveTask } from '../api/taskActions';
@@ -53,6 +54,7 @@ interface TaskListPageProps {
 export default function TaskListPage({ onOpenTask }: TaskListPageProps) {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
+  const { loaded: permissionsLoaded, can } = usePermissions();
   const [state, setState] = useState<ListState>(readState);
   const [data, setData] = useState<Paginated<TaskListItem> | null>(null);
   const [loadedKey, setLoadedKey] = useState('');
@@ -176,6 +178,7 @@ export default function TaskListPage({ onOpenTask }: TaskListPageProps) {
           busy={loading}
           onSearch={handleSearch}
           onCreate={() => setForm({ open: true, taskId: null })}
+          canCreate={permissionsLoaded && can('add_congviec')}
         />
       </div>
 
