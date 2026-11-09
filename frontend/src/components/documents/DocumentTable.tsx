@@ -216,7 +216,9 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
       doc.can_change_hieu_luc ||
       can(isDi ? 'change_hieu_luc_vanbandi' : 'change_hieu_luc_vanbanden')
     );
-    const canOnlyChangeHieuLuc = !isExpired && !isDocConfidential && canChangeHieuLucPerm;
+    // Quyền chỉ đổi hiệu lực: Áp dụng cho văn bản Đến/Đi thường (NOI_BO) cả còn hiệu lực lẫn hết hiệu lực;
+    // Tuyệt đối không tự ý áp dụng cho văn bản hạn chế (!isDocConfidential).
+    const canOnlyChangeHieuLuc = !isDocConfidential && canChangeHieuLucPerm;
 
     let userCanEdit = (doc.can_edit !== undefined ? doc.can_edit : defaultCanEdit) || canOnlyChangeHieuLuc;
     let userCanDelete = doc.can_delete !== undefined ? doc.can_delete : defaultCanDelete;
@@ -255,11 +257,18 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
       (isDocConfidential ? isCreator : userCanViewHistory)
     );
 
+    const isOnlyHieuLuc = Boolean(
+      !isDocConfidential &&
+      canChangeHieuLucPerm &&
+      (doc.can_edit_full === false || !can(isDi ? 'change_vanbandi' : 'change_vanbanden'))
+    );
+
     return {
       canView: canViewDetail,
       canEdit: Boolean(onEdit) && userCanEdit,
       canDelete: Boolean(onDelete) && userCanDelete,
       canViewHistory: Boolean(onViewHistory) && canViewHistory,
+      isOnlyHieuLuc,
     };
   }, [currentSession, isConfidential, isSuperuser, isSystemAdmin, can, loai, onDelete, onEdit, onViewHistory]);
 
@@ -387,7 +396,7 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
                 const isExpired = doc.hieu_luc === 'HET_HIEU_LUC';
                 const isActiveRow = activeMenuId === doc.id;
                 const isNearBottom = documents.length >= 5 && index >= documents.length - 2 && index >= 3;
-                const { canView, canEdit, canDelete, canViewHistory } = getDocPermissions(doc);
+                const { canView, canEdit, canDelete, canViewHistory, isOnlyHieuLuc } = getDocPermissions(doc);
 
                 // Tông màu hàng theo yêu cầu:
                 // - Toàn bộ hàng trắng đồng nhất, di chuột vào sáng trắng/xám nhẹ
@@ -651,9 +660,13 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
                               >
                                 <i className="fa-solid fa-pen-to-square text-warning-text w-4 text-xs" />
                                 <span>
-                                  {doc.can_edit_full === false && (doc.can_change_hieu_luc || can(isDi ? 'change_hieu_luc_vanbandi' : 'change_hieu_luc_vanbanden'))
-                                    ? (t('documents_ui.table.changeValidity') || 'Đổi hiệu lực')
-                                    : (t('documents_ui.table.edit') || 'Chỉnh sửa')}
+                                  {isOnlyHieuLuc
+                                    ? (t('documents_ui.table.changeValidity') && !t('documents_ui.table.changeValidity').startsWith('documents_ui.')
+                                        ? t('documents_ui.table.changeValidity')
+                                        : 'Đổi hiệu lực')
+                                    : (t('documents_ui.table.edit') && !t('documents_ui.table.edit').startsWith('documents_ui.')
+                                        ? t('documents_ui.table.edit')
+                                        : 'Chỉnh sửa')}
                                 </span>
                               </button>
                             )}
@@ -723,7 +736,7 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
         ) : (
           documents.map((doc, index) => {
             const isExpired = doc.hieu_luc === 'HET_HIEU_LUC';
-            const { canView, canEdit, canDelete, canViewHistory } = getDocPermissions(doc);
+            const { canView, canEdit, canDelete, canViewHistory, isOnlyHieuLuc } = getDocPermissions(doc);
 
             return (
               <div
@@ -903,9 +916,13 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
                       onClick={() => onEdit!(doc)}
                       className="!px-2 !py-1 text-xs text-warning-text hover:bg-warning-subtle"
                       title={
-                        doc.can_edit_full === false && (doc.can_change_hieu_luc || can(isDi ? 'change_hieu_luc_vanbandi' : 'change_hieu_luc_vanbanden'))
-                          ? (t('documents_ui.table.changeValidity') || 'Đổi hiệu lực')
-                          : (t('documents_ui.table.edit') || 'Chỉnh sửa')
+                        isOnlyHieuLuc
+                          ? (t('documents_ui.table.changeValidity') && !t('documents_ui.table.changeValidity').startsWith('documents_ui.')
+                              ? t('documents_ui.table.changeValidity')
+                              : 'Đổi hiệu lực')
+                          : (t('documents_ui.table.edit') && !t('documents_ui.table.edit').startsWith('documents_ui.')
+                              ? t('documents_ui.table.edit')
+                              : 'Chỉnh sửa')
                       }
                     />
                   )}
