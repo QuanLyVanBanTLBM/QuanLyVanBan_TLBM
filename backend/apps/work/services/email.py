@@ -72,7 +72,7 @@ def send_new_task_mail(task_id):
     """
     Báo công việc mới cho người liên quan (chủ trì, chỉ đạo, cán bộ tham gia), trừ người tạo.
     - Chỉ gửi lúc tạo mới, không gửi khi sửa.
-    - Công việc đang ẩn thì không gửi, vì người nhận chưa mở được công việc.
+    - Công việc đang ẩn vẫn gửi: người được giao thấy được việc ẩn của mình.
     - Người chưa khai báo email thì bỏ qua.
     Trả về số thư đã gửi.
     """
@@ -82,7 +82,7 @@ def send_new_task_mail(task_id):
         .filter(pk=task_id)
         .first()
     )
-    if task is None or not task.is_public:
+    if task is None:
         return 0
 
     creator_name = employee_full_name(task.created_by)
@@ -142,8 +142,7 @@ def _reminder_recipients(task):
 
 def _reminder_queryset(statuses, today):
     return (
-        Task.objects.filter(is_public=True)
-        .with_status(today=today)
+        Task.objects.with_status(today=today)
         .filter(status__in=statuses)
         .prefetch_related(Prefetch("participants", queryset=TaskParticipant.objects.select_related("user")))
     )
