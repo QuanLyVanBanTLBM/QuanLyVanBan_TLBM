@@ -359,22 +359,46 @@ export const MeetingsPage: React.FC = () => {
     }).sort(compareRoomsByFloor);
   }, [rooms, roomSearchTerm, roomStatusFilter, roomVisibilityFilter, selectedFloorFilter, canChangeRoom, currentLang]);
 
-  // Lọc danh sách cuộc họp theo tầng ở Tab 1
+  // Lọc danh sách cuộc họp theo tầng và sắp xếp theo thời gian, đẩy lịch bị hủy xuống cuối
   const displayBookings = useMemo(() => {
-    if (!selectedFloorFilter || selectedFloorFilter.toLowerCase() === 'all') return bookings;
-    return bookings.filter((b) => {
-      const room = rooms.find((r) => r.id === b.room) || b.room_detail;
-      const rFloor = extractFloor(room?.location, currentLang);
-      const rFloorVi = extractFloor(room?.location, 'vi');
-      const rFloorEn = extractFloor(room?.location, 'en');
-      const rFloorKey = getFloorKey(room?.location);
+    let list = bookings;
+    if (selectedFloorFilter && selectedFloorFilter.toLowerCase() !== 'all') {
+      list = bookings.filter((b) => {
+        const room = rooms.find((r) => r.id === b.room) || b.room_detail;
+        const rFloor = extractFloor(room?.location, currentLang);
+        const rFloorVi = extractFloor(room?.location, 'vi');
+        const rFloorEn = extractFloor(room?.location, 'en');
+        const rFloorKey = getFloorKey(room?.location);
 
-      return (
-        selectedFloorFilter === rFloor ||
-        selectedFloorFilter === rFloorVi ||
-        selectedFloorFilter === rFloorEn ||
-        selectedFloorFilter === rFloorKey
-      );
+        return (
+          selectedFloorFilter === rFloor ||
+          selectedFloorFilter === rFloorVi ||
+          selectedFloorFilter === rFloorEn ||
+          selectedFloorFilter === rFloorKey
+        );
+      });
+    }
+
+    return [...list].sort((a, b) => {
+      const aCancelled = a.trang_thai === 'CANCELLED' ? 1 : 0;
+      const bCancelled = b.trang_thai === 'CANCELLED' ? 1 : 0;
+
+      // 1. Lịch hiệu lực/hoàn thành (0) lên trước, lịch bị hủy (1) đẩy xuống cuối
+      if (aCancelled !== bCancelled) {
+        return aCancelled - bCancelled;
+      }
+
+      // 2. Sắp xếp theo ngày (nếu khác ngày)
+      if (a.date !== b.date) {
+        return a.date.localeCompare(b.date);
+      }
+
+      // 3. Sắp xếp tăng dần theo giờ bắt đầu
+      const startDiff = a.start_time.localeCompare(b.start_time);
+      if (startDiff !== 0) return startDiff;
+
+      // 4. Nếu trùng giờ bắt đầu, sắp xếp theo giờ kết thúc
+      return a.end_time.localeCompare(b.end_time);
     });
   }, [bookings, selectedFloorFilter, rooms, currentLang]);
 
@@ -944,9 +968,9 @@ export const MeetingsPage: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {filteredRooms.map((room) => {
                 const isAvailable = (room.trang_thai || 'AVAILABLE') === 'AVAILABLE';
-                const roomBookingsForDate = todayBookings.filter(
-                  (b) => b.room === room.id && b.trang_thai !== 'CANCELLED'
-                );
+                const roomBookingsForDate = todayBookings
+                  .filter((b) => b.room === room.id && b.trang_thai !== 'CANCELLED')
+                  .sort((a, b) => a.start_time.localeCompare(b.start_time) || a.end_time.localeCompare(b.end_time));
 
                 const isViewingToday = roomsDate === todayStr;
                 const now = new Date();
