@@ -47,14 +47,12 @@ TEN_LOAI = {
     "QUA_HAN": "Quá hạn ký",
     "KHOA_QUYEN_KY": "Quyền ký bị tạm khóa",
     "BAT_LAI_QUYEN_KY": "Quyền ký đã được bật lại",
-    "THU_HOI_KHOA": "Khóa ký bị thu hồi",
 }
-LOAI_QUAN_TRI = ("KHOA_QUYEN_KY", "BAT_LAI_QUYEN_KY", "THU_HOI_KHOA")
+LOAI_QUAN_TRI = ("KHOA_QUYEN_KY", "BAT_LAI_QUYEN_KY")
 # Bản tiếng Anh của thông báo thao tác quản trị (#489): chưa có tùy chọn ngôn ngữ theo tài khoản nên thư song ngữ.
 TEN_LOAI_EN = {
     "KHOA_QUYEN_KY": "Signing permission temporarily locked",
     "BAT_LAI_QUYEN_KY": "Signing permission restored",
-    "THU_HOI_KHOA": "Signing key revoked",
 }
 SO_LAN_GUI_TOI_DA = 5
 
@@ -95,12 +93,6 @@ def quan_tri_khoa_quyen(khoa):
 def quan_tri_bat_lai_quyen(khoa):
     """Báo tài khoản được bật lại quyền ký; gọi sau khi `bat_lai_luc` đã lưu nên kênh email không còn bị chặn."""
     _tao(None, khoa.nguoi_bi_khoa, "BAT_LAI_QUYEN_KY", f"BAT_LAI_QUYEN_KY:{khoa.pk}")
-
-
-def quan_tri_thu_hoi_khoa(nguoi_so_huu, danh_sach_khoa):
-    """Báo chủ khóa ký bị quản trị viên thu hồi khẩn cấp; một thông báo cho mỗi lần thu hồi."""
-    ma = min(k.pk for k in danh_sach_khoa)
-    _tao(None, nguoi_so_huu, "THU_HOI_KHOA", f"THU_HOI_KHOA:{ma}")
 
 
 def noi_dung_quan_tri(tb):

@@ -8,7 +8,7 @@ from accounts.models import Position
 from signing import enums
 from signing.errors import ImmutableEvidenceError
 from signing.models import (
-    SigningAttempt, SigningAuditLog, SigningKey, SigningManifest, SigningNotification,
+    SigningAttempt, SigningAuditLog, SigningManifest, SigningNotification,
     SigningProcess, SigningProcessStep, SigningProcessStepSigner, SigningRequest,
     SigningRequestStep, SigningRequestStepSigner, SigningSignature,
 )
@@ -36,10 +36,6 @@ class Base(TestCase):
         self.signer = SigningRequestStepSigner.objects.create(
             buoc_ky=self.step, nguoi_ky=self.u1, ten_nguoi_ky="U1", vai_tro_ky=enums.VaiTroKy.KY_CHINH
         )
-        self.key = SigningKey.objects.create(
-            nguoi_so_huu=self.u1, ma_khoa="k", dau_van_tay=H1, khoa_cong_khai="x", ngay_hieu_luc=timezone.now()
-        )
-
     def make_request(self, **kw):
         data = dict(
             document_type=enums.LoaiVanBan.VAN_BAN_DI, van_ban_id=1, quy_trinh=self.process, phien_ban_quy_trinh=1,
@@ -57,8 +53,7 @@ class Base(TestCase):
 
     def make_signature(self):
         return SigningSignature.objects.create(
-            luot_trinh=self.attempt, buoc_ky=self.signer, khoa_ky=self.key, hash_tai_lieu=H1,
-            thuat_toan="Ed25519", chu_ky_so="c2ln",
+            luot_trinh=self.attempt, buoc_ky=self.signer, hash_tai_lieu=H1,
         )
 
 
@@ -159,22 +154,14 @@ class SignatureImmutabilityTests(Base):
     def test_signature_hash_must_be_sha256(self):
         with self.assertRaises(IntegrityError), transaction.atomic():
             SigningSignature.objects.create(
-                luot_trinh=self.attempt, buoc_ky=self.signer, khoa_ky=self.key, hash_tai_lieu="x",
-                thuat_toan="Ed25519", chu_ky_so="c2ln",
+                luot_trinh=self.attempt, buoc_ky=self.signer, hash_tai_lieu="x",
             )
 
-    def test_core_fields_cannot_change_but_verification_can(self):
+    def test_evidence_fields_cannot_change_after_creation(self):
         sig = self.make_signature()
-        sig.chu_ky_so = "khac"
+        sig.hash_tai_lieu = H2
         with self.assertRaises(ImmutableEvidenceError):
             sig.save()
-        sig = SigningSignature.objects.get(pk=sig.pk)
-        sig.trang_thai_xac_minh = enums.TrangThaiXacMinh.KHONG_HOP_LE
-        sig.thoi_diem_xac_minh = timezone.now()
-        sig.save()
-        self.assertEqual(
-            SigningSignature.objects.get(pk=sig.pk).trang_thai_xac_minh, enums.TrangThaiXacMinh.KHONG_HOP_LE
-        )
 
     def test_delete_blocked(self):
         sig = self.make_signature()
@@ -183,11 +170,10 @@ class SignatureImmutabilityTests(Base):
         with self.assertRaises(ImmutableEvidenceError):
             SigningSignature.objects.filter(pk=sig.pk).delete()
 
-    def test_bulk_update_only_verification_fields(self):
+    def test_bulk_update_cannot_change_evidence(self):
         sig = self.make_signature()
-        SigningSignature.objects.filter(pk=sig.pk).update(trang_thai_xac_minh=enums.TrangThaiXacMinh.HOP_LE)
         with self.assertRaises(ImmutableEvidenceError):
-            SigningSignature.objects.filter(pk=sig.pk).update(chu_ky_so="khac")
+            SigningSignature.objects.filter(pk=sig.pk).update(hash_tai_lieu=H2)
 
     def test_multiple_signatures_per_signer_allowed(self):
         self.make_signature()

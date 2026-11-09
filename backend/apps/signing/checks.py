@@ -1,4 +1,4 @@
-"""System checks của phân hệ Trình ký: secret PIN và pepper khóa ký ở môi trường production."""
+"""System checks cho cấu hình PIN ký và nhà cung cấp SMS ở môi trường production."""
 
 from django.conf import settings
 from django.core.checks import Error, Tags, Warning, register
@@ -7,7 +7,7 @@ from django.core.checks import Error, Tags, Warning, register
 @register(Tags.security, deploy=True)
 def kiem_tra_bi_mat_pin(app_configs, **kwargs):
     """
-    `SIGNING_PIN_SECRET` dùng để HMAC mã đặt lại PIN và MFA (không dùng mã hóa private key ký).
+    `SIGNING_PIN_SECRET` dùng để tạo verifier PIN và HMAC OTP.
     Chạy trong `manage.py check --deploy` (cổng kiểm tra cấu hình production). Không đăng ký thành
     check thường vì `manage.py test` luôn đặt DEBUG = False: check thường sẽ chặn test của mọi nhóm
     khi CI không đặt biến này. Lúc chạy, `services.pin._bi_mat_may_chu` từ chối hoạt động nếu
@@ -30,19 +30,21 @@ def kiem_tra_bi_mat_pin(app_configs, **kwargs):
 
 
 @register(Tags.security, deploy=True)
-def kiem_tra_pepper_khoa_ky(app_configs, **kwargs):
-    """Pepper tách biệt để mã hóa private key và xác minh PIN; không dùng SECRET_KEY thay thế ở production."""
-    pepper = getattr(settings, "SIGNING_KEY_PEPPER", "")
-    if not pepper:
+def kiem_tra_cau_hinh_sms_otp(app_configs, **kwargs):
+    """SMS là kênh OTP mặc định; production phải có endpoint HTTPS, Authorization và sender."""
+    url = getattr(settings, "SIGNING_SMS_URL", "")
+    authorization = getattr(settings, "SIGNING_SMS_AUTHORIZATION", "")
+    sender = getattr(settings, "SIGNING_SMS_FROM", "")
+    if not url or not authorization or not sender:
         return [Error(
-            "Chưa đặt SIGNING_KEY_PEPPER cho môi trường production.",
-            hint="Đặt SIGNING_KEY_PEPPER là chuỗi ngẫu nhiên riêng và giữ ổn định qua các lần deploy.",
+            "Chưa cấu hình đầy đủ SMS OTP cho môi trường production.",
+            hint="Đặt SIGNING_SMS_URL, SIGNING_SMS_AUTHORIZATION và SIGNING_SMS_FROM; không lưu thông tin xác thực trong mã nguồn.",
             id="signing.E005",
         )]
-    if pepper == settings.SECRET_KEY or pepper == getattr(settings, "SIGNING_PIN_SECRET", ""):
+    if not url.startswith("https://"):
         return [Error(
-            "SIGNING_KEY_PEPPER phải khác SECRET_KEY và SIGNING_PIN_SECRET.",
-            hint="Dùng một pepper ngẫu nhiên riêng cho mã hóa private key và xác minh PIN.",
+            "SIGNING_SMS_URL phải dùng HTTPS.",
+            hint="Dùng endpoint HTTPS để bảo vệ mã OTP và thông tin người nhận khi gửi tới nhà cung cấp.",
             id="signing.E006",
         )]
     return []

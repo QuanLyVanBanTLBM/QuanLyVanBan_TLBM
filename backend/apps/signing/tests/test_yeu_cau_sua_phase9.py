@@ -22,7 +22,7 @@ from signing.services import trinh_ky as trinh_ky_service
 from signing.services import yeu_cau_sua as yeu_cau_sua_service
 
 from .helpers import cap_quyen, dat_anh_chu_ky
-from .test_hanh_dong_ky_phase8 import HASH, KyBase, chay_song_song, khoa_hoat_dong, ky_so, ma_loi
+from .test_hanh_dong_ky_phase8 import HASH, PIN_KIEM_THU, KyBase, chay_song_song, ma_loi, tao_pin
 from .test_trinh_ky_phase7 import BASE, PDF, VAN_BAN, tep_pdf
 
 User = get_user_model()
@@ -45,8 +45,7 @@ class YeuCauSuaTests(KyBase):
                            HTTP_IDEMPOTENCY_KEY=khoa)
 
     def ky_ban_sua(self, user):
-        private, _ = self.khoa[user.pk]
-        return self.ky(user, hash_tai_lieu=HASH_SUA, chu_ky_so=ky_so(private, HASH_SUA))
+        return self.ky(user, hash_tai_lieu=HASH_SUA)
 
     def test_return_at_later_level_then_full_resign(self):
         self.ky(self.ky1)
@@ -122,7 +121,7 @@ class YeuCauSuaTests(KyBase):
 
 
 @unittest.skipUnless(connection.vendor == "postgresql", "Cần PostgreSQL để kiểm tra khóa dòng đồng thời")
-@override_settings(SIGNING_PIN_SECRET="bi-mat-test", SIGNING_KEY_PEPPER="pepper-test")
+@override_settings(SIGNING_PIN_SECRET="bi-mat-test")
 class TraSuaDongThoiTests(TransactionTestCase):
     """Hai người cùng cấp thao tác cùng lúc: không có chữ ký nào được ghi trên lượt đã dừng."""
 
@@ -150,7 +149,8 @@ class TraSuaDongThoiTests(TransactionTestCase):
         ho_so = trinh_ky_service.tao_nhap(self.tao, quy_trinh=qt, tep=tep_pdf(),
                                           trich_yeu_van_ban="Tài liệu kiểm tra")
         self.ho_so = trinh_ky_service.gui(ho_so, self.tao, khoa_chong_trung="g")
-        self.private, self.key = khoa_hoat_dong(self.ky1, "K-DT")
+        tao_pin(self.ky1)
+        tao_pin(self.ky2)
 
     def tra_sua(self):
         yeu_cau_sua_service.yeu_cau_sua(self.ho_so, self.ky2, tieu_de="Sửa", ly_do="Sai", khoa_chong_trung="ycs")
@@ -162,8 +162,8 @@ class TraSuaDongThoiTests(TransactionTestCase):
 
     def test_sign_racing_return_never_signs_paused_attempt(self):
         loi = chay_song_song(
-            lambda: hanh_dong_service.ky(self.ho_so, self.ky1, khoa_ky=self.key.pk, hash_tai_lieu=HASH,
-                                         pin="123456", khoa_chong_trung="ky"),
+            lambda: hanh_dong_service.ky(self.ho_so, self.ky1, hash_tai_lieu=HASH,
+                                         pin=PIN_KIEM_THU, khoa_chong_trung="ky"),
             self.tra_sua,
         )
         self.assertEqual(self.kiem_luot_dung(), ("YEU_CAU_SUA", "TAM_DUNG"))
