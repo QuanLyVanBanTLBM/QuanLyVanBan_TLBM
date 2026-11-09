@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from '@i18n/translate';
 import { ApiError, apiClient, downloadBlob } from '@lib/apiClient';
 import { usePermissions } from '@lib/permissions';
@@ -75,20 +75,20 @@ export default function OrganizationsPage() {
   const [isDeletingUnit, setIsDeletingUnit] = useState<boolean>(false);
 
   // Hiển thị thông báo tạm thời
-  const showToast = (textKey: string, isError = false) => {
+  const showToast = useCallback((textKey: string, isError = false) => {
     setToastMessage({ textKey, isError });
     setTimeout(() => setToastMessage(null), 3500);
-  };
+  }, []);
 
   // Thiếu quyền xem (403) khác lỗi mạng: báo đúng nguyên nhân một lần trong khung thay vì "kiểm tra kết nối" và số 0.
   const [accessDenied, setAccessDenied] = useState<boolean>(false);
-  const handleLoadError = (err: unknown) => {
+  const handleLoadError = useCallback((err: unknown) => {
     if (err instanceof ApiError && err.status === 403) {
       setAccessDenied(true);
       return;
     }
     showToast('organizations.messages.fetchError', true);
-  };
+  }, [showToast]);
 
   // Phân trang cho Tab Khối
   const [regionPage, setRegionPage] = useState<number>(1);
@@ -145,7 +145,7 @@ export default function OrganizationsPage() {
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [handleLoadError]);
 
   // 2. Tải danh sách Bảng Khối có phân trang và tìm kiếm phía Server
   useEffect(() => {
@@ -176,7 +176,7 @@ export default function OrganizationsPage() {
     return () => {
       ignore = true;
     };
-  }, [regionPage, regionSearchQuery]);
+  }, [regionPage, regionSearchQuery, handleLoadError]);
 
   // Tải danh sách Đơn vị khi thay đổi trang, khối hoặc từ khóa tìm kiếm
   useEffect(() => {
@@ -204,7 +204,7 @@ export default function OrganizationsPage() {
     return () => {
       ignore = true;
     };
-  }, [currentPage, selectedRegionId, searchQuery]);
+  }, [currentPage, selectedRegionId, searchQuery, handleLoadError]);
 
   // Làm mới danh sách Khối sau khi thêm/sửa/xóa
   const refreshRegions = async () => {

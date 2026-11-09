@@ -28,16 +28,16 @@ def get_active_ai_settings() -> dict:
     Priority:
     1. DATA_DIR / ai_settings.json (persisted on disk across workers/restarts)
     2. os.environ / backend.config attributes
-    3. Defaults (gemini / gemini-3.8-flash)
+    3. Defaults (openai / gpt-6-luna)
     """
-    provider = os.getenv("MODEL_PROVIDER") or getattr(config, "MODEL_PROVIDER", "gemini")
-    provider_config = MODEL_CONFIG.get(provider, MODEL_CONFIG["gemini"])
+    provider = "openai"
+    provider_config = MODEL_CONFIG[provider]
 
     settings = {
         "provider": provider,
-        "llm_model": os.getenv("LLM_MODEL") or getattr(config, "LLM_MODEL", provider_config["default_llm"]),
-        "embed_model": os.getenv("EMBED_MODEL") or getattr(config, "EMBED_MODEL", provider_config["embed_model"]),
-        "vision_model": os.getenv("VISION_MODEL") or getattr(config, "VISION_MODEL", provider_config["default_llm"]),
+        "llm_model": provider_config["default_llm"],
+        "embed_model": provider_config["embed_model"],
+        "vision_model": provider_config["default_llm"],
         "gemini_api_key": os.getenv("GEMINI_API_KEY") or getattr(config, "GEMINI_API_KEY", ""),
         "openai_api_key": os.getenv("OPENAI_API_KEY") or getattr(config, "OPENAI_API_KEY", ""),
     }
@@ -47,19 +47,25 @@ def get_active_ai_settings() -> dict:
         try:
             stored = json.loads(file_path.read_text(encoding="utf-8"))
             if isinstance(stored, dict):
-                for k in ("provider", "llm_model", "embed_model", "vision_model", "gemini_api_key", "openai_api_key"):
+                for k in ("gemini_api_key", "openai_api_key"):
                     val = stored.get(k)
                     if val is not None and str(val).strip():
                         settings[k] = str(val).strip()
         except Exception as exc:
             logger.warning("Could not read ai_settings.json: %s", exc)
 
+    settings.update({
+        "provider": provider,
+        "llm_model": provider_config["default_llm"],
+        "embed_model": provider_config["embed_model"],
+        "vision_model": provider_config["default_llm"],
+    })
     return settings
 
 
 def get_active_provider() -> str:
     active = get_active_ai_settings()
-    return str(active.get("provider") or "gemini").lower().strip()
+    return "openai"
 
 
 def save_ai_settings(updates: dict) -> dict:

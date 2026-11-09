@@ -89,6 +89,8 @@ class AIAccessTests(TestCase):
         response = self.client.get("/api/ai/settings")
         self.assertEqual(response.status_code, 200)
         self.assertIn("api_key_masked", response.json())
+        self.assertEqual(response.json()["provider"], "openai")
+        self.assertEqual(response.json()["model_options"]["openai"]["llm_models"], ["gpt-6-luna"])
 
     def test_chat_passes_authenticated_employee_id_not_request_body(self):
         self.client.force_authenticate(self.ai_user)
@@ -122,7 +124,7 @@ class AIAccessTests(TestCase):
         fake_rag = SimpleNamespace(setup_llamaindex=MagicMock())
         response_body = {
             "data": [
-                {"id": "gpt-4o-mini"},
+                {"id": "gpt-6-luna"},
                 {"id": "text-embedding-3-small"},
                 {"id": "text-embedding-3-large"},
             ]
@@ -144,9 +146,9 @@ class AIAccessTests(TestCase):
                     MODEL_PROVIDER="openai",
                     BASE_DIR=Path(temp_dir),
                     DATA_DIR=Path(temp_dir) / "data",
-                    LLM_MODEL="gemini-3.8-flash",
-                    EMBED_MODEL="models/gemini-embedding-001",
-                    VISION_MODEL="gemini-3.8-flash",
+                    LLM_MODEL="gpt-6-luna",
+                    EMBED_MODEL="text-embedding-3-large",
+                    VISION_MODEL="gpt-6-luna",
                 ),
             ):
                 response = self.client.post(
@@ -154,7 +156,7 @@ class AIAccessTests(TestCase):
                     {
                         "provider": "openai",
                         "api_key": "test-openai-key",
-                        "llm_model": "gpt-4o-mini",
+                        "llm_model": "gpt-6-luna",
                     },
                     format="json",
                 )
@@ -163,7 +165,7 @@ class AIAccessTests(TestCase):
         request = urlopen.call_args.args[0]
         self.assertEqual(request.get_header("Authorization"), "Bearer test-openai-key")
 
-    def test_switch_from_gemini_to_openai_succeeds_without_409_conflict(self):
+    def test_switch_from_legacy_gemini_config_to_openai_succeeds(self):
         self.client.force_authenticate(self.superuser)
         fake_rag = SimpleNamespace(
             setup_llamaindex=MagicMock(),
@@ -204,11 +206,11 @@ class AIAccessTests(TestCase):
                     {
                         "provider": "openai",
                         "api_key": "sk-mock-key-1234567890",
-                        "llm_model": "gpt-4o-mini",
+                        "llm_model": "gpt-6-luna",
                     },
                     format="json",
                 )
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["provider"], "openai")
-        self.assertEqual(response.json()["llm_model"], "gpt-4o-mini")
+        self.assertEqual(response.json()["llm_model"], "gpt-6-luna")

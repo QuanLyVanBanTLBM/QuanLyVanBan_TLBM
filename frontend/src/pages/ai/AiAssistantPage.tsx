@@ -15,7 +15,6 @@ import {
   previewDocument,
   getAISettings,
 } from '../../api';
-import AISettingsModal from '../../components/AISettingsModal';
 import { t as translate, useTranslation, type SupportedLanguage } from '@i18n/translate';
 import { usePermissions } from '@lib/permissions';
 import '@styles/ai-chat.css';
@@ -865,7 +864,6 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
   const [categories, setCategories] = useState<CategoryItem[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [previewFilename, setPreviewFilename] = useState<string | null>(null);
-  const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
   const [aiConfig, setAiConfig] = useState<AIConfig | null>(null);
 
   // Chat input states
@@ -1949,28 +1947,14 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                 className="model-selector-wrapper ai-model-badge"
                 style={{ display: 'flex' }}
                 aria-live="polite"
-                aria-label={`${aiConfig.provider || 'GEMINI'} ${aiConfig.llm_model || t('aiAssistant.modelLoading')}`}
-                title={`${aiConfig.provider || 'GEMINI'} ${aiConfig.llm_model || t('aiAssistant.modelLoading')}`}
+                aria-label={aiConfig.provider || 'OPENAI'}
+                title={aiConfig.provider || 'OPENAI'}
               >
                 <span className="live-pulse-dot" />
-                <span className="text-uppercase font-bold">{aiConfig.provider || 'GEMINI'}</span>
-                <span className="opacity-50">|</span>
-                <span>{aiConfig.llm_model || t('aiAssistant.defaultModel')}</span>
+                <span className="text-uppercase font-bold">{aiConfig.provider || 'OPENAI'}</span>
               </div>
             )}
 
-            {/* Nút Cài đặt AI */}
-            {currentUser.isAdmin && (
-              <button
-                type="button"
-                className="chat-action-btn"
-                onClick={() => setShowSettingsModal(true)}
-                title={t('aiAssistant.inline.aiModelApiKeySettings')}
-              >
-                <i className="fa-solid fa-gear" />
-                <span className="hidden xl:inline">{t('aiAssistant.inline.aiSettings')}</span>
-              </button>
-            )}
 
             {/* Nút Xuất file */}
             <button
@@ -2098,7 +2082,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                     <span className="sender-name">
                       {msg.sender === 'user'
                         ? currentUser.fullName
-                        : t('aiAssistant.assistantSenderName', { provider: aiConfig?.provider ? aiConfig.provider.toUpperCase() : 'GEMINI' })}
+                        : t('aiAssistant.assistantSenderName', { provider: aiConfig?.provider ? aiConfig.provider.toUpperCase() : 'OPENAI' })}
                     </span>
                     <span className="message-time">{msg.time}</span>
                   </div>
@@ -2398,13 +2382,6 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
         />
       )}
 
-      {/* Modal Cài Đặt AI */}
-      {showSettingsModal && (
-        <AISettingsModal
-          onClose={() => setShowSettingsModal(false)}
-          onSaved={(newConfig: AIConfig) => setAiConfig(newConfig)}
-        />
-      )}
       <AlertModal open={aiAlertOpen} onClose={()=>setAiAlertOpen(false)} message={aiAlertMsg} />
     </div>
   );
