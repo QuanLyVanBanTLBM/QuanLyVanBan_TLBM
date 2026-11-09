@@ -1,5 +1,5 @@
 /**
- * Trang và panel Trình ký chưa có test: tạo hồ sơ (bước 1), khóa ký & PIN, trao đổi khi trả sửa, kết quả hoàn tất.
+ * Trang và panel Trình ký: tạo hồ sơ (bước 1), thiết lập PIN, trao đổi khi trả sửa, kết quả hoàn tất.
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -7,17 +7,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import KetQuaPanel from '@components/signing/KetQuaPanel';
 import XemPdf from '@components/signing/XemPdf';
 import TraoDoiPanel from '@components/signing/TraoDoiPanel';
-import { ApiError } from '@lib/apiClient';
 import { signingApi } from '@lib/signing/api';
 import { SigningContext } from '@lib/signing/hooks';
-import type { HoSoChiTiet, KhoaKy, LuotTrinh, NguoiDungHienTai, QuyTrinh } from '@lib/signing/types';
-import KhoaPage from './KhoaPage';
+import type { HoSoChiTiet, LuotTrinh, NguoiDungHienTai, QuyTrinh } from '@lib/signing/types';
 import TaoHoSoPage, { Buoc2 } from './TaoHoSoPage';
 
 vi.mock('@lib/signing/api', async () => {
   const actual = await vi.importActual<typeof import('@lib/signing/api')>('@lib/signing/api');
   return { ...actual, signingApi: {
-    timVanBanDi: vi.fn(), chiTietVanBanDi: vi.fn(), lienKetVanBanDi: vi.fn(), quyTrinh: vi.fn(), taoNhap: vi.fn(), chiTietQuyTrinh: vi.fn(), khoa: vi.fn(),
+    timVanBanDi: vi.fn(), chiTietVanBanDi: vi.fn(), lienKetVanBanDi: vi.fn(), quyTrinh: vi.fn(), taoNhap: vi.fn(), chiTietQuyTrinh: vi.fn(),
     traoDoi: vi.fn(), guiTinNhan: vi.fn(), giaiQuyet: vi.fn(), taoLaiTepHoanTat: vi.fn(), tepHoanTat: vi.fn(),
     bangChung: vi.fn(),
   } };
@@ -162,46 +160,6 @@ describe('Buoc2 định vị khung ký', () => {
     expect(nutBoKhung).toBeInTheDocument();
     fireEvent.click(nutBoKhung);
     await waitFor(() => expect(screen.getByText('Chưa đặt vị trí (chỉ hiện trên trang phê duyệt)')).toBeInTheDocument());
-  });
-});
-
-describe('KhoaPage', () => {
-  it('chưa có khóa: chặn PIN không đạt chính sách và PIN nhập lại không khớp', async () => {
-    api.khoa.mockResolvedValue([]);
-    boc(<KhoaPage />);
-    expect(await screen.findByText('Bạn chưa đăng ký khóa ký với máy chủ.')).toBeInTheDocument();
-    const tao = screen.getByRole('button', { name: 'Đăng ký khóa ký mới' });
-    fireEvent.change(screen.getByLabelText('PIN mới (6 chữ số)'), { target: { value: '234567' } });
-    expect(await screen.findByText(/liên tiếp|tăng|giảm/i)).toBeInTheDocument();
-    expect(tao).toBeDisabled();
-    fireEvent.change(screen.getByLabelText('PIN mới (6 chữ số)'), { target: { value: '482739' } });
-    fireEvent.change(screen.getByLabelText('Nhập lại PIN'), { target: { value: '482738' } });
-    expect(await screen.findByText('Hai lần nhập PIN không khớp.')).toBeInTheDocument();
-    expect(tao).toBeDisabled();
-    fireEvent.change(screen.getByLabelText('Nhập lại PIN'), { target: { value: '482739' } });
-    await waitFor(() => expect(tao).toBeEnabled());
-  });
-
-  it.each([
-    [500, { detail: 'Internal Server Error' }, 'Máy chủ gặp sự cố. Vui lòng thử lại sau.'],
-    [429, { detail: 'Request was throttled.' }, 'Thao tác quá nhanh. Vui lòng thử lại sau ít phút.'],
-    [404, { detail: 'Not found.' }, 'Không tìm thấy dữ liệu yêu cầu.'],
-    [403, { detail: 'You do not have permission.' }, 'Bạn không có quyền thực hiện thao tác này.'],
-  ])('tải khóa lỗi HTTP %i: hiện thông báo theo mã trạng thái, không hiện chuỗi thô của máy chủ', async (status, data, mong_doi) => {
-    api.khoa.mockRejectedValue(new ApiError(status, data));
-    boc(<KhoaPage />);
-    expect(await screen.findByText(mong_doi)).toBeInTheDocument();
-    expect(screen.queryByText(data.detail)).not.toBeInTheDocument();
-  });
-
-  it('khóa trình duyệt cũ cần được thay bằng khóa mới trên máy chủ', async () => {
-    const khoa = { id: 4, ma_khoa: 'TB-3-1', dau_van_tay: 'f'.repeat(64), thuat_toan: 'Ed25519',
-      khoa_cong_khai: 'pub', trang_thai: 'HOAT_DONG' } as KhoaKy;
-    api.khoa.mockResolvedValue([khoa]);
-    boc(<KhoaPage />);
-    expect(await screen.findByText(/Khóa trình duyệt cũ không có private key phía máy chủ/)).toBeInTheDocument();
-    expect(screen.queryByLabelText(/file khóa/i)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Đăng ký khóa ký mới' })).toBeInTheDocument();
   });
 });
 

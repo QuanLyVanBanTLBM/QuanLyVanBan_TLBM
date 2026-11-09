@@ -97,7 +97,7 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
         setZoom(1);
         setOffset({ x: 0, y: 0 });
       };
-      img.onerror = () => setLoi(t('khoa.chuaChonAnh'));
+      img.onerror = () => setLoi(t('pin.chuaChonAnh'));
       img.src = src;
     };
     reader.readAsDataURL(tep);
@@ -361,7 +361,7 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
               disabled={!rawImg || Boolean(loi)}
               onClick={xuatAnh}
             >
-              {t('khoa.xacNhanCat')}
+              {t('pin.xacNhanCat')}
             </Button>
           </>
         }
@@ -420,14 +420,14 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
       {xacNhan && (
         <HopThoai
           mo={Boolean(xacNhan)}
-          moTieuDe={t('khoa.xacNhanChuKyTieuDe')}
+          moTieuDe={t('pin.xacNhanChuKyTieuDe')}
           onDong={onHuyXacNhan}
           dangXuLy={dangXuLy}
           chieuRong="400px"
           chanDuoi={
             <>
               <Button variant="secondary" onClick={onHuyXacNhan} disabled={dangXuLy}>
-                {t('khoa.chinhSuaLai')}
+                {t('pin.chinhSuaLai')}
               </Button>
               <Button
                 variant="primary"
@@ -435,19 +435,19 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
                 isLoading={dangXuLy}
                 onClick={onDongYApDung}
               >
-                {t('khoa.dongYApDung')}
+                {t('pin.dongYApDung')}
               </Button>
             </>
           }
         >
           <div className="space-y-4">
             <ThongBao loai="canh_bao">
-              {t('khoa.xacNhanChuKyNoiDung')}
+              {t('pin.xacNhanChuKyNoiDung')}
             </ThongBao>
 
             <div className="flex flex-col items-center justify-center space-y-2">
               <span className="text-xs text-secondary font-medium">
-                {t('khoa.ketQuaCat')}
+                {t('pin.ketQuaCat')}
               </span>
               <div
                 className="flex items-center justify-center p-3 rounded-lg border-2 border-primary shadow-sm"
@@ -462,7 +462,7 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
               >
                 <img
                   src={xacNhan.dataUrl}
-                  alt={t('khoa.chuKyCaNhan')}
+                  alt={t('pin.chuKyCaNhan')}
                   className="w-full h-full object-contain"
                 />
               </div>
