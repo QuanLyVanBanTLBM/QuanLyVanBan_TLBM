@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { ResourceFormModal } from './ResourceFormModal';
 import { ResourceItem, ResourceCategory, ResourceType } from '@app-types/resource';
+import { Unit } from '@app-types/organization';
 
 const mockCategories: ResourceCategory[] = [
   { id: 1, stt_uu_tien: 1, ten_tai_lieu: 'Thư mục 1' },
@@ -139,5 +140,73 @@ describe('ResourceFormModal Component', () => {
 
     // Ô ngày hết hiệu lực được tự động điền ngày hôm nay
     expect(expDateInput.value).toBeTruthy();
+  });
+
+  it('displays department helper notice when Internal Scope is selected with an issuing unit', () => {
+    const mockUnits: Unit[] = [
+      {
+        id: 10,
+        khoi: 1,
+        ten: 'Ban Kiểm toán nội bộ',
+        stt_uu_tien: 1,
+        dia_chi: null,
+        dien_thoai: null,
+        email: null,
+        is_public: true,
+        ghi_chu: null,
+      },
+    ];
+
+    render(
+      <ResourceFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+        categories={mockCategories}
+        types={mockTypes}
+        units={mockUnits}
+        initialData={{
+          id: 99,
+          dm_tai_lieu: 1,
+          loai_tai_lieu: [1],
+          tieu_de: 'Tài liệu nội bộ',
+          ngay_dang: '2026-01-01',
+          noi_ban_hanh: 'Ban Kiểm toán nội bộ',
+          don_vi_id: 10,
+          hieu_luc: 'CON_HIEU_LUC',
+          file_dinh_kem: '/media/test.pdf',
+          hien_thi: 'NOI_BO_PHONG_BAN',
+        }}
+      />
+    );
+
+    // Kiểm tra thông báo phạm vi nội bộ hiển thị đúng đơn vị ban hành
+    expect(screen.getByText(/Tài liệu chỉ hiển thị cho cán bộ nhân viên thuộc đơn vị: Ban Kiểm toán nội bộ/i)).toBeInTheDocument();
+  });
+
+  it('formats posted date (ngay_dang) as dd/mm/yyyy in read-only input', () => {
+    render(
+      <ResourceFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+        categories={mockCategories}
+        types={mockTypes}
+        initialData={{
+          id: 100,
+          dm_tai_lieu: 1,
+          loai_tai_lieu: [1],
+          tieu_de: 'Tài liệu test ngày',
+          ngay_dang: '2026-10-24',
+          hieu_luc: 'CON_HIEU_LUC',
+          file_dinh_kem: '/media/test.pdf',
+          hien_thi: 'TAT_CA',
+        }}
+      />
+    );
+
+    const postedDateInput = document.getElementById('field-ngay_dang') as HTMLInputElement;
+    expect(postedDateInput).toBeInTheDocument();
+    expect(postedDateInput.value).toBe('24/10/2026');
   });
 });

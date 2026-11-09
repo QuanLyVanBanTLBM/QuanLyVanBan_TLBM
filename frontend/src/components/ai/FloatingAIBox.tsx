@@ -27,6 +27,11 @@ interface AIConfig {
   llm_model?: string;
 }
 
+interface Position {
+  x: number;
+  y: number;
+}
+
 const MAX_WIDGET_QUESTION_LENGTH = 4000;
 
 let floatingMsgSeq = 0;
@@ -187,15 +192,252 @@ export default function FloatingAIBox({ onNavigate }: FloatingAIBoxProps) {
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const windowRef = useRef<HTMLDivElement>(null);
+  const buttonWrapperRef = useRef<HTMLDivElement>(null);
   const sendingRef = useRef(false);
 
-  useEffect(() => {
+  // Vị trí cửa sổ chat khi kéo thả tự do
+  const [windowPos, setWindowPos] = useState<Position | null>(() => {
     try {
-      localStorage.removeItem('tlbm_ai_box_pos');
+      const saved = localStorage.getItem('tlbm_ai_win_pos');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed?.x === 'number' && typeof parsed?.y === 'number') {
+          return parsed;
+        }
+      }
     } catch {
-      // Storage may be unavailable in private browsing contexts.
+      // Storage có thể không khả dụng trong private browsing
     }
+    return null;
+  });
+  const [isDraggingWindow, setIsDraggingWindow] = useState(false);
+  const dragWindowRef = useRef<{
+    startX: number;
+    startY: number;
+    origX: number;
+    origY: number;
+    hasMoved: boolean;
+  } | null>(null);
+
+  // Vị trí nút robot tròn khi kéo thả tự do
+  const [buttonPos, setButtonPos] = useState<Position | null>(() => {
+    try {
+      const saved = localStorage.getItem('tlbm_ai_btn_pos');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed?.x === 'number' && typeof parsed?.y === 'number') {
+          return parsed;
+        }
+      }
+    } catch {
+      // Storage unavailable
+    }
+    return null;
+  });
+  const [isDraggingButton, setIsDraggingButton] = useState(false);
+  const dragButtonRef = useRef<{
+    startX: number;
+    startY: number;
+    origX: number;
+    origY: number;
+    hasMoved: boolean;
+  } | null>(null);
+
+  // Giữ cửa sổ và nút luôn nằm trong màn hình khi co giãn trình duyệt
+  useEffect(() => {
+    const handleResize = () => {
+      setWindowPos((prev) => {
+        if (!prev || !windowRef.current) return prev;
+        const rect = windowRef.current.getBoundingClientRect();
+        const maxX = Math.max(8, window.innerWidth - rect.width - 8);
+        const maxY = Math.max(8, window.innerHeight - rect.height - 8);
+        return {
+          x: Math.max(8, Math.min(prev.x, maxX)),
+          y: Math.max(8, Math.min(prev.y, maxY)),
+        };
+      });
+      setButtonPos((prev) => {
+        if (!prev || !buttonWrapperRef.current) return prev;
+        const rect = buttonWrapperRef.current.getBoundingClientRect();
+        const maxX = Math.max(8, window.innerWidth - rect.width - 8);
+        const maxY = Math.max(8, window.innerHeight - rect.height - 8);
+        return {
+          x: Math.max(8, Math.min(prev.x, maxX)),
+          y: Math.max(8, Math.min(prev.y, maxY)),
+        };
+      });
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // Xử lý kéo thả cửa sổ chat
+  useEffect(() => {
+    if (!isDraggingWindow) return;
+
+    const handlePointerMove = (e: MouseEvent | TouchEvent) => {
+      if (!dragWindowRef.current || !windowRef.current) return;
+      const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+      const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+
+      const deltaX = clientX - dragWindowRef.current.startX;
+      const deltaY = clientY - dragWindowRef.current.startY;
+
+      if (!dragWindowRef.current.hasMoved && Math.hypot(deltaX, deltaY) > 3) {
+        dragWindowRef.current.hasMoved = true;
+      }
+
+      const rect = windowRef.current.getBoundingClientRect();
+      const rawX = dragWindowRef.current.origX + deltaX;
+      const rawY = dragWindowRef.current.origY + deltaY;
+
+      const maxX = Math.max(8, window.innerWidth - rect.width - 8);
+      const maxY = Math.max(8, window.innerHeight - rect.height - 8);
+
+      const clampedX = Math.max(8, Math.min(rawX, maxX));
+      const clampedY = Math.max(8, Math.min(rawY, maxY));
+
+      setWindowPos({ x: clampedX, y: clampedY });
+    };
+
+    const handlePointerUp = () => {
+      setIsDraggingWindow(false);
+      if (dragWindowRef.current?.hasMoved) {
+        setWindowPos((current) => {
+          if (current) {
+            try {
+              localStorage.setItem('tlbm_ai_win_pos', JSON.stringify(current));
+            } catch {
+              // ignore
+            }
+          }
+          return current;
+        });
+      }
+      dragWindowRef.current = null;
+    };
+
+    window.addEventListener('mousemove', handlePointerMove);
+    window.addEventListener('mouseup', handlePointerUp);
+    window.addEventListener('touchmove', handlePointerMove, { passive: false });
+    window.addEventListener('touchend', handlePointerUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handlePointerMove);
+      window.removeEventListener('mouseup', handlePointerUp);
+      window.removeEventListener('touchmove', handlePointerMove);
+      window.removeEventListener('touchend', handlePointerUp);
+    };
+  }, [isDraggingWindow]);
+
+  // Xử lý kéo thả nút robot tròn
+  useEffect(() => {
+    if (!isDraggingButton) return;
+
+    const handlePointerMove = (e: MouseEvent | TouchEvent) => {
+      if (!dragButtonRef.current || !buttonWrapperRef.current) return;
+      const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+      const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+
+      const deltaX = clientX - dragButtonRef.current.startX;
+      const deltaY = clientY - dragButtonRef.current.startY;
+
+      if (!dragButtonRef.current.hasMoved && Math.hypot(deltaX, deltaY) > 5) {
+        dragButtonRef.current.hasMoved = true;
+      }
+
+      const rect = buttonWrapperRef.current.getBoundingClientRect();
+      const rawX = dragButtonRef.current.origX + deltaX;
+      const rawY = dragButtonRef.current.origY + deltaY;
+
+      const maxX = Math.max(8, window.innerWidth - rect.width - 8);
+      const maxY = Math.max(8, window.innerHeight - rect.height - 8);
+
+      const clampedX = Math.max(8, Math.min(rawX, maxX));
+      const clampedY = Math.max(8, Math.min(rawY, maxY));
+
+      setButtonPos({ x: clampedX, y: clampedY });
+    };
+
+    const handlePointerUp = () => {
+      const moved = dragButtonRef.current?.hasMoved;
+      setIsDraggingButton(false);
+      if (moved) {
+        setButtonPos((current) => {
+          if (current) {
+            try {
+              localStorage.setItem('tlbm_ai_btn_pos', JSON.stringify(current));
+            } catch {
+              // ignore
+            }
+          }
+          return current;
+        });
+      }
+      setTimeout(() => {
+        dragButtonRef.current = null;
+      }, 50);
+    };
+
+    window.addEventListener('mousemove', handlePointerMove);
+    window.addEventListener('mouseup', handlePointerUp);
+    window.addEventListener('touchmove', handlePointerMove, { passive: false });
+    window.addEventListener('touchend', handlePointerUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handlePointerMove);
+      window.removeEventListener('mouseup', handlePointerUp);
+      window.removeEventListener('touchmove', handlePointerMove);
+      window.removeEventListener('touchend', handlePointerUp);
+    };
+  }, [isDraggingButton]);
+
+  const handleWindowDragStart = (e: React.MouseEvent | React.TouchEvent) => {
+    if ('button' in e && e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('button') || target.closest('input') || target.closest('a')) {
+      return;
+    }
+    if (!windowRef.current) return;
+    const rect = windowRef.current.getBoundingClientRect();
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+
+    dragWindowRef.current = {
+      startX: clientX,
+      startY: clientY,
+      origX: rect.left,
+      origY: rect.top,
+      hasMoved: false,
+    };
+    setIsDraggingWindow(true);
+  };
+
+  const handleButtonDragStart = (e: React.MouseEvent | React.TouchEvent) => {
+    if ('button' in e && e.button !== 0) return;
+    if (!buttonWrapperRef.current) return;
+    const rect = buttonWrapperRef.current.getBoundingClientRect();
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+
+    dragButtonRef.current = {
+      startX: clientX,
+      startY: clientY,
+      origX: rect.left,
+      origY: rect.top,
+      hasMoved: false,
+    };
+    setIsDraggingButton(true);
+  };
+
+  const handleResetPosition = () => {
+    setWindowPos(null);
+    try {
+      localStorage.removeItem('tlbm_ai_win_pos');
+    } catch {
+      // ignore
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -283,11 +525,26 @@ export default function FloatingAIBox({ onNavigate }: FloatingAIBoxProps) {
   return (
     <>
       {!isOpen && (
-        <div className="fixed bottom-24 sm:bottom-28 right-5 sm:right-6 z-[9998] pointer-events-auto">
+        <div
+          ref={buttonWrapperRef}
+          style={buttonPos ? { left: `${buttonPos.x}px`, top: `${buttonPos.y}px`, right: 'auto', bottom: 'auto' } : undefined}
+          className={`fixed bottom-24 sm:bottom-28 right-5 sm:right-6 z-[9998] pointer-events-auto select-none touch-none ${
+            isDraggingButton ? 'cursor-grabbing scale-105' : 'cursor-grab'
+          }`}
+          onMouseDown={handleButtonDragStart}
+          onTouchStart={handleButtonDragStart}
+        >
           <button
             type="button"
-            className="relative w-12 h-12 sm:w-13 sm:h-13 rounded-full bg-gradient-to-tr from-purple-600 via-primary to-cyan-400 p-[2px] shadow-xl hover:shadow-2xl shadow-primary/25 cursor-pointer flex items-center justify-center transition-all duration-200 hover:scale-110 active:scale-95 group"
-            onClick={() => { setIsOpen(true); setIsMinimized(false); }}
+            className="relative w-12 h-12 sm:w-13 sm:h-13 rounded-full bg-gradient-to-tr from-purple-600 via-primary to-cyan-400 p-[2px] shadow-xl hover:shadow-2xl shadow-primary/25 cursor-pointer flex items-center justify-center transition-all duration-200 hover:scale-110 active:scale-95 group pointer-events-auto"
+            onClick={(e) => {
+              if (dragButtonRef.current?.hasMoved) {
+                e.preventDefault();
+                return;
+              }
+              setIsOpen(true);
+              setIsMinimized(false);
+            }}
             title={t('floatingAI.openTitle')}
             aria-label={t('floatingAI.openTitle')}
           >
@@ -303,12 +560,26 @@ export default function FloatingAIBox({ onNavigate }: FloatingAIBoxProps) {
       {isOpen && (
         <div
           ref={windowRef}
-          className={`fixed bottom-24 sm:bottom-28 right-5 sm:right-6 z-[9999] w-[390px] max-w-[calc(100vw-32px)] rounded-2xl bg-surface-elevated/95 backdrop-blur-xl border border-subtle shadow-2xl flex flex-col overflow-hidden transition-all duration-fast animate-in fade-in slide-in-from-bottom-4 ${
-            isMinimized ? 'h-14' : 'h-fit max-h-[calc(100vh-120px)]'
-          }`}
+          style={windowPos ? { left: `${windowPos.x}px`, top: `${windowPos.y}px`, right: 'auto', bottom: 'auto' } : undefined}
+          className={`fixed bottom-24 sm:bottom-28 right-5 sm:right-6 z-[9999] w-[390px] max-w-[calc(100vw-32px)] rounded-2xl bg-surface-elevated/95 backdrop-blur-xl border border-subtle shadow-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-4 ${
+            isDraggingWindow
+              ? 'transition-none select-none ring-2 ring-primary/40 shadow-2xl cursor-grabbing'
+              : 'transition-all duration-fast'
+          } ${isMinimized ? 'h-14' : 'h-fit max-h-[calc(100vh-120px)]'}`}
         >
-          <div className="p-3 bg-surface border-b border-subtle flex items-center justify-between select-none">
-            <div className="flex items-center gap-2.5 min-w-0">
+          <div
+            className={`p-3 bg-surface border-b border-subtle flex items-center justify-between select-none touch-none ${
+              isDraggingWindow ? 'cursor-grabbing' : 'cursor-grab'
+            }`}
+            onMouseDown={handleWindowDragStart}
+            onTouchStart={handleWindowDragStart}
+            onDoubleClick={handleResetPosition}
+            title={t('floatingAI.dragTooltip')}
+          >
+            <div className="flex items-center gap-2 min-w-0 pointer-events-none">
+              <div className="text-text-muted/60 flex items-center pr-0.5">
+                <i className="fa-solid fa-grip-vertical text-xs" />
+              </div>
               <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-purple-500 to-primary text-white flex items-center justify-center text-sm relative shadow-xs shrink-0">
                 <i className="fa-solid fa-robot" />
                 <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-surface" />
@@ -326,7 +597,11 @@ export default function FloatingAIBox({ onNavigate }: FloatingAIBoxProps) {
               </div>
             </div>
 
-            <div className="flex items-center gap-1 shrink-0">
+            <div
+              className="flex items-center gap-1 shrink-0 pointer-events-auto"
+              onMouseDown={(e) => e.stopPropagation()}
+              onTouchStart={(e) => e.stopPropagation()}
+            >
               <button type="button" className="w-7 h-7 rounded-lg text-text-muted hover:text-text-main hover:bg-surface-hover flex items-center justify-center transition-colors text-xs cursor-pointer disabled:opacity-40" onClick={handleClearHistory} title={t('floatingAI.reset')} disabled={isTyping}>
                 <i className="fa-solid fa-rotate-left" />
               </button>

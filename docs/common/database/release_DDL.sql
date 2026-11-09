@@ -1,4 +1,13 @@
 -- =====================================================================
+-- CẤP QUYỀN THÊM, SỬA DANH MỤC HỒ SƠ VÀ LOẠI VĂN BẢN CHO VĂN THƯ (Nhóm 7; đánh dấu [VTHS] tại vị trí)
+-- Căn cứ: bảng phân quyền Danh mục hồ sơ và Loại văn bản do nhóm Hồ sơ (Nhóm 3) gửi, nhóm trưởng chốt làm theo (issue #647):
+--   BGD, CV, TP chỉ xem; VT xem, thêm, sửa, không xóa; ADMIN đủ 4. Hai màn hình dùng chung mã view/add/change/delete_hoso.
+--   Đảo lại quyết định 03/11 ([VTQ], issue #513) đã gỡ add_hoso, change_hoso khỏi VT. Không thêm mã quyền mới.
+--   Migration authorization 0019_van_thu_them_sua_ho_so bổ sung hai lượt gán cho nhóm VT trên DB đã seed từ trước.
+-- Quy mô sau [VTHS] (cộng sau [GQVC]): giữ 83 quyền thao tác; thêm 2 lượt phân quyền (VT +2): 201 -> 203;
+--   nhóm VT 33 -> 35 quyền.
+-- =====================================================================
+-- =====================================================================
 -- CHO QUẢN TRỊ VIÊN XÓA VĂN BẢN HẠN CHẾ (Nhóm 7; đánh dấu [XVHC] tại vị trí)
 -- Căn cứ: Quản trị viên xóa được văn bản hạn chế hết hiệu lực (issue #610); trigger prevent_delete_van_ban_han_che
 --   chặn mọi lệnh xóa nên API trả 403 dù cờ can_delete đúng. Hàm chỉ chặn khi phiên không đặt
@@ -2206,7 +2215,7 @@ FROM (
 ) AS source (stt_uu_tien, dia_chi, dien_thoai, is_public)
 WHERE unit.stt_uu_tien = source.stt_uu_tien;
 
--- 3) Seed 25 Chức vụ chuẩn (STT 1 = cao nhất: 22 chức vụ của đặc tả, giữ "Quản trị viên",
+-- 3) Seed 27 Chức vụ chuẩn (STT 1 = cao nhất: 24 chức vụ của đặc tả, giữ "Quản trị viên",
 --    "Lãnh đạo cơ quan", "Văn thư" chèn theo cấp bậc) và Tài khoản quản trị hệ thống mẫu
 --    (Idempotent, không hard-code ID)
 INSERT INTO
@@ -2232,17 +2241,19 @@ FROM (
         (12, 'Trợ lý TGĐ'),
         (13, 'Giám đốc'),
         (14, 'Phó Giám đốc'),
-        (15, 'Trưởng Ban'),
-        (16, 'Phó Ban'),
-        (17, 'Trưởng Bộ phận'),
-        (18, 'Trưởng nhóm'),
-        (19, 'Trưởng phòng'),
-        (20, 'Phó phòng'),
-        (21, 'Chuyên viên'),
-        (22, 'Văn thư'),
-        (23, 'Kiểm toán viên'),
-        (24, 'Nhân viên'),
-        (25, 'Thành viên')
+        (15, 'Giám đốc Ban'),
+        (16, 'Phụ trách Ban'),
+        (17, 'Trưởng Ban'),
+        (18, 'Phó Ban'),
+        (19, 'Trưởng Bộ phận'),
+        (20, 'Trưởng nhóm'),
+        (21, 'Trưởng phòng'),
+        (22, 'Phó phòng'),
+        (23, 'Chuyên viên'),
+        (24, 'Văn thư'),
+        (25, 'Kiểm toán viên'),
+        (26, 'Nhân viên'),
+        (27, 'Thành viên')
     ) AS x (stt, ten)
 WHERE
     NOT EXISTS (
@@ -2938,7 +2949,7 @@ WHERE
     ) ON CONFLICT (group_id, permission_id) DO NOTHING;
 
 -- [VTQ] Nhóm VT (Văn thư): xem, thêm, import văn bản đến/đi, xuất Excel văn bản đến, đổi hiệu lực;
--- [XHHL] xem văn bản đến/đi hết hiệu lực; [TVHC] thêm văn bản đến/đi hạn chế;
+-- [XHHL] xem văn bản đến/đi hết hiệu lực; [TVHC] thêm văn bản đến/đi hạn chế; [VTHS] thêm, sửa hồ sơ và loại văn bản;
 --   không sửa/xóa văn bản đến/đi, không gửi mail toàn hệ thống; xem hồ sơ, tài liệu biểu mẫu; quyền chung của CBNV
 INSERT INTO
     auth_group_permissions (group_id, permission_id)
@@ -2966,6 +2977,9 @@ WHERE
         'view_het_hieu_luc_vanbandi',
         'add_han_che_vanbandi',
         'view_hoso',
+        -- [VTHS]
+        'add_hoso',
+        'change_hoso',
         'view_tailieu',
         'view_trinhky',
         'send_trinhky',

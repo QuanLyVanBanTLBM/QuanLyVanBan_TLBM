@@ -54,4 +54,21 @@ describe('Toast Component', () => {
     expect(screen.queryByText('Lỗi lưu trữ')).not.toBeInTheDocument();
     expect(screen.getByText('Từ chối quyền hạn')).toBeInTheDocument();
   });
+
+  it('renders positioned at top-right corner instead of top-center', () => {
+    const mockToast: ToastNotification = {
+      id: 4,
+      message: 'Thông báo góc phải',
+      type: 'info',
+    };
+
+    render(<Toast toast={mockToast} onClose={vi.fn()} />);
+
+    const toastElement = screen.getByRole('status');
+    expect(toastElement).toBeInTheDocument();
+    expect(toastElement.className).toContain('right-5');
+    expect(toastElement.className).toContain('sm:right-6');
+    expect(toastElement.className).not.toContain('left-1/2');
+    expect(toastElement.className).not.toContain('-translate-x-1/2');
+  });
 });

@@ -57,6 +57,7 @@ export const authService = {
     const isRoleAdmin = rawUser.role === 'admin';
 
     const session: UserSession = {
+      id: rawUser.id,
       username: rawUser.username || credentials.username.trim(),
       fullName:
         rawUser.fullName ||
@@ -68,6 +69,10 @@ export const authService = {
         rawUser.position ||
         (isRoleAdmin ? 'Quản trị viên tối cao' : 'Cán bộ xử lý văn bản'),
       token: accessToken,
+      don_vi_id: (rawUser.don_vi_id ?? rawUser.donViId) as number | undefined,
+      donViId: (rawUser.donViId ?? rawUser.don_vi_id) as number | undefined,
+      department: (rawUser.department ?? rawUser.unit) as string | undefined,
+      unit: (rawUser.unit ?? rawUser.department) as string | undefined,
     };
 
     // Lưu trữ token và session
