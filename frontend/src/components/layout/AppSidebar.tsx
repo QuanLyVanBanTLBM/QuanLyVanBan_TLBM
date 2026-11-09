@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { MAIN_MODULES } from '@lib/constants';
 import { ActivePageId } from '@app-types/navigation';
 import { useTranslation } from '@i18n/translate';
 import { Logo } from '@components/common/Logo';
-import { usePermissions } from '@lib/permissions';
+import { MAIN_MODULES } from '@lib/constants';
+import { useVisibleModules } from '@lib/navPermissions';
 
 interface AppSidebarProps {
   isMobileOpen: boolean;
@@ -37,10 +37,7 @@ export default function AppSidebar({
   onTogglePin,
 }: AppSidebarProps) {
   const { t } = useTranslation();
-  const { loaded: permissionsLoaded, can } = usePermissions();
-  const visibleModules = MAIN_MODULES.filter(
-    (mod) => mod.id !== 'ai' || (permissionsLoaded && can('use_aiassistant')),
-  );
+  const visibleModules = useVisibleModules();
 
   // Trạng thái mở accordion của các module
   const [expandedModIds, setExpandedModIds] = useState<Record<string, boolean>>(() => {

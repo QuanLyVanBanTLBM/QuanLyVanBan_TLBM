@@ -1,7 +1,7 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import { ActivePageId } from '@app-types/navigation';
 import { ThemeMode } from '@app-types/theme';
-import { MAIN_MODULES } from '@lib/constants';
+import { useVisibleModules } from '@lib/navPermissions';
 
 interface MobileAssistiveTouchProps {
   activePage: ActivePageId;
@@ -52,10 +52,12 @@ export default function MobileAssistiveTouch({
     hasMoved: false,
   });
 
+  const visibleModules = useVisibleModules();
+
   // Xác định phân hệ cha đang chứa trang hiện tại
   const activeModule =
-    MAIN_MODULES.find((mod) => mod.subItems.some((item) => item.id === activePage)) ||
-    MAIN_MODULES[0];
+    visibleModules.find((mod) => mod.subItems.some((item) => item.id === activePage)) ||
+    visibleModules[0];
 
   // Cơ chế tự động mờ phím Home ảo sau 3.5s nếu không tương tác
   useEffect(() => {
@@ -250,7 +252,7 @@ export default function MobileAssistiveTouch({
 
             {/* Lưới 6 Phân hệ biểu tượng phong cách Apple */}
             <div className="grid grid-cols-3 gap-2.5">
-              {MAIN_MODULES.map((mod) => {
+              {visibleModules.map((mod) => {
                 const isSelected = activeModule.id === mod.id;
                 const numericBadges = mod.subItems
                   .map((s) => (typeof s.badge === 'number' ? s.badge : 0))
