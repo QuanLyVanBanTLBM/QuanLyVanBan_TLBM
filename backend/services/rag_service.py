@@ -127,25 +127,9 @@ def setup_llamaindex():
     except Exception:
         active = {}
 
-    provider = (
-        active.get("provider")
-        or getattr(config, "MODEL_PROVIDER", None)
-        or os.getenv("MODEL_PROVIDER")
-        or MODEL_PROVIDER
-    ).lower().strip()
-
-    llm_model = (
-        active.get("llm_model")
-        or getattr(config, "LLM_MODEL", None)
-        or os.getenv("LLM_MODEL")
-        or ("gpt-6-luna" if provider == "openai" else "gemini-3.8-flash")
-    )
-    embed_model = (
-        active.get("embed_model")
-        or getattr(config, "EMBED_MODEL", None)
-        or os.getenv("EMBED_MODEL")
-        or ("text-embedding-3-large" if provider == "openai" else "models/gemini-embedding-001")
-    )
+    provider = "openai"
+    llm_model = "gpt-6-luna"
+    embed_model = "text-embedding-3-large"
     gemini_key = (
         active.get("gemini_api_key")
         or getattr(config, "GEMINI_API_KEY", None)
@@ -166,13 +150,6 @@ def setup_llamaindex():
 
     if provider == "openai":
         if not openai_key:
-            if gemini_key:
-                logger.warning("OPENAI_API_KEY chua co; tu dong fallback sang Gemini de tiep tuc test local.")
-                from backend.services.gemini_service import GeminiRESTLLM, GeminiRESTEmbedding
-                Settings.embed_model = GeminiRESTEmbedding(api_key=gemini_key, model_name=embed_model if "embedding" in embed_model else "models/gemini-embedding-001")
-                Settings.llm = GeminiRESTLLM(api_key=gemini_key, model_name=llm_model)
-                print(f"[TEST LOCAL] Fallback Gemini cho model {llm_model}")
-                return
             raise RuntimeError("OPENAI_API_KEY is not configured")
         import llama_index.llms.openai.utils as openai_utils
         import tiktoken.model

@@ -399,8 +399,8 @@ def ai_settings(request):
         if denied:
             return denied
         active = get_active_ai_settings()
-        provider = str(active.get("provider") or "gemini").lower().strip()
-        provider_cfg = MODEL_CONFIG.get(provider, MODEL_CONFIG["gemini"])
+        provider = "openai"
+        provider_cfg = MODEL_CONFIG[provider]
         llm = active.get("llm_model") or provider_cfg["default_llm"]
         embed = active.get("embed_model") or provider_cfg["embed_model"]
         vision = active.get("vision_model") or llm
@@ -448,7 +448,7 @@ def ai_settings(request):
         return _error("Cấu hình không hợp lệ.")
     provider = str(payload.get("provider", "")).lower().strip()
     if provider not in MODEL_CONFIG:
-        return _error("Provider phải là 'gemini' hoặc 'openai'.", code="provider_not_supported")
+        return _error("Provider được hỗ trợ là 'openai'.", code="provider_not_supported")
 
     active = get_active_ai_settings()
     existing_key = active.get(f"{provider}_api_key") or (
