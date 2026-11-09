@@ -165,7 +165,7 @@ class AIAccessTests(TestCase):
         request = urlopen.call_args.args[0]
         self.assertEqual(request.get_header("Authorization"), "Bearer test-openai-key")
 
-    def test_switch_from_gemini_to_openai_succeeds_without_409_conflict(self):
+    def test_switch_from_legacy_gemini_config_to_openai_succeeds(self):
         self.client.force_authenticate(self.superuser)
         fake_rag = SimpleNamespace(
             setup_llamaindex=MagicMock(),
@@ -206,11 +206,11 @@ class AIAccessTests(TestCase):
                     {
                         "provider": "openai",
                         "api_key": "sk-mock-key-1234567890",
-                        "llm_model": "gpt-4o-mini",
+                        "llm_model": "gpt-6-luna",
                     },
                     format="json",
                 )
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["provider"], "openai")
-        self.assertEqual(response.json()["llm_model"], "gpt-4o-mini")
+        self.assertEqual(response.json()["llm_model"], "gpt-6-luna")
