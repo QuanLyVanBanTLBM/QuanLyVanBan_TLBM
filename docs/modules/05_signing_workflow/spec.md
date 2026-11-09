@@ -48,7 +48,7 @@ Xây dựng phân hệ **Trình ký** gồm: tạo hồ sơ trình ký; luân ch
 6. **Ký duyệt và xử lý phản hồi hai nhánh:**
    - Trước khi ký, người dùng xác nhận bằng PIN. Tạo PIN gồm nhập PIN, nhập lại PIN, yêu cầu OTP, xác minh OTP rồi lưu PIN. SMS là mặc định; email là lựa chọn. Hủy trước khi OTP được xác minh giữ nguyên PIN cũ; nếu chưa có PIN thì thao tác ký vẫn bị chặn.
    - Khôi phục PIN dùng cùng luồng OTP. Khôi phục thành công đặt lại bộ đếm PIN sai và khóa tạm thời.
-   - PIN sai 5 lần liên tiếp thì khóa nhập 30 phút; tối đa 15 lần sai trong ngày (3 chu kỳ). Giao diện báo số lượt còn lại và thời gian mở lại.
+   - PIN sai 5 lần liên tiếp thì khóa nhập 30 phút; tối đa 10 lần sai trong ngày (2 chu kỳ). Giao diện báo số lượt còn lại và thời gian mở lại.
    - **Nhánh 1 — Lỗi nhỏ, không chặn luồng:** ký duyệt kèm `ghi_chu_ky`; luồng tiếp tục; ghi chú hiển thị cho người tạo và các cấp sau.
    - **Nhánh 2 — Lỗi lớn, chặn luồng:** `yeu_cau_sua` kèm lý do; lượt trình chuyển `YEU_CAU_SUA`, các cấp đang mở `TAM_DUNG`; mở thread trao đổi hai chiều (`signing_change_thread`). Khi thống nhất, người tạo tải bản mới, thread `DA_GIAI_QUYET`, hệ thống tạo lượt trình mới để ký lại toàn bộ. Lượt cũ giữ nguyên `YEU_CAU_SUA` làm lịch sử.
    - **Từ chối = không đồng ý ban hành** (`tu_choi`), bắt buộc lý do; hồ sơ kết thúc ở `TU_CHOI`. Muốn trình lại thì tạo hồ sơ mới (`trinh_lai`) trỏ về hồ sơ gốc (`ho_so_goc`). Giao diện phân biệt rõ "Trả lại để sửa" (nhánh 2) và "Không đồng ý ban hành".
@@ -139,7 +139,7 @@ API ảnh chữ ký cá nhân thuộc Nhóm 7, không nằm trong phân hệ nà
 - **Tọa độ chữ ký:** tỷ lệ % theo trang, gốc trên-trái, độc lập độ phân giải màn hình.
 - **Lazy Stamping:** không sửa raw bytes tệp PDF trong luồng nội bộ; chỉ dán ảnh chữ ký một lần khi lượt trình `HOAN_THANH`, dùng snapshot ảnh tại thời điểm ký.
 - **Xác nhận ký bằng PIN (#596):** PIN 6 chữ số được lưu dưới dạng verifier PBKDF2-SHA256 trên HMAC có domain riêng và secret máy chủ. Mỗi thao tác ký xác minh PIN; OTP chỉ dùng khi tạo hoặc khôi phục PIN. SMS là kênh mặc định, email là tùy chọn. Hủy trước khi xác minh OTP không đổi PIN đang dùng. Không còn cặp key pair, MFA lúc ký hoặc luồng fallback sang thuật toán ký cũ.
-- **Giới hạn PIN:** 5 lần sai liên tiếp khóa nhập 30 phút; tối đa 15 lần sai trong ngày (3 chu kỳ). Khôi phục PIN thành công đặt lại bộ đếm và khóa tạm thời. Nhật ký lưu thao tác PIN và thao tác quản trị khóa/mở quyền ký, không lưu PIN hoặc OTP.
+- **Giới hạn PIN:** 5 lần sai liên tiếp khóa nhập 30 phút; tối đa 10 lần sai trong ngày (2 chu kỳ). Khôi phục PIN thành công đặt lại bộ đếm và khóa tạm thời. Nhật ký lưu thao tác PIN và thao tác quản trị khóa/mở quyền ký, không lưu PIN hoặc OTP.
 - **Thể thức:** khối chữ ký theo `hinh_thuc_ky` (KT., TL., TUQ.) đi cùng ủy quyền, thuộc backlog sau MVP.
 - **Văn bản hạn chế (`pham_vi = 'HAN_CHE'`):** là văn bản gửi đi chọn người xem và lưu log xem (Nhóm 2), không ký và không đi qua trình ký; API tạo hồ sơ từ chối. Bảo mật trình ký (PIN, mã băm, nhật ký, bằng chứng) giữ nguyên.
 - **Ranh giới pháp lý:** kết quả MVP là bản duyệt nội bộ, chưa phát hành; không thay cho văn bản ban hành.
