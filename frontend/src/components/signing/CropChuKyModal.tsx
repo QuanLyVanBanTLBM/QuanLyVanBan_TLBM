@@ -88,7 +88,8 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const [rawImg, setRawImg] = useState<HTMLImageElement | null>(null);
+  const [anhDaNap, setAnhDaNap] = useState<{ tep: File; img: HTMLImageElement } | null>(null);
+  const rawImg = anhDaNap?.tep === tep ? anhDaNap.img : null;
 
   const [baseScale, setBaseScale] = useState(1);
   const [zoom, setZoom] = useState(1); // 1 = 100% kích thước fit khởi tạo
@@ -106,22 +107,21 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
   const touchStartDistRef = useRef<number | null>(null);
   const touchStartZoomRef = useRef<number>(1);
 
-  const [loi, setLoi] = useState('');
+  const [loiTheoTep, setLoiTheoTep] = useState<{ tep: File; thongBao: string } | null>(null);
+  const loi = loiTheoTep?.tep === tep ? loiTheoTep.thongBao : '';
 
   // Modal xác nhận kết quả cắt
-  const [xacNhan, setXacNhan] = useState<{ blob: Blob; dataUrl: string } | null>(null);
+  const [xacNhanTheoTep, setXacNhanTheoTep] = useState<{
+    tep: File;
+    blob: Blob;
+    dataUrl: string;
+  } | null>(null);
+  const xacNhan = xacNhanTheoTep?.tep === tep ? xacNhanTheoTep : null;
 
   // 1. Nạp ảnh khi chọn tệp mới và tự động scan nét chữ ký khỏi nền giấy.
   useEffect(() => {
-    if (!tep) {
-      setRawImg(null);
-      setLoi('');
-      return undefined;
-    }
+    if (!tep) return undefined;
     let dangHoatDong = true;
-    setRawImg(null);
-    setLoi('');
-    setXacNhan(null);
     const reader = new FileReader();
     reader.onload = (e) => {
       if (!dangHoatDong) return;
@@ -129,8 +129,8 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
       const img = new Image();
       img.onload = () => {
         if (!dangHoatDong) return;
-        setRawImg(img);
-        setLoi('');
+        setAnhDaNap({ tep, img });
+        setLoiTheoTep(null);
         const fitW = CROP_W / img.width;
         const fitH = CROP_H / img.height;
         const initScale = Math.min(fitW, fitH);
@@ -139,12 +139,16 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
         setOffset({ x: 0, y: 0 });
       };
       img.onerror = () => {
-        if (dangHoatDong) setLoi(dichRef.current('pin.chuaChonAnh'));
+        if (dangHoatDong) {
+          setLoiTheoTep({ tep, thongBao: dichRef.current('pin.chuaChonAnh') });
+        }
       };
       img.src = src;
     };
     reader.onerror = () => {
-      if (dangHoatDong) setLoi(dichRef.current('pin.chuaChonAnh'));
+      if (dangHoatDong) {
+        setLoiTheoTep({ tep, thongBao: dichRef.current('pin.chuaChonAnh') });
+      }
     };
     reader.readAsDataURL(tep);
     return () => {
@@ -346,7 +350,7 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
 
   // 5. Cắt ảnh và mở modal xác nhận trước khi lưu
   const xuatAnh = () => {
-    if (!rawImg) return;
+    if (!rawImg || !tep) return;
     const exportCanvas = document.createElement('canvas');
     exportCanvas.width = CROP_W;
     exportCanvas.height = CROP_H;
@@ -368,7 +372,7 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
     exportCanvas.toBlob((blob) => {
       if (!blob) return;
       const dataUrl = exportCanvas.toDataURL('image/png');
-      setXacNhan({ blob, dataUrl });
+      setXacNhanTheoTep({ tep, blob, dataUrl });
     }, 'image/png');
   };
 
@@ -376,11 +380,11 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
   const onDongYApDung = () => {
     if (!xacNhan) return;
     onLuu(xacNhan.blob, xacNhan.dataUrl);
-    setXacNhan(null);
+    setXacNhanTheoTep(null);
   };
 
   const onHuyXacNhan = () => {
-    setXacNhan(null);
+    setXacNhanTheoTep(null);
   };
 
   return (
