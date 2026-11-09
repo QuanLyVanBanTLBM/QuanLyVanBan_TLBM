@@ -61,20 +61,6 @@ class TrangThaiNguoiKy(models.TextChoices):
     YEU_CAU_SUA = "YEU_CAU_SUA", "Yêu cầu sửa"
 
 
-class TrangThaiKhoa(models.TextChoices):
-    CHO_KICH_HOAT = "CHO_KICH_HOAT", "Chờ kích hoạt"
-    HOAT_DONG = "HOAT_DONG", "Hoạt động"
-    DA_XOAY_VONG = "DA_XOAY_VONG", "Đã xoay vòng"
-    THU_HOI = "THU_HOI", "Thu hồi"
-    HET_HAN = "HET_HAN", "Hết hạn"
-
-
-class TrangThaiXacMinh(models.TextChoices):
-    CHUA_XAC_MINH = "CHUA_XAC_MINH", "Chưa xác minh"
-    HOP_LE = "HOP_LE", "Hợp lệ"
-    KHONG_HOP_LE = "KHONG_HOP_LE", "Không hợp lệ"
-
-
 class TrangThaiManifest(models.TextChoices):
     NHAP = "NHAP", "Nháp"
     DA_CHOT = "DA_CHOT", "Đã chốt"

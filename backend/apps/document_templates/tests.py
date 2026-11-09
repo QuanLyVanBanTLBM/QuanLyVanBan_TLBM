@@ -1159,7 +1159,7 @@ def test_view_and_download_attachment_with_query_param_token(self):
             with open(disk_path, 'wb') as f:
                 f.write(b"%PDF-1.4 sample file")
 
-        # 4. Người dùng đăng nhập hợp lệ xin vé xem tạm thời dùng 1 lần (Single-Use Short-Lived Ticket)
+        # 4. Người dùng đăng nhập hợp lệ xin vé xem tạm thời có chữ ký số (Signed Short-Lived Ticket)
         from rest_framework.test import APIClient
         auth_client = APIClient()
         auth_client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
@@ -1168,21 +1168,38 @@ def test_view_and_download_attachment_with_query_param_token(self):
         ticket = res_ticket.data['ticket']
         self.assertTrue(ticket.startswith('vt_'))
 
-        # 5. Mở xem tệp lần đầu với vé hợp lệ -> 200 OK và inline disposition
+        # 5. Mở xem tệp với vé hợp lệ -> 200 OK và inline disposition
         res_view = self.client.get(f'/api/resources/attachments/{att.id}/view/?ticket={ticket}')
         self.assertEqual(res_view.status_code, status.HTTP_200_OK)
         self.assertIn('inline', res_view.headers.get('Content-Disposition', ''))
 
-        # 6. BURN ON READ: Mở lại bằng vé cũ (ví dụ copy link sang cửa sổ ẩn danh) -> 403 Forbidden ("Vé xem tài liệu không hợp lệ hoặc đã hết hạn")
-        res_reuse = self.client.get(f'/api/resources/attachments/{att.id}/view/?ticket={ticket}')
-        self.assertEqual(res_reuse.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertIn('không hợp lệ hoặc đã hết hạn', res_reuse.data.get('detail', ''))
+        # 6. Trình duyệt tải các khối dữ liệu (chunks/range requests) trong thời hạn vé -> 200 OK
+        res_stream = self.client.get(f'/api/resources/attachments/{att.id}/view/?ticket={ticket}')
+        self.assertEqual(res_stream.status_code, status.HTTP_200_OK)
 
-        # 7. Vé ngẫu nhiên / không tồn tại -> 403 Forbidden
+        # 7. Vé giả mạo / sai chữ ký mật mã -> 403 Forbidden
         res_bad_ticket = self.client.get(f'/api/resources/attachments/{att.id}/view/?ticket=vt_fake_xyz')
         self.assertEqual(res_bad_ticket.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn('không hợp lệ hoặc đã hết hạn', res_bad_ticket.data.get('detail', ''))
 
-        # 8. Cấp vé tải về dùng 1 lần và thử tải lại lần 2
+        # 8. Vé tạo cho tệp đính kèm khác -> 403 Forbidden ("Vé không áp dụng cho tài liệu này.")
+        from django.core.signing import TimestampSigner
+        signer = TimestampSigner(salt='doc_view_ticket')
+        diff_payload = {'att_id': att.id + 9999, 'user_id': user.id}
+        diff_ticket = f"vt_{signer.sign_object(diff_payload)}"
+        res_diff = self.client.get(f'/api/resources/attachments/{att.id}/view/?ticket={diff_ticket}')
+        self.assertEqual(res_diff.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn('không áp dụng', res_diff.data.get('detail', ''))
+
+        # 9. Vé hết hạn (quá 60s) -> 403 Forbidden
+        from unittest.mock import patch
+        from django.core.signing import SignatureExpired
+        with patch.object(TimestampSigner, 'unsign_object', side_effect=SignatureExpired('Signature expired')):
+            res_expired = self.client.get(f'/api/resources/attachments/{att.id}/view/?ticket={ticket}')
+            self.assertEqual(res_expired.status_code, status.HTTP_403_FORBIDDEN)
+            self.assertIn('không hợp lệ hoặc đã hết hạn', res_expired.data.get('detail', ''))
+
+        # 10. Cấp vé tải về và tải tệp thành công
         res_dl_ticket = auth_client.post(f'/api/resources/attachments/{att.id}/ticket/')
         self.assertEqual(res_dl_ticket.status_code, status.HTTP_200_OK)
         dl_ticket = res_dl_ticket.data['ticket']
@@ -1190,7 +1207,3 @@ def test_view_and_download_attachment_with_query_param_token(self):
         res_dl = self.client.get(f'/api/resources/attachments/{att.id}/download/?ticket={dl_ticket}')
         self.assertEqual(res_dl.status_code, status.HTTP_200_OK)
         self.assertIn('attachment', res_dl.headers.get('Content-Disposition', ''))
-
-        # Tải lại vé tải về đã sử dụng -> 403 Forbidden
-        res_dl_reuse = self.client.get(f'/api/resources/attachments/{att.id}/download/?ticket={dl_ticket}')
-        self.assertEqual(res_dl_reuse.status_code, status.HTTP_403_FORBIDDEN)

@@ -1,5 +1,13 @@
 import { Attachment, TaskComment, TaskDetail } from '../types/task';
-import { ApiError, authHeaders, flattenErrors, messageForStatus, request } from './client';
+import { API_BASE_URL, ApiError, authHeaders, flattenErrors, messageForStatus, request } from './client';
+
+/** Backend trả đường dẫn tương đối (/api/...); dựng URL đầy đủ từ API_BASE_URL hoặc origin trang. URL tuyệt đối giữ nguyên. */
+export function resolveDownloadUrl(downloadUrl: string): string {
+  if (/^https?:\/\//i.test(downloadUrl)) return downloadUrl;
+  const pageOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://127.0.0.1:8000';
+  const origin = /^https?:\/\//i.test(API_BASE_URL) ? new URL(API_BASE_URL).origin : pageOrigin;
+  return new URL(downloadUrl, origin).toString();
+}
 
 /** Ghi nhận "đã mở" (nếu đủ điều kiện) và trả về chi tiết mới nhất. Gọi khi vào trang chi tiết. */
 export function openTask(taskId: number): Promise<TaskDetail> {
@@ -40,7 +48,7 @@ export function createComment(taskId: number, content: string, files: File[] = [
 export async function downloadAttachment(attachment: Attachment): Promise<void> {
   let response: Response;
   try {
-    response = await fetch(attachment.downloadUrl, { headers: authHeaders() });
+    response = await fetch(resolveDownloadUrl(attachment.downloadUrl), { headers: authHeaders() });
   } catch {
     throw new ApiError(
       'Không kết nối được máy chủ để tải file. Hãy kiểm tra backend đã chạy rồi thử lại.',

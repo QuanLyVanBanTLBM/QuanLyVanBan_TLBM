@@ -81,6 +81,9 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
   const birthdayDateButtonRef = useRef<HTMLButtonElement>(null);
   const isSelfEditOnly = Boolean(initialData && !isAdmin);
   const isBirthdayMasked = Boolean(initialData?.is_birthday_masked);
+  const canEditMaskedBirthday = Boolean(initialData && isAdmin && isBirthdayMasked);
+  const [isBirthdayEditMode, setIsBirthdayEditMode] = useState(false);
+  const isBirthdayReadOnly = isBirthdayMasked && !isBirthdayEditMode;
 
   const toDisplayDateString = (dateStr?: string | null): string => {
     if (!dateStr) return '';
@@ -373,8 +376,11 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
       return;
     }
 
+    const shouldSubmitBirthday = Boolean(
+      formData.ngay_sinh && (!isBirthdayMasked || isBirthdayEditMode)
+    );
     let isoBirthday: string | null = null;
-    if (formData.ngay_sinh && !isBirthdayMasked) {
+    if (shouldSubmitBirthday) {
       isoBirthday = parseToIso(formData.ngay_sinh);
       if (!isoBirthday) {
         const msg = t('employees.import.errors.invalidBirthday', { value: formData.ngay_sinh });
@@ -405,7 +411,7 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
         payload = {
           email: formData.email.trim(),
           sdt: formData.sdt.trim(),
-          ...(formData.ngay_sinh && !isBirthdayMasked ? { ngay_sinh: isoBirthday || formData.ngay_sinh } : {}),
+          ...(shouldSubmitBirthday ? { ngay_sinh: isoBirthday || formData.ngay_sinh } : {}),
         };
       } else {
         if (!initialData && !formData.chuc_vu_id) {
@@ -450,7 +456,7 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
         payload = {
           ho_ten: formData.ho_ten.trim(),
           email: formData.email.trim(),
-          ...(formData.ngay_sinh && !isBirthdayMasked ? { ngay_sinh: isoBirthday || formData.ngay_sinh } : {}),
+          ...(shouldSubmitBirthday ? { ngay_sinh: isoBirthday || formData.ngay_sinh } : {}),
           don_vi_id: formData.don_vi_id ? Number(formData.don_vi_id) : null,
           chuc_vu_id: formData.chuc_vu_id ? Number(formData.chuc_vu_id) : null,
           chuc_danh: formData.chuc_danh.trim(),
@@ -917,8 +923,8 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                     type="text"
                     name="ngay_sinh"
                     value={formData.ngay_sinh}
-                    readOnly={isBirthdayMasked}
-                    title={isBirthdayMasked ? t('employees.hints.birthdayMaskedTooltip') : undefined}
+                    readOnly={isBirthdayReadOnly}
+                    title={isBirthdayReadOnly ? t('employees.hints.birthdayMaskedTooltip') : undefined}
                     onChange={(e) => {
                       let val = e.target.value.replace(/[^\d/]/g, '');
                       if (/^\d{2}$/.test(val) && !formData.ngay_sinh.endsWith('/')) {
@@ -933,31 +939,71 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                     }}
                     placeholder="DD/MM/YYYY"
                     maxLength={10}
-                    className={`w-full pl-3.5 pr-10 py-2 text-sm border border-border rounded-lg placeholder-muted transition-all ${isBirthdayMasked ? 'bg-surface text-muted cursor-not-allowed' : 'bg-surface-elevated text-main focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary'}`}
+                    className={`w-full pl-3.5 ${canEditMaskedBirthday ? 'pr-20' : 'pr-10'} py-2 text-sm border border-border rounded-lg placeholder-muted transition-all ${isBirthdayReadOnly ? 'bg-surface text-muted cursor-not-allowed' : 'bg-surface-elevated text-main focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary'}`}
                     required={!initialData}
                   />
                   <div className="pointer-events-none absolute inset-y-0 left-0 flex w-full items-center justify-end text-muted">
-                    {!isBirthdayMasked ? <button
-                      ref={birthdayDateButtonRef}
-                      type="button"
-                      aria-label={t('employees.fields.birthday')}
-                      title={t('employees.fields.birthday')}
-                      onClick={openBirthdayPicker}
-                      className="pointer-events-auto z-10 mr-2.5 inline-flex h-8 w-8 items-center justify-center rounded-md hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                    >
-                      <i aria-hidden="true" className="fa-solid fa-calendar-days text-sm" />
-                    </button> : <span
-                      className="pointer-events-auto z-10 mr-2.5 inline-flex h-8 w-8 items-center justify-center text-warning"
-                      title={t('employees.hints.birthdayMaskedTooltip')}
-                      aria-label={t('employees.hints.birthdayMaskedTooltip')}
-                    >
-                      <i aria-hidden="true" className="fa-solid fa-lock text-sm" />
-                    </span>}
+                    {isBirthdayReadOnly ? (
+                      <>
+                        <span
+                          className="pointer-events-auto z-10 inline-flex h-8 w-8 items-center justify-center text-warning"
+                          title={t('employees.hints.birthdayMaskedTooltip')}
+                          aria-label={t('employees.hints.birthdayMaskedTooltip')}
+                        >
+                          <i aria-hidden="true" className="fa-solid fa-lock text-sm" />
+                        </span>
+                        {canEditMaskedBirthday && (
+                          <button
+                            type="button"
+                            aria-label={t('employees.actions.editBirthday')}
+                            title={t('employees.actions.editBirthday')}
+                            onClick={() => {
+                              setFormData((prev) => ({ ...prev, ngay_sinh: '' }));
+                              setIsBirthdayEditMode(true);
+                              if (errorKey) setErrorKey(null);
+                            }}
+                            disabled={isLoading}
+                            className="pointer-events-auto z-10 mr-2.5 inline-flex h-8 w-8 items-center justify-center rounded-md hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                          >
+                            <i aria-hidden="true" className="fa-solid fa-pen text-sm" />
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          ref={birthdayDateButtonRef}
+                          type="button"
+                          aria-label={t('employees.fields.birthday')}
+                          title={t('employees.fields.birthday')}
+                          onClick={openBirthdayPicker}
+                          className="pointer-events-auto z-10 inline-flex h-8 w-8 items-center justify-center rounded-md hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                        >
+                          <i aria-hidden="true" className="fa-solid fa-calendar-days text-sm" />
+                        </button>
+                        {canEditMaskedBirthday && isBirthdayEditMode && (
+                          <button
+                            type="button"
+                            aria-label={t('employees.actions.cancelBirthdayEdit')}
+                            title={t('employees.actions.cancelBirthdayEdit')}
+                            onClick={() => {
+                              setFormData((prev) => ({ ...prev, ngay_sinh: initialData?.ngay_sinh || '' }));
+                              setIsBirthdayEditMode(false);
+                              if (errorKey) setErrorKey(null);
+                            }}
+                            disabled={isLoading}
+                            className="pointer-events-auto z-10 mr-2.5 inline-flex h-8 w-8 items-center justify-center rounded-md hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                          >
+                            <i aria-hidden="true" className="fa-solid fa-xmark text-sm" />
+                          </button>
+                        )}
+                      </>
+                    )}
                     <input
                       ref={birthdayDateInputRef}
                       type="date"
                       value={parseToIso(formData.ngay_sinh) || ''}
-                      disabled={isBirthdayMasked}
+                      disabled={isBirthdayReadOnly}
                       onChange={(e) => {
                         const iso = e.target.value;
                         if (iso) {
@@ -974,6 +1020,9 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                   </div>
                 </div>
                 <span className="text-xs text-muted block mt-1">{t('employees.hints.birthdayFormat')}</span>
+                {canEditMaskedBirthday && isBirthdayEditMode && (
+                  <span className="text-xs text-muted block mt-1">{t('employees.hints.birthdayEditMasked')}</span>
+                )}
               </div>
 
               {/* Số điện thoại */}

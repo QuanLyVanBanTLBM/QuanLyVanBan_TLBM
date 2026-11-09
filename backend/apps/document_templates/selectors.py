@@ -16,16 +16,20 @@ def visible_resources(qs, user):
         return qs
 
     # Người dùng đăng nhập: thấy tài liệu TAT_CA, hoặc do chính mình tạo, hoặc cùng đơn vị/phòng ban
-    user_dept = ""
-    if hasattr(user, "profile"):
-        user_dept = getattr(user.profile, "department", "")
+    user_don_vi_ids = set()
     user_don_vi_id = getattr(user, "don_vi_id", None)
+    if user_don_vi_id:
+        user_don_vi_ids.add(user_don_vi_id)
+
+    if hasattr(user, "assignments"):
+        try:
+            user_don_vi_ids.update(user.assignments.values_list("don_vi_id", flat=True))
+        except Exception:
+            pass
 
     q_filter = Q(hien_thi='TAT_CA') | Q(nguoi_tao=user)
-    if user_don_vi_id:
-        q_filter |= Q(hien_thi='NOI_BO_PHONG_BAN', don_vi_id=user_don_vi_id)
-    if user_dept:
-        q_filter |= Q(hien_thi='NOI_BO_PHONG_BAN', nguoi_tao__profile__department=user_dept)
+    if user_don_vi_ids:
+        q_filter |= Q(hien_thi='NOI_BO_PHONG_BAN', don_vi_id__in=user_don_vi_ids)
 
     return qs.filter(q_filter).distinct()
 

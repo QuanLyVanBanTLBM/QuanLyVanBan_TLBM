@@ -5,6 +5,8 @@
 > Cập nhật 06/10/2026 theo [`danh-gia-nghiep-vu-va-de-xuat.md`](danh-gia-nghiep-vu-va-de-xuat.md): cấp ký luôn tuần tự (bỏ `kieu_ky`), từ chối là kết thúc, chức vụ tương đối theo đơn vị, ủy quyền theo thời gian kèm hình thức ký, leo thang quá hạn, tách khâu văn thư.
 > Cập nhật 08/10/2026 theo #80: MVP là luồng duyệt nội bộ hoàn chỉnh, kết thúc ở **hoàn tất duyệt nội bộ, chưa phát hành**. CA, chứng thư số, `LegalSignerAdapter`, DocMDP, cấp số và phát hành pháp lý đã gỡ khỏi roadmap của #80 (mục 1.4). Văn bản mật đã bỏ nên không còn phụ thuộc pháp chế về phạm vi văn bản mật.
 
+> **Cập nhật issue #596:** thiết kế cặp khóa, Argon2id, MFA lúc ký, recovery theo khóa và endpoint quản lý key trong tài liệu này đã lỗi thời. Contract hiện hành là xác nhận ký bằng PIN và tạo/khôi phục PIN qua OTP (SMS mặc định, email tùy chọn). Xem `README.md` và `spec.md` của module để biết flow hiện hành.
+
 ## 1. Mục tiêu và ranh giới
 
 ### 1.1. Mục tiêu
@@ -173,7 +175,7 @@ GVHD đã chốt bỏ văn bản mật hành chính. Tài liệu nội bộ hạ
 - Tham số Argon2id: `m=64 MiB, t=3, p=1`, phiên bản 19; server chỉ chấp nhận đúng bộ tham số này để tránh KDF yếu hoặc request gây cạn tài nguyên. Dùng Argon2id (RFC 9106), không dùng PBKDF2/bcrypt.
 - **Contract salt, verifier và khóa mã hóa (#447 phân vùng 1):** client sinh salt ngẫu nhiên 16 byte bằng CSPRNG (`crypto.getRandomValues`); mỗi khóa và mỗi lần đổi PIN dùng salt mới. `ma_bam_xac_minh_pin` lưu Argon2id v19 của HMAC-SHA256(pepper, domain || PIN) với `m=64 MiB, t=3, p=1`. AES key được dẫn xuất độc lập bằng HKDF-SHA256(`SIGNING_KEY_PEPPER`, salt, info riêng), rồi mã hóa private key PKCS#8 Ed25519 bằng AES-256-GCM. `signing_key_unlock` lưu verifier, ciphertext Base64(nonce || ciphertext || tag) và `tham_so_kdf`; không lưu PIN hoặc khóa dẫn xuất. Trước mỗi chữ ký server xác minh verifier, mở ciphertext trong bộ nhớ và kiểm tra private key khớp public key.
 - **Pepper và tradeoff lưu trữ:** `SIGNING_KEY_PEPPER` là secret riêng, ngoài CSDL, bắt buộc và khác `SECRET_KEY`/`SIGNING_PIN_SECRET` khi `DEBUG=False`; `check --deploy` báo `signing.E005/E006`, request thiếu/sai cấu hình trả 503. Pepper phải được giữ ổn định và đưa vào backup/restore secret handling vì mất pepper làm private key hiện hành không thể giải mã. Do pepper giải mã ciphertext độc lập PIN, người có cả bản sao CSDL lẫn pepper có thể đọc private key mà không cần PIN; PIN là rào chắn xác thực ký trực tuyến, không phải lớp mã hóa private key. `SIGNING_PIN_SECRET` vẫn dùng riêng cho mã email reset/MFA.
-- **Kênh truyền:** raw PIN, private key lúc đăng ký, PIN đổi/recovery và PIN lúc ký chỉ được gửi qua HTTPS. Endpoint đặt/đổi/recovery PIN và ký từ chối HTTP khi `DEBUG=False` (`https_bat_buoc`). Khi TLS kết thúc ở Nginx, chỉ bật `DJANGO_SECURE_PROXY_SSL_HEADER=true` nếu Nginx luôn ghi đè `X-Forwarded-Proto`; HTTPS cần sẵn sàng trước rollout.
+- **Kênh truyền (#596):** API tạo/khôi phục PIN và ký không tự áp chính sách HTTPS ở view layer; local development có thể dùng HTTP. Staging kết thúc TLS tại Nginx theo cấu hình deploy (#599). Chỉ bật `DJANGO_SECURE_PROXY_SSL_HEADER=true` khi Nginx luôn ghi đè `X-Forwarded-Proto`. Chứng chỉ tự ký dự phòng của #612 không được trình duyệt tin cậy mặc định; cần chứng chỉ hợp lệ và quy trình gia hạn được xác minh trước khi coi HTTPS staging sẵn sàng. Backend vẫn gửi OTP tới nhà cung cấp qua HTTPS.
 - Chính sách PIN: đúng 6 chữ số; client chặn PIN phổ biến, dãy tăng/giảm, lặp một chữ số và dạng ngày. Server khóa theo bản ghi khóa sau 15 lần sai trong ngày, ghi audit; PIN đúng đặt bộ đếm về 0.
 - **Reset rollout (#447):** migration thu hồi khóa `HOAT_DONG`/`CHO_KICH_HOAT` và xóa unlock rows cũ; người dùng đăng ký khóa server-side mới. Giữ public key cũ, chữ ký, audit và bằng chứng để xác minh lịch sử. Private key cũ không import; migration reset một chiều vì verifier/mảnh cũ không thể khôi phục.
 - Mất PIN: chủ khóa dùng mã xác thực email để đặt PIN mới trên chính khóa đang hoạt động; giữ nguyên key id, public key, trạng thái và ciphertext. Quản trị viên có thể thu hồi khẩn cấp khóa, nhưng đó là thao tác vô hiệu hóa riêng; sau thu hồi phải đăng ký khóa mới. Chữ ký/audit/bằng chứng lịch sử vẫn được giữ.
@@ -668,7 +670,7 @@ Trả lại để sửa, đã triển khai ở lõi Phase 9 (#80):
   - `POST /signing/khoa/{id}/doi-pin/`: `{pin_cu, pin_moi, tham_so_kdf}` → 200 `{khoa, da_dat_pin}`. Server decrypts and re-encrypts the same key with a fresh salt; no private key is returned. Wrong PIN → 400 `pin_khong_dung`; the 15th wrong attempt in a local day and subsequent attempts → 429 `pin_het_luot_trong_ngay`.
   - `POST /signing/dat-lai-pin/xac-nhan/`: `{ma, pin_moi}` → `{da_dat_lai_pin, khoa}` after valid emailed code. Requires HTTPS; code is bound to its original `khoa_id`. Updates only PIN verifier and failed-attempt state, retaining key status, key id, public key and ciphertext.
   - `POST /signing/trinh-ky/{id}/ky/`: `{khoa_ky, hash_tai_lieu, pin, ghi_chu_ky}`. The server checks ownership, active key, locked document hash and MFA, decrypts the key in memory, signs the raw 32-byte SHA-256 digest with Ed25519 and verifies that signature against the stored public key before state changes. Request requires HTTPS in production; response is `no-store`.
-  - Legacy `mo-khoa-ky/` route and `k_srv`/PIN-verifier responses are removed. The HTTPS condition depends on correct Nginx TLS and `DJANGO_SECURE_PROXY_SSL_HEADER` configuration.
+  - Legacy `mo-khoa-ky/` route and `k_srv`/PIN-verifier responses are removed. Theo quyết định #596, module ký chấp nhận request qua HTTP hoặc HTTPS.
 - Lịch sử hồ sơ trả trong `GET /signing/trinh-ky/{id}/` (`lich_su`).
 - Lõi Phase 10 (#80), người xem được hồ sơ (người tạo, người ký, `view_signing_audit`):
   - `GET /signing/trinh-ky/{id}/bang-chung/`: bằng chứng đã chốt của lượt hiện hành (`noi_dung_chuan_hoa`, `ma_bam_bang_chung`, `thoi_diem_chot`) và `xac_minh` (băm lại, verify lại từng chữ ký bằng khóa công khai trong bằng chứng, đối chiếu tệp gốc và tệp hoàn tất đang lưu). Chưa hoàn tất: 409 `chua_co_bang_chung`.
@@ -799,8 +801,8 @@ Trả lại để sửa, đã triển khai ở lõi Phase 9 (#80):
 
 ### Mật mã, nhật ký, pháp lý
 
-- Private key chỉ xuất hiện trong request đặt PIN qua HTTPS; sau đó lưu trong CSDL dạng AES-256-GCM ciphertext. API không trả private key/ciphertext, không ghi vào log hoặc bằng chứng tổng hợp.
-- PIN chỉ truyền qua HTTPS; pepper ở env ngoài CSDL. Sai PIN quá ngưỡng bị từ chối và ghi audit; response không chứa secret. Proxy phải cấu hình để `request.is_secure()` nhận diện HTTPS.
+- API không tự áp chính sách HTTPS; local development có thể dùng HTTP, còn public staging phải đi qua listener TLS của Nginx. API không trả secret hoặc ghi PIN/OTP vào log.
+- Pepper ở env ngoài CSDL. Sai PIN quá ngưỡng bị từ chối và ghi audit; response không chứa secret.
 - Chữ ký verify được từ khóa công khai và raw SHA-256 digest.
 - Xoay vòng/thu hồi khóa, thu hồi chữ ký, từ chối, yêu cầu sửa, hủy, quản trị hủy thay đều có nhật ký, kể cả sự kiện không gắn yêu cầu.
 - Bằng chứng chuẩn hóa kiểm tra độc lập được theo lượt trình; `DA_CHOT` bất biến.
@@ -835,7 +837,7 @@ Nếu repo có chuẩn lint/type check thì bổ sung đúng lệnh của repo t
 - `[CHƯA CHỐT]` Kích thước pixel chuẩn của ảnh chữ ký.
 - `[CHƯA CHỐT]` Hệ tọa độ vị trí ký: tỷ lệ % hay điểm PDF.
 - `[CHƯA CHỐT]` Khôi phục khóa đa thiết bị; mỗi thiết bị mới tạo khóa riêng và cần xoay vòng.
-- `[RỦI RO]` Server-side signing cần HTTPS được cấu hình và xác minh ở staging trước rollout; endpoint PIN/ký fail closed khi Django không nhận biết request là HTTPS.
+- `[RỦI RO]` HTTP không mã hóa PIN, OTP và access token. Không dùng đường HTTP công khai cho trình ký; local development có thể dùng HTTP. Chứng chỉ tự ký dự phòng của #612 vẫn gây cảnh báo tin cậy ở trình duyệt nếu không được cài làm trust anchor; staging cần chứng chỉ hợp lệ và gia hạn được xác minh. Kết nối backend tới nhà cung cấp SMS vẫn dùng HTTPS.
 - `[RỦI RO]` Chống chối bỏ nội bộ chỉ đáng tin ở mức tin cậy vào CSDL (khóa công khai và chữ ký đều lưu trong CSDL). Giảm bằng chuỗi hash nhật ký hoặc dấu thời gian bên thứ ba; chưa thuộc MVP.
 - `[CẦN XÁC NHẬN]` Contract cấp số văn bản đi và chuyển trạng thái phát hành với Nhóm 2 (mục 1.4), trước Phase 10.
 - `[CẦN XÁC NHẬN]` Danh sách cấp trên trực tiếp (Nhóm 7), trước Phase 9.

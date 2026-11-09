@@ -130,7 +130,7 @@
       "welcome": "**Welcome, Officer!**\n\nI am the **TLBM AI Assistant** — an intelligent semantic Q&A and document retrieval system for administrative procedures.\n\nI prioritize searching our digitized knowledge base (PDF, DOCX, TXT), analyzing incoming/outgoing records, and deep linking with operational modules. Choose a suggested topic below or ask any question!",
       "quickPrompt1": "Procedure for incoming documents?",
       "quickPrompt2": "How are documents classified and access controlled?",
-      "quickPrompt3": "How does internal Ed25519 signing with OTP work?",
+      "quickPrompt3": "How does signing PIN setup with SMS OTP work?",
       "quickPrompt4": "Staff directory & permission matrix?"
     },
     "templates": {
@@ -146,8 +146,8 @@
       },
       "signing": {
         "title": "Internal signing",
-        "desc": "Internal Ed25519 signing with a signing key, PIN, and two-factor OTP.",
-        "query": "How does internal Ed25519 signing with a signing key, PIN, and OTP work?"
+        "desc": "Create or recover the signing PIN with SMS OTP; approve documents with the PIN.",
+        "query": "How does signing PIN setup or recovery with SMS OTP work?"
       },
       "organization": {
         "title": "Organization & Permissions",
@@ -170,6 +170,7 @@
     },
     "uncategorized": "Uncategorized",
     "defaultModel": "Gemini",
+    "modelLoading": "Loading model...",
     "duplicateUploadError": "A document with this name was added during upload. Refresh the list and try again.",
     "replaceExistingTitle": "Document already exists",
     "replaceExistingConfirm": "\"{filename}\" already exists in the library. It will only be replaced after indexing succeeds. Continue with the upload?"
@@ -229,7 +230,7 @@
     "welcome": "**Hello!**\n\nI am the **TLBM AI Assistant**, here to look up documents and authorized operational information.",
     "suggestionIncoming": "What is the incoming document process?",
     "suggestionLookup": "Look up an internal document by reference number?",
-    "suggestionSigning": "How does internal Ed25519 signing with OTP work?",
+    "suggestionSigning": "How does signing PIN setup with SMS OTP work?",
     "suggestionPermissions": "Where can I look up staff permissions?",
     "openTitle": "Open TLBM AI Assistant",
     "modelLoading": "Loading configuration",

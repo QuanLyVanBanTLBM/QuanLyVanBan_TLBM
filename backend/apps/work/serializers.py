@@ -111,9 +111,8 @@ class AttachmentSerializer(serializers.ModelSerializer):
         ]
 
     def get_downloadUrl(self, obj):
-        url = reverse("work:attachment-download", kwargs={"pk": obj.pk})
-        request = self.context.get("request")
-        return request.build_absolute_uri(url) if request else url
+        # Đường dẫn tương đối: build_absolute_uri mất cổng khi proxy chuyển Host không kèm cổng.
+        return reverse("work:attachment-download", kwargs={"pk": obj.pk})
 
     def get_canDelete(self, obj):
         # Chỉ file bằng chứng mới có nút xóa riêng; file giao việc xóa trong màn hình sửa.
