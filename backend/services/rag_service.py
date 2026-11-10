@@ -28,7 +28,6 @@ from llama_index.core.vector_stores.types import (
 from llama_index.vector_stores.chroma import ChromaVectorStore
 from pdf2image import convert_from_path
 from PIL import Image
-from rapidocr_onnxruntime import RapidOCR
 
 import backend.config as config
 from backend.config import (
@@ -40,7 +39,6 @@ from backend.config import (
     COLLECTION_NAME,
     DOCS_DIR,
     EMBED_MODEL,
-    GEMINI_API_KEY,
     LLM_MODEL,
     MODEL_PROVIDER,
     PARENT_CHUNK_OVERLAP,
@@ -120,7 +118,7 @@ Quy tắc output:
 
 
 def setup_llamaindex():
-    global MODEL_PROVIDER, LLM_MODEL, EMBED_MODEL, GEMINI_API_KEY, VISION_MODEL
+    global MODEL_PROVIDER, LLM_MODEL, EMBED_MODEL, VISION_MODEL
     try:
         from backend.services.ai_settings_service import get_active_ai_settings
         active = get_active_ai_settings()
@@ -130,12 +128,6 @@ def setup_llamaindex():
     provider = "openai"
     llm_model = "gpt-6-luna"
     embed_model = "text-embedding-3-large"
-    gemini_key = (
-        active.get("gemini_api_key")
-        or getattr(config, "GEMINI_API_KEY", None)
-        or os.getenv("GEMINI_API_KEY")
-        or GEMINI_API_KEY
-    ).strip()
     openai_key = (
         active.get("openai_api_key")
         or getattr(config, "OPENAI_API_KEY", None)
@@ -146,44 +138,27 @@ def setup_llamaindex():
     MODEL_PROVIDER = provider
     LLM_MODEL = llm_model
     EMBED_MODEL = embed_model
-    GEMINI_API_KEY = gemini_key
+    VISION_MODEL = llm_model
+    if not openai_key:
+        raise RuntimeError("OPENAI_API_KEY is not configured")
+    import llama_index.llms.openai.utils as openai_utils
+    import tiktoken.model
+    if llm_model not in openai_utils.ALL_AVAILABLE_MODELS:
+        openai_utils.ALL_AVAILABLE_MODELS[llm_model] = 128000
+        openai_utils.CHAT_MODELS[llm_model] = 128000
+        try:
+            tiktoken.model.MODEL_TO_ENCODING[llm_model] = "o200k_base"
+        except Exception:
+            pass
 
-    if provider == "openai":
-        if not openai_key:
-            raise RuntimeError("OPENAI_API_KEY is not configured")
-        import llama_index.llms.openai.utils as openai_utils
-        import tiktoken.model
-        actual_llm = "gpt-4o-mini" if llm_model == "gpt-6-luna" else llm_model
-        for m_name in (llm_model, actual_llm):
-            if m_name not in openai_utils.ALL_AVAILABLE_MODELS:
-                openai_utils.ALL_AVAILABLE_MODELS[m_name] = 128000
-                openai_utils.CHAT_MODELS[m_name] = 128000
-                try:
-                    tiktoken.model.MODEL_TO_ENCODING[m_name] = "o200k_base"
-                except Exception:
-                    pass
+    from llama_index.embeddings.openai import OpenAIEmbedding
+    from llama_index.llms.openai import OpenAI
 
-        from llama_index.embeddings.openai import OpenAIEmbedding
-        from llama_index.llms.openai import OpenAI
-
-        embed_model_name = embed_model if "text-embedding" in embed_model else "text-embedding-3-large"
-        Settings.embed_model = OpenAIEmbedding(model_name=embed_model_name, api_key=openai_key)
-        temp = 1.0 if ("luna" in llm_model or llm_model.startswith(("o1", "o3", "o4"))) else 0.1
-        Settings.llm = OpenAI(model=actual_llm, temperature=temp, request_timeout=180.0, api_key=openai_key)
-        print(f"✅ OpenAI LLM: {llm_model} (engine: {actual_llm})")
-        print(f"✅ OpenAI Embed: {embed_model_name}")
-    elif provider == "gemini":
-        if not gemini_key:
-            raise RuntimeError("GEMINI_API_KEY is not configured")
-        from backend.services.gemini_service import GeminiRESTLLM, GeminiRESTEmbedding
-
-        Settings.embed_model = GeminiRESTEmbedding(api_key=gemini_key, model_name=embed_model)
-        Settings.llm = GeminiRESTLLM(api_key=gemini_key, model_name=llm_model)
-        print(f"✅ Gemini LLM: {llm_model}")
-        print(f"✅ Gemini Embed: {embed_model}")
-        print(f"✅ Gemini Vision Model: {VISION_MODEL}")
-    else:
-        raise ValueError(f"Unsupported AI provider: {provider}")
+    embed_model_name = embed_model if "text-embedding" in embed_model else "text-embedding-3-large"
+    Settings.embed_model = OpenAIEmbedding(model_name=embed_model_name, api_key=openai_key)
+    Settings.llm = OpenAI(model=llm_model, temperature=1.0, request_timeout=180.0, api_key=openai_key)
+    print(f"✅ OpenAI LLM: {llm_model}")
+    print(f"✅ OpenAI Embed: {embed_model_name}")
 
     Settings.text_splitter = SentenceSplitter(
         chunk_size=CHILD_CHUNK_SIZE,
@@ -373,17 +348,48 @@ def image_to_base64(image) -> str:
 
 
 def call_vision_ocr(image, prompt: str = VISION_OCR_PROMPT) -> str:
-    """Gọi Vision OCR (Gemini Multimodal Vision) để trích xuất text, công thức LaTeX và mô tả ảnh."""
+    """Use the configured OpenAI chat model for image OCR."""
     if not VISION_OCR_ENABLED:
         return ""
 
-    from backend.services.gemini_service import call_gemini_vision
     try:
-        return call_gemini_vision(image, prompt=prompt, api_key=GEMINI_API_KEY, model_name=VISION_MODEL)
-    except Exception as error:
-        print(f"❌ Gemini Vision OCR Error: {type(error).__name__}: {error}")
-        return ""
+        from openai import OpenAI
+        from backend.services.ai_settings_service import get_active_ai_settings
 
+        active = get_active_ai_settings()
+        openai_key = (
+            active.get("openai_api_key")
+            or getattr(config, "OPENAI_API_KEY", "")
+            or os.getenv("OPENAI_API_KEY", "")
+        ).strip()
+        if not openai_key:
+            raise RuntimeError("OPENAI_API_KEY is not configured")
+
+        response = OpenAI(api_key=openai_key, timeout=VISION_OCR_TIMEOUT).chat.completions.create(
+            model=LLM_MODEL,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{image_to_base64(image)}"},
+                    },
+                ],
+            }],
+        )
+        content = response.choices[0].message.content
+        if isinstance(content, str):
+            return content.strip()
+        if isinstance(content, list):
+            return "".join(
+                item.text for item in content
+                if getattr(item, "type", None) == "text" and getattr(item, "text", None)
+            ).strip()
+        return ""
+    except Exception as error:
+        logger.exception("OpenAI vision OCR failed: %s", type(error).__name__)
+        return ""
 
 def should_run_vision_ocr(text: str) -> bool:
     """Quyết định có cần chạy Vision OCR không dựa trên VISION_OCR_MODE và nội dung text."""
@@ -456,32 +462,21 @@ def read_pdf_pages_with_pdfplumber(file_path: Path):
 
 
 def _process_pdf_page_with_ocr(page_number: int, image, file_path: Path):
-    ocr = RapidOCR()
-    result, _ = ocr(image)
-    page_lines = []
-
-    if result:
-        for line in result:
-            page_lines.append(line[1])
-
-    page_text = "\n".join(page_lines).strip()
     vision_text = ""
-
-    if should_run_vision_ocr(page_text):
+    if should_run_vision_ocr(""):
         vision_text = extract_image_vision_text(
             image,
             f"{file_path.name} page {page_number}",
         )
 
-    combined_text = combine_ocr_text(page_text, vision_text)
-
+    combined_text = combine_ocr_text("", vision_text)
     if not combined_text:
         return None
 
     return {
         "text": combined_text,
         "page": page_number,
-        "reader": "ocr+vision" if vision_text else "ocr",
+        "reader": "gpt-6-luna-vision",
     }
 
 
@@ -963,66 +958,24 @@ def read_xml(file_path: Path) -> str:
 
 
 def read_image(file_path: Path) -> list[dict]:
-    """Đọc file ảnh — dùng Vision OCR (Gemini) làm chính, RapidOCR làm fallback.
-
-    Luồng xử lý:
-    1. Mở ảnh bằng Pillow.
-    2. Nếu VISION_OCR_ENABLED và mode != "off" → gọi Vision OCR để trích text + mô tả ngữ nghĩa.
-    3. Luôn chạy thêm RapidOCR (OCR truyền thống) để bắt các ký tự Vision có thể bỏ sót.
-    4. Kết hợp cả hai kết quả; nếu không trích được gì thì trả về [].
-    """
+    """Extract text from an image with the configured GPT-6 Luna vision model."""
     try:
         image = Image.open(str(file_path))
         image.load()
     except Exception as error:
-        print(f"❌ Không mở được ảnh ({file_path.name}): {error}")
+        logger.warning("Could not open image %s: %s", file_path.name, error)
         return []
 
-    # Chuyển sang RGB để tương thích với Vision OCR và RapidOCR
-    if image.mode not in ("RGB", "L"):
+    if image.mode != "RGB":
         image = image.convert("RGB")
-
-    parts = []
-
-    # ── Vision OCR (Gemini multimodal) ───────────────────────
-    if VISION_OCR_ENABLED and VISION_OCR_MODE != "off":
-        print(f"📸 Vision OCR cho ảnh: {file_path.name}")
-        vision_text = call_vision_ocr(image)
-        if vision_text:
-            parts.append(vision_text.strip())
-            print(f"✅ Vision OCR thành công: {len(vision_text)} ký tự")
-        else:
-            print(f"⚠️  Vision OCR không trả về kết quả cho: {file_path.name}")
-
-    # ── RapidOCR fallback / bổ sung ──────────────────────────
-    try:
-        import numpy as np
-
-        ocr = RapidOCR()
-        img_array = np.array(image)
-        result, _ = ocr(img_array)
-        if result:
-            ocr_lines = [line[1] for line in result if line[1].strip()]
-            if ocr_lines:
-                rapid_text = "\n".join(ocr_lines).strip()
-                # Chỉ thêm nếu không trùng hoàn toàn với Vision result
-                if not parts or rapid_text not in parts[0]:
-                    parts.append(f"[RapidOCR]\n{rapid_text}")
-                    print(f"✅ RapidOCR bổ sung: {len(rapid_text)} ký tự")
-    except Exception as error:
-        print(f"⚠️  RapidOCR không xử lý được ({file_path.name}): {error}")
-
-    if not parts:
-        print(f"⚠️  Không trích xuất được nội dung từ ảnh: {file_path.name}")
+    if not should_run_vision_ocr(""):
         return []
 
-    combined = "\n\n".join(parts)
-    reader = "image+vision" if VISION_OCR_ENABLED and VISION_OCR_MODE != "off" else "image+ocr"
+    vision_text = call_vision_ocr(image)
+    if not vision_text:
+        return []
 
-    return [{"text": combined, "page": None, "reader": reader}]
-
-
-# ─────────────────────────────────────────────────────────────
+    return [{"text": vision_text, "page": None, "reader": "gpt-6-luna-vision"}]
 
 
 def read_document_pages(file_path: Path):
@@ -1446,34 +1399,16 @@ def format_chat_history(history) -> str:
     return "\n".join(lines)
 
 
-def get_chroma_collection(provider_override: str | None = None):
+def get_chroma_collection():
     CHROMA_DIR.mkdir(parents=True, exist_ok=True)
     client = chromadb.PersistentClient(path=str(CHROMA_DIR))
-
-    if provider_override:
-        current_provider = str(provider_override).lower().strip()
-    else:
-        try:
-            from backend.services.ai_settings_service import get_active_provider
-            current_provider = get_active_provider()
-        except Exception:
-            current_provider = (
-                getattr(config, "MODEL_PROVIDER", None)
-                or os.getenv("MODEL_PROVIDER")
-                or MODEL_PROVIDER
-            ).lower().strip()
-
     base_name = os.getenv("COLLECTION_NAME", "smart_documents")
-    # For gemini, maintain backward-compatible "smart_documents" collection.
-    # For openai and other providers, isolate in dedicated collections to prevent dimension conflicts.
-    collection_name = base_name if current_provider == "gemini" else f"{base_name}_{current_provider}"
-    return client.get_or_create_collection(collection_name)
+    return client.get_or_create_collection(f"{base_name}_openai")
 
-
-def sync_documents_if_needed(provider: str | None = None):
+def sync_documents_if_needed():
     """Automatically populate the provider's collection if empty using registered documents."""
     try:
-        collection = get_chroma_collection(provider_override=provider)
+        collection = get_chroma_collection()
         if collection.count() > 0:
             return
 

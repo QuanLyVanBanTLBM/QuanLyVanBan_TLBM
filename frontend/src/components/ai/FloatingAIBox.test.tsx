@@ -58,7 +58,6 @@ describe('FloatingAIBox', () => {
 
     await waitFor(() => expect(mockedGetAISettings).toHaveBeenCalled());
     expect(screen.queryByText('gpt-6-luna')).not.toBeInTheDocument();
-    expect(screen.queryByText('gpt-4o')).not.toBeInTheDocument();
   });
 
   it('allows dragging the chat box window and resets on double click', async () => {

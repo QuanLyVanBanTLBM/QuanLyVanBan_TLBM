@@ -179,7 +179,7 @@ class AIAccessTests(TestCase):
         )
         response_body = {
             "data": [
-                {"id": "gpt-4o-mini"},
+                {"id": "gpt-6-luna"},
                 {"id": "text-embedding-3-large"},
             ]
         }
