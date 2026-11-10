@@ -5,6 +5,7 @@ from django.urls import reverse
 from django.utils import timezone
 from rest_framework import serializers
 
+from authorization.permissions import is_system_admin
 from documents.selectors import van_ban_xem_duoc
 from work.models import (
     AttachmentKind,
@@ -221,6 +222,7 @@ class TaskListSerializer(serializers.ModelSerializer):
         return {
             "canEdit": obj.can_edit(user),
             "canDelete": obj.can_delete(user),
+            "canExtend": obj.can_extend(user),
             "canApprove": obj.can_approve(user),
             "canUnapprove": obj.can_unapprove(user),
         }
@@ -637,4 +639,7 @@ class EmployeeSerializer(EmployeeBriefSerializer):
 
 
 class MeSerializer(EmployeeSerializer):
-    isAdmin = serializers.BooleanField(source="is_superuser", read_only=True)
+    isAdmin = serializers.SerializerMethodField()
+
+    def get_isAdmin(self, obj):
+        return is_system_admin(obj)

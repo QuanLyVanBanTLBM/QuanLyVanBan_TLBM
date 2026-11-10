@@ -120,7 +120,8 @@
       "edit": "Edit task",
       "delete": "Delete task",
       "approve": "Approve",
-      "unapprove": "Revoke"
+      "unapprove": "Revoke",
+      "extend": "Extend"
     },
     "pagination": {
       "showing": "Showing {from}–{to} of {count} tasks",
@@ -256,7 +257,8 @@
       "waitingEvidence": "The Approve button will appear when the lead handler or participating staff submit a comment with evidence files.",
       "readyToApprove": "Evidence files are available. Please review the comments with files above before approving.",
       "alreadyApproved": "Approved at {time}{by}. Revoking will return the task to Awaiting Approval.",
-      "approvedBy": " by {name}"
+      "approvedBy": " by {name}",
+      "extendButton": "Extend deadline"
     },
     "attachments": {
       "empty": "No attachments.",
@@ -285,6 +287,16 @@
       "tooLarge": "File \"{fileName}\" is {size}, exceeding the limit. Please select a file under {max} MB or compress it first.",
       "emptyFile": "File \"{fileName}\" is empty. Please check the file on your computer and select it again.",
       "duplicate": "File \"{fileName}\" is already in the list. Rename the file if it is a different one."
+    },
+    "extend": {
+      "title": "Extend task deadline",
+      "hint": "Current due date: {dueDate}. Choose a new due date from today onward; the task status is recalculated from the new date.",
+      "newDueDate": "New due date",
+      "confirm": "Extend",
+      "required": "Choose a new due date.",
+      "errorTitle": "Could not extend the deadline",
+      "successNotice": "Extended the deadline of task \"{title}\".",
+      "successDetailNotice": "Task deadline extended."
     }
   }
 }

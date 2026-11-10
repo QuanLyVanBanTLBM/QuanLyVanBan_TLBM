@@ -120,7 +120,8 @@
       "edit": "Sửa công việc",
       "delete": "Xóa công việc",
       "approve": "Duyệt",
-      "unapprove": "Hủy duyệt"
+      "unapprove": "Hủy duyệt",
+      "extend": "Gia hạn"
     },
     "pagination": {
       "showing": "Hiển thị {from}–{to} / {count} công việc",
@@ -256,7 +257,8 @@
       "waitingEvidence": "Nút Duyệt sẽ hiện khi người chủ trì hoặc cán bộ tham gia gửi ý kiến kèm file kết quả.",
       "readyToApprove": "Đã có file kết quả. Hãy xem các ý kiến kèm file ở trên trước khi duyệt hoàn thành.",
       "alreadyApproved": "Đã duyệt hoàn thành lúc {time}{by}. Hủy duyệt sẽ đưa công việc về Chờ duyệt.",
-      "approvedBy": " bởi {name}"
+      "approvedBy": " bởi {name}",
+      "extendButton": "Gia hạn công việc"
     },
     "attachments": {
       "empty": "Không có tệp đính kèm.",
@@ -285,6 +287,16 @@
       "tooLarge": "File \"{fileName}\" nặng {size}, vượt giới hạn. Hãy chọn file dưới {max} MB hoặc nén file trước khi tải lên.",
       "emptyFile": "File \"{fileName}\" đang trống. Hãy kiểm tra lại file trên máy rồi chọn lại.",
       "duplicate": "File \"{fileName}\" đã có trong danh sách. Hãy đổi tên file nếu đây là file khác."
+    },
+    "extend": {
+      "title": "Gia hạn công việc",
+      "hint": "Hạn xử lý hiện tại: {dueDate}. Chọn hạn mới từ hôm nay trở đi; trạng thái công việc sẽ được tính lại theo hạn mới.",
+      "newDueDate": "Hạn xử lý mới",
+      "confirm": "Gia hạn",
+      "required": "Hãy chọn hạn xử lý mới.",
+      "errorTitle": "Không gia hạn được",
+      "successNotice": "Đã gia hạn công việc \"{title}\".",
+      "successDetailNotice": "Đã gia hạn công việc."
     }
   }
 }
