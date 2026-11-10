@@ -42,6 +42,12 @@ describe('Nghiệp Vụ Khóa Thay Thế Văn Bản (Replacement Guard - Theo Ch
     fireEvent.change(screen.getByPlaceholderText(/mục đích và nội dung cốt lõi/i), {
       target: { value: 'Thông báo phân công lịch trực tiếp nhận' },
     });
+    fireEvent.change(screen.getByPlaceholderText(/Họ và tên người ký/i), {
+      target: { value: 'Nguyễn Văn A' },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/VD: Thứ trưởng, Giám đốc/i), {
+      target: { value: 'Giám đốc' },
+    });
 
     // Tick chọn văn bản thay thế
     const replaceCheckbox = screen.getByLabelText(/Văn bản này thay thế cho văn bản khác trong hệ thống/i);
@@ -82,6 +88,12 @@ describe('Nghiệp Vụ Khóa Thay Thế Văn Bản (Replacement Guard - Theo Ch
     });
     fireEvent.change(screen.getByPlaceholderText(/mục đích và nội dung cốt lõi/i), {
       target: { value: 'Trích yếu test' },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/Họ và tên người ký/i), {
+      target: { value: 'Nguyễn Văn A' },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/VD: Thứ trưởng, Giám đốc/i), {
+      target: { value: 'Giám đốc' },
     });
 
     // Tick chọn thay thế
