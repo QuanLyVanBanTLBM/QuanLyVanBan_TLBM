@@ -118,6 +118,12 @@ def _khoi_chu_ky(c, khung, nguoi_ky, anh, phong, phong_dam):
     from reportlab.lib.utils import ImageReader
 
     x, y, rong, cao = khung
+
+    # Tô nền trắng lót toàn bộ diện tích khung ký (với độ đệm 1.5pt để bao trùm đường viền)
+    # nhằm xóa/che sạch mọi khung nét đứt placeholder, hướng dẫn vị trí ký có sẵn trong văn bản gốc
+    c.setFillColor(Color(1, 1, 1))
+    c.rect(x - 1.5, y - 1.5, rong + 3, cao + 3, fill=1, stroke=0)
+
     c.setFillColor(Color(0, 0, 0))
 
     ten_in_hoa = str(nguoi_ky.get("ten_nguoi_ky") or "").strip().upper()

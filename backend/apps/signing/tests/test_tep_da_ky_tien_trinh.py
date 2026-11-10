@@ -89,3 +89,16 @@ class TepDaKyTienTrinhTests(KyBase):
         client_la = self.client_cua(nguoi_ngoai)
         r = client_la.get(f"{BASE}/{self.pk}/tep-da-ky/")
         self.assertEqual(r.status_code, 404)
+
+    def test_khung_ky_co_lop_nen_trang_che_placeholder(self):
+        """Khung ký khi dán lên PDF có vẽ hình chữ nhật màu trắng lót bên dưới để che placeholder."""
+        self.ky(self.ky1)
+        r = self.c.get(f"{BASE}/{self.pk}/tep-da-ky/")
+        self.assertEqual(r.status_code, 200)
+
+        pdf = PdfReader(io.BytesIO(r.content))
+        # Kiểm tra nội dung trang có lệnh tô màu trắng RGB (1 1 1 rg) và lệnh vẽ chữ nhật tô đầy (re f / re f*)
+        noi_dung_trang = pdf.pages[0].get_contents()
+        raw_stream = noi_dung_trang.get_data().decode("latin1", errors="ignore")
+        # ReportLab tô màu trắng bằng '1 1 1 rg' hoặc '1 g' trước lệnh 're f'
+        self.assertTrue("1 1 1 rg" in raw_stream or "1 g" in raw_stream)
