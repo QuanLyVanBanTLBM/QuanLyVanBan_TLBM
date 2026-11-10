@@ -96,13 +96,18 @@ class ThemVanBanHanCheTest(TestCase):
         denied = self.post_document(self.adder_den_only, "DI", "HAN_CHE", "04/DI-HC-TU-CHOI")
         self.assertEqual(denied.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_clerk_admin_group_and_staff_create_restricted_documents(self):
-        for user in (self.clerk, self.admin_group_user, self.staff):
+    def test_clerk_and_admin_group_create_restricted_documents(self):
+        for user in (self.clerk, self.admin_group_user):
             for loai in ("DEN", "DI"):
                 so_hieu = f"05/{loai}-HC-{user.username}"
                 response = self.post_document(user, loai, "HAN_CHE", so_hieu)
                 self.assertEqual(response.status_code, status.HTTP_201_CREATED, (user.username, loai, response.data))
                 self.assertEqual(response.data["pham_vi"], "HAN_CHE")
+
+    def test_is_staff_flag_alone_does_not_grant_restricted_creation(self):
+        for loai in ("DEN", "DI"):
+            response = self.post_document(self.staff, loai, "HAN_CHE", f"05/{loai}-HC-staff")
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN, (loai, response.data))
 
     def test_user_without_any_add_permission_is_forbidden_for_both_scopes(self):
         for pham_vi in ("NOI_BO", "HAN_CHE"):
@@ -135,7 +140,7 @@ class ThemVanBanHanCheTest(TestCase):
         self.assertFalse(VanBanDi.objects.filter(so_hieu="07/DI-HC-TU-CHOI").exists())
 
     def test_import_restricted_rows_with_permission(self):
-        for user in (self.clerk, self.admin_group_user, self.staff):
+        for user in (self.clerk, self.admin_group_user):
             so_hieu = f"08/DI-HC-{user.username}"
             result = import_from_excel(self.restricted_di_workbook(so_hieu), "DI", user, pham_vi="HAN_CHE")
             self.assertEqual(result["created"], 1, (user.username, result))

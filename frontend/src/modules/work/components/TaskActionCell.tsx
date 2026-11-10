@@ -15,6 +15,7 @@ interface TaskActionCellProps {
   onDelete: (task: TaskListItem) => void;
   onApprove: (task: TaskListItem) => void;
   onUnapprove: (task: TaskListItem) => void;
+  onExtend?: (task: TaskListItem) => void;
 }
 
 function IconButton({
@@ -105,11 +106,13 @@ export default function TaskActionCell({
   onDelete,
   onApprove,
   onUnapprove,
+  onExtend,
 }: TaskActionCellProps) {
   const { t } = useTranslation();
   const { canEdit, canDelete, canApprove, canUnapprove } = task.permissions;
+  const canExtend = Boolean(task.permissions.canExtend && onExtend);
 
-  if (!canEdit && !canDelete && !canApprove && !canUnapprove) {
+  if (!canEdit && !canDelete && !canApprove && !canUnapprove && !canExtend) {
     return (
       <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }} title={t('work.actions.viewOnly')}>
         —
@@ -119,6 +122,15 @@ export default function TaskActionCell({
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+      {canExtend && onExtend && (
+        <TextButton
+          label={t('work.actions.extend')}
+          icon="fa-solid fa-calendar-plus"
+          variant="warning"
+          disabled={disabled}
+          onClick={() => onExtend(task)}
+        />
+      )}
       {canEdit && (
         <IconButton
           icon="fa-solid fa-pen"

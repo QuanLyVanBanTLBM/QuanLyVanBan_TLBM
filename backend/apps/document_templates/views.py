@@ -87,7 +87,7 @@ class TicketOrJWTAuthentication(JWTAuthentication):
 def can_user_modify_document(user, doc, perm_codename):
     """
     Kiểm tra quyền sở hữu (RBAC) khi Cập nhật, Xóa và Đổi hiệu lực tài liệu:
-    - Quản trị hệ thống (superuser, is_staff hoặc nhóm ADMIN) có toàn quyền.
+    - Quản trị hệ thống (superuser hoặc nhóm ADMIN) có toàn quyền.
     - Người trực tiếp tạo ra tài liệu (nguoi_tao == user hoặc nguoi_tao_id == user.id) luôn có quyền trên tài liệu của mình.
     - Cán bộ có quyền perm_codename ('change_tailieu' hoặc 'delete_tailieu'):
       + Chỉ có quyền trên tài liệu thuộc cùng phòng ban / đơn vị của mình.
@@ -97,7 +97,7 @@ def can_user_modify_document(user, doc, perm_codename):
         return False
 
     # 1. Quản trị viên tối cao / Admin
-    if getattr(user, 'is_staff', False) or is_system_admin(user):
+    if is_system_admin(user):
         return True
 
     # 2. Người trực tiếp tạo tài liệu

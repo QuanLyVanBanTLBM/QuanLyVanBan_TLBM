@@ -517,7 +517,10 @@ class TaskListApiTests(WorkTestBase):
         self.assertEqual([p["id"] for p in item["directors"]], [self.director.pk])
         self.assertEqual([p["id"] for p in item["participants"]], [self.member.pk])
         self.assertEqual(item["myRoles"], ["CHU_TRI"])
-        self.assertEqual(item["permissions"], {"canEdit": True, "canDelete": True, "canApprove": False, "canUnapprove": False})
+        self.assertEqual(
+            item["permissions"],
+            {"canEdit": True, "canDelete": True, "canExtend": False, "canApprove": False, "canUnapprove": False},
+        )
 
     def test_tinh_trang_khong_hop_le(self):
         self.login(self.member)
