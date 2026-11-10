@@ -13,12 +13,13 @@ from rest_framework.response import Response
 from authorization.permissions import is_system_admin, require_permission
 from accounts.models import Employee
 from .models import BirthdayEmailLog, BirthdayEmailStatus
-from .services import is_birthday_on_date, load_birthday_card_token, serialize_staff_birthday
+from .services import can_retry_manually, is_birthday_on_date, load_birthday_card_token, serialize_staff_birthday
 
 VIETNAM_TIME_ZONE = ZoneInfo("Asia/Ho_Chi_Minh")
 
 
 def serialize_email_log(log: BirthdayEmailLog) -> dict:
+    can_retry = log.employee.is_active and can_retry_manually(log)
     return {
         "id": log.id,
         "employee_id": log.employee_id,
@@ -35,6 +36,12 @@ def serialize_email_log(log: BirthdayEmailLog) -> dict:
         "retry_count": log.retry_count,
         "error_message": log.error_message or "",
         "smtp_response_code": log.smtp_response_code or "",
+        "delivery_source": log.delivery_source,
+        "delivery_uncertain": log.delivery_uncertain,
+        "template_version": (log.delivery_snapshot or {}).get("template_version"),
+        "last_operator": log.last_operator,
+        "can_retry": can_retry,
+        "current_recipient": (log.employee.email or "").strip() if can_retry else None,
     }
 
 
@@ -216,7 +223,7 @@ def birthday_card_api(request):
 @permission_classes([IsAuthenticated])
 def birthday_email_logs_api(request):
     """
-    API xem nhật ký gửi email chúc mừng sinh nhật tự động.
+    API xem nhật ký gửi email chúc mừng sinh nhật tự động và thủ công.
     `date=YYYY-MM-DD` lọc theo khoảng `sent_at` của ngày tại múi giờ dự án; mặc định là ngày hiện tại.
     `month`/`year` tiếp tục được hỗ trợ cho các client cũ.
     Tạm thời chỉ quản trị hệ thống (superuser, nhóm ADMIN) được xem cho đến khi DDL có quyền riêng.

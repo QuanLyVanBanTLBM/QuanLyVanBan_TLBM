@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ subject }}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: #f3e8e8;
+      font-family: 'Georgia', serif;
+      padding: 32px 16px;
+      color: #2d1618;
+    }
+    .ruby-container {
+      max-width: 600px;
+      margin: 0 auto;
+      background: #ffffff;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 2px solid #e5c158;
+      box-shadow: 0 20px 40px rgba(105, 16, 26, 0.18);
+    }
+    .ruby-header {
+      background: linear-gradient(135deg, #6d0f1c 0%, #8f1626 50%, #4e0913 100%);
+      padding: 36px 32px 30px;
+      color: #ffffff;
+      text-align: center;
+      border-bottom: 4px solid #e5c158;
+    }
+    .ruby-badge {
+      display: inline-block;
+      background: rgba(229, 193, 88, 0.2);
+      border: 1px solid #e5c158;
+      color: #fde68a;
+      padding: 5px 16px;
+      border-radius: 30px;
+      font-family: Arial, sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+    .ruby-header h1 {
+      font-size: 32px;
+      color: #fde68a;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-bottom: 6px;
+    }
+    .ruby-header .sub {
+      font-size: 14px;
+      color: #fecdd3;
+      font-style: italic;
+    }
+    .recipient-card {
+      background: #fff9f5;
+      margin: 26px 34px 10px;
+      border: 1px solid #f2d59b;
+      border-radius: 10px;
+      padding: 18px 22px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .rc-left h3 {
+      font-size: 20px;
+      color: #6d0f1c;
+      margin-bottom: 4px;
+    }
+    .rc-left p {
+      font-family: Arial, sans-serif;
+      font-size: 13px;
+      color: #57534e;
+    }
+    .rc-right {
+      text-align: right;
+      font-family: Arial, sans-serif;
+    }
+    .rc-date {
+      background: #6d0f1c;
+      color: #fde68a;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 14px;
+      display: inline-block;
+    }
+    .ruby-body {
+      padding: 20px 34px 36px;
+    }
+    .ruby-body p {
+      font-size: 15px;
+      line-height: 1.78;
+      color: #3b1d20;
+      margin-bottom: 16px;
+      text-align: justify;
+    }
+    .cta-ruby {
+      text-align: center;
+      margin: 26px 0;
+    }
+    .cta-ruby a {
+      display: inline-block;
+      background: #6d0f1c;
+      color: #fde68a;
+      border: 1.5px solid #e5c158;
+      padding: 13px 28px;
+      border-radius: 999px;
+      text-decoration: none;
+      font-family: Arial, sans-serif;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+    }
+    .ruby-footer {
+      background: #fdf4f5;
+      padding: 18px 34px;
+      border-top: 1px solid #f3d6da;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 14px;
+      color: #6d0f1c;
+    }
+  </style>
+</head>
+<body>
+  <div class="ruby-container">
+    <div class="ruby-header">
+      <div class="ruby-badge">{{ organization_name }}</div>
+      <h1>Mừng Sinh Nhật Rực Rỡ</h1>
+      <div class="sub">Chúc tuổi mới hồng phát, vạn sự hanh thông & ngập tràn niềm vui</div>
+    </div>
+
+    <div class="recipient-card">
+      <div class="rc-left">
+        <h3>{{ employee_name }}</h3>
+        <p>
+          Chức vụ: <strong style="color:#6d0f1c;">{{ position }}</strong>
+          &nbsp;|&nbsp;
+          Phòng ban: <strong style="color:#6d0f1c;">{{ department }}</strong>
+        </p>
+      </div>
+      <div class="rc-right">
+        <span class="rc-date">🎉 <span>{{ birthday_date }}</span></span>
+      </div>
+    </div>
+
+    <div class="ruby-body">
+      {% if chuc_danh %}<p>Chức danh: <strong>{{ chuc_danh }}</strong></p>{% endif %}
+      {{ greeting|linebreaks }}
+
+      <div class="cta-ruby">
+        {% if birthday_card_url %}<a href="{{ birthday_card_url }}">🎁 Mở Thiệp Chúc Mừng Sinh Nhật</a>{% endif %}
+      </div>
+    </div>
+
+    <div class="ruby-footer">
+      <div>
+        <span style="color:#78716c; font-size:13px;">Thân ái,</span><br>
+        <strong>Ban Lãnh đạo & Tập thể <span>{{ brand_name }}</span></strong>
+      </div>
+      <div style="font-size: 22px;">🥂✨</div>
+    </div>
+  </div>
+</body>
+</html>

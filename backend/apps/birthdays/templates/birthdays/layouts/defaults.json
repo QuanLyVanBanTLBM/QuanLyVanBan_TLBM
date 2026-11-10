@@ -1,0 +1,42 @@
+{
+  "01": {
+    "subject": "[{{ brand_name }}] Chúc mừng sinh nhật {{ employee_name }}",
+    "message": "Kính gửi {{ employee_name }},\n\nNhân dịp sinh nhật ngày {{ birthday_date }} của {{ employee_name }}, Ban Lãnh đạo cùng toàn thể cán bộ nhân viên {{ organization_name }} trân trọng gửi đến đồng chí lời chúc mừng sinh nhật nồng nhiệt và tốt đẹp nhất. Chúc đồng chí bước sang tuổi mới luôn dồi dào sức khỏe, tràn đầy năng lượng và đón nhận thật nhiều niềm vui, hạnh phúc viên mãn bên gia đình, người thân.\n\nBan Lãnh đạo ghi nhận và trân trọng cảm ơn những nỗ lực, cống hiến và tinh thần trách nhiệm mà {{ employee_name }} đã không ngừng đóng góp cho sự phát triển vững mạnh của {{ department }} cũng như ngôi nhà chung {{ organization_name }} trong suốt thời gian qua.\n\nKính chúc đồng chí trên cương vị {{ position }} sẽ luôn vững vàng nhiệt huyết, tiếp tục phát huy tối đa năng lực để hoàn thành xuất sắc mọi mục tiêu đề ra, gặt hái thêm nhiều thành công rực rỡ và cùng tập thể {{ brand_name }} lan tỏa những giá trị tốt đẹp đến khách hàng và cộng đồng."
+  },
+  "02": {
+    "subject": "[{{ brand_name }}] Chúc mừng sinh nhật {{ employee_name }}",
+    "message": "Kính gửi {{ employee_name }},\n\nNhân ngày đặc biệt {{ birthday_date }}, Ban Lãnh đạo cùng toàn thể đồng nghiệp tại {{ organization_name }} xin gửi tới đồng chí lời chúc mừng sinh nhật trang trọng, ấm áp và tràn đầy niềm vui.\n\n“Sự tận tâm và bản lĩnh của đồng chí trên cương vị {{ position }} là mảnh ghép quan trọng tạo nên sức mạnh tập thể của {{ department }}.”\n\nBước sang tuổi mới, kính chúc {{ employee_name }} luôn giữ vững ngọn lửa đam mê, dồi dào sức khỏe, trí lực minh mẫn để tiếp tục dẫn dắt và đồng hành cùng {{ department }} chinh phục những cột mốc thành công mới."
+  },
+  "03": {
+    "subject": "[{{ brand_name }}] Chúc mừng sinh nhật {{ employee_name }}",
+    "message": "Nhân dịp sinh nhật ngày {{ birthday_date }}, Ban Lãnh đạo cùng toàn thể cán bộ nhân viên {{ organization_name }} trân trọng gửi tới {{ employee_name }} lời chúc sức khỏe, hạnh phúc và bình an.\n\nMỗi chặng đường phát triển của {{ department }} đều mang đậm dấu ấn đóng góp, sự chuyên nghiệp và tinh thần trách nhiệm của đồng chí trên cương vị {{ position }}. Tập thể công ty luôn trân trọng những giá trị bền vững mà đồng chí đã kiến tạo.\n\nChúc {{ employee_name }} đón một tuổi mới với thật nhiều cảm hứng sáng tạo, hoàn thành xuất sắc mọi mục tiêu công việc và tận hưởng trọn vẹn niềm vui bên những người thân yêu."
+  },
+  "04": {
+    "subject": "[{{ brand_name }}] Chúc mừng sinh nhật {{ employee_name }}",
+    "message": "Kính gửi {{ employee_name }},\n\nHòa chung niềm vui trong ngày sinh nhật {{ birthday_date }} của đồng chí, Ban Lãnh đạo và toàn thể cán bộ nhân viên {{ organization_name }} thân ái gửi đến đồng chí những lời chúc tốt đẹp và nồng hậu nhất!\n\nCảm ơn đồng chí đã luôn đồng hành, cống hiến hết mình vì sự phát triển của {{ department }}. Với vai trò {{ position }}, sự nhiệt huyết và tận tụy của đồng chí luôn là nguồn động lực to lớn đối với anh chị em đồng nghiệp.\n\nChúc đồng chí bước sang tuổi mới sức khỏe dồi dào, gia đình hạnh phúc, công việc thuận buồm xuôi gió và gặt hái thêm nhiều thành tựu vẻ vang cùng {{ brand_name }}!"
+  },
+  "05": {
+    "subject": "[{{ brand_name }}] Chúc mừng sinh nhật {{ employee_name }}",
+    "message": "Thân gửi {{ employee_name }},\n\nNhân dịp sinh nhật ngày {{ birthday_date }}, Ban Lãnh đạo và các đồng nghiệp tại {{ organization_name }} chúc bạn một ngày sinh nhật thật trọn vẹn, ngập tràn tiếng cười và năng lượng tích cực!\n\nSự chủ động, sáng tạo và tinh thần trách nhiệm của bạn ở vị trí {{ position }} đã góp phần quan trọng giúp {{ department }} luôn vận hành hiệu quả và bứt phá mạnh mẽ.\n\nChúc bạn bước sang tuổi mới luôn dồi dào sức khỏe, bứt phá mọi giới hạn và gặt hái thêm nhiều dấu ấn rực rỡ trong sự nghiệp lẫn cuộc sống!"
+  },
+  "06": {
+    "subject": "[{{ brand_name }}] Chúc mừng sinh nhật {{ employee_name }}",
+    "message": "Kính gửi {{ employee_name }},\n\nNhân dịp sinh nhật ngày {{ birthday_date }}, tập thể {{ organization_name }} thân thương gửi đến đồng chí lời chúc mừng sinh nhật dịu dàng, ấm áp và tràn ngập niềm vui.\n\nCảm ơn đồng chí vì đã luôn là một phần gắn kết đầy trân quý của {{ department }}. Trên cương vị {{ position }}, sự tận tâm và điềm tĩnh của đồng chí đã góp phần vun đắp môi trường làm việc hài hòa, chuyên nghiệp và hiệu quả.\n\nChúc đồng chí tuổi mới luôn bình an trong tâm hồn, dồi dào sức khỏe và gặt hái thật nhiều quả ngọt trên hành trình sự nghiệp lẫn cuộc sống gia đình."
+  },
+  "07": {
+    "subject": "[{{ brand_name }}] Chúc mừng sinh nhật {{ employee_name }}",
+    "message": "Kính gửi {{ employee_name }},\n\nNhân dịp sinh nhật ngày {{ birthday_date }}, Ban Lãnh đạo và toàn thể đồng nghiệp tại {{ organization_name }} trân trọng gửi tới đồng chí lời chúc mừng sinh nhật nồng nhiệt nhất!\n\nTại {{ department }}, nỗ lực bền bỉ và năng lực chuyên môn vững vàng của đồng chí trên cương vị {{ position }} luôn tỏa sáng như một ngôi sao tiêu biểu, góp phần kiến tạo nên thành công chung của toàn hệ thống.\n\nChúc đồng chí bước sang tuổi mới với thật nhiều sức khỏe, may mắn, hạnh phúc viên mãn và tiếp tục vươn tới những đỉnh cao mới!"
+  },
+  "08": {
+    "subject": "[{{ brand_name }}] Chúc mừng sinh nhật {{ employee_name }}",
+    "message": "Thân gửi đồng chí {{ employee_name }},\n\nChào đón ngày sinh nhật {{ birthday_date }} đầy ý nghĩa, Ban Lãnh đạo và đại gia đình {{ organization_name }} xin gửi tới đồng chí lời chúc sức khỏe dồi dào, tinh thần hứng khởi và ngập tràn hạnh phúc.\n\nSự gắn bó và nhiệt tâm của đồng chí trên cương vị {{ position }} tại {{ department }} luôn mang lại nguồn năng lượng ấm áp, lan tỏa tinh thần đoàn kết và trách nhiệm đến toàn thể anh chị em trong đơn vị.\n\nChúc đồng chí tuổi mới luôn vững bước, đạt được nhiều thành tựu mới và mãi là người đồng hành tin cậy của {{ brand_name }}!"
+  },
+  "09": {
+    "subject": "[{{ brand_name }}] Chúc mừng sinh nhật {{ employee_name }}",
+    "message": "Kính gửi đồng chí {{ employee_name }},\n\nNhân dịp kỷ niệm ngày sinh nhật {{ birthday_date }}, thay mặt Ban Lãnh đạo và toàn thể cán bộ nhân viên {{ organization_name }}, chúng tôi trân trọng gửi tới đồng chí lời chúc mừng tốt đẹp nhất.\n\nTrong suốt quá trình công tác tại {{ department }} với trọng trách {{ position }}, đồng chí đã luôn thể hiện tinh thần gương mẫu, tận tụy và đóng góp thiết thực vào sự phát triển bền vững của đơn vị.\n\nKính chúc đồng chí bước sang tuổi mới dồi dào sức khỏe, gia đình an khang thịnh vượng và tiếp tục gặt hái nhiều thắng lợi mới trong sự nghiệp."
+  },
+  "10": {
+    "subject": "[{{ brand_name }}] Chúc mừng sinh nhật {{ employee_name }}",
+    "message": "Chào {{ employee_name }},\n\nChúc mừng ngày sinh nhật {{ birthday_date }}! Đại gia đình {{ organization_name }} chúc bạn một tuổi mới rực rỡ sắc màu, tràn đầy năng lượng và ngập tràn những điều tuyệt vời nhất!\n\nCảm ơn bạn vì đã luôn cháy hết mình trên cương vị {{ position }} và cùng tập thể {{ department }} tạo nên biết bao dấu ấn đáng tự hào.\n\nHãy tận hưởng ngày hôm nay thật vui vẻ bên gia đình, bạn bè và đồng nghiệp nhé!"
+  }
+}

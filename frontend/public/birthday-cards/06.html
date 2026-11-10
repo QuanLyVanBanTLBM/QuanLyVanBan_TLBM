@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <script src="/birthday-cards/personalize.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Thiệp 06 - Thiên Nhiên Thanh Lịch 3D | Bảo Long Insurance</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,400&family=Playfair+Display:wght@600;700&family=Montserrat:wght@500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      background: linear-gradient(160deg, #cfe3d4 0%, #e4efe7 55%, #f5f2eb 100%);
+      font-family: 'Playfair Display', Georgia, serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 40px 16px;
+      overflow-x: hidden;
+    }
+    #botanicalWebGL {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 1;
+    }
+    .botanical-card {
+      position: relative;
+      z-index: 10;
+      max-width: 590px;
+      width: 100%;
+      background: rgba(252, 251, 247, 0.95);
+      border: 1.5px solid #9ab8a5;
+      border-radius: 22px;
+      overflow: hidden;
+      box-shadow: 0 24px 55px rgba(38, 70, 53, 0.16);
+    }
+    .b-header {
+      background: linear-gradient(180deg, #d3e5d7 0%, #fcfbf7 100%);
+      padding: 36px 34px 20px;
+      text-align: center;
+    }
+    .b-org {
+      font-family: 'Montserrat', sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 2.4px;
+      color: #3d634f;
+      text-transform: uppercase;
+      margin: 8px 0;
+    }
+    .b-header h1 {
+      font-size: 34px;
+      color: #1f3d2d;
+      margin-bottom: 6px;
+    }
+    .b-header p {
+      font-style: italic;
+      color: #8c6d3f;
+      font-size: 15px;
+    }
+    .b-staff {
+      margin: 18px 34px 22px;
+      background: #ffffff;
+      border: 1px solid #cce0d2;
+      border-radius: 14px;
+      padding: 16px 20px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      text-align: center;
+    }
+    .bs-col small {
+      display: block;
+      font-family: 'Montserrat', sans-serif;
+      font-size: 9.5px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #6b8577;
+      margin-bottom: 4px;
+      font-weight: 700;
+    }
+    .bs-col strong {
+      font-size: 14.5px;
+      color: #1f3d2d;
+    }
+    .b-body {
+      padding: 4px 36px 34px;
+    }
+    .b-body p {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 18px;
+      line-height: 1.78;
+      color: #2c3e35;
+      margin-bottom: 15px;
+      text-align: justify;
+    }
+    .sage-btn {
+      background: #3d634f;
+      color: #ffffff;
+      border: none;
+      padding: 13px 28px;
+      border-radius: 999px;
+      font-family: 'Montserrat', sans-serif;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      cursor: pointer;
+      box-shadow: 0 8px 20px rgba(61, 99, 79, 0.25);
+    }
+    .b-foot {
+      background: #f0f6f2;
+      padding: 18px 36px;
+      border-top: 1px solid #d8e6dc;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: #1f3d2d;
+    }
+    @media (max-width: 520px) {
+      .b-staff { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="botanicalWebGL"></canvas>
+
+  <div class="botanical-card" id="bCard">
+    <div class="b-header">
+      <svg width="72" height="36" viewBox="0 0 70 36" fill="none">
+        <path d="M5 30 Q35 10 65 30" stroke="#8c6d3f" stroke-width="1.6"/>
+        <ellipse cx="22" cy="18" rx="8" ry="4" transform="rotate(-25 22 18)" fill="#6b967d"/>
+        <ellipse cx="35" cy="14" rx="8" ry="4" fill="#3d634f"/>
+        <ellipse cx="48" cy="18" rx="8" ry="4" transform="rotate(25 48 18)" fill="#6b967d"/>
+      </svg>
+      <div class="b-org" data-card-field="organization_name">BẢO LONG INSURANCE</div>
+      <h1>Chúc Mừng Sinh Nhật</h1>
+      <p>Ngày sinh nhật an lành • <strong data-card-field="birthday_date">—</strong></p>
+    </div>
+
+    <div class="b-staff">
+      <div class="bs-col">
+        <small>Người nhận</small>
+        <strong data-card-field="employee_name">—</strong>
+      </div>
+      <div class="bs-col">
+        <small>Chức vụ</small>
+        <strong data-card-field="position">—</strong>
+      </div>
+      <div class="bs-col">
+        <small>Phòng ban</small>
+        <strong data-card-field="department">—</strong>
+      </div>
+    </div>
+
+    <div class="b-body">
+      <p>Kính gửi <strong data-card-field="employee_name">—</strong>,</p>
+      <p>
+        Nhân dịp sinh nhật ngày <strong data-card-field="birthday_date">—</strong>, tập thể <span data-card-field="organization_name">Bảo Long Insurance</span> thân thương gửi đến đồng chí lời chúc mừng sinh nhật dịu dàng, ấm áp và tràn ngập niềm vui.
+      </p>
+      <p>
+        Cảm ơn đồng chí vì đã luôn là một phần gắn kết đầy trân quý của <strong data-card-field="department">—</strong>. Trên cương vị <strong data-card-field="position">—</strong>, sự tận tâm và điềm tĩnh của đồng chí đã góp phần vun đắp môi trường làm việc hài hòa và hiệu quả.
+      </p>
+
+      <div style="text-align:center; margin: 24px 0 8px;">
+        <button class="sage-btn" id="petalBtn">🌿 Tung Cánh Hoa & Lời Chúc Bình An</button>
+      </div>
+    </div>
+
+    <div class="b-foot">
+      <div>
+        <small style="color:#6b8577; display:block;">Thân mến,</small>
+        <strong>Ban Lãnh đạo & Tập thể <span data-card-field="organization_name">Bảo Long Insurance</span></strong>
+      </div>
+      <div style="color:#8c6d3f; font-size:20px;">✿ ❀ ✿</div>
+    </div>
+  </div>
+
+
+</body>
+</html>

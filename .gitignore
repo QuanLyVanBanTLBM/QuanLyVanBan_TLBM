@@ -134,6 +134,9 @@ frontend/.vite/
 *.timestamp-*
 frontend/*.timestamp-*
 
+# Temporary template samples
+template/
+
 
 
 

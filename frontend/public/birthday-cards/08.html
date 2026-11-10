@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <script src="/birthday-cards/personalize.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Thiệp 08 - Bình Minh Ấm Áp & Đèn Trời 3D | Bảo Long Insurance</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Playfair+Display:wght@700;800&family=Montserrat:wght@600;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      background: linear-gradient(180deg, #431407 0%, #7c2d12 50%, #b45309 100%);
+      font-family: 'Playfair Display', Georgia, serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 40px 16px;
+      overflow-x: hidden;
+    }
+    #lanternWebGL {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 1;
+    }
+    .sunrise-shell {
+      position: relative;
+      z-index: 10;
+      max-width: 590px;
+      width: 100%;
+      background: #fffcf9;
+      border-radius: 18px;
+      border: 2px solid #f59e0b;
+      box-shadow: 0 28px 60px rgba(67, 20, 7, 0.55);
+      overflow: hidden;
+    }
+    .s-head {
+      background: linear-gradient(135deg, #b45309 0%, #c2410c 55%, #7c2d12 100%);
+      padding: 34px;
+      color: #ffffff;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+    }
+    .s-head h1 {
+      font-size: 30px;
+      margin: 6px 0;
+    }
+    .sun-orb {
+      width: 78px;
+      height: 78px;
+      border-radius: 50%;
+      background: radial-gradient(circle, #fde047 0%, #f59e0b 100%);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      color: #7c2d12;
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 800;
+      box-shadow: 0 0 28px rgba(253, 224, 71, 0.65);
+      flex-shrink: 0;
+    }
+    .s-bar {
+      background: #fff4e6;
+      border-bottom: 1px solid #fed7aa;
+      padding: 16px 34px;
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
+      font-family: 'Montserrat', sans-serif;
+      font-size: 12.5px;
+      color: #432818;
+    }
+    .s-bar strong { color: #9a3412; }
+    .s-body {
+      padding: 26px 34px 34px;
+      color: #432818;
+    }
+    .s-body p {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 18.5px;
+      line-height: 1.76;
+      margin-bottom: 15px;
+      text-align: justify;
+    }
+    .warm-btn {
+      background: linear-gradient(90deg, #c2410c, #ea580c);
+      color: #ffffff;
+      border: none;
+      padding: 13px 28px;
+      border-radius: 999px;
+      font-family: 'Montserrat', sans-serif;
+      font-size: 12.5px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 8px 20px rgba(194, 65, 12, 0.35);
+    }
+    .s-foot {
+      border-top: 1px solid #fed7aa;
+      padding-top: 16px;
+      margin-top: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="lanternWebGL"></canvas>
+
+  <div class="sunrise-shell" id="sCard">
+    <div class="s-head">
+      <div>
+        <small style="font-family:Montserrat,sans-serif; letter-spacing:2px; color:#fed7aa; font-weight:700;" data-card-field="organization_name">BẢO LONG INSURANCE</small>
+        <h1>Chúc Mừng Sinh Nhật</h1>
+        <p style="font-size:13.5px; color:#ffedd5;">Gửi ngàn lời chúc ấm áp nhất đến người đồng nghiệp thân quý</p>
+      </div>
+      <div class="sun-orb">
+        <small style="font-size:9px;">NGÀY SINH</small>
+        <strong style="font-size:16px;" data-card-field="birthday_date">—</strong>
+      </div>
+    </div>
+
+    <div class="s-bar">
+      <div>Họ tên: <strong data-card-field="employee_name">—</strong></div>
+      <div>Chức vụ: <strong data-card-field="position">—</strong></div>
+      <div>Phòng ban: <strong data-card-field="department">—</strong></div>
+    </div>
+
+    <div class="s-body">
+      <p>Thân gửi đồng chí <strong data-card-field="employee_name">—</strong>,</p>
+      <p>
+        Chào đón ngày sinh nhật <strong data-card-field="birthday_date">—</strong> đầy ý nghĩa, Ban Lãnh đạo và đại gia đình <strong data-card-field="organization_name">Bảo Long Insurance</strong> xin gửi tới đồng chí lời chúc sức khỏe dồi dào, tinh thần hứng khởi và ngập tràn hạnh phúc.
+      </p>
+      <p>
+        Sự gắn bó và nhiệt tâm của đồng chí trên cương vị <strong data-card-field="position">—</strong> tại <strong data-card-field="department">—</strong> luôn mang lại nguồn năng lượng ấm áp, lan tỏa tinh thần đoàn kết đến toàn đơn vị.
+      </p>
+
+      <div style="text-align:center; margin: 24px 0 8px;">
+        <button class="warm-btn" id="lanternBtn">🏮 Thả Đèn Trời Ước Nguyện Tuổi Mới</button>
+      </div>
+
+      <div class="s-foot">
+        <div>
+          <small style="color:#78716c; display:block;">Thân thương,</small>
+          <strong style="color:#9a3412;">Ban Lãnh đạo và tập thể <span data-card-field="organization_name">Bảo Long Insurance</span></strong>
+        </div>
+        <div style="font-size:22px;">🌻🎂</div>
+      </div>
+    </div>
+  </div>
+
+
+</body>
+</html>
