@@ -186,3 +186,34 @@ class TaiLenPdfTests(HoanTatBase):
                                      "tep": tep_pdf(b"%PDF-1.4 hong")},
                         format="multipart")
         self.assertEqual((r.status_code, r.data["code"]), (400, "tep_khong_phai_pdf"))
+
+
+class DinhDangChuKyTests(HoanTatBase):
+    def test_times_new_roman_font_candidate_priority(self):
+        from signing.pdf_hoan_tat import UNG_VIEN_PHONG_CHU
+
+        dau_tien = [c[0].lower() for c in UNG_VIEN_PHONG_CHU[:5]]
+        self.assertTrue(any("times" in p or "liberationserif" in p for p in dau_tien))
+
+    def test_khoi_chu_ky_renders_uppercase_bold_under_signature_and_fits_long_name(self):
+        from unittest.mock import MagicMock
+        from signing.pdf_hoan_tat import _khoi_chu_ky
+
+        c = MagicMock()
+        c.stringWidth.side_effect = lambda text, font, size: len(text) * size * 0.6
+        khung = (100, 200, 80, 50)
+        nguoi_ky = {
+            "ten_nguoi_ky": "nguyễn văn long hoàng nam",
+            "ten_chuc_vu": "Trưởng phòng",
+            "chu_ky": {"ngay_ky": "2026-11-10T04:00:00Z"},
+        }
+        anh_bytes = b"fake-png-data"
+        with mock.patch("reportlab.lib.utils.ImageReader"):
+            _khoi_chu_ky(c, khung, nguoi_ky, anh_bytes, "PhongThuong", "PhongDam")
+
+        c.drawImage.assert_called_once()
+        draw_centred_calls = c.drawCentredString.call_args_list
+        self.assertEqual(len(draw_centred_calls), 1)
+        args, _ = draw_centred_calls[0]
+        self.assertEqual(args[2], "NGUYỄN VĂN LONG HOÀNG NAM")
+        c.rect.assert_not_called()
