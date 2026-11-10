@@ -10,9 +10,9 @@ from rest_framework.test import APIClient
 
 from accounts.models import Employee, Position
 
-from .models import BirthdayEmailLog, BirthdayEmailStatus, BirthdayEmailTemplate
-from .services import send_automated_birthday_emails
-from .templates_service import LAYOUT_DEFAULTS
+from birthdays.models import BirthdayEmailLog, BirthdayEmailStatus, BirthdayEmailTemplate
+from birthdays.services import send_automated_birthday_emails
+from birthdays.templates_service import LAYOUT_DEFAULTS
 
 
 @override_settings(

@@ -27,13 +27,8 @@ class BirthdayDraftThrottle(UserRateThrottle):
 
 def complete_draft(prompt: str) -> str:
     config = get_active_ai_settings()
-    provider = config["provider"]
-    model = config["llm_model"]
-    if provider == "gemini" and config["gemini_api_key"]:
-        from backend.services.gemini_service import GeminiRESTLLM
-
-        llm = GeminiRESTLLM(api_key=config["gemini_api_key"], model_name=model, timeout_sec=4)
-    elif provider == "openai" and config["openai_api_key"]:
+    model = config.get("llm_model", "gpt-6-luna")
+    if config.get("openai_api_key"):
         from llama_index.llms.openai import OpenAI
 
         actual_model = "gpt-4o-mini" if model == "gpt-6-luna" else model
