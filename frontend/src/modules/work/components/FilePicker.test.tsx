@@ -12,8 +12,8 @@ describe('previewLocalFile', () => {
     vi.useFakeTimers();
     createObjectURL = vi.fn(() => 'blob:http://localhost/fake-id');
     revokeObjectURL = vi.fn();
-    globalThis.URL.createObjectURL = createObjectURL;
-    globalThis.URL.revokeObjectURL = revokeObjectURL;
+    globalThis.URL.createObjectURL = createObjectURL as unknown as typeof URL.createObjectURL;
+    globalThis.URL.revokeObjectURL = revokeObjectURL as unknown as typeof URL.revokeObjectURL;
     windowOpen = vi.spyOn(window, 'open').mockImplementation(() => null);
   });
 
@@ -66,8 +66,8 @@ describe('FilePicker — bấm tên file mở xem trước', () => {
     const onChange = vi.fn();
 
     vi.spyOn(window, 'open').mockImplementation(() => null);
-    globalThis.URL.createObjectURL = vi.fn(() => 'blob:fake');
-    globalThis.URL.revokeObjectURL = vi.fn();
+    globalThis.URL.createObjectURL = vi.fn(() => 'blob:fake') as unknown as typeof URL.createObjectURL;
+    globalThis.URL.revokeObjectURL = vi.fn() as unknown as typeof URL.revokeObjectURL;
 
     render(<FilePicker files={[file]} onChange={onChange} />);
 
@@ -82,7 +82,7 @@ describe('FilePicker — bấm tên file mở xem trước', () => {
     const onChange = vi.fn();
 
     vi.spyOn(window, 'open').mockImplementation(() => null);
-    globalThis.URL.createObjectURL = vi.fn(() => 'blob:fake');
+    globalThis.URL.createObjectURL = vi.fn(() => 'blob:fake') as unknown as typeof URL.createObjectURL;
 
     render(<FilePicker files={[file]} onChange={onChange} />);
 
