@@ -181,11 +181,11 @@ class AnhChuKyTests(HoanTatBase):
 
         pdf = PdfReader(io.BytesIO(self.c.get(f"{BASE}/{self.pk}/tep-hoan-tat/").content))
         self.assertEqual(len(pdf.pages), 3)  # 2 trang gốc + trang phê duyệt
-        trang1, trang2 = pdf.pages[0].extract_text(), pdf.pages[1].extract_text()
-        self.assertIn("ke_toan", trang1)  # chú thích dưới ảnh chữ ký
-        self.assertIn("phap_che", trang1)
-        self.assertIn("giam_doc", trang2)
-        self.assertNotIn("giam_doc", trang1)
+        trang1, trang2 = pdf.pages[0].extract_text().upper(), pdf.pages[1].extract_text().upper()
+        self.assertIn("KE_TOAN", trang1)  # chú thích dưới ảnh chữ ký (in hoa chuẩn Nghị định 30)
+        self.assertIn("PHAP_CHE", trang1)
+        self.assertIn("GIAM_DOC", trang2)
+        self.assertNotIn("GIAM_DOC", trang1)
         self.assertIn("/XObject", str(pdf.pages[0]["/Resources"]))  # ảnh đã dán
         self.assertEqual(json.loads(pdf.attachments[f"bang-chung-{d['luot_trinh'][0]['id']}.json"][0]),
                          bc["noi_dung_chuan_hoa"])
@@ -220,10 +220,10 @@ class AnhChuKyTests(HoanTatBase):
         self.assertEqual(res_tep.status_code, 200)
         self.assertIn("da-ky.pdf", res_tep["Content-Disposition"])
         pdf = PdfReader(io.BytesIO(res_hoan_tat.content))
-        trang2 = pdf.pages[1].extract_text()
-        self.assertIn("ke_toan", trang2)
-        self.assertIn("phap_che", trang2)
-        self.assertIn("giam_doc", trang2)
+        trang2 = pdf.pages[1].extract_text().upper()
+        self.assertIn("KE_TOAN", trang2)
+        self.assertIn("PHAP_CHE", trang2)
+        self.assertIn("GIAM_DOC", trang2)
 
 
 class GiaiQuyetViTriTests(KyBase):
