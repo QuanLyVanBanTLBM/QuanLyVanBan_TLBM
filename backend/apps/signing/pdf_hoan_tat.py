@@ -301,3 +301,60 @@ def dung_tep_hoan_tat(tep_goc: bytes, noi_dung: dict, ma_bam_bang_chung: str, an
     buf = io.BytesIO()
     writer.write(buf)
     return buf.getvalue()
+
+
+def dung_tep_da_ky_tien_trinh(tep_goc: bytes, noi_dung: dict, anh_chu_ky=None) -> bytes:
+    """Dựng tệp PDF chứa các chữ ký đã hoàn tất tính đến giai đoạn hiện tại (không kèm trang phê duyệt và file đính kèm json).
+    - Giữ nguyên các trang gốc;
+    - Dán chữ ký của các người ký đã có chữ ký (`n.get("chu_ky")`);
+    - Vị trí của người ký chưa ký để trống theo nguyên bản của tệp gốc.
+    """
+    from pypdf import PdfReader, PdfWriter, Transformation
+    from pypdf.errors import PdfReadError
+
+    anh_chu_ky = anh_chu_ky or {}
+    phong, phong_dam = _phong_chu()
+    try:
+        reader = PdfReader(io.BytesIO(tep_goc))
+        if reader.is_encrypted and not reader.decrypt(""):
+            raise LoiTaoTep("tep_goc_bi_ma_hoa", "Tệp gốc có mật khẩu.")
+        trang_goc = list(reader.pages)
+    except (PdfReadError, ValueError, KeyError, TypeError) as exc:
+        raise LoiTaoTep("tep_goc_khong_doc_duoc", str(exc)) from exc
+
+    ho_so, luot = noi_dung["ho_so"], noi_dung["luot_trinh"]
+    dong_chan = f"{noi_dung['nhan_dien']} · Hồ sơ trình ký #{ho_so['id']}, lượt {luot['so_luot']}"
+    khoi_theo_trang = {}
+    tong_so_trang = len(trang_goc)
+    fallback_dem = 0
+    for cap in noi_dung["cap_ky"]:
+        for n in cap["nguoi_ky"]:
+            if n.get("chu_ky"):
+                vt = n.get("vi_tri")
+                if not vt or not vt.get("trang_ky"):
+                    y_pos = max(10, 75 - fallback_dem * 12)
+                    fallback_dem += 1
+                    vt = {
+                        "trang_ky": tong_so_trang,
+                        "toa_do_x": "60",
+                        "toa_do_y": str(y_pos),
+                        "chieu_rong_khung": "30",
+                        "chieu_cao_khung": "10",
+                    }
+                trang_target = min(int(vt.get("trang_ky", tong_so_trang)), tong_so_trang)
+                khoi_theo_trang.setdefault(trang_target, []).append(
+                    (vt, n, anh_chu_ky.get(n["chu_ky"]["id"])))
+    writer = PdfWriter()
+    for so, trang in enumerate(trang_goc, start=1):
+        trang = writer.add_page(trang)
+        trang.transfer_rotation_to_content()
+        hop = trang.mediabox
+        lop = _lop_phu(float(hop.width), float(hop.height), dong_chan, khoi_theo_trang.get(so, []), phong, phong_dam)
+        trang.merge_transformed_page(PdfReader(io.BytesIO(lop)).pages[0],
+                                     Transformation().translate(float(hop.left), float(hop.bottom)))
+    writer.add_metadata({"/Title": f"Bản ký tiến trình — hồ sơ trình ký #{ho_so['id']}",
+                         "/Subject": noi_dung["nhan_dien"], "/Producer": "QLVB TLBM — Trình ký"})
+    buf = io.BytesIO()
+    writer.write(buf)
+    return buf.getvalue()
+

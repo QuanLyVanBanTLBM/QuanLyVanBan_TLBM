@@ -29,7 +29,7 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
-from authorization.permissions import is_system_admin
+from authorization.permissions import is_system_admin, require_permission
 from .filters import (
     DocumentFilter,
     VanBanDenFilter,
@@ -119,7 +119,7 @@ def is_admin_user(user):
     """Kiểm tra người dùng có quyền Quản trị viên (Admin) hay không."""
     if not user or not user.is_authenticated:
         return False
-    return bool(user.is_staff or is_system_admin(user))
+    return bool(is_system_admin(user))
 
 
 def can_edit_document(user, instance):
@@ -224,6 +224,23 @@ def can_export_document(user, loai="DEN"):
     except Exception:
         pass
     return False
+
+
+def can_export_confidential(user):
+    """Xuất Excel văn bản mật: cần quyền xuất văn bản đến hoặc văn bản đi (khớp nút ở trang Văn bản mật)."""
+    return can_export_document(user, "DEN") or can_export_document(user, "DI")
+
+
+def can_import_confidential(user):
+    """Nhập Excel văn bản mật: cần quyền nhập văn bản đến hoặc văn bản đi (khớp nút ở trang Văn bản mật)."""
+    return can_import_document(user, "DEN") or can_import_document(user, "DI")
+
+
+def reject_scope_change(request, instance):
+    """Phạm vi lưu hành bất biến sau khi tạo (trigger CSDL prevent_change_pham_vi): trả 400 thay vì để lỗi CSDL thành 500."""
+    new_scope = request.data.get("pham_vi") if hasattr(request.data, "get") else None
+    if new_scope and str(new_scope).strip().upper() != str(getattr(instance, "pham_vi", "")).upper():
+        raise ValidationError({"pham_vi": "Phạm vi lưu hành không thể thay đổi sau khi tạo văn bản."})
 
 
 def can_change_hieu_luc(user, loai="DEN"):
@@ -376,11 +393,8 @@ def can_delete_document(user, instance):
 
     model_name = instance._meta.model_name
     try:
-        if (
-            user.has_perm(f"documents.delete_{model_name}")
-            or user.has_perm("documents.delete_document")
-            or user.has_perm("documents.delete_vanbanden")
-        ):
+        # Chỉ nhận quyền xóa đúng loại văn bản (delete_vanbanden cho văn bản đến, delete_vanbandi cho văn bản đi).
+        if user.has_perm(f"documents.delete_{model_name}") or user.has_perm(f"delete_{model_name}"):
             return True
     except Exception:
         pass
@@ -633,6 +647,8 @@ class DocumentViewSet(viewsets.ViewSet):
             modified_fields = set(request.data.keys()) - allowed_fields
             if modified_fields:
                 raise PermissionDenied("Bạn chỉ có quyền thay đổi trạng thái hiệu lực của văn bản.")
+
+        reject_scope_change(request, instance)
 
         old_link = (instance.link_thay_the or "").strip()
         old_so_hieu = (instance.so_hieu or "").strip()
@@ -1000,6 +1016,7 @@ class VanBanDenViewSet(viewsets.ModelViewSet):
             modified_fields = set(request.data.keys()) - allowed_fields
             if modified_fields:
                 raise PermissionDenied("Bạn chỉ có quyền thay đổi trạng thái hiệu lực của văn bản.")
+        reject_scope_change(request, obj)
         return super().update(request, *args, **kwargs)
 
     def partial_update(self, request, *args, **kwargs):
@@ -1016,6 +1033,7 @@ class VanBanDenViewSet(viewsets.ModelViewSet):
             modified_fields = set(request.data.keys()) - allowed_fields
             if modified_fields:
                 raise PermissionDenied("Bạn chỉ có quyền thay đổi trạng thái hiệu lực của văn bản.")
+        reject_scope_change(request, obj)
         return super().partial_update(request, *args, **kwargs)
 
     def create(self, request, *args, **kwargs):
@@ -1093,6 +1111,7 @@ class VanBanDiViewSet(viewsets.ModelViewSet):
             modified_fields = set(request.data.keys()) - allowed_fields
             if modified_fields:
                 raise PermissionDenied("Bạn chỉ có quyền thay đổi trạng thái hiệu lực của văn bản.")
+        reject_scope_change(request, obj)
         return super().update(request, *args, **kwargs)
 
     def partial_update(self, request, *args, **kwargs):
@@ -1109,6 +1128,7 @@ class VanBanDiViewSet(viewsets.ModelViewSet):
             modified_fields = set(request.data.keys()) - allowed_fields
             if modified_fields:
                 raise PermissionDenied("Bạn chỉ có quyền thay đổi trạng thái hiệu lực của văn bản.")
+        reject_scope_change(request, obj)
         return super().partial_update(request, *args, **kwargs)
 
     def create(self, request, *args, **kwargs):
@@ -1167,6 +1187,8 @@ class VanBanDiViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="export")
     def export(self, request):
+        if not can_export_document(request.user, "DI"):
+            raise PermissionDenied("Bạn không có quyền xuất danh sách văn bản. Vui lòng liên hệ Quản trị viên.")
         qs = self.filter_queryset(self.get_queryset())
         pham_vi = request.query_params.get("pham_vi")
         excel_file = export_to_excel(qs, "DI", pham_vi=pham_vi)
@@ -1180,6 +1202,8 @@ class VanBanDiViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"], url_path="import", parser_classes=[MultiPartParser])
     def import_excel(self, request):
+        if not can_import_document(request.user, "DI"):
+            raise PermissionDenied("Bạn không có quyền import tạo văn bản mới. Vui lòng liên hệ Quản trị viên.")
         file_obj = request.FILES.get("file")
         raw_pham_vi = request.data.get("pham_vi") or request.query_params.get("pham_vi")
         if not file_obj:
@@ -1253,6 +1277,7 @@ class VanBanMatViewSet(viewsets.ModelViewSet):
             raise NotFound(f"Không tìm thấy văn bản với ID {pk}.")
         if not can_edit_document(request.user, obj):
             raise PermissionDenied("Bạn không có quyền chỉnh sửa văn bản mật. Chỉ Quản trị viên (Admin) mới có quyền chỉnh sửa.")
+        reject_scope_change(request, obj)
         return super().update(request, *args, **kwargs)
 
     def partial_update(self, request, *args, **kwargs):
@@ -1262,6 +1287,7 @@ class VanBanMatViewSet(viewsets.ModelViewSet):
             raise NotFound(f"Không tìm thấy văn bản với ID {pk}.")
         if not can_edit_document(request.user, obj):
             raise PermissionDenied("Bạn không có quyền chỉnh sửa văn bản mật. Chỉ Quản trị viên (Admin) mới có quyền chỉnh sửa.")
+        reject_scope_change(request, obj)
         return super().partial_update(request, *args, **kwargs)
 
     def create(self, request, *args, **kwargs):
@@ -1330,6 +1356,8 @@ class VanBanMatViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="export")
     def export(self, request):
+        if not can_export_confidential(request.user):
+            raise PermissionDenied("Bạn không có quyền xuất danh sách văn bản. Vui lòng liên hệ Quản trị viên.")
         qs = self.filter_queryset(self.get_queryset())
         excel_file = export_to_excel(qs, "MAT", pham_vi="HAN_CHE")
         filename = f"DanhSach_VanBan_MAT_{timezone.now().strftime('%Y%m%d_%H%M')}.xlsx"
@@ -1342,6 +1370,8 @@ class VanBanMatViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"], url_path="import", parser_classes=[MultiPartParser])
     def import_excel(self, request):
+        if not can_import_confidential(request.user):
+            raise PermissionDenied("Bạn không có quyền import tạo văn bản mới. Vui lòng liên hệ Quản trị viên.")
         file_obj = request.FILES.get("file")
         if not file_obj:
             return Response({"error": "Vui lòng chọn file Excel."}, status=status.HTTP_400_BAD_REQUEST)
@@ -1373,7 +1403,23 @@ class VanBanMatViewSet(viewsets.ModelViewSet):
 # Folder & FolderFile ViewSets — Thư mục nhiều cấp
 # ═══════════════════════════════════════════════════════════════════
 
-class FolderViewSet(viewsets.ModelViewSet):
+class FolderPermissionMixin:
+    """Cây thư mục thuộc module Tài liệu: xem theo view_tailieu; thêm, sửa, xóa theo add/change/delete_tailieu."""
+
+    def get_permissions(self):
+        action_name = getattr(self, "action", None)
+        if action_name in ("update", "partial_update", "move"):
+            code = "change_tailieu"
+        elif action_name == "destroy":
+            code = "delete_tailieu"
+        elif self.request.method in permissions.SAFE_METHODS:
+            code = "view_tailieu"
+        else:
+            code = "add_tailieu"
+        return [permissions.IsAuthenticated(), require_permission(code)()]
+
+
+class FolderViewSet(FolderPermissionMixin, viewsets.ModelViewSet):
     """
     ViewSet quản lý Thư mục nhiều cấp (Nested / Hierarchical Folders).
     
@@ -1670,7 +1716,7 @@ class FolderViewSet(viewsets.ModelViewSet):
         })
 
 
-class FolderFileViewSet(viewsets.ModelViewSet):
+class FolderFileViewSet(FolderPermissionMixin, viewsets.ModelViewSet):
     """ViewSet quản lý file trong thư mục."""
     queryset = FolderFile.objects.all().select_related("folder", "uploaded_by")
     serializer_class = FolderFileSerializer

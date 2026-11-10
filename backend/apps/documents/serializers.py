@@ -11,6 +11,7 @@ from django.contrib.auth import get_user_model
 from django.db import models
 from django.utils import timezone
 from rest_framework import serializers
+from rest_framework.exceptions import PermissionDenied
 
 from authorization.permissions import is_system_admin
 
@@ -464,13 +465,13 @@ class DocumentDetailSerializer(serializers.Serializer):
 
     def get_don_vi_nhan(self, obj):
         try:
-            if hasattr(obj, "donvinhan"):
-                first_dvn = obj.donvinhan.first()
-                if first_dvn:
-                    from organizations.models import DonVi
-                    dv = DonVi.objects.filter(pk=first_dvn.donvi_id).first()
-                    if dv:
-                        return dv.ten
+            if hasattr(obj, "donvinhan") and obj.donvinhan.exists():
+                from organizations.models import DonVi
+                dv_ids = list(obj.donvinhan.values_list("donvi_id", flat=True))
+                if dv_ids:
+                    dvs = list(DonVi.objects.filter(pk__in=dv_ids).values_list("ten", flat=True))
+                    if dvs:
+                        return ", ".join(dvs)
             if hasattr(obj, "nguoi_nhan"):
                 first_user = obj.nguoi_nhan.select_related("don_vi").first()
                 if first_user and first_user.don_vi:
@@ -850,16 +851,11 @@ class DocumentCreateUpdateSerializer(serializers.Serializer):
                         {"link_thay_the": f"Xung đột nghiệp vụ: Văn bản '{target_doc.so_hieu}' đang còn hiệu lực toàn phần và đã được thiết lập thay thế cho văn bản này. Không thể tạo vòng lặp thay thế hai chiều!"}
                     )
 
-        # Issue #82 & Quyền thay đổi phạm vi lưu hành:
-        # CHỈ RIÊNG Quản trị viên (Admin) mới có quyền chỉnh sửa phạm vi từ NOI_BO sang HAN_CHE và ngược lại sau khi thêm
+        # Phạm vi lưu hành bất biến sau khi tạo (trigger CSDL prevent_change_pham_vi), kể cả với quản trị.
         if self.instance and "pham_vi" in attrs and attrs["pham_vi"] != self.instance.pham_vi:
-            request = self.context.get("request")
-            user = getattr(request, "user", None) if request else None
-            if not is_system_admin(user):
-                raise serializers.ValidationError(
-                    {"pham_vi": "Chỉ Quản trị viên (Admin) mới có quyền thay đổi phạm vi lưu hành của văn bản."}
-                )
-            self.instance._allow_scope_change = True
+            raise serializers.ValidationError(
+                {"pham_vi": "Phạm vi lưu hành không thể thay đổi sau khi tạo văn bản."}
+            )
 
         pham_vi = attrs.get("pham_vi") or (getattr(self.instance, "pham_vi", PhamVi.NOI_BO) if self.instance else PhamVi.NOI_BO)
         if pham_vi == PhamVi.HAN_CHE or loai == LoaiVanBan.MAT:
@@ -889,24 +885,49 @@ class DocumentCreateUpdateSerializer(serializers.Serializer):
 
         return attrs
 
+    def _kiem_quyen_tao_ho_so(self, ho_so_val):
+        """Gửi văn bản kèm hồ sơ chưa có chỉ được tạo hồ sơ mới khi người gửi có quyền add_hoso (hoặc là quản trị hệ thống)."""
+        name = str(ho_so_val).strip() if ho_so_val is not None else ""
+        if not name:
+            return
+        request = self.context.get("request")
+        user = getattr(request, "user", None) if request else None
+        if user is None or not user.is_authenticated:
+            return
+        if is_system_admin(user) or user.has_perm("add_hoso"):
+            return
+        from records.models import HoSo
+
+        exists = (
+            (name.isdigit() and HoSo.objects.filter(pk=int(name)).exists())
+            or HoSo.objects.filter(ten_ho_so__iexact=name).exists()
+            or HoSo.objects.filter(so_ky_hieu__iexact=name).exists()
+        )
+        if not exists:
+            raise PermissionDenied("Bạn không có quyền tạo hồ sơ mới. Hãy chọn hồ sơ có sẵn hoặc liên hệ Quản trị viên.")
+
     def _save_don_vi_nhan(self, instance, don_vi_name: str):
         try:
             from organizations.models import DonVi
             from .models import VanBanDenDonViNhan, VanBanDiDonViNhan
 
-            dv = None
-            if don_vi_name and str(don_vi_name).strip():
-                dv = DonVi.objects.filter(ten__iexact=str(don_vi_name).strip()).first()
+            unit_names = [n.strip() for n in str(don_vi_name).split(",") if n.strip()] if don_vi_name else []
+            dvs = []
+            if unit_names:
+                for uname in unit_names:
+                    dv = DonVi.objects.filter(ten__iexact=uname).first()
+                    if dv and dv not in dvs:
+                        dvs.append(dv)
 
             kind = getattr(instance, "document_kind", "")
             if kind in ("vanbanden", "vanbanmat"):
                 VanBanDenDonViNhan.objects.filter(vanbanden=instance).delete()
-                if dv:
-                    VanBanDenDonViNhan.objects.create(vanbanden=instance, donvi_id=dv.id)
+                for dv in dvs:
+                    VanBanDenDonViNhan.objects.get_or_create(vanbanden=instance, donvi_id=dv.id)
             elif kind == "vanbandi":
                 VanBanDiDonViNhan.objects.filter(vanbandi=instance).delete()
-                if dv:
-                    VanBanDiDonViNhan.objects.create(vanbandi=instance, donvi_id=dv.id)
+                for dv in dvs:
+                    VanBanDiDonViNhan.objects.get_or_create(vanbandi=instance, donvi_id=dv.id)
         except Exception:
             pass
 
@@ -1024,6 +1045,7 @@ class DocumentCreateUpdateSerializer(serializers.Serializer):
         ten_loai_van_ban = validated_data.pop("ten_loai_van_ban", None)
         loai = validated_data.pop("loai", LoaiVanBan.DEN)
         model = get_document_model(loai)
+        self._kiem_quyen_tao_ho_so(danh_muc_ho_so)
 
         # VB hạn chế / VB Mật không gửi mail toàn hệ thống
         pham_vi = validated_data.get("pham_vi", PhamVi.NOI_BO)
@@ -1109,13 +1131,10 @@ class DocumentCreateUpdateSerializer(serializers.Serializer):
         validated_data.pop("loai", None)
         validated_data.pop("so_thu_tu", None)  # Read-only! Khóa cứng Số đi / Số đến
         validated_data.pop("nam", None)        # Read-only! Khóa cứng Năm khi cập nhật văn bản
+        self._kiem_quyen_tao_ho_so(danh_muc_ho_so)
 
         if "pham_vi" in validated_data and validated_data["pham_vi"] != instance.pham_vi:
-            req = self.context.get("request")
-            user = getattr(req, "user", None) if req else None
-            if not is_system_admin(user):
-                raise serializers.ValidationError({"pham_vi": "Chỉ Quản trị viên (Admin) mới có quyền thay đổi phạm vi lưu hành của văn bản."})
-            instance._allow_scope_change = True
+            raise serializers.ValidationError({"pham_vi": "Phạm vi lưu hành không thể thay đổi sau khi tạo văn bản."})
 
         if getattr(instance, "pham_vi", None) == PhamVi.HAN_CHE or getattr(instance, "loai", None) == "MAT":
             validated_data["gui_mail_toan_he_thong"] = False

@@ -7,6 +7,7 @@ import { getTask } from '../api/tasks';
 import ConfirmDialog from '../components/ConfirmDialog';
 import TaskApprovalBar from '../components/TaskApprovalBar';
 import TaskCommentPanel from '../components/TaskCommentPanel';
+import TaskExtendModal from '../components/TaskExtendModal';
 import TaskInfoCard from '../components/TaskInfoCard';
 import TaskPeopleCard from '../components/TaskPeopleCard';
 import TaskStatusBadge from '../components/TaskStatusBadge';
@@ -56,6 +57,7 @@ export default function TaskDetailPage({ taskId, onBack }: TaskDetailPageProps) 
   const [actionError, setActionError] = useState('');
   const [notice, setNotice] = useState('');
   const [pending, setPending] = useState<PendingAction>(null);
+  const [extendOpen, setExtendOpen] = useState(false);
   const [pendingBusy, setPendingBusy] = useState(false);
 
   useEffect(() => {
@@ -260,6 +262,18 @@ export default function TaskDetailPage({ taskId, onBack }: TaskDetailPageProps) 
         busy={pendingBusy}
         onApprove={() => setPending({ type: 'approve' })}
         onUnapprove={() => setPending({ type: 'unapprove' })}
+        onExtend={() => setExtendOpen(true)}
+      />
+
+      <TaskExtendModal
+        task={extendOpen ? { id: task.id, title: task.title, dueDate: task.dueDate } : null}
+        onClose={() => setExtendOpen(false)}
+        onExtended={() => {
+          setExtendOpen(false);
+          setActionError('');
+          setNotice(t('work.extend.successDetailNotice'));
+          refresh().catch(() => undefined);
+        }}
       />
 
       <ConfirmDialog

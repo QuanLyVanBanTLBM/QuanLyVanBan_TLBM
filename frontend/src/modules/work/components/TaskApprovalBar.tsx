@@ -16,6 +16,7 @@ interface TaskApprovalBarProps {
   busy: boolean;
   onApprove: () => void;
   onUnapprove: () => void;
+  onExtend?: () => void;
 }
 
 function waitingReason(task: TaskDetail): string {
@@ -25,12 +26,13 @@ function waitingReason(task: TaskDetail): string {
   return t('work.approval.waitingEvidence');
 }
 
-export default function TaskApprovalBar({ task, busy, onApprove, onUnapprove }: TaskApprovalBarProps) {
+export default function TaskApprovalBar({ task, busy, onApprove, onUnapprove, onExtend }: TaskApprovalBarProps) {
   const { t } = useTranslation();
   const { canApprove, canUnapprove } = task.permissions;
+  const canExtend = Boolean(task.permissions.canExtend && onExtend);
   const isApprover = task.myRoles.some((role) => APPROVER_ROLES.includes(role));
 
-  if (!canApprove && !canUnapprove && !isApprover) return null;
+  if (!canApprove && !canUnapprove && !isApprover && !canExtend) return null;
 
   const buttonStyle = (color: string, subtle: string, border: string): React.CSSProperties => ({
     display: 'inline-flex',
@@ -74,6 +76,17 @@ export default function TaskApprovalBar({ task, busy, onApprove, onUnapprove }: 
         <i className="fa-solid fa-stamp" style={{ color: 'var(--color-primary)', marginRight: '8px' }} />
         {description}
       </div>
+      {canExtend && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onExtend}
+          style={buttonStyle('var(--color-warning-text)', 'var(--color-warning-subtle)', 'var(--color-warning-border)')}
+        >
+          <i className="fa-solid fa-calendar-plus" />
+          {t('work.approval.extendButton')}
+        </button>
+      )}
       {canApprove && (
         <button
           type="button"

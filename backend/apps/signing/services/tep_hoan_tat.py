@@ -20,11 +20,11 @@ from rest_framework import status
 from .. import crypto, enums
 from ..errors import ConflictError, SigningError
 from ..models import SigningAttempt, SigningAuditLog, SigningRequest, SigningSignature
-from ..pdf_hoan_tat import LoiTaoTep, dung_tep_hoan_tat
+from ..pdf_hoan_tat import LoiTaoTep, dung_tep_da_ky_tien_trinh, dung_tep_hoan_tat
 from ..permissions import XEM_NHAT_KY, co_quyen
 from ..storage import StorageError, get_storage, xoa_tep_sau_commit
 from .audit import ghi_nhat_ky
-from .bang_chung import bang_chung_cua
+from .bang_chung import bang_chung_cua, noi_dung_bang_chung
 from .trinh_ky import luot_hien_hanh
 
 logger = logging.getLogger(__name__)
@@ -226,3 +226,23 @@ def phuc_hoi_tep_hoan_tat(bay_gio=None):
         if ket_qua_luot is not None:
             ket_qua.append(ket_qua_luot)
     return ket_qua
+
+
+def sinh_tep_da_ky_tien_trinh(luot):
+    """Trả về bytes PDF chứa các chữ ký lũy kế đã có của lượt trình."""
+    storage = get_storage()
+    try:
+        goc = storage.read_bytes(luot.vi_tri_luu_tep)
+    except StorageError as exc:
+        raise LoiTaoTep("tep_goc_khong_doc_duoc", str(exc)) from exc
+    noi_dung = noi_dung_bang_chung(luot)
+    chu_ky_ids = [n["chu_ky"]["id"] for c in noi_dung["cap_ky"] for n in c["nguoi_ky"] if n.get("chu_ky")]
+    anh_chu_ky = {}
+    for ck in SigningSignature.objects.filter(pk__in=chu_ky_ids):
+        if ck.vi_tri_anh_chu_ky:
+            try:
+                anh_chu_ky[ck.pk] = storage.read_bytes(ck.vi_tri_anh_chu_ky)
+            except StorageError:
+                pass
+    return dung_tep_da_ky_tien_trinh(goc, noi_dung, anh_chu_ky)
+

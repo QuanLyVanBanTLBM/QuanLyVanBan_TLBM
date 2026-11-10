@@ -209,7 +209,6 @@ function getSessionUser() {
         username: typeof parsed.username === 'string' ? parsed.username : '',
         fullName: parsed.fullName || parsed.full_name || '',
         role: parsed.roleTitle || translate('aiAssistant.msg.defaultRole'),
-        isAdmin: parsed.role === 'admin',
       };
     }
   } catch {
@@ -219,7 +218,6 @@ function getSessionUser() {
     username: '',
     fullName: '',
     role: translate('aiAssistant.msg.defaultRole'),
-    isAdmin: false,
   };
 }
 
@@ -692,13 +690,15 @@ function CitationsBox({
 // Component Chính AiAssistantPage
 export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
   const { t, currentLang } = useTranslation();
-  const currentUser = getSessionUser();
+  const sessionUser = getSessionUser();
   const routerNavigate = useNavigate();
   const navigateToCitation = (page: ActivePageId) => {
     if (onNavigate) onNavigate(page);
     else routerNavigate(pageIdToPath(page));
   };
-  const { loaded: aiPermissionLoaded, can } = usePermissions();
+  const { loaded: aiPermissionLoaded, can, isSystemAdmin } = usePermissions();
+  // Quản trị hệ thống (superuser hoặc nhóm ADMIN) lấy từ quyền thật, khớp cổng _require_ai_admin của API.
+  const currentUser = { ...sessionUser, isAdmin: isSystemAdmin };
   const canUseAI = aiPermissionLoaded && can('use_aiassistant');
   // Chat input states
   const [isMobile, setIsMobile] = useState<boolean>(() => {
