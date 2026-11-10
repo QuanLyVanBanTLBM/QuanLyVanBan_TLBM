@@ -594,17 +594,19 @@ export const FolderManagerModal: React.FC<FolderManagerModalProps> = ({
                     {t('folders.modal.pickFolderHint')}
                   </p>
                 </div>
-                <Button
-                  variant="primary"
-                  size="md"
-                  icon="fa-folder-plus"
-                  onClick={() => {
-                    setCreateModalParent(null);
-                    setIsCreateModalOpen(true);
-                  }}
-                >
-                  {t('folders.modal.createNewRoot')}
-                </Button>
+                {canAddFolder && (
+                  <Button
+                    variant="primary"
+                    size="md"
+                    icon="fa-folder-plus"
+                    onClick={() => {
+                      setCreateModalParent(null);
+                      setIsCreateModalOpen(true);
+                    }}
+                  >
+                    {t('folders.modal.createNewRoot')}
+                  </Button>
+                )}
               </div>
             )}
           </div>
