@@ -38,7 +38,6 @@ def get_active_ai_settings() -> dict:
         "llm_model": provider_config["default_llm"],
         "embed_model": provider_config["embed_model"],
         "vision_model": provider_config["default_llm"],
-        "gemini_api_key": os.getenv("GEMINI_API_KEY") or getattr(config, "GEMINI_API_KEY", ""),
         "openai_api_key": os.getenv("OPENAI_API_KEY") or getattr(config, "OPENAI_API_KEY", ""),
     }
 
@@ -47,7 +46,7 @@ def get_active_ai_settings() -> dict:
         try:
             stored = json.loads(file_path.read_text(encoding="utf-8"))
             if isinstance(stored, dict):
-                for k in ("gemini_api_key", "openai_api_key"):
+                for k in ("openai_api_key",):
                     val = stored.get(k)
                     if val is not None and str(val).strip():
                         settings[k] = str(val).strip()
@@ -93,8 +92,6 @@ def save_ai_settings(updates: dict) -> dict:
         "EMBED_MODEL": "EMBED_MODEL",
         "vision_model": "VISION_MODEL",
         "VISION_MODEL": "VISION_MODEL",
-        "gemini_api_key": "GEMINI_API_KEY",
-        "GEMINI_API_KEY": "GEMINI_API_KEY",
         "openai_api_key": "OPENAI_API_KEY",
         "OPENAI_API_KEY": "OPENAI_API_KEY",
     }
@@ -115,7 +112,6 @@ def save_ai_settings(updates: dict) -> dict:
         "LLM_MODEL": current.get("llm_model"),
         "EMBED_MODEL": current.get("embed_model"),
         "VISION_MODEL": current.get("vision_model"),
-        "GEMINI_API_KEY": current.get("gemini_api_key"),
         "OPENAI_API_KEY": current.get("openai_api_key"),
     }
     for env_path in target_env_paths:

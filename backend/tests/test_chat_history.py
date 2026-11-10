@@ -19,7 +19,7 @@ class RagRegressionTests(unittest.TestCase):
     def test_build_retrieval_query_uses_history_for_follow_up(self):
         history = [
             {"role": "user", "content": "RAG dùng công nghệ gì?"},
-            {"role": "assistant", "content": "Dùng LlamaIndex, ChromaDB và Gemini."},
+            {"role": "assistant", "content": "Dùng LlamaIndex, ChromaDB và OpenAI gpt-6-luna."},
         ]
 
         query = build_retrieval_query("giải thích thêm phần embedding", history)
