@@ -465,13 +465,13 @@ class DocumentDetailSerializer(serializers.Serializer):
 
     def get_don_vi_nhan(self, obj):
         try:
-            if hasattr(obj, "donvinhan"):
-                first_dvn = obj.donvinhan.first()
-                if first_dvn:
-                    from organizations.models import DonVi
-                    dv = DonVi.objects.filter(pk=first_dvn.donvi_id).first()
-                    if dv:
-                        return dv.ten
+            if hasattr(obj, "donvinhan") and obj.donvinhan.exists():
+                from organizations.models import DonVi
+                dv_ids = list(obj.donvinhan.values_list("donvi_id", flat=True))
+                if dv_ids:
+                    dvs = list(DonVi.objects.filter(pk__in=dv_ids).values_list("ten", flat=True))
+                    if dvs:
+                        return ", ".join(dvs)
             if hasattr(obj, "nguoi_nhan"):
                 first_user = obj.nguoi_nhan.select_related("don_vi").first()
                 if first_user and first_user.don_vi:
@@ -911,19 +911,23 @@ class DocumentCreateUpdateSerializer(serializers.Serializer):
             from organizations.models import DonVi
             from .models import VanBanDenDonViNhan, VanBanDiDonViNhan
 
-            dv = None
-            if don_vi_name and str(don_vi_name).strip():
-                dv = DonVi.objects.filter(ten__iexact=str(don_vi_name).strip()).first()
+            unit_names = [n.strip() for n in str(don_vi_name).split(",") if n.strip()] if don_vi_name else []
+            dvs = []
+            if unit_names:
+                for uname in unit_names:
+                    dv = DonVi.objects.filter(ten__iexact=uname).first()
+                    if dv and dv not in dvs:
+                        dvs.append(dv)
 
             kind = getattr(instance, "document_kind", "")
             if kind in ("vanbanden", "vanbanmat"):
                 VanBanDenDonViNhan.objects.filter(vanbanden=instance).delete()
-                if dv:
-                    VanBanDenDonViNhan.objects.create(vanbanden=instance, donvi_id=dv.id)
+                for dv in dvs:
+                    VanBanDenDonViNhan.objects.get_or_create(vanbanden=instance, donvi_id=dv.id)
             elif kind == "vanbandi":
                 VanBanDiDonViNhan.objects.filter(vanbandi=instance).delete()
-                if dv:
-                    VanBanDiDonViNhan.objects.create(vanbandi=instance, donvi_id=dv.id)
+                for dv in dvs:
+                    VanBanDiDonViNhan.objects.get_or_create(vanbandi=instance, donvi_id=dv.id)
         except Exception:
             pass
 
