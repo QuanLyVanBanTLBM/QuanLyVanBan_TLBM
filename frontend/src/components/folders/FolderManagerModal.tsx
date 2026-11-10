@@ -11,6 +11,7 @@ import {
   DeleteFolderModal,
 } from './FolderActionModals';
 import { useTranslation } from '@i18n/translate';
+import { usePermissions } from '@lib/permissions';
 
 function findNodeInTree(nodes: FolderItem[], id: number): FolderItem | null {
   for (const node of nodes) {
@@ -35,6 +36,11 @@ export const FolderManagerModal: React.FC<FolderManagerModalProps> = ({
   onSelectFolderForResource,
 }) => {
   const { t } = useTranslation();
+  const { can, isSystemAdmin } = usePermissions();
+  // Cây thư mục thuộc module Tài liệu: thao tác theo add/change/delete_tailieu (khớp cổng quyền API).
+  const canAddFolder = isSystemAdmin || can('add_tailieu');
+  const canChangeFolder = isSystemAdmin || can('change_tailieu');
+  const canDeleteFolder = isSystemAdmin || can('delete_tailieu');
   const [tree, setTree] = useState<FolderItem[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<FolderItem | null>(null);
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbType[]>([]);
@@ -264,6 +270,7 @@ export const FolderManagerModal: React.FC<FolderManagerModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {canAddFolder && (
             <Button
               variant="secondary"
               size="sm"
@@ -276,6 +283,8 @@ export const FolderManagerModal: React.FC<FolderManagerModalProps> = ({
             >
               {t('folders.modal.syncLocal')}
             </Button>
+            )}
+            {canAddFolder && (
             <Button
               variant="primary"
               size="sm"
@@ -287,6 +296,7 @@ export const FolderManagerModal: React.FC<FolderManagerModalProps> = ({
             >
               {t('folders.modal.createRoot')}
             </Button>
+            )}
             <button
               type="button"
               onClick={onClose}
@@ -321,6 +331,9 @@ export const FolderManagerModal: React.FC<FolderManagerModalProps> = ({
                 setDeletingFolder(folder);
                 setIsDeleteModalOpen(true);
               }}
+              canAdd={canAddFolder}
+              canChange={canChangeFolder}
+              canDelete={canDeleteFolder}
             />
           </div>
 
@@ -372,6 +385,7 @@ export const FolderManagerModal: React.FC<FolderManagerModalProps> = ({
 
                   {/* Nhóm nút hành động */}
                   <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    {canAddFolder && (
                     <Button
                       variant="secondary"
                       size="sm"
@@ -384,7 +398,8 @@ export const FolderManagerModal: React.FC<FolderManagerModalProps> = ({
                     >
                       {t('folders.modal.addSubfolder')}
                     </Button>
-                    {!selectedFolder.is_local ? (
+                    )}
+                    {!selectedFolder.is_local ? (canAddFolder ? (
                       <Button
                         variant="primary"
                         size="sm"
@@ -394,7 +409,7 @@ export const FolderManagerModal: React.FC<FolderManagerModalProps> = ({
                       >
                         {t('folders.modal.addFile')}
                       </Button>
-                    ) : (
+                    ) : null) : (
                       <span
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-400 text-xs font-semibold select-none border border-sky-200 dark:border-sky-800/50"
                         title={t('folders.modal.localReadOnlyHint')}
@@ -455,7 +470,7 @@ export const FolderManagerModal: React.FC<FolderManagerModalProps> = ({
                         {t('folders.modal.fileList', { count: files.length })}
                       </h4>
                     </div>
-                    {!selectedFolder.is_local && (
+                    {!selectedFolder.is_local && canAddFolder && (
                       <Button
                         variant="secondary"
                         size="sm"
@@ -472,7 +487,7 @@ export const FolderManagerModal: React.FC<FolderManagerModalProps> = ({
                       <div className="py-12 text-center text-xs text-muted space-y-2">
                         <i className="fa-solid fa-file-circle-question text-3xl text-muted/40 block" />
                         <p>{t('folders.modal.noFiles')}</p>
-                        {!selectedFolder.is_local && (
+                        {!selectedFolder.is_local && canAddFolder && (
                           <Button
                             variant="secondary"
                             size="sm"
@@ -548,6 +563,7 @@ export const FolderManagerModal: React.FC<FolderManagerModalProps> = ({
                                   >
                                     <i className="fa-solid fa-download text-xs" />
                                   </a>
+                                  {canDeleteFolder && (
                                   <button
                                     type="button"
                                     onClick={() => handleDeleteFile(file.id)}
@@ -556,6 +572,7 @@ export const FolderManagerModal: React.FC<FolderManagerModalProps> = ({
                                   >
                                     <i className="fa-solid fa-trash text-xs" />
                                   </button>
+                                  )}
                                 </div>
                               </td>
                             </tr>
