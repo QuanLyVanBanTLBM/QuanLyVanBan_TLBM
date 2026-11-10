@@ -4,14 +4,15 @@ import { ThemeMode } from '@app-types/theme';
 import MainLayout from '@layouts/MainLayout';
 import type { ModuleRoute } from './moduleRoutes';
 import { MODULE_ROUTES } from './moduleRouteTable';
+import PagePermissionGuard from './PagePermissionGuard';
 
-function renderModuleRoute(route: ModuleRoute) {
+function renderModuleRoute(route: ModuleRoute, guarded = false) {
   const element =
     'redirectTo' in route ? (
       <Navigate to={route.redirectTo} replace />
     ) : (
       <React.Suspense fallback={null}>
-        <route.Component />
+        {guarded ? (<PagePermissionGuard><route.Component /></PagePermissionGuard>) : (<route.Component />)}
       </React.Suspense>
     );
   return <Route key={route.path} path={route.path} element={element} />;
@@ -65,7 +66,7 @@ export default function AppRouter({
   return (
     <Routes>
       {/* Route công khai (màn hình Đăng nhập), không qua layout và ProtectedRoute */}
-      {MODULE_ROUTES.filter(isPublicRoute).map(renderModuleRoute)}
+      {MODULE_ROUTES.filter(isPublicRoute).map((route) => renderModuleRoute(route))}
 
       {/* Routes có Layout chung (được bảo vệ bởi ProtectedRoute - yêu cầu đăng nhập trước) */}
       <Route
@@ -82,7 +83,7 @@ export default function AppRouter({
         }
       >
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        {MODULE_ROUTES.filter((route) => !isPublicRoute(route)).map(renderModuleRoute)}
+        {MODULE_ROUTES.filter((route) => !isPublicRoute(route)).map((route) => renderModuleRoute(route, true))}
 
         {/* Fallback cho các đường dẫn chưa đăng ký */}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
