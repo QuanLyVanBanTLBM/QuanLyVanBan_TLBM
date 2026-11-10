@@ -150,6 +150,7 @@ export const signingApi = {
     apiClient.post<HoSoChiTiet>(`${SIGNING_BASE}/trinh-ky/${id}/tao-lai-tep-hoan-tat/`, {}),
   tepGoc: (id: number) => layBlob(`/trinh-ky/${id}/tep/`),
   tepCuaLuot: (id: number, luot: number) => layBlob(`/trinh-ky/${id}/tep/?luot=${luot}`),
+  tepDaKy: (id: number) => layBlob(`/trinh-ky/${id}/tep-da-ky/`),
   tepHoanTat: (id: number) => layBlob(`/trinh-ky/${id}/tep-hoan-tat/`),
   anhChuKy: (id: number, chuKyId: number) => layBlob(`/trinh-ky/${id}/anh-chu-ky/${chuKyId}/`),
 

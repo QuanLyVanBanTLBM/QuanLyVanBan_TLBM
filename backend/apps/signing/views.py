@@ -461,6 +461,8 @@ class TrinhKyTepView(SigningAPIView):
 
     def get(self, request, pk):
         ho_so = _ho_so_xem_duoc(request, pk)
+        if request.query_params.get("da_ky") == "1":
+            return TrinhKyTepDaKyView().get(request, pk)
         luot_id = request.query_params.get("luot")
         if luot_id:
             luot = get_object_or_404(ho_so.luot_trinh_set, pk=_doc_so_nguyen(luot_id, "luot"))
@@ -627,6 +629,45 @@ class TepHoanTatView(SigningAPIView):
         response["Cache-Control"] = "no-store"
         response["X-Content-Type-Options"] = "nosniff"
         return response
+
+
+class TrinhKyTepDaKyView(SigningAPIView):
+    """
+    GET /trinh-ky/<pk>/tep-da-ky/: tệp PDF chứa chữ ký lũy kế tính đến giai đoạn hiện tại.
+    - Đã HOAN_THANH: trả về tệp hoàn tất (có trang phê duyệt cuối).
+    - Đang ký (CHO_DUYET) và có chữ ký: trả về tệp dán các chữ ký hiện có, các cấp chưa ký để trống.
+    - Chưa có chữ ký nào: trả về tệp gốc.
+    """
+
+    def get(self, request, pk):
+        ho_so = _ho_so_xem_duoc(request, pk)
+        luot = trinh_ky_service.luot_hien_hanh(ho_so)
+        if luot and ho_so.trang_thai == enums.TrangThaiYeuCau.HOAN_THANH:
+            if luot.trang_thai_tep_hoan_tat != enums.TrangThaiTepHoanTat.THANH_CONG:
+                if luot.trang_thai_tep_hoan_tat != enums.TrangThaiTepHoanTat.DANG_XU_LY:
+                    luot.trang_thai_tep_hoan_tat = enums.TrangThaiTepHoanTat.DANG_XU_LY
+                    luot.save(update_fields=["trang_thai_tep_hoan_tat", "update_at"])
+                tep_hoan_tat_service.tao_tep_hoan_tat(luot.pk, request.user.pk)
+                luot.refresh_from_db()
+            data = tep_hoan_tat_service.doc_tep_hoan_tat(luot)
+            ten_tep = f"trinh-ky-{ho_so.pk}-ban-duyet-noi-bo.pdf"
+        elif luot and SigningSignature.objects.filter(luot_trinh=luot).exists():
+            data = tep_hoan_tat_service.sinh_tep_da_ky_tien_trinh(luot)
+            ten_tep = f"trinh-ky-{ho_so.pk}-da-ky.pdf"
+        else:
+            vi_tri = luot.vi_tri_luu_tep if luot else ho_so.vi_tri_luu_tep
+            try:
+                data = get_storage().read_bytes(vi_tri)
+            except StorageError:
+                raise SigningError(code="khong_doc_duoc_tep", detail="Không đọc được tệp của hồ sơ.",
+                                   status_code=status.HTTP_404_NOT_FOUND)
+            ten_tep = f"trinh-ky-{ho_so.pk}.pdf"
+        response = HttpResponse(data, content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="{ten_tep}"'
+        response["Cache-Control"] = "no-store"
+        response["X-Content-Type-Options"] = "nosniff"
+        return response
+
 
 
 class TaoLaiTepHoanTatView(SigningAPIView):
