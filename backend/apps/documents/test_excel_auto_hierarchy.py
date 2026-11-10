@@ -267,3 +267,93 @@ class ExcelAutoHierarchyAndValidationTests(TestCase):
 
         self.assertEqual(exported_hoso_val, "Hồ sơ Lưu Trữ 2026")
         self.assertEqual(exported_loaivb_val, "Chỉ thị")
+
+    def test_07_user_without_add_hoso_permission_blocked_when_importing_new_hoso(self):
+        """Cán bộ thiếu quyền records.add_hoso sẽ bị chặn toàn bộ file nếu import hồ sơ mới chưa có trong CSDL."""
+        chuyenvien = User.objects.create_user(
+            username="chuyenvien_normal",
+            password="password123",
+            email="cv@test.com",
+            is_staff=False,
+            is_superuser=False,
+        )
+
+        wb = openpyxl.load_workbook(generate_excel_template("DEN", "NOI_BO"))
+        ws = wb.active
+        ws.append([
+            "701/DEN-NO-PERM", "Nội bộ", "28/10/2026 09:00:00", "28/10/2026",
+            "Công văn chứa hồ sơ chưa từng tồn tại", "Hồ sơ Bí Mật Tự Phát 999", "Công văn", "Bộ GD&ĐT",
+            "Nguyễn Văn X", "Chuyên viên", "CON_HIEU_LUC", "", "", "",
+        ])
+        bio = io.BytesIO()
+        wb.save(bio)
+        bio.seek(0)
+
+        res = import_from_excel(bio, "DEN", chuyenvien, pham_vi="NOI_BO")
+        self.assertEqual(res["created"], 0, "Chuyên viên không có quyền add_hoso phải bị chặn toàn bộ file")
+        self.assertTrue(any("không có quyền tạo mới hồ sơ" in e["message"] for e in res["errors"]))
+        self.assertFalse(HoSo.objects.filter(ten_ho_so="Hồ sơ Bí Mật Tự Phát 999").exists())
+        self.assertFalse(VanBanDen.objects.filter(so_hieu="701/DEN-NO-PERM").exists())
+
+    def test_08_user_without_add_hoso_permission_can_import_existing_hoso(self):
+        """Cán bộ thiếu quyền records.add_hoso vẫn import thành công nếu sử dụng hồ sơ ĐÃ CÓ SẴN."""
+        chuyenvien = User.objects.create_user(
+            username="chuyenvien_existing",
+            password="password123",
+            email="cv_existing@test.com",
+            is_staff=False,
+            is_superuser=False,
+        )
+
+        # Sử dụng hồ sơ chuẩn "Hồ sơ Hành chính - Quản trị" đã có sẵn
+        wb = openpyxl.load_workbook(generate_excel_template("DEN", "NOI_BO"))
+        ws = wb.active
+        ws.append([
+            "801/DEN-EXISTING-HS", "Nội bộ", "29/10/2026 09:00:00", "29/10/2026",
+            "Công văn nhập vào hồ sơ có sẵn", "Hồ sơ Hành chính - Quản trị", "Công văn", "Bộ GD&ĐT",
+            "Nguyễn Văn Y", "Chuyên viên", "CON_HIEU_LUC", "", "", "",
+        ])
+        bio = io.BytesIO()
+        wb.save(bio)
+        bio.seek(0)
+
+        res = import_from_excel(bio, "DEN", chuyenvien, pham_vi="NOI_BO")
+        self.assertEqual(res["created"], 1, "Chuyên viên dùng hồ sơ có sẵn phải import thành công")
+        doc = VanBanDen.objects.filter(so_hieu="801/DEN-EXISTING-HS").first()
+        self.assertIsNotNone(doc)
+        hs = HoSo.objects.filter(ten_ho_so="Hồ sơ Hành chính - Quản trị").first()
+        self.assertTrue(VanBanDenHoSo.objects.filter(vanbanden=doc, hoso_id=hs.id).exists())
+
+    def test_09_user_with_add_hoso_permission_can_auto_create_new_hoso(self):
+        """Cán bộ được cấp quyền records.add_hoso (hoặc Văn thư/Admin) tự động tạo mới hồ sơ khi import."""
+        from django.contrib.auth.models import Permission
+
+        canbo_with_perm = User.objects.create_user(
+            username="canbo_has_perm",
+            password="password123",
+            email="cb_perm@test.com",
+            is_staff=False,
+            is_superuser=False,
+        )
+        perm = Permission.objects.filter(codename="add_hoso").first()
+        if perm:
+            canbo_with_perm.user_permissions.add(perm)
+
+        wb = openpyxl.load_workbook(generate_excel_template("DI", "NOI_BO"))
+        ws = wb.active
+        ws.append([
+            "901/DI-NEW-HS-OK", "Nội bộ", "30/10/2026", "30/10/2026",
+            "Quyết định thành lập ban dự án", "Hồ sơ Dự Án Chuyển Đổi Số 2026", "Quyết định", "BGH",
+            "Toàn trường", "Hiệu trưởng", "Hiệu trưởng", "CON_HIEU_LUC", "", "", "",
+        ])
+        bio = io.BytesIO()
+        wb.save(bio)
+        bio.seek(0)
+
+        res = import_from_excel(bio, "DI", canbo_with_perm, pham_vi="NOI_BO")
+        self.assertEqual(res["created"], 1)
+
+        new_hs = HoSo.objects.filter(ten_ho_so="Hồ sơ Dự Án Chuyển Đổi Số 2026").first()
+        self.assertIsNotNone(new_hs)
+        doc = VanBanDi.objects.filter(so_hieu="901/DI-NEW-HS-OK").first()
+        self.assertTrue(VanBanDiHoSo.objects.filter(vanbandi=doc, hoso_id=new_hs.id).exists())

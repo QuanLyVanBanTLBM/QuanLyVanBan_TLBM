@@ -1896,6 +1896,8 @@ class VanBanDiServiceTests(TestCase):
         self.assertIn("chỉ chứa dòng ví dụ mẫu", res5["errors"][0]["message"])
 
         # 6. Import mẫu Hạn chế với dữ liệu thực và cán bộ nhận thành công
+        from records.models import HoSo
+        HoSo.objects.get_or_create(ten_ho_so="Hồ sơ tài liệu mật", defaults={"so_ky_hieu": "HS-TLM", "nguoi_lap": self.creator})
         wb = openpyxl.load_workbook(generate_excel_template("DI", "HAN_CHE"))
         ws = wb.active
         ws.append([

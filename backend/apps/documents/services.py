@@ -1017,6 +1017,37 @@ def _clean_attachment_name(name: str) -> str:
     return s.lower()
 
 
+def can_create_hoso_permission(user) -> bool:
+    """
+    Kiểm tra người dùng có quyền tạo mới Danh mục hồ sơ / Loại văn bản hay không.
+    Theo quy ước Nhóm 3 & Nhóm 7 (Issue #647, release_DDL.sql [VTHS], migration 0019):
+    - Admin (is_superuser=True hoặc mã nhóm ADMIN hoặc is_system_admin(user)) có đủ quyền.
+    - Văn thư (VT) được cấp quyền add_hoso (dùng chung cho cả Hồ sơ và Loại văn bản).
+    - Bất kỳ cán bộ nào được cấp quyền records.add_hoso / add_hoso trong phân hệ Phân quyền.
+    """
+    if not user or not getattr(user, "is_authenticated", False):
+        return False
+    if getattr(user, "is_superuser", False):
+        return True
+    try:
+        from authorization.permissions import is_system_admin
+        if is_system_admin(user):
+            return True
+    except Exception:
+        pass
+    try:
+        if user.has_perm("records.add_hoso") or user.has_perm("add_hoso"):
+            return True
+        if hasattr(user, "groups") and user.groups.filter(groupinfo__ma_nhom_quyen__in=["VT", "ADMIN"]).exists():
+            return True
+        perms = getattr(user, "_user_permissions_cache", None) or set()
+        if any("add_hoso" in str(p) for p in perms):
+            return True
+    except Exception:
+        pass
+    return False
+
+
 def import_from_excel(file_obj, loai: str, user, pham_vi: str = None, attachments: list = None) -> dict:
     """Import dữ liệu văn bản từ file Excel vào đúng model tương ứng."""
     loai_str = str(loai).strip().upper()
@@ -1207,6 +1238,15 @@ def import_from_excel(file_obj, loai: str, user, pham_vi: str = None, attachment
 
     missing_required_row_errors = []
     if has_hoso_col or has_loaivb_col:
+        can_add_hs = can_create_hoso_permission(user)
+        try:
+            from records.models import HoSo
+            existing_hs_names = set(HoSo.objects.values_list("ten_ho_so", flat=True))
+            existing_hs_codes = set(HoSo.objects.values_list("so_ky_hieu", flat=True))
+        except Exception:
+            existing_hs_names = set()
+            existing_hs_codes = set()
+
         for r_idx, r in enumerate(rows[1:], start=2):
             r_text = " ".join(str(v) for v in r if v)
             if "xóa trước khi import" in r_text.lower() or not any(v for v in r):
@@ -1233,6 +1273,25 @@ def import_from_excel(file_obj, loai: str, user, pham_vi: str = None, attachment
                     "row": r_idx,
                     "message": f"Dòng {r_idx} thiếu thông tin bắt buộc: {', '.join(missing_items)}. Vui lòng điền đầy đủ trước khi import."
                 })
+                continue
+
+            # Kiểm tra phân quyền: Nếu hồ sơ chưa có trong CSDL mà user không có quyền add_hoso -> Chặn ngay
+            if has_hoso_col and r_hoso and not can_add_hs:
+                hs_exists = (
+                    r_hoso.isdigit() and HoSo.objects.filter(pk=int(r_hoso)).exists()
+                ) or any(
+                    r_hoso.lower() == (name or "").lower() for name in existing_hs_names
+                ) or any(
+                    r_hoso.lower() == (code or "").lower() for code in existing_hs_codes
+                )
+                if not hs_exists:
+                    missing_required_row_errors.append({
+                        "row": r_idx,
+                        "message": (
+                            f"Dòng {r_idx}: Danh mục hồ sơ '{r_hoso}' chưa tồn tại trong hệ thống và tài khoản của bạn "
+                            f"không có quyền tạo mới hồ sơ. Vui lòng chọn hồ sơ đã có sẵn hoặc liên hệ Quản trị viên / Văn thư để được hỗ trợ."
+                        )
+                    })
 
     if missing_required_row_errors:
         return {
@@ -1899,7 +1958,7 @@ def ensure_hoso_and_doc_type(ho_so_name: str, loai_van_ban_name: str = "", creat
             hs = HoSo.objects.filter(pk=int(clean_hs)).first()
         if not hs:
             hs = HoSo.objects.filter(ten_ho_so__iexact=clean_hs).first() or HoSo.objects.filter(so_ky_hieu__iexact=clean_hs).first()
-        if not hs and admin_u:
+        if not hs and admin_u and can_create_hoso_permission(admin_u):
             # Tạo mới Hồ sơ an toàn với mã chống trùng lặp
             words = clean_hs.split()
             abbr = "".join(w[0].upper() for w in words if w.isalnum()) or "HS"
