@@ -162,7 +162,7 @@
       "followUpSummary": "Summarize the key points",
       "followUpFigures": "Extract related figures",
       "followUpBasis": "Legal basis documents",
-      "aiUnavailable": "Unable to reach the AI right now. Please try again later.",
+      "aiUnavailable": "Unable to answer right now. Please try again; if the problem persists, contact your administrator.",
       "ttsUnsupported": "This browser does not support text-to-speech.",
       "speechUnsupported": "This browser does not support the Web Speech API. Please use Google Chrome or Microsoft Edge.",
       "closeSidebar": "Close sidebar",

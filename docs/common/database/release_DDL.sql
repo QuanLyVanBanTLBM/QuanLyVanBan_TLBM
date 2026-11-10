@@ -181,12 +181,12 @@
 --   3) documents_vanbanden, documents_vanbandi thêm cột pham_vi ('NOI_BO' | 'HAN_CHE'), mặc định 'NOI_BO';
 --      CHECK văn bản HAN_CHE không gửi mail toàn hệ thống (chuyển từ CHECK B2 của bảng mật).
 --   4) Bỏ 4 quyền view/add/change/delete_vanbanmat và các lượt phân quyền tương ứng.
---   5) Trợ lý AI (role qlvb_readonly) chỉ đọc metadata qua view ai_*; view văn bản loại HAN_CHE,
---      bỏ cột/bảng đính kèm, và role không có SELECT trên bảng nghiệp vụ gốc.
+--   5) Trợ lý AI đọc văn bản theo danh tính và quyền phiên, gồm HAN_CHE được phép;
+--      tệp chính thức chỉ đọc qua view đã lọc theo văn bản được phép. Không đọc bảng gốc.
 -- Quy tắc xem văn bản HAN_CHE (tầng ứng dụng, queryset dùng chung của Nhóm 2):
 --   chỉ người tạo, người nhận, thành viên đơn vị nhận; không ngoại lệ cho superuser hay quyền view_*;
 --   mọi lượt mở ghi documents_view_log.
--- Trợ lý AI không dùng văn bản HAN_CHE trong mọi trường hợp, kể cả khi người hỏi là người nhận.
+-- Trợ lý AI chỉ dùng HAN_CHE khi tài khoản hiện tại được phép xem văn bản đó.
 -- Quy tắc văn bản HAN_CHE (văn bản mật nội bộ công ty; không phải mật hành chính do cơ quan nhà nước ban hành):
 --   người xem = người tạo + người nhận do người tạo chọn theo ID nhân viên (documents_*_nguoinhan);
 --   không ngoại lệ cho superuser hay quyền view_*; tài khoản bị khóa (is_active = FALSE) mất quyền xem;
@@ -2969,17 +2969,44 @@ COMMIT;
 -- - Role được tạo ngoài DDL (kèm mật khẩu từ biến môi trường); khối dưới chỉ cấp quyền khi role đã tồn tại.
 -- - Cấp theo bảng/cột cần dùng; KHÔNG cấp bảng khóa ký/PIN/nhật ký, cột password;
 --   KHÔNG dùng ALTER DEFAULT PRIVILEGES.
--- - AI chỉ được cấp SELECT trên ai_vanbanden, ai_vanbandi, ai_tailieu.
---   Các view văn bản chỉ trả về NOI_BO đang hiển thị; cột/bảng đính kèm không nằm trong view.
--- - Quyền dùng AI và quyền xem từng loại được kiểm tra ở ứng dụng theo codename.
---   View ai_tailieu tự giới hạn TAT_CA / NOI_BO_PHONG_BAN theo employee_id của phiên DB.
+-- - AI chỉ được cấp SELECT trên ba view nguồn và hai view tệp đính kèm đã lọc.
+-- - Ứng dụng chỉ truy vấn các ID mà selector Documents cho tài khoản hiện tại xem được;
+--   employee_id và quyền xem hết hiệu lực được đặt ở transaction-local settings.
+--   View văn bản lọc bổ sung theo người tạo, người nhận, đơn vị nhận và hiệu lực.
+--   View tệp chỉ trả tệp chưa xóa gắn với văn bản được phép; bảng gốc không được cấp quyền.
+-- - View ai_tailieu tự giới hạn TAT_CA / NOI_BO_PHONG_BAN theo employee_id của phiên DB.
 -- =====================================================================
 CREATE VIEW ai_vanbanden WITH (security_barrier) AS
-    SELECT id, so_hieu, so_thu_tu, nam, ngay_den, trich_yeu, noi_ban_hanh,
-           ngay_van_ban, nguoi_ky, chuc_vu, hieu_luc, ngay_het_hieu_luc,
-           ghi_chu, updated_at
-    FROM documents_vanbanden
-    WHERE pham_vi = 'NOI_BO' AND hien_thi IS TRUE;
+    SELECT vb.id, vb.so_hieu, vb.so_thu_tu, vb.nam, vb.ngay_den, vb.trich_yeu, vb.noi_ban_hanh,
+           vb.ngay_van_ban, vb.nguoi_ky, vb.chuc_vu, vb.hieu_luc, vb.ngay_het_hieu_luc,
+           vb.ghi_chu, vb.updated_at
+    FROM documents_vanbanden vb
+    WHERE (
+        (vb.pham_vi = 'NOI_BO'
+         AND (current_setting('qlvb.can_view_vanbanden', true) = 'on'
+              OR vb.nguoi_tao_id = NULLIF(current_setting('qlvb.employee_id', true), '')::bigint))
+        OR (vb.pham_vi = 'HAN_CHE' AND (
+            vb.nguoi_tao_id = NULLIF(current_setting('qlvb.employee_id', true), '')::bigint
+            OR EXISTS (
+                SELECT 1 FROM documents_vanbanden_nguoinhan nn
+                WHERE nn.vanbanden_id = vb.id
+                  AND nn.employee_id = NULLIF(current_setting('qlvb.employee_id', true), '')::bigint
+            )
+            OR (NOT EXISTS (
+                SELECT 1 FROM documents_vanbanden_nguoinhan nn
+                WHERE nn.vanbanden_id = vb.id
+            ) AND EXISTS (
+                SELECT 1 FROM documents_vanbanden_donvinhan dv
+                JOIN accounts_employee e ON e.don_vi_id = dv.donvi_id
+                WHERE dv.vanbanden_id = vb.id
+                  AND e.id = NULLIF(current_setting('qlvb.employee_id', true), '')::bigint
+            ))
+        ) OR (vb.hieu_luc::text NOT IN ('CON_HIEU_LUC', 'CON_HIEU_LUC_1_PHAN')
+              AND current_setting('qlvb.can_view_expired_vanbanden', true) = 'on'))
+    ) AND (
+        vb.hieu_luc::text IN ('CON_HIEU_LUC', 'CON_HIEU_LUC_1_PHAN')
+        OR current_setting('qlvb.can_view_expired_vanbanden', true) = 'on'
+    );
 
 CREATE VIEW ai_vanbanden_nguoinhan WITH (security_barrier) AS
     SELECT nn.* FROM documents_vanbanden_nguoinhan nn
@@ -3003,7 +3030,32 @@ CREATE VIEW ai_vanbandi WITH (security_barrier) AS
            vb.ngay_van_ban, vb.nguoi_ky, vb.chuc_vu, vb.hieu_luc,
            vb.ngay_het_hieu_luc, vb.ghi_chu, vb.updated_at
     FROM documents_vanbandi vb
-    WHERE vb.pham_vi = 'NOI_BO' AND vb.hien_thi IS TRUE;
+    WHERE (
+        (vb.pham_vi = 'NOI_BO'
+         AND (current_setting('qlvb.can_view_vanbandi', true) = 'on'
+              OR vb.nguoi_tao_id = NULLIF(current_setting('qlvb.employee_id', true), '')::bigint))
+        OR (vb.pham_vi = 'HAN_CHE' AND (
+            vb.nguoi_tao_id = NULLIF(current_setting('qlvb.employee_id', true), '')::bigint
+            OR EXISTS (
+                SELECT 1 FROM documents_vanbandi_nguoinhan nn
+                WHERE nn.vanbandi_id = vb.id
+                  AND nn.employee_id = NULLIF(current_setting('qlvb.employee_id', true), '')::bigint
+            )
+            OR (NOT EXISTS (
+                SELECT 1 FROM documents_vanbandi_nguoinhan nn
+                WHERE nn.vanbandi_id = vb.id
+            ) AND EXISTS (
+                SELECT 1 FROM documents_vanbandi_donvinhan dv
+                JOIN accounts_employee e ON e.don_vi_id = dv.donvi_id
+                WHERE dv.vanbandi_id = vb.id
+                  AND e.id = NULLIF(current_setting('qlvb.employee_id', true), '')::bigint
+            ))
+        ) OR (vb.hieu_luc::text NOT IN ('CON_HIEU_LUC', 'CON_HIEU_LUC_1_PHAN')
+              AND current_setting('qlvb.can_view_expired_vanbandi', true) = 'on'))
+    ) AND (
+        vb.hieu_luc::text IN ('CON_HIEU_LUC', 'CON_HIEU_LUC_1_PHAN')
+        OR current_setting('qlvb.can_view_expired_vanbandi', true) = 'on'
+    );
 
 CREATE VIEW ai_vanbandi_noibanhanh WITH (security_barrier) AS
     SELECT nb.* FROM documents_vanbandi_noibanhanh nb
@@ -3019,6 +3071,18 @@ CREATE VIEW ai_vanbandi_donvinhan WITH (security_barrier) AS
     SELECT dv.* FROM documents_vanbandi_donvinhan dv
     JOIN documents_vanbandi vb ON vb.id = dv.vanbandi_id
     WHERE vb.pham_vi = 'NOI_BO' AND vb.hien_thi IS TRUE;
+
+CREATE VIEW ai_vanbanden_attachment WITH (security_barrier) AS
+    SELECT a.id, a.document_id, a.name, a.path
+    FROM documents_vanbanden_attachment a
+    JOIN ai_vanbanden vb ON vb.id = a.document_id
+    WHERE a.is_deleted IS FALSE;
+
+CREATE VIEW ai_vanbandi_attachment WITH (security_barrier) AS
+    SELECT a.id, a.document_id, a.name, a.path
+    FROM documents_vanbandi_attachment a
+    JOIN ai_vanbandi vb ON vb.id = a.document_id
+    WHERE a.is_deleted IS FALSE;
 
 CREATE VIEW ai_tailieu WITH (security_barrier) AS
     SELECT t.id, t.ky_hieu, t.tieu_de, t.ngay_dang, t.noi_ban_hanh,
@@ -3054,7 +3118,9 @@ BEGIN
         GRANT SELECT ON
             ai_vanbanden,
             ai_vanbandi,
-            ai_tailieu
+            ai_tailieu,
+            ai_vanbanden_attachment,
+            ai_vanbandi_attachment
         TO qlvb_readonly;
     ELSE
         RAISE NOTICE 'Role qlvb_readonly chưa tồn tại: bỏ qua cấp quyền chỉ đọc cho trợ lý AI';

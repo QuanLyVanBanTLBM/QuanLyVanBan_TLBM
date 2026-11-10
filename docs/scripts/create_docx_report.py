@@ -271,8 +271,8 @@ def build_report():
     )
     
     add_bullet(
-        "Truy vấn trực tiếp qua tài khoản chỉ đọc an toàn (qlvb_readonly) trên các Database View: ai_vanbanden, ai_vanbandi, ai_tailieu. "
-        "Các view này áp dụng cơ chế security_barrier, tự động lọc theo danh tính nhân viên (qlvb.employee_id) và loại trừ 100% văn bản thuộc diện HẠN CHẾ hoặc MẬT.",
+        "Truy vấn qua tài khoản chỉ đọc qlvb_readonly trên các view ai_vanbanden, ai_vanbandi, ai_tailieu và hai view tệp đính kèm. "
+        "Các view giới hạn văn bản, hiệu lực và tệp theo danh tính cùng quyền của tài khoản đang đăng nhập.",
         "1. Dữ liệu Văn bản & Hồ sơ CSDL PostgreSQL: "
     )
     
@@ -468,8 +468,9 @@ def build_report():
         "Mã nguồn backend (sql_document_source.py) kiểm tra nghiêm ngặt: Quyền sử dụng chatbot (use_aiassistant) không tự động "
         "cho phép đọc mọi dữ liệu. Khi thực hiện câu hỏi, hệ thống kiểm tra chéo:"
     )
-    add_bullet("Người dùng bắt buộc phải có thêm quyền view_vanbanden thì AI mới truy vấn bảng ai_vanbanden.", "Văn bản đến: ")
-    add_bullet("Người dùng bắt buộc phải có thêm quyền view_vanbandi thì AI mới truy vấn bảng ai_vanbandi.", "Văn bản đi: ")
+    add_bullet("Quyền view_vanbanden mở phạm vi văn bản đến nội bộ; văn bản hạn chế được lọc theo người tạo, người nhận hoặc đơn vị nhận.", "Văn bản đến: ")
+    add_bullet("Quyền view_vanbandi mở phạm vi văn bản đi nội bộ; văn bản hạn chế được lọc theo người tạo, người nhận hoặc đơn vị nhận.", "Văn bản đi: ")
+    add_bullet("Quyền xem văn bản hết hiệu lực được kiểm tra riêng; tệp chỉ lấy từ văn bản mà tài khoản hiện tại xem được.", "Hiệu lực và tệp: ")
     add_bullet("Người dùng phải có quyền view_tailieu và có mã nhân viên hợp lệ. CSDL kích hoạt lệnh: "
                "SET qlvb.employee_id = '<id>' để view ai_tailieu tự động lọc đúng tài liệu thuộc quyền xem.", "Tài liệu nội bộ: ")
 
@@ -510,16 +511,15 @@ def build_report():
     add_bullet("User qlvb_readonly bị thu hồi (REVOKE) toàn bộ quyền đọc trên các bảng gốc, chỉ được SELECT qua các view ai_*.", "Cấm đọc bảng gốc: ")
     add_bullet("AI hoàn toàn KHÔNG THỂ thực hiện bất kỳ lệnh ghi/sửa/xóa (INSERT, UPDATE, DELETE) nào lên dữ liệu cơ quan.", "Bất khả xâm phạm CSDL: ")
 
-    add_h2("6.3. Loại Trừ Tuyệt Đối Văn Bản Mật & Tệp Đính Kèm Nhạy Cảm")
+    add_h2("6.3. Giới Hạn Văn Bản Và Tệp Theo Quyền")
     add_bullet(
-        "Tại định nghĩa của các view ai_vanbanden và ai_vanbandi, mệnh đề lọc cứng: WHERE pham_vi = 'NOI_BO' AND hien_thi IS TRUE. "
-        "Do đó, 100% các văn bản thuộc phạm vi HẠN CHẾ (HAN_CHE) hoặc VĂN BẢN MẬT bị loại bỏ hoàn toàn khỏi tầm nhìn của AI.",
-        "Loại trừ văn bản MẬT: "
+        "Các view ai_vanbanden và ai_vanbandi chỉ trả văn bản theo quyền nội bộ, quyền người tạo, người nhận, đơn vị nhận và quyền xem hết hiệu lực. "
+        "Văn bản mật thuộc phân hệ riêng không được đưa vào các view AI.",
+        "Phạm vi văn bản: "
     )
     add_bullet(
-        "Các cột chứa tệp đính kèm gốc (file_dinh_kem), mật khẩu người dùng, mã PIN ký số, khóa riêng tư (Private Key/Token PKI) "
-        "tuyệt đối không bao giờ được cấp quyền truy cập cho AI.",
-        "Không cấp tệp đính kèm nhạy cảm: "
+        "AI chỉ đọc tệp chưa xóa qua view gắn với văn bản người dùng được phép xem. Hỗ trợ trích xuất PDF, DOCX, JPG, JPEG và PNG.",
+        "Tệp đính kèm: "
     )
 
     add_h2("6.4. Hạn Chế Tác Vụ: Chỉ Là Trợ Lý Tra Cứu (Không Phải Execution Agent)")

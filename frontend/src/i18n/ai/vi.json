@@ -162,7 +162,7 @@
       "followUpSummary": "Tóm tắt các điểm quan trọng",
       "followUpFigures": "Trích xuất số liệu liên quan",
       "followUpBasis": "Văn bản quy định căn cứ",
-      "aiUnavailable": "Không thể truy cập AI lúc này. Vui lòng thử lại sau.",
+      "aiUnavailable": "Chưa thể trả lời lúc này. Vui lòng thử lại; nếu lỗi tiếp diễn, hãy liên hệ quản trị viên.",
       "ttsUnsupported": "Trình duyệt không hỗ trợ nhận diện giọng nói TTS.",
       "speechUnsupported": "Trình duyệt không hỗ trợ Web Speech API. Vui lòng sử dụng Google Chrome hoặc Microsoft Edge.",
       "closeSidebar": "Đóng thanh bên",
