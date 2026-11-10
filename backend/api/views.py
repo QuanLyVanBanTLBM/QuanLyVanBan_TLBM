@@ -491,8 +491,7 @@ def ai_settings(request):
         else:
             available_models = {item.get("id") for item in catalog.get("data", [])}
             embedding_available = embed in available_models
-        # gpt-6-luna is an internal custom alias that maps to gpt-4o-mini
-        if llm not in available_models and llm != "gpt-6-luna":
+        if llm not in available_models:
             return _error("API key không có quyền sử dụng mô hình đã chọn.", 400, "model_access_denied")
         if not embedding_available:
             return _error("API key không có quyền sử dụng mô hình embedding mặc định của provider.", 400, "embedding_access_denied")

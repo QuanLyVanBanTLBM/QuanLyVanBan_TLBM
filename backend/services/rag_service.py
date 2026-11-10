@@ -153,15 +153,13 @@ def setup_llamaindex():
             raise RuntimeError("OPENAI_API_KEY is not configured")
         import llama_index.llms.openai.utils as openai_utils
         import tiktoken.model
-        actual_llm = "gpt-4o-mini" if llm_model == "gpt-6-luna" else llm_model
-        for m_name in (llm_model, actual_llm):
-            if m_name not in openai_utils.ALL_AVAILABLE_MODELS:
-                openai_utils.ALL_AVAILABLE_MODELS[m_name] = 128000
-                openai_utils.CHAT_MODELS[m_name] = 128000
-                try:
-                    tiktoken.model.MODEL_TO_ENCODING[m_name] = "o200k_base"
-                except Exception:
-                    pass
+        if llm_model not in openai_utils.ALL_AVAILABLE_MODELS:
+            openai_utils.ALL_AVAILABLE_MODELS[llm_model] = 128000
+            openai_utils.CHAT_MODELS[llm_model] = 128000
+            try:
+                tiktoken.model.MODEL_TO_ENCODING[llm_model] = "o200k_base"
+            except Exception:
+                pass
 
         from llama_index.embeddings.openai import OpenAIEmbedding
         from llama_index.llms.openai import OpenAI
@@ -169,8 +167,8 @@ def setup_llamaindex():
         embed_model_name = embed_model if "text-embedding" in embed_model else "text-embedding-3-large"
         Settings.embed_model = OpenAIEmbedding(model_name=embed_model_name, api_key=openai_key)
         temp = 1.0 if ("luna" in llm_model or llm_model.startswith(("o1", "o3", "o4"))) else 0.1
-        Settings.llm = OpenAI(model=actual_llm, temperature=temp, request_timeout=180.0, api_key=openai_key)
-        print(f"✅ OpenAI LLM: {llm_model} (engine: {actual_llm})")
+        Settings.llm = OpenAI(model=llm_model, temperature=temp, request_timeout=180.0, api_key=openai_key)
+        print(f"✅ OpenAI LLM: {llm_model}")
         print(f"✅ OpenAI Embed: {embed_model_name}")
     elif provider == "gemini":
         if not gemini_key:
@@ -373,17 +371,48 @@ def image_to_base64(image) -> str:
 
 
 def call_vision_ocr(image, prompt: str = VISION_OCR_PROMPT) -> str:
-    """Gọi Vision OCR (Gemini Multimodal Vision) để trích xuất text, công thức LaTeX và mô tả ảnh."""
+    """Use the configured OpenAI chat model for image OCR."""
     if not VISION_OCR_ENABLED:
         return ""
 
-    from backend.services.gemini_service import call_gemini_vision
     try:
-        return call_gemini_vision(image, prompt=prompt, api_key=GEMINI_API_KEY, model_name=VISION_MODEL)
-    except Exception as error:
-        print(f"❌ Gemini Vision OCR Error: {type(error).__name__}: {error}")
-        return ""
+        from openai import OpenAI
+        from backend.services.ai_settings_service import get_active_ai_settings
 
+        active = get_active_ai_settings()
+        openai_key = (
+            active.get("openai_api_key")
+            or getattr(config, "OPENAI_API_KEY", "")
+            or os.getenv("OPENAI_API_KEY", "")
+        ).strip()
+        if not openai_key:
+            raise RuntimeError("OPENAI_API_KEY is not configured")
+
+        response = OpenAI(api_key=openai_key, timeout=VISION_OCR_TIMEOUT).chat.completions.create(
+            model=LLM_MODEL,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{image_to_base64(image)}"},
+                    },
+                ],
+            }],
+        )
+        content = response.choices[0].message.content
+        if isinstance(content, str):
+            return content.strip()
+        if isinstance(content, list):
+            return "".join(
+                item.text for item in content
+                if getattr(item, "type", None) == "text" and getattr(item, "text", None)
+            ).strip()
+        return ""
+    except Exception as error:
+        logger.exception("OpenAI vision OCR failed: %s", type(error).__name__)
+        return ""
 
 def should_run_vision_ocr(text: str) -> bool:
     """Quyết định có cần chạy Vision OCR không dựa trên VISION_OCR_MODE và nội dung text."""
