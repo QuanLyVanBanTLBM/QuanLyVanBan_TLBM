@@ -39,6 +39,15 @@ User = get_user_model()
 TEMP_STORAGE = tempfile.mkdtemp()
 
 
+def grant_tailieu_permissions(*users):
+    """Cây thư mục thuộc module Tài liệu: cấp view/add/change/delete_tailieu cho tài khoản thử."""
+    from django.contrib.auth.models import Permission
+
+    perms = list(Permission.objects.filter(codename__in=("view_tailieu", "add_tailieu", "change_tailieu", "delete_tailieu")))
+    for user in users:
+        user.user_permissions.add(*perms)
+
+
 @override_settings(DOCUMENT_STORAGE_ROOT=TEMP_STORAGE, MEDIA_ROOT=TEMP_STORAGE)
 class BackendSecurityAndLogicFixesTests(TestCase):
     def setUp(self):
@@ -57,6 +66,8 @@ class BackendSecurityAndLogicFixesTests(TestCase):
             email="other_sec@example.com",
             password="otherpassword123",
         )
+
+        grant_tailieu_permissions(self.staff_user, self.other_staff)
 
         khoi = KhoiKhuVuc.objects.create(ten="Khối Văn phòng", thu_tu_hien_thi=1)
         self.don_vi = DonVi.objects.create(khoi=khoi, ten="Văn phòng Bộ", stt_uu_tien=100)

@@ -26,6 +26,15 @@ from records.models import HoSo, LoaiVanBan as RecordLoaiVanBan
 User = get_user_model()
 
 
+def grant_tailieu_permissions(*users):
+    """Cây thư mục thuộc module Tài liệu: cấp view/add/change/delete_tailieu cho tài khoản thử."""
+    from django.contrib.auth.models import Permission
+
+    perms = list(Permission.objects.filter(codename__in=("view_tailieu", "add_tailieu", "change_tailieu", "delete_tailieu")))
+    for user in users:
+        user.user_permissions.add(*perms)
+
+
 class BackendFixesSecurityAndLogicTests(TestCase):
     def setUp(self):
         user_kwargs = {"username": "normal_user", "password": "password123"}
@@ -42,6 +51,8 @@ class BackendFixesSecurityAndLogicTests(TestCase):
         if hasattr(User, "ho_ten"):
             admin_kwargs["ho_ten"] = "Admin User"
         self.admin_user = User.objects.create_user(**admin_kwargs)
+
+        grant_tailieu_permissions(self.user, self.other_user)
 
         self.client = APIClient()
 

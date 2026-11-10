@@ -24,6 +24,7 @@ interface TaskTableProps {
   onDelete: (task: TaskListItem) => void;
   onApprove: (task: TaskListItem) => void;
   onUnapprove: (task: TaskListItem) => void;
+  onExtend?: (task: TaskListItem) => void;
 }
 
 const COLUMN_KEYS = [
@@ -79,6 +80,7 @@ function TaskGridTable({
   onDelete,
   onApprove,
   onUnapprove,
+  onExtend,
 }: TaskTableProps) {
   const { t } = useTranslation();
   return (
@@ -202,6 +204,7 @@ function TaskGridTable({
                     onDelete={onDelete}
                     onApprove={onApprove}
                     onUnapprove={onUnapprove}
+                    onExtend={onExtend}
                   />
                 </td>
               </tr>
@@ -222,6 +225,7 @@ function TaskCardList({
   onDelete,
   onApprove,
   onUnapprove,
+  onExtend,
 }: TaskTableProps) {
   const { t } = useTranslation();
   return (
@@ -356,6 +360,7 @@ function TaskCardList({
                 onDelete={onDelete}
                 onApprove={onApprove}
                 onUnapprove={onUnapprove}
+                onExtend={onExtend}
               />
             </div>
           </li>

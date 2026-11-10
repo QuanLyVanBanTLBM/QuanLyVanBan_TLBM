@@ -36,7 +36,7 @@ def is_admin_user(user):
     """Kiểm tra người dùng có quyền Quản trị viên (Admin) hay không."""
     if not user or not user.is_authenticated:
         return False
-    return bool(getattr(user, "is_staff", False) or is_system_admin(user))
+    return bool(is_system_admin(user))
 
 
 def _co_quyen(user, perm_code):
@@ -106,8 +106,7 @@ def van_ban_xem_duoc(user, loai="DEN"):
     # Điều kiện xem NOI_BO: Phân quyền theo mã chuẩn trong seed DDL (view_vanbanden, view_vanbandi)
     try:
         has_view_perm = (
-            user.is_staff
-            or user.is_superuser
+            user.is_superuser
             or is_admin_user(user)
             or user.has_perm(f"documents.view_{model_name}")
             or user.has_perm(f"view_{model_name}")
@@ -115,7 +114,7 @@ def van_ban_xem_duoc(user, loai="DEN"):
             or user.has_perm(f"view_read_log_{model_name}")
         )
     except Exception:
-        has_view_perm = bool(user.is_staff or user.is_superuser)
+        has_view_perm = bool(user.is_superuser)
 
     # Điều kiện văn bản còn hiệu lực và hết hiệu lực
     cond_active = Q(hieu_luc__in=[HieuLuc.CON_HIEU_LUC, HieuLuc.CON_HIEU_LUC_1_PHAN])
@@ -177,7 +176,7 @@ def la_nguoi_xem_duoc(user, van_ban):
         return False
 
     # Với văn bản nội bộ (NOI_BO):
-    if is_admin_user(user) or getattr(user, "is_staff", False) or getattr(user, "is_superuser", False):
+    if is_admin_user(user) or getattr(user, "is_superuser", False):
         return True
     if (getattr(van_ban, "nguoi_tao_id", None) == user.pk) or (getattr(van_ban, "nguoi_tao", None) == user):
         return True

@@ -25,6 +25,15 @@ from documents.models import Folder, FolderFile
 User = get_user_model()
 
 
+def grant_tailieu_permissions(*users):
+    """Cây thư mục thuộc module Tài liệu: cấp view/add/change/delete_tailieu cho tài khoản thử."""
+    from django.contrib.auth.models import Permission
+
+    perms = list(Permission.objects.filter(codename__in=("view_tailieu", "add_tailieu", "change_tailieu", "delete_tailieu")))
+    for user in users:
+        user.user_permissions.add(*perms)
+
+
 class HierarchicalFolderModelTests(TestCase):
     """Kiểm thử cấp Model: Logic cấu trúc dữ liệu, quan hệ và toàn vẹn dữ liệu."""
 
@@ -132,10 +141,15 @@ class HierarchicalFolderAPITests(TestCase):
             user_kwargs["ho_ten"] = "Test User"
         self.user = User.objects.create_user(**user_kwargs)
 
-        admin_kwargs = {"username": "testadmin", "password": "password123", "is_staff": True}
+        admin_kwargs = {"username": "testadmin", "password": "password123"}
         if hasattr(User, "ho_ten"):
             admin_kwargs["ho_ten"] = "Admin User"
         self.admin_user = User.objects.create_user(**admin_kwargs)
+        grant_tailieu_permissions(self.user)
+        from django.contrib.auth.models import Group
+        from authorization.models import GroupInfo
+
+        self.admin_user.groups.add(Group.objects.get(pk=GroupInfo.objects.get(ma_nhom_quyen="ADMIN").pk))
 
         self.client = APIClient()
         self.client.force_authenticate(user=self.user)

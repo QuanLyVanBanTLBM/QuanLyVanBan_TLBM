@@ -6,6 +6,7 @@ import { unapproveTask } from '../api/taskActions';
 import { deleteTask, listTasks } from '../api/tasks';
 import ConfirmDialog from '../components/ConfirmDialog';
 import TaskFilterBar, { FilterDraft } from '../components/TaskFilterBar';
+import TaskExtendModal from '../components/TaskExtendModal';
 import TaskFormModal from '../components/TaskFormModal';
 import TaskPagination from '../components/TaskPagination';
 import TaskTable from '../components/TaskTable';
@@ -57,6 +58,7 @@ export default function TaskListPage({ onOpenTask }: TaskListPageProps) {
   const { loaded: permissionsLoaded, can } = usePermissions();
   const [state, setState] = useState<ListState>(readState);
   const [data, setData] = useState<Paginated<TaskListItem> | null>(null);
+  const [extending, setExtending] = useState<TaskListItem | null>(null);
   const [loadedKey, setLoadedKey] = useState('');
   const [loadError, setLoadError] = useState<{ key: string; message: string } | null>(null);
   const [actionError, setActionError] = useState('');
@@ -253,6 +255,7 @@ export default function TaskListPage({ onOpenTask }: TaskListPageProps) {
               onDelete={(task) => setPending({ type: 'delete', task })}
               onApprove={(task) => onOpenTask(task.id)}
               onUnapprove={(task) => setPending({ type: 'unapprove', task })}
+              onExtend={(task) => setExtending(task)}
             />
             {data && (
               <TaskPagination
@@ -282,6 +285,17 @@ export default function TaskListPage({ onOpenTask }: TaskListPageProps) {
           } else {
             setNotice(t('work.taskList.updatedNotice', { title: task.title }));
           }
+          reload();
+        }}
+      />
+
+      <TaskExtendModal
+        task={extending}
+        onClose={() => setExtending(null)}
+        onExtended={(task) => {
+          setExtending(null);
+          setActionError('');
+          setNotice(t('work.extend.successNotice', { title: task.title }));
           reload();
         }}
       />

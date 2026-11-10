@@ -62,6 +62,15 @@ from documents.services import (
 
 User = get_user_model()
 
+def make_system_admin(user):
+    """Đưa tài khoản vào nhóm ADMIN: quản trị hệ thống chỉ nhận diện qua superuser hoặc nhóm ADMIN, không qua is_staff."""
+    from django.contrib.auth.models import Group
+    from authorization.models import GroupInfo
+
+    user.groups.add(Group.objects.get(pk=GroupInfo.objects.get(ma_nhom_quyen="ADMIN").pk))
+    return user
+
+
 TEMP_STORAGE_ROOT = tempfile.mkdtemp(prefix="documents-tests-")
 atexit.register(shutil.rmtree, TEMP_STORAGE_ROOT, ignore_errors=True)
 
@@ -387,8 +396,7 @@ class DocumentAPITests(TestCase):
 
     def test_api_excel_export(self):
         """GET /api/documents/export/?loai=DEN xuất file Excel theo bộ lọc (khi có quyền)."""
-        self.user.is_staff = True
-        self.user.save()
+        make_system_admin(self.user)
         response = self.client.get("/api/documents/export/?loai=DEN")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn("application/vnd.openxmlformats-officedocument", response["Content-Type"])
@@ -402,8 +410,7 @@ class DocumentAPITests(TestCase):
 
     def test_api_excel_import(self):
         """POST /api/documents/import/ nhận file Excel và import (khi có quyền)."""
-        self.user.is_staff = True
-        self.user.save()
+        make_system_admin(self.user)
         template_stream = generate_excel_template("DEN")
         excel_file = SimpleUploadedFile(
             "import_test.xlsx",
@@ -466,8 +473,7 @@ class DocumentAPITests(TestCase):
         self.assertTrue((Path(TEMP_STORAGE_ROOT) / att_di.file.name).is_file())
 
     def test_create_with_attachment_stores_in_shared_tree_and_downloads(self):
-        self.user.is_staff = True
-        self.user.save()
+        make_system_admin(self.user)
         response = self.client.post(
             "/api/documents/",
             {
@@ -485,8 +491,7 @@ class DocumentAPITests(TestCase):
         self.assertEqual(download.content, b"%PDF-1.4 noi dung")
 
     def test_create_rejects_disallowed_extension_without_creating_document(self):
-        self.user.is_staff = True
-        self.user.save()
+        make_system_admin(self.user)
         before = VanBanDen.objects.count()
         response = self.client.post(
             "/api/documents/",
@@ -529,8 +534,7 @@ class DocumentAPITests(TestCase):
 
     def test_create_het_va_thay_the_without_link_rejected(self):
         """Issue #61 Lỗi 2: HET_VA_THAY_THE bắt buộc phải có link_thay_the."""
-        self.user.is_staff = True
-        self.user.save()
+        make_system_admin(self.user)
         response = self.client.post(
             "/api/documents/",
             {
@@ -548,8 +552,7 @@ class DocumentAPITests(TestCase):
 
     def test_create_returns_id_in_response(self):
         """Issue #61 Lỗi 3: Tạo văn bản thành công phải trả về trường id trong response."""
-        self.user.is_staff = True
-        self.user.save()
+        make_system_admin(self.user)
         response = self.client.post(
             "/api/documents/",
             {
@@ -919,11 +922,11 @@ class RestrictedDocumentSecurityIssue82Tests(TestCase):
     """
 
     def setUp(self):
-        self.creator = User.objects.create_user(username="creator_user", password="pwd", is_staff=True)
+        self.creator = make_system_admin(User.objects.create_user(username="creator_user", password="pwd"))
         self.recipient1 = User.objects.create_user(username="recipient_1", password="pwd")
         self.recipient2 = User.objects.create_user(username="recipient_2", password="pwd")
         self.stranger = User.objects.create_user(username="stranger_user", password="pwd")
-        self.other_staff = User.objects.create_user(username="other_staff", password="pwd", is_staff=True)
+        self.other_staff = make_system_admin(User.objects.create_user(username="other_staff", password="pwd"))
         self.superuser = User.objects.create_superuser(username="admin_super", password="pwd", email="admin@corp.vn")
 
         # Tạo văn bản hạn chế mẫu
@@ -1345,7 +1348,7 @@ class DocumentPhamViFilterTests(TestCase):
     """
 
     def setUp(self):
-        self.creator = User.objects.create_user(username="creator_pv", password="pwd", is_staff=True)
+        self.creator = make_system_admin(User.objects.create_user(username="creator_pv", password="pwd"))
         self.recipient = User.objects.create_user(username="recipient_pv", password="pwd")
         self.stranger = User.objects.create_user(username="stranger_pv", password="pwd")
 
@@ -1445,12 +1448,11 @@ class VanBanMatTests(TestCase):
 
     def setUp(self):
         User = get_user_model()
-        self.creator = User.objects.create_user(
+        self.creator = make_system_admin(User.objects.create_user(
             username="mat_creator",
             password="password123",
             email="creator@school.edu.vn",
-            is_staff=True,
-        )
+        ))
         self.recipient = User.objects.create_user(
             username="mat_recipient",
             password="password123",
@@ -2053,8 +2055,18 @@ class VanBanMatServiceTests(TestCase):
         )
         doc.nguoi_nhan.add(self.recipient)
 
-        # Người lạ gọi export qua API chỉ nhận được danh sách rỗng (hoặc chỉ văn bản họ được xem)
+        # Thiếu quyền xuất văn bản đến/đi thì bị chặn ở cổng quyền (403).
         client_stranger = APIClient()
+        client_stranger.force_authenticate(user=self.stranger)
+        self.assertEqual(client_stranger.get("/api/documents/mat/export/").status_code, status.HTTP_403_FORBIDDEN)
+
+        # Có quyền xuất nhưng không thuộc người nhận: chỉ nhận được danh sách rỗng (chỉ văn bản họ được xem)
+        from django.contrib.auth.models import Permission
+        export_perm = Permission.objects.get(codename="export_vanbanden")
+        self.stranger.user_permissions.add(export_perm)
+        self.recipient.user_permissions.add(export_perm)
+        self.stranger = User.objects.get(pk=self.stranger.pk)
+        self.recipient = User.objects.get(pk=self.recipient.pk)
         client_stranger.force_authenticate(user=self.stranger)
         res_stranger = client_stranger.get("/api/documents/mat/export/")
         self.assertEqual(res_stranger.status_code, status.HTTP_200_OK)

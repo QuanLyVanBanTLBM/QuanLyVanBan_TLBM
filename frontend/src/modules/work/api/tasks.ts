@@ -46,6 +46,13 @@ export function updateTask(taskId: number, values: TaskFormValues): Promise<Task
   return request<TaskDetail>(`work/tasks/${taskId}/`, { method: 'PATCH', body: buildTaskFormData(values, true) });
 }
 
+/** Gia hạn việc quá hạn: chỉ gửi hạn xử lý mới (isoDate YYYY-MM-DD). */
+export function extendTask(taskId: number, dueDate: string): Promise<TaskDetail> {
+  const data = new FormData();
+  data.append('dueDate', dueDate);
+  return request<TaskDetail>(`work/tasks/${taskId}/`, { method: 'PATCH', body: data });
+}
+
 /** Xóa hẳn công việc cùng toàn bộ file và ý kiến; không hoàn tác được. */
 export function deleteTask(taskId: number): Promise<void> {
   return request<void>(`work/tasks/${taskId}/`, { method: 'DELETE' });

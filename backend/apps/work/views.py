@@ -23,6 +23,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from authorization.permissions import require_permission
 from work.models import (
+    FROZEN_STATUSES,
     AttachmentKind,
     Task,
     TaskAttachment,
@@ -266,8 +267,17 @@ class TaskViewSet(
 
     def partial_update(self, request, *args, **kwargs):
         task = self.get_object()
+        # Việc quá hạn bị khóa; người giao việc và quản trị hệ thống chỉ được gia hạn (chỉ gửi dueDate).
+        is_extension = (
+            task.get_status() in FROZEN_STATUSES
+            and "dueDate" in request.data
+            and set(request.data.keys()) <= {"dueDate"}
+        )
         try:
-            task.check_edit(request.user)
+            if is_extension:
+                task.check_extend(request.user)
+            else:
+                task.check_edit(request.user)
         except TaskRuleError as error:
             raise_rule_error(error)
 
@@ -278,6 +288,12 @@ class TaskViewSet(
             context=self.get_serializer_context(),
         )
         serializer.is_valid(raise_exception=True)
+        new_due_date = serializer.validated_data.get("due_date")
+        if new_due_date is not None and new_due_date != task.due_date:
+            try:
+                task.check_change_deadline(request.user)
+            except TaskRuleError as error:
+                raise_rule_error(error)
         serializer.save()
         return self.detail_response(task.pk)
 

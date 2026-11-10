@@ -10,6 +10,10 @@ interface FolderTreeViewProps {
   onEditFolder: (folder: FolderItem) => void;
   onMoveFolder: (folder: FolderItem) => void;
   onDeleteFolder: (folder: FolderItem) => void;
+  /** Quyền thao tác (add/change/delete_tailieu); mặc định true để giữ nguyên hành vi khi nơi dùng không truyền. */
+  canAdd?: boolean;
+  canChange?: boolean;
+  canDelete?: boolean;
   className?: string;
 }
 
@@ -24,6 +28,9 @@ interface FolderTreeNodeProps {
   onEditFolder: (folder: FolderItem) => void;
   onMoveFolder: (folder: FolderItem) => void;
   onDeleteFolder: (folder: FolderItem) => void;
+  canAdd: boolean;
+  canChange: boolean;
+  canDelete: boolean;
   searchTerm?: string;
 }
 
@@ -38,6 +45,9 @@ const FolderTreeNode: React.FC<FolderTreeNodeProps> = ({
   onEditFolder,
   onMoveFolder,
   onDeleteFolder,
+  canAdd,
+  canChange,
+  canDelete,
   searchTerm = '',
 }) => {
   const { t } = useTranslation();
@@ -130,10 +140,12 @@ const FolderTreeNode: React.FC<FolderTreeNodeProps> = ({
         </div>
 
         {/* Nút thao tác nhanh (Hiện khi hover) */}
+        {(canAdd || canChange || canDelete) && (
         <div
           className="relative opacity-0 group-hover:opacity-100 flex items-center gap-1 shrink-0 ml-1 transition-opacity"
           onClick={(e) => e.stopPropagation()}
         >
+          {canAdd && (
           <button
             type="button"
             title={t('folders.tree.addSubfolder')}
@@ -142,6 +154,7 @@ const FolderTreeNode: React.FC<FolderTreeNodeProps> = ({
           >
             <i className="fa-solid fa-plus text-[10px]" />
           </button>
+          )}
 
           <button
             type="button"
@@ -160,6 +173,7 @@ const FolderTreeNode: React.FC<FolderTreeNodeProps> = ({
                 onClick={() => setIsMenuOpen(false)}
               />
               <div className="absolute right-0 top-7 z-50 w-44 bg-surface border border-border-subtle rounded-xl shadow-lg p-1 text-xs space-y-0.5 animate-in fade-in zoom-in-95">
+                {canAdd && (
                 <button
                   type="button"
                   onClick={() => {
@@ -171,6 +185,9 @@ const FolderTreeNode: React.FC<FolderTreeNodeProps> = ({
                   <i className="fa-solid fa-folder-plus text-primary w-4 text-center" />
                   {t('folders.tree.addSubfolder')}
                 </button>
+                )}
+                {canChange && (
+                <>
                 <button
                   type="button"
                   onClick={() => {
@@ -193,7 +210,11 @@ const FolderTreeNode: React.FC<FolderTreeNodeProps> = ({
                   <i className="fa-solid fa-arrows-up-down-left-right text-sky-500 w-4 text-center" />
                   {t('folders.tree.move')}
                 </button>
-                <div className="h-px bg-border-subtle my-0.5" />
+                </>
+                )}
+                {canDelete && (
+                <>
+                {(canAdd || canChange) && <div className="h-px bg-border-subtle my-0.5" />}
                 <button
                   type="button"
                   onClick={() => {
@@ -205,10 +226,13 @@ const FolderTreeNode: React.FC<FolderTreeNodeProps> = ({
                   <i className="fa-solid fa-trash w-4 text-center" />
                   {t('folders.tree.delete')}
                 </button>
+                </>
+                )}
               </div>
             </>
           )}
         </div>
+        )}
       </div>
 
       {/* Hiển thị con cháu đệ quy */}
@@ -227,6 +251,9 @@ const FolderTreeNode: React.FC<FolderTreeNodeProps> = ({
               onEditFolder={onEditFolder}
               onMoveFolder={onMoveFolder}
               onDeleteFolder={onDeleteFolder}
+              canAdd={canAdd}
+              canChange={canChange}
+              canDelete={canDelete}
               searchTerm={searchTerm}
             />
           ))}
@@ -244,6 +271,9 @@ export const FolderTreeView: React.FC<FolderTreeViewProps> = ({
   onEditFolder,
   onMoveFolder,
   onDeleteFolder,
+  canAdd = true,
+  canChange = true,
+  canDelete = true,
   className = '',
 }) => {
   const { t } = useTranslation();
@@ -366,6 +396,9 @@ export const FolderTreeView: React.FC<FolderTreeViewProps> = ({
               onEditFolder={onEditFolder}
               onMoveFolder={onMoveFolder}
               onDeleteFolder={onDeleteFolder}
+              canAdd={canAdd}
+              canChange={canChange}
+              canDelete={canDelete}
               searchTerm={searchTerm}
             />
           ))

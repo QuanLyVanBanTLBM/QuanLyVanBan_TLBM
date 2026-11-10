@@ -465,6 +465,31 @@ class Task(models.Model):
         if status in FROZEN_STATUSES:
             raise TaskRuleError(FROZEN_MESSAGE.format(action="sửa"), TaskRuleError.INVALID_STATE)
 
+    def _is_deadline_owner(self, user):
+        """Người giao việc (người tạo) hoặc quản trị hệ thống: những người duy nhất đổi được hạn xử lý."""
+        return bool(
+            user is not None
+            and user.is_authenticated
+            and (self.created_by_id == user.id or is_system_admin(user))
+        )
+
+    def check_change_deadline(self, user):
+        if not self._is_deadline_owner(user):
+            raise TaskRuleError(
+                "Chỉ người giao việc hoặc quản trị hệ thống mới được đổi hạn xử lý. "
+                "Nếu cần đổi hạn, hãy liên hệ người giao việc."
+            )
+
+    def check_extend(self, user):
+        """Gia hạn việc đã quá hạn (đang bị khóa): người giao việc hoặc quản trị hệ thống."""
+        self.check_change_deadline(user)
+        if self.get_status() not in FROZEN_STATUSES:
+            raise TaskRuleError(
+                "Công việc chưa quá hạn nên không cần gia hạn. "
+                "Hãy dùng chức năng sửa công việc để đổi hạn xử lý.",
+                TaskRuleError.INVALID_STATE,
+            )
+
     def check_delete(self, user):
         if not (
             self.roles_of(user) & {ROLE_CREATOR, ParticipantRole.CHU_TRI}
@@ -593,6 +618,9 @@ class Task(models.Model):
 
     def can_delete(self, user):
         return self._passes(self.check_delete, user)
+
+    def can_extend(self, user):
+        return self._passes(self.check_extend, user)
 
     def can_submit_evidence(self, user):
         return self._passes(self.check_submit_evidence, user)
