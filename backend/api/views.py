@@ -113,6 +113,9 @@ def ai_health(request):
 def chat(request):
     if request.method != "POST":
         return _error("Phương thức không được hỗ trợ.", 405)
+    denied = _require_ai_access(request)
+    if denied:
+        return denied
     payload = _json_body(request)
     if not isinstance(payload, dict):
         return _error("Dữ liệu gửi lên không hợp lệ.")
@@ -130,9 +133,6 @@ def chat(request):
         return _error("Câu hỏi không được vượt quá 4000 ký tự.")
     if not isinstance(history, list):
         return _error("Lịch sử hội thoại không hợp lệ.")
-    denied = _require_ai_access(request)
-    if denied:
-        return denied
     safe_history = [item for item in history[-8:] if isinstance(item, dict) and item.get("role") in {"user", "assistant"} and isinstance(item.get("content"), str)]
     try:
         from backend.services.rag_service import ask_document
