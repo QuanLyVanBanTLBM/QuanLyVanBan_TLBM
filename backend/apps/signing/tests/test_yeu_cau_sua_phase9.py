@@ -21,8 +21,8 @@ from signing.services import process as process_service
 from signing.services import trinh_ky as trinh_ky_service
 from signing.services import yeu_cau_sua as yeu_cau_sua_service
 
-from .helpers import cap_quyen
-from .test_hanh_dong_ky_phase8 import HASH, KyBase, chay_song_song, khoa_hoat_dong, ky_so, ma_loi
+from .helpers import cap_quyen, dat_anh_chu_ky
+from .test_hanh_dong_ky_phase8 import HASH, PIN_KIEM_THU, KyBase, chay_song_song, ma_loi, tao_pin
 from .test_trinh_ky_phase7 import BASE, PDF, VAN_BAN, tep_pdf
 
 User = get_user_model()
@@ -45,8 +45,7 @@ class YeuCauSuaTests(KyBase):
                            HTTP_IDEMPOTENCY_KEY=khoa)
 
     def ky_ban_sua(self, user):
-        private, _ = self.khoa[user.pk]
-        return self.ky(user, hash_tai_lieu=HASH_SUA, chu_ky_so=ky_so(private, HASH_SUA))
+        return self.ky(user, hash_tai_lieu=HASH_SUA)
 
     def test_return_at_later_level_then_full_resign(self):
         self.ky(self.ky1)
@@ -82,15 +81,15 @@ class YeuCauSuaTests(KyBase):
         self.assertEqual(r.data["trang_thai"], "HOAN_THANH")
         self.assertEqual(SigningSignature.objects.filter(luot_trinh__so_luot=1).count(), 2)  # bằng chứng lượt cũ
         self.assertEqual(SigningSignature.objects.filter(luot_trinh__so_luot=2, hash_tai_lieu=HASH_SUA).count(), 3)
-        hanh_dong = list(SigningAuditLog.objects.filter(trinh_ky_id=self.pk).values_list("hanh_dong", flat=True))
+        hanh_dong = list(SigningAuditLog.objects.filter(trinh_ky_id=self.pk).order_by("id").values_list("hanh_dong", flat=True))
         i = hanh_dong.index("GIAI_QUYET_YEU_CAU_SUA")
         self.assertEqual((hanh_dong[i - 1], hanh_dong[i + 1]), ("YEU_CAU_SUA", "MO_CAP_KY"))
 
     def test_rules(self):
         r = self.yeu_cau_sua(self.ky1, tieu_de="")
         self.assertEqual((r.status_code, r.data["code"]), (400, "du_lieu_khong_hop_le"))
-        r = self.yeu_cau_sua(self.ky2)  # ký chính chưa mở
-        self.assertEqual((r.status_code, r.data["code"]), (409, "chua_den_luot_ky"))
+        r = self.yeu_cau_sua(self.ky3)  # cấp 2 chưa mở
+        self.assertEqual((r.status_code, r.data["code"]), (403, "khong_phai_nguoi_ky_dang_mo"))
         r = self.giai_quyet()
         self.assertEqual((r.status_code, r.data["code"]), (409, "khong_co_yeu_cau_sua_dang_mo"))
         self.assertEqual(self.tin_nhan(self.tao, "x").data["code"], "khong_co_trao_doi_dang_mo")
@@ -139,14 +138,19 @@ class TraSuaDongThoiTests(TransactionTestCase):
         self.ky1 = User.objects.create_user("ky1")
         self.ky2 = User.objects.create_user("ky2")
         cap_quyen(self.tao, "add_trinhky", "send_trinhky", "view_vanbandi")
+        cap_quyen(self.ky1, "sign_trinhky")
+        cap_quyen(self.ky2, "sign_trinhky")
+        dat_anh_chu_ky(self.ky1)
+        dat_anh_chu_ky(self.ky2)
         qt = process_service.tao_quy_trinh(self.tao, ma_quy_trinh="DT", ten_quy_trinh="DT", pham_vi="CONG_TY", cap_ky=[
             {"cap_ky": 1, "ten_cap_ky": "C", "thu_tu": 1, "nguoi_ky": [
                 {"nguoi_ky": self.ky1, "thu_tu": 1}, {"nguoi_ky": self.ky2, "thu_tu": 2}]}])
         qt = process_service.kich_hoat(qt, self.tao)
-        ho_so = trinh_ky_service.tao_nhap(self.tao, document_type="vanbandi", van_ban_id=10, quy_trinh=qt,
-                                          muc_do="THUONG", tep=tep_pdf())
+        ho_so = trinh_ky_service.tao_nhap(self.tao, quy_trinh=qt, tep=tep_pdf(),
+                                          trich_yeu_van_ban="Tài liệu kiểm tra")
         self.ho_so = trinh_ky_service.gui(ho_so, self.tao, khoa_chong_trung="g")
-        self.private, self.key = khoa_hoat_dong(self.ky1, "K-DT")
+        tao_pin(self.ky1)
+        tao_pin(self.ky2)
 
     def tra_sua(self):
         yeu_cau_sua_service.yeu_cau_sua(self.ho_so, self.ky2, tieu_de="Sửa", ly_do="Sai", khoa_chong_trung="ycs")
@@ -158,8 +162,8 @@ class TraSuaDongThoiTests(TransactionTestCase):
 
     def test_sign_racing_return_never_signs_paused_attempt(self):
         loi = chay_song_song(
-            lambda: hanh_dong_service.ky(self.ho_so, self.ky1, khoa_ky=self.key.pk, hash_tai_lieu=HASH,
-                                         chu_ky_so=ky_so(self.private), khoa_chong_trung="ky"),
+            lambda: hanh_dong_service.ky(self.ho_so, self.ky1, hash_tai_lieu=HASH,
+                                         pin=PIN_KIEM_THU, khoa_chong_trung="ky"),
             self.tra_sua,
         )
         self.assertEqual(self.kiem_luot_dung(), ("YEU_CAU_SUA", "TAM_DUNG"))

@@ -1,0 +1,65 @@
+name: Birthday email scheduler
+
+on:
+  schedule:
+    # 08:00 Asia/Ho_Chi_Minh (UTC+7).
+    - cron: "0 1 * * *"
+
+permissions: {}
+
+concurrency:
+  group: birthday-email-scheduler
+  cancel-in-progress: false
+
+jobs:
+  send-birthday-emails:
+    name: Send scheduled birthday emails
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Run mail task on the current release
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_SSH_PRIVATE_KEY"
+          test -n "$DEPLOY_KNOWN_HOSTS"
+
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+          chmod 600 "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+          ssh -i "$HOME/.ssh/id_ed25519" -p 2150 \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          BASE=/srv/qlvb
+          LOG="$BASE/birthday-email.log"
+          umask 077
+          touch "$LOG"
+          chmod 600 "$LOG"
+
+          if /usr/bin/flock --wait 1800 "$BASE/.deploy.lock" /bin/bash -c '
+            set -euo pipefail
+            set -a
+            . /etc/qlvb/backend.env
+            set +a
+            cd /srv/qlvb/current/backend
+            exec /srv/qlvb/current/venv/bin/python manage.py send_birthday_emails
+          ' >>"$LOG" 2>&1; then
+            echo "Birthday email task completed; details are in the protected server log and application email log."
+          else
+            status=$?
+            echo "::error::Birthday email task failed (exit $status); inspect the protected server log."
+            exit "$status"
+          fi
+          REMOTE_SCRIPT

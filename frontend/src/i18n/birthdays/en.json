@@ -1,0 +1,111 @@
+{
+  "navigation": {
+    "birthdays": "Staff Birthdays"
+  },
+  "pages": {
+    "birthdays": {
+      "title": "Staff Birthday Calendar & Automated Greetings (7.2)",
+      "module": "Module 7.2: Staff Birthdays",
+      "assignedTeam": "Group 7 (System & Utilities Subsystem)",
+      "codeRef": "Item 7.2 · Difficulty: 0.40",
+      "isGroup1": false,
+      "desc": "Display employee birthday calendar with automated congratulatory email dispatch on schedule."
+    }
+  },
+  "birthdayPage": {
+    "title": "Staff birthday calendar",
+    "description": "View birthdays and staff lists by date.",
+    "returnToMonthPicker": "Return to month picker",
+    "today": "Today",
+    "calendarLabel": "Monthly birthday calendar",
+    "detailsLabel": "Birthdays on selected date",
+    "previousMonth": "Previous month",
+    "nextMonth": "Next month",
+    "monthYear": "Month {month} / {year}",
+    "total": "Total: {count} birthdays",
+    "calendarLoading": "Loading birthday calendar...",
+    "calendarError": "Could not load the birthday calendar.",
+    "dayLoading": "Loading birthdays...",
+    "dayError": "Could not load birthdays for this date.",
+    "retry": "Retry",
+    "selectDay": "Select {day}/{month}/{year}",
+    "selectedDate": "Birthdays on {day}/{month}/{year}",
+    "staffCount": "{count} staff members",
+    "birthdayCount": "{count} staff birthdays",
+    "emptyDay": "No staff birthdays on this date.",
+    "birthDayMonth": "Birthday: {day}/{month}",
+    "paginationLabel": "Birthday list pages",
+    "previousPage": "Previous page",
+    "nextPage": "Next page",
+    "pageCount": "Page {page} / {total}",
+    "weekdays": {
+      "monday": "Mon",
+      "tuesday": "Tue",
+      "wednesday": "Wed",
+      "thursday": "Thu",
+      "friday": "Fri",
+      "saturday": "Sat",
+      "sunday": "Sun"
+    },
+    "fullWeekdays": {
+      "monday": "Monday",
+      "tuesday": "Tuesday",
+      "wednesday": "Wednesday",
+      "thursday": "Thursday",
+      "friday": "Friday",
+      "saturday": "Saturday",
+      "sunday": "Sunday"
+    },
+    "monthTitle": "Month {month}",
+    "yearTitle": "Year {year}",
+    "decadeTitle": "Years {start} - {end}",
+    "zoomToMonthView": "Click to view months",
+    "zoomToYearView": "Click to view years",
+    "selectMonthPrompt": "Select month",
+    "selectYearPrompt": "Select year",
+    "previousYear": "Previous year",
+    "nextYear": "Next year",
+    "previousDecade": "Previous 12 years",
+    "nextDecade": "Next 12 years",
+    "emailLogs": {
+      "title": "Birthday email log",
+      "description": "The system automatically emails every active employee whose birthday falls on the day, using email, name, position, and department from the employee record.",
+      "filterByDate": "Viewing date",
+      "filterByStatus": "Filter by status",
+      "allStatuses": "All statuses",
+      "statusPending": "Pending",
+      "statusSending": "Sending",
+      "statusSuccess": "Sent successfully",
+      "statusFailed": "Failed",
+      "statusRetry": "Waiting to retry",
+      "today": "Today",
+      "refresh": "Refresh log",
+      "loading": "Loading email log...",
+      "loadError": "Could not load the email log.",
+      "emptyToday": "No birthday email log entries for today.",
+      "emptyDate": "No birthday email log entries for {date}.",
+      "viewingDate": "Viewing date: {date}",
+      "total": "Total records: {count}",
+      "employee": "Employee",
+      "email": "Recipient email",
+      "position": "Position",
+      "department": "Department/unit",
+      "birthdayDate": "Birthday date",
+      "sentAt": "Sent at",
+      "status": "Status",
+      "retries": "Retry count",
+      "details": "Details",
+      "paginationLabel": "Email log pagination",
+      "previousPage": "Previous page",
+      "nextPage": "Next page",
+      "pageCount": "Page {page} / {total}"
+    }
+  },
+  "birthdays": {
+    "messages": {
+      "permissionDenied": "You do not have permission to view birthday email logs.",
+      "invalidStatus": "The birthday email log status is invalid.",
+      "invalidDate": "The birthday email log date is invalid."
+    }
+  }
+}

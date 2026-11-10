@@ -38,4 +38,37 @@ describe('Toast Component', () => {
 
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it('translates raw roles.messages.permissionDenied and replaces storage error title with permission denied title', () => {
+    const mockToast: ToastNotification = {
+      id: 3,
+      message: 'roles.messages.permissionDenied',
+      title: 'Lỗi lưu trữ',
+      type: 'danger',
+    };
+
+    render(<Toast toast={mockToast} onClose={vi.fn()} />);
+
+    expect(screen.queryByText('roles.messages.permissionDenied')).not.toBeInTheDocument();
+    expect(screen.getByText('Bạn không có quyền thực hiện thao tác này.')).toBeInTheDocument();
+    expect(screen.queryByText('Lỗi lưu trữ')).not.toBeInTheDocument();
+    expect(screen.getByText('Từ chối quyền hạn')).toBeInTheDocument();
+  });
+
+  it('renders positioned at top-right corner instead of top-center', () => {
+    const mockToast: ToastNotification = {
+      id: 4,
+      message: 'Thông báo góc phải',
+      type: 'info',
+    };
+
+    render(<Toast toast={mockToast} onClose={vi.fn()} />);
+
+    const toastElement = screen.getByRole('status');
+    expect(toastElement).toBeInTheDocument();
+    expect(toastElement.className).toContain('right-5');
+    expect(toastElement.className).toContain('sm:right-6');
+    expect(toastElement.className).not.toContain('left-1/2');
+    expect(toastElement.className).not.toContain('-translate-x-1/2');
+  });
 });

@@ -1,6 +1,6 @@
 import apiClient, { apiClientBlob } from "./lib/apiClient";
 
-const apiPath = (path) => `/api${path}`;
+const apiPath = (path) => `/api/ai${path}`;
 
 export async function uploadDocument(file) {
   const formData = new FormData();
@@ -8,9 +8,10 @@ export async function uploadDocument(file) {
   return apiClient(apiPath("/upload"), { method: "POST", body: formData });
 }
 
-export async function uploadDocumentAsync(file) {
+export async function uploadDocumentAsync(file, replaceExisting = false) {
   const formData = new FormData();
   formData.append("file", file);
+  formData.append("replace_existing", String(replaceExisting));
   return apiClient(apiPath("/upload/async"), { method: "POST", body: formData });
 }
 
@@ -18,9 +19,12 @@ export async function getUploadProgress(jobId) {
   return apiClient(apiPath(`/upload/progress/${encodeURIComponent(jobId)}`));
 }
 
-export async function askQuestion(question, history = [], category = null) {
+export async function askQuestion(question, history = [], category = null, filename = null, language = null) {
   const payload = { question, history };
   if (category) payload.category = category;
+  if (filename) payload.filename = filename;
+  const lang = language || (typeof window !== "undefined" ? localStorage.getItem("tlbm_lang") : null) || "vi";
+  payload.language = lang;
   return apiClient.post(apiPath("/chat"), payload);
 }
 
@@ -32,8 +36,10 @@ export async function getCategories() {
   return apiClient(apiPath("/categories"));
 }
 
-export async function deleteDocuments() {
-  return apiClient.delete(apiPath("/documents"));
+export async function deleteDocuments(confirmation) {
+  return apiClient.delete(apiPath("/documents"), {
+    body: JSON.stringify({ confirmation }),
+  });
 }
 
 export async function deleteDocument(filename) {
@@ -53,9 +59,9 @@ export async function getDocumentFile(filename) {
 }
 
 export async function getAISettings() {
-  return apiClient(apiPath("/settings/ai"));
+  return apiClient(apiPath("/settings"));
 }
 
 export async function updateAISettings(settings) {
-  return apiClient.post(apiPath("/settings/ai"), settings);
+  return apiClient.post(apiPath("/settings"), settings);
 }

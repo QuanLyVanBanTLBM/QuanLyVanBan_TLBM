@@ -2,6 +2,7 @@ import React from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ApiError } from '@lib/apiClient';
 import { recordsService } from '@lib/recordsService';
+import { usePermissions } from '@lib/permissions';
 import { useTranslation } from '@i18n/translate';
 import {
   Badge,
@@ -41,14 +42,19 @@ export default function DocumentTypesPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { currentLang, t } = useTranslation();
-  const stateDossier = (location.state as { dossier?: Dossier } | null)?.dossier;
-  const [dossier, setDossier] = React.useState<Dossier | null>(stateDossier ?? null);
+  const { can } = usePermissions();
+  const canAdd = can('add_hoso');
+  const canEdit = can('change_hoso');
+  const canDelete = can('delete_hoso');
+  const [parentContext, setParentContext] = React.useState<{ routeId: string; dossier: Dossier } | null>(null);
+  const dossier = parentContext?.routeId === dossierId ? parentContext.dossier : null;
   const [items, setItems] = React.useState<DocumentType[]>([]);
   const [count, setCount] = React.useState(0);
   const [page, setPage] = React.useState(1);
   const [searchInput, setSearchInput] = React.useState('');
   const [search, setSearch] = React.useState('');
   const [year, setYear] = React.useState('');
+  const [appliedYear, setAppliedYear] = React.useState('');
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [reloadKey, setReloadKey] = React.useState(0);
@@ -70,18 +76,33 @@ export default function DocumentTypesPage() {
   React.useEffect(() => {
     if (!dossierId) return;
     let active = true;
-    recordsService.getDossier(dossierId).then((value) => { if (active) setDossier(value); }).catch(() => undefined);
+    recordsService.getDossier(dossierId).then((value) => {
+      if (active && String(value.id) === dossierId) setParentContext({ routeId: dossierId, dossier: value });
+    }).catch(() => undefined);
     return () => { active = false; };
   }, [dossierId]);
 
   React.useEffect(() => {
+    if (!dossier) return;
+    const query = new URLSearchParams(location.search);
+    if (query.getAll('ten_ho_so').length === 1 && query.get('ten_ho_so') === dossier.ten_ho_so.trim()) return;
+    query.set('ten_ho_so', dossier.ten_ho_so.trim());
+    navigate({ pathname: location.pathname, search: `?${query}` }, { replace: true });
+  }, [dossier, location.pathname, location.search, navigate]);
+
+  React.useEffect(() => {
     let active = true;
-    const request = dossierId
-      ? recordsService.listDocumentTypes(dossierId, { search, year, page, pageSize: PAGE_SIZE })
-      : recordsService.listDocumentTypeCatalog({ search, year, page, pageSize: PAGE_SIZE });
-    request
+    Promise.resolve()
+      .then(() => {
+        if (!active) return null;
+        setIsLoading(true);
+        setError(null);
+        return dossierId
+          ? recordsService.listDocumentTypes(dossierId, { search, year: appliedYear, page, pageSize: PAGE_SIZE })
+          : recordsService.listDocumentTypeCatalog({ search, year: appliedYear, page, pageSize: PAGE_SIZE });
+      })
       .then((result) => {
-        if (!active) return;
+        if (!active || !result) return;
         setItems(result.items);
         setCount(result.count);
       })
@@ -100,11 +121,26 @@ export default function DocumentTypesPage() {
     return () => {
       active = false;
     };
-  }, [dossierId, search, year, page, reloadKey, t]);
+  }, [dossierId, search, appliedYear, page, reloadKey, t]);
 
-  const beginReload = () => {
-    setIsLoading(true);
-    setError(null);
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      const trimmed = searchInput.trim();
+      if (trimmed !== search) {
+        setPage(1);
+        setSearch(trimmed);
+      }
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [searchInput, search]);
+
+  const handleClearSearch = () => {
+    setSearchInput('');
+    if (search !== '') {
+      setPage(1);
+      setSearch('');
+    }
   };
 
   const closeEditor = () => {
@@ -153,7 +189,6 @@ export default function DocumentTypesPage() {
       else await recordsService.createDocumentType(parentId, payload);
       setNotice(t(editing ? 'records.documentTypes.notices.updated' : 'records.documentTypes.notices.created'));
       setEditing(undefined);
-      beginReload();
       setReloadKey((value) => value + 1);
     } catch (requestError) {
       setSaveError(errorMessage(requestError, t('records.errors.saveDocumentType'), t('records.errors.forbidden')));
@@ -172,7 +207,6 @@ export default function DocumentTypesPage() {
       await recordsService.deleteDocumentType(deleting.id);
       setDeleting(null);
       setNotice(t('records.documentTypes.notices.deleted'));
-      beginReload();
       if (items.length === 1 && page > 1) setPage((value) => value - 1);
       else setReloadKey((value) => value + 1);
     } catch (requestError) {
@@ -219,7 +253,7 @@ export default function DocumentTypesPage() {
             {t('records.documentTypes.description')}
           </p>
         </div>
-        <Button type="button" icon="fa-plus" onClick={() => void openCreate()}>{t('records.documentTypes.add')}</Button>
+        {canAdd && <Button type="button" icon="fa-plus" onClick={() => void openCreate()}>{t('records.documentTypes.add')}</Button>}
       </div>
 
       {notice && <div className="flex items-center justify-between rounded-lg border border-success-border bg-success-subtle px-4 py-3 text-sm text-success" role="status">
@@ -232,29 +266,38 @@ export default function DocumentTypesPage() {
           className="flex flex-col gap-3 border-b border-border-subtle p-4 md:flex-row"
           onSubmit={(event) => {
             event.preventDefault();
-            beginReload();
+            const trimmed = searchInput.trim();
             setPage(1);
-            setSearch(searchInput.trim());
+            setSearch(trimmed);
+            setAppliedYear(year);
+            setReloadKey((value) => value + 1);
           }}
         >
           <label className="relative flex-1">
             <span className="sr-only">{t('records.documentTypes.searchLabel')}</span>
             <i className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
             <input
-              className={`${controlClass} w-full pl-9`}
+              type="text"
+              className={`${controlClass} w-full pl-9 ${searchInput ? 'pr-8' : ''}`}
               placeholder={t('records.documentTypes.searchPlaceholder')}
               value={searchInput}
               onChange={(event) => setSearchInput(event.target.value)}
             />
+            {searchInput && (
+              <button
+                type="button"
+                className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer border-none bg-transparent p-0 text-muted transition hover:text-main"
+                onClick={handleClearSearch}
+                aria-label={t('records.actions.reset')}
+              >
+                <i className="fa-solid fa-xmark text-sm" />
+              </button>
+            )}
           </label>
           <select
             className={`${controlClass} w-full md:w-40`}
             value={year}
-            onChange={(event) => {
-              beginReload();
-              setYear(event.target.value);
-              setPage(1);
-            }}
+            onChange={(event) => setYear(event.target.value)}
             aria-label={t('records.filters.year')}
           >
             <option value="">{t('records.filters.allYears')}</option>
@@ -267,15 +310,15 @@ export default function DocumentTypesPage() {
           <Button type="submit" variant="secondary" icon="fa-filter">
             {t('records.actions.filter')}
           </Button>
-          {(search || year) && (
+          {(search || year || appliedYear) && (
             <Button
               type="button"
               variant="ghost"
               onClick={() => {
-                beginReload();
                 setSearchInput('');
                 setSearch('');
                 setYear('');
+                setAppliedYear('');
                 setPage(1);
               }}
             >
@@ -298,7 +341,6 @@ export default function DocumentTypesPage() {
               variant="secondary"
               icon="fa-rotate-right"
               onClick={() => {
-                beginReload();
                 setReloadKey((value) => value + 1);
               }}
             >
@@ -373,20 +415,24 @@ export default function DocumentTypesPage() {
                         >
                           <span className="sr-only sm:not-sr-only">{t('records.actions.viewDocuments')}</span>
                         </Button>
-                        <Button type="button" size="sm" variant="ghost" icon="fa-pen"
-                          className="h-11 w-11 shrink-0 sm:h-auto sm:w-auto"
-                          title={t('records.actions.edit')}
-                          aria-label={t('records.documentTypes.editLabel', { name: item.ten_loai })}
-                          onClick={(event) => { event.stopPropagation(); setSaveError(null); setEditing(item); }}>
-                          <span className="sr-only sm:not-sr-only">{t('records.actions.edit')}</span>
-                        </Button>
-                        <Button type="button" size="sm" variant="ghost" icon="fa-trash"
-                          className="h-11 w-11 shrink-0 sm:h-auto sm:w-auto"
-                          title={t('records.actions.delete')}
-                          aria-label={t('records.documentTypes.deleteLabel', { name: item.ten_loai })}
-                          onClick={(event) => { event.stopPropagation(); setDeleteError(null); setDeleting(item); }}>
-                          <span className="sr-only sm:not-sr-only">{t('records.actions.delete')}</span>
-                        </Button>
+                        {canEdit && (
+                          <Button type="button" size="sm" variant="ghost" icon="fa-pen"
+                            className="h-11 w-11 shrink-0 sm:h-auto sm:w-auto"
+                            title={t('records.actions.edit')}
+                            aria-label={t('records.documentTypes.editLabel', { name: item.ten_loai })}
+                            onClick={(event) => { event.stopPropagation(); setSaveError(null); setEditing(item); }}>
+                            <span className="sr-only sm:not-sr-only">{t('records.actions.edit')}</span>
+                          </Button>
+                        )}
+                        {canDelete && (
+                          <Button type="button" size="sm" variant="ghost" icon="fa-trash"
+                            className="h-11 w-11 shrink-0 sm:h-auto sm:w-auto"
+                            title={t('records.actions.delete')}
+                            aria-label={t('records.documentTypes.deleteLabel', { name: item.ten_loai })}
+                            onClick={(event) => { event.stopPropagation(); setDeleteError(null); setDeleting(item); }}>
+                            <span className="sr-only sm:not-sr-only">{t('records.actions.delete')}</span>
+                          </Button>
+                        )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -398,10 +444,7 @@ export default function DocumentTypesPage() {
               page={page}
               pageSize={PAGE_SIZE}
               count={count}
-              onChange={(value) => {
-                beginReload();
-                setPage(value);
-              }}
+              onChange={(value) => setPage(value)}
             />
           </>
         )}
@@ -414,7 +457,7 @@ export default function DocumentTypesPage() {
         message={t('records.documentTypes.confirmDeleteMessage', { name: deleting?.ten_loai ?? '' })}
         isLoading={isSaving} error={deleteError} onCancel={() => { if (!mutationPending.current) setDeleting(null); }}
         onConfirm={() => void handleDelete()} />
-      {selectedCategory && <DocumentDestinationDialog key={String(selectedCategory.id)} category={selectedCategory}
+      {selectedCategory && <DocumentDestinationDialog key={`${dossierId}:${selectedCategory.id}`} category={selectedCategory} dossierId={dossierId || undefined}
         onClose={closeDestination} onNavigate={(destination) => navigate(destination)} />}
     </section>
   );

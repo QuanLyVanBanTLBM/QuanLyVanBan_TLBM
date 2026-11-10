@@ -1,18 +1,13 @@
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadDictionary } from './i18n-dictionaries.mjs';
 
 const frontendDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const dictionariesDir = path.join(frontendDir, 'src', 'i18n');
 const recordsSources = [
   path.join(frontendDir, 'src', 'components', 'records'),
   path.join(frontendDir, 'src', 'pages', 'records'),
 ];
-
-async function readDictionary(language) {
-  const file = path.join(dictionariesDir, `${language}.json`);
-  return JSON.parse((await readFile(file, 'utf8')).replace(/^\uFEFF/, ''));
-}
 
 function flatten(value, prefix = '', result = new Map()) {
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || value === null) {
@@ -48,7 +43,7 @@ async function sourceFiles(directory) {
   return files;
 }
 
-const [vi, en] = await Promise.all([readDictionary('vi'), readDictionary('en')]);
+const [vi, en] = [loadDictionary('vi'), loadDictionary('en')];
 const viKeys = flatten(vi);
 const enKeys = flatten(en);
 const errors = [];

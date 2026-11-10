@@ -1,0 +1,111 @@
+{
+  "navigation": {
+    "birthdays": "Sinh Nhật CBNV"
+  },
+  "pages": {
+    "birthdays": {
+      "title": "Tiện Ích Sinh Nhật Cán Bộ Nhân Viên (7.2)",
+      "module": "Module 7.2: Sinh nhật CBNV",
+      "assignedTeam": "Nhóm 7 (Phân hệ Tiện ích & Quản trị)",
+      "codeRef": "Mục 7.2 · Độ khó: 0.40",
+      "isGroup1": false,
+      "desc": "Hiển thị lịch sinh nhật CBNV, gửi email chúc mừng tự động khi đến ngày."
+    }
+  },
+  "birthdayPage": {
+    "title": "Lịch sinh nhật cán bộ nhân viên",
+    "description": "Xem lịch sinh nhật và danh sách cán bộ nhân viên theo ngày.",
+    "returnToMonthPicker": "Quay lại chọn tháng",
+    "today": "Hôm nay",
+    "calendarLabel": "Lịch sinh nhật theo tháng",
+    "detailsLabel": "Danh sách sinh nhật theo ngày",
+    "previousMonth": "Tháng trước",
+    "nextMonth": "Tháng sau",
+    "monthYear": "Tháng {month} / {year}",
+    "total": "Tổng cộng: {count} sinh nhật",
+    "calendarLoading": "Đang tải lịch sinh nhật...",
+    "calendarError": "Không thể tải lịch sinh nhật.",
+    "dayLoading": "Đang tải danh sách sinh nhật...",
+    "dayError": "Không thể tải danh sách sinh nhật theo ngày.",
+    "retry": "Thử lại",
+    "selectDay": "Chọn ngày {day}/{month}/{year}",
+    "selectedDate": "Sinh nhật ngày {day}/{month}/{year}",
+    "staffCount": "Có {count} cán bộ nhân viên",
+    "birthdayCount": "{count} cán bộ nhân viên có sinh nhật",
+    "emptyDay": "Không có cán bộ nhân viên nào sinh vào ngày này.",
+    "birthDayMonth": "Ngày sinh nhật: {day}/{month}",
+    "paginationLabel": "Phân trang danh sách sinh nhật",
+    "previousPage": "Trang trước",
+    "nextPage": "Trang sau",
+    "pageCount": "Trang {page} / {total}",
+    "weekdays": {
+      "monday": "T2",
+      "tuesday": "T3",
+      "wednesday": "T4",
+      "thursday": "T5",
+      "friday": "T6",
+      "saturday": "T7",
+      "sunday": "CN"
+    },
+    "fullWeekdays": {
+      "monday": "Thứ hai",
+      "tuesday": "Thứ ba",
+      "wednesday": "Thứ tư",
+      "thursday": "Thứ năm",
+      "friday": "Thứ sáu",
+      "saturday": "Thứ bảy",
+      "sunday": "Chủ nhật"
+    },
+    "monthTitle": "Tháng {month}",
+    "yearTitle": "Năm {year}",
+    "decadeTitle": "Năm {start} - {end}",
+    "zoomToMonthView": "Bấm để xem danh sách tháng",
+    "zoomToYearView": "Bấm để xem danh sách năm",
+    "selectMonthPrompt": "Chọn tháng",
+    "selectYearPrompt": "Chọn năm",
+    "previousYear": "Năm trước",
+    "nextYear": "Năm sau",
+    "previousDecade": "12 năm trước",
+    "nextDecade": "12 năm sau",
+    "emailLogs": {
+      "title": "Nhật ký email chúc mừng sinh nhật",
+      "description": "Hệ thống tự gửi tới mọi CBNV có hồ sơ đang hoạt động khi đến ngày sinh nhật, dùng email, họ tên, chức vụ và phòng ban trong hồ sơ.",
+      "filterByDate": "Ngày xem",
+      "filterByStatus": "Lọc trạng thái",
+      "allStatuses": "Tất cả trạng thái",
+      "statusPending": "Chờ xử lý",
+      "statusSending": "Đang gửi",
+      "statusSuccess": "Gửi thành công",
+      "statusFailed": "Thất bại",
+      "statusRetry": "Chờ gửi lại",
+      "today": "Hôm nay",
+      "refresh": "Tải lại nhật ký",
+      "loading": "Đang tải nhật ký email...",
+      "loadError": "Không thể tải nhật ký email.",
+      "emptyToday": "Chưa có nhật ký gửi email sinh nhật trong ngày hôm nay.",
+      "emptyDate": "Chưa có nhật ký gửi email sinh nhật ngày {date}.",
+      "viewingDate": "Ngày đang xem: {date}",
+      "total": "Tổng số bản ghi: {count}",
+      "employee": "Cán bộ nhân viên",
+      "email": "Email nhận",
+      "position": "Chức vụ",
+      "department": "Phòng ban/đơn vị",
+      "birthdayDate": "Ngày sinh nhật",
+      "sentAt": "Thời điểm gửi",
+      "status": "Trạng thái",
+      "retries": "Số lần gửi lại",
+      "details": "Chi tiết",
+      "paginationLabel": "Phân trang nhật ký email",
+      "previousPage": "Trang trước",
+      "nextPage": "Trang sau",
+      "pageCount": "Trang {page} / {total}"
+    }
+  },
+  "birthdays": {
+    "messages": {
+      "permissionDenied": "Bạn không có quyền xem nhật ký email sinh nhật.",
+      "invalidStatus": "Trạng thái nhật ký email sinh nhật không hợp lệ.",
+      "invalidDate": "Ngày tra cứu nhật ký email sinh nhật không hợp lệ."
+    }
+  }
+}

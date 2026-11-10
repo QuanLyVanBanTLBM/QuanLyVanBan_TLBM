@@ -11,23 +11,34 @@ Bao gồm:
 """
 
 import io
-from datetime import datetime
+import math
+import os
+import re
+import unicodedata
+from datetime import date, datetime
+from pathlib import Path
 
+from django.conf import settings
 from django.db import models, transaction
 from django.utils import timezone
 from openpyxl import Workbook, load_workbook
+from openpyxl.comments import Comment
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from .models import (
     HieuLuc,
     LoaiVanBan,
+    PhamVi,
     VanBanDen,
     VanBanDenAttachment,
     VanBanDi,
     VanBanDiAttachment,
+    VanBanMat,
+    VanBanMatAttachment,
     DocumentViewLog,
     get_document_model,
+    canonical_document_kind,
 )
 
 
@@ -63,7 +74,7 @@ def generate_so_thu_tu(loai: str, nam: int) -> int:
 def check_and_update_expired_documents() -> int:
     """
     Quét và tự động chuyển trạng thái các văn bản đã tới hoặc quá ngày hết hiệu lực
-    sang 'HET_HIEU_LUC' trên cả 2 model: Đến và Đi.
+    sang 'HET_HIEU_LUC' trên cả 3 model: Đến, Đi và Mật.
     Áp dụng cho cả CON_HIEU_LUC và CON_HIEU_LUC_1_PHAN.
     """
     now = timezone.now()
@@ -81,12 +92,130 @@ def check_and_update_expired_documents() -> int:
         ngay_het_hieu_luc__lte=now,
     ).update(hieu_luc=HieuLuc.HET_HIEU_LUC)
 
-    return count_den + count_di
+    count_mat = VanBanMat.objects.filter(
+        hieu_luc__in=active_statuses,
+        ngay_het_hieu_luc__isnull=False,
+        ngay_het_hieu_luc__lte=now,
+    ).update(hieu_luc=HieuLuc.HET_HIEU_LUC)
+
+    return count_den + count_di + count_mat
 
 
 # ═══════════════════════════════════════════════════════════════════
 # 2.1 TRUY VẤN ĐỘNG VÀ ĐỒNG BỘ QUAN HỆ THAY THẾ (Replacements)
 # ═══════════════════════════════════════════════════════════════════
+
+def parse_replacement_target(target_str: str) -> dict:
+    """
+    Phân tích chuỗi mục tiêu thay thế thành các thành phần định danh:
+    - base_so_hieu: Số hiệu văn bản gốc (ví dụ: '1' hoặc '125/CV-NEW')
+    - so_thu_tu: Số thứ tự trong năm (nếu có, ví dụ: 16)
+    - extra_info: Thông tin bổ sung (nơi ban hành / người ký)
+    - raw: Chuỗi gốc
+    """
+    raw = (target_str or "").strip()
+    if not raw:
+        return {"base_so_hieu": "", "so_thu_tu": None, "extra_info": "", "raw": ""}
+
+    match = re.match(r"^(.+?)\s*(?:\[|\()([^\]\)]+)(?:\]|\))$", raw)
+    if match:
+        base_so = match.group(1).strip()
+        bracket_content = match.group(2).strip()
+        stt_match = re.search(r"#(\d+)", bracket_content)
+        if not stt_match:
+            stt_match = re.search(r"(?:Số đến|Số đi|STT)\s*[:#]?\s*(\d+)", bracket_content, re.IGNORECASE)
+        stt = int(stt_match.group(1)) if stt_match else None
+        extra = bracket_content
+        if stt_match:
+            extra = re.sub(r"(?:Số đến|Số đi|STT)\s*[:#]?\s*\d+", "", extra, flags=re.IGNORECASE)
+            extra = re.sub(r"#\d+", "", extra)
+            extra = re.sub(r"Nơi ban hành\s*:\s*", "", extra, flags=re.IGNORECASE)
+            extra = re.sub(r"Người ký\s*:\s*", "", extra, flags=re.IGNORECASE)
+            extra = extra.strip(" -:;,[]()")
+        return {
+            "base_so_hieu": base_so,
+            "so_thu_tu": stt,
+            "extra_info": extra,
+            "raw": raw,
+        }
+
+    return {
+        "base_so_hieu": raw,
+        "so_thu_tu": None,
+        "extra_info": "",
+        "raw": raw,
+    }
+
+
+def _model_has_field(model, field_name: str) -> bool:
+    try:
+        model._meta.get_field(field_name)
+        return True
+    except Exception:
+        return False
+
+
+def find_replacement_target_document(target_str: str, current_doc=None, target_model=None, current_pham_vi=None):
+    """
+    Truy vấn chính xác văn bản mục tiêu thay thế theo bộ ba định danh:
+    (so_hieu, so_thu_tu, noi_ban_hanh/nguoi_ky) kết hợp phạm vi (NOI_BO/HAN_CHE) và phân hệ (DEN/DI).
+    """
+    parsed = parse_replacement_target(target_str)
+    base_so = parsed["base_so_hieu"]
+    target_stt = parsed["so_thu_tu"]
+    extra = parsed["extra_info"]
+    if not base_so:
+        return None
+
+    from .models import VanBanDen, VanBanDi, VanBanMat
+
+    models_to_check = [target_model] if target_model else (
+        [current_doc.__class__] if current_doc else [VanBanDen, VanBanDi, VanBanMat]
+    )
+
+    for model in models_to_check:
+        if not model:
+            continue
+        qs = model.objects.filter(so_hieu__iexact=base_so)
+        if current_doc and getattr(current_doc, "pk", None):
+            qs = qs.exclude(pk=current_doc.pk)
+
+        # 1. Khóa theo phạm vi (NOI_BO / HAN_CHE)
+        scope = current_pham_vi or (getattr(current_doc, "pham_vi", None) if current_doc else None)
+        scoped_qs = qs.filter(pham_vi=scope) if scope else qs
+
+        # 2. Khóa chính xác theo số thứ tự (Số đến / Số đi trong năm)
+        if target_stt is not None:
+            match_stt = scoped_qs.filter(so_thu_tu=target_stt).first()
+            if match_stt:
+                return match_stt
+            match_stt_fallback = qs.filter(so_thu_tu=target_stt).first()
+            if match_stt_fallback:
+                return match_stt_fallback
+
+        # 3. Khớp theo nơi ban hành hoặc người ký nếu có (chỉ filter nếu là database field thực tế)
+        if extra:
+            if _model_has_field(model, "noi_ban_hanh"):
+                match_extra = scoped_qs.filter(noi_ban_hanh__icontains=extra).first()
+                if match_extra:
+                    return match_extra
+            if _model_has_field(model, "nguoi_ky"):
+                match_extra = scoped_qs.filter(nguoi_ky__icontains=extra).first()
+                if match_extra:
+                    return match_extra
+
+        # 4. Nếu không có định danh phụ, ưu tiên bản ghi trong cùng phạm vi
+        match_scope = scoped_qs.first()
+        if match_scope:
+            return match_scope
+
+        # 5. Fallback nếu không có trong scope
+        fallback_match = qs.first()
+        if fallback_match:
+            return fallback_match
+
+    return None
+
 
 def get_replacement_relations(doc) -> dict:
     """
@@ -108,7 +237,7 @@ def get_replacement_relations(doc) -> dict:
     if not so_hieu:
         return {"thay_the_cho": [], "bi_thay_boi": []}
 
-    from .models import VanBanDen, VanBanDi, HieuLuc
+    from .models import VanBanDen, VanBanDi, VanBanMat, HieuLuc
     doc_date = (
         getattr(doc_obj, "ngay_van_ban", None)
         or getattr(doc_obj, "ngay_den", None)
@@ -117,29 +246,46 @@ def get_replacement_relations(doc) -> dict:
 
     # Chiều 1: doc.link_thay_the chứa các số hiệu mục tiêu
     own_link = (getattr(doc_obj, "link_thay_the", "") or "").strip() if doc_obj else ""
-    target_numbers = [s.strip() for s in own_link.split(",") if s.strip() and s.strip().lower() != so_hieu_clean]
+    target_raws = [s.strip() for s in own_link.split(",") if s.strip()]
 
     # Chiều 2: Các văn bản khác có link_thay_the chứa so_hieu của doc
     referencing_docs = []
-    for model in (VanBanDen, VanBanDi):
+    for model in (VanBanDen, VanBanDi, VanBanMat):
         try:
             qs = model.objects.filter(link_thay_the__icontains=so_hieu)
             if doc_obj and getattr(doc_obj, "pk", None):
                 qs = qs.exclude(pk=doc_obj.pk)
             for other in qs:
-                other_links = [t.strip().lower() for t in (other.link_thay_the or "").split(",") if t.strip()]
-                if so_hieu_clean in other_links and other.so_hieu:
-                    referencing_docs.append(other)
+                other_targets = [t.strip() for t in (other.link_thay_the or "").split(",") if t.strip()]
+                for ot in other_targets:
+                    p = parse_replacement_target(ot)
+                    if p["base_so_hieu"].lower() == so_hieu_clean:
+                        is_match = True
+                        if p["so_thu_tu"] is not None and getattr(doc_obj, "so_thu_tu", None) is not None:
+                            is_match = (doc_obj.so_thu_tu == p["so_thu_tu"])
+                        elif p["extra_info"] and hasattr(doc_obj, "noi_ban_hanh") and getattr(doc_obj, "noi_ban_hanh", None):
+                            is_match = (p["extra_info"].lower() in doc_obj.noi_ban_hanh.lower())
+                        
+                        if is_match and other not in referencing_docs:
+                            referencing_docs.append(other)
         except Exception:
             pass
 
+    def to_date_norm(d):
+        if not d:
+            return None
+        return d.date() if hasattr(d, "date") and callable(d.date) else d
+
+    norm_doc_date = to_date_norm(doc_date)
+
     # Phân loại theo bản chất quan hệ, thời gian và trạng thái hiệu lực
-    for target_so in target_numbers:
-        target_obj = None
-        for model in (VanBanDen, VanBanDi):
-            target_obj = model.objects.filter(so_hieu__iexact=target_so).first()
-            if target_obj:
-                break
+    for raw_target in target_raws:
+        parsed_target = parse_replacement_target(raw_target)
+        target_obj = find_replacement_target_document(raw_target, current_doc=doc_obj)
+        if not target_obj:
+            continue
+        if doc_obj and getattr(doc_obj, "pk", None) and target_obj.pk == doc_obj.pk:
+            continue
 
         if target_obj:
             target_date = (
@@ -147,10 +293,17 @@ def get_replacement_relations(doc) -> dict:
                 or getattr(target_obj, "ngay_den", None)
                 or getattr(target_obj, "ngay_ban_hanh", None)
             )
+            norm_target_date = to_date_norm(target_date)
             if getattr(doc_obj, "hieu_luc", "") in (HieuLuc.HET_VA_THAY_THE, HieuLuc.HET_HIEU_LUC):
                 if target_obj.so_hieu not in bi_thay_boi:
                     bi_thay_boi.append(target_obj.so_hieu)
-            elif target_obj.hieu_luc == HieuLuc.HET_VA_THAY_THE and (not doc_date or not target_date or target_date <= doc_date):
+            elif getattr(doc_obj, "hieu_luc", "") == HieuLuc.CON_HIEU_LUC_1_PHAN and (
+                (target_obj.hieu_luc == HieuLuc.CON_HIEU_LUC and any(parse_replacement_target(s)["base_so_hieu"].lower() == so_hieu_clean for s in (target_obj.link_thay_the or "").split(",") if s.strip()))
+                or (norm_doc_date and norm_target_date and norm_target_date > norm_doc_date)
+            ):
+                if target_obj.so_hieu not in bi_thay_boi:
+                    bi_thay_boi.append(target_obj.so_hieu)
+            elif target_obj.hieu_luc == HieuLuc.HET_VA_THAY_THE and (not norm_doc_date or not norm_target_date or norm_target_date <= norm_doc_date):
                 if target_obj.so_hieu not in thay_the_cho:
                     thay_the_cho.append(target_obj.so_hieu)
             elif getattr(doc_obj, "hieu_luc", "") in (HieuLuc.CON_HIEU_LUC, HieuLuc.CON_HIEU_LUC_1_PHAN):
@@ -159,7 +312,6 @@ def get_replacement_relations(doc) -> dict:
             else:
                 if target_obj.so_hieu not in bi_thay_boi:
                     bi_thay_boi.append(target_obj.so_hieu)
-        # Nếu target_obj không tồn tại trong CSDL: Bỏ qua hoàn toàn, không tạo badge cho số hiệu không tồn tại.
 
     for ref_doc in referencing_docs:
         ref_so = ref_doc.so_hieu
@@ -168,10 +320,11 @@ def get_replacement_relations(doc) -> dict:
             or getattr(ref_doc, "ngay_den", None)
             or getattr(ref_doc, "ngay_ban_hanh", None)
         )
-        if ref_doc.hieu_luc in (HieuLuc.CON_HIEU_LUC, HieuLuc.CON_HIEU_LUC_1_PHAN) or (doc_date and ref_date and ref_date > doc_date):
+        norm_ref_date = to_date_norm(ref_date)
+        if ref_doc.hieu_luc in (HieuLuc.CON_HIEU_LUC, HieuLuc.CON_HIEU_LUC_1_PHAN) or (norm_doc_date and norm_ref_date and norm_ref_date > norm_doc_date):
             if ref_so not in bi_thay_boi and ref_so not in thay_the_cho:
                 bi_thay_boi.append(ref_so)
-        elif ref_doc.hieu_luc == HieuLuc.HET_VA_THAY_THE and (not doc_date or not ref_date or ref_date <= doc_date):
+        elif ref_doc.hieu_luc == HieuLuc.HET_VA_THAY_THE and (not norm_doc_date or not norm_ref_date or norm_ref_date <= norm_doc_date):
             if ref_so not in thay_the_cho and ref_so not in bi_thay_boi:
                 thay_the_cho.append(ref_so)
         elif getattr(doc_obj, "hieu_luc", "") == HieuLuc.HET_VA_THAY_THE:
@@ -207,99 +360,174 @@ def sync_replacement_document(doc):
         return
 
     targets = [t.strip() for t in raw_target.split(",") if t.strip()]
-    now = timezone.now()
-    effective_date = (
-        getattr(doc, "ngay_van_ban", None)
-        or getattr(doc, "ngay_den", None)
-        or getattr(doc, "ngay_ban_hanh", None)
-        or now
-    )
+    from .models import VanBanDen, VanBanDi, VanBanMat, HieuLuc
 
-    from .models import VanBanDen, VanBanDi, HieuLuc
     for target in targets:
-        other_doc = None
-        for model in (VanBanDen, VanBanDi):
-            qs = model.objects.filter(so_hieu__iexact=target)
-            if getattr(doc, "pk", None):
-                qs = qs.exclude(pk=doc.pk)
-            found = qs.first()
-            if found:
-                other_doc = found
-                break
-
+        other_doc = find_replacement_target_document(
+            target,
+            current_doc=doc,
+            target_model=doc.__class__,
+            current_pham_vi=getattr(doc, "pham_vi", None),
+        )
         if not other_doc:
             continue
 
+        existing_links = [s.strip() for s in (other_doc.link_thay_the or "").split(",") if s.strip()]
+        doc_so = (doc.so_hieu or "").strip()
+
+        def is_already_linked(link: str) -> bool:
+            p = parse_replacement_target(link)
+            if p["base_so_hieu"].lower() != doc_so.lower():
+                return False
+            if p["so_thu_tu"] is not None and getattr(doc, "so_thu_tu", None) is not None:
+                return p["so_thu_tu"] == doc.so_thu_tu
+            if p["extra_info"]:
+                doc_extra = getattr(doc, "noi_ban_hanh", None) or getattr(doc, "nguoi_ky", None) or ""
+                return p["extra_info"].lower() in str(doc_extra).lower()
+            return True
+
+        already_linked = any(is_already_linked(link) for link in existing_links)
+        if doc_so and not already_linked:
+            # Tạo định danh phân biệt chiều ngược lại
+            if hasattr(doc, "noi_ban_hanh") and getattr(doc, "noi_ban_hanh", None) and getattr(doc, "so_thu_tu", None):
+                back_link = f"{doc_so} [Nơi ban hành: {doc.noi_ban_hanh} - Số đến #{doc.so_thu_tu}]"
+            elif hasattr(doc, "nguoi_ky") and getattr(doc, "nguoi_ky", None) and getattr(doc, "so_thu_tu", None):
+                back_link = f"{doc_so} [Người ký: {doc.nguoi_ky} - Số đi #{doc.so_thu_tu}]"
+            else:
+                back_link = doc_so
+            existing_links.append(back_link)
+        other_doc.link_thay_the = ", ".join(existing_links)
+
+        # Trạng thái hiệu lực (Phương án A):
+        # Khi văn bản A thay thế cho B, nếu B đang Còn hiệu lực (CON_HIEU_LUC),
+        # tự động chuyển B sang trạng thái Còn hiệu lực 1 phần (CON_HIEU_LUC_1_PHAN).
+        # Nếu B đã là Còn hiệu lực 1 phần hoặc Hết hiệu lực, bảo lưu trạng thái hiện tại.
         if getattr(doc, "hieu_luc", "") in (HieuLuc.CON_HIEU_LUC, HieuLuc.CON_HIEU_LUC_1_PHAN):
-            other_doc.hieu_luc = HieuLuc.HET_VA_THAY_THE
-            existing_links = [s.strip() for s in (other_doc.link_thay_the or "").split(",") if s.strip()]
-            if getattr(doc, "so_hieu", "") and doc.so_hieu not in existing_links:
-                existing_links.append(doc.so_hieu)
-            other_doc.link_thay_the = ", ".join(existing_links)
-            other_doc.ngay_het_hieu_luc = effective_date
-            other_doc.save(update_fields=["hieu_luc", "link_thay_the", "ngay_het_hieu_luc"])
-        elif getattr(doc, "hieu_luc", "") == HieuLuc.HET_VA_THAY_THE:
-            existing_links = [s.strip() for s in (other_doc.link_thay_the or "").split(",") if s.strip()]
-            if getattr(doc, "so_hieu", "") and doc.so_hieu not in existing_links:
-                existing_links.append(doc.so_hieu)
-            other_doc.link_thay_the = ", ".join(existing_links)
+            if other_doc.hieu_luc == HieuLuc.CON_HIEU_LUC:
+                other_doc.hieu_luc = HieuLuc.CON_HIEU_LUC_1_PHAN
+                other_doc.save(update_fields=["hieu_luc", "link_thay_the"])
+            else:
+                other_doc.save(update_fields=["link_thay_the"])
+        else:
             other_doc.save(update_fields=["link_thay_the"])
 
 
-def cleanup_old_replacement_link(old_target_so_hieu, current_so_hieu):
+def cleanup_old_replacement_link(old_target_so_hieu, current_so_hieu, new_target_so_hieu=None):
     """Dọn dẹp quan hệ thay thế cũ khi văn bản sửa đổi/xóa link_thay_the."""
     if not old_target_so_hieu:
         return
 
-    from .models import VanBanDen, VanBanDi, HieuLuc
-    from django.db.models import Q
-    query = Q(so_hieu__iexact=old_target_so_hieu) | Q(link_thay_the__iexact=current_so_hieu)
-    for model in (VanBanDen, VanBanDi):
-        for doc in model.objects.filter(query):
+    from .models import VanBanDen, VanBanDi, VanBanMat, HieuLuc
+
+    old_list = [s.strip() for s in str(old_target_so_hieu).split(",") if s.strip()]
+    new_list = [s.strip() for s in str(new_target_so_hieu or "").split(",") if s.strip()]
+
+    # Những mục tiêu thực sự bị gỡ bỏ khỏi link_thay_the
+    if new_list:
+        removed_targets = [
+            ot for ot in old_list
+            if not any(
+                parse_replacement_target(ot)["base_so_hieu"].lower() == parse_replacement_target(nt)["base_so_hieu"].lower()
+                and (
+                    parse_replacement_target(ot)["so_thu_tu"] is None
+                    or parse_replacement_target(nt)["so_thu_tu"] is None
+                    or parse_replacement_target(ot)["so_thu_tu"] == parse_replacement_target(nt)["so_thu_tu"]
+                )
+                for nt in new_list
+            )
+        ]
+    else:
+        removed_targets = old_list
+
+    for old_target in removed_targets:
+        parsed = parse_replacement_target(old_target)
+        target_doc = find_replacement_target_document(old_target)
+        docs_to_clean = [target_doc] if target_doc else []
+
+        if not docs_to_clean:
+            for model in (VanBanDen, VanBanDi, VanBanMat):
+                docs_to_clean.extend(list(model.objects.filter(so_hieu__iexact=parsed["base_so_hieu"])))
+
+        for doc in docs_to_clean:
             updated_fields = []
-            if current_so_hieu and doc.link_thay_the and doc.link_thay_the.strip().lower() == current_so_hieu.lower():
-                doc.link_thay_the = ""
-                updated_fields.append("link_thay_the")
-            if doc.hieu_luc == HieuLuc.HET_VA_THAY_THE:
+            if current_so_hieu and doc.link_thay_the:
+                cur_so_clean = str(current_so_hieu).strip().lower()
+                links = [l.strip() for l in doc.link_thay_the.split(",") if l.strip()]
+                remaining_links = [
+                    l for l in links
+                    if parse_replacement_target(l)["base_so_hieu"].lower() != cur_so_clean
+                ]
+                new_link_str = ", ".join(remaining_links)
+                if new_link_str != doc.link_thay_the:
+                    doc.link_thay_the = new_link_str
+                    updated_fields.append("link_thay_the")
+
+            if doc.hieu_luc in (HieuLuc.HET_VA_THAY_THE, HieuLuc.HET_HIEU_LUC, HieuLuc.CON_HIEU_LUC_1_PHAN):
                 doc.hieu_luc = HieuLuc.CON_HIEU_LUC
                 doc.ngay_het_hieu_luc = None
                 if "ngay_het_hieu_luc" not in updated_fields:
                     updated_fields.append("ngay_het_hieu_luc")
                 if "hieu_luc" not in updated_fields:
                     updated_fields.append("hieu_luc")
+
             if updated_fields:
                 doc.save(update_fields=updated_fields)
 
 
-def cleanup_replacement_links_on_delete(instance):
+def cleanup_replacement_links_on_delete(instance_or_so_hieu):
     """Dọn dẹp và khôi phục văn bản liên quan khi một văn bản bị xóa."""
-    so_hieu = (instance.so_hieu or "").strip()
-    link_target = (instance.link_thay_the or "").strip()
+    if isinstance(instance_or_so_hieu, str):
+        so_hieu = instance_or_so_hieu.strip()
+        link_target = ""
+    else:
+        so_hieu = (getattr(instance_or_so_hieu, "so_hieu", "") or "").strip()
+        link_target = (getattr(instance_or_so_hieu, "link_thay_the", "") or "").strip()
     if not so_hieu and not link_target:
         return
 
-    from .models import VanBanDen, VanBanDi, HieuLuc
+    from .models import VanBanDen, VanBanDi, VanBanMat, HieuLuc
     from django.db.models import Q
     query = Q()
     if so_hieu:
-        query |= Q(link_thay_the__iexact=so_hieu)
+        query |= Q(link_thay_the__icontains=so_hieu)
     if link_target:
-        query |= Q(so_hieu__iexact=link_target)
+        for t in link_target.split(","):
+            p = parse_replacement_target(t)
+            if p["base_so_hieu"]:
+                query |= Q(so_hieu__iexact=p["base_so_hieu"])
 
-    for model in (VanBanDen, VanBanDi):
-        for doc in model.objects.filter(query).exclude(pk=instance.pk):
+    exclude_pk = getattr(instance_or_so_hieu, "pk", None)
+    for model in (VanBanDen, VanBanDi, VanBanMat):
+        qs = model.objects.filter(query)
+        if exclude_pk:
+            qs = qs.exclude(pk=exclude_pk)
+        for doc in qs:
             updated_fields = []
-            if so_hieu and doc.link_thay_the and doc.link_thay_the.strip().lower() == so_hieu.lower():
-                doc.link_thay_the = ""
-                updated_fields.append("link_thay_the")
+            if so_hieu and doc.link_thay_the and so_hieu.lower() in doc.link_thay_the.lower():
+                links = [l.strip() for l in doc.link_thay_the.split(",") if l.strip()]
+                remaining_links = [
+                    l for l in links
+                    if parse_replacement_target(l)["base_so_hieu"].lower() != so_hieu.lower()
+                ]
+                new_str = ", ".join(remaining_links)
+                if new_str != doc.link_thay_the:
+                    doc.link_thay_the = new_str
+                    updated_fields.append("link_thay_the")
 
-            if doc.hieu_luc == HieuLuc.HET_VA_THAY_THE:
-                doc.hieu_luc = HieuLuc.CON_HIEU_LUC
-                doc.ngay_het_hieu_luc = None
-                if "ngay_het_hieu_luc" not in updated_fields:
-                    updated_fields.append("ngay_het_hieu_luc")
-                if "hieu_luc" not in updated_fields:
-                    updated_fields.append("hieu_luc")
+                # Chỉ khôi phục trạng thái nếu không còn văn bản nào khác thay thế
+                if not remaining_links:
+                    now = timezone.now()
+                    is_date_expired = bool(doc.ngay_het_hieu_luc and doc.ngay_het_hieu_luc <= now)
+                    if is_date_expired:
+                        if doc.hieu_luc == HieuLuc.HET_VA_THAY_THE:
+                            doc.hieu_luc = HieuLuc.HET_HIEU_LUC
+                            if "hieu_luc" not in updated_fields:
+                                updated_fields.append("hieu_luc")
+                    else:
+                        if doc.hieu_luc in (HieuLuc.HET_VA_THAY_THE, HieuLuc.CON_HIEU_LUC_1_PHAN):
+                            doc.hieu_luc = HieuLuc.CON_HIEU_LUC
+                            if "hieu_luc" not in updated_fields:
+                                updated_fields.append("hieu_luc")
 
             if updated_fields:
                 doc.save(update_fields=updated_fields)
@@ -326,7 +554,7 @@ def get_accessible_documents(user, doc_type: str = "vanbanden", strict_need_to_k
 # 3. GHI LOG NGƯỜI XEM — Upsert vào documents_view_log
 # ═══════════════════════════════════════════════════════════════════
 
-def log_document_view(document, user):
+def log_document_view(document, user, doc_type=None):
     """
     Ghi nhận người dùng đã xem văn bản.
     Khớp với bảng `documents_view_log` (document_type, document_id, user_id).
@@ -334,12 +562,19 @@ def log_document_view(document, user):
     if not user or not user.is_authenticated:
         return
 
-    doc_type = getattr(document, "document_kind", None)
     if not doc_type:
-        loai = getattr(document, "loai", "DEN")
-        doc_type = "vanbandi" if loai == "DI" else "vanbanden"
+        doc_type = getattr(document, "document_kind", None)
+        if not doc_type:
+            loai = getattr(document, "loai", "DEN")
+            if loai == "MAT":
+                doc_type = "vanbanmat"
+            elif loai == "DI":
+                doc_type = "vanbandi"
+            else:
+                doc_type = "vanbanden"
 
     doc_id = document.pk if hasattr(document, "pk") else document.id
+    doc_type = canonical_document_kind(doc_type)
 
     DocumentViewLog.objects.update_or_create(
         document_type=doc_type,
@@ -354,61 +589,186 @@ def log_document_view(document, user):
 # ═══════════════════════════════════════════════════════════════════
 
 EXCEL_COLUMNS = {
-    LoaiVanBan.DEN: [
-        ("so_hieu", "Số, ký hiệu VB", 20),
+    (LoaiVanBan.DEN, PhamVi.NOI_BO): [
+        ("so_hieu", "Số, ký hiệu VB", 24),
+        ("pham_vi", "Phạm vi", 16),
         ("ngay_den", "Ngày đến", 18),
         ("ngay_van_ban", "Ngày văn bản", 18),
-        ("trich_yeu", "Trích yếu nội dung", 50),
-        ("noi_ban_hanh", "Nơi ban hành", 30),
-        ("nguoi_ky", "Người ký", 20),
+        ("trich_yeu", "Trích yếu nội dung", 65),
+        ("noi_ban_hanh", "Nơi ban hành", 32),
+        ("nguoi_ky", "Người ký", 22),
         ("chuc_vu", "Chức vụ", 20),
         ("hieu_luc", "Hiệu lực", 20),
-        ("ghi_chu", "Ghi chú", 30),
+        ("tep_dinh_kem", "Tệp đính kèm", 32),
+        ("link_thay_the", "Link văn bản thay thế", 28),
+        ("ghi_chu", "Ghi chú", 36),
     ],
-    LoaiVanBan.DI: [
-        ("so_hieu", "Số, ký hiệu VB", 20),
+    (LoaiVanBan.DEN, PhamVi.HAN_CHE): [
+        ("so_hieu", "Số, ký hiệu VB", 24),
+        ("pham_vi", "Phạm vi", 16),
+        ("ngay_den", "Ngày đến", 18),
+        ("ngay_van_ban", "Ngày văn bản", 18),
+        ("trich_yeu", "Trích yếu nội dung", 65),
+        ("noi_ban_hanh", "Nơi ban hành", 32),
+        ("nguoi_nhan", "Cán bộ nhận (Username)", 30),
+        ("don_vi_nhan", "Đơn vị nhận", 28),
+        ("nguoi_ky", "Người ký", 22),
+        ("chuc_vu", "Chức vụ", 20),
+        ("hieu_luc", "Hiệu lực", 20),
+        ("tep_dinh_kem", "Tệp đính kèm", 32),
+        ("link_thay_the", "Link văn bản thay thế", 28),
+        ("ghi_chu", "Ghi chú", 36),
+    ],
+    (LoaiVanBan.DI, PhamVi.NOI_BO): [
+        ("so_hieu", "Số, ký hiệu VB", 24),
+        ("pham_vi", "Phạm vi", 16),
         ("ngay_ban_hanh", "Ngày ban hành", 18),
         ("ngay_van_ban", "Ngày văn bản", 18),
-        ("trich_yeu", "Trích yếu nội dung", 50),
-        ("noi_ban_hanh", "Nơi ban hành", 30),
-        ("nguoi_ky", "Người ký", 20),
+        ("trich_yeu", "Trích yếu nội dung", 65),
+        ("noi_ban_hanh", "Nơi ban hành", 32),
+        ("don_vi_nhan", "Nơi nhận / Đơn vị nhận", 30),
+        ("nguoi_ky", "Người ký", 22),
         ("chuc_vu", "Chức vụ", 20),
         ("hieu_luc", "Hiệu lực", 20),
-        ("ghi_chu", "Ghi chú", 30),
+        ("tep_dinh_kem", "Tệp đính kèm", 32),
+        ("link_thay_the", "Link văn bản thay thế", 28),
+        ("ghi_chu", "Ghi chú", 36),
+    ],
+    (LoaiVanBan.DI, PhamVi.HAN_CHE): [
+        ("so_hieu", "Số, ký hiệu VB", 24),
+        ("pham_vi", "Phạm vi", 16),
+        ("ngay_ban_hanh", "Ngày ban hành", 18),
+        ("ngay_van_ban", "Ngày văn bản", 18),
+        ("trich_yeu", "Trích yếu nội dung", 65),
+        ("noi_ban_hanh", "Nơi ban hành", 32),
+        ("nguoi_nhan", "Cán bộ nhận (Username)", 30),
+        ("don_vi_nhan", "Nơi nhận / Đơn vị nhận", 30),
+        ("nguoi_ky", "Người ký", 22),
+        ("chuc_vu", "Chức vụ", 20),
+        ("hieu_luc", "Hiệu lực", 20),
+        ("tep_dinh_kem", "Tệp đính kèm", 32),
+        ("link_thay_the", "Link văn bản thay thế", 28),
+        ("ghi_chu", "Ghi chú", 36),
     ],
 }
 
+# 4 mẫu chuẩn của dự án: Đến Nội bộ, Đến Hạn chế, Đi Nội bộ, Đi Hạn chế
+# Tương thích ngược: LoaiVanBan.MAT trỏ trực tiếp về Văn bản Đến - Hạn chế
+EXCEL_COLUMNS[LoaiVanBan.DEN] = EXCEL_COLUMNS[(LoaiVanBan.DEN, PhamVi.NOI_BO)]
+EXCEL_COLUMNS[LoaiVanBan.DI] = EXCEL_COLUMNS[(LoaiVanBan.DI, PhamVi.NOI_BO)]
+EXCEL_COLUMNS[LoaiVanBan.MAT] = EXCEL_COLUMNS[(LoaiVanBan.DEN, PhamVi.HAN_CHE)]
+
 SAMPLE_DATA = {
-    LoaiVanBan.DEN: {
+    (LoaiVanBan.DEN, PhamVi.NOI_BO): {
         "so_hieu": "15/CV-BGDDT",
+        "pham_vi": "Nội bộ",
         "ngay_den": "15/09/2026 08:30:00",
         "ngay_van_ban": "14/09/2026",
-        "trich_yeu": "V/v hướng dẫn tuyển sinh năm học 2026-2027",
+        "trich_yeu": "V/v hướng dẫn công tác tuyển sinh và đào tạo năm học 2026-2027",
         "noi_ban_hanh": "Bộ Giáo dục và Đào tạo",
         "nguoi_ky": "Nguyễn Văn A",
         "chuc_vu": "Thứ trưởng",
-        "hieu_luc": "CON_HIEU_LUC",
-        "ghi_chu": "(Dòng ví dụ — xóa trước khi import)",
+        "hieu_luc": "Còn hiệu lực",
+        "tep_dinh_kem": "To_trinh_01.pdf",
+        "link_thay_the": "12/QĐ-BGDDT",
+        "ghi_chu": "(Dòng ví dụ mẫu — xóa trước khi import)",
     },
-    LoaiVanBan.DI: {
-        "so_hieu": "01/TB-VP",
-        "ngay_ban_hanh": "15/09/2026",
-        "ngay_van_ban": "15/09/2026",
-        "trich_yeu": "Thông báo kế hoạch công tác quý",
-        "noi_ban_hanh": "",
-        "nguoi_ky": "Trần Văn B",
-        "chuc_vu": "Trưởng phòng",
-        "hieu_luc": "CON_HIEU_LUC",
-        "ghi_chu": "(Dòng ví dụ — xóa trước khi import)",
+    (LoaiVanBan.DEN, PhamVi.HAN_CHE): {
+        "so_hieu": "04/TB-SGDDT",
+        "pham_vi": "Hạn chế",
+        "ngay_den": "18/09/2026 09:15:00",
+        "ngay_van_ban": "17/09/2026",
+        "trich_yeu": "Thông báo danh sách điều động thanh tra công tác tài chính nội bộ (Hạn chế)",
+        "noi_ban_hanh": "Sở Giáo dục và Đào tạo",
+        "nguoi_nhan": "admin, kietlt",
+        "don_vi_nhan": "Ban Giám hiệu",
+        "nguoi_ky": "Trần Thị C",
+        "chuc_vu": "Phó Giám đốc Sở",
+        "hieu_luc": "Còn hiệu lực",
+        "tep_dinh_kem": "Thong_bao_thanh_tra.pdf",
+        "link_thay_the": "02/TB-SGDDT",
+        "ghi_chu": "(Dòng ví dụ mẫu — xóa trước khi import)",
+    },
+    (LoaiVanBan.DI, PhamVi.NOI_BO): {
+        "so_hieu": "88/QD-SNN",
+        "pham_vi": "Nội bộ",
+        "ngay_ban_hanh": "20/09/2026",
+        "ngay_van_ban": "20/09/2026",
+        "trich_yeu": "Quyết định về việc ban hành quy chế chi tiêu nội bộ năm học 2026",
+        "noi_ban_hanh": "Phòng Hành chính - Tổng hợp",
+        "don_vi_nhan": "Toàn thể các đơn vị",
+        "nguoi_ky": "Lê Văn D",
+        "chuc_vu": "Hiệu trưởng",
+        "hieu_luc": "Còn hiệu lực",
+        "tep_dinh_kem": "88_QD_Ban_hanh_quy_che.pdf",
+        "link_thay_the": "45/QĐ-SNN",
+        "ghi_chu": "(Dòng ví dụ mẫu — xóa trước khi import)",
+    },
+    (LoaiVanBan.DI, PhamVi.HAN_CHE): {
+        "so_hieu": "12/BC-SNN-HC",
+        "pham_vi": "Hạn chế",
+        "ngay_ban_hanh": "22/09/2026",
+        "ngay_van_ban": "22/09/2026",
+        "trich_yeu": "Báo cáo rà soát đánh giá quy hoạch cán bộ chủ chốt giai đoạn 2026-2030 (Hạn chế)",
+        "noi_ban_hanh": "Ban Giám hiệu",
+        "nguoi_nhan": "admin, kietlt",
+        "don_vi_nhan": "Hội đồng trường",
+        "nguoi_ky": "Lê Văn D",
+        "chuc_vu": "Hiệu trưởng",
+        "hieu_luc": "Còn hiệu lực",
+        "tep_dinh_kem": "12_BC_Danh_gia_can_bo.pdf",
+        "link_thay_the": "08/BC-SNN-HC",
+        "ghi_chu": "(Dòng ví dụ mẫu — xóa trước khi import)",
     },
 }
 
+# 4 mẫu chuẩn của dự án: Đến Nội bộ, Đến Hạn chế, Đi Nội bộ, Đi Hạn chế
+# Tương thích ngược: LoaiVanBan.MAT trỏ trực tiếp về Văn bản Đến - Hạn chế
+SAMPLE_DATA[LoaiVanBan.DEN] = SAMPLE_DATA[(LoaiVanBan.DEN, PhamVi.NOI_BO)]
+SAMPLE_DATA[LoaiVanBan.DI] = SAMPLE_DATA[(LoaiVanBan.DI, PhamVi.NOI_BO)]
+SAMPLE_DATA[LoaiVanBan.MAT] = SAMPLE_DATA[(LoaiVanBan.DEN, PhamVi.HAN_CHE)]
+
+HEADER_COMMENTS = {
+    "tep_dinh_kem": (
+        "• Tên file đính kèm trong kho tệp lịch sử (oldfile).\n"
+        "• Cấu trúc: oldfile/<loai>/<pham_vi>/YYYY/MM/DD/<ten_file>.\n"
+        "• Nhiều file phân tách nhau bằng dấu chấm phẩy (;).\n"
+        "• Để trống nếu không có tệp đính kèm."
+    ),
+    "link_thay_the": (
+        "• Số hiệu VB bị thay thế (VD: 12/QĐ-BGDDT).\n"
+        "• Nhiều VB cách nhau bằng dấu phẩy.\n"
+        "• Để trống nếu không thay thế."
+    ),
+    "hieu_luc": (
+        "• Chấp nhận 3 trạng thái hiệu lực:\n"
+        "  - Còn hiệu lực\n"
+        "  - Còn hiệu lực 1 phần\n"
+        "  - Hết hiệu lực\n"
+        "• Để trống mặc định là 'Còn hiệu lực'."
+    ),
+}
+
+COMMENT_SIZES = {
+    "tep_dinh_kem": (380, 110),
+    "link_thay_the": (250, 85),
+    "hieu_luc": (380, 135),
+}
+
 _header_font = Font(name="Arial", bold=True, size=11, color="FFFFFF")
-_header_fill = PatternFill(start_color="2E86C1", end_color="2E86C1", fill_type="solid")
+_header_fill = PatternFill(start_color="1E40AF", end_color="1E40AF", fill_type="solid")
+_header_fill_den_noibo = PatternFill(start_color="1E40AF", end_color="1E40AF", fill_type="solid")    # Xanh dương đậm
+_header_fill_den_hanche = PatternFill(start_color="991B1B", end_color="991B1B", fill_type="solid")   # Đỏ đậm hạn chế
+_header_fill_di_noibo = PatternFill(start_color="047857", end_color="047857", fill_type="solid")     # Xanh lục bảo
+_header_fill_di_hanche = PatternFill(start_color="C2410C", end_color="C2410C", fill_type="solid")    # Cam đất / Nâu hổ phách
+_header_fill_mat = PatternFill(start_color="922B21", end_color="922B21", fill_type="solid")          # Đỏ đô bảo mật
 _header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 _sample_fill = PatternFill(start_color="FFF9C4", end_color="FFF9C4", fill_type="solid")
-_sample_font = Font(name="Arial", italic=True, size=10, color="888888")
+_sample_font = Font(name="Arial", size=10, color="374151")
 _cell_font = Font(name="Arial", size=10)
+_cell_font_han_che = Font(name="Arial", size=10, color="922B21")
+_cell_font_han_che_bold = Font(name="Arial", size=10, bold=True, color="C00000")
+_fill_han_che = PatternFill(start_color="FFF1F2", end_color="FFF1F2", fill_type="solid")
 _cell_alignment = Alignment(vertical="center", wrap_text=True)
 _thin_border = Border(
     left=Side(style="thin"),
@@ -418,29 +778,47 @@ _thin_border = Border(
 )
 
 
-def generate_excel_template(loai: str) -> io.BytesIO:
-    """Sinh file Excel mẫu trực tiếp từ cấu hình DB."""
+def generate_excel_template(loai: str, pham_vi: str = "NOI_BO") -> io.BytesIO:
+    """Sinh file Excel mẫu trực tiếp từ cấu hình DB, phân biệt rõ theo hệ và phạm vi."""
     loai_str = str(loai).strip().upper()
-    norm_loai = LoaiVanBan.DI if loai_str in ("DI", "VANBANDI") else LoaiVanBan.DEN
+    pv_str = str(pham_vi).strip().upper() if pham_vi else "NOI_BO"
+    is_han_che = (pv_str in ("HAN_CHE", "HẠN CHẾ", "HANCHE") or loai_str in ("MAT", "VANBANMAT"))
+    norm_pv = PhamVi.HAN_CHE if is_han_che else PhamVi.NOI_BO
 
-    columns = EXCEL_COLUMNS.get(norm_loai, EXCEL_COLUMNS[LoaiVanBan.DEN])
-    sample = SAMPLE_DATA.get(norm_loai, SAMPLE_DATA[LoaiVanBan.DEN])
+    if loai_str in ("DI", "VANBANDI"):
+        norm_loai = LoaiVanBan.DI
+        active_fill = _header_fill_di_hanche if is_han_che else _header_fill_di_noibo
+        sheet_title = "Mẫu VB Đi - Hạn chế" if is_han_che else "Mẫu VB Đi - Nội bộ"
+    else:
+        # Văn bản Đến (bao gồm cả trường hợp gọi MAT / Văn bản Mật Đến)
+        norm_loai = LoaiVanBan.DEN
+        active_fill = _header_fill_den_hanche if is_han_che else _header_fill_den_noibo
+        sheet_title = "Mẫu VB Đến - Hạn chế" if is_han_che else "Mẫu VB Đến - Nội bộ"
+
+    columns = EXCEL_COLUMNS.get((norm_loai, norm_pv)) or EXCEL_COLUMNS[LoaiVanBan.DEN]
+    sample = SAMPLE_DATA.get((norm_loai, norm_pv)) or SAMPLE_DATA[LoaiVanBan.DEN]
 
     wb = Workbook()
     ws = wb.active
-    ws.title = f"Mẫu {dict(LoaiVanBan.choices).get(norm_loai, norm_loai)}"
+    ws.title = sheet_title
 
     ws.row_dimensions[1].height = 28
     for col_idx, (field_name, col_title, col_width) in enumerate(columns, start=1):
         cell = ws.cell(row=1, column=col_idx, value=col_title)
         cell.font = _header_font
-        cell.fill = _header_fill
+        cell.fill = active_fill
         cell.alignment = _header_alignment
         cell.border = _thin_border
+        if field_name in HEADER_COMMENTS:
+            cmt = Comment(HEADER_COMMENTS[field_name], "Hệ thống QLVB")
+            w, h = COMMENT_SIZES.get(field_name, (400, 120))
+            cmt.width = w
+            cmt.height = h
+            cell.comment = cmt
         col_letter = get_column_letter(col_idx)
         ws.column_dimensions[col_letter].width = col_width
 
-    ws.row_dimensions[2].height = 22
+    ws.row_dimensions[2].height = 36
     for col_idx, (field_name, _, _) in enumerate(columns, start=1):
         val = sample.get(field_name, "")
         cell = ws.cell(row=2, column=col_idx, value=val)
@@ -464,17 +842,43 @@ HEADER_TO_FIELD = {
     "Số, ký hiệu VB": "so_hieu",
     "Số hiệu": "so_hieu",
     "Số ký hiệu": "so_hieu",
+    "Phạm vi": "pham_vi",
+    "Phân loại": "pham_vi",
+    "Số đi": "so_thu_tu",
+    "Số đến": "so_thu_tu",
+    "Số thứ tự": "so_thu_tu",
     "Ngày đến": "ngay_den",
     "Ngày ban hành": "ngay_ban_hanh",
     "Ngày văn bản": "ngay_van_ban",
     "Trích yếu nội dung": "trich_yeu",
     "Trích yếu": "trich_yeu",
     "Nơi ban hành": "noi_ban_hanh",
+    "Phòng ban": "noi_ban_hanh",
+    "Đơn vị ban hành": "noi_ban_hanh",
+    "Đơn vị nhận": "don_vi_nhan",
+    "Nơi nhận / Đơn vị nhận": "don_vi_nhan",
+    "Nơi nhận": "don_vi_nhan",
+    "Cán bộ nhận (Username)": "nguoi_nhan",
+    "Cán bộ nhận": "nguoi_nhan",
+    "Cán bộ nhận / xử lý": "nguoi_nhan",
+    "Cán bộ nhận / xử lý (Username)": "nguoi_nhan",
+    "Người nhận": "nguoi_nhan",
     "Người ký": "nguoi_ky",
     "Chức vụ": "chuc_vu",
     "Hiệu lực": "hieu_luc",
-    "Ghi chú": "ghi_chu",
+    "Trạng thái hiệu lực": "hieu_luc",
     "Link văn bản thay thế": "link_thay_the",
+    "Số hiệu văn bản thay thế": "link_thay_the",
+    "Văn bản thay thế": "link_thay_the",
+    "Link thay thế": "link_thay_the",
+    "Tệp đính kèm": "tep_dinh_kem",
+    "File đính kèm": "tep_dinh_kem",
+    "Tệp tin đính kèm": "tep_dinh_kem",
+    "Tập tin đính kèm": "tep_dinh_kem",
+    "Tên file": "tep_dinh_kem",
+    "Tên tệp": "tep_dinh_kem",
+    "File": "tep_dinh_kem",
+    "Ghi chú": "ghi_chu",
 }
 
 
@@ -485,35 +889,133 @@ def _parse_date(value):
         if timezone.is_naive(value):
             return timezone.make_aware(value)
         return value
+    if isinstance(value, date):
+        dt = datetime.combine(value, datetime.min.time())
+        return timezone.make_aware(dt)
     text = str(value).strip()
-    for fmt in ("%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M", "%d/%m/%Y", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+    if not text:
+        return None
+    for fmt in (
+        "%d/%m/%Y %H:%M:%S",
+        "%d/%m/%Y %H:%M",
+        "%d/%m/%Y",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M",
+        "%Y-%m-%d",
+        "%Y/%m/%d %H:%M:%S",
+        "%Y/%m/%d %H:%M",
+        "%Y/%m/%d",
+        "%d-%m-%Y %H:%M:%S",
+        "%d-%m-%Y %H:%M",
+        "%d-%m-%Y",
+    ):
         try:
             dt = datetime.strptime(text, fmt)
             return timezone.make_aware(dt)
         except ValueError:
             continue
+    try:
+        from dateutil import parser as date_parser
+        dt = date_parser.parse(text)
+        if timezone.is_naive(dt):
+            return timezone.make_aware(dt)
+        return dt
+    except Exception:
+        pass
     return None
+
+
+def _normalize_text(s: str) -> str:
+    if not s:
+        return ""
+    import unicodedata
+    s = unicodedata.normalize("NFKD", str(s))
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return s.strip().lower()
 
 
 def _parse_hieu_luc(value):
     if value is None:
         return HieuLuc.CON_HIEU_LUC
-    text = str(value).strip().upper()
-    mapping = {
-        "CON_HIEU_LUC": HieuLuc.CON_HIEU_LUC,
-        "CÒN HIỆU LỰC": HieuLuc.CON_HIEU_LUC,
-        "HET_HIEU_LUC": HieuLuc.HET_HIEU_LUC,
-        "HẾT HIỆU LỰC": HieuLuc.HET_HIEU_LUC,
-        "HET_VA_THAY_THE": HieuLuc.HET_VA_THAY_THE,
-        "HẾT HIỆU LỰC VÀ THAY THẾ": HieuLuc.HET_VA_THAY_THE,
-    }
-    return mapping.get(text, HieuLuc.CON_HIEU_LUC)
+    raw = str(value).strip()
+    if not raw:
+        return HieuLuc.CON_HIEU_LUC
+    text = raw.upper()
+    norm = _normalize_text(raw)
+
+    # 1. Còn hiệu lực 1 phần (nhận diện: "Còn hiệu lực 1 phần", "Một phần", "CON_HIEU_LUC_1_PHAN", v.v.)
+    if (
+        text in ("CON_HIEU_LUC_1_PHAN", "CON_HIEU_LUC_MOT_PHAN", "1_PHAN", "MOT_PHAN", "PARTIAL")
+        or "1 phan" in norm
+        or "mot phan" in norm
+        or "sua doi" in norm
+        or "bo sung" in norm
+    ):
+        return HieuLuc.CON_HIEU_LUC_1_PHAN
+
+    # 2. Hết hiệu lực (nhận diện: "Hết hiệu lực", "HET_HIEU_LUC", "Đã thay thế", "HET_VA_THAY_THE", v.v.)
+    if (
+        text in ("HET_HIEU_LUC", "HET_VA_THAY_THE", "EXPIRED", "THAY_THE")
+        or "het" in norm
+        or "thay the" in norm
+        or "bai bo" in norm
+    ):
+        return HieuLuc.HET_HIEU_LUC
+
+    # 3. Mặc định là Còn hiệu lực (kể cả khi gõ "Còn hiệu lực", "CON_HIEU_LUC", hoặc để trống)
+    return HieuLuc.CON_HIEU_LUC
 
 
-def import_from_excel(file_obj, loai: str, user) -> dict:
+def _clean_attachment_name(name: str) -> str:
+    """
+    Chuẩn hóa tên file đính kèm để so khớp chính xác:
+    - Loại bỏ khoảng trắng thừa đầu/cuối
+    - Chuẩn hóa Unicode tiếng Việt sang dạng dựng sẵn (NFC)
+    - Loại bỏ khoảng trắng thừa trước dấu chấm đuôi mở rộng (VD: 'tai_lieu .pdf' -> 'tai_lieu.pdf')
+    - Chuyển chữ thường
+    """
+    if not name:
+        return ""
+    s = unicodedata.normalize("NFC", str(name)).strip()
+    s = re.sub(r"\s+\.([a-zA-Z0-9]+)$", r".\1", s)
+    return s.lower()
+
+
+def import_from_excel(file_obj, loai: str, user, pham_vi: str = None, attachments: list = None) -> dict:
     """Import dữ liệu văn bản từ file Excel vào đúng model tương ứng."""
     loai_str = str(loai).strip().upper()
     model = get_document_model(loai_str)
+
+    # Lập bản đồ tra cứu file đính kèm tải lên theo tên file (case-insensitive & NFC-normalized)
+    uploaded_files_map = {}
+    uploaded_stems_map = {}
+    if attachments:
+        for att in attachments:
+            att_name = getattr(att, "name", "")
+            if att_name:
+                key_clean = _clean_attachment_name(att_name)
+                uploaded_files_map[key_clean] = att
+                key_raw = str(att_name).strip().lower()
+                if key_raw not in uploaded_files_map:
+                    uploaded_files_map[key_raw] = att
+
+                # Tương thích định dạng Office phổ biến (.doc <-> .docx, .xls <-> .xlsx, .ppt <-> .pptx)
+                stem, ext = os.path.splitext(key_clean)
+                if ext == ".docx":
+                    uploaded_files_map.setdefault(f"{stem}.doc", att)
+                elif ext == ".doc":
+                    uploaded_files_map.setdefault(f"{stem}.docx", att)
+                elif ext == ".xlsx":
+                    uploaded_files_map.setdefault(f"{stem}.xls", att)
+                elif ext == ".xls":
+                    uploaded_files_map.setdefault(f"{stem}.xlsx", att)
+                elif ext == ".pptx":
+                    uploaded_files_map.setdefault(f"{stem}.ppt", att)
+                elif ext == ".ppt":
+                    uploaded_files_map.setdefault(f"{stem}.pptx", att)
+
+                if stem and stem not in uploaded_stems_map:
+                    uploaded_stems_map[stem] = att
 
     wb = load_workbook(file_obj, read_only=True, data_only=True)
     ws = wb.active
@@ -532,6 +1034,118 @@ def import_from_excel(file_obj, loai: str, user) -> dict:
         return {
             "created": 0,
             "errors": [{"row": 1, "message": "Không nhận diện được cột. Vui lòng dùng file mẫu."}],
+        }
+
+    # ── Xác định phân hệ đích và phạm vi đích mong đợi ──
+    norm_loai = (
+        LoaiVanBan.MAT
+        if loai_str in ("MAT", "VANBANMAT")
+        else (LoaiVanBan.DI if loai_str in ("DI", "VANBANDI") else LoaiVanBan.DEN)
+    )
+    if loai_str in ("MAT", "VANBANMAT"):
+        target_pv = PhamVi.HAN_CHE
+    elif pham_vi:
+        pv_req_norm = _normalize_text(pham_vi)
+        target_pv = PhamVi.HAN_CHE if ("han" in pv_req_norm or "mat" in pv_req_norm) else PhamVi.NOI_BO
+    else:
+        target_pv = PhamVi.NOI_BO
+
+    # Import văn bản Đến/Đi phạm vi Hạn chế cần quyền riêng add_han_che_vanbanden/vanbandi.
+    if target_pv == PhamVi.HAN_CHE and norm_loai != LoaiVanBan.MAT:
+        from .selectors import co_quyen_them_han_che
+
+        if not co_quyen_them_han_che(user, "vanbandi" if norm_loai == LoaiVanBan.DI else "vanbanden"):
+            return {
+                "created": 0,
+                "errors": [{
+                    "row": 0,
+                    "message": "Bạn không có quyền thêm văn bản hạn chế. Vui lòng liên hệ Quản trị viên để được cấp quyền.",
+                }],
+            }
+
+    # ── Phân tích thông tin từ Sheet title, Cột và Dữ liệu ──
+    sheet_title_norm = _normalize_text(getattr(ws, "title", ""))
+    has_recipient_col = any(f == "nguoi_nhan" for f in col_map.values())
+    has_ngay_den_col = any(f == "ngay_den" for f in col_map.values())
+    has_ngay_ban_hanh_col = any(f == "ngay_ban_hanh" for f in col_map.values())
+
+    title_is_han_che = any(k in sheet_title_norm for k in ("han che", "mat", "bao mat"))
+    title_is_noi_bo = any(k in sheet_title_norm for k in ("noi bo",))
+    title_is_den = any(k in sheet_title_norm for k in ("vb den", "van ban den", "mau den"))
+    title_is_di = any(k in sheet_title_norm for k in ("vb di", "van ban di", "mau di"))
+
+    sample_rows_count = 0
+    valid_data_rows_count = 0
+    file_has_han_che_data = False
+    file_has_noi_bo_data = False
+
+    for r in rows[1:]:
+        r_text = " ".join(str(v) for v in r if v)
+        if "xóa trước khi import" in r_text.lower():
+            sample_rows_count += 1
+            continue
+        if not any(v for v in r):
+            continue
+        valid_data_rows_count += 1
+        for c_idx, f_name in col_map.items():
+            if f_name == "pham_vi" and c_idx < len(r) and r[c_idx]:
+                pv_val = _normalize_text(r[c_idx])
+                if "han" in pv_val or "mat" in pv_val:
+                    file_has_han_che_data = True
+                elif "noi" in pv_val:
+                    file_has_noi_bo_data = True
+
+    # 1. Khóa nghiệp vụ: Phạm vi (Nội bộ vs Hạn chế)
+    is_file_han_che = title_is_han_che or has_recipient_col or file_has_han_che_data
+    is_file_noi_bo = title_is_noi_bo or (file_has_noi_bo_data and not has_recipient_col)
+
+    if target_pv == PhamVi.NOI_BO and is_file_han_che:
+        return {
+            "created": 0,
+            "errors": [{
+                "row": 1,
+                "message": "File Excel bạn chọn là biểu mẫu hoặc chứa dữ liệu Văn bản Hạn chế. Bạn đang ở phân hệ Văn bản Nội bộ, hệ thống từ chối nạp để ngăn ngừa lộ lọt thông tin. Vui lòng chuyển sang tab 'Văn bản Hạn chế' để import file này."
+            }],
+        }
+
+    if target_pv == PhamVi.HAN_CHE and is_file_noi_bo and not has_recipient_col:
+        return {
+            "created": 0,
+            "errors": [{
+                "row": 1,
+                "message": "File Excel bạn chọn là biểu mẫu hoặc chứa dữ liệu Văn bản Nội bộ. Bạn đang ở phân hệ Văn bản Hạn chế, hệ thống từ chối nạp do thiếu thông tin phân quyền cán bộ nhận. Vui lòng chuyển sang tab 'Văn bản Nội bộ' để import file này."
+            }],
+        }
+
+    # 2. Khóa nghiệp vụ: Loại văn bản (Đến vs Đi)
+    if norm_loai == LoaiVanBan.DI:
+        if title_is_den or (has_ngay_den_col and not has_ngay_ban_hanh_col and not title_is_di):
+            return {
+                "created": 0,
+                "errors": [{
+                    "row": 1,
+                    "message": "File Excel bạn chọn là biểu mẫu Văn bản Đến. Bạn đang ở phân hệ Văn bản Đi, vui lòng chọn đúng file mẫu Văn bản Đi để tiếp tục."
+                }],
+            }
+
+    if norm_loai == LoaiVanBan.DEN:
+        if title_is_di or (has_ngay_ban_hanh_col and not has_ngay_den_col and not title_is_den):
+            return {
+                "created": 0,
+                "errors": [{
+                    "row": 1,
+                    "message": "File Excel bạn chọn là biểu mẫu Văn bản Đi. Bạn đang ở phân hệ Văn bản Đến, vui lòng chọn đúng file mẫu Văn bản Đến để tiếp tục."
+                }],
+            }
+
+    # 3. Nếu file chỉ chứa duy nhất dòng ví dụ mẫu của template mà không có dữ liệu thực
+    if valid_data_rows_count == 0 and sample_rows_count > 0:
+        return {
+            "created": 0,
+            "errors": [{
+                "row": 2,
+                "message": "File tải lên chỉ chứa dòng ví dụ mẫu ('xóa trước khi import'). Vui lòng xóa dòng ví dụ hoặc nhập thêm dữ liệu văn bản thực tế trước khi thực hiện import."
+            }],
         }
 
     created_count = 0
@@ -568,17 +1182,228 @@ def import_from_excel(file_obj, loai: str, user) -> dict:
         if "nam" not in doc_data:
             doc_data["nam"] = nam
 
-        # Sinh số thứ tự
-        doc_data["so_thu_tu"] = generate_so_thu_tu(loai_str, nam)
+        if loai_str in ("MAT", "VANBANMAT"):
+            doc_data["pham_vi"] = PhamVi.HAN_CHE
+            doc_data["gui_mail_toan_he_thong"] = False
+            doc_data.pop("so_thu_tu", None)
+            if not doc_data.get("ngay_ban_hanh"):
+                doc_data["ngay_ban_hanh"] = timezone.now()
+            if not doc_data.get("ngay_van_ban"):
+                doc_data["ngay_van_ban"] = doc_data["ngay_ban_hanh"]
+        else:
+            # Gán phạm vi văn bản: tuân thủ target_pv
+            doc_data["pham_vi"] = target_pv
 
-        # Gán ngày mặc định theo loại nếu thiếu
-        if loai_str in ("DEN", "VANBANDEN") and not doc_data.get("ngay_den"):
-            doc_data["ngay_den"] = timezone.now()
-        elif loai_str in ("DI", "VANBANDI") and not doc_data.get("ngay_ban_hanh"):
-            doc_data["ngay_ban_hanh"] = timezone.now()
+            # Tự cấp số nếu file trống hoặc không hợp lệ (concurrency-safe)
+            current_stt = doc_data.get("so_thu_tu")
+            if not current_stt or not str(current_stt).isdigit() or int(current_stt) <= 0:
+                doc_data["so_thu_tu"] = generate_so_thu_tu(loai_str, nam)
+            else:
+                doc_data["so_thu_tu"] = int(current_stt)
+
+            # Gán ngày mặc định theo loại nếu thiếu và tương thích linh hoạt giữa các cột ngày
+            if loai_str in ("DEN", "VANBANDEN"):
+                if not doc_data.get("ngay_van_ban") and doc_data.get("ngay_ban_hanh"):
+                    doc_data["ngay_van_ban"] = doc_data["ngay_ban_hanh"]
+                if not doc_data.get("ngay_den"):
+                    doc_data["ngay_den"] = timezone.now()
+                if not doc_data.get("ngay_van_ban"):
+                    doc_data["ngay_van_ban"] = doc_data["ngay_den"]
+            elif loai_str in ("DI", "VANBANDI"):
+                if not doc_data.get("ngay_ban_hanh") and doc_data.get("ngay_den"):
+                    doc_data["ngay_ban_hanh"] = doc_data["ngay_den"]
+                if not doc_data.get("ngay_ban_hanh"):
+                    doc_data["ngay_ban_hanh"] = timezone.now()
+                if not doc_data.get("ngay_van_ban"):
+                    doc_data["ngay_van_ban"] = doc_data["ngay_ban_hanh"]
 
         try:
-            model.objects.create(**doc_data)
+            model_fields = {
+                f.name for f in model._meta.get_fields()
+                if hasattr(f, "attname") and not getattr(f, "many_to_many", False) and not getattr(f, "one_to_many", False)
+            }
+            payload = {k: v for k, v in doc_data.items() if k in model_fields and k != "nguoi_nhan"}
+            if "nguoi_tao" in model_fields and user and user.is_authenticated and "nguoi_tao" not in payload:
+                payload["nguoi_tao"] = user
+            created_doc = model.objects.create(**payload)
+
+            # 1. Liên kết cán bộ nhận (nguoi_nhan) từ username trong file Excel
+            raw_nguoi_nhan = doc_data.get("nguoi_nhan")
+            if raw_nguoi_nhan and hasattr(created_doc, "nguoi_nhan"):
+                raw_str = str(raw_nguoi_nhan).replace(";", ",").replace("\n", ",")
+                usernames = [u.strip() for u in raw_str.split(",") if u.strip()]
+                if usernames:
+                    from django.contrib.auth import get_user_model
+                    User = get_user_model()
+                    matched_users = list(User.objects.filter(username__in=usernames))
+                    if matched_users:
+                        created_doc.nguoi_nhan.add(*matched_users)
+
+            # 2. Với văn bản Hạn chế hoặc Văn bản Mật: luôn đảm bảo người tạo/import được thêm vào nguoi_nhan
+            is_restricted = (
+                getattr(created_doc, "pham_vi", None) == PhamVi.HAN_CHE
+                or loai_str in ("MAT", "VANBANMAT")
+            )
+            if is_restricted and user and user.is_authenticated and hasattr(created_doc, "nguoi_nhan"):
+                created_doc.nguoi_nhan.add(user)
+
+            # 3. Liên kết Đơn vị nhận (don_vi_nhan) nếu có
+            raw_don_vi = doc_data.get("don_vi_nhan")
+            if raw_don_vi:
+                try:
+                    try:
+                        from apps.organizations.models import DonVi
+                    except ImportError:
+                        from organizations.models import DonVi
+                    from .models import VanBanDenDonViNhan, VanBanDiDonViNhan
+
+                    dv_val = str(raw_don_vi).strip()
+                    dv = None
+                    if dv_val.isdigit():
+                        dv = DonVi.objects.filter(pk=int(dv_val)).first()
+                    if not dv:
+                        dv = DonVi.objects.filter(ten__iexact=dv_val).first()
+                    if dv:
+                        if loai_str in ("DEN", "VANBANDEN", "MAT", "VANBANMAT"):
+                            VanBanDenDonViNhan.objects.get_or_create(vanbanden=created_doc, donvi_id=dv.id)
+                        elif loai_str in ("DI", "VANBANDI"):
+                            VanBanDiDonViNhan.objects.get_or_create(vanbandi=created_doc, donvi_id=dv.id)
+                except Exception:
+                    pass
+
+            # 4. Nếu là Văn bản Đi và có nơi ban hành là tên phòng ban nội bộ, liên kết VanBanDiNoiBanHanh
+            if loai_str in ("DI", "VANBANDI") and doc_data.get("noi_ban_hanh"):
+                try:
+                    try:
+                        from apps.organizations.models import DonVi
+                    except ImportError:
+                        from organizations.models import DonVi
+                    from .models import VanBanDiNoiBanHanh
+
+                    nbh_val = str(doc_data["noi_ban_hanh"]).strip()
+                    dv_nbh = None
+                    if nbh_val.isdigit():
+                        dv_nbh = DonVi.objects.filter(pk=int(nbh_val)).first()
+                    if not dv_nbh:
+                        dv_nbh = DonVi.objects.filter(ten__iexact=nbh_val).first()
+                    if dv_nbh:
+                        VanBanDiNoiBanHanh.objects.get_or_create(vanbandi=created_doc, donvi_id=dv_nbh.id)
+                except Exception:
+                    pass
+
+            # 5. Đồng bộ quan hệ thay thế 2 chiều nếu file Excel có cung cấp link_thay_the
+            if getattr(created_doc, "link_thay_the", None):
+                sync_replacement_document(created_doc)
+
+            # 6. Liên kết tệp đính kèm từ cột tep_dinh_kem (kho oldfile)
+            raw_tep_dinh_kem = doc_data.get("tep_dinh_kem")
+            if raw_tep_dinh_kem:
+                raw_files_str = str(raw_tep_dinh_kem).replace("\n", ";").replace(",", ";")
+                file_names = [f.strip() for f in raw_files_str.split(";") if f.strip()]
+                if file_names:
+                    base_module = "van-ban-di" if loai_str in ("DI", "VANBANDI") else "van-ban-den"
+                    is_han_che_doc = (
+                        getattr(created_doc, "pham_vi", "") == PhamVi.HAN_CHE
+                        or loai_str in ("MAT", "VANBANMAT")
+                    )
+                    pv_folder = "han-che" if is_han_che_doc else "noi-bo"
+
+                    doc_dt = None
+                    if base_module == "van-ban-den":
+                        doc_dt = getattr(created_doc, "ngay_den", None) or getattr(created_doc, "ngay_van_ban", None)
+                    else:
+                        doc_dt = getattr(created_doc, "ngay_ban_hanh", None) or getattr(created_doc, "ngay_van_ban", None)
+
+                    if not doc_dt:
+                        doc_dt = timezone.now()
+                    elif timezone.is_aware(doc_dt):
+                        doc_dt = timezone.localtime(doc_dt)
+
+                    date_str = doc_dt.strftime("%Y/%m/%d")
+
+                    oldfile_root = getattr(settings, "OLDFILE_STORAGE_ROOT", "")
+                    if not oldfile_root:
+                        if getattr(settings, "DOCUMENT_STORAGE_ROOT", ""):
+                            oldfile_root = str(Path(settings.DOCUMENT_STORAGE_ROOT).parent / "oldfile")
+                        else:
+                            oldfile_root = str(Path(settings.BASE_DIR).parent / "storage" / "oldfile")
+
+                    AttachmentModel = VanBanDiAttachment if base_module == "van-ban-di" else VanBanDenAttachment
+
+                    for fn in file_names:
+                        clean_fn = _clean_attachment_name(fn)
+                        fn_stem, _ = os.path.splitext(clean_fn)
+
+                        # 6.1. Ưu tiên 1: Tệp được người dùng kéo thả tải lên trực tiếp trong request import
+                        matched_up_file = (
+                            uploaded_files_map.get(clean_fn)
+                            or uploaded_files_map.get(fn.strip().lower())
+                            or (uploaded_files_map.get(f"{clean_fn}x") if clean_fn.endswith((".doc", ".xls", ".ppt")) else None)
+                            or (uploaded_files_map.get(clean_fn[:-1]) if clean_fn.endswith((".docx", ".xlsx", ".pptx")) else None)
+                            or (uploaded_stems_map.get(fn_stem) if fn_stem else None)
+                        )
+                        if matched_up_file:
+                            up_file = matched_up_file
+                            try:
+                                if hasattr(up_file, "seek"):
+                                    up_file.seek(0)
+                            except Exception:
+                                pass
+
+                            att_real_name = getattr(up_file, "name", "") or fn.strip()
+                            final_name = fn.strip()
+                            if att_real_name and os.path.splitext(att_real_name)[1].lower() != os.path.splitext(fn.strip())[1].lower():
+                                final_name = att_real_name
+
+                            AttachmentModel.objects.create(
+                                document=created_doc,
+                                name=final_name,
+                                file=up_file,
+                                file_size=getattr(up_file, "size", 0),
+                                nguoi_tao=user if user and user.is_authenticated else None,
+                            )
+                            continue
+
+                        # 6.2. Ưu tiên 2: Tìm trong kho tệp lịch sử (oldfile)
+                        rel_oldfile_sub = f"{base_module}/{pv_folder}/{date_str}/{fn.strip()}"
+                        db_path = f"oldfile/{rel_oldfile_sub}"
+
+                        disk_file = Path(oldfile_root) / rel_oldfile_sub
+                        if not (disk_file.exists() and disk_file.is_file()):
+                            flex_dir = Path(oldfile_root) / base_module / pv_folder
+                            if flex_dir.exists() and flex_dir.is_dir():
+                                found_candidates = list(flex_dir.glob(f"**/{fn.strip()}"))
+                                if not found_candidates and clean_fn:
+                                    found_candidates = [
+                                        cand for cand in flex_dir.glob("**/*")
+                                        if cand.is_file() and (
+                                            _clean_attachment_name(cand.name) == clean_fn
+                                            or (fn_stem and os.path.splitext(_clean_attachment_name(cand.name))[0] == fn_stem)
+                                        )
+                                    ]
+                                if found_candidates:
+                                    disk_file = found_candidates[0]
+                                    rel_sub = disk_file.relative_to(Path(oldfile_root)).as_posix()
+                                    db_path = f"oldfile/{rel_sub}"
+
+                        if disk_file.exists() and disk_file.is_file():
+                            att_disk_name = disk_file.name
+                            final_disk_name = fn.strip()
+                            if os.path.splitext(att_disk_name)[1].lower() != os.path.splitext(fn.strip())[1].lower():
+                                final_disk_name = att_disk_name
+
+                            AttachmentModel.objects.create(
+                                document=created_doc,
+                                name=final_disk_name,
+                                path=db_path,
+                                nguoi_tao=user if user and user.is_authenticated else None,
+                            )
+                        else:
+                            errors.append({
+                                "row": row_idx,
+                                "message": f"Văn bản '{created_doc.so_hieu}' đã được tạo, nhưng chưa tìm thấy tệp đính kèm '{fn.strip()}'."
+                            })
+
             created_count += 1
         except Exception as e:
             errors.append({"row": row_idx, "message": str(e)})
@@ -591,40 +1416,59 @@ def import_from_excel(file_obj, loai: str, user) -> dict:
 # 6. EXPORT DANH SÁCH RA EXCEL THEO BỘ LỌC
 # ═══════════════════════════════════════════════════════════════════
 
-def export_to_excel(queryset, loai: str) -> io.BytesIO:
+def export_to_excel(queryset, loai: str, pham_vi: str = None) -> io.BytesIO:
     """Xuất danh sách văn bản ra file Excel theo bộ lọc hiện tại."""
     loai_str = str(loai).strip().upper()
-    norm_loai = LoaiVanBan.DI if loai_str in ("DI", "VANBANDI") else LoaiVanBan.DEN
+    is_han_che_only = (str(pham_vi).strip().upper() == "HAN_CHE" or loai_str in ("MAT", "VANBANMAT"))
+
+    if loai_str in ("MAT", "VANBANMAT"):
+        norm_loai = LoaiVanBan.MAT
+        active_fill = _header_fill_mat
+        has_so_thu_tu = False
+    elif loai_str in ("DI", "VANBANDI"):
+        norm_loai = LoaiVanBan.DI
+        active_fill = _header_fill_mat if is_han_che_only else _header_fill
+        has_so_thu_tu = True
+    else:
+        norm_loai = LoaiVanBan.DEN
+        active_fill = _header_fill_mat if is_han_che_only else _header_fill
+        has_so_thu_tu = True
 
     columns = EXCEL_COLUMNS.get(norm_loai, EXCEL_COLUMNS[LoaiVanBan.DEN])
 
     wb = Workbook()
     ws = wb.active
     loai_display = dict(LoaiVanBan.choices).get(norm_loai, norm_loai)
-    ws.title = f"Danh sách {loai_display}"
+    if is_han_che_only:
+        ws.title = f"VB {loai_display} (Hạn chế)"
+    else:
+        ws.title = f"Danh sách {loai_display}"
 
     # Cột STT
     stt_cell = ws.cell(row=1, column=1, value="STT")
     stt_cell.font = _header_font
-    stt_cell.fill = _header_fill
+    stt_cell.fill = active_fill
     stt_cell.alignment = _header_alignment
     stt_cell.border = _thin_border
     ws.column_dimensions["A"].width = 6
 
-    # Cột Số đến / Số đi
-    so_label = "Số đến" if norm_loai == LoaiVanBan.DEN else "Số đi"
-    so_cell = ws.cell(row=1, column=2, value=so_label)
-    so_cell.font = _header_font
-    so_cell.fill = _header_fill
-    so_cell.alignment = _header_alignment
-    so_cell.border = _thin_border
-    ws.column_dimensions["B"].width = 10
-    col_offset = 3
+    if has_so_thu_tu:
+        # Cột Số đến / Số đi
+        so_label = "Số đến" if norm_loai == LoaiVanBan.DEN else "Số đi"
+        so_cell = ws.cell(row=1, column=2, value=so_label)
+        so_cell.font = _header_font
+        so_cell.fill = active_fill
+        so_cell.alignment = _header_alignment
+        so_cell.border = _thin_border
+        ws.column_dimensions["B"].width = 10
+        col_offset = 3
+    else:
+        col_offset = 2
 
     for col_idx, (_, col_title, col_width) in enumerate(columns, start=col_offset):
         cell = ws.cell(row=1, column=col_idx, value=col_title)
         cell.font = _header_font
-        cell.fill = _header_fill
+        cell.fill = active_fill
         cell.alignment = _header_alignment
         cell.border = _thin_border
         col_letter = get_column_letter(col_idx)
@@ -634,35 +1478,340 @@ def export_to_excel(queryset, loai: str) -> io.BytesIO:
 
     hieu_luc_map = dict(HieuLuc.choices)
 
+    align_center = Alignment(horizontal="center", vertical="center", wrap_text=False)
+    align_left_wrap = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    align_left = Alignment(horizontal="left", vertical="center", wrap_text=False)
+
+    center_fields = {"so_hieu", "pham_vi", "ngay_den", "ngay_ban_hanh", "ngay_van_ban", "hieu_luc", "link_thay_the"}
+    wrap_fields = {"trich_yeu", "noi_ban_hanh", "ghi_chu", "tep_dinh_kem"}
+
     for row_idx, doc in enumerate(queryset, start=2):
-        ws.row_dimensions[row_idx].height = 22
+        is_doc_han_che = (
+            getattr(doc, "pham_vi", "") == PhamVi.HAN_CHE
+            or getattr(doc, "loai", "") == "MAT"
+            or getattr(doc, "document_kind", "") == "vanbanmat"
+        )
+        row_fill = _fill_han_che if is_doc_han_che else None
+
+        # Tính toán chiều cao dòng linh hoạt (dynamic row height) dựa trên độ dài nội dung để không bị đè/rối chữ
+        trich_yeu_text = str(getattr(doc, "trich_yeu", "") or "").strip()
+        noi_ban_hanh_text = str(getattr(doc, "noi_ban_hanh", "") or "").strip()
+        ghi_chu_text = str(getattr(doc, "ghi_chu", "") or "").strip()
+
+        tep_dinh_kem_text = ""
+        if hasattr(doc, "attachments"):
+            atts = [a.name for a in doc.attachments.all() if not getattr(a, "is_deleted", False) and a.name]
+            tep_dinh_kem_text = "; ".join(atts)
+        lines_att = max(1, math.ceil(len(tep_dinh_kem_text) / 28)) if tep_dinh_kem_text else 1
+
+        lines_ty = 1
+        if trich_yeu_text:
+            lines_ty = sum(max(1, math.ceil(len(line.strip()) / 52)) for line in trich_yeu_text.splitlines() if line.strip()) or 1
+        lines_nbh = max(1, math.ceil(len(noi_ban_hanh_text) / 26)) if noi_ban_hanh_text else 1
+        lines_gc = 1
+        if ghi_chu_text:
+            lines_gc = sum(max(1, math.ceil(len(line.strip()) / 25)) for line in ghi_chu_text.splitlines() if line.strip()) or 1
+
+        est_lines = max(lines_ty, lines_nbh, lines_gc, lines_att)
+        if est_lines <= 1:
+            ws.row_dimensions[row_idx].height = 28
+        else:
+            ws.row_dimensions[row_idx].height = est_lines * 19 + 10
 
         cell_stt = ws.cell(row=row_idx, column=1, value=row_idx - 1)
-        cell_stt.font = _cell_font
-        cell_stt.alignment = Alignment(horizontal="center", vertical="center")
+        cell_stt.font = _cell_font_han_che if is_doc_han_che else _cell_font
+        cell_stt.alignment = align_center
         cell_stt.border = _thin_border
+        if row_fill:
+            cell_stt.fill = row_fill
 
-        cell_so = ws.cell(row=row_idx, column=2, value=getattr(doc, "so_thu_tu", ""))
-        cell_so.font = _cell_font
-        cell_so.alignment = Alignment(horizontal="center", vertical="center")
-        cell_so.border = _thin_border
+        if has_so_thu_tu:
+            cell_so = ws.cell(row=row_idx, column=2, value=getattr(doc, "so_thu_tu", ""))
+            cell_so.font = _cell_font_han_che if is_doc_han_che else _cell_font
+            cell_so.alignment = align_center
+            cell_so.border = _thin_border
+            if row_fill:
+                cell_so.fill = row_fill
 
         for col_idx, (field_name, _, _) in enumerate(columns, start=col_offset):
             val = getattr(doc, field_name, "")
-            if isinstance(val, datetime):
+            if field_name == "tep_dinh_kem":
+                val = tep_dinh_kem_text
+            elif field_name == "pham_vi":
+                val = "Hạn chế" if is_doc_han_che else "Nội bộ"
+            elif isinstance(val, datetime):
                 val = val.strftime("%d/%m/%Y %H:%M" if field_name == "ngay_den" else "%d/%m/%Y")
             elif field_name == "hieu_luc":
                 val = hieu_luc_map.get(val, val)
             elif val is None:
                 val = ""
 
-            cell = ws.cell(row=row_idx, column=col_idx, value=str(val))
-            cell.font = _cell_font
-            cell.alignment = _cell_alignment
+            cell = ws.cell(row=row_idx, column=col_idx, value=str(val).strip())
+            
+            # Font chữ nổi bật cho dòng Hạn chế
+            if field_name == "pham_vi":
+                cell.font = _cell_font_han_che_bold if is_doc_han_che else _cell_font
+            elif field_name == "so_hieu" and is_doc_han_che:
+                cell.font = _cell_font_han_che_bold
+            else:
+                cell.font = _cell_font
+
+            if row_fill:
+                cell.fill = row_fill
+
             cell.border = _thin_border
+
+            if field_name in center_fields:
+                cell.alignment = align_center
+            elif field_name in wrap_fields:
+                cell.alignment = align_left_wrap
+            else:
+                cell.alignment = align_left
 
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
     wb.close()
     return output
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 7. DỊCH VỤ GỬI EMAIL THÔNG BÁO VĂN BẢN
+# ═══════════════════════════════════════════════════════════════════
+
+def send_document_notification_mail(document, recipient_list=None, force_system_wide: bool = False):
+    """
+    Dịch vụ gửi email thông báo văn bản.
+    QUY TẮC BẢO MẬT TUYỆT ĐỐI (Issue #82 & Luật BVBMNN):
+    - KHÓA HOÀN TOÀN chức năng gửi mail toàn hệ thống đối với Văn bản Mật và Văn bản Hạn chế.
+    - Bất kỳ nỗ lực nào gửi mail toàn hệ thống cho VB Mật sẽ bị chặn ngay lập tức (raise ValidationError).
+    - Với VB Mật / Hạn chế: chỉ được gửi email đích danh cho các cán bộ trong danh sách người nhận (nguoi_nhan).
+    """
+    from django.core.exceptions import ValidationError
+
+    doc_kind = getattr(document, "document_kind", "")
+    is_confidential = (
+        getattr(document, "loai", "") == "MAT"
+        or doc_kind == "vanbanmat"
+        or getattr(document, "pham_vi", "") == PhamVi.HAN_CHE
+    )
+
+    if is_confidential:
+        if force_system_wide or getattr(document, "gui_mail_toan_he_thong", False) or recipient_list == "ALL":
+            raise ValidationError(
+                "TUYỆT ĐỐI CẤM GỬI EMAIL TOÀN HỆ THỐNG đối với văn bản mật / văn bản hạn chế theo Luật Bảo vệ BMNN."
+            )
+
+    # Đảm bảo cờ gui_mail_toan_he_thong của VB mật luôn là False
+    if is_confidential and getattr(document, "gui_mail_toan_he_thong", False):
+        document.gui_mail_toan_he_thong = False
+        if hasattr(document, "save"):
+            document.save(update_fields=["gui_mail_toan_he_thong"])
+
+    # Xác định danh sách email người nhận hợp lệ
+    emails = []
+    if is_confidential:
+        if recipient_list and recipient_list != "ALL":
+            for u in recipient_list:
+                email = getattr(u, "email", None) or (u if isinstance(u, str) and "@" in u else None)
+                if email and email not in emails:
+                    emails.append(email)
+        elif hasattr(document, "nguoi_nhan"):
+            for u in document.nguoi_nhan.all():
+                if u.email and u.email not in emails:
+                    emails.append(u.email)
+    else:
+        if getattr(document, "gui_mail_toan_he_thong", False) or force_system_wide or recipient_list == "ALL":
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            emails = list(User.objects.filter(is_active=True).exclude(email="").values_list("email", flat=True))
+        elif recipient_list:
+            for u in recipient_list:
+                email = getattr(u, "email", None) or (u if isinstance(u, str) and "@" in u else None)
+                if email and email not in emails:
+                    emails.append(email)
+
+    return {
+        "success": True,
+        "is_confidential": is_confidential,
+        "recipient_count": len(emails),
+        "recipients": emails,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 7. QUẢN LÝ DANH MỤC HỒ SƠ & LOẠI VĂN BẢN ĐỒNG BỘ DDL (RECORDS)
+# ═══════════════════════════════════════════════════════════════════
+
+def infer_doc_type(so_hieu: str = "", trich_yeu: str = "") -> str:
+    """Suy luận loại văn bản từ số hiệu hoặc trích yếu (hỗ trợ hiển thị và lọc dự phòng)."""
+    type_mapping = {
+        "QĐ": "Quyết định", "QD": "Quyết định",
+        "TB": "Thông báo",
+        "CV": "Công văn",
+        "HD": "Hướng dẫn", "HĐ": "Hướng dẫn",
+        "KH": "Kế hoạch",
+        "CT": "Chỉ thị",
+        "BC": "Báo cáo",
+        "TTR": "Tờ trình",
+        "NQ": "Nghị quyết",
+    }
+    if so_hieu:
+        match = re.search(r"/([A-ZĐ]+)(?:-|$)", str(so_hieu), re.IGNORECASE)
+        if match and match.group(1).upper() in type_mapping:
+            return type_mapping[match.group(1).upper()]
+    if trich_yeu:
+        ty_upper = str(trich_yeu).strip().upper()
+        for prefix, name in [
+            ("QUYẾT ĐỊNH", "Quyết định"),
+            ("THÔNG BÁO", "Thông báo"),
+            ("HƯỚNG DẪN", "Hướng dẫn"),
+            ("KẾ HOẠCH", "Kế hoạch"),
+            ("CÔNG VĂN", "Công văn"),
+            ("CHỈ THỊ", "Chỉ thị"),
+            ("TỜ TRÌNH", "Tờ trình"),
+            ("BÁO CÁO", "Báo cáo"),
+            ("NGHỊ QUYẾT", "Nghị quyết"),
+        ]:
+            if ty_upper.startswith(prefix):
+                return name
+    return ""
+
+
+def ensure_standard_hoso_and_doc_types():
+    """Tự động đảm bảo 7 Danh mục hồ sơ nghiệp vụ chuẩn và Loại văn bản con luôn tồn tại."""
+    try:
+        from records.models import HoSo, LoaiVanBan as RecordLoaiVanBan
+        from django.contrib.auth import get_user_model
+    except Exception:
+        return
+
+    try:
+        HoSo.objects.exists()
+    except Exception:
+        try:
+            from django.core.management import call_command
+            call_command("migrate", "records", interactive=False)
+        except Exception:
+            return
+
+    User = get_user_model()
+    admin_u = User.objects.filter(is_superuser=True).first() or User.objects.first()
+    if not admin_u:
+        return
+
+    STANDARD_FOLDERS = {
+        "Hồ sơ Hành chính - Quản trị": ("HS-HCQT", ["Công văn", "Thông báo", "Tờ trình"]),
+        "Hồ sơ Tổ chức - Cán bộ": ("HS-TCCB", ["Quyết định", "Thông báo", "Hướng dẫn"]),
+        "Hồ sơ Kế hoạch - Tài chính": ("HS-KHTC", ["Kế hoạch", "Quyết định", "Báo cáo"]),
+        "Hồ sơ Chuyên môn - Nghiệp vụ": ("HS-CMNV", ["Hướng dẫn", "Công văn", "Kế hoạch"]),
+        "Hồ sơ Thanh tra - Pháp chế": ("HS-TTPC", ["Quyết định", "Chỉ thị", "Nghị quyết"]),
+        "Hồ sơ Kế hoạch - Dự án": ("HS-KHDA", ["Kế hoạch", "Báo cáo", "Quyết định"]),
+        "Hồ sơ Lưu trữ cơ quan": ("HS-LTCQ", ["Công văn", "Quyết định", "Thông báo"]),
+    }
+    for ten_hs, (so_kh, types) in STANDARD_FOLDERS.items():
+        hs = HoSo.objects.filter(ten_ho_so__iexact=ten_hs).first() or HoSo.objects.filter(so_ky_hieu__iexact=so_kh).first()
+        if not hs:
+            try:
+                hs = HoSo.objects.create(ten_ho_so=ten_hs, so_ky_hieu=so_kh, nguoi_lap=admin_u)
+            except Exception:
+                hs = HoSo.objects.filter(so_ky_hieu__iexact=so_kh).first()
+        if hs:
+            for dt in types:
+                if not RecordLoaiVanBan.objects.filter(ten_loai__iexact=dt, ho_so=hs).exists():
+                    try:
+                        RecordLoaiVanBan.objects.create(ho_so=hs, ten_loai=dt)
+                    except Exception:
+                        pass
+
+
+def ensure_hoso_and_doc_type(ho_so_name: str, loai_van_ban_name: str = "", creator=None):
+    """
+    Tìm hoặc tự động tạo HoSo và LoaiVanBan an toàn để liên kết với văn bản Đến/Đi,
+    đảm bảo không bao giờ bị mất dữ liệu Danh mục hồ sơ & Loại văn bản khi lưu.
+    """
+    try:
+        from records.models import HoSo, LoaiVanBan as RecordLoaiVanBan
+        from django.contrib.auth import get_user_model
+    except Exception:
+        return None, None
+
+    try:
+        HoSo.objects.exists()
+    except Exception:
+        try:
+            from django.core.management import call_command
+            call_command("migrate", "records", interactive=False)
+        except Exception:
+            return None, None
+
+    ensure_standard_hoso_and_doc_types()
+
+    User = get_user_model()
+    admin_u = creator or User.objects.filter(is_superuser=True).first() or User.objects.first()
+
+    hs = None
+    if ho_so_name and str(ho_so_name).strip():
+        clean_hs = str(ho_so_name).strip()
+        if clean_hs.isdigit():
+            hs = HoSo.objects.filter(pk=int(clean_hs)).first()
+        if not hs:
+            hs = HoSo.objects.filter(ten_ho_so__iexact=clean_hs).first() or HoSo.objects.filter(so_ky_hieu__iexact=clean_hs).first()
+        if not hs and admin_u:
+            words = clean_hs.split()
+            abbr = "".join(w[0].upper() for w in words if w) or "HS"
+            so_kh = f"HS-{abbr}"[:250]
+            counter = 1
+            while HoSo.objects.filter(so_ky_hieu=so_kh).exists():
+                so_kh = f"HS-{abbr}-{counter}"[:250]
+                counter += 1
+            try:
+                hs = HoSo.objects.create(
+                    ten_ho_so=clean_hs,
+                    so_ky_hieu=so_kh,
+                    nguoi_lap=admin_u,
+                )
+            except Exception:
+                hs = HoSo.objects.filter(ten_ho_so__iexact=clean_hs).first() or HoSo.objects.filter(so_ky_hieu__iexact=so_kh).first()
+
+    lvb = None
+    if loai_van_ban_name and str(loai_van_ban_name).strip():
+        clean_lvb = str(loai_van_ban_name).strip()
+        if clean_lvb.isdigit():
+            lvb = RecordLoaiVanBan.objects.filter(pk=int(clean_lvb)).first()
+        if not lvb and hs:
+            lvb = RecordLoaiVanBan.objects.filter(ten_loai__iexact=clean_lvb, ho_so=hs).first()
+            if not lvb:
+                try:
+                    lvb = RecordLoaiVanBan.objects.create(
+                        ho_so=hs,
+                        ten_loai=clean_lvb,
+                    )
+                except Exception:
+                    lvb = RecordLoaiVanBan.objects.filter(ten_loai__iexact=clean_lvb, ho_so=hs).first()
+        if not lvb:
+            lvb = RecordLoaiVanBan.objects.filter(ten_loai__iexact=clean_lvb).first()
+        if not lvb:
+            target_hs = hs or HoSo.objects.filter(is_he_thong=True).first() or HoSo.objects.first()
+            if not target_hs and admin_u:
+                try:
+                    target_hs = HoSo.objects.create(
+                        ten_ho_so="Hồ sơ chung",
+                        so_ky_hieu="HSC",
+                        nguoi_lap=admin_u,
+                        is_he_thong=True,
+                    )
+                except Exception:
+                    target_hs = HoSo.objects.filter(so_ky_hieu="HSC").first() or HoSo.objects.first()
+            if target_hs:
+                try:
+                    lvb = RecordLoaiVanBan.objects.create(
+                        ho_so=target_hs,
+                        ten_loai=clean_lvb,
+                    )
+                except Exception:
+                    lvb = RecordLoaiVanBan.objects.filter(ten_loai__iexact=clean_lvb, ho_so=target_hs).first() or RecordLoaiVanBan.objects.filter(ten_loai__iexact=clean_lvb).first()
+
+    return hs, lvb
+
+

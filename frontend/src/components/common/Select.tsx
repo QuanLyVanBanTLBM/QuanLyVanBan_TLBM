@@ -13,6 +13,8 @@ export interface SelectOption {
 export interface SelectProps {
   id?: string;
   name?: string;
+  title?: string;
+  nativeSelect?: boolean;
   value: string;
   onChange: (value: string) => void;
   options: SelectOption[];
@@ -32,6 +34,8 @@ export interface SelectProps {
 export const Select: React.FC<SelectProps> = ({
   id,
   name,
+  title,
+  nativeSelect = false,
   value,
   onChange,
   options,
@@ -196,6 +200,39 @@ export const Select: React.FC<SelectProps> = ({
         data-testid={id ? `select-hidden-${id}` : undefined}
       />
 
+      {/* Hidden Native Select để tương thích 100% với a11y, screen readers & automated test suites */}
+      {nativeSelect && (
+        <select
+          tabIndex={-1}
+          aria-hidden="true"
+          title={title}
+          value={value}
+          disabled={disabled}
+          onChange={(e) => onChange(e.target.value)}
+          className="sr-only"
+          style={{
+            position: 'absolute',
+            width: '1px',
+            height: '1px',
+            padding: 0,
+            margin: '-1px',
+            overflow: 'hidden',
+            clip: 'rect(0, 0, 0, 0)',
+            whiteSpace: 'nowrap',
+            borderWidth: 0,
+          }}
+        >
+          {!options.some((opt) => opt.value === '') && placeholder && (
+            <option value="">{placeholder}</option>
+          )}
+          {options.map((opt) => (
+            <option key={opt.value} value={opt.value} disabled={opt.disabled}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      )}
+
       {/* Nút Trigger Dropdown */}
       <button
         type="button"
@@ -262,7 +299,7 @@ export const Select: React.FC<SelectProps> = ({
       {/* Menu Xổ Xuống (Dropdown Popover) */}
       {isOpen && (
         <div
-          className="dropdown-animate absolute left-0 top-full mt-1.5 w-full min-w-[220px] rounded-xl bg-surface-elevated border border-border-subtle shadow-2xl p-1.5 z-[10002] flex flex-col"
+          className="dropdown-animate absolute left-0 right-0 top-full mt-1.5 w-full max-w-full sm:min-w-[220px] rounded-xl bg-surface-elevated border border-border-subtle shadow-2xl p-1.5 z-[10002] flex flex-col box-border"
           role="listbox"
         >
           {/* Ô Tìm Kiếm Nhanh */}
@@ -323,6 +360,7 @@ export const Select: React.FC<SelectProps> = ({
                           key={option.value}
                           role="option"
                           aria-selected={isSelected}
+                          title={option.label}
                           onClick={() => !option.disabled && handleSelect(option.value)}
                           className={`w-full px-2.5 py-1.5 text-sm rounded-lg text-left flex items-center justify-between transition-colors cursor-pointer select-none ${
                             isSelected
@@ -363,6 +401,7 @@ export const Select: React.FC<SelectProps> = ({
                     key={option.value}
                     role="option"
                     aria-selected={isSelected}
+                    title={option.label}
                     onClick={() => !option.disabled && handleSelect(option.value)}
                     className={`w-full px-3 py-2 text-sm rounded-lg text-left flex items-center justify-between transition-colors cursor-pointer select-none ${
                       isSelected

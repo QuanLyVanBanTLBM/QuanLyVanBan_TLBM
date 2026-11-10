@@ -30,6 +30,12 @@ describe('Nghiệp Vụ Khóa Thay Thế Văn Bản (Replacement Guard - Theo Ch
     fireEvent.change(screen.getByPlaceholderText('VD: 125/BGDDT-VP'), {
       target: { value: '112/TB-SGDĐT' },
     });
+    fireEvent.change(screen.getByPlaceholderText(/Hồ sơ công văn đến/i), {
+      target: { value: 'Hồ sơ công văn đến' },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/Nhập loại văn bản/i), {
+      target: { value: 'Thông báo' },
+    });
     fireEvent.change(screen.getByPlaceholderText(/Bộ Giáo dục và Đào tạo/i), {
       target: { value: 'Sở Giáo dục và Đào tạo' },
     });
@@ -64,6 +70,12 @@ describe('Nghiệp Vụ Khóa Thay Thế Văn Bản (Replacement Guard - Theo Ch
     // Nhập số hiệu văn bản hiện tại
     fireEvent.change(screen.getByPlaceholderText('VD: 125/BGDDT-VP'), {
       target: { value: '112/TB-SGDĐT' },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/Hồ sơ công văn đến/i), {
+      target: { value: 'Hồ sơ công văn đến' },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/Nhập loại văn bản/i), {
+      target: { value: 'Thông báo' },
     });
     fireEvent.change(screen.getByPlaceholderText(/Bộ Giáo dục và Đào tạo/i), {
       target: { value: 'Sở Giáo dục và Đào tạo' },

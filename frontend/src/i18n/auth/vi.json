@@ -1,0 +1,42 @@
+{
+  "pages": {
+    "login": {
+      "title": "Trang Đăng Nhập Hệ Thống (2 trường hợp: CBNV & Quản trị viên)",
+      "module": "Module 1.1: Layout & Đăng nhập",
+      "assignedTeam": "Nhóm 1 (Phân hệ Đăng nhập & Xác thực)",
+      "codeRef": "Mục 1.1 · Độ khó: 0.60",
+      "isGroup1": true,
+      "desc": "Xác thực tài khoản cán bộ nhân viên và tài khoản quản trị hệ thống với 2 giao diện riêng biệt."
+    }
+  },
+  "auth": {
+    "backToDashboard": "Vào Bàn Làm Việc (Dashboard)",
+    "brandTitle": "Quản lý văn bản & Tài liệu Bảo Long",
+    "brandSubtitle": "Chuyển đổi số",
+    "welcomeBack": "Chào mừng trở lại",
+    "welcomeDesc": "Vui lòng nhập thông tin xác thực để vào hệ thống tác nghiệp.",
+    "usernameLabel": "Tài khoản / Mã nhân viên",
+    "usernamePlaceholder": "Nhập tên đăng nhập hoặc mã cán bộ...",
+    "passwordLabel": "Mật khẩu xác thực",
+    "passwordPlaceholder": "Nhập mật khẩu...",
+    "hidePassword": "Ẩn mật khẩu",
+    "showPassword": "Hiện mật khẩu",
+    "rememberMe": "Ghi nhớ phiên (30 ngày)",
+    "forgotPassword": "Quên mật khẩu?",
+    "forgotPasswordAlert": "Vui lòng liên hệ Quản trị viên hệ thống để cấp lại mật khẩu!",
+    "loginBtn": "Đăng nhập",
+    "loggingIn": "Đang xác thực...",
+    "loginSuccess": "Đăng nhập thành công!",
+    "invalidCredentials": "Tên đăng nhập hoặc mật khẩu không chính xác!",
+    "networkError": "Không thể kết nối đến máy chủ xác thực. Vui lòng kiểm tra lại dịch vụ Backend!",
+    "sessionExpired": "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại!",
+    "enterpriseTagline": "Bảo hiểm Bảo Long",
+    "securityBadge": "Hệ thống Bảo mật & Xác thực",
+    "characters": {
+      "purple": "Click để tớ nhảy!",
+      "black": "Click để tớ nhún nhảy!",
+      "orange": "Click để tớ cười to hơn!",
+      "yellow": "Click để tớ lắc lư!"
+    }
+  }
+}

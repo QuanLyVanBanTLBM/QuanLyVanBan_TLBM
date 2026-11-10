@@ -1,0 +1,43 @@
+name: PR gắn issue
+
+on:
+  pull_request:
+    branches: [staging]
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  issues: read
+  pull-requests: read
+
+jobs:
+  issue-link:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kiểm tra PR gắn issue và tên nhánh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BODY: ${{ github.event.pull_request.body }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          # AGENTS.md mục 8: mô tả PR có `Closes #<số>` hoặc `Refs #<số>` trỏ tới một issue.
+          refs=$(printf '%s\n' "$BODY" | grep -oiE '\b(closes|fixes|resolves|refs)[[:space:]]+#[0-9]+' | grep -oE '[0-9]+' || true)
+          if [ -z "$refs" ]; then
+            echo "::error::Mô tả PR thiếu dòng 'Closes #<số issue>' hoặc 'Refs #<số issue>' (AGENTS.md mục 8)."
+            exit 1
+          fi
+          ok=0
+          for n in $refs; do
+            if gh api "repos/$REPO/issues/$n" --jq 'if .pull_request then "pr" else "issue" end' 2>/dev/null | grep -qx issue; then
+              echo "Gắn issue #$n."
+              ok=1
+            else
+              echo "#$n không phải issue của repo."
+            fi
+          done
+          [ "$ok" -eq 1 ] || { echo "::error::Các số tham chiếu trong mô tả PR đều không phải issue."; exit 1; }
+          # Tên nhánh theo quy ước <loại>/<số-issue>-<mô-tả>; chỉ cảnh báo để không chặn nhánh tạo trước quy ước.
+          if ! printf '%s' "$HEAD_REF" | grep -qE '^(feat|fix|docs|chore|refactor)/[0-9]+-[a-z0-9-]+$'; then
+            echo "::warning::Tên nhánh '$HEAD_REF' chưa theo quy ước <loại>/<số-issue>-<mô-tả> (AGENTS.md mục 8)."
+          fi

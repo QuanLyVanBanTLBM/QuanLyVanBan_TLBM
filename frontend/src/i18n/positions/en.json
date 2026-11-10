@@ -1,0 +1,113 @@
+{
+  "navigation": {
+    "positions": "Job Positions"
+  },
+  "pages": {
+    "positions": {
+      "title": "Job Positions Directory",
+      "module": "Module 7.4: System Admin - Job Positions",
+      "assignedTeam": "Group 7 (System & Utilities Subsystem)",
+      "codeRef": "Item 7.4 · Difficulty: 0.80",
+      "isGroup1": false,
+      "desc": "Position list by priority order, creation, Excel template import and position search."
+    }
+  },
+  "positions": {
+    "title": "Position Directory",
+    "desc": "Manage the shared position catalog for staff and its display priority order.",
+    "addBtn": "Add Position",
+    "createTitle": "Add New Position",
+    "editTitle": "Update Position",
+    "sttLabel": "Priority No.",
+    "sttPlaceholder": "Leave blank to use the next number automatically",
+    "sttHelp": "Positive integer, must be unique. Leave blank to auto-assign the highest number + 1.",
+    "nameLabel": "Position name",
+    "namePlaceholder": "e.g. Department Head",
+    "isPublicLabel": "Publicly visible",
+    "isPublicHelp": "If unchecked, the position is only visible to administrators.",
+    "notesLabel": "Notes",
+    "notesPlaceholder": "Enter additional notes (optional)",
+    "deleteConfirmTitle": "Confirm position deletion",
+    "deleteConfirmDesc": "Are you sure you want to delete the position \"{name}\"? This action cannot be undone.",
+    "table": {
+      "stt": "No.",
+      "name": "Position name",
+      "status": "Status",
+      "notes": "Notes",
+      "actions": "Actions",
+      "public": "Public",
+      "internal": "Internal",
+      "empty": "No positions yet.",
+      "emptySearch": "No matching positions found.",
+      "loading": "Loading data...",
+      "emptyValue": "—",
+      "paginationInfo": "Showing {from} - {to} of {total}",
+      "prevPage": "Previous page",
+      "nextPage": "Next page"
+    },
+    "actions": {
+      "searchPlaceholder": "Search by position name...",
+      "save": "Save changes",
+      "create": "Create",
+      "cancel": "Cancel",
+      "close": "Close",
+      "edit": "Edit",
+      "delete": "Delete",
+      "retry": "Retry"
+    },
+    "messages": {
+      "nameRequired": "Position name cannot be empty or contain only spaces.",
+      "nameTooLong": "Position name must be at most 255 characters.",
+      "nameExists": "This position name already exists.",
+      "sttInvalid": "Priority number must be a positive integer.",
+      "sttTooLarge": "Priority number must be at most 2147483647.",
+      "sttExists": "This priority number is already in use. Please choose another.",
+      "notFound": "Position not found.",
+      "inUse": "This position cannot be deleted because it is assigned to staff members.",
+      "inUseByModule": "This position cannot be deleted because it is used in a signing process.",
+      "permissionDenied": "You do not have permission to perform this action.",
+      "createSuccess": "Position added successfully.",
+      "updateSuccess": "Position updated successfully.",
+      "deleteSuccess": "Position deleted successfully.",
+      "fetchError": "Unable to load positions. Please try again.",
+      "saveError": "Unable to save the position. Please try again.",
+      "templateError": "Unable to download the template. Please try again."
+    },
+    "import": {
+      "openBtn": "Import Excel",
+      "title": "Import Positions From Excel",
+      "desc": "Download the template, fill in the positions, then upload it. Invalid rows are reported with a reason; valid rows are still saved.",
+      "downloadTemplate": "Download template (.xlsx)",
+      "chooseFile": "Choose Excel file (.xlsx)",
+      "noFile": "No file selected",
+      "upload": "Upload and import",
+      "uploading": "Importing...",
+      "resultTitle": "Import result",
+      "totalRows": "Total rows",
+      "importedRows": "Succeeded",
+      "failedRows": "Failed",
+      "errorsTitle": "Failed row details",
+      "rowLabel": "Row {row}",
+      "valueLabel": "Value: {value}",
+      "allSuccess": "All rows were imported successfully.",
+      "fields": {
+        "display_order": "Priority No.",
+        "name": "Position name",
+        "is_public": "Publicly visible"
+      },
+      "errors": {
+        "fileRequired": "Please choose an Excel file to import.",
+        "invalidFile": "Invalid file. Only intact Excel (.xlsx) files are accepted.",
+        "invalidTemplate": "The file does not match the template. Download the template and keep the first-row columns unchanged.",
+        "emptyFile": "The file has no data rows.",
+        "tooManyRows": "The file has too many rows (maximum 1000 rows per import).",
+        "fileTooLarge": "The file is too large (maximum 2 MB).",
+        "invalidStt": "Priority number must be a positive integer.",
+        "invalidPublic": "The public column only accepts Yes or No.",
+        "duplicateNameInFile": "This position name duplicates a row above in the file.",
+        "duplicateSttInFile": "This priority number duplicates a row above in the file.",
+        "importFailed": "Import failed. Please try again."
+      }
+    }
+  }
+}

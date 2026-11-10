@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useTranslation } from '@i18n/translate';
+import { formatGroupName } from '@lib/roleUtils';
 import { Employee } from '@app-types/employee';
 import { Button } from '@components/common/Button';
 import { Badge } from '@components/common/Badge';
@@ -9,6 +10,7 @@ interface EmployeeDetailModalProps {
   onClose: () => void;
   employee: Employee | null;
   onEdit?: (employee: Employee) => void;
+  returnFocusRef?: React.RefObject<HTMLButtonElement | null>;
 }
 
 export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
@@ -16,8 +18,78 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
   onClose,
   employee,
   onEdit,
+  returnFocusRef,
 }) => {
-  const { t } = useTranslation();
+  const { t, currentLang } = useTranslation();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const onCloseRef = useRef(onClose);
+  const onEditRef = useRef(onEdit);
+  const skipFocusRestoreRef = useRef(false);
+  const employeeKey = employee?.id ?? null;
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+    onEditRef.current = onEdit;
+  }, [onClose, onEdit]);
+
+  useEffect(() => {
+    if (!isOpen || employeeKey === null) return;
+
+    skipFocusRestoreRef.current = false;
+    const opener = returnFocusRef?.current;
+    closeButtonRef.current?.focus();
+
+    const dialog = dialogRef.current;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+
+      if (event.key !== 'Tab' || !dialog) return;
+
+      const focusableElements = Array.from(
+        dialog.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter((element) => {
+        const style = window.getComputedStyle(element);
+        return element.getAttribute('aria-hidden') !== 'true' && style.display !== 'none' && style.visibility !== 'hidden';
+      });
+
+      if (focusableElements.length === 0) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+
+      const first = focusableElements[0];
+      const last = focusableElements[focusableElements.length - 1];
+      const activeElement = document.activeElement;
+
+      if (event.shiftKey && (activeElement === first || !dialog.contains(activeElement))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (activeElement === last || !dialog.contains(activeElement))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      if (skipFocusRestoreRef.current) {
+        skipFocusRestoreRef.current = false;
+        return;
+      }
+      window.requestAnimationFrame(() => {
+        if (opener?.isConnected) opener.focus();
+      });
+    };
+  }, [isOpen, employeeKey, returnFocusRef]);
 
   if (!isOpen || !employee) return null;
 
@@ -33,18 +105,27 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-backdrop backdrop-blur-sm animate-fade-in">
-      <div className="bg-surface border border-border rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden animate-scale-up">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="employee-detail-title"
+        tabIndex={-1}
+        className="bg-surface border border-border rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden animate-scale-up focus:outline-none"
+      >
         {/* Modal Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-surface-elevated">
           <div className="flex items-center gap-2">
             <i className="fa-solid fa-id-card text-primary text-lg" />
-            <h2 className="text-lg font-bold text-main">
+            <h2 id="employee-detail-title" className="text-lg font-bold text-main">
               {t('employees.detail.title')}
             </h2>
           </div>
           <button
+            ref={closeButtonRef}
             type="button"
             onClick={onClose}
+            aria-label={t('employees.actions.close')}
             className="text-secondary hover:text-main p-2 rounded-lg hover:bg-surface-hover transition-colors"
           >
             <i className="fa-solid fa-xmark text-lg" />
@@ -151,6 +232,55 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
             </div>
           </div>
 
+          {/* Phân công kiêm nhiệm (Đa phòng ban & Chức vụ) */}
+          {employee.assignments && employee.assignments.length > 0 && (
+            <div className="p-4 bg-surface-elevated border border-border rounded-lg space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-muted uppercase tracking-wider block">
+                  {t('employees.fields.concurrentAssignments')}
+                </span>
+                <span className="text-xs font-medium text-primary bg-primary-subtle px-2 py-0.5 rounded-full border border-primary-border">
+                  {employee.assignments.length}
+                </span>
+              </div>
+              <div className="space-y-2">
+                {employee.assignments.map((assignment, index) => (
+                  <div
+                    key={assignment.id || index}
+                    className="p-3 bg-surface border border-border rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                  >
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-2">
+                        <i className="fa-solid fa-building text-xs text-primary" />
+                        <span className="text-sm font-semibold text-main">
+                          {assignment.don_vi_ten || '—'}
+                        </span>
+                      </div>
+                      {assignment.khoi_ten && (
+                        <span className="text-xs text-secondary block pl-4">
+                          {t('employees.fields.region')}: {assignment.khoi_ten}
+                        </span>
+                      )}
+                    </div>
+                    <div className="sm:text-right space-y-0.5">
+                      <div className="flex items-center sm:justify-end gap-1.5">
+                        <i className="fa-solid fa-briefcase text-xs text-secondary" />
+                        <span className="text-sm font-medium text-main">
+                          {assignment.chuc_vu_ten || '—'}
+                        </span>
+                      </div>
+                      {assignment.chuc_danh && (
+                        <span className="text-xs text-secondary block">
+                          {assignment.chuc_danh}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Nhóm quyền (RBAC) */}
           <div className="p-4 bg-surface-elevated border border-border rounded-lg space-y-2">
             <span className="text-xs font-semibold text-muted uppercase tracking-wider block">
@@ -164,7 +294,7 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
                     className="px-2.5 py-1 text-xs font-medium rounded-md bg-primary-subtle text-primary border border-primary-border"
                   >
                     <i className="fa-solid fa-shield-halved mr-1.5" />
-                    {group.name}
+                    {formatGroupName(group.name, currentLang)}
                   </span>
                 ))}
               </div>
@@ -204,8 +334,8 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
                 type="button"
                 variant="primary"
                 onClick={() => {
-                  onClose();
-                  onEdit(employee);
+                  skipFocusRestoreRef.current = true;
+                  onEditRef.current?.(employee);
                 }}
                 icon="fa-pen-to-square"
               >

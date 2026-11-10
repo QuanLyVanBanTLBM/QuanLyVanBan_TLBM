@@ -1,11 +1,11 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import confetti from 'canvas-confetti';
 import { ActivePageId } from '@app-types/navigation';
 import { UserSession } from '@app-types/auth';
 import { useTranslation } from '@i18n/translate';
 import LanguageSwitcher from '@components/layout/LanguageSwitcher';
-import LoginCharacters from '@components/auth/LoginCharacters';
+import LoginBanner from '@components/auth/LoginBanner';
 import LoginForm from '@components/auth/LoginForm';
 import authService from '@lib/authService';
 import { ApiError } from '@lib/apiClient';
@@ -24,22 +24,6 @@ export default function LoginPage({ onNavigate, onLoginSuccess }: LoginPageProps
   const [customError, setCustomError] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isSuccess, setIsSuccess] = useState<boolean>(false);
-
-  // Trạng thái tương tác điều phối giữa Form và Nhân vật hoạt hình
-  const [isUsernameFocused, setIsUsernameFocused] = useState<boolean>(false);
-  const [isPasswordFocused, setIsPasswordFocused] = useState<boolean>(false);
-  const [showPassword, setShowPassword] = useState<boolean>(false);
-  const [isTyping, setIsTyping] = useState<boolean>(false);
-
-  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const triggerTypingAnimation = () => {
-    setIsTyping(true);
-    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-    typingTimeoutRef.current = setTimeout(() => {
-      setIsTyping(false);
-    }, 300);
-  };
 
   const handleLoginSubmit = async ({ username, password }: { username: string; password: string }) => {
     setErrorKey('');
@@ -89,10 +73,16 @@ export default function LoginPage({ onNavigate, onLoginSuccess }: LoginPageProps
             err.data?.detail ||
             'Tài khoản đã bị vô hiệu hóa. Vui lòng liên hệ Quản trị viên.'
           );
-        } else if (err.status === 0) {
-          setErrorKey('auth.networkError');
+        } else if (err.status >= 500) {
+          const raw = err.data?.error || err.data?.detail || '';
+          if (raw.startsWith('<') || raw.includes('<!DOCTYPE')) {
+            setCustomError('Máy chủ đang gặp sự cố (500). Vui lòng thử lại sau!');
+          } else {
+            setCustomError(raw || 'Máy chủ đang gặp sự cố (500). Vui lòng thử lại sau!');
+          }
         } else {
-          setCustomError(err.data?.error || err.data?.detail || err.message);
+          const raw = err.data?.error || err.data?.detail || err.message;
+          setCustomError(raw.startsWith('<') ? 'Đã xảy ra lỗi không xác định.' : raw);
         }
       } else {
         setErrorKey('auth.networkError');
@@ -121,17 +111,10 @@ export default function LoginPage({ onNavigate, onLoginSuccess }: LoginPageProps
         <LanguageSwitcher />
       </div>
 
-      {/* 3. Thẻ chứa Form và Nhân vật Hoạt hình (Container) */}
+      {/* 3. Thẻ chứa Form và Banner thương hiệu Bảo Long */}
       <div className="login-card-container w-full max-w-4xl bg-surface rounded-2xl overflow-hidden shadow-lg flex flex-col md:flex-row relative z-10 md:my-auto border border-border-subtle animate-fade-in">
-        {/* Nửa trái: Sân khấu 4 nhân vật hoạt họa */}
-        <LoginCharacters
-          isUsernameFocused={isUsernameFocused}
-          isPasswordFocused={isPasswordFocused}
-          showPassword={showPassword}
-          isTyping={isTyping}
-          isSuccess={isSuccess}
-          isError={Boolean(activeError)}
-        />
+        {/* Nửa trái: Khung nhận diện thương hiệu Bảo Long */}
+        <LoginBanner />
 
         {/* Nửa phải: Form đăng nhập */}
         <LoginForm
@@ -139,10 +122,10 @@ export default function LoginPage({ onNavigate, onLoginSuccess }: LoginPageProps
           isSuccess={isSuccess}
           error={activeError}
           onSubmit={handleLoginSubmit}
-          onUsernameFocusChange={setIsUsernameFocused}
-          onPasswordFocusChange={setIsPasswordFocused}
-          onShowPasswordChange={setShowPassword}
-          onTyping={triggerTypingAnimation}
+          onUsernameFocusChange={() => {}}
+          onPasswordFocusChange={() => {}}
+          onShowPasswordChange={() => {}}
+          onTyping={() => {}}
         />
       </div>
     </div>

@@ -1,13 +1,17 @@
 import calendar
 from datetime import date, timedelta
+from urllib.parse import urlencode, urlsplit, urlunsplit
+
 from django.conf import settings
+from django.core import signing
 from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.core.mail import send_mail
 from django.core.validators import validate_email
 from django.db import transaction
 from django.db.models import Q
+from django.template.loader import render_to_string
 from django.utils import timezone
-from django.utils.html import escape
+
 from accounts.models import Employee
 from .models import BirthdayEmailLog, BirthdayEmailStatus
 
@@ -17,6 +21,8 @@ PRE_ACCEPTANCE_SMTP_ERRORS = (
 
 STALE_SENDING_NOTE = "Kết quả gửi không xác định, cần đối soát."
 SKIPPED_EMAIL_PREFIX = "Bỏ qua:"
+BIRTHDAY_CARD_TOKEN_SALT = "birthdays.animated-card"
+BIRTHDAY_CARD_TOKEN_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 
 
 def is_birthday_on_date(birth_date: date, target_date: date, leap_year_strategy: str = "FEB_28") -> bool:
@@ -67,69 +73,95 @@ def serialize_staff_birthday(employee: Employee) -> dict:
     }
 
 
-def generate_birthday_email_html(employee: Employee, card_template: str = "GOLDEN") -> str:
+def _birthday_card_data(employee: Employee) -> dict:
+    brand_name = getattr(settings, "BRAND_NAME", "Bảo Long Insurance")
+    return {
+        "employee_name": employee.ho_ten,
+        "birthday_date": employee.ngay_sinh.strftime("%d/%m") if employee.ngay_sinh else "",
+        "department": employee.don_vi.ten if employee.don_vi else "Cơ quan",
+        "position": employee.chuc_vu.name if employee.chuc_vu else "Cán bộ",
+        "brand_name": brand_name,
+        "organization_name": getattr(settings, "ORGANIZATION_NAME", brand_name),
+    }
+
+
+def generate_birthday_card_token(employee: Employee) -> str:
+    """Ký snapshot tối thiểu của thiệp để người nhận xem mà không cần đăng nhập."""
+    return signing.dumps(_birthday_card_data(employee), salt=BIRTHDAY_CARD_TOKEN_SALT, compress=True)
+
+
+def load_birthday_card_token(token: str) -> dict:
+    """Xác minh chữ ký và thời hạn token thiệp (30 ngày)."""
+    return signing.loads(
+        token,
+        salt=BIRTHDAY_CARD_TOKEN_SALT,
+        max_age=BIRTHDAY_CARD_TOKEN_MAX_AGE_SECONDS,
+    )
+
+
+def generate_birthday_card_url(employee: Employee) -> str:
+    """Tạo URL thiệp từ override riêng hoặc địa chỉ frontend dùng cho email."""
+    base_url = (getattr(settings, "BIRTHDAY_CARD_BASE_URL", "") or "").strip()
+    if not base_url:
+        frontend_url = (getattr(settings, "SIGNING_FRONTEND_URL", "") or "").strip().rstrip("/")
+        if not frontend_url:
+            return ""
+        base_url = f"{frontend_url}/birthday-card.html"
+
+    parsed = urlsplit(base_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return ""
+
+    fragment = urlencode({"token": generate_birthday_card_token(employee)})
+    return urlunsplit(parsed._replace(fragment=fragment))
+
+
+def generate_birthday_email_html(
+    employee: Employee,
+    card_template: str = "GOLDEN",
+    card_url: str | None = None,
+) -> str:
     """
-    Tạo nội dung HTML sang trọng, chuẩn mực cho thiệp chúc mừng sinh nhật gửi qua email.
+    Kết xuất thiệp email theo thiết kế Bảo Long và dữ liệu của cán bộ nhân viên.
 
     TUÂN THỦ QUY ĐỊNH BẢO MẬT:
     - Tuyệt đối không hiển thị tuổi hoặc năm sinh trong nội dung thư chúc mừng.
     """
+    card_data = _birthday_card_data(employee)
+    return render_to_string(
+        "birthdays/birthday_email.html",
+        {
+            **card_data,
+            "birthday_card_url": card_url if card_url is not None else generate_birthday_card_url(employee),
+        },
+    )
+
+
+def generate_birthday_email_text(employee: Employee, card_url: str | None = None) -> str:
+    """Tạo bản text khớp nội dung thiệp HTML và thông tin công tác của nhân viên."""
+    birthday_date = employee.ngay_sinh.strftime("%d/%m") if employee.ngay_sinh else ""
+    department = employee.don_vi.ten if employee.don_vi else "Cơ quan"
+    position = employee.chuc_vu.name if employee.chuc_vu else "Cán bộ"
     brand_name = getattr(settings, "BRAND_NAME", "Bảo Long Insurance")
     organization_name = getattr(settings, "ORGANIZATION_NAME", brand_name)
-    department_name = employee.don_vi.ten if employee.don_vi else organization_name
-    day_month_str = f"{employee.ngay_sinh.day:02d}/{employee.ngay_sinh.month:02d}" if employee.ngay_sinh else ""
-    safe_name = escape(employee.ho_ten)
-    safe_brand = escape(brand_name)
-    safe_organization = escape(organization_name)
-    safe_department = escape(department_name)
-    safe_unit = escape(employee.don_vi.ten if employee.don_vi else "Cơ quan")
-    safe_position = escape(employee.chuc_vu.name if employee.chuc_vu else "Cán bộ")
-
-    return f"""<!DOCTYPE html>
-<html lang="vi">
-<head>
-    <meta charset="UTF-8">
-    <style>
-        body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f1f5f9; margin: 0; padding: 20px; }}
-        .card-container {{ max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.1); border: 1px solid #e2e8f0; }}
-        .header-banner {{ background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 50%, #ec4899 100%); padding: 40px 20px; text-align: center; color: #ffffff; }}
-        .header-banner h1 {{ margin: 0; font-size: 24px; font-weight: 700; letter-spacing: 0.5px; }}
-        .header-banner p {{ margin-top: 8px; font-size: 14px; opacity: 0.9; }}
-        .content-body {{ padding: 32px 28px; color: #1e293b; line-height: 1.6; text-align: center; }}
-        .greeting-title {{ font-size: 20px; font-weight: 700; color: #0f172a; margin-bottom: 12px; }}
-        .staff-highlight {{ color: #2563eb; font-weight: 700; }}
-        .message-box {{ background: #f8fafc; border-left: 4px solid #3b82f6; padding: 18px 20px; text-align: left; margin: 20px 0; border-radius: 0 12px 12px 0; font-size: 15px; color: #334155; }}
-        .footer-signature {{ margin-top: 28px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b; text-align: center; }}
-        .footer-signature strong {{ color: #0f172a; }}
-    </style>
-</head>
-<body>
-    <div class="card-container">
-        <div class="header-banner">
-            <h1>🎂 CHÚC MỪNG SINH NHẬT 🎂</h1>
-            <p>{safe_brand}</p>
-        </div>
-        <div class="content-body">
-            <div class="greeting-title">
-                Kính gửi Đồng chí <span class="staff-highlight">{safe_name}</span>
-            </div>
-            <p>
-                Nhân dịp ngày sinh nhật ({day_month_str}), Ban lãnh đạo và tập thể cán bộ nhân viên <strong>{safe_organization}</strong> thân ái gửi đến đồng chí lời chúc mừng nồng nhiệt và tốt đẹp nhất!
-            </p>
-            <div class="message-box">
-                "Kính chúc đồng chí luôn dồi dào sức khỏe, ngập tràn niềm vui, hạnh phúc bền lâu và luôn hoàn thành xuất sắc mọi trọng trách công tác được giao phó!"
-            </div>
-            <p style="font-size: 13px; color: #64748b;">
-                Đơn vị: <strong>{safe_unit}</strong> · Chức vụ: <strong>{safe_position}</strong>
-            </p>
-            <div class="footer-signature">
-                <p>Thư gửi tự động từ <strong>{safe_brand}</strong></p>
-                <p>© {timezone.localdate().year} {safe_organization}</p>
-            </div>
-        </div>
-    </div>
-</body>
-</html>"""
+    text = (
+        f"Kính gửi {employee.ho_ten},\n\n"
+        f"Nhân dịp sinh nhật ngày {birthday_date} của {employee.ho_ten}, Ban Lãnh đạo cùng toàn thể cán bộ nhân viên "
+        f"{organization_name} trân trọng gửi đến {employee.ho_ten} lời chúc mừng sinh nhật nồng nhiệt và tốt đẹp nhất. "
+        f"Chúc {employee.ho_ten} bước sang tuổi mới luôn dồi dào sức khỏe, tràn đầy năng lượng và đón nhận thật nhiều "
+        "niềm vui, hạnh phúc viên mãn bên gia đình, người thân.\n\n"
+        f"Ban Lãnh đạo ghi nhận và trân trọng cảm ơn những nỗ lực, cống hiến và tinh thần trách nhiệm mà "
+        f"{employee.ho_ten} đã không ngừng đóng góp cho sự phát triển vững mạnh của {department} cũng như ngôi nhà chung "
+        f"{organization_name} trong suốt thời gian qua.\n\n"
+        f"Kính chúc {employee.ho_ten} trên cương vị {position} sẽ luôn vững vàng nhiệt huyết, tiếp tục phát huy tối đa "
+        "năng lực để hoàn thành xuất sắc mọi mục tiêu đề ra, gặt hái thêm nhiều thành công rực rỡ và cùng tập thể "
+        f"{brand_name} lan tỏa những giá trị tốt đẹp đến khách hàng và cộng đồng.\n\n"
+        f"Thân mến,\nBan Lãnh đạo và tập thể {brand_name}"
+    )
+    resolved_card_url = card_url if card_url is not None else generate_birthday_card_url(employee)
+    if resolved_card_url:
+        text += f"\n\nMở thiệp chúc mừng sinh nhật: {resolved_card_url}"
+    return text
 
 
 def _email_log(employee: Employee, sent_date: date, recipient: str, subject: str) -> BirthdayEmailLog:
@@ -415,12 +447,13 @@ def send_automated_birthday_emails(
 
             send_error = None
             try:
+                card_url = generate_birthday_card_url(employee)
                 accepted = send_mail(
                     subject=subject,
-                    message=f"Kính chúc đồng chí {employee.ho_ten} sinh nhật vui vẻ, hạnh phúc và thành công!",
+                    message=generate_birthday_email_text(employee, card_url=card_url),
                     from_email=sender_email,
                     recipient_list=[recipient],
-                    html_message=generate_birthday_email_html(employee),
+                    html_message=generate_birthday_email_html(employee, card_url=card_url),
                     fail_silently=False,
                 )
                 if accepted != 1:

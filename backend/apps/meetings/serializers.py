@@ -148,7 +148,13 @@ class UserSimpleSerializer(serializers.Serializer):
     username = serializers.CharField(read_only=True)
     ho_ten = serializers.CharField(read_only=True)
     don_vi_ten = serializers.CharField(source="don_vi.ten", read_only=True, default="")
-    chuc_vu_ten = serializers.CharField(source="chuc_vu.name", read_only=True, default="")
+    chuc_vu_ten = serializers.SerializerMethodField()
+
+    def get_chuc_vu_ten(self, obj):
+        chuc_vu = getattr(obj, "chuc_vu", None)
+        if chuc_vu and getattr(chuc_vu, "name", None):
+            return chuc_vu.name
+        return getattr(obj, "chuc_danh", "") or ""
 
 
 class MeetingBookingSerializer(serializers.ModelSerializer):

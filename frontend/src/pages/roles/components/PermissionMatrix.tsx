@@ -1,11 +1,16 @@
 import React, { useState } from 'react';
 import { useTranslation } from '@i18n/translate';
 import { Permission } from '@app-types/authorization';
+import { filterPermissions } from './permissionFilter';
+import { getModuleLabel, getPermissionLabel } from './permissionLabels';
 
 interface PermissionMatrixProps {
   permissions: Permission[];
   selectedIds: Set<number>;
   onToggle: (permId: number) => void;
+  /** Ô tìm do trang cha giữ (để "Chọn tất cả"/"Bỏ chọn" chỉ tác động lên các quyền đang hiện); bỏ trống thì tự giữ. */
+  query?: string;
+  onQueryChange?: (query: string) => void;
   /** Chỉ xem: người dùng không có quyền sửa nhóm quyền thì không bật/tắt được ô nào (backend vẫn chặn thật). */
   readOnly?: boolean;
 }
@@ -16,8 +21,7 @@ interface ModuleGroup {
   items: Permission[];
 }
 
-// Backend (SQL_Fix4) trả sẵn module_ten tiếng Việt cho từng quyền -> gom nhóm theo đó,
-// giữ đúng thứ tự module của đặc tả; module mới của nhóm khác tự xuất hiện, không cần sửa code ở đây.
+// Dùng module_ten làm khóa nhóm ổn định; nhãn hiển thị được dịch riêng theo ngôn ngữ.
 function groupByModule(permissions: Permission[]): ModuleGroup[] {
   const map = new Map<string, ModuleGroup>();
   for (const perm of permissions) {
@@ -30,26 +34,18 @@ function groupByModule(permissions: Permission[]): ModuleGroup[] {
   return Array.from(map.values());
 }
 
-// Bỏ dấu tiếng Việt và hoa/thường để tìm "chuc vu" vẫn ra "Chức vụ".
-function normalizeText(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/đ/g, 'd')
-    .replace(/Đ/g, 'D')
-    .toLowerCase();
-}
-
-function matchesQuery(perm: Permission, normalizedQuery: string): boolean {
-  if (!normalizedQuery) return true;
-  return [perm.name, perm.codename, perm.module_ten].some((field) => normalizeText(field || '').includes(normalizedQuery));
-}
-
-export const PermissionMatrix: React.FC<PermissionMatrixProps> = ({ permissions, selectedIds, onToggle, readOnly = false }) => {
+export const PermissionMatrix: React.FC<PermissionMatrixProps> = ({
+  permissions,
+  selectedIds,
+  onToggle,
+  query,
+  onQueryChange,
+  readOnly = false,
+}) => {
   const { t } = useTranslation();
-  const [query, setQuery] = useState('');
-  const normalizedQuery = normalizeText(query.trim());
-  const groups = groupByModule(permissions.filter((perm) => matchesQuery(perm, normalizedQuery)));
+  const [ownQuery, setOwnQuery] = useState('');
+  const currentQuery = query ?? ownQuery;
+  const groups = groupByModule(filterPermissions(permissions, currentQuery));
 
   if (permissions.length === 0) {
     return (
@@ -66,8 +62,8 @@ export const PermissionMatrix: React.FC<PermissionMatrixProps> = ({ permissions,
         <i className="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-muted text-sm" />
         <input
           type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          value={currentQuery}
+          onChange={(e) => (onQueryChange ?? setOwnQuery)(e.target.value)}
           placeholder={t('roles.matrixSearchPlaceholder')}
           aria-label={t('roles.matrixSearchPlaceholder')}
           className="w-full pl-10 pr-3.5 py-2 text-sm bg-surface border border-border rounded-lg text-main placeholder-muted focus:outline-none focus:border-primary"
@@ -84,7 +80,7 @@ export const PermissionMatrix: React.FC<PermissionMatrixProps> = ({ permissions,
       {groups.map((group, idx) => (
         <div key={group.key}>
           <h4 className="font-bold text-danger mb-2 text-sm">
-            {idx + 1}. {group.label}
+            {idx + 1}. {getModuleLabel(group.label)}
           </h4>
           <div className="space-y-1 pl-2">
             {group.items.map((perm) => (
@@ -96,7 +92,7 @@ export const PermissionMatrix: React.FC<PermissionMatrixProps> = ({ permissions,
               >
                 <span className="flex items-center gap-2">
                   <i className="fa-solid fa-arrow-right-long text-muted text-xs" />
-                  {perm.name}
+                  {getPermissionLabel(perm)}
                 </span>
                 <input
                   type="checkbox"

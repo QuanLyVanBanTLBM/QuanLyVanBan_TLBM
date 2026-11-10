@@ -7,7 +7,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .models import PermissionInfo
-from .permissions import require_permission
+from .permissions import is_system_admin, require_permission
 from .serializers import GroupSerializer, PermissionSerializer, standard_code
 
 # Quyền theo method, kiểm bằng helper chung trước khi view chạy (kể cả trước khi tra bản ghi,
@@ -127,6 +127,7 @@ def my_permissions_view(request):
     return Response(
         {
             "is_superuser": user.is_superuser,
+            "is_system_admin": is_system_admin(user),
             "permissions": sorted(user.get_all_permissions()),
         }
     )

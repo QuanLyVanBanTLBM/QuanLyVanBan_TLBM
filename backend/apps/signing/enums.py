@@ -20,23 +20,14 @@ class PhamViChucVu(models.TextChoices):
     TOAN_CO_QUAN = "TOAN_CO_QUAN", "Toàn cơ quan"
 
 
-class MucDoTrinhKy(models.TextChoices):
-    """Mức độ ưu tiên xử lý hồ sơ (spec bộ lọc "mức độ"); tạm dùng đến khi có danh mục mức độ chung."""
-
-    THUONG = "THUONG", "Thường"
-    KHAN = "KHAN", "Khẩn"
-    HOA_TOC = "HOA_TOC", "Hỏa tốc"
-
-
 class VaiTroKy(models.TextChoices):
-    KY_NHAY = "KY_NHAY", "Ký nháy"
     KY_CHINH = "KY_CHINH", "Ký chính"
 
 
 class LoaiVanBan(models.TextChoices):
-    # Trình ký chỉ nhận dự thảo văn bản đi (Phase 6c). Văn bản đến thuộc luồng chỉ đạo của Nhóm 2;
-    # văn bản mật đã bỏ khỏi hệ thống. Cột document_type giữ để mở rộng sau.
-    VAN_BAN_DI = "vanbandi", "Văn bản đi"
+    # Bản ghi gắn ngoài Trình ký chỉ nhận văn bản đi (Phase 6c); PDF dự thảo chưa vào sổ để document_type=NULL. Văn bản đến
+    # thuộc luồng chỉ đạo của Nhóm 2; văn bản mật đã bỏ khỏi hệ thống.
+    VAN_BAN_DI = "vanbandi", "Văn bản"
 
 
 class TrangThaiYeuCau(models.TextChoices):
@@ -68,20 +59,6 @@ class TrangThaiNguoiKy(models.TextChoices):
     DA_KY = "DA_KY", "Đã ký"
     TU_CHOI = "TU_CHOI", "Từ chối"
     YEU_CAU_SUA = "YEU_CAU_SUA", "Yêu cầu sửa"
-
-
-class TrangThaiKhoa(models.TextChoices):
-    CHO_KICH_HOAT = "CHO_KICH_HOAT", "Chờ kích hoạt"
-    HOAT_DONG = "HOAT_DONG", "Hoạt động"
-    DA_XOAY_VONG = "DA_XOAY_VONG", "Đã xoay vòng"
-    THU_HOI = "THU_HOI", "Thu hồi"
-    HET_HAN = "HET_HAN", "Hết hạn"
-
-
-class TrangThaiXacMinh(models.TextChoices):
-    CHUA_XAC_MINH = "CHUA_XAC_MINH", "Chưa xác minh"
-    HOP_LE = "HOP_LE", "Hợp lệ"
-    KHONG_HOP_LE = "KHONG_HOP_LE", "Không hợp lệ"
 
 
 class TrangThaiManifest(models.TextChoices):

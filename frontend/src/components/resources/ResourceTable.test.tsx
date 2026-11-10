@@ -190,7 +190,7 @@ describe('ResourceTable Component', () => {
     expect(handlePageChange).toHaveBeenCalledWith(10);
   });
 
-  it('supports quick jumping to page via input', () => {
+  it('supports quick jumping to page via input with Enter key and filters non-digits', () => {
     const handlePageChange = vi.fn();
     render(
       <ResourceTable
@@ -204,15 +204,21 @@ describe('ResourceTable Component', () => {
       />
     );
 
-    const jumpInput = screen.getByLabelText('Nhập số trang muốn chuyển tới');
-    fireEvent.change(jumpInput, { target: { value: '8' } });
+    const jumpInput = screen.getByLabelText('Nhập số trang muốn chuyển tới') as HTMLInputElement;
 
-    const goBtn = screen.getByTitle('Chuyển đến trang đã nhập');
-    fireEvent.click(goBtn);
+    // Không còn nút "Đi"
+    expect(screen.queryByTitle('Chuyển đến trang đã nhập')).not.toBeInTheDocument();
+
+    // Nhập chữ và ký tự đặc biệt -> chỉ giữ lại số
+    fireEvent.change(jumpInput, { target: { value: 'abc!@#8' } });
+    expect(jumpInput.value).toBe('8');
+
+    // Nhấn phím Enter để chuyển trang
+    fireEvent.keyDown(jumpInput, { key: 'Enter', code: 'Enter' });
     expect(handlePageChange).toHaveBeenCalledWith(8);
   });
 
-  it('renders only 3 page numbers (1, 2, 3) on page 1 of 9 pages, not 4 or 5', () => {
+  it('renders only 2 page numbers (1, 2) and last page (9) on page 1 of 9 pages (<< < 1 2 ... 9 > >>)', () => {
     render(
       <ResourceTable
         items={mockItems}
@@ -225,18 +231,24 @@ describe('ResourceTable Component', () => {
       />
     );
 
-    // Kiểm tra có các nút trang 1, 2, 3 và trang cuối 9
+    // Kiểm tra có các nút trang 1, 2 và trang cuối 9
     expect(screen.getByRole('button', { name: 'Trang 1' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Trang 2' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Trang 3' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Trang 9' })).toBeInTheDocument();
 
-    // Tuyệt đối không hiển thị nút trang 4 và 5 theo yêu cầu người dùng
+    // Tuyệt đối không hiển thị nút trang 3, 4, 5
+    expect(screen.queryByRole('button', { name: 'Trang 3' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Trang 4' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Trang 5' })).not.toBeInTheDocument();
+
+    // Có đầy đủ các nút << < > >>
+    expect(screen.getByLabelText('Về trang đầu')).toBeInTheDocument();
+    expect(screen.getByLabelText('Trang trước')).toBeInTheDocument();
+    expect(screen.getByLabelText('Trang sau')).toBeInTheDocument();
+    expect(screen.getByLabelText('Đến trang cuối')).toBeInTheDocument();
   });
 
-  it('renders only 3 page numbers (7, 8, 9) on page 9 of 9 pages, not 5 or 6', () => {
+  it('renders only first page (1) and last 2 page numbers (8, 9) on page 9 of 9 pages (<< < 1 ... 8 9 > >>)', () => {
     render(
       <ResourceTable
         items={[mockItems[0], mockItems[1]]}
@@ -249,15 +261,42 @@ describe('ResourceTable Component', () => {
       />
     );
 
-    // Kiểm tra có các nút trang 1, 7, 8, 9
+    // Kiểm tra có các nút trang 1, 8, 9
     expect(screen.getByRole('button', { name: 'Trang 1' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Trang 7' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Trang 8' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Trang 9' })).toBeInTheDocument();
 
-    // Không hiển thị 5 hay 6
-    expect(screen.queryByRole('button', { name: 'Trang 5' })).not.toBeInTheDocument();
+    // Không hiển thị 6 hay 7
     expect(screen.queryByRole('button', { name: 'Trang 6' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Trang 7' })).not.toBeInTheDocument();
+  });
+
+  it('renders clean pagination (1 ... 3 ... 13) without page 2 and with static ••• ellipsis on page 3', () => {
+    const { container } = render(
+      <ResourceTable
+        items={mockItems}
+        currentPage={3}
+        totalPages={13}
+        pageSize={5}
+        totalCount={65}
+        onPageChange={vi.fn()}
+        onViewDetail={vi.fn()}
+      />
+    );
+
+    // Kiểm tra có các nút trang 1, 3 và trang cuối 13
+    expect(screen.getByRole('button', { name: 'Trang 1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Trang 3' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Trang 13' })).toBeInTheDocument();
+
+    // Không hiển thị trang 2 (rút gọn thành ...)
+    expect(screen.queryByRole('button', { name: 'Trang 2' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Trang 4' })).not.toBeInTheDocument();
+
+    // Nút ba chấm không chứa icon fa-angles-left / fa-angles-right khi hover
+    const ellipsisButtons = screen.getAllByText('•••');
+    expect(ellipsisButtons.length).toBe(2);
+    expect(container.querySelectorAll('.fa-angles-left').length).toBe(1); // Chỉ có nút << về trang đầu
   });
 
   it('renders spacer rows on the last page to stabilize table height', () => {
@@ -309,5 +348,188 @@ describe('ResourceTable Component', () => {
     expect(screen.queryByText(/1:5173/)).not.toBeInTheDocument();
     expect(screen.queryByText(/d881270d/i)).not.toBeInTheDocument();
     expect(screen.getByText('PDF')).toBeInTheDocument();
+  });
+
+  it('calls onViewDetail and does NOT call onDrillDown when clicking on row or file badge', () => {
+    const handleViewDetail = vi.fn();
+    const handleDrillDown = vi.fn();
+    render(
+      <ResourceTable
+        items={mockItems}
+        currentPage={1}
+        totalPages={1}
+        pageSize={10}
+        totalCount={3}
+        onPageChange={vi.fn()}
+        onViewDetail={handleViewDetail}
+        onDrillDown={handleDrillDown}
+      />
+    );
+
+    // Bấm vào badge Tệp
+    const fileBadges = screen.getAllByText('PDF');
+    fireEvent.click(fileBadges[0]);
+    expect(handleViewDetail).toHaveBeenCalledWith(mockItems[0]);
+    expect(handleDrillDown).not.toHaveBeenCalled();
+
+    // Bấm vào dòng
+    const rowTitle = screen.getByText('Quy chế quản lý nội bộ 2026');
+    fireEvent.click(rowTitle);
+    expect(handleViewDetail).toHaveBeenCalledWith(mockItems[0]);
+    expect(handleDrillDown).not.toHaveBeenCalled();
+  });
+
+  it('keeps scheduled document active with expiry date badge when expiration date is in the future', () => {
+    const futureItem: ResourceItem = {
+      id: 99,
+      dm_tai_lieu: 1,
+      loai_tai_lieu: [1],
+      tieu_de: 'Tài liệu hết hạn tương lai',
+      ngay_dang: '2026-01-01',
+      hieu_luc: 'HET_HIEU_LUC',
+      ngay_het_hieu_luc: '2099-12-31',
+      file_dinh_kem: '/media/test.pdf',
+      hien_thi: 'TAT_CA',
+    };
+
+    const { container } = render(
+      <ResourceTable
+        items={[futureItem]}
+        currentPage={1}
+        totalPages={1}
+        pageSize={10}
+        totalCount={1}
+        onPageChange={vi.fn()}
+        onViewDetail={vi.fn()}
+      />
+    );
+
+    const row = container.querySelector('tbody tr');
+    expect(row?.className).not.toContain('bg-slate-100/70');
+    expect(screen.getByText('Còn hiệu lực')).toBeInTheDocument();
+    expect(screen.getByText(/31\/12\/2099/)).toBeInTheDocument();
+  });
+  it('renders first attachment badge and ... badge when multiple file types are attached', () => {
+    const multiItem: ResourceItem = {
+      id: 101,
+      dm_tai_lieu: 1,
+      loai_tai_lieu: [1],
+      tieu_de: 'Tài liệu nhiều loại tệp',
+      ngay_dang: '2026-10-30',
+      hieu_luc: 'CON_HIEU_LUC',
+      hien_thi: 'TAT_CA',
+      file_dinh_kem: '/media/bao_cao.pdf',
+      attachments: [
+        { id: 1, name: 'bao_cao.pdf', path: '/media/bao_cao.pdf', mime_type: 'application/pdf', file_size: 1000 },
+        { id: 2, name: 'hinh_anh.jpg', path: '/media/hinh_anh.jpg', mime_type: 'image/jpeg', file_size: 2000 },
+        { id: 3, name: 'bang_tinh.xlsx', path: '/media/bang_tinh.xlsx', mime_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', file_size: 3000 },
+        { id: 4, name: 'huong_dan.docx', path: '/media/huong_dan.docx', mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', file_size: 4000 },
+      ],
+    };
+
+    render(
+      <ResourceTable
+        items={[multiItem]}
+        currentPage={1}
+        totalPages={1}
+        pageSize={10}
+        totalCount={1}
+        onPageChange={vi.fn()}
+        onViewDetail={vi.fn()}
+      />
+    );
+
+    // Hiển thị loại đầu tiên: PDF
+    expect(screen.getByText('PDF')).toBeInTheDocument();
+    // Hiển thị badge '...' cho các loại còn lại
+    expect(screen.getByText('...')).toBeInTheDocument();
+    // Không hiển thị trực tiếp tất cả badge khác trên hàng để tránh làm vỡ layout/kéo giãn dòng
+    expect(screen.queryByText('XLSX')).not.toBeInTheDocument();
+    expect(screen.queryByText('DOCX')).not.toBeInTheDocument();
+  });
+
+  it('hides edit and delete action menu items when canEdit and canDelete return false', () => {
+    const handleEdit = vi.fn();
+    const handleDelete = vi.fn();
+
+    render(
+      <ResourceTable
+        items={mockItems}
+        currentPage={1}
+        totalPages={1}
+        pageSize={10}
+        totalCount={3}
+        onPageChange={vi.fn()}
+        onViewDetail={vi.fn()}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
+        canEdit={() => false}
+        canDelete={() => false}
+      />
+    );
+
+    // Mở menu ⋯
+    const menuButtons = screen.getAllByTitle('Thao tác');
+    fireEvent.click(menuButtons[0]);
+
+    // "Xem chi tiết" vẫn có
+    expect(screen.getByRole('button', { name: 'Xem chi tiết tài liệu' })).toBeInTheDocument();
+
+    // "Chỉnh sửa" và "Xóa" bị ẩn do thiếu quyền RBAC
+    expect(screen.queryByRole('button', { name: 'Chỉnh sửa' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Xóa' })).not.toBeInTheDocument();
+  });
+
+  it('shows edit and delete action menu items when canEdit and canDelete return true', () => {
+    const handleEdit = vi.fn();
+    const handleDelete = vi.fn();
+
+    render(
+      <ResourceTable
+        items={mockItems}
+        currentPage={1}
+        totalPages={1}
+        pageSize={10}
+        totalCount={3}
+        onPageChange={vi.fn()}
+        onViewDetail={vi.fn()}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
+        canEdit={() => true}
+        canDelete={() => true}
+      />
+    );
+
+    // Mở menu ⋯
+    const menuButtons = screen.getAllByTitle('Thao tác');
+    fireEvent.click(menuButtons[0]);
+
+    // Cả "Chỉnh sửa" và "Xóa" đều hiển thị
+    expect(screen.getByRole('button', { name: 'Chỉnh sửa' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Xóa' })).toBeInTheDocument();
+  });
+
+  it('renders HET_VA_THAY_THE badge correctly with label "Hết hiệu lực và thay thế"', () => {
+    const replacedItem: ResourceItem = {
+      ...mockItems[0],
+      id: 99,
+      hieu_luc: 'HET_VA_THAY_THE',
+      link_thay_the: 'https://example.com/replacement.pdf',
+    };
+
+    render(
+      <ResourceTable
+        items={[replacedItem]}
+        currentPage={1}
+        totalPages={1}
+        pageSize={10}
+        totalCount={1}
+        onPageChange={vi.fn()}
+        onViewDetail={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('Hết hiệu lực và thay thế')).toBeInTheDocument();
+    expect(screen.queryByText('Hết hiệu lực')).not.toBeInTheDocument();
   });
 });

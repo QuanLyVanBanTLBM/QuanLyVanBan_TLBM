@@ -1,23 +1,42 @@
 import json
-import shutil
+import os
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
 from backend.config import DOCS_DIR, DOC_REGISTRY_PATH
 
 
-def save_upload_file(file) -> tuple[Path, bool]:
+def stage_upload_file(file) -> tuple[Path, str, bool]:
+    """Write an upload outside the visible document list until indexing succeeds."""
     DOCS_DIR.mkdir(parents=True, exist_ok=True)
+    staging_dir = DOCS_DIR / ".staging"
+    staging_dir.mkdir(parents=True, exist_ok=True)
+    filename = Path(file.name).name
+    final_path = DOCS_DIR / filename
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix="upload-", suffix=Path(filename).suffix, dir=staging_dir
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as buffer:
+            for chunk in file.chunks():
+                buffer.write(chunk)
+    except Exception:
+        temporary_path.unlink(missing_ok=True)
+        raise
+    return temporary_path, filename, final_path.exists()
 
-    safe_name = Path(file.name).name
-    saved_path = DOCS_DIR / safe_name
-    is_reupload = saved_path.exists()
 
-    with saved_path.open("wb") as buffer:
-        for chunk in file.chunks():
-            buffer.write(chunk)
+def commit_staged_upload(staged_path: Path, filename: str) -> Path:
+    final_path = DOCS_DIR / Path(filename).name
+    final_path.parent.mkdir(parents=True, exist_ok=True)
+    staged_path.replace(final_path)
+    return final_path
 
-    return saved_path, is_reupload
+
+def discard_staged_upload(staged_path: Path) -> None:
+    staged_path.unlink(missing_ok=True)
 
 
 # ── Registry CRUD ──────────────────────────────────────────────
@@ -73,11 +92,15 @@ def update_category_in_registry(filename: str, category: str):
     save_registry(entries)
 
 
-def remove_from_registry(filename: str):
+def remove_from_registry(filename: str) -> bool:
     """Xóa 1 entry theo filename."""
     entries = load_registry()
+    initial_len = len(entries)
     entries = [e for e in entries if e.get("filename") != filename]
-    save_registry(entries)
+    if len(entries) < initial_len:
+        save_registry(entries)
+        return True
+    return False
 
 
 def clear_registry():
@@ -134,6 +157,11 @@ def clear_documents():
     DOCS_DIR.mkdir(parents=True, exist_ok=True)
 
     for item in DOCS_DIR.iterdir():
+        if item.is_dir() and item.name == ".staging":
+            for staged_file in item.iterdir():
+                if staged_file.is_file():
+                    staged_file.unlink()
+            item.rmdir()
         if item.is_file() and item.name != ".gitkeep":
             item.unlink()
 
@@ -145,11 +173,11 @@ def delete_document_file(filename: str) -> bool:
 
     safe_name = Path(filename).name
     file_path = DOCS_DIR / safe_name
-    existed = file_path.exists() and file_path.is_file()
+    file_existed = file_path.exists() and file_path.is_file()
 
-    if existed and safe_name != ".gitkeep":
+    if file_existed and safe_name != ".gitkeep":
         file_path.unlink()
 
-    remove_from_registry(safe_name)
+    reg_existed = remove_from_registry(safe_name)
 
-    return existed
+    return file_existed or reg_existed

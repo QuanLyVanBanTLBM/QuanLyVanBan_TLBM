@@ -32,8 +32,334 @@ Lịch sử & Nhật ký:
 import os
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator
 from django.db import IntegrityError, models, transaction
+from django.db.models import F, Value
+from django.db.models.functions import Trim
+from django.db.models.lookups import Exact
 from django.utils import timezone
+
+from document_storage import build_dated_path, get_document_storage
+
+DB_NOW = models.Func(function="now", output_field=models.DateTimeField())
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Folder Model — Thư mục nhiều cấp (Nested / Hierarchical)
+# ═══════════════════════════════════════════════════════════════════
+
+class Folder(models.Model):
+    """
+    Model quản lý thư mục phân cấp nhiều cấp (Nested Folder / Hierarchical Folder).
+
+    Hỗ trợ:
+    - Tự tham chiếu (self-referential ForeignKey) qua trường `parent`.
+    - Materialized Path (`path`) cho truy vấn nhanh cây thư mục.
+    - Giới hạn độ sâu tối đa (MAX_DEPTH = 10).
+    - Chống vòng lặp thư mục (Circular Reference Prevention).
+    - Cascade delete: xóa thư mục cha sẽ xóa toàn bộ con cháu.
+
+    Cấu trúc ví dụ:
+        Tài liệu (depth=0, path="/1/")
+        ├── Lập trình (depth=1, path="/1/2/")
+        │   ├── Python (depth=2, path="/1/2/3/")
+        │   │   └── Bài tập (depth=3, path="/1/2/3/4/")
+        │   └── Java (depth=2, path="/1/2/5/")
+        └── Cơ sở dữ liệu (depth=1, path="/1/6/")
+    """
+
+    MAX_DEPTH = 10  # Giới hạn tối đa 10 cấp
+
+    name = models.CharField(
+        "Tên thư mục",
+        max_length=255,
+        help_text="Tên hiển thị của thư mục.",
+    )
+    parent = models.ForeignKey(
+        "self",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="children",
+        verbose_name="Thư mục cha",
+        help_text="Để trống nếu là thư mục gốc (root).",
+    )
+    # Materialized Path: lưu đường dẫn ID từ gốc, ví dụ "/1/3/7/"
+    path = models.CharField(
+        "Đường dẫn phân cấp",
+        max_length=1000,
+        default="/",
+        db_index=True,
+        editable=False,
+        help_text="Materialized Path — tự động tính toán, không sửa tay.",
+    )
+    depth = models.PositiveIntegerField(
+        "Độ sâu",
+        default=0,
+        editable=False,
+        help_text="0 = thư mục gốc, 1 = con của gốc, ...",
+    )
+    order = models.PositiveIntegerField(
+        "Thứ tự hiển thị",
+        default=0,
+        help_text="Sắp xếp các thư mục cùng cấp.",
+    )
+    description = models.TextField(
+        "Mô tả",
+        blank=True,
+        default="",
+    )
+    is_local = models.BooleanField(
+        "Thư mục cục bộ (Local)",
+        default=False,
+        help_text="Thư mục được đồng bộ trực tiếp từ ổ đĩa máy tính.",
+    )
+    local_path = models.CharField(
+        "Đường dẫn Local",
+        max_length=1000,
+        blank=True,
+        default="",
+        help_text="Đường dẫn thư mục thực tế trên ổ đĩa máy tính.",
+    )
+
+    # ── Audit ──────────────────────────────────────────────────────
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="Người tạo",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="folders_created",
+    )
+    created_at = models.DateTimeField("Ngày tạo", auto_now_add=True)
+    updated_at = models.DateTimeField("Ngày cập nhật", auto_now=True)
+
+    class Meta:
+        app_label = "documents"
+        db_table = "documents_folder"
+        verbose_name = "Thư mục"
+        verbose_name_plural = "Thư mục"
+        ordering = ["path", "order", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["parent", "name"],
+                name="uq_folder_parent_name",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["parent"], name="idx_folder_parent"),
+            models.Index(fields=["path"], name="idx_folder_path"),
+            models.Index(fields=["depth"], name="idx_folder_depth"),
+        ]
+
+    def __str__(self):
+        return self.name
+
+    # ── Đường dẫn hiển thị ────────────────────────────────────────
+    @property
+    def full_path_display(self):
+        """Trả về đường dẫn hiển thị dạng 'Tài liệu / Lập trình / Python'."""
+        parts = []
+        node = self
+        while node:
+            parts.append(node.name)
+            node = node.parent
+        return " / ".join(reversed(parts))
+
+    # ── Lấy tất cả tổ tiên ───────────────────────────────────────
+    def get_ancestors(self):
+        """Trả về danh sách tổ tiên từ gốc đến cha trực tiếp (không bao gồm chính nó)."""
+        ancestors = []
+        node = self.parent
+        while node:
+            ancestors.append(node)
+            node = node.parent
+        return list(reversed(ancestors))
+
+    # ── Lấy tất cả con cháu ──────────────────────────────────────
+    def get_descendants(self):
+        """Trả về QuerySet tất cả con cháu (dùng Materialized Path)."""
+        if not self.pk:
+            return Folder.objects.none()
+        prefix = self.path
+        return Folder.objects.filter(path__startswith=prefix).exclude(pk=self.pk)
+
+    # ── Lấy breadcrumb ───────────────────────────────────────────
+    def get_breadcrumb(self):
+        """Trả về danh sách breadcrumb từ gốc đến thư mục hiện tại."""
+        ancestors = self.get_ancestors()
+        return [*ancestors, self]
+
+    # ── Kiểm tra vòng lặp ────────────────────────────────────────
+    def _check_circular(self, new_parent):
+        """Kiểm tra di chuyển thư mục có tạo vòng lặp không."""
+        if new_parent is None:
+            return
+        if new_parent.pk == self.pk:
+            raise ValidationError(
+                "Không thể đặt thư mục làm con của chính nó."
+            )
+        # Kiểm tra new_parent có phải là con cháu của self không
+        descendant_ids = set(self.get_descendants().values_list("pk", flat=True))
+        if new_parent.pk in descendant_ids:
+            raise ValidationError(
+                f"Không thể di chuyển thư mục '{self.name}' vào bên trong "
+                f"thư mục con '{new_parent.name}' (tạo vòng lặp)."
+            )
+
+    # ── Tính toán path & depth ────────────────────────────────────
+    def _compute_path_and_depth(self):
+        """Tính toán materialized path và depth từ parent."""
+        if self.parent:
+            self.depth = self.parent.depth + 1
+            # path sẽ được set sau save vì cần pk
+        else:
+            self.depth = 0
+
+    # ── Cập nhật path cho bản thân và toàn bộ con cháu ───────────
+    def _update_paths_recursive(self):
+        """Cập nhật materialized path cho bản thân và tất cả con cháu."""
+        if self.parent:
+            self.path = f"{self.parent.path}{self.pk}/"
+        else:
+            self.path = f"/{self.pk}/"
+        Folder.objects.filter(pk=self.pk).update(path=self.path)
+
+        for child in Folder.objects.filter(parent=self):
+            child.path = f"{self.path}{child.pk}/"
+            child.depth = self.depth + 1
+            Folder.objects.filter(pk=child.pk).update(
+                path=child.path, depth=child.depth
+            )
+            child._update_paths_recursive_children()
+
+    def _update_paths_recursive_children(self):
+        """Cập nhật path cho con cháu (helper nội bộ)."""
+        for child in Folder.objects.filter(parent=self):
+            child.path = f"{self.path}{child.pk}/"
+            child.depth = self.depth + 1
+            Folder.objects.filter(pk=child.pk).update(
+                path=child.path, depth=child.depth
+            )
+            child._update_paths_recursive_children()
+
+    # ── Override save ─────────────────────────────────────────────
+    def save(self, *args, **kwargs):
+        # Kiểm tra vòng lặp nếu đang thay đổi parent
+        if self.pk:
+            try:
+                old = Folder.objects.get(pk=self.pk)
+                if old.parent_id != (self.parent_id if self.parent else None):
+                    self._check_circular(self.parent)
+            except Folder.DoesNotExist:
+                pass
+
+        # Kiểm tra giới hạn độ sâu
+        self._compute_path_and_depth()
+        if self.depth >= self.MAX_DEPTH:
+            raise ValidationError(
+                f"Thư mục không được vượt quá {self.MAX_DEPTH} cấp. "
+                f"Cấp hiện tại: {self.depth}."
+            )
+
+        is_new = self._state.adding or not self.pk
+        super().save(*args, **kwargs)
+
+        # Cập nhật materialized path sau khi có pk
+        if is_new:
+            if self.parent:
+                new_path = f"{self.parent.path}{self.pk}/"
+            else:
+                new_path = f"/{self.pk}/"
+            if self.path != new_path:
+                self.path = new_path
+                Folder.objects.filter(pk=self.pk).update(path=self.path)
+        else:
+            # Nếu đang di chuyển thư mục, cập nhật path cho toàn bộ cây con
+            self._update_paths_recursive()
+
+    # ── Di chuyển thư mục ─────────────────────────────────────────
+    def move_to(self, new_parent):
+        """
+        Di chuyển thư mục đến vị trí mới.
+        new_parent = None: chuyển thành thư mục gốc.
+        """
+        self._check_circular(new_parent)
+        self.parent = new_parent
+        self.save()
+
+
+# ═══════════════════════════════════════════════════════════════════
+# FolderFile — Liên kết File với Folder
+# ═══════════════════════════════════════════════════════════════════
+
+class FolderFile(models.Model):
+    """
+    Model liên kết file/tài liệu với thư mục.
+    Một file có thể thuộc một thư mục cụ thể.
+    """
+
+    folder = models.ForeignKey(
+        Folder,
+        on_delete=models.CASCADE,
+        related_name="files",
+        verbose_name="Thư mục",
+    )
+    file_name = models.CharField(
+        "Tên file",
+        max_length=500,
+    )
+    file_path = models.CharField(
+        "Đường dẫn file",
+        max_length=1000,
+        blank=True,
+        default="",
+    )
+    file_size = models.PositiveBigIntegerField(
+        "Kích thước (bytes)",
+        default=0,
+    )
+    file_type = models.CharField(
+        "Loại file",
+        max_length=50,
+        blank=True,
+        default="",
+        help_text="Phần mở rộng: pdf, docx, txt, ...",
+    )
+    description = models.TextField(
+        "Mô tả",
+        blank=True,
+        default="",
+    )
+    is_local = models.BooleanField(
+        "File cục bộ (Local)",
+        default=False,
+        help_text="File nằm trên ổ đĩa máy tính, không lưu trong media server.",
+    )
+
+    # ── Audit ──────────────────────────────────────────────────────
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="Người tải lên",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="folder_files_uploaded",
+    )
+    created_at = models.DateTimeField("Ngày tạo", auto_now_add=True)
+
+    class Meta:
+        app_label = "documents"
+        db_table = "documents_folder_file"
+        verbose_name = "File trong thư mục"
+        verbose_name_plural = "File trong thư mục"
+        ordering = ["file_name"]
+        indexes = [
+            models.Index(fields=["folder"], name="idx_folder_file_folder"),
+        ]
+
+    def __str__(self):
+        return self.file_name
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -48,6 +374,13 @@ class PhamVi(models.TextChoices):
 class LoaiVanBan(models.TextChoices):
     DEN = "DEN", "Văn bản Đến"
     DI = "DI", "Văn bản Đi"
+    MAT = "MAT", "Văn bản Mật"
+
+
+def canonical_document_kind(document_kind):
+    """Map the compatibility alias to the kind of its shared backing table."""
+    value = str(document_kind).lower()
+    return "vanbanden" if value == "vanbanmat" else value
 
 
 class HieuLuc(models.TextChoices):
@@ -76,14 +409,16 @@ class BaseVanBan(models.Model):
         max_length=20,
         choices=PhamVi.choices,
         default=PhamVi.NOI_BO,
+        db_default=PhamVi.NOI_BO,
         db_index=True,
         help_text="NOI_BO: Văn bản nội bộ; HAN_CHE: Văn bản hạn chế (mật nội bộ).",
     )
 
     # ── Năm & Ký hiệu ──────────────────────────────────────────────
-    nam = models.PositiveSmallIntegerField(
+    nam = models.SmallIntegerField(
         "Năm",
         default=timezone.now().year,
+        validators=[MinValueValidator(0)],
         db_index=True,
         help_text="Mặc định năm hiện tại, cho phép sửa.",
     )
@@ -104,12 +439,14 @@ class BaseVanBan(models.Model):
         max_length=255,
         blank=True,
         default="",
+        null=True,
     )
     chuc_vu = models.CharField(
         "Chức vụ người ký",
         max_length=255,
         blank=True,
         default="",
+        null=True,
     )
 
     # ── Hiệu lực ──────────────────────────────────────────────────
@@ -118,7 +455,6 @@ class BaseVanBan(models.Model):
         max_length=20,
         choices=HieuLuc.choices,
         default=HieuLuc.CON_HIEU_LUC,
-        db_index=True,
     )
     ngay_het_hieu_luc = models.DateTimeField(
         "Ngày hết hiệu lực",
@@ -130,18 +466,21 @@ class BaseVanBan(models.Model):
         max_length=500,
         blank=True,
         default="",
+        null=True,
     )
 
     # ── Ghi chú & Cờ hệ thống ──────────────────────────────────────
-    ghi_chu = models.TextField("Ghi chú", blank=True, default="")
+    ghi_chu = models.TextField("Ghi chú", blank=True, default="", null=True)
     hien_thi = models.BooleanField(
         "Trạng thái hiển thị",
         default=True,
+        db_default=True,
         help_text="False = ẩn với user thường, admin vẫn thấy (đổi màu).",
     )
     gui_mail_toan_he_thong = models.BooleanField(
         "Gửi mail toàn hệ thống",
         default=False,
+        db_default=False,
     )
 
     # ── Audit ──────────────────────────────────────────────────────
@@ -154,8 +493,8 @@ class BaseVanBan(models.Model):
         db_column="nguoi_tao_id",
         related_name="%(class)s_created",
     )
-    created_at = models.DateTimeField("Ngày tạo", auto_now_add=True)
-    updated_at = models.DateTimeField("Ngày cập nhật", auto_now=True)
+    created_at = models.DateTimeField("Ngày tạo", auto_now_add=True, db_default=DB_NOW)
+    updated_at = models.DateTimeField("Ngày cập nhật", auto_now=True, db_default=DB_NOW)
 
     class Meta:
         abstract = True
@@ -168,7 +507,8 @@ class BaseVanBan(models.Model):
             )
 
     def save(self, *args, **kwargs):
-        if self.pk:
+        allow_scope_change = kwargs.pop("allow_scope_change", False) or getattr(self, "_allow_scope_change", False)
+        if self.pk and not allow_scope_change:
             old_inst = self.__class__.objects.filter(pk=self.pk).values("pham_vi").first()
             if old_inst and old_inst["pham_vi"] != self.pham_vi:
                 raise ValidationError("Phạm vi văn bản không được đổi sau khi tạo.")
@@ -177,8 +517,14 @@ class BaseVanBan(models.Model):
         super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
-        if self.pham_vi == self.PhamVi.HAN_CHE:
+        # Chỉ DocumentViewSet.destroy đặt _allow_delete_han_che (Quản trị viên, đã kiểm quyền) cùng biến phiên của trigger.
+        if self.pham_vi == self.PhamVi.HAN_CHE and not getattr(self, "_allow_delete_han_che", False):
             raise ValidationError("Văn bản hạn chế không được phép xóa.")
+        # Dọn dẹp liên kết Loại văn bản và Hồ sơ trước để thỏa mãn Trigger CSDL PostgreSQL
+        if hasattr(self, "danhmuc"):
+            self.danhmuc.all().delete()
+        if hasattr(self, "hoso"):
+            self.hoso.all().delete()
         return super().delete(*args, **kwargs)
 
     @property
@@ -208,9 +554,18 @@ class VanBanDen(BaseVanBan):
     loai = "DEN"
     document_kind = "vanbanden"
 
-    so_thu_tu = models.PositiveIntegerField(
+    ngay_van_ban = models.DateTimeField(
+        "Ngày văn bản",
+        default=timezone.now,
+        null=True,
+        blank=True,
+        help_text="Dùng để lọc/sắp xếp danh sách.",
+    )
+
+    so_thu_tu = models.IntegerField(
         "Số đến",
         default=1,
+        validators=[MinValueValidator(0)],
         help_text="Tự động tăng theo năm (Số đến).",
     )
     ngay_den = models.DateTimeField(
@@ -223,6 +578,7 @@ class VanBanDen(BaseVanBan):
         max_length=500,
         blank=True,
         default="",
+        null=True,
     )
     nguoi_nhan = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
@@ -272,6 +628,7 @@ class VanBanDen(BaseVanBan):
             models.Index(fields=["ngay_den"], name="idx_vbden_ngay_den"),
             models.Index(fields=["so_hieu"], name="idx_vanbanden_sohieu"),
             models.Index(fields=["nam"], name="idx_vanbanden_nam"),
+            models.Index(fields=["hieu_luc"], name="idx_vanbanden_hieu_luc"),
         ]
         constraints = [
             models.UniqueConstraint(fields=["nam", "so_thu_tu"], name="uq_vanbanden_nam_stt"),
@@ -282,6 +639,16 @@ class VanBanDen(BaseVanBan):
             models.CheckConstraint(
                 condition=~models.Q(pham_vi="HAN_CHE") | models.Q(gui_mail_toan_he_thong=False),
                 name="chk_vanbanden_han_che_khong_mail_toan_he_thong",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    ~models.Q(hieu_luc="HET_VA_THAY_THE")
+                    | (
+                        models.Q(link_thay_the__isnull=False)
+                        & ~Exact(Trim(F("link_thay_the")), Value(""))
+                    )
+                ),
+                name="chk_vanbanden_link_thay_the",
             ),
         ]
 
@@ -415,9 +782,10 @@ class VanBanDi(BaseVanBan):
     loai = "DI"
     document_kind = "vanbandi"
 
-    so_thu_tu = models.PositiveIntegerField(
+    so_thu_tu = models.IntegerField(
         "Số đi",
         default=1,
+        validators=[MinValueValidator(0)],
         help_text="Tự động tăng theo năm (Số đi).",
     )
     ngay_ban_hanh = models.DateTimeField(
@@ -482,6 +850,7 @@ class VanBanDi(BaseVanBan):
             models.Index(fields=["ngay_ban_hanh"], name="idx_vbdi_ngay_ban_hanh"),
             models.Index(fields=["so_hieu"], name="idx_vanbandi_sohieu"),
             models.Index(fields=["nam"], name="idx_vanbandi_nam"),
+            models.Index(fields=["hieu_luc"], name="idx_vanbandi_hieu_luc"),
         ]
         constraints = [
             models.UniqueConstraint(fields=["nam", "so_thu_tu"], name="uq_vanbandi_nam_stt"),
@@ -492,6 +861,16 @@ class VanBanDi(BaseVanBan):
             models.CheckConstraint(
                 condition=~models.Q(pham_vi="HAN_CHE") | models.Q(gui_mail_toan_he_thong=False),
                 name="chk_vanbandi_han_che_khong_mail_toan_he_thong",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    ~models.Q(hieu_luc="HET_VA_THAY_THE")
+                    | (
+                        models.Q(link_thay_the__isnull=False)
+                        & ~Exact(Trim(F("link_thay_the")), Value(""))
+                    )
+                ),
+                name="chk_vanbandi_link_thay_the",
             ),
         ]
 
@@ -645,34 +1024,19 @@ class VanBanDiNoiBanHanh(models.Model):
 
 def document_attachment_path(instance, filename):
     """
-    Xác định đường dẫn lưu file đính kèm:
-    02_documents/<loai>/<muc_do>/<nam>/<thang>/<ngay>/<filename>
-    - <loai>: den | di
-    - <muc_do>: thuong | han_che
+    Đường dẫn lưu tệp đính kèm trong DOCUMENT_STORAGE_ROOT:
+    van-ban-den|van-ban-di/{noi-bo|han-che}/YYYY/MM/DD/<uuid>.<ext> (ngày upload). Tên gốc giữ ở cột `name`.
     """
     doc = getattr(instance, "document", None)
-    subfolder = "den"
-    muc_do = "thuong"
-    date_val = None
-    year = None
-
-    if doc:
-        loai = getattr(doc, "loai", "DEN")
-        subfolder = "di" if loai == "DI" else "den"
-        pham_vi = getattr(doc, "pham_vi", "NOI_BO")
-        muc_do = "han_che" if pham_vi == "HAN_CHE" else "thuong"
-        year = getattr(doc, "nam", timezone.now().year)
-        if loai == "DEN":
-            date_val = getattr(doc, "ngay_den", None) or getattr(doc, "ngay_van_ban", None)
-        else:
-            date_val = getattr(doc, "ngay_ban_hanh", None) or getattr(doc, "ngay_van_ban", None)
-
-    if not date_val:
-        date_val = timezone.now()
-    if not year:
-        year = date_val.year
-
-    return f"02_documents/{subfolder}/{muc_do}/{year}/{date_val.month:02d}/{date_val.day:02d}/{filename}"
+    base_module = "van-ban-di" if getattr(doc, "loai", "DEN") == "DI" else "van-ban-den"
+    is_han_che = (
+        getattr(doc, "pham_vi", "NOI_BO") == "HAN_CHE"
+        or getattr(doc, "loai", "") == "MAT"
+        or getattr(doc, "document_kind", "") == "vanbanmat"
+    )
+    pv = "han-che" if is_han_che else "noi-bo"
+    module = f"{base_module}/{pv}"
+    return build_dated_path(module, filename)
 
 
 class BaseDocumentAttachment(models.Model):
@@ -682,13 +1046,16 @@ class BaseDocumentAttachment(models.Model):
     file = models.FileField(
         "File đính kèm",
         upload_to=document_attachment_path,
+        storage=get_document_storage,
         db_column="path",
         max_length=500,
         default="",
         help_text="Chấp nhận: PDF, DOC, DOCX, JPG, JPEG, PNG. Tối đa 20MB.",
     )
-    is_deleted = models.BooleanField("Cờ xóa mềm", default=False)
-    created_at = models.DateTimeField("Ngày upload", default=timezone.now, db_column="created_at")
+    is_deleted = models.BooleanField("Cờ xóa mềm", default=False, db_default=False)
+    created_at = models.DateTimeField(
+        "Ngày upload", default=timezone.now, db_default=DB_NOW, db_column="created_at"
+    )
     nguoi_tao = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         verbose_name="Người tải lên",
@@ -832,7 +1199,7 @@ class DocumentViewLog(models.Model):
         choices=DocumentKind.choices,
         default=DocumentKind.VANBANDEN,
     )
-    document_id = models.PositiveBigIntegerField("ID văn bản")
+    document_id = models.BigIntegerField("ID văn bản", validators=[MinValueValidator(0)])
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -847,6 +1214,7 @@ class DocumentViewLog(models.Model):
         verbose_name_plural = "Lịch sử xem văn bản"
         unique_together = [("document_type", "document_id", "user")]
         ordering = ["-viewed_at"]
+        indexes = [models.Index(fields=["document_type", "document_id"], name="idx_viewlog_document")]
 
     def __str__(self):
         return f"{self.user} xem {self.document_type}#{self.document_id} lúc {self.viewed_at}"
@@ -895,7 +1263,7 @@ class DocumentAccessLog(models.Model):
     )
     tep_id = models.BigIntegerField("ID tệp tin", null=True, blank=True)
     dia_chi_ip = models.CharField("Địa chỉ IP", max_length=45, null=True, blank=True)
-    created_at = models.DateTimeField("Thời điểm", auto_now_add=True)
+    created_at = models.DateTimeField("Thời điểm", auto_now_add=True, db_default=DB_NOW)
 
     class Meta:
         db_table = "documents_access_log"
@@ -1021,3 +1389,15 @@ class DocumentAttachmentFacade:
 
 
 DocumentAttachment = DocumentAttachmentFacade
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Backward-Compatibility Aliases (Văn bản Mật gộp vào Văn bản Hạn chế)
+# ═══════════════════════════════════════════════════════════════════
+VanBanMat = VanBanDen
+VanBanMatAttachment = VanBanDenAttachment
+VanBanMatNguoiNhan = VanBanDenNguoiNhan
+VanBanMatDonViNhan = VanBanDenDonViNhan
+VanBanMatDanhmuc = VanBanDenDanhmuc
+VanBanMatHoSo = VanBanDenHoSo
+VanBanMatNoiBanHanh = VanBanDiNoiBanHanh

@@ -1,4 +1,6 @@
 from django.contrib.auth import authenticate, get_user_model
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -6,7 +8,59 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
 
+from authorization.permissions import require_permission
 from .serializers import ChangePasswordSerializer
+from .alpaca_auth import check_alpaca_auth
+
+
+def _provision_alpaca_employee(username, user_info):
+    """
+    Tự động khởi tạo và đồng bộ hồ sơ CBNV từ API Bảo Long (Just-In-Time Provisioning).
+    Gán chức vụ, đơn vị và nhóm quyền mặc định tương ứng với vị trí công tác.
+    """
+    UserModel = get_user_model()
+    from accounts.models import Position
+    from organizations.models import DonVi
+    from .serializers import get_default_groups_for_position
+
+    full_name = user_info.get("fullName") or username
+    email = user_info.get("email") or f"{username}@baolong.vn"
+    phone = user_info.get("phoneNumber") or ""
+    pos_name = user_info.get("positionName") or ""
+    dept_name = user_info.get("departmentName") or ""
+
+    # Chỉ khớp đúng tên (không phân biệt hoa thường): khớp một phần có thể gán nhầm chức vụ cao hơn và nhóm quyền cao hơn.
+    position = None
+    if pos_name:
+        position = Position.objects.filter(name__iexact=pos_name.strip()).first()
+    if not position:
+        position = Position.objects.filter(name="Chuyên viên").first() or Position.objects.first()
+
+    don_vi = None
+    if dept_name:
+        don_vi = (
+            DonVi.objects.filter(ten__iexact=dept_name.strip()).first()
+            or DonVi.objects.filter(ten__icontains=dept_name.strip()).first()
+        )
+    if not don_vi:
+        don_vi = DonVi.objects.filter(ten__icontains="Công nghệ thông tin").first() or DonVi.objects.first()
+
+    target_user = UserModel.objects.create_user(
+        username=username,
+        ho_ten=full_name,
+        email=email,
+        sdt=phone,
+        chuc_vu=position,
+        don_vi=don_vi,
+        is_active=True,
+    )
+
+    if position:
+        default_groups = get_default_groups_for_position(position)
+        if default_groups:
+            target_user.groups.set(default_groups)
+
+    return target_user
 
 
 def _build_user_payload(user):
@@ -16,6 +70,7 @@ def _build_user_payload(user):
     position = user.chuc_vu.name if user.chuc_vu_id else ("Quản trị viên tối cao" if user.is_superuser else "Chuyên viên văn thư")
     date_joined_str = user.created_at.strftime("%Y-%m-%d") if user.created_at else ""
 
+    user_don_vi_id = getattr(user, "don_vi_id", None)
     return {
         "id": user.id,
         "username": user.username,
@@ -23,11 +78,13 @@ def _build_user_payload(user):
         # CamelCase (theo API Contract Hieu.md)
         "fullName": full_name,
         "unit": department,
+        "donViId": user_don_vi_id,
         "roleTitle": position,
         "dateJoined": date_joined_str,
         # Snake_case (tương thích backward)
         "full_name": full_name,
         "department": department,
+        "don_vi_id": user_don_vi_id,
         "position": position,
         "role": "admin" if user.is_superuser else "staff",
         "phone": user.sdt,
@@ -59,20 +116,114 @@ def login_view(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    UserModel = get_user_model()
+    target_user = UserModel.objects.filter(username=username).first()
+
+    # 1. Thử xác thực cục bộ (Local Auth)
     user = authenticate(request, username=username, password=password)
 
-    if user is None:
-        UserModel = get_user_model()
-        try:
-            existing_user = UserModel.objects.get(username=username)
-            if not existing_user.is_active and existing_user.check_password(password):
-                msg = "Tài khoản đã bị vô hiệu hóa. Vui lòng liên hệ Quản trị viên."
+    if user is not None:
+        if not user.is_active:
+            msg = "Tài khoản đã bị vô hiệu hóa. Vui lòng liên hệ Quản trị viên."
+            return Response(
+                {"success": False, "error": msg, "detail": msg},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        refresh = RefreshToken.for_user(user)
+        access_token = str(refresh.access_token)
+
+        user_payload = _build_user_payload(user)
+        user_payload["auth_provider"] = "local"
+
+        return Response(
+            {
+                "success": True,
+                "token": access_token,
+                "access": access_token,
+                "refresh": str(refresh),
+                "user": user_payload,
+                "auth_provider": "local",
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    # 2. Xử lý khi xác thực cục bộ thất bại:
+    # 2.1. Nếu tài khoản cục bộ tồn tại nhưng bị vô hiệu hóa và đúng mật khẩu
+    if target_user and not target_user.is_active and target_user.check_password(password):
+        msg = "Tài khoản đã bị vô hiệu hóa. Vui lòng liên hệ Quản trị viên."
+        return Response(
+            {"success": False, "error": msg, "detail": msg},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    # 2.2. [Điểm 1 & Điểm 2 từ Nhóm 7]:
+    # Tuyệt đối KHÔNG gọi API ngoài đối với tài khoản quản trị/đặc quyền (is_superuser, is_staff).
+    # Chặn rò rỉ mật khẩu admin ra hệ thống ngoài và ngăn ngừa leo thang chiếm quyền (Account Takeover).
+    if target_user and (target_user.is_superuser or target_user.is_staff):
+        msg = "Tên đăng nhập hoặc mật khẩu không chính xác!"
+        return Response(
+            {"success": False, "error": msg, "detail": msg},
+            status=status.HTTP_401_UNAUTHORIZED,
+        )
+
+    # 3. Kích hoạt xác thực kép qua API Ngân hàng Bảo Long (Alpaca)
+    alpaca_res = check_alpaca_auth(username, password)
+
+    if alpaca_res.get("success"):
+        # [Điểm 3 & Điểm 4 từ Nhóm 7]:
+        # Nếu tài khoản chưa có trong hệ thống QLVB:
+        # - Trường hợp 1: Không có hồ sơ cán bộ thật (mock SIT Data=7) -> 403 Forbidden.
+        # - Trường hợp 2: Có hồ sơ CBNV thật từ máy chủ Bảo Long -> Kích hoạt Just-In-Time (JIT) Provisioning
+        #   để đồng bộ hồ sơ cán bộ vào CSDL và tự động gán quyền tương ứng.
+        if not target_user:
+            user_info = alpaca_res.get("user_info") or {}
+            full_name = user_info.get("fullName", "").strip()
+
+            if not full_name:
+                msg = "Tài khoản chưa được phân quyền trong hệ thống. Vui lòng liên hệ Quản trị viên."
                 return Response(
                     {"success": False, "error": msg, "detail": msg},
                     status=status.HTTP_403_FORBIDDEN,
                 )
-        except UserModel.DoesNotExist:
-            pass
+
+            target_user = _provision_alpaca_employee(username, user_info)
+
+        if not target_user.is_active:
+            msg = "Tài khoản đã bị vô hiệu hóa. Vui lòng liên hệ Quản trị viên."
+            return Response(
+                {"success": False, "error": msg, "detail": msg},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # [Điểm 2 từ Nhóm 7]:
+        # KHÔNG ghi đè mật khẩu cục bộ của tài khoản (không gọi target_user.set_password).
+        # Cấp token JWT trực tiếp cho phiên làm việc hiện tại của nhân viên.
+        refresh = RefreshToken.for_user(target_user)
+        access_token = str(refresh.access_token)
+
+        user_payload = _build_user_payload(target_user)
+        user_payload["auth_provider"] = "alpaca_api"
+
+        return Response(
+            {
+                "success": True,
+                "token": access_token,
+                "access": access_token,
+                "refresh": str(refresh),
+                "user": user_payload,
+                "auth_provider": "alpaca_api",
+            },
+            status=status.HTTP_200_OK,
+        )
+    else:
+        # Nếu Alpaca thông báo tài khoản bị khóa hoặc vô hiệu hóa
+        if alpaca_res.get("status") in (0, 3):
+            msg = alpaca_res.get("message") or "Tài khoản đã bị vô hiệu hóa hoặc khóa."
+            return Response(
+                {"success": False, "error": msg, "detail": msg},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         msg = "Tên đăng nhập hoặc mật khẩu không chính xác!"
         return Response(
@@ -80,24 +231,67 @@ def login_view(request):
             status=status.HTTP_401_UNAUTHORIZED,
         )
 
-    if not user.is_active:
-        msg = "Tài khoản đã bị vô hiệu hóa. Vui lòng liên hệ Quản trị viên."
+
+# ─────────────────────────────────────────────────────────────────────────────
+# POST /api/auth/admin-set-password/
+# ─────────────────────────────────────────────────────────────────────────────
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, require_permission("approve_password_reset_cbnv")])
+def admin_set_password_view(request):
+    """
+    Quản trị viên đặt/cập nhật mật khẩu cho bất kỳ tài khoản nào (admin set pass).
+    [Điểm 5 từ Nhóm 7]: Đi qua RBAC (quyền 'approve_password_reset_cbnv' hoặc 'is_superuser')
+    và kiểm tra độ an toàn qua django.contrib.auth.password_validation.validate_password.
+    Body: { "username": "...", "new_password": "..." }
+    """
+    target_username = request.data.get("username", "").strip()
+    new_password = (
+        request.data.get("new_password", "").strip()
+        or request.data.get("password", "").strip()
+    )
+
+    if not target_username or not new_password:
         return Response(
-            {"success": False, "error": msg, "detail": msg},
+            {"success": False, "error": "Vui lòng nhập tên đăng nhập và mật khẩu mới."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    UserModel = get_user_model()
+    try:
+        target_user = UserModel.objects.get(username=target_username)
+    except UserModel.DoesNotExist:
+        return Response(
+            {"success": False, "error": f"Không tìm thấy tài khoản '{target_username}'."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    # Mật khẩu superuser chỉ superuser mới đặt lại được (nhóm ADMIN có approve_password_reset_cbnv nhưng không đủ).
+    if target_user.is_superuser and not request.user.is_superuser:
+        return Response(
+            {"success": False, "error": "roles.messages.permissionDenied"},
             status=status.HTTP_403_FORBIDDEN,
         )
 
-    # Cấp JWT token
-    refresh = RefreshToken.for_user(user)
-    access_token = str(refresh.access_token)
+    # [Điểm 5]: Kiểm tra chất lượng mật khẩu bằng password validation chuẩn Django
+    try:
+        validate_password(new_password, user=target_user)
+    except ValidationError as exc:
+        return Response(
+            {
+                "success": False,
+                "error": "; ".join(exc.messages),
+                "errors": list(exc.messages),
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
+    target_user.set_password(new_password)
+    target_user.save(update_fields=["password"])
     return Response(
         {
             "success": True,
-            "token": access_token,
-            "access": access_token,
-            "refresh": str(refresh),
-            "user": _build_user_payload(user),
+            "message": f"Đặt lại mật khẩu thành công cho tài khoản '{target_username}'.",
         },
         status=status.HTTP_200_OK,
     )
@@ -194,9 +388,10 @@ def logout_view(request):
     if refresh_token:
         try:
             token = RefreshToken(refresh_token)
-            token.blacklist()
-        except TokenError:
-            pass  # Nếu token đã hết hạn hoặc không hợp lệ, vẫn cho phép đăng xuất an toàn
+            if hasattr(token, "blacklist"):
+                token.blacklist()
+        except Exception:
+            pass  # Nếu token không hợp lệ hoặc blacklist không bật, vẫn cho phép đăng xuất an toàn
 
     return Response(
         {"success": True, "message": "Đã đăng xuất", "detail": "Đã đăng xuất"},

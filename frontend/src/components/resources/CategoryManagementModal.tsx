@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { ResourceCategory, ResourceType } from '@app-types/resource';
 import { Button } from '@components/common/Button';
@@ -6,17 +6,275 @@ import { Badge } from '@components/common/Badge';
 import { useTranslation } from '@i18n/translate';
 import { ConfirmationModal } from './ConfirmationModal';
 import { authService } from '@lib/authService';
+import { usePermissions } from '@lib/permissions';
+import { formatDate } from '@lib/dateUtils';
 
 export interface CategoryManagementModalProps {
   isOpen: boolean;
   onClose: () => void;
   categories: ResourceCategory[];
   types: ResourceType[];
-  onSaveCategory: (category: ResourceCategory, isEdit: boolean, childCount?: number) => void;
-  onDeleteCategory: (id: number) => void;
-  onSaveType: (type: ResourceType, isEdit: boolean, silent?: boolean) => void;
-  onDeleteType: (id: number) => void;
+  onSaveCategory: (
+    category: ResourceCategory,
+    isEdit: boolean,
+    childCount?: number,
+    childTypes?: string[]
+  ) => void | Promise<void>;
+  onDeleteCategory: (id: number) => void | Promise<void>;
+  onSaveType: (type: ResourceType, isEdit: boolean, silent?: boolean) => void | Promise<void>;
+  onDeleteType: (id: number) => void | Promise<void>;
 }
+
+// ============================================================================
+// COMPONENT PHÂN TRANG NỘI BỘ CHO MODAL (ĐỒNG BỘ PHONG CÁCH VỚI BẢNG TÀI LIỆU)
+// ============================================================================
+interface ModalPaginationProps {
+  currentPage: number;
+  totalPages: number;
+  pageSize: number;
+  totalItems: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (newPageSize: number) => void;
+  itemLabel: string;
+  pageSizeOptions?: number[];
+}
+
+const ModalPagination: React.FC<ModalPaginationProps> = ({
+  currentPage,
+  totalPages,
+  pageSize,
+  totalItems,
+  onPageChange,
+  onPageSizeChange,
+  itemLabel,
+  pageSizeOptions = [5, 10, 20, 50],
+}) => {
+  const { t } = useTranslation();
+  const [jumpPageInput, setJumpPageInput] = useState('');
+
+  const handleJump = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const pageNum = parseInt(jumpPageInput.trim(), 10);
+    if (!isNaN(pageNum)) {
+      const validPage = Math.max(1, Math.min(pageNum, totalPages));
+      onPageChange(validPage);
+      setJumpPageInput('');
+    }
+  };
+
+  type PageItem =
+    | { type: 'page'; num: number }
+    | { type: 'ellipsis'; direction: 'prev' | 'next'; targetPage: number };
+
+  const getPageElements = (): PageItem[] => {
+    if (totalPages <= 4) {
+      return Array.from({ length: totalPages }, (_, i) => ({
+        type: 'page',
+        num: i + 1,
+      }));
+    }
+
+    const items: PageItem[] = [];
+
+    if (currentPage <= 2) {
+      items.push({ type: 'page', num: 1 });
+      items.push({ type: 'page', num: 2 });
+      items.push({
+        type: 'ellipsis',
+        direction: 'next',
+        targetPage: Math.min(totalPages, currentPage + 2),
+      });
+      items.push({ type: 'page', num: totalPages });
+    } else if (currentPage >= totalPages - 1) {
+      items.push({ type: 'page', num: 1 });
+      items.push({
+        type: 'ellipsis',
+        direction: 'prev',
+        targetPage: Math.max(1, currentPage - 2),
+      });
+      items.push({ type: 'page', num: totalPages - 1 });
+      items.push({ type: 'page', num: totalPages });
+    } else {
+      items.push({ type: 'page', num: 1 });
+      items.push({
+        type: 'ellipsis',
+        direction: 'prev',
+        targetPage: Math.max(2, currentPage - 2),
+      });
+      items.push({ type: 'page', num: currentPage });
+      items.push({
+        type: 'ellipsis',
+        direction: 'next',
+        targetPage: Math.min(totalPages - 1, currentPage + 2),
+      });
+      items.push({ type: 'page', num: totalPages });
+    }
+
+    return items;
+  };
+
+  const startRecord = totalItems === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const endRecord = Math.min(currentPage * pageSize, totalItems);
+
+  return (
+    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-3 sm:px-4 py-2.5 border-t border-border-subtle text-xs text-secondary bg-surface select-none">
+      {/* Bên trái: Chọn số dòng & Tóm tắt phạm vi */}
+      <div className="flex items-center gap-2 sm:gap-2.5 shrink-0 flex-wrap">
+        <span className="font-medium text-muted">{t('resourceManagement.display')}</span>
+        <select
+          value={pageSize}
+          onChange={(e) => onPageSizeChange(Number(e.target.value))}
+          className="px-2 py-1 bg-surface-elevated border border-border-subtle rounded-md text-main text-xs focus:outline-hidden focus:border-primary cursor-pointer font-medium"
+          aria-label={t('resourceManagement.selectItemsPerPageAria', { label: itemLabel })}
+        >
+          {pageSizeOptions.map((opt) => (
+            <option key={opt} value={opt}>
+              {opt} {t('resourceManagement.rows')}
+            </option>
+          ))}
+        </select>
+        <span className="font-medium text-muted">/ {t('resourceManagement.rowsPerPage')}</span>
+        <span className="text-muted">·</span>
+        <span className="text-secondary font-medium">
+          {totalItems === 0 ? (
+            `0 ${itemLabel}`
+          ) : (
+            <>
+              {t('resourceManagement.display')} <strong className="text-main font-semibold">{startRecord}–{endRecord}</strong> / <strong className="text-main font-semibold">{totalItems}</strong> {itemLabel}
+            </>
+          )}
+        </span>
+      </div>
+
+      {/* Bên phải: Cụm nút điều hướng */}
+      {totalPages > 1 ? (
+        <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap justify-center">
+          {/* Nút về đầu */}
+          <button
+            type="button"
+            disabled={currentPage <= 1}
+            onClick={() => onPageChange(1)}
+            className="min-w-[28px] sm:min-w-[30px] h-7 sm:h-7.5 px-1.5 text-xs font-medium rounded-lg border border-border-subtle bg-surface hover:bg-surface-elevated text-secondary hover:text-main disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center justify-center"
+            title={t('resourceManagement.firstPage')}
+            aria-label={t('resourceManagement.firstPage')}
+          >
+            <i className="fa-solid fa-angles-left text-[10px]" />
+          </button>
+
+          {/* Nút trang trước */}
+          <button
+            type="button"
+            disabled={currentPage <= 1}
+            onClick={() => onPageChange(currentPage - 1)}
+            className="min-w-[28px] sm:min-w-[30px] h-7 sm:h-7.5 px-1.5 text-xs font-medium rounded-lg border border-border-subtle bg-surface hover:bg-surface-elevated text-secondary hover:text-main disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center justify-center"
+            title={t('resourceManagement.prevPage')}
+            aria-label={t('resourceManagement.prevPage')}
+          >
+            <i className="fa-solid fa-chevron-left text-[10px]" />
+          </button>
+
+          {/* Danh sách các nút số trang */}
+          {getPageElements().map((item, idx) => {
+            if (item.type === 'ellipsis') {
+              return (
+                <button
+                  key={`ellipsis-${idx}`}
+                  type="button"
+                  onClick={() => onPageChange(item.targetPage)}
+                  className="min-w-[28px] sm:min-w-[30px] h-7 sm:h-7.5 px-1 text-xs font-medium rounded-lg border border-transparent hover:border-border-subtle hover:bg-surface-elevated text-muted hover:text-primary transition-all cursor-pointer flex items-center justify-center"
+                  title={
+                    item.direction === 'prev'
+                      ? t('resourceManagement.jumpBackPages', { page: item.targetPage })
+                      : t('resourceManagement.jumpForwardPages', { page: item.targetPage })
+                  }
+                  aria-label={item.direction === 'prev' ? t('resourceManagement.jumpBackAria') : t('resourceManagement.jumpForwardAria')}
+                >
+                  <span className="tracking-widest text-[10px] font-bold">•••</span>
+                </button>
+              );
+            }
+
+            const isActive = item.num === currentPage;
+            return (
+              <button
+                key={`page-${item.num}`}
+                type="button"
+                onClick={() => onPageChange(item.num)}
+                className={`min-w-[28px] sm:min-w-[30px] h-7 sm:h-7.5 px-2 text-xs font-semibold rounded-lg transition-all cursor-pointer flex items-center justify-center ${
+                  isActive
+                    ? 'bg-primary text-white shadow-xs font-bold border border-primary'
+                    : 'border border-border-subtle bg-surface hover:bg-surface-elevated text-secondary hover:text-main'
+                }`}
+                aria-label={`${t('resourceManagement.page')} ${item.num}`}
+                aria-current={isActive ? 'page' : undefined}
+              >
+                {item.num}
+              </button>
+            );
+          })}
+
+          {/* Nút trang sau */}
+          <button
+            type="button"
+            disabled={currentPage >= totalPages}
+            onClick={() => onPageChange(currentPage + 1)}
+            className="min-w-[28px] sm:min-w-[30px] h-7 sm:h-7.5 px-1.5 text-xs font-medium rounded-lg border border-border-subtle bg-surface hover:bg-surface-elevated text-secondary hover:text-main disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center justify-center"
+            title={t('resourceManagement.nextPage')}
+            aria-label={t('resourceManagement.nextPage')}
+          >
+            <i className="fa-solid fa-chevron-right text-[10px]" />
+          </button>
+
+          {/* Nút đến trang cuối */}
+          <button
+            type="button"
+            disabled={currentPage >= totalPages}
+            onClick={() => onPageChange(totalPages)}
+            className="min-w-[28px] sm:min-w-[30px] h-7 sm:h-7.5 px-1.5 text-xs font-medium rounded-lg border border-border-subtle bg-surface hover:bg-surface-elevated text-secondary hover:text-main disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center justify-center"
+            title={t('resourceManagement.lastPage')}
+            aria-label={t('resourceManagement.lastPage')}
+          >
+            <i className="fa-solid fa-angles-right text-[10px]" />
+          </button>
+
+          {/* Nhập trang nhảy nhanh khi có từ 5 trang trở lên */}
+          {totalPages > 4 && (
+            <form
+              onSubmit={handleJump}
+              className="flex items-center gap-1 pl-1.5 border-l border-border-subtle text-secondary"
+            >
+              <span className="text-[10px] whitespace-nowrap">{t('resourceManagement.jumpTo')}</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={jumpPageInput}
+                onChange={(e) => setJumpPageInput(e.target.value.replace(/\D/g, ''))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleJump();
+                    (e.target as HTMLInputElement).blur();
+                  }
+                }}
+                placeholder={String(currentPage)}
+                title={t('resourceManagement.jumpPageTooltip')}
+                className="w-9 h-7 px-1 text-center bg-surface-elevated border border-border-subtle rounded-lg text-main text-xs focus:outline-hidden focus:border-primary font-medium"
+                aria-label={t('resourceManagement.jumpPageAria')}
+              />
+            </form>
+          )}
+        </div>
+      ) : (
+        <div className="flex items-center gap-1.5">
+          <span className="text-[11px] text-muted font-medium px-2 py-0.5 rounded-md bg-surface-elevated border border-border-subtle">
+            {t('resourceManagement.page')} 1 / 1
+          </span>
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = ({
   isOpen,
@@ -29,6 +287,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
   onDeleteType,
 }) => {
   const { t } = useTranslation();
+
   // 2 tab chính quản lý: "category" (Thư mục) | "type" (Loại tài liệu)
   const [activeTab, setActiveTab] = useState<'category' | 'type'>('category');
 
@@ -41,6 +300,14 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
   const [typeSearch, setTypeSearch] = useState('');
   const [filterParentCat, setFilterParentCat] = useState<string>('all');
   const [catDeleteBlockedMsg, setCatDeleteBlockedMsg] = useState<string | null>(null);
+
+  // Phân trang Tab Thư mục (Category)
+  const [catPage, setCatPage] = useState(1);
+  const [catPageSize, setCatPageSize] = useState(5);
+
+  // Phân trang Tab Loại tài liệu (Type)
+  const [typePage, setTypePage] = useState(1);
+  const [typePageSize, setTypePageSize] = useState(5);
 
   // States cho Modal thông báo/xác nhận UI chuẩn
   const [deleteCatTarget, setDeleteCatTarget] = useState<ResourceCategory | null>(null);
@@ -55,6 +322,17 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
   const [isConfirmDiscardUnifiedOpen, setIsConfirmDiscardUnifiedOpen] = useState(false);
   const [unifiedMode, setUnifiedMode] = useState<'create' | 'edit'>('create');
   const [unifiedTarget, setUnifiedTarget] = useState<'category' | 'type'>('category');
+  const [isSubmittingUnified, setIsSubmittingUnified] = useState(false);
+
+  const currentSession = authService.getSession();
+  const { can, isSuperuser, isSystemAdmin } = usePermissions();
+  const isSessionAdmin = isSystemAdmin;
+  const canAdd = isSuperuser || isSessionAdmin || can('add_loaitailieubieumau');
+  const canEdit = isSuperuser || isSessionAdmin || can('change_loaitailieubieumau');
+  const canDelete = isSuperuser || isSessionAdmin || can('delete_loaitailieubieumau');
+  const canManage = isSuperuser || isSessionAdmin || canAdd || canEdit || canDelete;
+  const isAdmin = canManage;
+  const defaultAdminAuthor = currentSession?.fullName || currentSession?.username || t('resourceManagement.defaultAdminAuthor');
 
   // State Thư mục
   const [editingCatId, setEditingCatId] = useState<number | null>(null);
@@ -69,7 +347,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
     stt_uu_tien: 1,
     ky_hieu: '',
     ten_tai_lieu: '',
-    nguoi_lap_name: 'Thượng Mạnh Quỳnh',
+    nguoi_lap_name: defaultAdminAuthor,
     ngay_lap: new Date().toISOString().split('T')[0],
     ghi_chu: '',
   });
@@ -88,40 +366,241 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
   });
   const [typeError, setTypeError] = useState<string | null>(null);
 
+  // Custom Dropdown State cho Lọc Thư mục cha (Tab 2) & Chọn Thư mục cha (Submodal)
+  const [isFilterCatDropdownOpen, setIsFilterCatDropdownOpen] = useState(false);
+  const filterCatDropdownRef = useRef<HTMLDivElement>(null);
+  const filterCatButtonRef = useRef<HTMLButtonElement>(null);
+  const filterCatMenuRef = useRef<HTMLDivElement>(null);
+  const [filterCatMenuPos, setFilterCatMenuPos] = useState<{
+    top?: number;
+    bottom?: number;
+    left: number;
+    width: number;
+    maxHeight: number;
+  } | null>(null);
+
+  const [isTypeCatDropdownOpen, setIsTypeCatDropdownOpen] = useState(false);
+  const [typeCatSearch, setTypeCatSearch] = useState('');
+  const typeCatDropdownRef = useRef<HTMLDivElement>(null);
+  const typeCatButtonRef = useRef<HTMLButtonElement>(null);
+  const typeCatMenuRef = useRef<HTMLDivElement>(null);
+  const [typeCatMenuPos, setTypeCatMenuPos] = useState<{
+    top?: number;
+    bottom?: number;
+    left: number;
+    width: number;
+    maxHeight: number;
+  } | null>(null);
+
   // Vị trí fixed của dropdown menu Thao tác — không bị cắt bởi overflow và lật lên khi ở đáy
   const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
 
-  const closeAllMenus = () => {
+  // Danh sách thư mục lọc theo từ khóa tìm kiếm trong dropdown Loại tài liệu
+  const filteredTypeCategories = useMemo(() => {
+    if (!typeCatSearch.trim()) return categories;
+    const q = typeCatSearch.trim().toLowerCase();
+    return categories.filter((c) =>
+      c.ten_tai_lieu.toLowerCase().includes(q) ||
+      (c.ky_hieu && c.ky_hieu.toLowerCase().includes(q))
+    );
+  }, [categories, typeCatSearch]);
+
+  // Cập nhật vị trí fixed cho Dropdown Chọn Thư mục cha (form Thêm/Sửa Loại tài liệu)
+  const updateTypeCatMenuPos = useCallback(() => {
+    if (!typeCatButtonRef.current) return;
+    const rect = typeCatButtonRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    const desiredHeight = 248; // Đủ cho ô tìm kiếm (~45px) + tối đa 5 mục thư mục (~180px) + padding (~15px)
+    const minHeight = 120;
+
+    let top: number | undefined;
+    let bottom: number | undefined;
+    let maxHeight: number;
+
+    // Tự động lật lên hoặc mở xuống dựa trên khoảng trống hiển thị thực tế
+    if (spaceBelow >= 230 || spaceBelow >= spaceAbove) {
+      top = rect.bottom + 6;
+      maxHeight = Math.min(desiredHeight, Math.max(minHeight, spaceBelow - 16));
+    } else {
+      bottom = window.innerHeight - rect.top + 6;
+      maxHeight = Math.min(desiredHeight, Math.max(minHeight, spaceAbove - 16));
+    }
+
+    const buttonWidth = rect.width > 0 ? rect.width : (typeCatButtonRef.current.offsetWidth || 320);
+    const width = Math.min(buttonWidth, window.innerWidth - 16);
+    const left = rect.left > 0 ? Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)) : 10;
+
+    setTypeCatMenuPos({
+      top,
+      bottom,
+      left,
+      width,
+      maxHeight,
+    });
+  }, []);
+
+  // Cập nhật vị trí fixed cho Dropdown Lọc Thư mục cha (Tab 2 Loại tài liệu)
+  const updateFilterCatMenuPos = useCallback(() => {
+    if (!filterCatButtonRef.current) return;
+    const rect = filterCatButtonRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    const desiredHeight = 195; // Hiển thị 5 mục, nếu nhiều hơn thì cuộn chuột lên xuống
+    const minHeight = 120;
+
+    let top: number | undefined;
+    let bottom: number | undefined;
+    let maxHeight: number;
+
+    if (spaceBelow >= 200 || spaceBelow >= spaceAbove) {
+      top = rect.bottom + 6;
+      maxHeight = Math.min(desiredHeight, Math.max(minHeight, spaceBelow - 16));
+    } else {
+      bottom = window.innerHeight - rect.top + 6;
+      maxHeight = Math.min(desiredHeight, Math.max(minHeight, spaceAbove - 16));
+    }
+
+    const buttonWidth = rect.width > 0 ? rect.width : (filterCatButtonRef.current.offsetWidth || 224);
+    const width = Math.min(Math.max(buttonWidth, 224), window.innerWidth - 16);
+    const left = rect.left > 0 ? Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)) : 10;
+
+    setFilterCatMenuPos({
+      top,
+      bottom,
+      left,
+      width,
+      maxHeight,
+    });
+  }, []);
+
+  // Đóng riêng floating action menu (3 chấm của từng dòng dữ liệu)
+  const closeFloatingMenu = () => {
     setActiveMenuCatId(null);
     setActiveMenuTypeId(null);
     setMenuPos(null);
   };
 
-  // Đóng dropdown khi click ngoài, scroll hoặc resize cửa sổ (lắng nghe cả pha capture để không bị cản bởi stopPropagation)
+  const closeAllMenus = () => {
+    closeFloatingMenu();
+    setIsFilterCatDropdownOpen(false);
+    setFilterCatMenuPos(null);
+    setIsTypeCatDropdownOpen(false);
+    setTypeCatMenuPos(null);
+    setTypeCatSearch('');
+  };
+
+  // Đóng custom dropdowns khi click ra ngoài, cuộn hoặc resize
   useEffect(() => {
-    const handleOutside = (e: MouseEvent) => {
+    if (!isFilterCatDropdownOpen && !isTypeCatDropdownOpen) return;
+
+    if (isFilterCatDropdownOpen) updateFilterCatMenuPos();
+    if (isTypeCatDropdownOpen) updateTypeCatMenuPos();
+
+    const handleOutsideDropdowns = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (
+        isFilterCatDropdownOpen &&
+        !filterCatButtonRef.current?.contains(target) &&
+        !filterCatMenuRef.current?.contains(target) &&
+        !filterCatDropdownRef.current?.contains(target)
+      ) {
+        setIsFilterCatDropdownOpen(false);
+        setFilterCatMenuPos(null);
+      }
+      if (
+        isTypeCatDropdownOpen &&
+        !typeCatButtonRef.current?.contains(target) &&
+        !typeCatMenuRef.current?.contains(target) &&
+        !typeCatDropdownRef.current?.contains(target)
+      ) {
+        setIsTypeCatDropdownOpen(false);
+        setTypeCatMenuPos(null);
+        setTypeCatSearch('');
+      }
+    };
+
+    const handleScrollOrResize = (e?: Event) => {
+      // Nếu sự kiện cuộn xảy ra bên trong chính menu dropdown thì bỏ qua, cho phép người dùng lăn chuột mượt mà
+      if (e?.target) {
+        const targetNode = e.target as Node;
+        if (
+          typeCatMenuRef.current?.contains(targetNode) ||
+          filterCatMenuRef.current?.contains(targetNode)
+        ) {
+          return;
+        }
+      }
+
+      if (isFilterCatDropdownOpen) {
+        if (!filterCatButtonRef.current) {
+          setIsFilterCatDropdownOpen(false);
+          setFilterCatMenuPos(null);
+        } else {
+          const rect = filterCatButtonRef.current.getBoundingClientRect();
+          if (rect.bottom < 0 || rect.top > window.innerHeight) {
+            setIsFilterCatDropdownOpen(false);
+            setFilterCatMenuPos(null);
+          } else {
+            updateFilterCatMenuPos();
+          }
+        }
+      }
+
+      if (isTypeCatDropdownOpen) {
+        if (!typeCatButtonRef.current) {
+          setIsTypeCatDropdownOpen(false);
+          setTypeCatMenuPos(null);
+          setTypeCatSearch('');
+        } else {
+          const rect = typeCatButtonRef.current.getBoundingClientRect();
+          if (rect.bottom < 0 || rect.top > window.innerHeight) {
+            setIsTypeCatDropdownOpen(false);
+            setTypeCatMenuPos(null);
+            setTypeCatSearch('');
+          } else {
+            updateTypeCatMenuPos();
+          }
+        }
+      }
+    };
+
+    document.addEventListener('mousedown', handleOutsideDropdowns);
+    window.addEventListener('resize', handleScrollOrResize);
+    window.addEventListener('scroll', handleScrollOrResize, true);
+
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideDropdowns);
+      window.removeEventListener('resize', handleScrollOrResize);
+      window.removeEventListener('scroll', handleScrollOrResize, true);
+    };
+  }, [isFilterCatDropdownOpen, isTypeCatDropdownOpen, updateFilterCatMenuPos, updateTypeCatMenuPos]);
+
+  // Đóng floating menu Thao tác (3 chấm) khi click ngoài, scroll hoặc resize cửa sổ
+  useEffect(() => {
+    if (activeMenuCatId === null && activeMenuTypeId === null) return;
+
+    const handleOutsideFloating = (e: MouseEvent) => {
       const target = e.target as HTMLElement | null;
       if (target?.closest?.('[data-menu-trigger]') || target?.closest?.('[data-floating-menu]')) {
         return;
       }
-      closeAllMenus();
+      closeFloatingMenu();
     };
 
-    const handleScroll = () => {
-      closeAllMenus();
+    const handleScrollFloating = () => {
+      closeFloatingMenu();
     };
 
-    document.addEventListener('click', handleOutside, true);
-    window.addEventListener('resize', closeAllMenus);
-    window.addEventListener('scroll', handleScroll, true);
-    document.addEventListener('scroll', handleScroll, true);
+    document.addEventListener('mousedown', handleOutsideFloating);
+    window.addEventListener('resize', handleScrollFloating);
+    window.addEventListener('scroll', handleScrollFloating, true);
     return () => {
-      document.removeEventListener('click', handleOutside, true);
-      window.removeEventListener('resize', closeAllMenus);
-      window.removeEventListener('scroll', handleScroll, true);
-      document.removeEventListener('scroll', handleScroll, true);
+      document.removeEventListener('mousedown', handleOutsideFloating);
+      window.removeEventListener('resize', handleScrollFloating);
+      window.removeEventListener('scroll', handleScrollFloating, true);
     };
-  }, []);
+  }, [activeMenuCatId, activeMenuTypeId]);
 
 
   const handleOpenCatMenu = (e: React.MouseEvent<HTMLButtonElement>, catId: number) => {
@@ -136,7 +615,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
     const top = spaceBelow < 110 ? Math.max(10, rect.top - 84) : rect.bottom + 4;
     setMenuPos({
       top,
-      right: Math.max(10, window.innerWidth - rect.right),
+      right: Math.max(10, Math.min(window.innerWidth - 130, window.innerWidth - rect.right)),
     });
     setActiveMenuCatId(catId);
     setActiveMenuTypeId(null);
@@ -154,7 +633,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
     const top = spaceBelow < 110 ? Math.max(10, rect.top - 84) : rect.bottom + 4;
     setMenuPos({
       top,
-      right: Math.max(10, window.innerWidth - rect.right),
+      right: Math.max(10, Math.min(window.innerWidth - 130, window.innerWidth - rect.right)),
     });
     setActiveMenuTypeId(typeId);
     setActiveMenuCatId(null);
@@ -181,13 +660,12 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
     setIsUnifiedDirty(false);
     setIsConfirmDiscardUnifiedOpen(false);
 
-    // Khởi tạo form Thư mục: Tự động điền giá trị gợi ý mặc định ban đầu, cho phép chỉnh sửa tự do cả 3 trường
-    const defaultAuthor = authService.getSession()?.fullName || 'Thượng Mạnh Quỳnh';
+    // Khởi tạo form Thư mục: Tự động điền chính xác tài khoản Admin thực hiện tạo
     setCatForm({
       stt_uu_tien: nextOrderNumber(),
       ky_hieu: '',
       ten_tai_lieu: '',
-      nguoi_lap_name: defaultAuthor,
+      nguoi_lap_name: defaultAdminAuthor,
       ngay_lap: new Date().toISOString().split('T')[0],
       ghi_chu: '',
     });
@@ -226,7 +704,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
       stt_uu_tien: cat.stt_uu_tien,
       ky_hieu: cat.ky_hieu || '',
       ten_tai_lieu: cat.ten_tai_lieu,
-      nguoi_lap_name: cat.nguoi_lap_name || authService.getSession()?.fullName || 'Thượng Mạnh Quỳnh',
+      nguoi_lap_name: cat.nguoi_lap_name || defaultAdminAuthor,
       ngay_lap: cat.ngay_lap || new Date().toISOString().split('T')[0],
       ghi_chu: cat.ghi_chu || '',
     });
@@ -282,6 +760,8 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
     childTypeInput,
     typeForm.ten_loai,
     typeForm.ghi_chu,
+    setIsConfirmDiscardUnifiedOpen,
+    setIsUnifiedModalOpen,
   ]);
 
   // Người dùng bấm trực tiếp nút "Hủy" trên footer form -> Luôn bật xác nhận hủy
@@ -294,6 +774,14 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        if (isTypeCatDropdownOpen) {
+          setIsTypeCatDropdownOpen(false);
+          return;
+        }
+        if (isFilterCatDropdownOpen) {
+          setIsFilterCatDropdownOpen(false);
+          return;
+        }
         if (isUnifiedModalOpen) {
           if (isConfirmDiscardUnifiedOpen) return;
           handleSafeCloseUnified();
@@ -306,6 +794,8 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
     isOpen,
+    isTypeCatDropdownOpen,
+    isFilterCatDropdownOpen,
     isUnifiedModalOpen,
     isConfirmDiscardUnifiedOpen,
     handleSafeCloseUnified,
@@ -331,18 +821,19 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
   };
 
   // Submit Form hợp nhất
-  const handleUnifiedSubmit = (e: React.FormEvent) => {
+  const handleUnifiedSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingUnified) return;
 
     if (unifiedTarget === 'category') {
       // Validate Thư mục
       if (!catForm.ten_tai_lieu.trim()) {
-        setCatError('Vui lòng nhập tên thư mục');
+        setCatError(t('resourceManagement.errFolderRequired'));
         return;
       }
 
       if (!catForm.stt_uu_tien || Number(catForm.stt_uu_tien) < 1) {
-        setCatError('Vui lòng nhập STT ưu tiên hợp lệ (tối thiểu là 1)');
+        setCatError(t('resourceManagement.errOrderMin'));
         return;
       }
 
@@ -351,7 +842,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
         (c) => c.stt_uu_tien === sttNum && c.id !== editingCatId
       );
       if (isDuplicateOrder) {
-        setCatError('STT ưu tiên đã tồn tại');
+        setCatError(t('resourceManagement.orderExists'));
         return;
       }
 
@@ -361,7 +852,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
         stt_uu_tien: sttNum,
         ky_hieu: catForm.ky_hieu.trim(),
         ten_tai_lieu: catForm.ten_tai_lieu.trim(),
-        nguoi_lap_name: catForm.nguoi_lap_name.trim(),
+        nguoi_lap_name: (catForm.nguoi_lap_name || defaultAdminAuthor).trim(),
         ngay_lap: catForm.ngay_lap,
         ghi_chu: catForm.ghi_chu.trim(),
       };
@@ -373,38 +864,29 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
         finalChildTypes.push(pendingChild);
       }
 
-      onSaveCategory(payload, Boolean(editingCatId), finalChildTypes.length);
-
-      // Nếu tạo mới thư mục và có thêm kèm các loại con
-      if (!editingCatId && finalChildTypes.length > 0) {
-        finalChildTypes.forEach((typeName, idx) => {
-          onSaveType(
-            {
-              id: Date.now() + idx + 1,
-              dm_tai_lieu: categoryId,
-              ten_loai: typeName.trim(),
-              is_public: true,
-              ghi_chu: `Khởi tạo cùng thư mục ${catForm.ten_tai_lieu.trim()}`,
-              ngay_lap: catForm.ngay_lap,
-            },
-            false,
-            true
-          );
-        });
+      try {
+        setIsSubmittingUnified(true);
+        setCatError(null);
+        await onSaveCategory(payload, Boolean(editingCatId), finalChildTypes.length, finalChildTypes);
+        setIsUnifiedDirty(false);
+        setIsConfirmDiscardUnifiedOpen(false);
+        setIsUnifiedModalOpen(false);
+      } catch (err: unknown) {
+        console.error('Lỗi khi lưu thư mục:', err);
+        const errMsg = err instanceof Error ? err.message : t('resourceManagement.errSaveCat');
+        setCatError(errMsg);
+      } finally {
+        setIsSubmittingUnified(false);
       }
-
-      setIsUnifiedDirty(false);
-      setIsConfirmDiscardUnifiedOpen(false);
-      setIsUnifiedModalOpen(false);
     } else {
       // Validate & Lưu Loại tài liệu
       if (categories.length === 0 || !typeForm.dm_tai_lieu) {
-        setTypeError('Chưa có Thư mục Cấp 1 nào. Vui lòng tạo Thư mục Cấp 1 trước khi tạo Loại tài liệu.');
+        setTypeError(t('resourceManagement.noParentCatWarning'));
         return;
       }
 
       if (!typeForm.ten_loai.trim()) {
-        setTypeError('Vui lòng nhập tên loại tài liệu');
+        setTypeError(t('resourceManagement.errTypeNameRequired'));
         return;
       }
 
@@ -417,10 +899,20 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
         ngay_lap: new Date().toISOString().split('T')[0],
       };
 
-      onSaveType(payload, Boolean(editingTypeId));
-      setIsUnifiedDirty(false);
-      setIsConfirmDiscardUnifiedOpen(false);
-      setIsUnifiedModalOpen(false);
+      try {
+        setIsSubmittingUnified(true);
+        setTypeError(null);
+        await onSaveType(payload, Boolean(editingTypeId));
+        setIsUnifiedDirty(false);
+        setIsConfirmDiscardUnifiedOpen(false);
+        setIsUnifiedModalOpen(false);
+      } catch (err: unknown) {
+        console.error('Lỗi khi lưu loại tài liệu:', err);
+        const errMsg = err instanceof Error ? err.message : t('resourceManagement.errSaveType');
+        setTypeError(errMsg);
+      } finally {
+        setIsSubmittingUnified(false);
+      }
     }
   };
 
@@ -456,6 +948,14 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
       .sort((a, b) => a.stt_uu_tien - b.stt_uu_tien);
   }, [categories, catSearch]);
 
+  // Tính toán phân trang cho Thư mục
+  const totalCatPages = Math.max(1, Math.ceil(filteredCategories.length / catPageSize));
+  const effectiveCatPage = Math.min(Math.max(1, catPage), totalCatPages);
+  const paginatedCategories = useMemo(() => {
+    const start = (effectiveCatPage - 1) * catPageSize;
+    return filteredCategories.slice(start, start + catPageSize);
+  }, [filteredCategories, effectiveCatPage, catPageSize]);
+
   // Loại tài liệu đã lọc
   const filteredTypes = useMemo(() => {
     return types.filter((t) => {
@@ -470,21 +970,29 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
     });
   }, [types, filterParentCat, typeSearch]);
 
+  // Tính toán phân trang cho Loại tài liệu
+  const totalTypePages = Math.max(1, Math.ceil(filteredTypes.length / typePageSize));
+  const effectiveTypePage = Math.min(Math.max(1, typePage), totalTypePages);
+  const paginatedTypes = useMemo(() => {
+    const start = (effectiveTypePage - 1) * typePageSize;
+    return filteredTypes.slice(start, start + typePageSize);
+  }, [filteredTypes, effectiveTypePage, typePageSize]);
+
   if (!isOpen) return null;
   if (typeof document === 'undefined') return null;
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-xs animate-fade-in"
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-2 sm:p-6 bg-black/60 backdrop-blur-xs animate-fade-in"
       role="dialog"
       aria-modal="true"
     >
       <div
-        className="w-full max-w-4xl max-h-[90vh] bg-surface rounded-2xl border border-border-subtle shadow-2xl flex flex-col overflow-hidden animate-slide-in-bottom"
+        className="w-full max-w-4xl max-h-[92vh] sm:max-h-[90vh] bg-surface rounded-2xl border border-border-subtle shadow-2xl flex flex-col overflow-hidden animate-slide-in-bottom"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header Modal */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border-subtle bg-surface-elevated shrink-0">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-border-subtle bg-surface-elevated shrink-0">
           <div>
             <h2 className="text-base sm:text-lg font-bold text-main flex items-center gap-2">
               <i className="fa-solid fa-folder-tree text-primary text-base" />
@@ -499,14 +1007,14 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
             type="button"
             onClick={onClose}
             className="w-8 h-8 rounded-lg flex items-center justify-center text-muted hover:text-main hover:bg-surface transition-colors cursor-pointer"
-            aria-label="Đóng popup"
+            aria-label={t('resourceManagement.close')}
           >
             <i className="fa-solid fa-xmark text-sm" />
           </button>
         </div>
 
         {/* Tab Switcher (Thư mục | Loại tài liệu) */}
-        <div className="flex border-b border-border-subtle px-6 bg-surface shrink-0">
+        <div className="flex border-b border-border-subtle px-3 sm:px-6 bg-surface shrink-0">
           <button
             type="button"
             onClick={() => {
@@ -514,7 +1022,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
               setCatDeleteBlockedMsg(null);
               closeAllMenus();
             }}
-            className={`py-3 px-4 text-xs sm:text-sm font-semibold border-b-2 flex items-center gap-2 transition-colors cursor-pointer ${
+            className={`py-3 px-3 sm:px-4 text-xs sm:text-sm font-semibold border-b-2 flex items-center gap-2 transition-colors cursor-pointer ${
               activeTab === 'category'
                 ? 'border-primary text-primary font-bold'
                 : 'border-transparent text-secondary hover:text-main'
@@ -523,7 +1031,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
             <i className="fa-solid fa-folder" />
             <span>{t('resourceManagement.tabFolders')}</span>
             <span
-              className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
+              className={`min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-bold inline-flex items-center justify-center leading-none shrink-0 ${
                 activeTab === 'category'
                   ? 'bg-primary-subtle text-primary'
                   : 'bg-surface-elevated text-secondary'
@@ -540,7 +1048,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
               setCatDeleteBlockedMsg(null);
               closeAllMenus();
             }}
-            className={`py-3 px-4 text-xs sm:text-sm font-semibold border-b-2 flex items-center gap-2 transition-colors cursor-pointer ${
+            className={`py-3 px-3 sm:px-4 text-xs sm:text-sm font-semibold border-b-2 flex items-center gap-2 transition-colors cursor-pointer ${
               activeTab === 'type'
                 ? 'border-primary text-primary font-bold'
                 : 'border-transparent text-secondary hover:text-main'
@@ -549,7 +1057,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
             <i className="fa-solid fa-tags" />
             <span>{t('resourceManagement.tabTypes')}</span>
             <span
-              className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
+              className={`min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-bold inline-flex items-center justify-center leading-none shrink-0 ${
                 activeTab === 'type'
                   ? 'bg-primary-subtle text-primary'
                   : 'bg-surface-elevated text-secondary'
@@ -561,7 +1069,15 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
         </div>
 
         {/* Body Modal */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4 min-h-0">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-3 sm:space-y-4 min-h-0">
+          {/* Cảnh báo chế độ chỉ xem nếu không phải Admin */}
+          {!isAdmin && (
+            <div className="p-3 rounded-xl bg-amber-500/10 text-amber-800 dark:text-amber-200 border border-amber-500/30 text-xs flex items-center gap-2.5 animate-fade-in">
+              <i className="fa-solid fa-lock text-amber-500 shrink-0" />
+              <span>{t('resourceManagement.readOnlyAdminWarning')}</span>
+            </div>
+          )}
+
           {/* Cảnh báo nếu xóa thư mục bị chặn */}
           {catDeleteBlockedMsg && (
             <div className="p-3 rounded-xl bg-danger-subtle text-danger border border-danger/30 text-xs sm:text-sm flex items-center justify-between gap-3 animate-fade-in">
@@ -573,7 +1089,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                 type="button"
                 onClick={() => setCatDeleteBlockedMsg(null)}
                 className="p-1 hover:opacity-70 text-xs cursor-pointer"
-                aria-label="Đóng cảnh báo"
+                aria-label={t('resourceManagement.close')}
               >
                 <i className="fa-solid fa-xmark" />
               </button>
@@ -582,24 +1098,30 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
 
           {/* TAB 1: THƯ MỤC */}
           {activeTab === 'category' && (
-            <div className="space-y-4">
+            <div className="space-y-3 sm:space-y-4">
               {/* Thanh công cụ Tab Thư mục */}
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-                <div className="relative flex-1 max-w-md">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-3">
+                <div className="relative flex-1 w-full sm:max-w-md">
                   <i className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-muted text-xs pointer-events-none" />
                   <input
                     type="text"
                     placeholder={t('resourceManagement.catSearchPlaceholder')}
                     value={catSearch}
-                    onChange={(e) => setCatSearch(e.target.value)}
+                    onChange={(e) => {
+                      setCatSearch(e.target.value);
+                      setCatPage(1);
+                    }}
                     className="w-full pl-8 pr-8 py-2 bg-surface border border-border-subtle rounded-xl text-xs text-main focus:outline-hidden focus:border-primary transition-all shadow-2xs"
                   />
                   {catSearch && (
                     <button
                       type="button"
-                      onClick={() => setCatSearch('')}
+                      onClick={() => {
+                        setCatSearch('');
+                        setCatPage(1);
+                      }}
                       className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-main text-xs p-1 cursor-pointer"
-                      title="Xóa tìm kiếm"
+                      title={t('resourceManagement.clearSearch')}
                     >
                       <i className="fa-solid fa-xmark" />
                     </button>
@@ -610,9 +1132,13 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                   variant="primary"
                   size="sm"
                   icon="fa-plus"
-                  onClick={() => handleOpenUnifiedCreate('category')}
-                  className="h-9 px-3.5 rounded-xl text-xs font-bold shrink-0 shadow-sm hover:shadow-glow"
-                  title={t('resourceManagement.addNew')}
+                  disabled={!canAdd}
+                  onClick={() => {
+                    if (!canAdd) return;
+                    handleOpenUnifiedCreate('category');
+                  }}
+                  className="h-9 px-3.5 rounded-xl text-xs font-bold shrink-0 shadow-sm hover:shadow-glow disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto justify-center"
+                  title={canAdd ? t('resourceManagement.addNew') : t('resourceManagement.adminOnlyFolder')}
                 >
                   {t('resourceManagement.addNew')}
                 </Button>
@@ -620,15 +1146,15 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
 
               {/* Bảng danh sách Thư mục */}
               <div className="w-full overflow-x-auto rounded-xl border border-border-subtle bg-surface shadow-2xs">
-                <table className="w-full text-left text-xs border-collapse">
+                <table className="w-full text-left text-xs border-collapse min-w-full">
                   <thead className="bg-surface-elevated font-bold text-muted uppercase tracking-wider border-b border-border-subtle">
                     <tr>
-                      <th className="px-3 py-3 w-16 text-center">{t('resourceManagement.colOrder')}</th>
-                      <th className="px-3 py-3 w-28">{t('resourceManagement.colCatCode')}</th>
-                      <th className="px-4 py-3 min-w-[200px]">{t('resourceManagement.colCatName')}</th>
-                      <th className="px-3 py-3 w-32">{t('resourceManagement.colCatDate')}</th>
-                      <th className="px-3 py-3 w-28 text-center">{t('resourceManagement.colCatSubtypes')}</th>
-                      <th className="px-3 py-3 w-24 text-center whitespace-nowrap">{t('resourceManagement.colActions')}</th>
+                      <th className="hidden sm:table-cell px-2 sm:px-3 py-3 w-16 text-center">{t('resourceManagement.colOrder')}</th>
+                      <th className="hidden sm:table-cell px-3 py-3 w-24 sm:w-28">{t('resourceManagement.colCatCode')}</th>
+                      <th className="px-3 sm:px-4 py-3 min-w-[140px] sm:min-w-[200px]">{t('resourceManagement.colCatName')}</th>
+                      <th className="hidden md:table-cell px-3 py-3 w-28 sm:w-32">{t('resourceManagement.colCatDate')}</th>
+                      <th className="hidden sm:table-cell px-3 py-3 w-24 sm:w-28 text-center">{t('resourceManagement.colCatSubtypes')}</th>
+                      <th className="px-2 sm:px-3 py-3 w-12 sm:w-20 text-center whitespace-nowrap">{t('resourceManagement.colActions')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border-subtle">
@@ -637,37 +1163,56 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                         <td colSpan={6} className="py-10 text-center text-muted">
                           <i className="fa-solid fa-folder-open text-2xl mb-2 block opacity-40" />
                           {categories.length === 0
-                            ? 'Chưa có Thư mục Cấp 1 nào. Bấm "Thêm mới" để tạo thư mục đầu tiên.'
-                            : 'Không tìm thấy thư mục nào phù hợp'}
+                            ? t('resourceManagement.emptyCategoriesHint')
+                            : t('resourceManagement.noMatchingCategories')}
                         </td>
                       </tr>
                     ) : (
-                      filteredCategories.map((cat) => {
+                      paginatedCategories.map((cat) => {
                         const childCount = types.filter((t) => t.dm_tai_lieu === cat.id).length;
                         return (
                           <tr key={cat.id} className="hover:bg-surface-elevated/70 transition-colors">
-                            <td className="px-3 py-3 text-center font-bold text-primary font-mono">
+                            <td className="hidden sm:table-cell px-2 sm:px-3 py-3 text-center font-bold text-primary text-xs">
                               {cat.stt_uu_tien}
                             </td>
-                            <td className="px-3 py-3 font-mono font-medium text-secondary">
+                            <td className="hidden sm:table-cell px-3 py-3 font-medium text-secondary">
                               {cat.ky_hieu || '-'}
                             </td>
-                            <td className="px-4 py-3">
-                              <span className="font-semibold text-main block">{cat.ten_tai_lieu}</span>
-                              {cat.ghi_chu && (
-                                <span className="text-[11px] text-muted truncate block max-w-sm mt-0.5">
-                                  {cat.ghi_chu}
-                                </span>
-                              )}
+                            <td className="px-3 sm:px-4 py-2.5 sm:py-3">
+                              <div className="flex items-start gap-2">
+                                <div className="mt-0.5 shrink-0 text-primary/75">
+                                  <i className="fa-solid fa-folder text-sm" />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <span className="font-semibold text-main text-xs sm:text-sm block leading-snug">
+                                    {cat.ten_tai_lieu}
+                                  </span>
+                                  <div className="flex items-center gap-1.5 flex-wrap sm:hidden mt-1 text-[11px]">
+                                    {cat.ky_hieu && (
+                                      <span className="text-[10px] font-medium text-muted bg-surface-elevated px-1.5 py-0.5 rounded border border-border-subtle shrink-0">
+                                        {cat.ky_hieu}
+                                      </span>
+                                    )}
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-primary/10 text-primary border border-primary/20 shrink-0">
+                                      {t('resourceManagement.subtypesCount', { count: childCount })}
+                                    </span>
+                                  </div>
+                                  {cat.ghi_chu && (
+                                    <p className="text-[11px] text-muted line-clamp-1 mt-0.5 leading-tight font-normal">
+                                      {cat.ghi_chu}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
                             </td>
-                            <td className="px-3 py-3 text-secondary">{cat.ngay_lap || '-'}</td>
-                            <td className="px-3 py-3 text-center">
+                            <td className="hidden md:table-cell px-3 py-3 text-secondary">{formatDate(cat.ngay_lap)}</td>
+                            <td className="hidden sm:table-cell px-3 py-3 text-center">
                               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-surface-elevated text-secondary border border-border-subtle">
-                                {childCount} loại
+                                {t('resourceManagement.subtypesCount', { count: childCount })}
                               </span>
                             </td>
                             <td
-                              className="px-3 py-3 text-center whitespace-nowrap"
+                              className="px-2 sm:px-3 py-2.5 sm:py-3 text-center whitespace-nowrap align-middle"
                               onClick={(e) => e.stopPropagation()}
                             >
                               <button
@@ -679,8 +1224,8 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                                     ? 'bg-primary text-white shadow-xs'
                                     : 'text-muted hover:text-main hover:bg-surface-elevated'
                                 }`}
-                                title="Thao tác"
-                                aria-label={`Thao tác với thư mục ${cat.ten_tai_lieu}`}
+                                title={t('resourceManagement.actionMenu')}
+                                aria-label={t('resourceManagement.actionsForFolder', { name: cat.ten_tai_lieu })}
                               >
                                 <i className="fa-solid fa-ellipsis text-xs" />
                               </button>
@@ -691,47 +1236,114 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                     )}
                   </tbody>
                 </table>
+
+                {/* Thanh phân trang Thư mục */}
+                {filteredCategories.length > 0 && (
+                  <ModalPagination
+                    currentPage={effectiveCatPage}
+                    totalPages={totalCatPages}
+                    pageSize={catPageSize}
+                    totalItems={filteredCategories.length}
+                    onPageChange={(p) => {
+                      setCatPage(p);
+                      closeAllMenus();
+                    }}
+                    onPageSizeChange={(newSize) => {
+                      setCatPageSize(newSize);
+                      setCatPage(1);
+                      closeAllMenus();
+                    }}
+                    itemLabel={t('resourceManagement.itemLabelFolders')}
+                  />
+                )}
               </div>
             </div>
           )}
 
           {/* TAB 2: LOẠI TÀI LIỆU */}
           {activeTab === 'type' && (
-            <div className="space-y-4">
+            <div className="space-y-3 sm:space-y-4">
               {/* Thanh công cụ Tab Loại tài liệu */}
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-2 flex-1">
-                  {/* Dropdown lọc Thư mục cha */}
-                  <select
-                    value={filterParentCat}
-                    onChange={(e) => setFilterParentCat(e.target.value)}
-                    className="h-9 px-3 bg-surface border border-border-subtle rounded-xl text-xs text-main focus:outline-hidden focus:border-primary cursor-pointer shrink-0 shadow-2xs font-medium"
-                    aria-label="Lọc theo thư mục cha"
-                  >
-                    <option value="all">Tất cả thư mục</option>
-                    {categories.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.ten_tai_lieu}
-                      </option>
-                    ))}
-                  </select>
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-3">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-1 w-full">
+                  {/* Dropdown lọc Thư mục cha - Custom Responsive Dropdown */}
+                  <div className="relative w-full sm:w-auto shrink-0" ref={filterCatDropdownRef}>
+                    <button
+                      ref={filterCatButtonRef}
+                      type="button"
+                      onClick={() => {
+                        if (isFilterCatDropdownOpen) {
+                          setIsFilterCatDropdownOpen(false);
+                          setFilterCatMenuPos(null);
+                        } else {
+                          updateFilterCatMenuPos();
+                          setIsFilterCatDropdownOpen(true);
+                        }
+                      }}
+                      aria-label={t('resourceManagement.filterByParentFolderAria')}
+                      aria-haspopup="listbox"
+                      aria-expanded={isFilterCatDropdownOpen}
+                      className={`w-full sm:w-56 h-9 px-3 bg-surface border rounded-xl text-xs text-main flex items-center justify-between gap-2 shadow-2xs cursor-pointer font-medium transition-colors ${
+                        isFilterCatDropdownOpen
+                          ? 'border-primary ring-1 ring-primary/20'
+                          : 'border-border-subtle hover:border-primary/50'
+                      }`}
+                    >
+                      <span className="truncate text-left flex-1">
+                        {filterParentCat === 'all'
+                          ? t('resourceManagement.allFolders')
+                          : categories.find((c) => String(c.id) === filterParentCat)?.ten_tai_lieu || t('resourceManagement.allFolders')}
+                      </span>
+                      <i
+                        className={`fa-solid fa-chevron-down text-[10px] text-muted transition-transform duration-200 shrink-0 ${
+                          isFilterCatDropdownOpen ? 'rotate-180 text-primary' : ''
+                        }`}
+                      />
+                    </button>
+
+                    {/* Native select ẩn để kiểm thử & trợ năng */}
+                    <select
+                      value={filterParentCat}
+                      onChange={(e) => {
+                        setFilterParentCat(e.target.value);
+                        setTypePage(1);
+                      }}
+                      className="sr-only"
+                      tabIndex={-1}
+                      aria-hidden="true"
+                      aria-label={t('resourceManagement.filterByParentFolderAria')}
+                    >
+                      <option value="all">{t('resourceManagement.allFolders')}</option>
+                      {categories.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.ten_tai_lieu}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
                   {/* Ô tìm nhanh theo tên loại */}
-                  <div className="relative flex-1 max-w-xs">
+                  <div className="relative w-full sm:flex-1 sm:max-w-xs">
                     <i className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-muted text-xs pointer-events-none" />
                     <input
                       type="text"
-                      placeholder="Tìm tên loại tài liệu..."
+                      placeholder={t('resourceManagement.typeSearchPlaceholder')}
                       value={typeSearch}
-                      onChange={(e) => setTypeSearch(e.target.value)}
+                      onChange={(e) => {
+                        setTypeSearch(e.target.value);
+                        setTypePage(1);
+                      }}
                       className="w-full pl-8 pr-8 py-2 bg-surface border border-border-subtle rounded-xl text-xs text-main focus:outline-hidden focus:border-primary transition-all shadow-2xs"
                     />
                     {typeSearch && (
                       <button
                         type="button"
-                        onClick={() => setTypeSearch('')}
+                        onClick={() => {
+                          setTypeSearch('');
+                          setTypePage(1);
+                        }}
                         className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-main text-xs p-1 cursor-pointer"
-                        title="Xóa tìm kiếm"
+                        title={t('resourceManagement.clearSearch')}
                       >
                         <i className="fa-solid fa-xmark" />
                       </button>
@@ -743,24 +1355,28 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                   variant="primary"
                   size="sm"
                   icon="fa-plus"
-                  onClick={() => handleOpenUnifiedCreate('type')}
-                  className="h-9 px-3.5 rounded-xl text-xs font-bold shrink-0 shadow-sm hover:shadow-glow"
-                  title="Thêm mới Thư mục hoặc Loại tài liệu"
+                  disabled={!canAdd}
+                  onClick={() => {
+                    if (!canAdd) return;
+                    handleOpenUnifiedCreate('type');
+                  }}
+                  className="h-9 px-3.5 rounded-xl text-xs font-bold shrink-0 shadow-sm hover:shadow-glow disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto justify-center"
+                  title={canAdd ? t('resourceManagement.addNewTypeTitle') : t('resourceManagement.adminOnlyType')}
                 >
-                  Thêm mới
+                  {t('resourceManagement.addNew')}
                 </Button>
               </div>
 
               {/* Bảng danh sách Loại tài liệu */}
               <div className="w-full overflow-x-auto rounded-xl border border-border-subtle bg-surface shadow-2xs">
-                <table className="w-full text-left text-xs border-collapse">
+                <table className="w-full text-left text-xs border-collapse min-w-full">
                   <thead className="bg-surface-elevated font-bold text-muted uppercase tracking-wider border-b border-border-subtle">
                     <tr>
-                      <th className="px-4 py-3 min-w-[200px]">{t('resourceManagement.colTypeName')}</th>
-                      <th className="px-3 py-3 w-48">{t('resourceManagement.colParentCat')}</th>
-                      <th className="px-3 py-3 w-28 text-center">{t('resourceManagement.colScope')}</th>
-                      <th className="px-3 py-3 min-w-[160px]">{t('resourceManagement.colNotes')}</th>
-                      <th className="px-3 py-3 w-24 text-center whitespace-nowrap">{t('resourceManagement.colActions')}</th>
+                      <th className="px-3 sm:px-4 py-3 min-w-[140px] sm:min-w-[200px]">{t('resourceManagement.colTypeName')}</th>
+                      <th className="hidden sm:table-cell px-3 py-3 w-36 sm:w-48">{t('resourceManagement.colParentCat')}</th>
+                      <th className="hidden sm:table-cell px-3 py-3 w-24 sm:w-28 text-center">{t('resourceManagement.colScope')}</th>
+                      <th className="hidden md:table-cell px-3 py-3 min-w-[160px]">{t('resourceManagement.colNotes')}</th>
+                      <th className="px-2 sm:px-3 py-3 w-12 sm:w-20 text-center whitespace-nowrap">{t('resourceManagement.colActions')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border-subtle">
@@ -769,58 +1385,90 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                         <td colSpan={5} className="py-10 text-center text-muted">
                           <i className="fa-solid fa-tags text-2xl mb-2 block opacity-40" />
                           {types.length === 0
-                            ? 'Chưa có Loại tài liệu Cấp 2 nào. Bấm "Thêm mới" để tạo loại đầu tiên.'
-                            : 'Không tìm thấy loại tài liệu nào phù hợp'}
+                            ? t('resourceManagement.emptyTypesHint')
+                            : t('resourceManagement.noMatchingTypes')}
                         </td>
                       </tr>
                     ) : (
-                      filteredTypes.map((t) => {
-                        const parentCat = categories.find((c) => c.id === t.dm_tai_lieu);
+                      paginatedTypes.map((typeItem) => {
+                        const parentCat = categories.find((c) => c.id === typeItem.dm_tai_lieu);
                         return (
                           <tr
-                            key={t.id}
+                            key={typeItem.id}
                             className="hover:bg-surface-elevated/70 transition-colors"
                           >
-                            <td className="px-4 py-3 font-semibold text-main">
-                              <span className="flex items-center gap-2">
-                                <i
-                                  className={`fa-solid ${
-                                    t.is_public ? 'fa-tag text-primary/70' : 'fa-lock text-amber-500'
-                                  } text-[11px]`}
-                                />
-                                <span>{t.ten_loai}</span>
-                              </span>
+                            <td className="px-3 sm:px-4 py-2.5 sm:py-3 font-semibold text-main">
+                              <div className="flex items-start gap-2">
+                                <div className="mt-0.5 shrink-0">
+                                  <i
+                                    className={`fa-solid ${
+                                      typeItem.is_public ? 'fa-tag text-primary/75' : 'fa-lock text-amber-500'
+                                    } text-xs`}
+                                  />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <span className="text-xs sm:text-sm font-semibold text-main block leading-snug">
+                                    {typeItem.ten_loai}
+                                  </span>
+
+                                  {/* Sub-line tinh gọn trên Mobile: Thư mục cha + Badge phạm vi */}
+                                  <div className="flex items-center gap-2 mt-1 sm:hidden flex-wrap text-[11px]">
+                                    <span className="text-secondary inline-flex items-center gap-1 truncate max-w-[170px]">
+                                      <i className="fa-solid fa-folder text-[10px] text-primary/60 shrink-0" />
+                                      <span className="truncate">{parentCat?.ten_tai_lieu || `Thư mục #${typeItem.dm_tai_lieu}`}</span>
+                                    </span>
+                                    {typeItem.is_public ? (
+                                      <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.2 rounded-full border border-emerald-500/20 shrink-0">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                                        {t('resourceManagement.scopePublic')}
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 px-1.5 py-0.2 rounded-full border border-amber-500/20 shrink-0">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                                        {t('resourceManagement.scopeInternal')}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {/* Ghi chú trên mobile nếu có */}
+                                  {typeItem.ghi_chu && (
+                                    <p className="sm:hidden text-[11px] text-muted line-clamp-1 mt-0.5 leading-tight font-normal">
+                                      {typeItem.ghi_chu}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
                             </td>
-                            <td className="px-3 py-3 text-secondary font-medium">
-                              {parentCat?.ten_tai_lieu || `Thư mục #${t.dm_tai_lieu}`}
+                            <td className="hidden sm:table-cell px-3 py-3 text-secondary font-medium">
+                              {parentCat?.ten_tai_lieu || `Thư mục #${typeItem.dm_tai_lieu}`}
                             </td>
-                            <td className="px-3 py-3 text-center">
-                              {t.is_public ? (
+                            <td className="hidden sm:table-cell px-3 py-3 text-center">
+                              {typeItem.is_public ? (
                                 <Badge variant="success" size="sm">
-                                  Công khai
+                                  {t('resourceManagement.scopePublic')}
                                 </Badge>
                               ) : (
                                 <Badge variant="warning" size="sm">
-                                  Nội bộ
+                                  {t('resourceManagement.scopeInternal')}
                                 </Badge>
                               )}
                             </td>
-                            <td className="px-3 py-3 text-muted">{t.ghi_chu || '-'}</td>
+                            <td className="hidden md:table-cell px-3 py-3 text-muted">{typeItem.ghi_chu || '-'}</td>
                             <td
-                              className="px-3 py-3 text-center whitespace-nowrap"
+                              className="px-2 sm:px-3 py-2.5 sm:py-3 text-center whitespace-nowrap align-middle"
                               onClick={(e) => e.stopPropagation()}
                             >
                               <button
                                 type="button"
                                 data-menu-trigger="true"
-                                onClick={(e) => handleOpenTypeMenu(e, t.id)}
+                                onClick={(e) => handleOpenTypeMenu(e, typeItem.id)}
                                 className={`w-7 h-7 rounded-lg inline-flex items-center justify-center transition-colors cursor-pointer ${
-                                  activeMenuTypeId === t.id
+                                  activeMenuTypeId === typeItem.id
                                     ? 'bg-primary text-white shadow-xs'
                                     : 'text-muted hover:text-main hover:bg-surface-elevated'
                                 }`}
-                                title="Thao tác"
-                                aria-label={`Thao tác với loại ${t.ten_loai}`}
+                                title={t('resourceManagement.actionMenu')}
+                                aria-label={t('resourceManagement.actionsForType', { name: typeItem.ten_loai })}
                               >
                                 <i className="fa-solid fa-ellipsis text-xs" />
                               </button>
@@ -831,13 +1479,33 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                     )}
                   </tbody>
                 </table>
+
+                {/* Thanh phân trang Loại tài liệu */}
+                {filteredTypes.length > 0 && (
+                  <ModalPagination
+                    currentPage={effectiveTypePage}
+                    totalPages={totalTypePages}
+                    pageSize={typePageSize}
+                    totalItems={filteredTypes.length}
+                    onPageChange={(p) => {
+                      setTypePage(p);
+                      closeAllMenus();
+                    }}
+                    onPageSizeChange={(newSize) => {
+                      setTypePageSize(newSize);
+                      setTypePage(1);
+                      closeAllMenus();
+                    }}
+                    itemLabel={t('resourceManagement.itemLabelTypes')}
+                  />
+                )}
               </div>
             </div>
           )}
         </div>
 
         {/* Footer Modal */}
-        <div className="px-6 py-3.5 border-t border-border-subtle bg-surface-elevated flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0">
+        <div className="px-4 sm:px-6 py-3 sm:py-3.5 border-t border-border-subtle bg-surface-elevated flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-3 shrink-0">
           <span className="text-xs text-muted">
             {t('resourceManagement.totalSummary', { catCount: String(categories.length), typeCount: String(types.length) })}
           </span>
@@ -854,14 +1522,14 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
       {/* ============================================================================ */}
       {isUnifiedModalOpen && (
         <div
-          className="fixed inset-0 z-[10001] flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-xs animate-fade-in"
+          className="fixed inset-0 z-[10001] flex items-center justify-center p-2 sm:p-5 bg-black/60 backdrop-blur-xs animate-fade-in"
         >
           <div
             className="w-full max-w-xl bg-surface rounded-2xl border border-border-subtle shadow-2xl overflow-hidden animate-zoom-in flex flex-col max-h-[90vh]"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header Dialog */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-border-subtle bg-surface-elevated shrink-0">
+            <div className="flex items-center justify-between px-4 sm:px-5 py-3.5 sm:py-4 border-b border-border-subtle bg-surface-elevated shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
                   <i
@@ -873,15 +1541,15 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                 <div>
                   <h3 className="text-sm sm:text-base font-bold text-main">
                     {unifiedMode === 'create'
-                      ? 'Thêm Mới Danh Mục / Loại Tài Liệu'
+                      ? t('resourceManagement.unifiedCreateTitle')
                       : unifiedTarget === 'category'
-                        ? 'Chỉnh Sửa Thư Mục'
-                        : 'Chỉnh Sửa Loại Tài Liệu'}
+                        ? t('resourceManagement.unifiedEditCatTitle')
+                        : t('resourceManagement.unifiedEditTypeTitle')}
                   </h3>
                   <p className="text-[11px] text-muted">
                     {unifiedMode === 'create'
-                      ? 'Lựa chọn cấp phân loại và nhập thông tin để tạo mới'
-                      : 'Cập nhật lại thông tin cấu hình'}
+                      ? t('resourceManagement.unifiedCreateSubtitle')
+                      : t('resourceManagement.unifiedEditSubtitle')}
                   </p>
                 </div>
               </div>
@@ -890,7 +1558,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                 type="button"
                 onClick={handleSafeCloseUnified}
                 className="w-7 h-7 rounded-lg flex items-center justify-center text-muted hover:text-main hover:bg-surface transition-colors cursor-pointer"
-                aria-label="Đóng form"
+                aria-label={t('resourceManagement.close')}
               >
                 <i className="fa-solid fa-xmark text-sm" />
               </button>
@@ -898,7 +1566,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
 
             {/* Form Body */}
             <form onSubmit={handleUnifiedSubmit} className="flex flex-col flex-1 min-h-0">
-              <div className="flex-1 overflow-y-auto p-5 space-y-4">
+              <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 space-y-3.5 sm:space-y-4 min-h-[220px]">
                 {/* Khi ở chế độ Tạo mới: Thanh Segmented Switcher chọn Cấp 1 hoặc Cấp 2 */}
                 {unifiedMode === 'create' && (
                   <div className="p-1 bg-surface-elevated rounded-xl flex items-center gap-1 border border-border-subtle">
@@ -915,7 +1583,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                       }`}
                     >
                       <i className="fa-solid fa-folder text-xs" />
-                      <span>Thư mục (Cấp 1)</span>
+                      <span>{t('resourceManagement.folderLevel1')}</span>
                     </button>
                     <button
                       type="button"
@@ -930,7 +1598,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                       }`}
                     >
                       <i className="fa-solid fa-tags text-xs" />
-                      <span>Loại tài liệu (Cấp 2)</span>
+                      <span>{t('resourceManagement.docTypeLevel2')}</span>
                     </button>
                   </div>
                 )}
@@ -942,7 +1610,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                       {/* STT ưu tiên */}
                       <div className="sm:col-span-4">
                         <label className="text-xs font-semibold text-main block mb-1">
-                          STT ưu tiên <span className="text-danger">*</span>
+                          {t('resourceManagement.colOrderPriority')} <span className="text-danger">*</span>
                         </label>
                         <input
                           type="number"
@@ -954,8 +1622,8 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                             if (catError && catError.includes('STT')) setCatError(null);
                             setIsUnifiedDirty(true);
                           }}
-                          placeholder="VD: 1, 2, 3..."
-                          className="w-full px-3 py-2 bg-surface border border-border-subtle rounded-xl text-xs font-mono font-bold text-main focus:outline-hidden focus:border-primary shadow-2xs"
+                          placeholder={t('resourceManagement.orderPlaceholder')}
+                          className="w-full px-3 py-2 bg-surface border border-border-subtle rounded-xl text-xs font-bold text-main focus:outline-hidden focus:border-primary shadow-2xs"
                           required
                         />
                         {catError && catError.includes('STT') && (
@@ -966,28 +1634,28 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                       {/* Ký hiệu thư mục */}
                       <div className="sm:col-span-8">
                         <label className="text-xs font-semibold text-main block mb-1">
-                          Ký hiệu thư mục
+                          {t('resourceManagement.catCodeLabel')}
                         </label>
                         <input
                           type="text"
-                          placeholder="VD: TLBM-CHUNG"
+                          placeholder={t('resourceManagement.placeholderCatCode')}
                           value={catForm.ky_hieu}
                           onChange={(e) => {
                             setCatForm({ ...catForm, ky_hieu: e.target.value });
                             setIsUnifiedDirty(true);
                           }}
-                          className="w-full px-3 py-2 bg-surface border border-border-subtle rounded-xl text-xs font-mono text-main focus:outline-hidden focus:border-primary shadow-2xs"
+                          className="w-full px-3 py-2 bg-surface border border-border-subtle rounded-xl text-xs text-main focus:outline-hidden focus:border-primary shadow-2xs"
                         />
                       </div>
 
                       {/* Tên thư mục (*) */}
                       <div className="sm:col-span-12">
                         <label className="text-xs font-semibold text-main block mb-1">
-                          Tên thư mục <span className="text-danger">*</span>
+                          {t('resourceManagement.colCatName')} <span className="text-danger">*</span>
                         </label>
                         <input
                           type="text"
-                          placeholder="VD: Tài liệu, Biểu mẫu chung"
+                          placeholder={t('resourceManagement.placeholderCatName')}
                           value={catForm.ten_tai_lieu}
                           onChange={(e) => {
                             setCatForm({ ...catForm, ten_tai_lieu: e.target.value });
@@ -1005,22 +1673,20 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                       {/* Người lập */}
                       <div className="sm:col-span-6">
                         <label className="text-xs font-semibold text-main block mb-1">
-                          Người lập thư mục
+                          {t('resourceManagement.catCreatorLabel')}
                         </label>
                         <input
                           type="text"
-                          value={catForm.nguoi_lap_name}
-                          onChange={(e) => {
-                            setCatForm({ ...catForm, nguoi_lap_name: e.target.value });
-                            setIsUnifiedDirty(true);
-                          }}
-                          className="w-full px-3 py-2 bg-surface border border-border-subtle rounded-xl text-xs text-main focus:outline-hidden focus:border-primary shadow-2xs"
+                          value={catForm.nguoi_lap_name || defaultAdminAuthor}
+                          readOnly
+                          className="w-full px-3 py-2 bg-surface-elevated/70 border border-border-subtle rounded-xl text-xs text-main font-semibold cursor-not-allowed select-none shadow-2xs"
+                          title={t('resourceManagement.adminCreatorTooltip')}
                         />
                       </div>
 
                       {/* Ngày lập */}
                       <div className="sm:col-span-6">
-                        <label className="text-xs font-semibold text-main block mb-1">Ngày lập</label>
+                        <label className="text-xs font-semibold text-main block mb-1">{t('resourceManagement.colCatDate')}</label>
                         <input
                           type="date"
                           value={catForm.ngay_lap}
@@ -1034,10 +1700,10 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
 
                       {/* Ghi chú */}
                       <div className="sm:col-span-12">
-                        <label className="text-xs font-semibold text-main block mb-1">Ghi chú</label>
+                        <label className="text-xs font-semibold text-main block mb-1">{t('resourceManagement.colNotes')}</label>
                         <input
                           type="text"
-                          placeholder="Mô tả phạm vi áp dụng của thư mục..."
+                          placeholder={t('resourceManagement.placeholderCatNotes')}
                           value={catForm.ghi_chu}
                           onChange={(e) => {
                             setCatForm({ ...catForm, ghi_chu: e.target.value });
@@ -1054,17 +1720,17 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                         <div className="flex items-center justify-between">
                           <label className="text-xs font-bold text-main flex items-center gap-1.5">
                             <i className="fa-solid fa-sitemap text-primary text-xs" />
-                            <span>Thêm nhanh loại tài liệu con thuộc thư mục này (Tùy chọn)</span>
+                            <span>{t('resourceManagement.quickAddSubtypesLabel')}</span>
                           </label>
                           <span className="text-[11px] text-muted">
-                            Đã thêm: {catChildTypes.length}
+                            {t('resourceManagement.addedCount', { count: catChildTypes.length })}
                           </span>
                         </div>
 
                         <div className="flex items-center gap-2">
                           <input
                             type="text"
-                            placeholder="Nhập tên loại (VD: Quy chế, Biểu mẫu...) rồi bấm Thêm hoặc Enter"
+                            placeholder={t('resourceManagement.quickAddSubtypesPlaceholder')}
                             value={childTypeInput}
                             onChange={(e) => setChildTypeInput(e.target.value)}
                             onKeyDown={(e) => {
@@ -1083,24 +1749,24 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                             onClick={handleAddChildType}
                             className="text-xs shrink-0 rounded-xl font-semibold shadow-2xs"
                           >
-                            Thêm
+                            {t('resourceManagement.addBtn')}
                           </Button>
                         </div>
 
                         {catChildTypes.length > 0 && (
                           <div className="flex flex-wrap gap-1.5 pt-1 max-h-24 overflow-y-auto">
-                            {catChildTypes.map((t, idx) => (
+                            {catChildTypes.map((childName, idx) => (
                               <span
                                 key={idx}
                                 className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/25 shadow-2xs"
                               >
                                 <i className="fa-solid fa-tag text-[10px]" />
-                                <span>{t}</span>
+                                <span>{childName}</span>
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveChildType(idx)}
                                   className="hover:text-danger ml-0.5 cursor-pointer text-xs"
-                                  title="Xóa loại này"
+                                  title={t('resourceManagement.removeThisType')}
                                 >
                                   ×
                                 </button>
@@ -1120,7 +1786,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                       <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-200 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-1">
                         <div className="flex items-center gap-2">
                           <i className="fa-solid fa-triangle-exclamation text-base text-amber-500 shrink-0" />
-                          <span>Chưa có Thư mục Cấp 1 nào. Vui lòng tạo Thư mục Cấp 1 trước khi tạo Loại tài liệu.</span>
+                          <span>{t('resourceManagement.noParentCatWarning')}</span>
                         </div>
                         <Button
                           type="button"
@@ -1130,29 +1796,70 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                           className="text-xs shrink-0 font-bold"
                         >
                           <i className="fa-solid fa-folder-plus mr-1" />
-                          Chuyển sang tạo Thư mục
+                          {t('resourceManagement.switchToCreateFolder')}
                         </Button>
                       </div>
                     )}
 
                     <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
-                      {/* Thư mục cha (*) */}
-                      <div className="sm:col-span-8">
+                      {/* Thư mục cha (*) - Custom Responsive Dropdown */}
+                      <div className="sm:col-span-8 relative" ref={typeCatDropdownRef}>
                         <label className="text-xs font-semibold text-main block mb-1">
-                          Thư mục cha <span className="text-danger">*</span>
+                          {t('resourceManagement.parentFolderRequired')} <span className="text-danger">*</span>
                         </label>
+                        <button
+                          ref={typeCatButtonRef}
+                          type="button"
+                          onClick={() => {
+                            if (categories.length > 0) {
+                              if (isTypeCatDropdownOpen) {
+                                setIsTypeCatDropdownOpen(false);
+                                setTypeCatMenuPos(null);
+                                setTypeCatSearch('');
+                              } else {
+                                updateTypeCatMenuPos();
+                                setIsTypeCatDropdownOpen(true);
+                              }
+                            }
+                          }}
+                          disabled={categories.length === 0}
+                          aria-haspopup="listbox"
+                          aria-expanded={isTypeCatDropdownOpen}
+                          className={`w-full px-3 py-2 bg-surface border rounded-xl text-xs text-main flex items-center justify-between gap-2 shadow-2xs font-medium transition-colors cursor-pointer ${
+                            categories.length === 0
+                              ? 'opacity-60 cursor-not-allowed border-border-subtle'
+                              : isTypeCatDropdownOpen
+                                ? 'border-primary ring-1 ring-primary/20'
+                                : 'border-border-subtle hover:border-primary/50'
+                          }`}
+                        >
+                          <span className={`truncate text-left flex-1 ${!typeForm.dm_tai_lieu ? 'text-muted' : 'text-main'}`}>
+                            {categories.length === 0
+                              ? t('resourceManagement.noFoldersAvailable')
+                              : categories.find((c) => c.id === Number(typeForm.dm_tai_lieu))?.ten_tai_lieu || t('resourceManagement.noFoldersAvailable')}
+                          </span>
+                          <i
+                            className={`fa-solid fa-chevron-down text-xs text-muted transition-transform duration-200 shrink-0 ${
+                              isTypeCatDropdownOpen ? 'rotate-180 text-primary' : ''
+                            }`}
+                          />
+                        </button>
+
+                        {/* Native select ẩn để đảm bảo HTML form validation & tests */}
                         <select
                           value={typeForm.dm_tai_lieu}
                           onChange={(e) => {
                             setTypeForm({ ...typeForm, dm_tai_lieu: Number(e.target.value) });
                             setIsUnifiedDirty(true);
                           }}
-                          className="w-full px-3 py-2 bg-surface border border-border-subtle rounded-xl text-xs text-main focus:outline-hidden focus:border-primary cursor-pointer shadow-2xs font-medium"
+                          className="sr-only"
+                          tabIndex={-1}
+                          aria-hidden="true"
                           required
                           disabled={categories.length === 0}
                         >
                           {categories.length === 0 ? (
-                            <option value="">-- Chưa có thư mục nào --</option>
+                            <option value="">{t('resourceManagement.noFoldersAvailable')}</option>
                           ) : (
                             categories.map((c) => (
                               <option key={c.id} value={c.id}>
@@ -1164,7 +1871,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                       </div>
 
                       {/* Phạm vi: Công khai checkbox */}
-                      <div className="sm:col-span-4 flex items-center pt-5">
+                      <div className="sm:col-span-4 flex items-center pt-1 sm:pt-5">
                         <label className="inline-flex items-center gap-2 cursor-pointer text-xs font-semibold text-main select-none">
                           <input
                             type="checkbox"
@@ -1175,18 +1882,18 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                             }}
                             className="rounded border-border-subtle text-primary focus:ring-0 cursor-pointer w-4 h-4"
                           />
-                          <span>Công khai dùng chung</span>
+                          <span>{t('resourceManagement.publicSharedScope')}</span>
                         </label>
                       </div>
 
                       {/* Tên loại tài liệu (*) */}
                       <div className="sm:col-span-12">
                         <label className="text-xs font-semibold text-main block mb-1">
-                          Tên loại tài liệu <span className="text-danger">*</span>
+                          {t('resourceManagement.colTypeName')} <span className="text-danger">*</span>
                         </label>
                         <input
                           type="text"
-                          placeholder="VD: Biểu mẫu bảo hiểm, Tờ trình..."
+                          placeholder={t('resourceManagement.placeholderTypeName')}
                           value={typeForm.ten_loai}
                           onChange={(e) => {
                             setTypeForm({ ...typeForm, ten_loai: e.target.value });
@@ -1203,10 +1910,10 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
 
                       {/* Ghi chú */}
                       <div className="sm:col-span-12">
-                        <label className="text-xs font-semibold text-main block mb-1">Ghi chú</label>
+                        <label className="text-xs font-semibold text-main block mb-1">{t('resourceManagement.colNotes')}</label>
                         <input
                           type="text"
-                          placeholder="Mô tả mục đích sử dụng..."
+                          placeholder={t('resourceManagement.placeholderTypeNotes')}
                           value={typeForm.ghi_chu}
                           onChange={(e) => {
                             setTypeForm({ ...typeForm, ghi_chu: e.target.value });
@@ -1221,7 +1928,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
               </div>
 
               {/* Dialog Footer */}
-              <div className="px-5 py-3.5 border-t border-border-subtle bg-surface-elevated flex items-center justify-end gap-2.5 shrink-0">
+              <div className="px-4 sm:px-5 py-3 sm:py-3.5 border-t border-border-subtle bg-surface-elevated flex items-center justify-end flex-wrap sm:flex-nowrap gap-2 sm:gap-2.5 shrink-0">
                 <Button
                   type="button"
                   variant="outline"
@@ -1229,26 +1936,199 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                   onClick={handleCancelBtnClick}
                   className="rounded-xl text-xs font-semibold"
                 >
-                  Hủy
+                  {t('resourceManagement.cancel')}
                 </Button>
                 <Button
                   type="submit"
                   variant="primary"
                   size="sm"
-                  icon="fa-check"
-                  disabled={unifiedTarget === 'type' && categories.length === 0}
+                  icon={isSubmittingUnified ? 'fa-spinner fa-spin' : 'fa-check'}
+                  disabled={(unifiedTarget === 'type' && categories.length === 0) || isSubmittingUnified}
                   className="rounded-xl text-xs font-bold shadow-sm hover:shadow-glow px-4"
                 >
-                  {unifiedMode === 'create'
-                    ? unifiedTarget === 'category'
-                      ? 'Lưu thư mục'
-                      : 'Lưu loại tài liệu'
-                    : 'Cập nhật thay đổi'}
+                  {isSubmittingUnified
+                    ? t('resourceManagement.saving')
+                    : unifiedMode === 'create'
+                      ? unifiedTarget === 'category'
+                        ? t('resourceManagement.saveFolder')
+                        : t('resourceManagement.saveType')
+                      : t('resourceManagement.saveChanges')}
                 </Button>
               </div>
             </form>
           </div>
         </div>
+      )}
+
+      {/* Dropdown popup lọc Thư mục cha (Tab 2) rendered via Portal chống đè / cắt */}
+      {isFilterCatDropdownOpen && filterCatMenuPos && createPortal(
+        <div
+          ref={filterCatMenuRef}
+          role="listbox"
+          onMouseDown={(e) => e.stopPropagation()}
+          onWheel={(e) => e.stopPropagation()}
+          style={{
+            position: 'fixed',
+            top: filterCatMenuPos.top !== undefined ? `${filterCatMenuPos.top}px` : undefined,
+            bottom: filterCatMenuPos.bottom !== undefined ? `${filterCatMenuPos.bottom}px` : undefined,
+            left: `${filterCatMenuPos.left}px`,
+            width: `${filterCatMenuPos.width}px`,
+            maxHeight: `${filterCatMenuPos.maxHeight}px`,
+            zIndex: 10005,
+          }}
+          className="bg-surface-elevated rounded-xl border border-border-subtle shadow-2xl p-1.5 overflow-y-auto max-h-[195px] space-y-0.5 overscroll-contain pr-1 custom-scrollbar animate-in fade-in zoom-in-95 duration-100"
+        >
+          <button
+            type="button"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              setFilterParentCat('all');
+              setTypePage(1);
+              setIsFilterCatDropdownOpen(false);
+              setFilterCatMenuPos(null);
+            }}
+            className={`w-full px-2.5 py-2 rounded-lg text-left text-xs font-medium flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+              filterParentCat === 'all'
+                ? 'bg-primary/10 text-primary font-bold'
+                : 'text-main hover:bg-surface'
+            }`}
+          >
+            <span className="truncate">{t('resourceManagement.allFolders')}</span>
+            {filterParentCat === 'all' && (
+              <i className="fa-solid fa-check text-primary text-xs shrink-0" />
+            )}
+          </button>
+
+          <div className="my-1 border-t border-border-subtle" />
+
+          {categories.map((c) => {
+            const isSelected = String(c.id) === filterParentCat;
+            return (
+              <button
+                key={c.id}
+                type="button"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setFilterParentCat(String(c.id));
+                  setTypePage(1);
+                  setIsFilterCatDropdownOpen(false);
+                  setFilterCatMenuPos(null);
+                }}
+                className={`w-full px-2.5 py-2 rounded-lg text-left text-xs font-medium flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+                  isSelected
+                    ? 'bg-primary/10 text-primary font-bold'
+                    : 'text-main hover:bg-surface'
+                }`}
+              >
+                <span className="truncate flex items-center gap-2">
+                  <i className="fa-solid fa-folder text-primary/70 text-xs shrink-0" />
+                  <span className="truncate">{c.ten_tai_lieu}</span>
+                </span>
+                {isSelected && (
+                  <i className="fa-solid fa-check text-primary text-xs shrink-0" />
+                )}
+              </button>
+            );
+          })}
+        </div>,
+        document.body
+      )}
+
+      {/* Dropdown popup Chọn Thư mục cha (Unified Modal) rendered via Portal chống đè / cắt */}
+      {isTypeCatDropdownOpen && typeCatMenuPos && createPortal(
+        <div
+          ref={typeCatMenuRef}
+          role="listbox"
+          data-dropdown-container="true"
+          onMouseDown={(e) => e.stopPropagation()}
+          style={{
+            position: 'fixed',
+            top: typeCatMenuPos.top !== undefined ? `${typeCatMenuPos.top}px` : undefined,
+            bottom: typeCatMenuPos.bottom !== undefined ? `${typeCatMenuPos.bottom}px` : undefined,
+            left: `${typeCatMenuPos.left}px`,
+            width: `${typeCatMenuPos.width}px`,
+            maxHeight: `${typeCatMenuPos.maxHeight}px`,
+            zIndex: 10005,
+          }}
+          className="bg-surface-elevated rounded-xl border border-border-subtle shadow-2xl p-1.5 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100"
+        >
+          {/* Ô tìm kiếm nhanh thư mục */}
+          <div className="p-1 pb-1.5 border-b border-border-subtle shrink-0">
+            <div className="relative">
+              <i className="fa-solid fa-magnifying-glass absolute left-2.5 top-1/2 -translate-y-1/2 text-muted text-[11px]" />
+              <input
+                type="text"
+                value={typeCatSearch}
+                onChange={(e) => setTypeCatSearch(e.target.value)}
+                placeholder={t('resourceManagement.searchCategoryPlaceholder')}
+                className="w-full pl-7 pr-7 py-1 text-xs bg-surface border border-border-subtle rounded-lg text-main placeholder:text-muted focus:outline-hidden focus:border-primary"
+                onClick={(e) => e.stopPropagation()}
+                autoFocus
+              />
+              {typeCatSearch && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setTypeCatSearch('');
+                  }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-main text-[11px] p-0.5 cursor-pointer"
+                >
+                  <i className="fa-solid fa-xmark" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Danh sách các thư mục có scroll: hiển thị 5 mục, nếu nhiều hơn thì cuộn chuột lên xuống */}
+          <div
+            className="flex-1 overflow-y-auto max-h-[185px] pt-1 space-y-0.5 overscroll-contain pr-1 custom-scrollbar"
+            role="listbox"
+            onWheel={(e) => e.stopPropagation()}
+          >
+            {filteredTypeCategories.length === 0 ? (
+              <div className="p-3 text-center text-xs text-muted">
+                {t('resourceManagement.noMatchingFolders')}
+              </div>
+            ) : (
+              filteredTypeCategories.map((c) => {
+                const isSelected = typeForm.dm_tai_lieu === c.id;
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setTypeForm((prev) => ({ ...prev, dm_tai_lieu: c.id }));
+                      setIsUnifiedDirty(true);
+                      setIsTypeCatDropdownOpen(false);
+                      setTypeCatMenuPos(null);
+                      setTypeCatSearch('');
+                    }}
+                    className={`w-full px-2.5 py-2 rounded-lg text-left text-xs font-medium flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+                      isSelected
+                        ? 'bg-primary/10 text-primary font-bold'
+                        : 'text-main hover:bg-surface'
+                    }`}
+                  >
+                    <span className="truncate flex items-center gap-2">
+                      <i className="fa-solid fa-folder text-primary/70 text-xs shrink-0" />
+                      <span className="truncate">{c.ten_tai_lieu}</span>
+                    </span>
+                    {isSelected && (
+                      <i className="fa-solid fa-check text-primary text-xs shrink-0" />
+                    )}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>,
+        document.body
       )}
 
       {/* Dropdown Menu Floating cho Thư mục — chỉ hiện khi đang ở tab Thư mục */}
@@ -1259,30 +2139,42 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
           style={{ top: `${menuPos.top}px`, right: `${menuPos.right}px` }}
           onClick={(e) => e.stopPropagation()}
         >
-          <button
-            type="button"
-            onClick={() => {
-              const cat = categories.find((c) => c.id === activeMenuCatId);
-              if (cat) handleOpenEditCat(cat);
-              closeAllMenus();
-            }}
-            className="w-full px-3 py-1.5 text-xs text-left text-main hover:bg-surface-elevated flex items-center gap-2 cursor-pointer font-medium"
-          >
-            <i className="fa-solid fa-pen-to-square text-primary text-xs" />
-            <span>{t('resourceManagement.edit')}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              const cat = categories.find((c) => c.id === activeMenuCatId);
-              if (cat) handleDeleteCategoryWithCheck(cat);
-              closeAllMenus();
-            }}
-            className="w-full px-3 py-1.5 text-xs text-left text-danger hover:bg-danger/10 flex items-center gap-2 cursor-pointer font-medium"
-          >
-            <i className="fa-solid fa-trash-can text-danger text-xs" />
-            <span>{t('resourceManagement.delete')}</span>
-          </button>
+          {canEdit || canDelete ? (
+            <>
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const cat = categories.find((c) => c.id === activeMenuCatId);
+                    if (cat) handleOpenEditCat(cat);
+                    closeAllMenus();
+                  }}
+                  className="w-full px-3 py-1.5 text-xs text-left text-main hover:bg-surface-elevated flex items-center gap-2 cursor-pointer font-medium"
+                >
+                  <i className="fa-solid fa-pen-to-square text-primary text-xs" />
+                  <span>{t('resourceManagement.edit')}</span>
+                </button>
+              )}
+              {canDelete && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const cat = categories.find((c) => c.id === activeMenuCatId);
+                    if (cat) handleDeleteCategoryWithCheck(cat);
+                    closeAllMenus();
+                  }}
+                  className="w-full px-3 py-1.5 text-xs text-left text-danger hover:bg-danger/10 flex items-center gap-2 cursor-pointer font-medium"
+                >
+                  <i className="fa-solid fa-trash-can text-danger text-xs" />
+                  <span>{t('resourceManagement.delete')}</span>
+                </button>
+              )}
+            </>
+          ) : (
+            <div className="px-3 py-1.5 text-xs text-muted italic text-center">
+              {t('resourceManagement.readOnlyBadge')}
+            </div>
+          )}
         </div>
       )}
 
@@ -1294,30 +2186,42 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
           style={{ top: `${menuPos.top}px`, right: `${menuPos.right}px` }}
           onClick={(e) => e.stopPropagation()}
         >
-          <button
-            type="button"
-            onClick={() => {
-              const t = types.find((item) => item.id === activeMenuTypeId);
-              if (t) handleOpenEditType(t);
-              closeAllMenus();
-            }}
-            className="w-full px-3 py-1.5 text-xs text-left text-main hover:bg-surface-elevated flex items-center gap-2 cursor-pointer font-medium"
-          >
-            <i className="fa-solid fa-pen-to-square text-primary text-xs" />
-            <span>{t('resourceManagement.edit')}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              const t = types.find((item) => item.id === activeMenuTypeId);
-              if (t) handleDeleteTypeConfirm(t);
-              closeAllMenus();
-            }}
-            className="w-full px-3 py-1.5 text-xs text-left text-danger hover:bg-danger/10 flex items-center gap-2 cursor-pointer font-medium"
-          >
-            <i className="fa-solid fa-trash-can text-danger text-xs" />
-            <span>{t('resourceManagement.delete')}</span>
-          </button>
+          {canEdit || canDelete ? (
+            <>
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const t = types.find((item) => item.id === activeMenuTypeId);
+                    if (t) handleOpenEditType(t);
+                    closeAllMenus();
+                  }}
+                  className="w-full px-3 py-1.5 text-xs text-left text-main hover:bg-surface-elevated flex items-center gap-2 cursor-pointer font-medium"
+                >
+                  <i className="fa-solid fa-pen-to-square text-primary text-xs" />
+                  <span>{t('resourceManagement.edit')}</span>
+                </button>
+              )}
+              {canDelete && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const t = types.find((item) => item.id === activeMenuTypeId);
+                    if (t) handleDeleteTypeConfirm(t);
+                    closeAllMenus();
+                  }}
+                  className="w-full px-3 py-1.5 text-xs text-left text-danger hover:bg-danger/10 flex items-center gap-2 cursor-pointer font-medium"
+                >
+                  <i className="fa-solid fa-trash-can text-danger text-xs" />
+                  <span>{t('resourceManagement.delete')}</span>
+                </button>
+              )}
+            </>
+          ) : (
+            <div className="px-3 py-1.5 text-xs text-muted italic text-center">
+              {t('resourceManagement.readOnlyBadge')}
+            </div>
+          )}
         </div>
       )}
 
@@ -1325,10 +2229,11 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
       <ConfirmationModal
         isOpen={deleteCatTarget !== null}
         onClose={() => setDeleteCatTarget(null)}
-        onConfirm={() => {
+        onConfirm={async () => {
           if (deleteCatTarget) {
-            onDeleteCategory(deleteCatTarget.id);
+            const catId = deleteCatTarget.id;
             setDeleteCatTarget(null);
+            await onDeleteCategory(catId);
           }
         }}
         variant="danger"
@@ -1361,10 +2266,11 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
       <ConfirmationModal
         isOpen={deleteTypeTarget !== null}
         onClose={() => setDeleteTypeTarget(null)}
-        onConfirm={() => {
+        onConfirm={async () => {
           if (deleteTypeTarget) {
-            onDeleteType(deleteTypeTarget.id);
+            const typeId = deleteTypeTarget.id;
             setDeleteTypeTarget(null);
+            await onDeleteType(typeId);
           }
         }}
         variant="danger"

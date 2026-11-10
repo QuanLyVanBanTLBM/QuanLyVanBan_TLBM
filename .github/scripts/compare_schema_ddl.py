@@ -57,14 +57,34 @@ def norm(sql):
     return re.sub(r"\s+", " ", sql).strip()
 
 
+CHECK_ARRAY = r"ARRAY\[(?:[^\]']|'(?:[^']|'')*')*\]"
+
+
+def norm_check_arrays(definition):
+    definition = re.sub(r"(?:(?<=\[)|(?<=, ))\('((?:[^']|'')*)'\)", r"'\1'", definition)
+    return re.sub(rf"\b(ANY|ALL) \(\(({CHECK_ARRAY})\)\)", r"\1 (\2)", definition)
+
+
 def norm_check(definition):
     """Đưa các dạng viết tương đương mà Django sinh cho Q(~...) về dạng DDL hay dùng."""
+    signer_one_of_two_ddl = (
+        "CHECK ((((chuc_vu_id IS NULL) AND (nguoi_ky_id IS NOT NULL)) OR "
+        "((chuc_vu_id IS NOT NULL) AND (nguoi_ky_id IS NULL))))"
+    )
+    signer_one_of_two_migration = (
+        "CHECK ((((nguoi_ky_id IS NOT NULL) AND (chuc_vu_id IS NULL)) OR "
+        "((nguoi_ky_id IS NULL) AND (chuc_vu_id IS NOT NULL))))"
+    )
+    if definition in {signer_one_of_two_ddl, signer_one_of_two_migration}:
+        return signer_one_of_two_ddl
     # NOT (TRIM(BOTH FROM col) = '')  ->  (btrim((col)) <> '')   (dạng Django sinh so với btrim(col) <> '' của DDL)
     definition = re.sub(r"\(NOT \(TRIM\(BOTH FROM \(?(\w+)\)?\) = ''\)\)", r"(btrim((\1)) <> '')", definition)
     # btrim(col) <> ''  ->  btrim((col)) <> ''   (cột varchar có thêm lớp ngoặc do ép kiểu đã bị norm() bỏ)
     definition = re.sub(r"btrim\(\(?(\w+)\)?\) <> ''", r"btrim((\1)) <> ''", definition)
-    # NOT ((col)= ANY ((ARRAY[...])))  ->  ((col)<> ALL ((ARRAY[...])))
-    definition = re.sub(r"\(NOT \(\((\w+)\)= ANY \(\((ARRAY\[[^\]]*\])\)\)\)\)", r"((\1)<> ALL ((\2)))", definition)
+    # ARRAY sau pg_restore: ANY (ARRAY[('a'), ('b')])  ->  ANY (ARRAY['a', 'b']);  ANY ((ARRAY[...]))  ->  ANY (ARRAY[...])
+    definition = norm_check_arrays(definition)
+    # NOT ((col)= ANY (ARRAY[...]))  ->  ((col)<> ALL (ARRAY[...]))
+    definition = re.sub(rf"\(NOT \(\((\w+)\)= ANY \(({CHECK_ARRAY})\)\)\)", r"((\1)<> ALL (\2))", definition)
     # NOT ((col)= 'x')  ->  ((col)<> 'x')
     definition = re.sub(r"\(NOT \(\((\w+)\)= ('[^']*')\)\)", r"((\1)<> \2)", definition)
     # (NOT col)  ->  (col = false)
@@ -167,6 +187,30 @@ def row_count(cur, table):
     return cur.fetchone()[0]
 
 
+def semantic_seed_rows(cur, table):
+    """Rows for RBAC seed tables, keyed by stable permission/group semantics."""
+    if table == "auth_permission":
+        cur.execute(
+            "SELECT ROW(permission.codename, permission.name, permission.module_ten, "
+            "content_type.app_label, content_type.model)::text "
+            "FROM auth_permission permission "
+            "LEFT JOIN django_content_type content_type "
+            "ON content_type.id = permission.content_type_id"
+        )
+    elif table == "auth_group_permissions":
+        cur.execute(
+            "SELECT ROW(group_info.ma_nhom_quyen, "
+            "CASE WHEN group_info.ma_nhom_quyen IS NULL THEN group_info.name END, "
+            "permission.codename)::text "
+            "FROM auth_group_permissions grant_row "
+            "JOIN auth_group group_info ON group_info.id = grant_row.group_id "
+            "JOIN auth_permission permission ON permission.id = grant_row.permission_id"
+        )
+    else:
+        raise ValueError(f"No semantic seed mapping for {table}.")
+    return Counter(row[0] for row in cur.fetchall())
+
+
 def seed_drift(migration_db, ddl_db, mig_tables, ddl_tables):
     """So đa tập dòng của bảng có dữ liệu ở ít nhất một DB, trên cột chung và xác định.
 
@@ -186,7 +230,31 @@ def seed_drift(migration_db, ddl_db, mig_tables, ddl_tables):
                 if "<tự tăng>" not in ddl_cols[c] and not VOLATILE_DEFAULT.search(ddl_cols[c])
                 and not VOLATILE_DEFAULT.search(mig_cols[c])
             )
-            expected, actual = seed_rows(ddl_cur, table, keep), seed_rows(mig_cur, table, keep)
+            if (
+                table == "auth_permission"
+                and {"name", "codename", "module_ten", "content_type_id"} <= set(keep)
+                and "django_content_type" in mig_tables
+                and "django_content_type" in ddl_tables
+            ):
+                expected = semantic_seed_rows(ddl_cur, table)
+                actual = semantic_seed_rows(mig_cur, table)
+            elif (
+                table == "auth_group_permissions"
+                and "group_id" in keep
+                and "permission_id" in keep
+                and "auth_group" in mig_tables
+                and "auth_group" in ddl_tables
+                and "auth_permission" in mig_tables
+                and "auth_permission" in ddl_tables
+                and {"ma_nhom_quyen", "name"} <= set(mig_tables["auth_group"][0])
+                and "codename" in set(mig_tables["auth_permission"][0])
+                and {"ma_nhom_quyen", "name"} <= set(ddl_tables["auth_group"][0])
+                and "codename" in set(ddl_tables["auth_permission"][0])
+            ):
+                expected = semantic_seed_rows(ddl_cur, table)
+                actual = semantic_seed_rows(mig_cur, table)
+            else:
+                expected, actual = seed_rows(ddl_cur, table, keep), seed_rows(mig_cur, table, keep)
             missing, extra = expected - actual, actual - expected
             if missing or extra:
                 found.append(
@@ -216,7 +284,7 @@ def require_same_collation(migration_db, ddl_db):
         )
 
 
-def drift(migration_db, ddl_db):
+def drift(migration_db, ddl_db, *, include_data=True):
     require_same_collation(migration_db, ddl_db)
     mig_tables, mig_enums, mig_views, mig_funcs, mig_trigs = snapshot(migration_db)
     ddl_tables, ddl_enums, ddl_views, ddl_funcs, ddl_trigs = snapshot(ddl_db)
@@ -280,14 +348,15 @@ def drift(migration_db, ddl_db):
                 found.append(f"TRIGGER {name}: khác định nghĩa so với DDL")
             if mig_state != ddl_state:
                 found.append(f"TRIGGER {name}: trạng thái migration {mig_state} | DDL {ddl_state}")
-    found.extend(seed_drift(migration_db, ddl_db, mig_tables, ddl_tables))
+    if include_data:
+        found.extend(seed_drift(migration_db, ddl_db, mig_tables, ddl_tables))
     return found
 
 
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     migration_db, ddl_db, baseline_path = args
-    current = drift(migration_db, ddl_db)
+    current = drift(migration_db, ddl_db, include_data="--schema-only" not in sys.argv)
 
     if "--write-baseline" in sys.argv:
         with open(baseline_path, "w", encoding="utf-8", newline="\n") as fh:

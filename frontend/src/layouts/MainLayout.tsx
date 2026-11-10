@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import AppSidebar from '@components/layout/AppSidebar';
 import AppHeader from '@components/layout/AppHeader';
@@ -6,9 +6,12 @@ import TopSubNav from '@components/layout/TopSubNav';
 import MobileAssistiveTouch from '@components/layout/MobileAssistiveTouch';
 import FloatingAIBox from '@components/ai/FloatingAIBox';
 import AppFooter from '@components/layout/AppFooter';
+import ScreenLockModal from '@components/auth/ScreenLockModal';
+import useIdleTimer from '@hooks/useIdleTimer';
 import { ActivePageId } from '@app-types/navigation';
 import { ThemeMode } from '@app-types/theme';
 import { pathToPageId, pageIdToPath } from '@lib/routes';
+import { usePermissions } from '@lib/permissions';
 
 interface MainLayoutProps {
   children?: React.ReactNode;
@@ -41,9 +44,14 @@ export default function MainLayout({
 }: MainLayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
+  const { loaded: permissionsLoaded, can } = usePermissions();
+  const canUseAI = permissionsLoaded && can('use_aiassistant');
 
   const currentActivePage = activePage || pathToPageId(location.pathname);
   const effectiveCommittedPage = committedPage || currentActivePage;
+
+  // Quản lý khóa màn hình bảo mật khi không thao tác
+  const { isLocked, unlock } = useIdleTimer();
 
   const handleNavigate = (pageId: ActivePageId) => {
     if (onNavigate) {
@@ -84,10 +92,25 @@ export default function MainLayout({
   const [isSidebarHovered, setIsSidebarHovered] = useState<boolean>(false);
   const hoverLeaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleCloseSidebar = () => {
+  const handleCloseSidebar = useCallback(() => {
+    // Nếu trên Desktop (>= 1024px) và đang ghim, không đóng và không hủy ghim khi click/điều hướng
+    if (typeof window !== 'undefined' && window.innerWidth >= 1024 && isSidebarPinned) {
+      return;
+    }
     setIsSidebarOpen(false);
+    setIsSidebarHovered(false);
+    if (hoverLeaveTimerRef.current) {
+      clearTimeout(hoverLeaveTimerRef.current);
+      hoverLeaveTimerRef.current = null;
+    }
+    localStorage.setItem('tlbm_sidebar_open_v2', 'false');
+  }, [isSidebarPinned]);
+
+  const handleCollapseSidebar = () => {
+    // Khi người dùng chủ động bấm nút thu gọn (chevron-left), mới hủy ghim và đóng sidebar
     setIsSidebarPinned(false);
     localStorage.setItem('tlbm_sidebar_pinned', 'false');
+    setIsSidebarOpen(false);
     setIsSidebarHovered(false);
     if (hoverLeaveTimerRef.current) {
       clearTimeout(hoverLeaveTimerRef.current);
@@ -125,7 +148,7 @@ export default function MainLayout({
     }
     hoverLeaveTimerRef.current = setTimeout(() => {
       setIsSidebarHovered(false);
-    }, 280);
+    }, 75);
   };
 
   useEffect(() => {
@@ -136,12 +159,15 @@ export default function MainLayout({
     };
   }, []);
 
-  // Điều hướng trang: Tự động đóng trạng thái hover và đóng sidebar nếu chưa ghim
+  // Điều hướng trang: Tự động đóng trạng thái hover và đóng sidebar nếu ở mobile hoặc chưa ghim
   const handleItemNavigate = (pageId: ActivePageId) => {
     handleNavigate(pageId);
     setIsSidebarHovered(false);
-    if (!isSidebarPinned || (typeof window !== 'undefined' && window.innerWidth < 1024)) {
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
       handleCloseSidebar();
+    } else if (!isSidebarPinned) {
+      setIsSidebarOpen(false);
+      localStorage.setItem('tlbm_sidebar_open_v2', 'false');
     }
   };
 
@@ -268,7 +294,70 @@ export default function MainLayout({
       window.removeEventListener('mousedown', handleMouseDown);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isEffectiveSidebarOpen]);
+  }, [isEffectiveSidebarOpen, handleCloseSidebar]);
+
+  // Trạng thái cuộn trang (khi cuộn > 60px, thu gọn TopSubNav và dời Home + Search lên AppHeader trên màn hình lớn)
+  const [isScrolled, setIsScrolled] = useState<boolean>(false);
+
+  useEffect(() => {
+    const scrollContainer = document.querySelector('.page-viewport');
+    if (scrollContainer) {
+      scrollContainer.scrollTop = 0;
+    }
+
+    const handleScroll = () => {
+      const scrollY = (scrollContainer ? scrollContainer.scrollTop : 0) || window.scrollY || document.documentElement.scrollTop || 0;
+      setIsScrolled((prev) => {
+        // Hysteresis (độ trễ ngưỡng) thông minh chống vòng lặp giật co giãn (jitter loop):
+        // 1. Chỉ thu gọn khi cuộn xuống > 80px VÀ trang có độ dài cuộn đủ lớn (> 120px)
+        if (!prev) {
+          if (scrollY > 80) {
+            if (scrollContainer) {
+              const maxScroll = scrollContainer.scrollHeight - scrollContainer.clientHeight;
+              if (maxScroll < 120) {
+                return false;
+              }
+            }
+            return true;
+          }
+          return false;
+        }
+        // 2. Khi đang ở trạng thái thu gọn (prev === true):
+        // Tuyệt đối không kiểm tra maxScroll tại đáy trang để tránh loop do thay đổi chiều cao viewport.
+        // Chỉ mở rộng lại KHI VÀ CHỈ KHI người dùng thực sự cuộn ngược về gần đỉnh (< 20px).
+        if (scrollY < 20) {
+          return false;
+        }
+        return true;
+      });
+    };
+
+    const rafId = requestAnimationFrame(() => {
+      handleScroll();
+    });
+
+    if (scrollContainer) {
+      scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
+    }
+    window.addEventListener('scroll', handleScroll, { passive: true });
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      if (scrollContainer) {
+        scrollContainer.removeEventListener('scroll', handleScroll);
+      }
+      window.removeEventListener('scroll', handleScroll);
+    };
+  }, [location.pathname]);
+
+  const handleScrollToTop = () => {
+    const scrollContainer = document.querySelector('.page-viewport');
+    if (scrollContainer) {
+      scrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
 
   return (
     <div
@@ -285,15 +374,15 @@ export default function MainLayout({
         />
       )}
 
-      {/* 2. Thanh điều hướng Sidebar: Dải Icon Rail (72px) khi thu gọn, mở rộng (290px) khi mở/ghim */}
+      {/* 2. Thanh điều hướng Sidebar: Dải Icon Rail (72px) khi thu gọn, mở rộng (248px) khi mở/ghim */}
       <div
         className={`sidebar-slide-wrapper fixed inset-y-0 left-0 z-[1200] h-full transform-gpu bg-surface-elevated border-r border-subtle rounded-none ${
           isEffectiveSidebarOpen
-            ? 'w-[290px] translate-x-0 pointer-events-auto shadow-2xl'
+            ? 'w-[248px] translate-x-0 pointer-events-auto shadow-2xl'
             : 'max-lg:-translate-x-full max-lg:pointer-events-none lg:w-[72px] lg:translate-x-0 lg:pointer-events-auto lg:shadow-none'
         }`}
         style={{
-          transition: 'width 0.28s cubic-bezier(0.16, 1, 0.3, 1), transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease',
+          transition: 'width 160ms cubic-bezier(0.4, 0, 0.2, 1), transform 160ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 150ms ease-out',
           willChange: 'width, transform',
         }}
         onMouseEnter={handleSidebarMouseEnter}
@@ -303,6 +392,7 @@ export default function MainLayout({
           <AppSidebar
             isMobileOpen={isEffectiveSidebarOpen}
             onCloseMobile={handleCloseSidebar}
+            onCollapse={handleCollapseSidebar}
             activePage={currentActivePage}
             committedPage={effectiveCommittedPage}
             previewPage={previewPage}
@@ -320,10 +410,10 @@ export default function MainLayout({
       {/* 3. Khung nội dung chính & Thanh Header đỉnh */}
       <div
         className={`main-container flex-1 min-w-0 flex flex-col h-full overflow-hidden w-full ${
-          isSidebarPinned && isEffectiveSidebarOpen ? 'lg:pl-[290px]' : 'lg:pl-[72px] pl-0'
+          isSidebarPinned && isEffectiveSidebarOpen ? 'lg:pl-[248px]' : 'lg:pl-[72px] pl-0'
         }`}
         style={{
-          transition: 'padding-left 0.28s cubic-bezier(0.16, 1, 0.3, 1)',
+          transition: 'padding-left 160ms cubic-bezier(0.4, 0, 0.2, 1)',
         }}
       >
         <AppHeader
@@ -335,6 +425,9 @@ export default function MainLayout({
           isSidebarOpen={isEffectiveSidebarOpen}
           onToggleSidebar={handleToggleSidebar}
           onNavigate={handleNavigate}
+          activePage={currentActivePage}
+          isScrolled={isScrolled}
+          onScrollToTop={handleScrollToTop}
         />
 
         {/* Thanh điều hướng phân hệ phụ nằm ngang - Ẩn khi vào trang Trợ lý AI */}
@@ -343,6 +436,7 @@ export default function MainLayout({
             activePage={currentActivePage}
             isHoveredPreview={previewPage !== null}
             onNavigate={handleNavigate}
+            isScrolled={isScrolled}
           />
         )}
 
@@ -376,9 +470,12 @@ export default function MainLayout({
       )}
 
       {/* 5. Box AI Trợ Lý nổi - Tự động ẩn khi người dùng đang ở trang Trợ lý AI toàn màn hình */}
-      {currentActivePage !== 'ai_assistant' && location.pathname !== '/ai-assistant' && (
+      {canUseAI && currentActivePage !== 'ai_assistant' && location.pathname !== '/ai-assistant' && (
         <FloatingAIBox onNavigate={handleNavigate} />
       )}
+
+      {/* 6. Màn hình khóa bảo mật phiên làm việc khi không thao tác */}
+      <ScreenLockModal isLocked={isLocked} onUnlock={unlock} />
     </div>
   );
 }

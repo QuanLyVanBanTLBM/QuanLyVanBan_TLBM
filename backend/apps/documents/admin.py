@@ -10,6 +10,8 @@ from .models import (
     VanBanDiAttachment,
     DocumentViewLog,
     DocumentAccessLog,
+    Folder,
+    FolderFile,
 )
 
 
@@ -107,3 +109,32 @@ class DocumentAccessLogAdmin(admin.ModelAdmin):
     search_fields = ["user__username", "user__ho_ten"] if hasattr(get_user_model(), "ho_ten") else ["user__username", "user__first_name", "user__last_name"]
     readonly_fields = ["created_at"]
     list_per_page = 30
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 4. Folder & FolderFile Admin — Thư mục nhiều cấp
+# ═══════════════════════════════════════════════════════════════════
+
+class FolderFileInline(admin.TabularInline):
+    model = FolderFile
+    extra = 0
+    readonly_fields = ["created_at"]
+
+
+@admin.register(Folder)
+class FolderAdmin(admin.ModelAdmin):
+    list_display = ["id", "name", "parent", "depth", "path", "order", "created_at"]
+    list_filter = ["depth", "created_at"]
+    search_fields = ["name", "path", "description"]
+    readonly_fields = ["depth", "path", "created_at", "updated_at"]
+    inlines = [FolderFileInline]
+    ordering = ["path", "order", "name"]
+
+
+@admin.register(FolderFile)
+class FolderFileAdmin(admin.ModelAdmin):
+    list_display = ["id", "file_name", "folder", "file_size", "file_type", "created_at"]
+    list_filter = ["file_type", "created_at"]
+    search_fields = ["file_name", "description"]
+    readonly_fields = ["created_at"]
+

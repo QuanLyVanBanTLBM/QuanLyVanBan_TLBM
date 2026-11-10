@@ -14,10 +14,18 @@ import os
 import sys
 from pathlib import Path
 from datetime import timedelta
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+# Captured from the resolved release source at process startup. Do not resolve the
+# current symlink per request: an old process must keep identifying its own code.
+def release_id_from_source(source_file):
+    return Path(source_file).resolve().parents[2].name
+
+
+RELEASE_ID = release_id_from_source(__file__)
 
 # Tải biến môi trường từ .env
 load_dotenv(BASE_DIR / ".env")
@@ -81,6 +89,7 @@ INSTALLED_APPS = [
     "records",
     "dashboard",
     "birthdays",
+    "work",
     "documents",
     "signing",
     "document_templates",
@@ -89,11 +98,19 @@ INSTALLED_APPS = [
     "authorization",
 ]
 
-# Custom User Model theo SQL_Fix4: accounts_employee là bảng người dùng
+# Custom User Model theo SQL_Fix4 / release_DDL: accounts_employee là bảng người dùng
 AUTH_USER_MODEL = "accounts.Employee"
 
-# RBAC theo SQL_Fix4: quyền định danh bằng codename trần (auth_permission.content_type_id = NULL)
+# RBAC theo release_DDL: quyền định danh bằng codename trần (auth_permission.content_type_id = NULL)
 AUTHENTICATION_BACKENDS = ["authorization.backends.RbacBackend"]
+
+# Chỉ bật các password hasher được ứng dụng hỗ trợ; hash mới dùng PBKDF2.
+PASSWORD_HASHERS = [
+    "django.contrib.auth.hashers.PBKDF2PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher",
+    "django.contrib.auth.hashers.BCryptSHA256PasswordHasher",
+    "django.contrib.auth.hashers.ScryptPasswordHasher",
+]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -135,32 +152,37 @@ WSGI_APPLICATION = "config.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/6.1/ref/settings/#databases
 
-# Làm rỗng dữ liệu nền do migration tạo trong DB test (xem config/test_runner.py).
-TEST_RUNNER = "config.test_runner.SeedFreeDiscoverRunner"
+# PostgreSQL là engine duy nhất (local, CI, staging). DB_ENGINE chỉ còn để tương thích env cũ.
+DB_ENGINE = os.getenv("DB_ENGINE", "postgresql").lower()
+if DB_ENGINE not in ("postgresql", "postgres"):
+    raise RuntimeError("Dự án chỉ hỗ trợ PostgreSQL: bỏ DB_ENGINE hoặc đặt DB_ENGINE=postgresql.")
 
-DB_ENGINE = os.getenv("DB_ENGINE", "sqlite3").lower()
-
-if DB_ENGINE in ("postgresql", "postgres"):
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.postgresql",
-            "NAME": os.getenv("DB_NAME", "qlvb_db"),
-            "USER": os.getenv("DB_USER", "postgres"),
-            "PASSWORD": os.getenv("DB_PASSWORD", ""),
-            "HOST": os.getenv("DB_HOST", "localhost"),
-            "PORT": os.getenv("DB_PORT", "5432"),
-        }
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.getenv("DB_NAME", "qlvb_db"),
+        "USER": os.getenv("DB_USER", "postgres"),
+        "PASSWORD": os.getenv("DB_PASSWORD", ""),
+        "HOST": os.getenv("DB_HOST", "localhost"),
+        "PORT": os.getenv("DB_PORT", "5432"),
     }
-else:
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
-        }
-    }
+}
 
-if "test" in sys.argv and DB_ENGINE not in ("postgresql", "postgres"):
-    raise RuntimeError("Test chạy trên PostgreSQL: đặt DB_ENGINE=postgresql và các biến DB_*.")
+# Kết nối chỉ đọc cho AI SQL (backend/docs/sql_document_source.md): role riêng, session read-only,
+# không bao giờ dùng user của "default". Thiếu DB_READONLY_USER thì không khai báo alias; đường AI SQL
+# từ chối truy vấn (SqlDocumentAccessError) còn app và các route khác chạy bình thường.
+if os.getenv("DB_READONLY_USER"):
+    DATABASES["readonly"] = {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.getenv("DB_READONLY_NAME") or DATABASES["default"]["NAME"],
+        "USER": os.environ["DB_READONLY_USER"],
+        "PASSWORD": os.getenv("DB_READONLY_PASSWORD", ""),
+        "HOST": os.getenv("DB_READONLY_HOST") or DATABASES["default"]["HOST"],
+        "PORT": os.getenv("DB_READONLY_PORT") or DATABASES["default"]["PORT"],
+        "OPTIONS": {"options": "-c default_transaction_read_only=on"},
+        # Test dùng chung kết nối test của "default" (role chỉ đọc không có quyền tạo DB).
+        "TEST": {"MIRROR": "default"},
+    }
 
 
 # Password validation
@@ -205,7 +227,48 @@ MEDIA_URL = "/media/"
 # Server đặt DJANGO_MEDIA_ROOT ra thư mục dùng chung để file không nằm trong thư mục release.
 MEDIA_ROOT = Path(os.getenv("DJANGO_MEDIA_ROOT") or BASE_DIR.parent / "media")
 
+# Nơi lưu tệp nghiệp vụ: <module>/YYYY/MM/DD/<uuid>.<ext> (xem apps/document_storage.py).
+# Dev (DEBUG) mặc định dùng thư mục storage/ cạnh backend (đã gitignore). Ngoài dev phải đặt biến
+# môi trường là thư mục tuyệt đối đã tồn tại, ngoài thư mục release; thiếu biến thì `check --deploy`
+# báo documents.E001 và lần ghi tệp đầu tiên báo lỗi cấu hình.
+DOCUMENT_STORAGE_ROOT = os.environ.get("DOCUMENT_STORAGE_ROOT", "").strip()
+if DEBUG and not DOCUMENT_STORAGE_ROOT:
+    DOCUMENT_STORAGE_ROOT = str(BASE_DIR.parent / "storage")
+if DOCUMENT_STORAGE_ROOT and not DEBUG:
+    _document_storage_root = Path(DOCUMENT_STORAGE_ROOT)
+    if not _document_storage_root.is_absolute() or not _document_storage_root.is_dir():
+        raise ImproperlyConfigured(
+            "Production DOCUMENT_STORAGE_ROOT must be an existing absolute directory on persistent storage."
+        )
+
+# Nơi lưu tệp lịch sử cũ (oldfile): <module>/<pham_vi>/YYYY/MM/DD/<ten_file_goc>.
+# Staging/Production mặc định là /srv/qlvb/shared/oldfile; Dev mặc định là storage/oldfile.
+OLDFILE_STORAGE_ROOT = os.environ.get("OLDFILE_STORAGE_ROOT", "").strip()
+if DEBUG and not OLDFILE_STORAGE_ROOT:
+    OLDFILE_STORAGE_ROOT = str(BASE_DIR.parent / "storage" / "oldfile")
+elif not OLDFILE_STORAGE_ROOT:
+    default_staging_oldfile = Path("/srv/qlvb/shared/oldfile")
+    if default_staging_oldfile.is_dir():
+        OLDFILE_STORAGE_ROOT = str(default_staging_oldfile)
+    elif DOCUMENT_STORAGE_ROOT:
+        OLDFILE_STORAGE_ROOT = str(Path(DOCUMENT_STORAGE_ROOT).parent / "oldfile")
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Celery uses Upstash's TCP endpoint. Eager mode preserves the existing synchronous
+# behavior in local/test environments without REDIS_URL; a configured broker is used directly.
+REDIS_URL = os.getenv("REDIS_URL", "").strip()
+CELERY_BROKER_URL = REDIS_URL or "memory://"
+CELERY_TASK_ALWAYS_EAGER = not REDIS_URL
+CELERY_TASK_EAGER_PROPAGATES = True
+CELERY_TASK_IGNORE_RESULT = True
+CELERY_TASK_SERIALIZER = "json"
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+# Reduce broker requests while the queue is idle; task pickup can wait up to 10s.
+CELERY_BROKER_TRANSPORT_OPTIONS = {"polling_interval": 10}
 
 # Email (Django 6.1 MAILERS)
 # Keep console delivery until an SMTP host is explicitly configured.
@@ -218,6 +281,7 @@ DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "").strip()
 
 BRAND_NAME = os.getenv("BRAND_NAME", "Bảo Long Insurance").strip()
 ORGANIZATION_NAME = os.getenv("ORGANIZATION_NAME", BRAND_NAME).strip()
+BIRTHDAY_CARD_BASE_URL = os.getenv("BIRTHDAY_CARD_BASE_URL", "").strip()
 
 if email_host:
     MAILERS = {
@@ -274,15 +338,23 @@ REST_FRAMEWORK = {
 # ─────────────────────────────────────────────────
 SIGNING_DOCUMENT_ROOT = os.environ.get("SIGNING_DOCUMENT_ROOT", "")
 
-# Trình ký — bí mật máy chủ để băm mã xác minh PIN và mã hóa k_srv (plan mục 3.4).
-# Bắt buộc đặt riêng trên Staging/Production; để trống thì dùng SECRET_KEY (chỉ cho môi trường dev).
-# Đổi giá trị này làm mọi PIN đã đặt mất hiệu lực (người dùng phải đặt lại).
+# Trình ký — pepper riêng cho PBKDF2 verifier PIN và HMAC mã OTP.
+# Phải giữ ổn định trong môi trường; thay đổi sẽ khiến PIN đã tạo không thể xác minh.
 SIGNING_PIN_SECRET = os.environ.get("SIGNING_PIN_SECRET", "")
+
+SIGNING_SMS_URL = os.environ.get("SIGNING_SMS_URL", "")
+SIGNING_SMS_AUTHORIZATION = os.environ.get("SIGNING_SMS_AUTHORIZATION", "")
+SIGNING_SMS_FROM = os.environ.get("SIGNING_SMS_FROM", "")
 
 # Trình ký — phông chữ có dấu tiếng Việt để in tệp PDF hoàn tất (Phase 10). Để trống thì tự dò phông hệ thống
 # (DejaVu Sans, Noto Sans, Liberation Sans, Arial); không có phông nào thì tạo tệp báo lỗi `thieu_phong_chu`.
 SIGNING_PDF_FONT = os.environ.get("SIGNING_PDF_FONT", "")
 SIGNING_PDF_FONT_BOLD = os.environ.get("SIGNING_PDF_FONT_BOLD", "")
+
+# Trình ký — email thông báo người trong luồng. Để trống thì dùng cấu hình email chung của dự án; dev có thể đặt
+# `django.core.mail.backends.console.EmailBackend`. Địa chỉ giao diện dùng cho liên kết trong email.
+SIGNING_EMAIL_BACKEND = os.environ.get("SIGNING_EMAIL_BACKEND", "")
+SIGNING_FRONTEND_URL = os.environ.get("SIGNING_FRONTEND_URL", "http://localhost:5173")
 
 # ─────────────────────────────────────────────────
 # SimpleJWT — Cấu hình token
@@ -303,3 +375,28 @@ SIMPLE_JWT = {
     "USER_ID_FIELD": "id",
     "USER_ID_CLAIM": "user_id",
 }
+# ─────────────────────────────────────────────────
+# Bảo Long Insurance (Alpaca / BHBL) Authentication Config
+# ─────────────────────────────────────────────────
+ALPACA_SECRET_KEY = os.getenv("ALPACA_SECRET_KEY", "")
+ALPACA_CHECK_AUTH_URL = os.getenv(
+    "ALPACA_CHECK_AUTH_URL",
+    "https://api2.bhbl.vn/auth-command/public/user/check-auth-user",
+)
+ALPACA_CHECK_USER_URL = os.getenv(
+    "ALPACA_CHECK_USER_URL",
+    "https://api2.bhbl.vn/auth-command/public/user/check-user-exist",
+)
+ALPACA_GET_USER_INFO_URL = os.getenv(
+    "ALPACA_GET_USER_INFO_URL",
+    "https://api2.bhbl.vn/auth-command/public/user/get-info-user",
+)
+ALPACA_BEARER_AUTH_KEY = os.getenv("ALPACA_BEARER_AUTH_KEY", "")
+
+# Tên miền email CBNV được phép, phân tách bằng dấu phẩy. Mặc định rỗng: nhận mọi tên miền (gmail.com, ...);
+# đặt ví dụ EMPLOYEE_EMAIL_ALLOWED_DOMAINS=baolong.vn để giới hạn lại.
+EMPLOYEE_EMAIL_ALLOWED_DOMAINS = tuple(
+    domain.strip().lower()
+    for domain in os.getenv("EMPLOYEE_EMAIL_ALLOWED_DOMAINS", "").split(",")
+    if domain.strip()
+)

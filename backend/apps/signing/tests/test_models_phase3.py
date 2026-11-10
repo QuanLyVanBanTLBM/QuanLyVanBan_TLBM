@@ -4,13 +4,16 @@ from django.db import IntegrityError, transaction
 from django.test import TestCase
 from django.utils import timezone
 
+from accounts.models import Position
 from signing import enums
 from signing.errors import ImmutableEvidenceError
 from signing.models import (
-    SigningAttempt, SigningAuditLog, SigningKey, SigningManifest, SigningNotification,
+    SigningAttempt, SigningAuditLog, SigningManifest, SigningNotification,
     SigningProcess, SigningProcessStep, SigningProcessStepSigner, SigningRequest,
     SigningRequestStep, SigningRequestStepSigner, SigningSignature,
 )
+
+from .helpers import tao_chuc_vu
 
 User = get_user_model()
 
@@ -33,14 +36,10 @@ class Base(TestCase):
         self.signer = SigningRequestStepSigner.objects.create(
             buoc_ky=self.step, nguoi_ky=self.u1, ten_nguoi_ky="U1", vai_tro_ky=enums.VaiTroKy.KY_CHINH
         )
-        self.key = SigningKey.objects.create(
-            nguoi_so_huu=self.u1, ma_khoa="k", dau_van_tay=H1, khoa_cong_khai="x", ngay_hieu_luc=timezone.now()
-        )
-
     def make_request(self, **kw):
         data = dict(
             document_type=enums.LoaiVanBan.VAN_BAN_DI, van_ban_id=1, quy_trinh=self.process, phien_ban_quy_trinh=1,
-            muc_do="THUONG", create_by=self.u1,
+            create_by=self.u1,
         )
         data.update(kw)
         return SigningRequest.objects.create(**data)
@@ -54,20 +53,22 @@ class Base(TestCase):
 
     def make_signature(self):
         return SigningSignature.objects.create(
-            luot_trinh=self.attempt, buoc_ky=self.signer, khoa_ky=self.key, hash_tai_lieu=H1,
-            thuat_toan="Ed25519", chu_ky_so="c2ln",
+            luot_trinh=self.attempt, buoc_ky=self.signer, hash_tai_lieu=H1,
         )
 
 
 class ProcessStepSignerTests(Base):
     def test_exactly_one_of_person_or_position(self):
+        position = Position.objects.create(
+            display_order=Position.get_next_display_order(), name="Chức vụ kiểm tra"
+        )
         SigningProcessStepSigner.objects.create(buoc_quy_trinh=self.pstep, nguoi_ky=self.u1, thu_tu=1)
-        SigningProcessStepSigner.objects.create(buoc_quy_trinh=self.pstep, chuc_vu_id=5, thu_tu=2)
+        SigningProcessStepSigner.objects.create(buoc_quy_trinh=self.pstep, chuc_vu=position, thu_tu=2)
         with self.assertRaises(IntegrityError), transaction.atomic():
             SigningProcessStepSigner.objects.create(buoc_quy_trinh=self.pstep, thu_tu=3)
         with self.assertRaises(IntegrityError), transaction.atomic():
             SigningProcessStepSigner.objects.create(
-                buoc_quy_trinh=self.pstep, nguoi_ky=self.u1, chuc_vu_id=5, thu_tu=4
+                buoc_quy_trinh=self.pstep, nguoi_ky=self.u1, chuc_vu=position, thu_tu=4
             )
 
 
@@ -77,18 +78,18 @@ class RequestAttemptTests(Base):
         # So đúng danh sách cột để phát hiện cả cột thừa lẫn cột thiếu so với DDL.
         self.assertEqual(enums.LoaiVanBan.values, ["vanbandi"])
         self.assertEqual(sorted(f.name for f in SigningProcess._meta.concrete_fields), [
-            "cau_hinh_nhac_han", "create_by", "created_at", "don_vi_ap_dung_id", "id", "ma_quy_trinh", "mo_ta",
+            "cau_hinh_nhac_han", "create_by", "created_at", "don_vi_ap_dung", "id", "ma_quy_trinh", "mo_ta",
             "pham_vi", "phien_ban", "ten_quy_trinh", "trang_thai", "update_at", "update_by",
         ])
         self.assertEqual(sorted(f.name for f in SigningRequest._meta.concrete_fields), [
             "create_by", "created_at", "document_type", "ghi_chu", "han_chot", "ho_so_goc", "id", "ly_do_huy",
-            "ly_do_tu_choi", "ma_bam_tai_lieu", "muc_do", "ngay_gui", "ngay_hoan_thanh", "ngay_huy",
-            "ngay_tu_choi", "phien_ban_quy_trinh", "phien_ban_van_ban", "quy_trinh", "trang_thai",
-            "update_at", "update_by", "van_ban_id", "vi_tri_luu_tep",
+            "ly_do_tu_choi", "ma_bam_tai_lieu", "ngay_gui", "ngay_hoan_thanh", "ngay_huy",
+            "ngay_tu_choi", "phien_ban_quy_trinh", "phien_ban_van_ban", "quy_trinh", "so_hieu_van_ban", "trang_thai",
+            "trich_yeu_van_ban", "update_at", "update_by", "van_ban_id", "vi_tri_luu_tep",
         ])
         for loai in ("vanbanden", "vanbanmat"):
             yeu_cau = SigningRequest(document_type=loai, van_ban_id=1, quy_trinh=self.process,
-                                     phien_ban_quy_trinh=1, muc_do="THUONG", create_by=self.u1)
+                                     phien_ban_quy_trinh=1, create_by=self.u1)
             with self.assertRaises(ValidationError) as ctx:
                 yeu_cau.full_clean()
             self.assertIn("document_type", ctx.exception.message_dict)
@@ -142,42 +143,25 @@ class RequestAttemptTests(Base):
                 luot_trinh=self.attempt, buoc_quy_trinh=self.pstep, cap_ky=2, ten_cap_ky="C2", thu_tu=1
             )
 
-    def test_signer_unique_in_step_and_delegation_reason(self):
+    def test_signer_unique_in_step(self):
         with self.assertRaises(IntegrityError), transaction.atomic():
             SigningRequestStepSigner.objects.create(
-                buoc_ky=self.step, nguoi_ky=self.u1, ten_nguoi_ky="U1", vai_tro_ky=enums.VaiTroKy.KY_NHAY
+                buoc_ky=self.step, nguoi_ky=self.u1, ten_nguoi_ky="U1", vai_tro_ky=enums.VaiTroKy.KY_CHINH
             )
-        with self.assertRaises(IntegrityError), transaction.atomic():
-            SigningRequestStepSigner.objects.create(
-                buoc_ky=self.step, nguoi_ky=self.u2, ten_nguoi_ky="U2", vai_tro_ky=enums.VaiTroKy.KY_NHAY,
-                uy_quyen_tu=self.u1, ly_do_uy_quyen="",
-            )
-        SigningRequestStepSigner.objects.create(
-            buoc_ky=self.step, nguoi_ky=self.u2, ten_nguoi_ky="U2", vai_tro_ky=enums.VaiTroKy.KY_NHAY,
-            uy_quyen_tu=self.u1, ly_do_uy_quyen="Đi công tác",
-        )
 
 
 class SignatureImmutabilityTests(Base):
     def test_signature_hash_must_be_sha256(self):
         with self.assertRaises(IntegrityError), transaction.atomic():
             SigningSignature.objects.create(
-                luot_trinh=self.attempt, buoc_ky=self.signer, khoa_ky=self.key, hash_tai_lieu="x",
-                thuat_toan="Ed25519", chu_ky_so="c2ln",
+                luot_trinh=self.attempt, buoc_ky=self.signer, hash_tai_lieu="x",
             )
 
-    def test_core_fields_cannot_change_but_verification_can(self):
+    def test_evidence_fields_cannot_change_after_creation(self):
         sig = self.make_signature()
-        sig.chu_ky_so = "khac"
+        sig.hash_tai_lieu = H2
         with self.assertRaises(ImmutableEvidenceError):
             sig.save()
-        sig = SigningSignature.objects.get(pk=sig.pk)
-        sig.trang_thai_xac_minh = enums.TrangThaiXacMinh.KHONG_HOP_LE
-        sig.thoi_diem_xac_minh = timezone.now()
-        sig.save()
-        self.assertEqual(
-            SigningSignature.objects.get(pk=sig.pk).trang_thai_xac_minh, enums.TrangThaiXacMinh.KHONG_HOP_LE
-        )
 
     def test_delete_blocked(self):
         sig = self.make_signature()
@@ -186,11 +170,10 @@ class SignatureImmutabilityTests(Base):
         with self.assertRaises(ImmutableEvidenceError):
             SigningSignature.objects.filter(pk=sig.pk).delete()
 
-    def test_bulk_update_only_verification_fields(self):
+    def test_bulk_update_cannot_change_evidence(self):
         sig = self.make_signature()
-        SigningSignature.objects.filter(pk=sig.pk).update(trang_thai_xac_minh=enums.TrangThaiXacMinh.HOP_LE)
         with self.assertRaises(ImmutableEvidenceError):
-            SigningSignature.objects.filter(pk=sig.pk).update(chu_ky_so="khac")
+            SigningSignature.objects.filter(pk=sig.pk).update(hash_tai_lieu=H2)
 
     def test_multiple_signatures_per_signer_allowed(self):
         self.make_signature()

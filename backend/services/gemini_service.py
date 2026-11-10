@@ -13,15 +13,6 @@ from llama_index.core.base.embeddings.base import BaseEmbedding
 from pydantic import Field
 
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
-DEFAULT_GEMINI_FALLBACKS = [
-    "gemini-flash-latest",
-    "gemini-flash-lite-latest",
-    "gemini-pro-latest",
-    "gemini-2.5-flash-lite",
-    "gemini-3.8-flash",
-]
-
-
 class GeminiRESTLLM(CustomLLM):
     api_key: str = Field(description="Gemini API key")
     model_name: str = Field(default="gemini-3.8-flash")
@@ -33,9 +24,9 @@ class GeminiRESTLLM(CustomLLM):
 
     def _get_models_to_try(self) -> List[str]:
         models = [self.model_name]
-        for m in DEFAULT_GEMINI_FALLBACKS:
-            if m not in models:
-                models.append(m)
+        for fallback in ["gemini-3-flash-preview", "gemini-2.5-flash"]:
+            if fallback not in models:
+                models.append(fallback)
         return models
 
     def complete(self, prompt: str, **kwargs: Any) -> CompletionResponse:
@@ -44,10 +35,10 @@ class GeminiRESTLLM(CustomLLM):
             "contents": [{"parts": [{"text": prompt}]}]
         }
         body = json.dumps(payload).encode("utf-8")
-        last_error = None
+        last_status = None
 
         for model in models:
-            url = f"{GEMINI_BASE_URL}/models/{model}:generateContent?key={self.api_key}"
+            url = f"{GEMINI_BASE_URL}/models/{model}:generateContent"
             req = urllib.request.Request(
                 url,
                 data=body,
@@ -66,18 +57,17 @@ class GeminiRESTLLM(CustomLLM):
                             return CompletionResponse(text=text)
                         return CompletionResponse(text="")
                 except urllib.error.HTTPError as e:
-                    last_error = e
+                    last_status = e.code
                     # If 503 or 429, wait briefly or try next model
                     if e.code in (503, 429):
                         time.sleep(1.0)
                         continue
                     # 404 or other error: immediately try next model
                     break
-                except Exception as e:
-                    last_error = e
+                except Exception:
                     time.sleep(0.5)
 
-        raise RuntimeError(f"All Gemini models failed. Last error: {last_error}")
+        raise RuntimeError(f"Gemini generation failed for configured model (HTTP {last_status}).")
 
     def stream_complete(self, prompt: str, **kwargs: Any) -> CompletionResponseGen:
         res = self.complete(prompt, **kwargs)
@@ -97,7 +87,7 @@ class GeminiRESTEmbedding(BaseEmbedding):
 
     def _get_text_embedding(self, text: str) -> List[float]:
         model = self._normalize_model_name()
-        url = f"{GEMINI_BASE_URL}/{model}:embedContent?key={self.api_key}"
+        url = f"{GEMINI_BASE_URL}/{model}:embedContent"
         payload = {"model": model, "content": {"parts": [{"text": text or " "}]}}
         req = urllib.request.Request(
             url,
@@ -130,7 +120,7 @@ class GeminiRESTEmbedding(BaseEmbedding):
         batch_size = 50
         all_embeddings = []
         model = self._normalize_model_name()
-        url = f"{GEMINI_BASE_URL}/{model}:batchEmbedContents?key={self.api_key}"
+        url = f"{GEMINI_BASE_URL}/{model}:batchEmbedContents"
 
         for i in range(0, len(texts), batch_size):
             chunk = texts[i : i + batch_size]
@@ -199,9 +189,12 @@ def call_gemini_vision(
     b64_image = base64.b64encode(buffer.getvalue()).decode("utf-8")
 
     models = [model_name]
-    for m in DEFAULT_GEMINI_FALLBACKS:
-        if m not in models:
-            models.append(m)
+
+    for fallback in ['gemini-3-flash-preview', 'gemini-2.5-flash']:
+
+        if fallback not in models:
+
+            models.append(fallback)
 
     payload = {
         "contents": [{
@@ -214,7 +207,7 @@ def call_gemini_vision(
     body = json.dumps(payload).encode("utf-8")
 
     for model in models:
-        url = f"{GEMINI_BASE_URL}/models/{model}:generateContent?key={api_key}"
+        url = f"{GEMINI_BASE_URL}/models/{model}:generateContent"
         req = urllib.request.Request(
             url,
             data=body,

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from '@i18n/translate';
 import { Button } from '@components/common';
+import soundAlert from '@lib/soundAlert';
 
 // Component Toggle Switch phong cách Hiện đại (Modern UI)
 function ModernToggle({
@@ -72,24 +73,30 @@ export default function SettingsPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
 
-  const [aiModel, setAiModel] = useState<'gpt4o' | 'claude' | 'llama'>(() => {
-    return (localStorage.getItem('tlbm_ai_model') as 'gpt4o' | 'claude' | 'llama') || 'gpt4o';
-  });
+  const [aiModel, setAiModel] = useState<'gemini'>('gemini');
 
-  // Trạng thái thông báo & bảo mật
-  const [notifIncoming, setNotifIncoming] = useState(true);
-  const [notifUrgent, setNotifUrgent] = useState(true);
-  const [notifDeadline, setNotifDeadline] = useState(true);
-  const [secAutoLock, setSecAutoLock] = useState(true);
-  const [sec2FA, setSec2FA] = useState(true);
+  // Trạng thái cấu hình âm thanh & bảo mật phiên làm việc (hoạt động thực tế)
+  const [notifUrgent, setNotifUrgent] = useState<boolean>(() => soundAlert.isUrgentSoundEnabled());
+  const [secAutoLock, setSecAutoLock] = useState<boolean>(() => {
+    return localStorage.getItem('tlbm_sec_auto_lock') !== 'false';
+  });
+  const [secLockTimeout, setSecLockTimeout] = useState<number>(() => {
+    return parseInt(localStorage.getItem('tlbm_sec_lock_timeout') || '15', 10);
+  });
   const [showSavedToast, setShowSavedToast] = useState(false);
 
   const handleSaveSettings = () => {
     localStorage.setItem('tlbm_interface_style', 'modern');
     document.documentElement.setAttribute('data-ui-style', 'modern');
     localStorage.setItem('tlbm_ai_model', aiModel);
+    localStorage.setItem('tlbm_notif_sound_urgent', String(notifUrgent));
+    soundAlert.setUrgentSoundEnabled(notifUrgent);
+    localStorage.setItem('tlbm_sec_auto_lock', String(secAutoLock));
+    localStorage.setItem('tlbm_sec_lock_timeout', String(secLockTimeout));
+
     window.dispatchEvent(new Event('tlbm_settings_updated'));
     window.dispatchEvent(new Event('tlbm_ai_model_updated'));
+    window.dispatchEvent(new Event('tlbm_sound_settings_updated'));
     setShowSavedToast(true);
     setTimeout(() => setShowSavedToast(false), 3500);
   };
@@ -97,15 +104,20 @@ export default function SettingsPage() {
   const handleResetSettings = () => {
     localStorage.setItem('tlbm_interface_style', 'modern');
     document.documentElement.setAttribute('data-ui-style', 'modern');
-    setAiModel('gpt4o');
-    setNotifIncoming(true);
+    setAiModel('gemini');
     setNotifUrgent(true);
-    setNotifDeadline(true);
     setSecAutoLock(true);
-    setSec2FA(true);
-    localStorage.setItem('tlbm_ai_model', 'gpt4o');
+    setSecLockTimeout(15);
+
+    localStorage.setItem('tlbm_ai_model', 'gemini');
+    localStorage.setItem('tlbm_notif_sound_urgent', 'true');
+    localStorage.setItem('tlbm_sec_auto_lock', 'true');
+    localStorage.setItem('tlbm_sec_lock_timeout', '15');
+    soundAlert.setUrgentSoundEnabled(true);
+
     window.dispatchEvent(new Event('tlbm_settings_updated'));
     window.dispatchEvent(new Event('tlbm_ai_model_updated'));
+    window.dispatchEvent(new Event('tlbm_sound_settings_updated'));
     setShowSavedToast(true);
     setTimeout(() => setShowSavedToast(false), 3500);
   };
@@ -120,7 +132,7 @@ export default function SettingsPage() {
           </div>
           <div>
             <div className="text-sm font-bold text-main">{t('settings.saveSuccessAlert')}</div>
-            <div className="text-xs text-muted">Đã áp dụng cấu hình trực tiếp vào hệ thống.</div>
+            <div className="text-xs text-muted">{t('settings.saveSuccessDetail')}</div>
           </div>
         </div>
       )}
@@ -131,14 +143,14 @@ export default function SettingsPage() {
           <div className="flex items-center gap-2.5 flex-wrap">
             <span className="px-3 py-1 rounded-full bg-primary text-white text-xs font-bold flex items-center gap-1.5 shadow-xs">
               <i className="fa-solid fa-gear text-[11px]" />
-              <span>Cấu hình ứng dụng</span>
+              <span>{t('settings.appConfig')}</span>
             </span>
           </div>
           <h1 className="text-2xl font-extrabold text-main mt-2">
             {t('settings.title')}
           </h1>
           <p className="text-sm text-secondary mt-1 max-w-2xl">
-            Tùy biến cấu hình thông báo văn bản, phiên làm việc bảo mật và mô hình Trợ lý AI trên hệ thống.
+            {t('settings.subtitle')}
           </p>
         </div>
 
@@ -151,81 +163,111 @@ export default function SettingsPage() {
             className="flex items-center gap-2 shadow-xs"
           >
             <i className="fa-solid fa-eye text-primary" />
-            <span>Xem thử Trang Chủ</span>
+            <span>{t('settings.previewDashboard')}</span>
           </Button>
         </div>
       </div>
 
-      {/* 2. Cấu hình thông báo & Bảo mật */}
+      {/* 2. Cấu hình thông báo âm thanh & Bảo mật phiên làm việc */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Card: Cấu hình thông báo */}
-        <div className="bg-surface border border-border-subtle rounded-2xl p-6 shadow-xs space-y-3.5">
-          <div className="flex items-center gap-2.5 pb-2 border-b border-border-subtle">
-            <div className="w-8 h-8 rounded-lg bg-primary-subtle text-primary flex items-center justify-center text-sm">
-              <i className="fa-solid fa-bell" />
+        {/* Card: Cấu hình thông báo âm thanh */}
+        <div className="bg-surface border border-border-subtle rounded-2xl p-6 shadow-xs space-y-4 flex flex-col justify-between">
+          <div className="space-y-3.5">
+            <div className="flex items-center gap-2.5 pb-2 border-b border-border-subtle">
+              <div className="w-8 h-8 rounded-lg bg-primary-subtle text-primary flex items-center justify-center text-sm">
+                <i className="fa-solid fa-bell" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-main">
+                  {t('settings.notificationSectionTitle')}
+                </h3>
+                <p className="text-xs text-muted">{t('settings.notificationSectionDesc')}</p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-sm font-bold text-main">
-                {t('settings.notificationSectionTitle')}
-              </h3>
-              <p className="text-xs text-muted">Tùy biến kênh nhận tin và cảnh báo</p>
+
+            <div className="space-y-2.5 pt-1">
+              <ModernToggle
+                checked={notifUrgent}
+                onChange={setNotifUrgent}
+                label={t('settings.notifUrgent')}
+                description={t('settings.notifUrgentDesc')}
+                icon="fa-volume-high"
+              />
             </div>
           </div>
 
-          <div className="space-y-2.5 pt-1">
-            <ModernToggle
-              checked={notifIncoming}
-              onChange={setNotifIncoming}
-              label={t('settings.notifIncoming')}
-              description="Thông báo đẩy khi văn bản mới đến hòm thư phân phối"
-              icon="fa-envelope"
-            />
-            <ModernToggle
-              checked={notifUrgent}
-              onChange={setNotifUrgent}
-              label={t('settings.notifUrgent')}
-              description="Phát âm thanh chuông cảnh báo với văn bản hỏa tốc"
-              icon="fa-triangle-exclamation"
-            />
-            <ModernToggle
-              checked={notifDeadline}
-              onChange={setNotifDeadline}
-              label={t('settings.notifDeadline')}
-              description="Tự động thông báo công việc sắp hết hạn xử lý"
-              icon="fa-clock"
-            />
+          {/* Tiện ích nghe thử âm thanh chuông */}
+          <div className="pt-3 mt-1 flex items-center justify-between gap-3 border-t border-border-subtle/70">
+            <div className="flex items-center gap-1.5 text-xs text-muted">
+              <i className="fa-solid fa-circle-check text-primary text-[11px]" />
+              <span>Web Audio Chuông Hỏa Tốc</span>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => soundAlert.playUrgentChime(true)}
+              className="gap-2 shadow-2xs hover:border-primary/40 font-semibold"
+            >
+              <i className="fa-solid fa-volume-high text-primary text-xs" />
+              <span>{t('settings.testSound')}</span>
+            </Button>
           </div>
         </div>
 
         {/* Card: Bảo mật phiên làm việc */}
-        <div className="bg-surface border border-border-subtle rounded-2xl p-6 shadow-xs space-y-3.5">
-          <div className="flex items-center gap-2.5 pb-2 border-b border-border-subtle">
-            <div className="w-8 h-8 rounded-lg bg-primary-subtle text-primary flex items-center justify-center text-sm">
-              <i className="fa-solid fa-shield-halved" />
+        <div className="bg-surface border border-border-subtle rounded-2xl p-6 shadow-xs space-y-4 flex flex-col justify-between">
+          <div className="space-y-3.5">
+            <div className="flex items-center gap-2.5 pb-2 border-b border-border-subtle">
+              <div className="w-8 h-8 rounded-lg bg-primary-subtle text-primary flex items-center justify-center text-sm">
+                <i className="fa-solid fa-shield-halved" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-main">
+                  {t('settings.securitySectionTitle')}
+                </h3>
+                <p className="text-xs text-muted">{t('settings.securitySectionDesc')}</p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-sm font-bold text-main">
-                {t('settings.securitySectionTitle')}
-              </h3>
-              <p className="text-xs text-muted">Bảo vệ phiên làm việc và dữ liệu mật</p>
+
+            <div className="space-y-2.5 pt-1">
+              <ModernToggle
+                checked={secAutoLock}
+                onChange={setSecAutoLock}
+                label={t('settings.secAutoLock')}
+                description={t('settings.secAutoLockDesc')}
+                icon="fa-lock"
+              />
             </div>
           </div>
 
-          <div className="space-y-2.5 pt-1">
-            <ModernToggle
-              checked={secAutoLock}
-              onChange={setSecAutoLock}
-              label={t('settings.secAutoLock')}
-              description="Khóa ứng dụng khi không có thao tác chuột hoặc phím"
-              icon="fa-lock"
-            />
-            <ModernToggle
-              checked={sec2FA}
-              onChange={setSec2FA}
-              label={t('settings.sec2FA')}
-              description="Yêu cầu mã xác thực OTP qua email/SMS khi đăng nhập"
-              icon="fa-key"
-            />
+          {/* Tùy chỉnh thời gian & Nút khóa màn hình ngay để demo */}
+          <div className="pt-3 mt-1 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-border-subtle/70">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-secondary font-medium whitespace-nowrap">
+                {t('settings.lockTimeout')}:
+              </span>
+              <select
+                value={secLockTimeout}
+                onChange={(e) => setSecLockTimeout(Number(e.target.value))}
+                disabled={!secAutoLock}
+                className="text-xs bg-surface border border-border-subtle rounded-lg px-2.5 py-1 text-main font-medium focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <option value={5}>5 phút</option>
+                <option value={15}>15 phút (Chuẩn)</option>
+                <option value={30}>30 phút</option>
+              </select>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => window.dispatchEvent(new Event('tlbm_lock_screen_now'))}
+              className="gap-2 shadow-2xs hover:border-amber-500/40 text-amber-600 dark:text-amber-400 font-semibold"
+            >
+              <i className="fa-solid fa-lock text-xs" />
+              <span>{t('settings.lockNow')}</span>
+            </Button>
           </div>
         </div>
       </div>
@@ -242,83 +284,60 @@ export default function SettingsPage() {
                 {t('settings.aiModelSectionTitle')}
               </h3>
               <p className="text-xs text-muted">
-                Lựa chọn công cụ trí tuệ nhân tạo để tóm tắt, trích xuất thực thể và phân loại văn bản
+                {t('settings.aiModelSectionDesc')}
               </p>
             </div>
           </div>
-          <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-surface-elevated text-text-muted border border-border-subtle">
-            Mô hình đang chọn: {aiModel.toUpperCase()}
+          <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-primary-subtle text-primary border border-primary/30 flex items-center gap-1.5 shadow-2xs">
+            <i className="fa-solid fa-circle-check text-xs" />
+            <span>{t('settings.aiModelActive')}GEMINI 1.5</span>
           </span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 pt-1">
-          {/* GPT-4o */}
-          <div
-            onClick={() => setAiModel('gpt4o')}
-            className={`p-4 rounded-xl border-2 cursor-pointer transition-all flex flex-col justify-between gap-3 ${
-              aiModel === 'gpt4o'
-                ? 'border-primary bg-primary-subtle/20 shadow-xs'
-                : 'border-border-subtle bg-surface-elevated hover:border-primary/50'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-main flex items-center gap-1.5">
-                <i className="fa-solid fa-bolt text-warning" />
-                <span>{t('settings.aiModelGpt4o')}</span>
-              </span>
-              {aiModel === 'gpt4o' && (
-                <i className="fa-solid fa-circle-check text-primary text-sm" />
-              )}
+        <div className="pt-1">
+          {/* Google Gemini 1.5 - Mô hình AI độc quyền duy nhất của hệ thống */}
+          <div className="p-5 rounded-2xl border-2 border-primary bg-primary-subtle/20 shadow-xs ring-1 ring-primary/40 flex flex-col md:flex-row md:items-center justify-between gap-5 transition-all select-none">
+            <div className="flex items-start gap-4 flex-1">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-primary to-indigo-500 text-white flex items-center justify-center text-xl shrink-0 shadow-sm shadow-primary/30">
+                <i className="fa-solid fa-wand-magic-sparkles" />
+              </div>
+              <div className="flex flex-col gap-1.5 flex-1">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <span className="text-base font-bold text-main">
+                    {t('settings.aiModelGemini')}
+                  </span>
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-success/15 text-success border border-success/30 flex items-center gap-1">
+                    <i className="fa-solid fa-check text-[10px]" />
+                    <span>{t('settings.aiModelGeminiBadge')}</span>
+                  </span>
+                </div>
+                <p className="text-xs text-secondary leading-relaxed max-w-2xl">
+                  {t('settings.aiModelGeminiDesc')}
+                </p>
+                <div className="flex items-center gap-2 flex-wrap pt-1">
+                  <span className="px-2.5 py-1 rounded-lg text-xs font-medium bg-surface text-text-muted border border-border-subtle flex items-center gap-1.5">
+                    <i className="fa-solid fa-file-lines text-primary text-[11px]" />
+                    <span>{t('settings.aiFeatureSummarize')}</span>
+                  </span>
+                  <span className="px-2.5 py-1 rounded-lg text-xs font-medium bg-surface text-text-muted border border-border-subtle flex items-center gap-1.5">
+                    <i className="fa-solid fa-tags text-primary text-[11px]" />
+                    <span>{t('settings.aiFeatureEntity')}</span>
+                  </span>
+                  <span className="px-2.5 py-1 rounded-lg text-xs font-medium bg-surface text-text-muted border border-border-subtle flex items-center gap-1.5">
+                    <i className="fa-solid fa-shield-halved text-success text-[11px]" />
+                    <span>{t('settings.aiFeatureSecurity')}</span>
+                  </span>
+                </div>
+              </div>
             </div>
-            <p className="text-xs text-muted">
-              Tốc độ phân tích siêu tốc, xử lý văn bản hành chính khối lượng lớn và trích xuất thực thể chính xác.
-            </p>
-          </div>
 
-          {/* Claude 3.5 Sonnet */}
-          <div
-            onClick={() => setAiModel('claude')}
-            className={`p-4 rounded-xl border-2 cursor-pointer transition-all flex flex-col justify-between gap-3 ${
-              aiModel === 'claude'
-                ? 'border-primary bg-primary-subtle/20 shadow-xs'
-                : 'border-border-subtle bg-surface-elevated hover:border-primary/50'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-main flex items-center gap-1.5">
-                <i className="fa-solid fa-feather text-primary" />
-                <span>{t('settings.aiModelClaude')}</span>
+            <div className="shrink-0 flex items-center md:flex-col md:items-end gap-1.5 text-xs border-t md:border-t-0 md:border-l border-border-subtle/80 pt-3 md:pt-0 md:pl-5">
+              <span className="font-semibold text-primary">Google DeepMind</span>
+              <span className="text-[11px] text-muted font-mono">v1.5 Flash & Pro</span>
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-surface border border-border-subtle text-text-muted mt-1">
+                API Ready
               </span>
-              {aiModel === 'claude' && (
-                <i className="fa-solid fa-circle-check text-primary text-sm" />
-              )}
             </div>
-            <p className="text-xs text-muted">
-              Văn phong hành chính chuẩn mực, tóm tắt chỉ đạo điều hành sâu sắc và phân tích sắc bén.
-            </p>
-          </div>
-
-          {/* Llama 3 On-Premise */}
-          <div
-            onClick={() => setAiModel('llama')}
-            className={`p-4 rounded-xl border-2 cursor-pointer transition-all flex flex-col justify-between gap-3 ${
-              aiModel === 'llama'
-                ? 'border-primary bg-primary-subtle/20 shadow-xs'
-                : 'border-border-subtle bg-surface-elevated hover:border-primary/50'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-main flex items-center gap-1.5">
-                <i className="fa-solid fa-server text-success" />
-                <span>{t('settings.aiModelLlama')}</span>
-              </span>
-              {aiModel === 'llama' && (
-                <i className="fa-solid fa-circle-check text-primary text-sm" />
-              )}
-            </div>
-            <p className="text-xs text-muted">
-              Triển khai tại máy chủ nội bộ (On-Premise), bảo mật tối đa cho tài liệu tuyệt mật và nội bộ.
-            </p>
           </div>
         </div>
       </div>
@@ -326,7 +345,7 @@ export default function SettingsPage() {
       {/* 4. Khối Lưu & Khôi phục (Footer Actions) */}
       <div className="bg-surface border border-border-subtle rounded-2xl p-4 sm:p-5 shadow-xs flex items-center justify-between gap-4 flex-wrap">
         <p className="text-xs text-muted">
-          Nhấn nút bên phải để lưu vĩnh viễn cấu hình vào hồ sơ của bạn.
+          {t('settings.saveSettingsNote')}
         </p>
         <div className="flex items-center gap-3">
           <Button

@@ -21,9 +21,50 @@ CREATE FUNCTION lit_fn() RETURNS text LANGUAGE sql AS $$ SELECT 'x y'::text $$;
 CREATE VIEW lit_v AS SELECT 'x y'::text AS v;
 """
 
+RBAC_BASE = """
+CREATE TABLE django_content_type (id serial PRIMARY KEY, app_label text NOT NULL, model text NOT NULL);
+INSERT INTO django_content_type (id, app_label, model) VALUES
+    ({content_type_id}, '{app_label}', '{content_type_model}');
+CREATE TABLE auth_group (id serial PRIMARY KEY, name text NOT NULL, ma_nhom_quyen text UNIQUE);
+INSERT INTO auth_group (id, name, ma_nhom_quyen) VALUES
+    ({group_id}, 'Văn thư', 'VAN_THU'),
+    ({custom_group_id}, 'Nhóm tùy chỉnh', NULL);
+CREATE TABLE auth_permission (
+    id serial PRIMARY KEY, name text NOT NULL, codename text NOT NULL UNIQUE,
+    module_ten text NOT NULL, content_type_id integer
+);
+INSERT INTO auth_permission (id, name, codename, module_ten, content_type_id) VALUES
+    ({permission_id}, 'Xem văn bản đến', 'view_vanbanden', 'Văn bản đến', {content_type_id}),
+    ({other_permission_id}, 'Sửa văn bản đến', 'change_vanbanden', 'Văn bản đến', {content_type_id});
+CREATE TABLE auth_group_permissions (
+    group_id integer NOT NULL, permission_id integer NOT NULL, PRIMARY KEY (group_id, permission_id)
+);
+INSERT INTO auth_group_permissions (group_id, permission_id) VALUES
+    ({group_id}, {grant_permission_id}),
+    ({custom_group_id}, {custom_grant_permission_id});
+"""
+
 
 def maintenance():
     return cmp.connect("postgres")
+
+
+class RestoredCheckFormTest(unittest.TestCase):
+    def norm(self, definition):
+        return cmp.norm_check(cmp.norm(definition))
+
+    def test_pg_restore_array_forms_equal_direct_forms(self):
+        direct = "CHECK (((pham_vi)::text = ANY ((ARRAY['A'::character varying, 'B'::character varying])::text[])))"
+        restored = "CHECK (((pham_vi)::text = ANY (ARRAY[('A'::character varying)::text, ('B'::character varying)::text])))"
+        self.assertEqual(self.norm(direct), self.norm(restored))
+        direct_not = "CHECK ((((x)::text <> ALL ((ARRAY['A'::character varying])::text[])) OR (u IS NOT NULL)))"
+        restored_not = "CHECK (((NOT ((x)::text = ANY (ARRAY[('A'::character varying)::text]))) OR (u IS NOT NULL)))"
+        self.assertEqual(self.norm(direct_not), self.norm(restored_not))
+
+    def test_different_values_or_operators_stay_different(self):
+        restored = "CHECK (((pham_vi)::text = ANY (ARRAY[('A'::character varying)::text, ('B'::character varying)::text])))"
+        self.assertNotEqual(self.norm(restored), self.norm(restored.replace("'B'", "'C'")))
+        self.assertNotEqual(self.norm(restored), self.norm(restored.replace("= ANY", "<> ALL")))
 
 
 class DriftTest(unittest.TestCase):
@@ -82,6 +123,49 @@ class DriftTest(unittest.TestCase):
         self.assertTrue(changed_b[0].startswith("SEED seed_t: DDL 2 dòng, migration thiếu 1 #"))
         self.assertIn(", thừa 1 #", changed_b[0])
         self.assertNotEqual(changed_b[0], changed_d[0])
+
+    def test_rbac_seed_uses_semantics_instead_of_generated_ids(self):
+        ddl = RBAC_BASE.format(
+            content_type_id=4, group_id=8, custom_group_id=9, permission_id=12,
+            other_permission_id=13, grant_permission_id=12, custom_grant_permission_id=13,
+            app_label="documents", content_type_model="vanbanden",
+        )
+        migration = RBAC_BASE.format(
+            content_type_id=41, group_id=82, custom_group_id=83, permission_id=123,
+            other_permission_id=124, grant_permission_id=123, custom_grant_permission_id=124,
+            app_label="documents", content_type_model="vanbanden",
+        )
+        self.assertEqual(self.drift(BASE + ddl, BASE + migration), [])
+
+    def test_rbac_comparator_reports_changed_semantic_grant_set(self):
+        ddl = RBAC_BASE.format(
+            content_type_id=4, group_id=8, custom_group_id=9, permission_id=12,
+            other_permission_id=13, grant_permission_id=12, custom_grant_permission_id=13,
+            app_label="documents", content_type_model="vanbanden",
+        )
+        migration = RBAC_BASE.format(
+            content_type_id=41, group_id=82, custom_group_id=83, permission_id=123,
+            other_permission_id=124, grant_permission_id=123, custom_grant_permission_id=123,
+            app_label="documents", content_type_model="vanbanden",
+        )
+        found = self.drift(BASE + ddl, BASE + migration)
+        self.assertEqual(len(found), 1)
+        self.assertTrue(found[0].startswith("SEED auth_group_permissions:"))
+
+    def test_rbac_comparator_detects_content_type_natural_key_change(self):
+        ddl = RBAC_BASE.format(
+            content_type_id=4, group_id=8, custom_group_id=9, permission_id=12,
+            other_permission_id=13, grant_permission_id=12, custom_grant_permission_id=13,
+            app_label="documents", content_type_model="vanbanden",
+        )
+        migration = RBAC_BASE.format(
+            content_type_id=41, group_id=82, custom_group_id=83, permission_id=123,
+            other_permission_id=124, grant_permission_id=123, custom_grant_permission_id=124,
+            app_label="records", content_type_model="tailieu",
+        )
+        found = self.drift(BASE + ddl, BASE + migration)
+        self.assertEqual(len(found), 1)
+        self.assertTrue(found[0].startswith("SEED auth_permission:"))
 
     def test_trim_check_equivalent_to_btrim_is_not_reported(self):
         ddl = BASE + "ALTER TABLE trig_t ADD CONSTRAINT c CHECK (name IS NULL OR btrim(name) <> '');"

@@ -1,0 +1,27 @@
+CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM
+Độc lập - Tự do - Hạnh phúc
+-----------------------
+
+HƯỚNG DẪN KỸ THUẬT VẬN HÀNH HỆ THỐNG VÀ TRỢ LÝ ẢO AI CHATBOX
+Số hiệu: 08/2026/HD-CNTT | Ngày ban hành: 10/10/2026
+
+Chương I: KIẾN TRÚC TRỢ LÝ AI VÀ CHỈ MỤC CHROMA-DB
+Điều 1. Kiến trúc mô hình ngôn ngữ và Vector Store
+Trợ lý ảo AI TLBM vận hành trên nền tảng kỹ thuật RAG tiên tiến:
+- LLM Model mặc định: Google Gemini 3.8 Flash (tích hợp cơ chế tự động fallback khi nghẽn mạng).
+- Vector Database: ChromaDB lưu trữ cục bộ tại đường dẫn `./data/chroma_db` bảo mật tuyệt đối không gửi dữ liệu ra cloud công cộng.
+- Cơ chế phân đoạn tri thức Parent-Child Chunking:
+  + Parent Chunk (Sơ cấp): Kích thước 1.500 ký tự (Overlap 300 ký tự) cung cấp ngữ cảnh đầy đủ cho câu trả lời.
+  + Child Chunk (Thứ cấp): Kích thước 300 ký tự (Overlap 50 ký tự) dùng để tạo vector embedding tra cứu siêu tốc.
+
+Điều 2. Nguyên tắc Không Ảo giác (Zero-Hallucination)
+AI chỉ được phản hồi dựa trên tài liệu hợp lệ trong kho tri thức. Nếu không có dữ liệu nguồn, AI bắt buộc phải trả lời câu chuẩn: 'Xin lỗi, thông tin bạn hỏi không có trong tài liệu được cung cấp nên tôi không thể trả lời.'
+
+Chương II: LỊCH SAO LƯU DỮ LIỆU VÀ QUẢN TRỊ AN TOÀN THÔNG TIN
+Điều 3. Chính sách sao lưu tự động (Backup Policy)
+- Sao lưu hàng ngày: Toàn bộ CSDL PostgreSQL và thư mục `./data/chroma_db` được tự động sao lưu lúc 01:00 sáng hàng ngày.
+- Sao lưu tuần: Đóng gói toàn bộ mã nguồn và dữ liệu vào lúc 02:00 sáng Chủ Nhật hàng tuần, lưu trữ tại máy chủ phụ ngoại vi.
+- Thời hạn lưu trữ bản sao lưu: Tối thiểu 90 ngày trước khi xoay vòng dữ liệu.
+
+Điều 4. Quyền quản trị phân hệ AI
+Chỉ tài khoản Quản trị viên tối cao (is_superuser=True) mới có quyền truy cập trang Cài đặt AI, xóa trắng chỉ mục Vector, hoặc thay đổi khóa API Key và Model Provider trong hệ thống.

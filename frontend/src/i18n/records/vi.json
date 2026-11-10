@@ -1,0 +1,173 @@
+{
+  "navigation": {
+    "records": "Danh Mục Hồ Sơ",
+    "record_types": "Loại văn bản"
+  },
+  "pages": {
+    "records": {
+      "title": "Quản Lý Hồ Sơ & Loại Văn Bản",
+      "module": "Module 3: Hồ sơ tài liệu (Cấp 1 & Cấp 2)",
+      "assignedTeam": "Nhóm 3 (Phân hệ Hồ sơ lưu trữ)",
+      "codeRef": "Mục 3.1 & 3.2 · Độ khó: 0.80",
+      "isGroup1": false,
+      "desc": "Danh mục hồ sơ Cấp 1, Loại văn bản Cấp 2 và liên kết văn bản theo hồ sơ."
+    }
+  },
+  "records": {
+    "common": {
+      "dossier": "Hồ sơ"
+    },
+    "actions": {
+      "filter": "Lọc dữ liệu",
+      "reset": "Đặt lại",
+      "retry": "Thử lại",
+      "viewDocuments": "Xem văn bản",
+      "view": "Xem",
+      "cancel": "Hủy",
+      "delete": "Xóa",
+      "close": "Đóng",
+      "saveChanges": "Lưu thay đổi",
+      "addNew": "Thêm mới",
+      "edit": "Sửa"
+    },
+    "filters": {
+      "year": "Lọc theo năm",
+      "allYears": "Tất cả năm",
+      "documentType": "Lọc theo loại văn bản",
+      "allDocumentTypes": "Tất cả",
+      "scope": "Phạm vi"
+    },
+    "table": {
+      "index": "STT",
+      "createdDate": "Ngày lập",
+      "note": "Ghi chú",
+      "action": "Thao tác"
+    },
+    "documentKinds": {
+      "vanbanden": "Văn bản đến",
+      "vanbandi": "Văn bản đi"
+    },
+    "dossiers": {
+      "moduleLabel": "Nhóm 3 · Hồ sơ và tài liệu",
+      "title": "Danh mục hồ sơ",
+      "description": "Quản lý hồ sơ cấp 1 và truy cập các loại văn bản thuộc từng hồ sơ.",
+      "add": "Thêm hồ sơ",
+      "closeNotice": "Đóng thông báo",
+      "searchLabel": "Tìm kiếm hồ sơ",
+      "searchPlaceholder": "Tìm theo tên hoặc số/ký hiệu hồ sơ...",
+      "loading": "Đang tải danh sách hồ sơ",
+      "emptyTitle": "Chưa có hồ sơ phù hợp",
+      "emptyDescription": "Thay đổi bộ lọc hoặc thêm hồ sơ mới để bắt đầu.",
+      "reference": "Số/ký hiệu",
+      "name": "Tên hồ sơ",
+      "creator": "Người lập",
+      "viewDocumentTypesLabel": "Xem loại văn bản của {name}",
+      "editLabel": "Sửa {name}",
+      "deleteLabel": "Xóa {name}",
+      "confirmDeleteTitle": "Xóa hồ sơ?",
+      "confirmDeleteMessage": "Hồ sơ “{name}” sẽ bị xóa. Thao tác có thể bị từ chối nếu hồ sơ còn dữ liệu liên quan.",
+      "notices": {
+        "updated": "Đã cập nhật hồ sơ thành công.",
+        "created": "Đã thêm hồ sơ thành công.",
+        "deleted": "Đã xóa hồ sơ thành công."
+      }
+    },
+    "modal": {
+      "requiredFields": "Các trường có dấu * là bắt buộc.",
+      "titles": {
+        "addDossier": "Thêm hồ sơ",
+        "editDossier": "Chỉnh sửa hồ sơ",
+        "addDocumentType": "Thêm loại văn bản",
+        "editDocumentType": "Chỉnh sửa loại văn bản"
+      },
+      "fields": {
+        "reference": "Số/ký hiệu",
+        "priority": "Thứ tự ưu tiên",
+        "dossierName": "Tên hồ sơ",
+        "documentTypeName": "Tên loại văn bản",
+        "createdDate": "Ngày lập",
+        "note": "Ghi chú"
+      },
+      "validation": {
+        "dossierNameRequired": "Vui lòng nhập tên hồ sơ.",
+        "documentTypeNameRequired": "Vui lòng nhập tên loại văn bản.",
+        "referenceRequired": "Vui lòng nhập số/ký hiệu hồ sơ.",
+        "priorityPositive": "Số thứ tự ưu tiên phải là số nguyên dương.",
+        "dossierRequired": "Vui lòng chọn hồ sơ chứa loại văn bản."
+      }
+    },
+    "documentTypes": {
+      "back": "Quay lại danh mục hồ sơ",
+      "title": "Loại văn bản",
+      "readOnlyNote": "Chọn Loại văn bản để mở danh sách văn bản đến hoặc đi tương ứng.",
+      "viewAllDocuments": "Xem toàn bộ văn bản",
+      "searchLabel": "Tìm loại văn bản",
+      "searchPlaceholder": "Tìm theo tên loại văn bản...",
+      "loading": "Đang tải loại văn bản",
+      "emptyTitle": "Không tìm thấy loại văn bản phù hợp",
+      "emptyDescription": "Thử thay đổi bộ lọc tìm kiếm.",
+      "name": "Tên loại văn bản",
+      "description": "Thêm, sửa và xóa loại văn bản thuộc từng hồ sơ.",
+      "add": "Thêm loại văn bản",
+      "closeNotice": "Đóng thông báo",
+      "chooseDossier": "Chọn hồ sơ",
+      "loadingDossiers": "Đang tải hồ sơ...",
+      "noDossiers": "Chưa có hồ sơ. Hãy tạo hồ sơ trước khi thêm loại văn bản.",
+      "editLabel": "Sửa {name}",
+      "deleteLabel": "Xóa {name}",
+      "confirmDeleteTitle": "Xóa loại văn bản?",
+      "confirmDeleteMessage": "Bạn muốn xóa loại văn bản “{name}”? Thao tác sẽ bị từ chối nếu còn văn bản tham chiếu.",
+      "notices": {
+        "created": "Đã thêm loại văn bản thành công.",
+        "updated": "Đã cập nhật loại văn bản thành công.",
+        "deleted": "Đã xóa loại văn bản thành công."
+      }
+    },
+    "documents": {
+      "back": "Quay lại văn bản cấp 2",
+      "title": "Văn bản thuộc hồ sơ",
+      "readOnlyNote": "Màn hình tra cứu chỉ đọc; không có thao tác thêm, sửa hoặc xóa.",
+      "searchLabel": "Tìm kiếm văn bản",
+      "searchPlaceholder": "Tìm theo số/ký hiệu hoặc trích yếu...",
+      "loading": "Đang tải danh sách văn bản",
+      "emptyTitle": "Không có văn bản phù hợp",
+      "emptyDescription": "Hãy thử thay đổi từ khóa, năm hoặc loại văn bản.",
+      "reference": "Số/ký hiệu",
+      "summary": "Trích yếu",
+      "documentDate": "Ngày văn bản",
+      "kind": "Loại"
+    },
+    "errors": {
+      "title": "Không thể tải dữ liệu",
+      "forbidden": "Bạn không có quyền thực hiện thao tác này.",
+      "loadDossiers": "Không thể tải danh sách hồ sơ.",
+      "saveDossier": "Không thể lưu hồ sơ. Vui lòng kiểm tra lại dữ liệu.",
+      "deleteDossier": "Không thể xóa hồ sơ. Hồ sơ có thể đang chứa dữ liệu liên quan.",
+      "missingDossier": "Không xác định được hồ sơ cần xem.",
+      "loadDocumentTypes": "Không thể tải danh sách văn bản cấp 2.",
+      "loadDocuments": "Không thể tải danh sách văn bản của hồ sơ.",
+      "sharedSchemaUnavailable": "Các bảng văn bản dùng chung của Nhóm 2 chưa sẵn sàng theo DDL đã chốt. Hãy đồng bộ schema trước khi kiểm thử luồng này.",
+      "saveDocumentType": "Không thể lưu loại văn bản. Vui lòng kiểm tra lại dữ liệu.",
+      "deleteDocumentType": "Không thể xóa loại văn bản. Vui lòng thử lại."
+    },
+    "pagination": {
+      "summary": "Hiển thị {first}–{last} trong tổng số {count}",
+      "previous": "Trước",
+      "next": "Sau",
+      "page": "Trang {page}/{total}"
+    },
+    "scopes": {
+      "all": "Tất cả phạm vi",
+      "NOI_BO": "Nội bộ",
+      "HAN_CHE": "Hạn chế"
+    },
+    "destination": {
+      "loadingContext": "Đang tải thông tin hồ sơ…",
+      "contextUnavailable": "Không thể xác minh hồ sơ. Đóng hộp thoại và tải lại danh sách trước khi thử lại.",
+      "title": "Chọn danh sách văn bản",
+      "direction": "Văn bản đến hoặc đi",
+      "restricted": "Chỉ văn bản mật (hạn chế)",
+      "note": "Văn bản mật thuộc văn bản đến hoặc đi. Bạn chỉ xem được các văn bản được phép truy cập."
+    }
+  }
+}

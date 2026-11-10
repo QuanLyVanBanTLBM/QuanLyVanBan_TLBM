@@ -1,8 +1,9 @@
-﻿import React from 'react';
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ActivePageId } from '@app-types/navigation';
 import { useTranslation } from '@i18n/translate';
 import { Card, Button } from '@components/common';
+import { formatRoleTitle, formatUserName } from '@lib/roleUtils';
 
 interface ProfilePageProps {
   onNavigate?: (page: ActivePageId) => void;
@@ -10,7 +11,7 @@ interface ProfilePageProps {
 
 export default function ProfilePage({ onNavigate }: ProfilePageProps) {
   const navigate = useNavigate();
-  const { t } = useTranslation();
+  const { t, currentLang } = useTranslation();
 
   // Lấy thông tin phiên đăng nhập thực tế
   const session = (() => {
@@ -22,8 +23,10 @@ export default function ProfilePage({ onNavigate }: ProfilePageProps) {
     }
   })();
 
-  const displayName = session?.fullName || session?.username || '—';
-  const displayRole = session?.roleTitle || session?.role || '—';
+  const rawName = session?.fullName || session?.username || '—';
+  const displayName = formatUserName(rawName, currentLang);
+  const rawRole = session?.roleTitle || session?.role || '—';
+  const displayRole = formatRoleTitle(rawRole, currentLang);
   const displayDept = session?.department || (session ? t('profile.sampleDept') : '—');
   const displayEmail = session?.email || (session?.username ? `${session.username}@donvi.gov.vn` : '—');
 

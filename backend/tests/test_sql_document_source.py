@@ -1,9 +1,14 @@
+import os
+import runpy
 from contextlib import nullcontext
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
+from django.conf import settings
+from django.db import connections
 from django.test import TestCase
 
 from backend.services.sql_document_source import (
@@ -145,5 +150,45 @@ class SqlDocumentSourceTests(TestCase):
         self.assertNotIn("file_dinh_kem", view_cursor.executed[0][0])
 
     @patch("backend.services.sql_document_source.is_postgres_source", return_value=False)
-    def test_schema_verification_is_skipped_for_sqlite_development(self, _is_postgres):
+    def test_schema_verification_is_skipped_for_non_postgres_connection(self, _is_postgres):
         self.assertEqual(verify_sql_schema()["status"], "skipped")
+
+
+class ReadonlyAliasSettingsTests(TestCase):
+    settings_path = Path(settings.BASE_DIR) / "config" / "settings.py"
+
+    def load_settings(self, **env):
+        base = {"DJANGO_SECRET_KEY": "test-only", "DB_NAME": "qlvb_x", "DB_HOST": "db-host", "DB_PORT": "6543"}
+        with patch.dict(os.environ, {**base, **env}, clear=False), patch("dotenv.load_dotenv"):
+            for name in ("DB_READONLY_USER", "DB_READONLY_PASSWORD", "DB_READONLY_NAME", "DB_READONLY_HOST", "DB_READONLY_PORT"):
+                if name not in env:
+                    os.environ.pop(name, None)
+            return runpy.run_path(str(self.settings_path))["DATABASES"]
+
+    def test_alias_is_absent_without_readonly_user_and_never_reuses_default_user(self):
+        databases = self.load_settings(DB_USER="app_user", DB_PASSWORD="app_secret")
+        self.assertNotIn("readonly", databases)
+
+    def test_alias_uses_dedicated_role_with_read_only_session_and_default_fallbacks(self):
+        databases = self.load_settings(DB_USER="app_user", DB_READONLY_USER="ro_user", DB_READONLY_PASSWORD="ro_secret")
+        readonly = databases["readonly"]
+        self.assertEqual(readonly["USER"], "ro_user")
+        self.assertEqual(readonly["PASSWORD"], "ro_secret")
+        self.assertEqual((readonly["NAME"], readonly["HOST"], readonly["PORT"]), ("qlvb_x", "db-host", "6543"))
+        self.assertEqual(readonly["OPTIONS"]["options"], "-c default_transaction_read_only=on")
+
+    def test_readonly_overrides_take_precedence(self):
+        databases = self.load_settings(DB_READONLY_USER="ro_user", DB_READONLY_NAME="other", DB_READONLY_HOST="ro-host", DB_READONLY_PORT="7000")
+        readonly = databases["readonly"]
+        self.assertEqual((readonly["NAME"], readonly["HOST"], readonly["PORT"]), ("other", "ro-host", "7000"))
+
+    def test_ai_sql_fails_closed_when_alias_is_not_configured(self):
+        user = User.objects.create_user(username="ai_no_ro", password="test-password")
+        grant_codename(user, "use_aiassistant")
+        grant_codename(user, "view_vanbanden")
+        with patch.dict(connections.databases, clear=False) as databases:
+            databases.pop("readonly", None)
+            with self.assertRaises(SqlDocumentAccessError):
+                accessible_documents(user)
+            self.assertEqual(verify_sql_schema()["status"], "mismatch")
+

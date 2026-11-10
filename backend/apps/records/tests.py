@@ -1,28 +1,66 @@
+import importlib
 from datetime import datetime, timezone
 from unittest.mock import patch
 
+from django.apps import apps as global_apps
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
-from django.db import DatabaseError, IntegrityError, transaction
+from django.db import DatabaseError, IntegrityError, connection, transaction
 from django.test import TestCase
 
 from records.models import HoSo, LoaiVanBan
+
+
+organizations_seed = importlib.import_module("organizations.migrations.0005_reference_data_ddl")
+accounts_seed = importlib.import_module("accounts.migrations.0006_reference_data_ddl")
+account_password_fix = importlib.import_module("accounts.migrations.0007_normalize_system_account_password")
+records_seed = importlib.import_module("records.migrations.0003_reference_data_ddl")
+
+
+def seed_reference_data():
+    with connection.schema_editor() as editor:
+        organizations_seed.seed(global_apps, editor)
+        accounts_seed.seed(global_apps, editor)
+        account_password_fix.normalize_system_seed_password(global_apps, editor)
+        records_seed.seed(global_apps, editor)
 
 
 
 class RecordsModelTests(TestCase):
     @classmethod
     def setUpTestData(cls):
+        seed_reference_data()
         user_model = get_user_model()
-        cls.user = user_model._default_manager.create_user(username="admin", password="test-only")
+        cls.user = user_model._default_manager.create_user(username="records_admin_test", password="test-only")
+
+    def make_hsc_non_system(self, **updates):
+        existing = HoSo.objects.get(so_ky_hieu="HSC")
+        changes = {"is_he_thong": False, **updates}
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "ALTER TABLE records_hoso "
+                "DISABLE TRIGGER trg_hoso_prevent_update_he_thong"
+            )
+        try:
+            HoSo.objects.filter(pk=existing.pk).update(**changes)
+        finally:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "ALTER TABLE records_hoso "
+                    "ENABLE TRIGGER trg_hoso_prevent_update_he_thong"
+                )
+
+        existing.refresh_from_db()
+        return existing
 
     def test_priority_is_assigned_in_order(self):
         first = HoSo.objects.create(so_ky_hieu="A", ten_ho_so="A", nguoi_lap=self.user)
         second = HoSo.objects.create(so_ky_hieu="B", ten_ho_so="B", nguoi_lap=self.user)
-        self.assertEqual([first.stt_uu_tien, second.stt_uu_tien], [1, 2])
+        self.assertEqual(second.stt_uu_tien, first.stt_uu_tien + 1)
 
     def test_system_dossier_seed_is_idempotent_and_protected(self):
         call_command("ensure_common_hoso", verbosity=0)
@@ -34,31 +72,57 @@ class RecordsModelTests(TestCase):
                 HoSo.objects.filter(pk=dossier.pk).delete()
         self.assertTrue(HoSo.objects.filter(pk=dossier.pk).exists())
 
-    def test_system_dossier_seed_handles_occupied_first_priority(self):
-        HoSo.objects.create(
-            stt_uu_tien=1,
-            so_ky_hieu="HS-EXISTING",
-            ten_ho_so="Hồ sơ có trước",
-            nguoi_lap=self.user,
+    def test_system_dossier_seed_uses_next_priority_when_first_is_occupied(self):
+        highest_priority = HoSo.objects.order_by("-stt_uu_tien").values_list(
+            "stt_uu_tien", flat=True
+        ).first() or 0
+        legacy_hsc = self.make_hsc_non_system(
+            so_ky_hieu="HSC-LEGACY",
+            stt_uu_tien=highest_priority + 1,
         )
+        priority_one = HoSo.objects.filter(stt_uu_tien=1).first()
+        if priority_one is None:
+            priority_one = HoSo.objects.create(
+                stt_uu_tien=1,
+                so_ky_hieu="HS-FIRST-PRIORITY",
+                ten_ho_so="Hồ sơ chiếm ưu tiên đầu tiên",
+                nguoi_lap=self.user,
+            )
+
+        self.assertFalse(HoSo.objects.filter(is_he_thong=True).exists())
+        self.assertFalse(HoSo.objects.filter(so_ky_hieu="HSC").exists())
+        self.assertEqual(priority_one.stt_uu_tien, 1)
 
         call_command("ensure_common_hoso", verbosity=0)
 
         common = HoSo.objects.get(is_he_thong=True)
         self.assertEqual(common.so_ky_hieu, "HSC")
-        self.assertEqual(common.stt_uu_tien, 2)
+        self.assertEqual(common.stt_uu_tien, legacy_hsc.stt_uu_tien + 1)
+        self.assertEqual(HoSo.objects.filter(is_he_thong=True).count(), 1)
 
     def test_system_dossier_seed_promotes_existing_hsc(self):
-        existing = HoSo.objects.create(
-            so_ky_hieu="HSC",
-            ten_ho_so="Hồ sơ chung",
-            nguoi_lap=self.user,
-        )
+        existing = self.make_hsc_non_system()
+        existing.ten_ho_so = "Hồ sơ HSC cần được nâng cờ hệ thống"
+        existing.save(update_fields=["ten_ho_so"])
 
         call_command("ensure_common_hoso", verbosity=0)
 
         existing.refresh_from_db()
         self.assertTrue(existing.is_he_thong)
+        self.assertEqual(existing.ten_ho_so, "Hồ sơ HSC cần được nâng cờ hệ thống")
+        self.assertEqual(HoSo.objects.filter(so_ky_hieu="HSC").count(), 1)
+        self.assertEqual(HoSo.objects.filter(is_he_thong=True).count(), 1)
+
+    def test_system_dossier_seed_preserves_existing_hsc(self):
+        existing = HoSo.objects.get(so_ky_hieu="HSC")
+        existing.ten_ho_so = "Hồ sơ chung do kiểm thử chỉnh sửa"
+        existing.save(update_fields=["ten_ho_so"])
+
+        call_command("ensure_common_hoso", verbosity=0)
+
+        existing.refresh_from_db()
+        self.assertTrue(existing.is_he_thong)
+        self.assertEqual(existing.ten_ho_so, "Hồ sơ chung do kiểm thử chỉnh sửa")
         self.assertEqual(HoSo.objects.filter(is_he_thong=True).count(), 1)
 
     def test_system_dossier_flag_cannot_be_lowered(self):
@@ -137,6 +201,7 @@ class RecordsModelTests(TestCase):
 
 class RecordsApiTests(APITestCase):
     def setUp(self):
+        seed_reference_data()
         user_model = get_user_model()
         self.user = user_model._default_manager.create_user(
             username="api-user",
@@ -281,11 +346,7 @@ class RecordsApiTests(APITestCase):
         )
 
     def test_system_dossier_cannot_be_deleted(self):
-        dossier = self.create_dossier(
-            so_ky_hieu="HSC",
-            ten_ho_so="Hồ sơ chung",
-            is_he_thong=True,
-        )
+        dossier = HoSo.objects.get(is_he_thong=True)
 
         response = self.client.delete(
             reverse(

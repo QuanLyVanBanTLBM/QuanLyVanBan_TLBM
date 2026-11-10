@@ -1,0 +1,72 @@
+{
+  "profile": {
+    "title": "Staff & Officer Profile",
+    "moduleTag": "Account Information",
+    "fullName": "Full Name",
+    "role": "System Role",
+    "department": "Work Unit",
+    "email": "Contact Email",
+    "sampleDept": "Operating Department / Division",
+    "roles": {
+      "admin": "Administrator",
+      "administrator": "Administrator",
+      "systemAdmin": "System Administrator",
+      "specialist": "Specialist / Officer",
+      "head": "Department Head",
+      "deputyHead": "Deputy Department Head",
+      "archivist": "Archivist / Document Clerk",
+      "director": "Director",
+      "board": "Board of Directors",
+      "auditor": "Auditor",
+      "assistant": "CEO Assistant",
+      "staff": "Staff"
+    }
+  },
+  "passwordChange": {
+    "title": "Set New Account Password",
+    "subtitle": "Changing your password periodically protects account access and classified records.",
+    "moduleTag": "Account Security",
+    "currentPassword": "Current Password",
+    "currentPasswordPlaceholder": "Enter current password...",
+    "newPassword": "New Password",
+    "newPasswordPlaceholder": "At least 8 characters, uppercase, numbers...",
+    "confirmPassword": "Confirm New Password",
+    "confirmPasswordPlaceholder": "Re-enter new password to verify...",
+    "submitBtn": "Update Password",
+    "backBtn": "Back to Dashboard",
+    "successMsg": "Password updated successfully! Please remember your new password.",
+    "mismatchError": "Confirmation password does not match!",
+    "emptyError": "Please fill in all required password fields!",
+    "tooShortError": "New password must be at least 8 characters!",
+    "securityGuidelinesTitle": "Password Security Guidelines",
+    "ruleMinLength": "At least 8 characters (12+ characters recommended)",
+    "ruleMixedCase": "Combine uppercase (A-Z) and lowercase (a-z) letters",
+    "ruleNumber": "Include at least one numerical digit (0-9)",
+    "ruleSpecial": "Special characters recommended (!@#$%^&*...)",
+    "ruleNoPersonal": "Avoid using birthdates, phone numbers or easy names",
+    "rulePeriodic": "Change your password regularly every 90 days",
+    "strengthWeak": "Weak",
+    "strengthFair": "Fair",
+    "strengthGood": "Good",
+    "strengthStrong": "Strong",
+    "helpHotline": "Need help or forgot your password? Please contact administrator via internal hotline or ask AI Assistant."
+  },
+  "pages": {
+    "profile": {
+      "title": "Personal Profile & Account Information",
+      "module": "Module 1.1: Layout & Account Info",
+      "assignedTeam": "Group 1 (Profile Subsystem)",
+      "codeRef": "Item 1.1 · Complexity: 0.60",
+      "isGroup1": true,
+      "desc": "View and update profile credentials, department, organization unit, email, and phone number."
+    },
+    "password_change": {
+      "title": "Change Account Password",
+      "module": "Module 1.1: Layout & Account Security",
+      "assignedTeam": "Group 1 (Security Subsystem)",
+      "codeRef": "Item 1.1 · Complexity: 0.60",
+      "isGroup1": true,
+      "desc": "Change user password following one-way cryptographic security policy."
+    }
+  }
+}

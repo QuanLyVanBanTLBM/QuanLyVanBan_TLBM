@@ -1,0 +1,42 @@
+{
+  "pages": {
+    "login": {
+      "title": "System Authentication (Staff & Administrator)",
+      "module": "Module 1.1: Layout & Authentication",
+      "assignedTeam": "Group 1 (Authentication Subsystem)",
+      "codeRef": "Item 1.1 · Complexity: 0.60",
+      "isGroup1": true,
+      "desc": "Authentication flow for staff members and system administrators with dual visual layouts."
+    }
+  },
+  "auth": {
+    "backToDashboard": "Go to Dashboard",
+    "brandTitle": "Bao Long Document & Records Management",
+    "brandSubtitle": "Digital Transformation",
+    "welcomeBack": "Welcome back",
+    "welcomeDesc": "Please enter your credentials to access the operational system.",
+    "usernameLabel": "Account / Employee ID",
+    "usernamePlaceholder": "Enter username or employee code...",
+    "passwordLabel": "Authentication Password",
+    "passwordPlaceholder": "Enter password...",
+    "hidePassword": "Hide password",
+    "showPassword": "Show password",
+    "rememberMe": "Remember session (30 days)",
+    "forgotPassword": "Forgot password?",
+    "forgotPasswordAlert": "Please contact the System Administrator to reset your password!",
+    "loginBtn": "Sign In",
+    "loggingIn": "Authenticating...",
+    "loginSuccess": "Login successful!",
+    "invalidCredentials": "Incorrect username or password!",
+    "networkError": "Cannot connect to authentication server. Please check Backend service!",
+    "sessionExpired": "Your login session has expired. Please sign in again!",
+    "enterpriseTagline": "Bao Long Insurance",
+    "securityBadge": "Security & Authentication System",
+    "characters": {
+      "purple": "Click to make me jump!",
+      "black": "Click to make me bounce!",
+      "orange": "Click to make me smile wider!",
+      "yellow": "Click to make me sway!"
+    }
+  }
+}

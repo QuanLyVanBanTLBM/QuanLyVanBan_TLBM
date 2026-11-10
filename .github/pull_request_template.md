@@ -2,7 +2,7 @@
 <!-- Tóm tắt mục đích của PR: giải quyết issue nào, hoàn thành task nào -->
 
 Issue: Closes #
-<!-- Bắt buộc gắn issue, label nhóm và milestone (docs/common/guidelines/quy-uoc-quan-ly-du-an.md) -->
+<!-- Bắt buộc: một issue của nhánh này (Closes # hoặc Refs #), label nhóm, milestone. Nhánh tạo từ staging, tên <loại>/<số-issue>-<mô-tả> (AGENTS.md mục 8) -->
 
 ### 2. Chi tiết thay đổi kỹ thuật (Changes)
 <!-- Liệt kê các file thay đổi và lý do kỹ thuật ngắn gọn -->
@@ -17,8 +17,8 @@ Issue: Closes #
 - [ ] Backend Check: `python backend/manage.py check` (Pass)
 - [ ] Backend Migrations: `python backend/manage.py makemigrations --check --dry-run` (No changes detected)
 - [ ] Backend Test: `python backend/manage.py test` (Pass)
-- [ ] Đồng bộ nhánh đích: đã cập nhật nhánh `staging` mới nhất vào nhánh PR (rebase hoặc merge) và job `migrate-postgres` chạy lại xanh sau lần cập nhật cuối
-- [ ] Thay đổi CSDL: PR DDL vào `ddl_base_v0` đã merge trước (ghi số PR), migration khớp DDL; bỏ qua nếu không đổi CSDL
+- [ ] Đồng bộ nhánh đích: đã cập nhật nhánh `staging` mới nhất vào nhánh PR (rebase hoặc merge) và job `backend` (ci.yml) chạy lại xanh sau lần cập nhật cuối
+- [ ] Thay đổi CSDL: cùng PR này sửa `release_DDL.sql`, thêm migration mới và mục `DDL_CHANGELOG.md`; không sửa migration đã có trên `staging`; bỏ qua nếu không đổi CSDL
 - [ ] Phạm vi migration: chỉ tạo/sửa migration của app thuộc nhóm; thay đổi bảng của nhóm khác đã có issue được nhóm đó xác nhận
 - [ ] i18n Key Parity: `pnpm --dir frontend run check:i18n` (Pass)
 - [ ] CSS Design Tokens: `pnpm --dir frontend run check:tokens` (Pass)

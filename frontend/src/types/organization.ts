@@ -5,6 +5,7 @@
 export interface Region {
   id: number;
   ten: string;
+  thu_tu_hien_thi?: number;
   don_vi_count?: number;
   created_at?: string;
   updated_at?: string;
@@ -34,6 +35,7 @@ export interface PaginatedResponse<T> {
 
 export interface RegionFormData {
   ten: string;
+  thu_tu_hien_thi?: number;
 }
 
 export interface UnitFormData {

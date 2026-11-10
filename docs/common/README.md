@@ -17,6 +17,9 @@ Thư mục này lưu trữ các quy chuẩn kiến trúc, tài liệu tích hợ
    - Checklist dành cho các nhóm khi tạo branch từ `staging`.
 3. **[Đặc Tả Dự Án Toàn Diện (`ITC - Django - QLVB&TL.md`)](./ITC%20-%20Django%20-%20QLVB&TL.md)**:
    - Bảng phân công 8 nhóm, độ khó, cơ cấu tổ chức, danh sách lớp và báo cáo tiến độ.
+4. **[Quy Chuẩn Typography & Phông Chữ Hệ Thống (`TYPOGRAPHY_GUIDELINES.md`)](./TYPOGRAPHY_GUIDELINES.md)**:
+   - Quy tắc Font Family (`Inter`, `FontAwesome 6`, `Monospace`), cấm tuyệt đối phông chữ siêu nhỏ (< 11px).
+   - Thang đo Type Scale, Font Weight và hệ thống Semantic Text Tokens đa chế độ giao diện (Light, Dark, Claymorphism).
 
 4. **[Quy Ước Quản Lý Dự Án (`guidelines/quy-uoc-quan-ly-du-an.md`)](./guidelines/quy-uoc-quan-ly-du-an.md)**:
    - Người merge `staging`/`ddl_base_v0`, quy trình sửa CSDL (DDL trước, migration sau), gắn issue + label nhóm + milestone cho mọi PR.

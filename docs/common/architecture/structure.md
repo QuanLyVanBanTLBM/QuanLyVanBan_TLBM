@@ -196,7 +196,7 @@ qlvbtl/
 │       ├── lib/                            # Hằng số (constants.ts) & Routes (routes.ts)
 │       ├── hooks/                          # Custom React Hooks
 │       ├── styles/                         # CSS Design Tokens, Theme & Animations
-│       ├── i18n/                           # Đa ngôn ngữ (translate.ts, vi.json, en.json)
+│       ├── i18n/                           # Đa ngôn ngữ (translate.ts, <module>/vi.json, <module>/en.json)
 │       └── types/                          # Kiểu dữ liệu TypeScript (navigation, auth...)
 │
 ├── media/                                  # Thư mục lưu trữ tệp tin tải lên (MEDIA_ROOT)
@@ -210,6 +210,8 @@ qlvbtl/
 │   │   └── signatures/
 │   ├── 06_tasks/                           # Tệp đính kèm xử lý công việc
 │   └── 07_meetings/                        # Biên bản, tài liệu phòng họp
+│
+├── storage/                                # Tệp nghiệp vụ khi chạy local (DOCUMENT_STORAGE_ROOT, đã gitignore), xem mục 7.1
 │
 ├── docs/                                   # Tài liệu kỹ thuật dự án
 │   ├── common/                             # Tài liệu dùng chung toàn hệ thống
@@ -350,15 +352,11 @@ QLVB&TL
 
 ## 7. Quy chuẩn Lưu trữ Tệp tin (Media Storage) & Tài liệu (Docs)
 
-### 7.1. Quy chuẩn Lưu trữ Tệp tin tải lên (`media/`)
-- Mọi file tải lên hệ thống (văn bản scan, file đính kèm, ảnh con dấu, biểu mẫu) bắt buộc cấu hình lưu trữ tập trung tại thư mục gốc `media/` thông qua `MEDIA_ROOT = BASE_DIR / 'media'` trong `settings.py`.
-- Tuyệt đối không lưu file tự do ở thư mục gốc hoặc lưu ngoài `MEDIA_ROOT`.
-- Trong `models.FileField` hoặc `models.ImageField`, tham số `upload_to` bắt buộc phải đặt tiền tố là tên module tương ứng:
-  - Nhóm 2 (Văn bản): `upload_to='02_documents/%Y/%m/'`
-  - Nhóm 4 (Biểu mẫu): `upload_to='04_templates/'`
-  - Nhóm 5 (Trình ký): `upload_to='05_signing/documents/%Y/%m/'` hoặc `upload_to='05_signing/signatures/'`
-  - Nhóm 6 (Công việc): `upload_to='06_tasks/%Y/%m/'`
-  - Nhóm 7 (Phòng họp): `upload_to='07_meetings/%Y/%m/'`
+### 7.1. Quy chuẩn Lưu trữ Tệp tin nghiệp vụ (`DOCUMENT_STORAGE_ROOT`)
+- Tệp nghiệp vụ (đính kèm văn bản đến/đi, công việc, tài liệu và biểu mẫu) lưu dưới thư mục gốc `DOCUMENT_STORAGE_ROOT` (biến môi trường; dev mặc định `storage/` cạnh `backend/`, đã gitignore; staging `/srv/qlvb/shared/storage`).
+- `FileField` dùng `storage=document_storage.get_document_storage` (callable, không đóng cứng đường dẫn vào migration) và `upload_to` sinh đường dẫn bằng `build_dated_path(module, filename)` trong `backend/apps/document_storage.py`: `<module>/YYYY/MM/DD/<uuid>.<ext>` theo ngày upload, với `module` thuộc `van-ban-den`, `van-ban-di`, `cong-viec`, `ho-so`, `mau-van-ban`. Tên gốc lưu ở cột tên của bảng; tên trên đĩa là UUID.
+- Không dùng `default_storage` hay `MEDIA_ROOT` cho tệp nghiệp vụ mới. Tệp trình ký (`SIGNING_DOCUMENT_ROOT`) và dữ liệu AI (`AI_DATA_DIR`) giữ cấu hình riêng.
+- Định dạng tệp do người dùng gửi phải được kiểm tra (trả 400) trước khi lưu; `build_dated_path` chỉ từ chối như lớp bảo vệ cuối.
 
 ### 7.2. Quy chuẩn Tài liệu Dự án (`docs/`)
 - Toàn bộ tài liệu, đặc tả, biểu mẫu khảo sát, sơ đồ ERD đưa về thư mục chung `docs/`.

@@ -84,4 +84,48 @@ describe('FilterBar Component', () => {
     fireEvent.click(screen.getByRole('button', { name: /Đặt lại/i }));
     expect(onReset).toHaveBeenCalledTimes(1);
   });
+
+  it('displays corresponding dossier and doc type names when cross-referenced by ID from Group 3', () => {
+    render(
+      <FilterBar
+        filters={{ ...defaultFilters, ho_so: '9', loai_van_ban: '5' }}
+        recordDossiers={[{ id: 9, ten_ho_so: 'Hồ sơ Ban Giám đốc' }]}
+        recordDocTypes={[{ id: 5, ten_loai: 'Kế hoạch', ho_so: 9, ten_ho_so: 'Hồ sơ Ban Giám đốc' }]}
+        onFilterChange={vi.fn()}
+        onSearch={vi.fn()}
+        onReset={vi.fn()}
+      />
+    );
+
+    const dossierSelect = screen.getByTitle('Chọn danh mục hồ sơ để lọc văn bản') as HTMLSelectElement;
+    expect(dossierSelect.value).toBe('Hồ sơ Ban Giám đốc');
+    expect(screen.getAllByText('Hồ sơ Ban Giám đốc').length).toBeGreaterThanOrEqual(1);
+
+    const docTypeSelect = screen.getByTitle('Chọn loại văn bản tương ứng') as HTMLSelectElement;
+    expect(docTypeSelect).not.toBeDisabled();
+    expect(docTypeSelect.value).toBe('Kế hoạch');
+    expect(screen.getAllByText('Kế hoạch').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('automatically resolves dossier name and enables docType select when only loai_van_ban ID is passed', () => {
+    render(
+      <FilterBar
+        filters={{ ...defaultFilters, loai_van_ban: '5' }}
+        recordDossiers={[{ id: 9, ten_ho_so: 'Hồ sơ Hội đồng quản trị' }]}
+        recordDocTypes={[{ id: 5, ten_loai: 'Quyết định', ho_so: 9, ten_ho_so: 'Hồ sơ Hội đồng quản trị' }]}
+        onFilterChange={vi.fn()}
+        onSearch={vi.fn()}
+        onReset={vi.fn()}
+      />
+    );
+
+    const dossierSelect = screen.getByTitle('Chọn danh mục hồ sơ để lọc văn bản') as HTMLSelectElement;
+    expect(dossierSelect.value).toBe('Hồ sơ Hội đồng quản trị');
+    expect(screen.getAllByText('Hồ sơ Hội đồng quản trị').length).toBeGreaterThanOrEqual(1);
+
+    const docTypeSelect = screen.getByTitle('Chọn loại văn bản tương ứng') as HTMLSelectElement;
+    expect(docTypeSelect).not.toBeDisabled();
+    expect(docTypeSelect.value).toBe('Quyết định');
+    expect(screen.getAllByText('Quyết định').length).toBeGreaterThanOrEqual(1);
+  });
 });

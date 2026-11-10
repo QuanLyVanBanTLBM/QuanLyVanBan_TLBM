@@ -1,13 +1,13 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 
 export type LogoSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl';
-export type LogoVariant = 'auto' | 'white' | 'dark';
+export type LogoVariant = 'auto' | 'white' | 'dark' | 'color';
 export type LogoType = 'full' | 'icon';
 
 export interface LogoProps extends React.ImgHTMLAttributes<HTMLImageElement> {
   /** Kích thước của Logo (chiều cao và tỉ lệ tương ứng) */
   size?: LogoSize;
-  /** Biến thể màu sắc: auto (tự thích ứng theme sáng/tối), white (trắng/vàng), dark (đen) */
+  /** Biến thể màu sắc: auto (tự thích ứng theme sáng/tối), white (trắng cho dark mode), color/dark (xanh vàng cho light mode) */
   variant?: LogoVariant;
   /** Kiểu hiển thị: 'full' (logo đầy đủ chữ + biểu tượng) hoặc 'icon' (chỉ biểu tượng rồng) */
   type?: LogoType;
@@ -18,11 +18,13 @@ export interface LogoProps extends React.ImgHTMLAttributes<HTMLImageElement> {
 const LOGO_ASSETS = {
   full: {
     white: '/baolong-logo.png',
-    dark: '/baolong-logo-black.png',
+    dark: '/baolong-logo-color.png',
+    color: '/baolong-logo-color.png',
   },
   icon: {
     white: '/baolong-icon.png',
-    dark: '/baolong-icon-black.png',
+    dark: '/baolong-icon.png',
+    color: '/baolong-icon.png',
   },
 } as const;
 
@@ -72,8 +74,8 @@ export const Logo: React.FC<LogoProps> = React.memo(({
   }
 
   // Trường hợp variant cố định: chỉ render 1 thẻ img duy nhất để tối ưu DOM & network
-  if (variant === 'white' || variant === 'dark') {
-    const src = variant === 'white' ? assets.white : assets.dark;
+  if (variant === 'white' || variant === 'dark' || variant === 'color') {
+    const src = variant === 'white' ? assets.white : assets.color;
     return (
       <img
         src={src}

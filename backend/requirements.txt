@@ -21,8 +21,16 @@ openpyxl>=3.1.5
 python-dotenv>=1.2,<2
 pytz>=2024.1
 
-# Signing: Ed25519 verify
-cryptography>=43.0.0
+# AI Chatbox: RAG, vector storage, document readers, and OCR
+llama-index-embeddings-openai>=0.3,<1
+llama-index-llms-openai>=0.3,<1
+numpy>=1.26,<3
+pandas>=2.2,<4
+python-pptx>=1.0,<2
+beautifulsoup4>=4.12,<5
+
+# Signing: background PDF generation and notification delivery via Redis
+celery[redis]>=5.6,<5.7
 
 # Signing: tệp PDF hoàn tất (ghép trang, in trang phê duyệt tiếng Việt)
 pypdf>=5.0,<7
@@ -30,3 +38,13 @@ reportlab>=4.2,<5
 # PostgreSQL Database Driver
 psycopg[binary]>=3.2.0
 gunicorn>=23,<24
+
+# RAG imports used by the integrated assistant and its mandatory regression suite.
+chromadb>=1.5.9,<2
+pdfplumber>=0.11.10,<0.12
+python-docx>=1.2,<2
+llama-index-core>=0.14.25,<0.15
+llama-index-vector-stores-chroma>=0.6,<0.7
+pdf2image>=1.17,<2
+Pillow>=13,<14
+rapidocr-onnxruntime>=1.4.4,<2

@@ -1,4 +1,4 @@
-"""Dữ liệu nền Chức vụ và tài khoản hệ thống `admin` (mật khẩu placeholder không đăng nhập được).
+"""Dữ liệu nền Chức vụ và tài khoản hệ thống `admin` (mật khẩu unusable theo Django).
 
 Chép nguyên văn từ docs/common/database/release_DDL.sql (mục seed dữ liệu nền) để DB dựng bằng migration có cùng
 dữ liệu với DB nạp DDL. Câu lệnh idempotent: chỉ chèn khi chưa có dòng tương ứng, không ghi đè dữ liệu sẵn có.
@@ -37,7 +37,7 @@ INSERT INTO
         is_superuser,
         is_active
     )
-SELECT 'admin', 'admin@baolong.vn', 'pbkdf2_sha256$system_seed_placeholder', 'Quản trị hệ thống', '1990-01-01', (
+SELECT 'admin', 'admin@baolong.vn', '!system_seed_placeholder', 'Quản trị hệ thống', '1990-01-01', (
         SELECT id
         FROM accounts_position
         WHERE

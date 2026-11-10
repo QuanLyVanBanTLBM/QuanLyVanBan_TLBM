@@ -41,118 +41,91 @@ Module 8 phụ trách xây dựng Trợ lý ảo AI thông minh, hỗ trợ cán
 | **Frontend** | React 19, TypeScript, Vite, Vanilla CSS Tokens, Axios / Fetch API Client |
 | **Backend** | Python 3.12+, Django 6.1, Django REST Framework, SimpleJWT |
 | **RAG & AI Engine** | LlamaIndex, ChromaDB, Gemini REST Client, OpenAI API |
-| **Cơ sở dữ liệu** | PostgreSQL (với các Database View `ai_*` và role `qlvb_readonly`), SQLite (kiểm thử/dự phòng) |
-| **CI / Quality Gate** | GitHub Actions, Unittest & Pytest Suite |
+| **Cơ sở dữ liệu** | PostgreSQL 16 (với các Database View `ai_*` và role `qlvb_readonly`) |
+| **CI / Quality Gate** | GitHub Actions, Django test runner |
 
 ---
 
 ## Cài đặt và chạy local
 
+README này là tài liệu duy nhất về setup local. Dựng DB, build/deploy staging: `docs/common/database/build_db_runbook.md`.
+
 ### Yêu cầu
 
-- Docker Desktop đã mở và Docker Engine đang chạy.
-- Node.js theo phiên bản khai báo trong `package.json` ở thư mục gốc; `pnpm` đã được cài.
-- Python 3.12 trở lên. Lệnh backend sẽ tự tạo `backend/.venv` (môi trường Python riêng) và tự cài thư viện; không cần tự tạo hoặc bật môi trường ảo.
+- Docker Desktop đang chạy.
+- Node.js theo `engines` trong `package.json` và `pnpm`.
+- Python 3.12 trở lên (Windows: lệnh `py`; Linux/macOS: `python3`). Lệnh `pnpm` tự tạo `backend/.venv` và cài thư viện; không cần tự tạo hoặc bật môi trường ảo.
 
-### Thiết lập lần đầu sau khi clone dự án
+Các lệnh `pnpm` dưới đây kiểm tra Docker, Python trước khi chạy và báo lỗi kèm cách xử lý.
 
-Mở Terminal (cửa sổ nhập lệnh) tại thư mục gốc có file `package.json`, rồi chạy:
+### Thiết lập lần đầu
 
-```powershell
-pnpm setup:frontend
-pnpm db:setup
+Tại thư mục gốc (có `package.json`):
+
+```bash
+pnpm bootstrap
 ```
 
-`pnpm setup:frontend` cài các gói giao diện theo lockfile (file khóa phiên bản thư viện). `pnpm db:setup` khởi động PostgreSQL và pgAdmin bằng Docker Compose (công cụ chạy các dịch vụ Docker), sau đó tự tạo môi trường Python và áp dụng các migration (bản thay đổi cấu trúc DB do Django quản lý).
+`pnpm bootstrap` chạy `pnpm setup:frontend` (cài gói giao diện theo lockfile) và `pnpm db:setup` (khởi động PostgreSQL 16 + pgAdmin bằng `compose.yaml`, tạo `backend/.venv`, dựng DB `qlvb_dev` từ `docs/common/database/release_DDL.sql` kèm dữ liệu mẫu). DB đã dựng đúng bản DDL hiện tại thì được giữ nguyên.
 
-Nếu cần cấu hình khóa Gemini, sao chép `.env.example` thành `.env` ở thư mục gốc và điền khóa API. Không commit file `.env`.
+Khóa Gemini và cấu hình email/ký: sao chép `.env.example` thành `.env` ở thư mục gốc và điền giá trị cần dùng. Kết nối DB do các lệnh `pnpm` tự đặt, không khai báo trong `.env`.
 
-### Chạy dự án — hai Terminal riêng
+Tệp nghiệp vụ tải lên (đính kèm văn bản, công việc, biểu mẫu) lưu theo cây `<module>/YYYY/MM/DD/<uuid>.<ext>` dưới `DOCUMENT_STORAGE_ROOT`. Chạy local (`DJANGO_DEBUG=true`) để trống biến này thì dùng thư mục `storage/` ở thư mục gốc dự án (đã gitignore). Staging/production bắt buộc đặt biến là thư mục tuyệt đối đã tồn tại, ngoài thư mục release, user chạy service ghi được; chi tiết sao lưu trong `docs/common/database/backup_restore_runbook.md`.
 
-`pnpm db:setup` chỉ cần chạy một lần cho DB local mới. Dữ liệu DB được lưu trong Docker volume, nên các lần mở dự án sau không cần dựng lại DB. Mỗi ngày, mở Docker Desktop và chờ Docker Engine sẵn sàng; nếu container DB đang chạy thì không cần chạy thêm lệnh DB.
+### Chạy hằng ngày
 
-Nếu trước đó mày đã chạy `pnpm db:stop` hoặc container DB đang dừng, mở Terminal tại thư mục gốc rồi chạy:
+Mở Docker Desktop, rồi chạy tại thư mục gốc:
 
-```powershell
-pnpm db:start
+```bash
+pnpm db:start     # chỉ cần khi DB đang dừng
+pnpm runserver    # Terminal 1: backend http://127.0.0.1:8000
+pnpm dev          # Terminal 2: frontend http://127.0.0.1:5173 (proxy /api sang backend)
 ```
 
-Sau đó chạy hai lệnh dưới đây trong hai Terminal riêng, đều đứng tại thư mục gốc:
+### Sau khi pull
 
-Terminal 1 — Backend (máy chủ xử lý API):
+- Có migration mới: `pnpm db:migrate`. Với DB cũ mang dấu `build_db:v2`, chạy `pnpm db:adopt` để xác minh schema và lịch sử migration rồi mới chạy `pnpm db:migrate`.
+- `release_DDL.sql` đổi không tự xóa DB. `pnpm db:migrate` yêu cầu migration chờ nếu hash DDL thay đổi; chỉ dùng `pnpm db:reset` khi chủ ý xóa dữ liệu local và gõ `RESET`.
+- Thư viện frontend đổi: `pnpm setup:frontend`.
 
-```powershell
-pnpm runserver
+Trước `pnpm db:setup` hoặc `pnpm db:reset`, đặt `ADMIN_PASSWORD` trong môi trường shell. Demo data không được tạo mặc định; khi cần, chạy `pnpm manage seed_db --demo-data` với `DEMO_PASSWORD` đã đặt.
+
+### Test và lệnh Django
+
+```bash
+pnpm test:backend                 # toàn bộ test backend trên PostgreSQL local
+pnpm test:backend accounts        # tham số được chuyển cho `manage.py test`
+pnpm manage <lệnh>                # ví dụ: pnpm manage check, pnpm manage createsuperuser
 ```
 
-Lệnh này kiểm tra Docker Engine và DB trước. Nếu Docker chưa chạy hoặc DB chưa sẵn sàng, sẽ báo cách xử lý ngay. Khi DB sẵn sàng, lệnh tự tạo `backend/.venv` nếu chưa có, cài hoặc cập nhật thư viện khi `backend/requirements.txt` thay đổi, rồi chạy Django tại `http://127.0.0.1:8000`. Backend kết nối cố định tới PostgreSQL local `127.0.0.1:55432`; không lấy thông tin kết nối DB từ `.env`.
+Test dùng DB tạm `test_qlvb_dev` do Django dựng bằng migration; DB `qlvb_dev` không bị thay đổi. Kiểm tra frontend: `pnpm --dir frontend run lint|test|build`.
 
-Terminal 2 — Frontend (giao diện):
+### Lệnh DB
 
-```powershell
-pnpm dev
-```
+| Lệnh | Tác dụng |
+|---|---|
+| `pnpm db:setup` | Khởi động DB/pgAdmin, tạo `backend/.venv`, dựng DB nếu chưa có (`scripts/build_db.py --if-empty --seed`) |
+| `pnpm db:start` / `pnpm db:stop` | Bật / tắt DB và pgAdmin, giữ nguyên dữ liệu (Docker volume) |
+| `pnpm db:status` | Trạng thái container và địa chỉ truy cập |
+| `pnpm db:adopt` | Xác minh schema và migration history của DB v2 được hỗ trợ, rồi nâng marker lên v3 |
+| `pnpm db:migrate` | Chạy thật migration Django chờ và cập nhật marker; không nạp lại DDL hoặc reset DB |
+| `pnpm db:migrations` | Danh sách migration đã/chưa áp dụng |
+| `pnpm db:reset` | Xóa và dựng lại DB local từ `release_DDL.sql` (cần `ADMIN_PASSWORD` và xác nhận `RESET`) |
 
-Mở địa chỉ do Vite in trong Terminal, mặc định là `http://localhost:5173`. Khi có migration Django mới, chạy riêng `pnpm db:migrate`; backend không tự áp dụng migration khi khởi động.
+Collation: DB do repo tạo dùng ICU `vi-VN`. DB `qlvb_dev` tạo từ volume cũ có collation khác sẽ bị `db:setup`/`db:migrate` từ chối. DDL hash đổi không tự kích hoạt reset; drift hoặc thiếu đường migration được báo để xử lý riêng.
 
-### pgAdmin và kết nối DB local
+### Kết nối DB local
 
-pgAdmin (trang web quản trị PostgreSQL) được mở tại `http://127.0.0.1:5050`.
+| Thành phần | Giá trị |
+|---|---|
+| PostgreSQL (từ máy host) | `127.0.0.1:55432`, database/user `qlvb_dev`, mật khẩu `qlvb_local_only` |
+| pgAdmin | `http://127.0.0.1:5050`, đăng nhập `admin@qlvb.local` / `qlvb_pgadmin_local_only` (máy chủ DB đã khai báo sẵn) |
 
-- Email đăng nhập: `admin@qlvb.local`
-- Mật khẩu pgAdmin: `qlvb_pgadmin_local_only`
-- Máy chủ DB đã được khai báo sẵn trong pgAdmin. Nếu cần nhập thủ công, dùng host `db`, cổng `5432` trong mạng Docker; tên DB và user là `qlvb_dev`, mật khẩu là `qlvb_local_only`.
-- Từ ứng dụng chạy trên máy Windows, dùng host `127.0.0.1`, cổng `55432`, database `qlvb_dev`, user `qlvb_dev`, mật khẩu `qlvb_local_only`.
+Các cổng chỉ bind vào `127.0.0.1`. Cổng bị trùng thì đặt biến môi trường `QLVB_DB_PORT` và/hoặc `QLVB_PGADMIN_PORT` trước khi chạy lệnh `pnpm`; tên compose project (`COMPOSE_PROJECT_NAME`) quyết định volume dữ liệu.
 
-Các cổng DB và pgAdmin chỉ bind vào `127.0.0.1` (chỉ truy cập từ máy local).
+### Deploy staging
 
-### Lệnh DB thường dùng
-
-Chạy tại thư mục gốc:
-
-- `pnpm db:setup`: khởi động DB và pgAdmin, tạo môi trường Python nếu thiếu, rồi dựng DB từ `docs/common/database/release_DDL.sql` (đồng bộ migration Django, nạp dữ liệu mẫu `seed_db`) bằng `scripts/build_db.py`. DB local đã có bảng thì giữ nguyên; dùng `pnpm db:reset` để dựng lại.
-- `pnpm db:start`: chỉ khởi động DB và pgAdmin; giữ nguyên dữ liệu local hiện có.
-- `pnpm db:status`: xem trạng thái container DB/pgAdmin và địa chỉ truy cập.
-- `pnpm db:migrate`: áp dụng migration Django mới vào DB local qua `scripts/build_db.py --sync`. Chỉ chạy khi DB do `pnpm db:setup`/`db:reset` dựng từ đúng bản `release_DDL.sql` hiện tại (dấu hoàn tất khớp hash DDL); khi đó migration tạo bảng đã có được ghi nhận là đã áp dụng (fake), migration tạo bảng mới chạy thật. DDL đã đổi hoặc DB không dựng bằng script thì dừng trước mọi thay đổi và yêu cầu `pnpm db:reset`. Không nạp lại DDL, không xóa dữ liệu.
-- `pnpm db:migrations`: xem danh sách migration và trạng thái đã áp dụng/chưa áp dụng.
-- `pnpm db:reset`: xóa dữ liệu trong DB local `qlvb_dev`, dựng lại từ `release_DDL.sql` bằng `scripts/build_db.py` (kèm `seed_db`); phải gõ `RESET` để xác nhận. Lệnh này không xóa dữ liệu production.
-- `pnpm db:stop`: dừng DB và pgAdmin nhưng giữ volume (kho dữ liệu bền vững của Docker).
-- `pnpm deploy:staging`: deploy backend của `origin/staging` lên host staging với `DB_MODE=rebuild` (xóa và dựng lại DB staging). Lệnh chỉ `git fetch`, không đổi working tree hay nhánh đang checkout; gửi tarball và `deploy/deploy.sh` qua `scp`/`ssh`; phải gõ `DEPLOY` để xác nhận (`--yes` bỏ bước này). Cần `ssh`, `scp`, `git` trong PATH và biến môi trường `QLVB_DEPLOY_HOST` (chi tiết ở `docs/common/database/build_db_runbook.md`).
-
-Không cần xóa volume khi chỉ muốn dựng lại DB; dùng `pnpm db:reset` để chỉ reset đúng database local của dự án.
-
-Collation: mọi DB do repo tạo dùng ICU `vi-VN` (thứ tự seed trong `release_DDL.sql` phụ thuộc collation). DB mới tạo bằng `scripts/build_db.py` có collation này trong mọi trường hợp; volume mới của `compose.yaml` cũng khởi tạo cluster với ICU `vi-VN`. DB local `qlvb_dev` tạo từ volume cũ (trước thay đổi này) có collation khác: `pnpm db:setup`/`pnpm db:migrate` báo lỗi và gợi ý `--force`; chạy `pnpm db:reset` để dựng lại DB với collation đúng, không cần xóa volume `qlvb_local_pgdata`. Test DB của Django do cluster cũ tạo vẫn dùng collation mặc định của cluster; muốn đồng nhất với CI thì xóa volume để cluster khởi tạo lại.
-
-Test backend chạy trên PostgreSQL (test DB do Django dựng bằng migration); quy trình dựng DB, cách chạy test và runbook staging nằm tại `docs/common/database/build_db_runbook.md`.
-
----
-
-## Cấu hình Biến môi trường Backend (`backend/.env`)
-
-| Tên biến | Giá trị mặc định | Giải thích |
-|---|---|---|
-| `MODEL_PROVIDER` | `gemini` | Nhà cung cấp mô hình (`gemini` hoặc `openai`) |
-| `GEMINI_API_KEY` | *(bỏ trống)* | API Key Gemini của Google |
-| `LLM_MODEL` | `gemini-3.8-flash` | Tên mô hình ngôn ngữ chính |
-| `EMBED_MODEL` | `models/gemini-embedding-001` | Mô hình nhúng vector |
-| `READONLY_DB_NAME` | *(tùy chọn)* | Tên CSDL PostgreSQL cho kết nối chỉ đọc |
-| `READONLY_DB_USER` | `qlvb_readonly` | Role chỉ đọc an toàn theo DDL mới |
-
----
-
-## Kiểm thử Đơn vị (Unit Tests)
-
-Module 8 đi kèm bộ test suite kiểm tra toàn diện quyền truy cập và bảo mật View chỉ đọc:
-
-```powershell
-# Chạy toàn bộ test của phân hệ AI Chatbox
-$env:PYTHONPATH="."
-python backend/manage.py test tests.test_sql_document_source tests.test_ai_access
-```
-
-Bộ test bao gồm:
-- **`test_sql_document_source`**: Kiểm tra truy vấn qua View `ai_*`, chặn đọc file đính kèm, từ chối role có đặc quyền cao hoặc sai role chỉ đọc.
-- **`test_ai_access`**: Kiểm tra quyền RBAC `use_aiassistant`, xác thực tài khoản qua JWT và kiểm soát quyền admin trên các endpoint cấu hình.
+`pnpm deploy:staging`: deploy `origin/staging` lên host staging và giữ dữ liệu bằng chế độ `sync`. Chỉ thêm `--reset-db` khi chủ ý xóa DB staging; thao tác này luôn yêu cầu gõ `RESET`, kể cả khi dùng `--yes`. Cần `QLVB_DEPLOY_HOST`; chi tiết ở `docs/common/database/build_db_runbook.md`.
 
 ---
 

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ActivePageId } from '@app-types/navigation';
 import { pageIdToPath } from '@lib/routes';
 import { apiClient, ApiError } from '@lib/apiClient';
-import ModernDashboardView, { DocumentItem, TaskItem } from '@components/dashboard/ModernDashboardView';
+import ModernDashboardView, { DocumentItem, TaskItem, ResourceTemplateItem, SigningRequestItem } from '@components/dashboard/ModernDashboardView';
 import { BirthdayEmployee } from '@components/dashboard/BirthdaysWidget';
 
 export interface DashboardMeetingItem {
@@ -22,15 +22,30 @@ export interface DashboardMeetingItem {
 export interface DashboardKpis {
   incomingCount: number;
   outgoingCount: number;
-  confidentialCount: number;
   tasksCount: number;
+  signingCount?: number;
+}
+
+export interface YearlyComparisonItem {
+  year: number;
+  incoming: number;
+  outgoing: number;
+}
+
+export interface DocStatsByYear {
+  selectedYear: number;
+  availableYears: number[];
+  yearlyComparison: YearlyComparisonItem[];
 }
 
 export interface DashboardOverviewResponse {
   kpis?: DashboardKpis;
+  docStatsByYear?: DocStatsByYear;
   recentIncoming?: DocumentItem[];
   recentOutgoing?: DocumentItem[];
   tasks?: TaskItem[];
+  resources?: ResourceTemplateItem[];
+  recentSigning?: SigningRequestItem[];
   meetingRooms?: DashboardMeetingItem[];
   birthdays?: BirthdayEmployee[];
   error?: string;
@@ -44,6 +59,7 @@ interface DashboardPageProps {
 export default function DashboardPage({ onNavigate }: DashboardPageProps) {
   const navigate = useNavigate();
   const [data, setData] = useState<DashboardOverviewResponse | null>(null);
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadTrigger, setReloadTrigger] = useState<number>(0);
@@ -61,10 +77,14 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
     setReloadTrigger((prev) => prev + 1);
   };
 
+  const handleYearChange = (year: number) => {
+    setSelectedYear(year);
+  };
+
   useEffect(() => {
     let isMounted = true;
 
-    apiClient<DashboardOverviewResponse>('/api/dashboard/overview/')
+    apiClient<DashboardOverviewResponse>(`/api/dashboard/overview/?year=${selectedYear}`)
       .then((res) => {
         if (isMounted) {
           setData(res);
@@ -76,7 +96,13 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
         if (isMounted) {
           if (err instanceof ApiError) {
             if (err.status === 401 || err.status === 403) {
-              setError('Phiên đăng nhập không hợp lệ hoặc bạn không có quyền truy cập dữ liệu.');
+              localStorage.removeItem('tlbm_access_token');
+              localStorage.removeItem('tlbm_token');
+              localStorage.removeItem('tlbm_refresh_token');
+              localStorage.removeItem('tlbm_session');
+              window.dispatchEvent(new Event('tlbm_auth_changed'));
+              navigate('/login', { replace: true });
+              return;
             } else {
               setError(
                 err.data?.error ||
@@ -95,10 +121,10 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
     return () => {
       isMounted = false;
     };
-  }, [reloadTrigger]);
+  }, [selectedYear, reloadTrigger, navigate]);
 
   // 1. Trạng thái Đang tải (Loading Skeleton)
-  if (isLoading) {
+  if (isLoading && !data) {
     return (
       <div className="space-y-6 animate-pulse p-2" data-testid="dashboard-loading">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -116,7 +142,7 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
   }
 
   // 2. Trạng thái Lỗi (Error State)
-  if (error) {
+  if (error && !data) {
     return (
       <div
         className="p-8 bg-surface rounded-2xl border border-border-subtle flex flex-col items-center justify-center text-center gap-4 my-8"
@@ -148,9 +174,16 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
       incomingCount={data?.kpis?.incomingCount ?? 0}
       outgoingCount={data?.kpis?.outgoingCount ?? 0}
       tasksCount={data?.kpis?.tasksCount ?? 0}
+      signingCount={data?.kpis?.signingCount ?? 0}
+      selectedYear={selectedYear}
+      availableYears={data?.docStatsByYear?.availableYears ?? [2024, 2025, 2026]}
+      yearlyComparison={data?.docStatsByYear?.yearlyComparison ?? []}
+      onYearChange={handleYearChange}
       incomingDocuments={data?.recentIncoming ?? []}
       outgoingDocuments={data?.recentOutgoing ?? []}
       tasks={data?.tasks ?? []}
+      resources={data?.resources ?? []}
+      signingRequests={data?.recentSigning ?? []}
       birthdays={data?.birthdays}
     />
   );

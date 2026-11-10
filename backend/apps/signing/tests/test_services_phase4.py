@@ -1,41 +1,31 @@
-import base64
-
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from django.contrib.auth import get_user_model
 from django.test import TestCase
-from django.utils import timezone
 
+from accounts.models import Position
 from signing import enums
 from signing.errors import ConflictError, SigningError
-from signing.models import SigningAuditLog, SigningKey, SigningProcess
-from signing.services import keys as key_service
+from signing.models import SigningAuditLog, SigningProcess, SigningProcessStepSigner
 from signing.services import process as process_service
 
+from .helpers import tao_chuc_vu
+
 User = get_user_model()
-
-
-def new_keypair():
-    private = Ed25519PrivateKey.generate()
-    raw = private.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
-    return private, base64.b64encode(raw).decode()
-
-
-def sign_challenge(private, key):
-    return base64.b64encode(private.sign(key_service.thach_thuc_so_huu(key).encode())).decode()
 
 
 class ProcessServiceTests(TestCase):
     def setUp(self):
         self.u1 = User.objects.create_user("u1")
         self.u2 = User.objects.create_user("u2")
+        self.position = Position.objects.create(
+            display_order=Position.get_next_display_order(), name="Trưởng phòng"
+        )
 
     def create(self, ma="QT1", cap_ky=None):
         cap_ky = cap_ky if cap_ky is not None else [
             {"cap_ky": 1, "ten_cap_ky": "Cấp 1", "thu_tu": 1,
              "nguoi_ky": [{"nguoi_ky": self.u2, "thu_tu": 1}]},
             {"cap_ky": 2, "ten_cap_ky": "Cấp 2", "thu_tu": 2,
-             "nguoi_ky": [{"chuc_vu_id": 7, "thu_tu": 1, "vai_tro_ky": enums.VaiTroKy.KY_NHAY}]},
+             "nguoi_ky": [{"chuc_vu_id": self.position.pk, "thu_tu": 1}]},
         ]
         return process_service.tao_quy_trinh(
             self.u1, ma_quy_trinh=ma, ten_quy_trinh="Quy trình", pham_vi=enums.PhamViQuyTrinh.CONG_TY, cap_ky=cap_ky,
@@ -52,6 +42,43 @@ class ProcessServiceTests(TestCase):
         self.assertEqual(p.cap_ky_set.count(), 2)
         self.assertEqual(p.cau_hinh_nhac_han, {"truoc_han_gio": [24], "dung_han": True})
         self.assertIn("TAO_QUY_TRINH", self.actions(p))
+
+    def test_missing_reference_ids_are_rejected_by_service_before_writes(self):
+        with self.assertRaises(SigningError) as ctx:
+            process_service.tao_quy_trinh(
+                self.u1,
+                ma_quy_trinh="QT_MISSING_UNIT",
+                ten_quy_trinh="Quy trình",
+                pham_vi=enums.PhamViQuyTrinh.PHONG_BAN,
+                don_vi_ap_dung_id=987654321,
+                cap_ky=[],
+            )
+        self.assertEqual(ctx.exception.get_codes(), "don_vi_khong_ton_tai")
+        self.assertIn("don_vi_ap_dung_id", ctx.exception.fields)
+        self.assertFalse(SigningProcess.objects.filter(ma_quy_trinh="QT_MISSING_UNIT").exists())
+
+        process = self.create("QT_STEP_UNIT", cap_ky=[])
+        audit_count = SigningAuditLog.objects.count()
+        with self.assertRaises(SigningError) as ctx:
+            process_service.them_cap_ky(
+                process, self.u1, cap_ky=1, ten_cap_ky="Cấp 1", thu_tu=1, don_vi_id=987654321
+            )
+        self.assertEqual(ctx.exception.get_codes(), "don_vi_khong_ton_tai")
+        self.assertIn("don_vi_id", ctx.exception.fields)
+        self.assertEqual(process.cap_ky_set.count(), 0)
+        self.assertEqual(SigningAuditLog.objects.count(), audit_count)
+
+        process = self.create("QT_SIGNER_POSITION", cap_ky=[
+            {"cap_ky": 1, "ten_cap_ky": "Cấp 1", "thu_tu": 1},
+        ])
+        step = process.cap_ky_set.get()
+        audit_count = SigningAuditLog.objects.count()
+        with self.assertRaises(SigningError) as ctx:
+            process_service.them_nguoi_ky(step, self.u1, thu_tu=1, chuc_vu_id=987654321)
+        self.assertEqual(ctx.exception.get_codes(), "chuc_vu_khong_ton_tai")
+        self.assertIn("chuc_vu_id", ctx.exception.fields)
+        self.assertEqual(SigningProcessStepSigner.objects.filter(buoc_quy_trinh=step).count(), 0)
+        self.assertEqual(SigningAuditLog.objects.count(), audit_count)
 
     def test_duplicate_code_rejected(self):
         self.create("QT1")
@@ -135,129 +162,3 @@ class ProcessServiceTests(TestCase):
         process_service.them_cap_ky(moi, self.u2, cap_ky=3, ten_cap_ky="Cấp 3", thu_tu=3)
         # nhân bản lần nữa lấy phiên bản kế tiếp
         self.assertEqual(process_service.nhan_ban(p, self.u2).phien_ban, 3)
-
-
-class KeyServiceTests(TestCase):
-    def setUp(self):
-        self.u1 = User.objects.create_user("u1")
-        self.u2 = User.objects.create_user("u2")
-
-    def register(self, user=None, ma="k1"):
-        private, public = new_keypair()
-        key = key_service.dang_ky(user or self.u1, ma_khoa=ma, khoa_cong_khai=public,
-                                  ngay_hieu_luc=timezone.now(), dia_chi_ip="10.0.0.1")
-        return private, key
-
-    def verify(self, private, key, user=None):
-        return key_service.xac_minh_so_huu(key, user or self.u1, sign_challenge(private, key))
-
-    def test_register_computes_fingerprint_and_logs(self):
-        _, key = self.register()
-        self.assertEqual(key.trang_thai, enums.TrangThaiKhoa.CHO_KICH_HOAT)
-        self.assertEqual(len(key.dau_van_tay), 64)
-        entry = SigningAuditLog.objects.get(loai_doi_tuong="signing_key", ma_doi_tuong=key.pk)
-        self.assertEqual((entry.hanh_dong, entry.dia_chi_ip), ("DANG_KY_KHOA", "10.0.0.1"))
-
-    def test_register_rejects_invalid_or_duplicate_key(self):
-        with self.assertRaises(SigningError) as ctx:
-            key_service.dang_ky(self.u1, ma_khoa="x", khoa_cong_khai="not-a-key", ngay_hieu_luc=timezone.now())
-        self.assertEqual(ctx.exception.get_codes(), "khoa_cong_khai_khong_hop_le")
-        private, key = self.register(ma="k1")
-        with self.assertRaises(ConflictError):
-            key_service.dang_ky(self.u2, ma_khoa="k1", khoa_cong_khai=key.khoa_cong_khai, ngay_hieu_luc=timezone.now())
-
-    def test_activation_requires_ownership_proof(self):
-        private, key = self.register()
-        with self.assertRaises(SigningError) as ctx:
-            key_service.kich_hoat(key, self.u1)
-        self.assertEqual(ctx.exception.get_codes(), "khoa_chua_xac_minh_so_huu")
-
-    def test_wrong_proof_rejected(self):
-        _, key = self.register()
-        other_private, _ = new_keypair()
-        with self.assertRaises(SigningError) as ctx:
-            key_service.xac_minh_so_huu(key, self.u1, sign_challenge(other_private, key))
-        self.assertEqual(ctx.exception.get_codes(), "chung_minh_so_huu_that_bai")
-        key.refresh_from_db()
-        self.assertIsNone(key.thoi_diem_xac_minh_so_huu)
-
-    def test_only_owner_can_operate(self):
-        private, key = self.register()
-        for call in (
-            lambda: key_service.xac_minh_so_huu(key, self.u2, sign_challenge(private, key)),
-            lambda: key_service.kich_hoat(key, self.u2),
-            lambda: key_service.thu_hoi(key, self.u2, "ly do"),
-        ):
-            with self.assertRaises(SigningError) as ctx:
-                call()
-            self.assertEqual(ctx.exception.status_code, 403)
-
-    def test_verify_and_activate(self):
-        private, key = self.register()
-        self.verify(private, key)
-        key = key_service.kich_hoat(key, self.u1)
-        self.assertEqual(key.trang_thai, enums.TrangThaiKhoa.HOAT_DONG)
-        self.assertIsNotNone(key.thoi_diem_kich_hoat)
-
-    def test_second_activation_blocked_until_rotation(self):
-        p1, k1 = self.register(ma="k1")
-        self.verify(p1, k1)
-        key_service.kich_hoat(k1, self.u1)
-        p2, k2 = self.register(ma="k2")
-        self.verify(p2, k2)
-        with self.assertRaises(ConflictError) as ctx:
-            key_service.kich_hoat(k2, self.u1)
-        self.assertEqual(ctx.exception.get_codes(), "da_co_khoa_hoat_dong")
-
-    def test_rotation_swaps_active_key_atomically(self):
-        p1, k1 = self.register(ma="k1")
-        self.verify(p1, k1)
-        key_service.kich_hoat(k1, self.u1)
-        p2, k2 = self.register(ma="k2")
-        self.verify(p2, k2)
-        moi = key_service.xoay_vong(k1, k2, self.u1)
-        k1.refresh_from_db()
-        self.assertEqual(moi.trang_thai, enums.TrangThaiKhoa.HOAT_DONG)
-        self.assertEqual(k1.trang_thai, enums.TrangThaiKhoa.DA_XOAY_VONG)
-        self.assertEqual(k1.khoa_thay_the_id, k2.pk)
-        self.assertEqual(SigningKey.objects.filter(nguoi_so_huu=self.u1, trang_thai=enums.TrangThaiKhoa.HOAT_DONG).count(), 1)
-
-    def test_rotation_rolls_back_when_new_key_unverified(self):
-        p1, k1 = self.register(ma="k1")
-        self.verify(p1, k1)
-        key_service.kich_hoat(k1, self.u1)
-        _, k2 = self.register(ma="k2")
-        with self.assertRaises(SigningError):
-            key_service.xoay_vong(k1, k2, self.u1)
-        k1.refresh_from_db()
-        self.assertEqual(k1.trang_thai, enums.TrangThaiKhoa.HOAT_DONG)
-        self.assertIsNone(k1.khoa_thay_the_id)
-
-    def test_revoke_requires_reason_and_is_final(self):
-        private, key = self.register()
-        with self.assertRaises(SigningError) as ctx:
-            key_service.thu_hoi(key, self.u1, "  ")
-        self.assertEqual(ctx.exception.get_codes(), "thieu_ly_do_thu_hoi")
-        key = key_service.thu_hoi(key, self.u1, "Mất thiết bị")
-        self.assertEqual(key.trang_thai, enums.TrangThaiKhoa.THU_HOI)
-        self.assertIsNotNone(key.ngay_thu_hoi)
-        with self.assertRaises(ConflictError):
-            key_service.thu_hoi(key, self.u1, "Lần hai")
-        entry = SigningAuditLog.objects.filter(hanh_dong="THU_HOI_KHOA").get()
-        self.assertEqual((entry.trang_thai_sau, entry.chi_tiet), (enums.TrangThaiKhoa.THU_HOI, "Mất thiết bị"))
-
-    def test_revoked_key_cannot_be_activated(self):
-        private, key = self.register()
-        self.verify(private, key)
-        key_service.thu_hoi(key, self.u1, "Thu hồi")
-        with self.assertRaises(ConflictError):
-            key_service.kich_hoat(key, self.u1)
-
-    def test_revoke_active_key_frees_slot_for_new_key(self):
-        p1, k1 = self.register(ma="k1")
-        self.verify(p1, k1)
-        key_service.kich_hoat(k1, self.u1)
-        key_service.thu_hoi(k1, self.u1, "Lộ khóa")
-        p2, k2 = self.register(ma="k2")
-        self.verify(p2, k2)
-        self.assertEqual(key_service.kich_hoat(k2, self.u1).trang_thai, enums.TrangThaiKhoa.HOAT_DONG)

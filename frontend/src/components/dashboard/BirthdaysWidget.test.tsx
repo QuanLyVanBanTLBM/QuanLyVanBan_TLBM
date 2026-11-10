@@ -14,4 +14,16 @@ describe('BirthdaysWidget', () => {
     ]} />);
     expect(screen.getAllByText('Nguyễn Văn Minh')).toHaveLength(2);
   });
+
+  it('sắp xếp theo thứ bậc chức vụ (Trưởng bộ phận trước Văn thư)', () => {
+    const birthdays = [
+      { id: 1, name: 'Nguyễn Văn Thư', birthdate: '31/10 (Hôm nay)', isToday: true, position: 'Văn thư', department: 'Ban kiểm toán nội bộ' },
+      { id: 2, name: 'Huỳnh Thị Yến', birthdate: '31/10 (Hôm nay)', isToday: true, position: 'Trưởng Bộ phận', department: 'Bảo Long Bình Dương' },
+    ];
+    render(<BirthdaysWidget birthdays={birthdays} />);
+    const names = screen.getAllByText(/(Huỳnh Thị Yến|Nguyễn Văn Thư)/).map(n => n.textContent);
+    // Huỳnh Thị Yến (Trưởng bộ phận) phải xuất hiện trước Nguyễn Văn Thư (Văn thư)
+    expect(names[0]).toBe('Huỳnh Thị Yến');
+    expect(names[1]).toBe('Nguyễn Văn Thư');
+  });
 });

@@ -6,8 +6,14 @@ import { setLanguage } from '@i18n/translate';
 import { ApiError } from '@lib/apiClient';
 import DocumentTypesPage from './DocumentTypesPage';
 
+const perms = vi.hoisted(() => ({ list: [] as string[] }));
+vi.mock('@lib/permissions', () => ({
+  usePermissions: () => ({ loaded: true, isSuperuser: false, isSystemAdmin: false, can: (code: string) => perms.list.includes(code) }),
+}));
+const ALL_HOSO_PERMS = ['view_hoso', 'add_hoso', 'change_hoso', 'delete_hoso'];
+
 vi.mock('@lib/recordsService', () => ({ recordsService: {
-  getDossier: vi.fn(), listDocumentTypes: vi.fn(), listDocumentTypeCatalog: vi.fn(),
+  getDossier: vi.fn(), getDocumentType: vi.fn(), listDocumentTypes: vi.fn(), listDocumentTypeCatalog: vi.fn(),
   listDossiers: vi.fn(), createDocumentType: vi.fn(), updateDocumentType: vi.fn(), deleteDocumentType: vi.fn(),
 } }));
 const categories = { items: [{ id: 23, ho_so: 9, ten_ho_so: 'Parent', ten_loai: 'Category A' }], count: 1, next: null, previous: null };
@@ -20,23 +26,51 @@ async function show(path = '/records/document-types') {
   </Routes></MemoryRouter>); });
 }
 describe('DocumentTypesPage shared-list handoff', () => {
-  beforeEach(() => { vi.clearAllMocks(); setLanguage('en');
+  beforeEach(() => { vi.clearAllMocks(); perms.list = [...ALL_HOSO_PERMS]; setLanguage('en');
     vi.mocked(recordsService.listDocumentTypeCatalog).mockResolvedValue(categories);
     vi.mocked(recordsService.listDocumentTypes).mockResolvedValue(categories);
     vi.mocked(recordsService.getDossier).mockResolvedValue({ id: 9, ten_ho_so: 'Parent', so_ky_hieu: 'HS' });
+    vi.mocked(recordsService.getDocumentType).mockResolvedValue(categories.items[0]);
     vi.mocked(recordsService.listDossiers).mockResolvedValue({ items: [{ id: 9, ten_ho_so: 'Parent', so_ky_hieu: 'HS' }], count: 1, next: null, previous: null });
     vi.mocked(recordsService.createDocumentType).mockResolvedValue(categories.items[0]);
     vi.mocked(recordsService.updateDocumentType).mockResolvedValue(categories.items[0]);
     vi.mocked(recordsService.deleteDocumentType).mockResolvedValue(undefined);
   });
   afterEach(() => { cleanup(); setLanguage('vi'); });
+  it('hides add, edit and delete when the account only has view_hoso', async () => {
+    perms.list = ['view_hoso'];
+    await show('/records/9/document-types');
+    await screen.findByRole('button', { name: 'Category A' });
+    expect(screen.queryByRole('button', { name: /^Add/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Edit/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Delete/i })).not.toBeInTheDocument();
+  });
+  it('waits for filter submission before changing the year in a dossier', async () => {
+    await show('/records/9/document-types');
+    const request = vi.mocked(recordsService.listDocumentTypes);
+    request.mockClear();
+    const year = String(new Date().getFullYear() - 1);
+    await act(async () => {
+      fireEvent.change(screen.getByRole('combobox', { name: 'Filter by year' }), { target: { value: year } });
+    });
+    expect(request).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Category A' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    await waitFor(() => expect(request).toHaveBeenCalledWith('9', expect.objectContaining({ year, page: 1 })));
+    request.mockClear();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filter by year' }), { target: { value: '' } });
+    expect(request).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    await waitFor(() => expect(request).toHaveBeenCalledWith('9', expect.objectContaining({ year: '', page: 1 })));
+  });
+
   it('shows an independent catalog and forwards the clicked category to incoming', async () => {
     await show();
     fireEvent.click(await screen.findByRole('button', { name: 'Category A' }));
     expect(screen.getByRole('dialog', { name: 'Choose document list' })).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: 'Restricted documents only' })).toBeInTheDocument();
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'View documents' }));
-    expect(await screen.findByTestId('destination')).toHaveTextContent('/documents/incoming?loai_van_ban=23');
+    fireEvent.click(await within(screen.getByRole('dialog')).findByRole('link', { name: 'View documents' }));
+    expect(await screen.findByTestId('destination')).toHaveTextContent('/documents/incoming?ho_so=9&ten_ho_so=Parent&loai_van_ban=23&pham_vi=NOI_BO');
     expect(recordsService.listDocumentTypes).not.toHaveBeenCalled();
   });
   it('keeps outgoing confidential documents in the same kind with HAN_CHE scope', async () => {
@@ -44,8 +78,8 @@ describe('DocumentTypesPage shared-list handoff', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Category A' }));
     fireEvent.change(within(screen.getByRole('dialog')).getByRole('combobox'), { target: { value: 'DI' } });
     fireEvent.click(screen.getByRole('checkbox'));
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'View documents' }));
-    expect(await screen.findByTestId('destination')).toHaveTextContent('/documents/outgoing?loai_van_ban=23&pham_vi=HAN_CHE');
+    fireEvent.click(await within(screen.getByRole('dialog')).findByRole('link', { name: 'View documents' }));
+    expect(await screen.findByTestId('destination')).toHaveTextContent('/documents/outgoing?ho_so=9&ten_ho_so=Parent&loai_van_ban=23&pham_vi=HAN_CHE');
     expect(recordsService.listDocumentTypeCatalog).not.toHaveBeenCalled();
   });
   it('allows Escape to close selection without opening a private list', async () => {
@@ -163,5 +197,115 @@ describe('DocumentTypesPage shared-list handoff', () => {
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }));
     fireEvent.click(screen.getByRole('button', { name: 'Edit Category A' }));
     expect(within(screen.getByRole('dialog')).getByRole('button', { name: 'Save changes' })).toBeEnabled();
+  });
+
+  it('debounces search input by 250ms and queries catalog', async () => {
+    vi.useFakeTimers();
+    await show();
+    expect(recordsService.listDocumentTypeCatalog).toHaveBeenCalledTimes(1);
+
+    const input = screen.getByPlaceholderText('Search by document category name...');
+    fireEvent.change(input, { target: { value: 'Category' } });
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(recordsService.listDocumentTypeCatalog).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+      await Promise.resolve();
+    });
+
+    expect(recordsService.listDocumentTypeCatalog).toHaveBeenCalledTimes(2);
+    expect(recordsService.listDocumentTypeCatalog).toHaveBeenLastCalledWith(
+      expect.objectContaining({ search: 'Category', page: 1 })
+    );
+
+    vi.useRealTimers();
+  });
+
+  it('does not enter loading state or initiate extra request when clearing search before debounce', async () => {
+    vi.useFakeTimers();
+    await show();
+    expect(recordsService.listDocumentTypeCatalog).toHaveBeenCalledTimes(1);
+
+    const input = screen.getByPlaceholderText('Search by document category name...');
+    fireEvent.change(input, { target: { value: 'Cat' } });
+
+    const clearBtn = screen.getByLabelText('Reset');
+    act(() => {
+      fireEvent.click(clearBtn);
+    });
+
+    expect(input).toHaveValue('');
+    expect(screen.queryByLabelText('Loading document types')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Category A' })).toBeInTheDocument();
+
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+      await Promise.resolve();
+    });
+
+    expect(recordsService.listDocumentTypeCatalog).toHaveBeenCalledTimes(1);
+    expect(screen.queryByLabelText('Loading document types')).not.toBeInTheDocument();
+
+    vi.useRealTimers();
+  });
+
+  it('does not enter loading state when typing only whitespace and clearing', async () => {
+    vi.useFakeTimers();
+    await show();
+    expect(recordsService.listDocumentTypeCatalog).toHaveBeenCalledTimes(1);
+
+    const input = screen.getByPlaceholderText('Search by document category name...');
+    fireEvent.change(input, { target: { value: '   ' } });
+
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+      await Promise.resolve();
+    });
+    expect(recordsService.listDocumentTypeCatalog).toHaveBeenCalledTimes(1);
+
+    const clearBtn = screen.getByLabelText('Reset');
+    act(() => {
+      fireEvent.click(clearBtn);
+    });
+
+    expect(input).toHaveValue('');
+    expect(screen.queryByLabelText('Loading document types')).not.toBeInTheDocument();
+    expect(recordsService.listDocumentTypeCatalog).toHaveBeenCalledTimes(1);
+
+    vi.useRealTimers();
+  });
+
+  it('reloads with empty search and resets to page 1 when clearing active search', async () => {
+    vi.useFakeTimers();
+    await show();
+
+    const input = screen.getByPlaceholderText('Search by document category name...');
+    fireEvent.change(input, { target: { value: 'Category A' } });
+
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+      await Promise.resolve();
+    });
+
+    expect(recordsService.listDocumentTypeCatalog).toHaveBeenCalledTimes(2);
+
+    const clearBtn = screen.getByLabelText('Reset');
+    await act(async () => {
+      fireEvent.click(clearBtn);
+      await Promise.resolve();
+    });
+
+    expect(input).toHaveValue('');
+    expect(recordsService.listDocumentTypeCatalog).toHaveBeenCalledTimes(3);
+    expect(recordsService.listDocumentTypeCatalog).toHaveBeenLastCalledWith(
+      expect.objectContaining({ search: '', page: 1 })
+    );
+    expect(screen.queryByLabelText('Loading document types')).not.toBeInTheDocument();
+
+    vi.useRealTimers();
   });
 });

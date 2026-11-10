@@ -1,8 +1,8 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from '@i18n/translate';
 import { Button } from '@components/common/Button';
 import { apiClient, downloadBlob } from '@lib/apiClient';
-import { ExcelImportError, ExcelImportResponse } from '@app-types/employee';
+import { ExcelImportError, ExcelImportJob } from '@app-types/employee';
 
 interface EmployeeImportModalProps {
   isOpen: boolean;
@@ -24,13 +24,68 @@ export const EmployeeImportModal: React.FC<EmployeeImportModalProps> = ({
   const [isDownloadingTemplate, setIsDownloadingTemplate] = useState<boolean>(false);
   const [generalError, setGeneralError] = useState<string | null>(null);
   const [errorList, setErrorList] = useState<ExcelImportError[]>([]);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [submissionKey, setSubmissionKey] = useState<string | null>(null);
+  const [jobProgress, setJobProgress] = useState<ExcelImportJob | null>(null);
+
+  const resetState = useCallback(() => {
+    setSelectedFile(null);
+    setIsDragging(false);
+    setIsUploading(false);
+    setIsDownloadingTemplate(false);
+    setGeneralError(null);
+    setErrorList([]);
+    setActiveJobId(null);
+    setSubmissionKey(null);
+    setJobProgress(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  }, []);
+
+  const handleClose = useCallback(() => {
+    if (isUploading) return;
+    resetState();
+    onClose();
+  }, [isUploading, resetState, onClose]);
+
+  const handleClearFile = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isUploading) return;
+    setSelectedFile(null);
+    setGeneralError(null);
+    setErrorList([]);
+    setActiveJobId(null);
+    setSubmissionKey(null);
+    setJobProgress(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen && !isUploading) {
+        handleClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, isUploading, handleClose]);
 
   if (!isOpen) return null;
 
+  const isExcelFile = (fileName: string) => {
+    const lower = fileName.toLowerCase();
+    return lower.endsWith('.xlsx');
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (isUploading) return;
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
-      if (!file.name.toLowerCase().endsWith('.xlsx')) {
+      if (!isExcelFile(file.name)) {
         setGeneralError(t('employees.import.invalidFileType'));
         setSelectedFile(null);
         return;
@@ -38,6 +93,9 @@ export const EmployeeImportModal: React.FC<EmployeeImportModalProps> = ({
       setSelectedFile(file);
       setGeneralError(null);
       setErrorList([]);
+      setActiveJobId(null);
+      setSubmissionKey(null);
+      setJobProgress(null);
     }
   };
 
@@ -53,9 +111,10 @@ export const EmployeeImportModal: React.FC<EmployeeImportModalProps> = ({
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
+    if (isUploading) return;
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
-      if (!file.name.toLowerCase().endsWith('.xlsx')) {
+      if (!isExcelFile(file.name)) {
         setGeneralError(t('employees.import.invalidFileType'));
         setSelectedFile(null);
         return;
@@ -63,6 +122,9 @@ export const EmployeeImportModal: React.FC<EmployeeImportModalProps> = ({
       setSelectedFile(file);
       setGeneralError(null);
       setErrorList([]);
+      setActiveJobId(null);
+      setSubmissionKey(null);
+      setJobProgress(null);
     }
   };
 
@@ -78,31 +140,66 @@ export const EmployeeImportModal: React.FC<EmployeeImportModalProps> = ({
   };
 
   const handleUpload = async () => {
-    if (!selectedFile) {
+    if (!activeJobId && !selectedFile) {
       setGeneralError(t('employees.import.noFileSelected'));
       return;
     }
 
+    let submittedJobId = activeJobId;
     try {
       setIsUploading(true);
       setGeneralError(null);
-      setErrorList([]);
+      if (!submittedJobId) {
+        setErrorList([]);
+        if (!selectedFile) return;
 
-      const formData = new FormData();
-      formData.append('file', selectedFile);
+        const idempotencyKey = submissionKey || (
+          typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+        );
+        setSubmissionKey(idempotencyKey);
+        const formData = new FormData();
+        formData.append('file', selectedFile);
 
-      const res = await apiClient.post<ExcelImportResponse>(
-        '/api/accounts/employees/import/',
-        formData
-      );
+        const accepted = await apiClient<{ job_id: string }>(
+          '/api/accounts/employees/import-async/',
+          {
+            method: 'POST',
+            body: formData,
+            headers: { 'Idempotency-Key': idempotencyKey },
+          }
+        );
+        submittedJobId = accepted.job_id;
+        setActiveJobId(submittedJobId);
+      }
 
-      if (res.success) {
-        onSuccess(res.created_count || 0);
-        onClose();
+      while (submittedJobId) {
+        const job = await apiClient<ExcelImportJob>(
+          `/api/accounts/employees/import-jobs/${submittedJobId}/`
+        );
+        setJobProgress(job);
+
+        if (job.status === 'done') {
+          onSuccess(job.created_count || 0);
+          resetState();
+          onClose();
+          return;
+        }
+
+        if (job.status === 'failed') {
+          setErrorList(job.errors || []);
+          setGeneralError(t(job.message || 'employees.import.uploadError'));
+          setActiveJobId(null);
+          setSubmissionKey(null);
+          return;
+        }
+
+        await new Promise((resolve) => window.setTimeout(resolve, 250));
       }
     } catch (err: unknown) {
       if (err && typeof err === 'object' && 'data' in err) {
-        const errorData = (err as { data: ExcelImportResponse & { detail?: string } }).data;
+        const errorData = (err as { data: { errors?: ExcelImportError[]; message?: string; detail?: string } }).data;
         if (errorData?.errors && Array.isArray(errorData.errors)) {
           setErrorList(errorData.errors);
           const rawMsg = errorData.message || 'employees.import.hasErrors';
@@ -115,19 +212,27 @@ export const EmployeeImportModal: React.FC<EmployeeImportModalProps> = ({
           return;
         }
       }
-      if (err instanceof Error) {
-        setGeneralError(t(err.message));
-      } else {
-        setGeneralError(t('employees.import.uploadError'));
-      }
+      setGeneralError(
+        t(submittedJobId ? 'employees.import.jobPollFailed' : 'employees.import.jobSubmissionUncertain')
+      );
     } finally {
       setIsUploading(false);
     }
   };
 
+  const importProgressPercent = jobProgress?.total
+    ? Math.min(100, Math.floor((jobProgress.processed / jobProgress.total) * 100))
+    : 0;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-backdrop backdrop-blur-sm animate-fade-in">
-      <div className="bg-surface border border-border rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden animate-scale-up">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-backdrop backdrop-blur-sm animate-fade-in"
+      onClick={handleClose}
+    >
+      <div
+        className="bg-surface border border-border rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden animate-scale-up"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Modal Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-surface-elevated">
           <div className="flex items-center gap-3">
@@ -145,8 +250,10 @@ export const EmployeeImportModal: React.FC<EmployeeImportModalProps> = ({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
+            disabled={isUploading}
             className="text-secondary hover:text-main p-2 rounded-lg hover:bg-surface-hover transition-colors"
+            title={t('employees.actions.close')}
           >
             <i className="fa-solid fa-xmark text-lg" />
           </button>
@@ -183,8 +290,8 @@ export const EmployeeImportModal: React.FC<EmployeeImportModalProps> = ({
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-            className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${
+            onClick={() => !isUploading && fileInputRef.current?.click()}
+            className={`border-2 border-dashed rounded-xl p-8 text-center transition-all ${isUploading ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'} ${
               isDragging
                 ? 'border-primary bg-primary-subtle'
                 : 'border-border hover:border-primary bg-surface-elevated'
@@ -193,21 +300,45 @@ export const EmployeeImportModal: React.FC<EmployeeImportModalProps> = ({
             <input
               ref={fileInputRef}
               type="file"
-              accept=".xlsx"
+              disabled={isUploading}
+              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               onChange={handleFileChange}
               className="hidden"
             />
             <div className="w-14 h-14 rounded-full bg-primary-subtle text-primary flex items-center justify-center mx-auto text-2xl mb-3">
               <i className="fa-solid fa-cloud-arrow-up" />
             </div>
-            <p className="text-sm font-semibold text-main">
-              {selectedFile ? selectedFile.name : t('employees.import.dragDropPrompt')}
-            </p>
-            <p className="text-xs text-muted mt-1">
-              {selectedFile
-                ? `${(selectedFile.size / 1024).toFixed(1)} KB`
-                : t('employees.import.formatNotice')}
-            </p>
+            {selectedFile ? (
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-main break-all">
+                  {selectedFile.name}
+                </p>
+                <p className="text-xs text-muted">
+                  {(selectedFile.size / 1024).toFixed(1)} KB
+                </p>
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={handleClearFile}
+                    disabled={isUploading}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium text-danger hover:text-white bg-danger-subtle hover:bg-danger border border-danger-border rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={t('employees.import.removeFile')}
+                  >
+                    <i className="fa-solid fa-xmark text-xs" />
+                    <span>{t('employees.import.removeFile')}</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <p className="text-sm font-semibold text-main">
+                  {t('employees.import.dragDropPrompt')}
+                </p>
+                <p className="text-xs text-muted mt-1">
+                  {t('employees.import.formatNotice')}
+                </p>
+              </>
+            )}
           </div>
 
           {/* General Error Message */}
@@ -215,6 +346,41 @@ export const EmployeeImportModal: React.FC<EmployeeImportModalProps> = ({
             <div className="p-3 text-sm text-danger bg-danger-subtle border border-danger-border rounded-lg flex items-center gap-2">
               <i className="fa-solid fa-circle-exclamation shrink-0" />
               <span>{generalError}</span>
+            </div>
+          )}
+
+          {isUploading && !jobProgress && (
+            <div className="space-y-2 rounded-xl border border-primary/20 bg-primary-subtle p-4" role="status" aria-live="polite">
+              <div className="flex items-center gap-2 text-sm font-semibold text-main">
+                <i className="fa-solid fa-spinner fa-spin text-primary" aria-hidden="true" />
+                <span>{t('employees.import.uploadingFile')}</span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-surface">
+                <div className="h-full w-1/3 rounded-full bg-primary motion-safe:animate-pulse" />
+              </div>
+            </div>
+          )}
+
+          {jobProgress && (jobProgress.status === 'queued' || jobProgress.status === 'processing') && (
+            <div className="space-y-2 rounded-xl border border-primary/20 bg-primary-subtle p-4" role="status" aria-live="polite">
+              <div className="flex items-center justify-between gap-3 text-sm font-semibold text-main">
+                <span>{t(jobProgress.message)}</span>
+                {jobProgress.total > 0 && <span>{importProgressPercent}%</span>}
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-surface">
+                <div
+                  className="h-full rounded-full bg-primary transition-all duration-300"
+                  style={{ width: `${importProgressPercent}%` }}
+                />
+              </div>
+              {jobProgress.total > 0 && (
+                <p className="text-xs text-secondary">
+                  {t('employees.import.jobProgress', {
+                    processed: jobProgress.processed,
+                    total: jobProgress.total,
+                  })}
+                </p>
+              )}
             </div>
           )}
 
@@ -269,7 +435,7 @@ export const EmployeeImportModal: React.FC<EmployeeImportModalProps> = ({
 
         {/* Modal Footer */}
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border bg-surface-elevated">
-          <Button type="button" variant="secondary" onClick={onClose} disabled={isUploading}>
+          <Button type="button" variant="secondary" onClick={handleClose} disabled={isUploading}>
             {t('employees.actions.cancel')}
           </Button>
           <Button
@@ -277,10 +443,10 @@ export const EmployeeImportModal: React.FC<EmployeeImportModalProps> = ({
             variant="primary"
             onClick={handleUpload}
             isLoading={isUploading}
-            disabled={!selectedFile}
+            disabled={!selectedFile && !activeJobId}
             icon="fa-upload"
           >
-            {t('employees.import.startImport')}
+            {t(activeJobId ? 'employees.import.resumeImport' : 'employees.import.startImport')}
           </Button>
         </div>
       </div>

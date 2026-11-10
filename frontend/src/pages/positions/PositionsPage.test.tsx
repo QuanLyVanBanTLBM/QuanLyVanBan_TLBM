@@ -72,11 +72,34 @@ describe('PositionsPage (Issue #20)', () => {
     renderPage();
 
     expect(await screen.findByText('Tổng Giám đốc')).toBeInTheDocument();
-    expect(screen.getByText('Cấp cao nhất')).toBeInTheDocument();
+    expect(screen.getAllByText('Cấp cao nhất').length).toBeGreaterThan(0);
     expect(screen.getByText('Công khai')).toBeInTheDocument();
     expect(screen.getByText('Nội bộ')).toBeInTheDocument();
     expect(screen.getByTestId('position-row-2').className).toContain('border-l-warning');
     expect(screen.getByTestId('position-row-1').className).not.toContain('border-l-warning');
+  });
+
+  it('keeps the table inside a phone screen: notes column is desktop-only and the note moves under the name', async () => {
+    mockApi();
+    renderPage();
+
+    await screen.findByText('Tổng Giám đốc');
+    const notesHeader = screen.getByRole('columnheader', { name: /Ghi chú/i });
+    expect(notesHeader.className).toContain('hidden');
+    expect(notesHeader.className).toContain('sm:table-cell');
+
+    const nameCell = screen.getByText('Tổng Giám đốc').closest('td')!;
+    const mobileNote = within(nameCell).getByText('Cấp cao nhất');
+    expect(mobileNote.className).toContain('sm:hidden');
+    expect(screen.getAllByText('Cấp cao nhất')).toHaveLength(2);
+  });
+
+  it('leaves room under the list so the floating assistant never covers the last rows', async () => {
+    mockApi();
+    const { container } = renderPage();
+
+    await screen.findByText('Tổng Giám đốc');
+    expect((container.firstElementChild as HTMLElement).className).toContain('pb-24');
   });
 
   it('hides write actions when the user only has view permission', async () => {
@@ -89,6 +112,8 @@ describe('PositionsPage (Issue #20)', () => {
     expect(screen.queryByRole('button', { name: /Import Excel/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Chỉnh sửa Tổng Giám đốc/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Xóa Tổng Giám đốc/ })).not.toBeInTheDocument();
+    // C1: không còn cột Thao tác trống
+    expect(screen.queryByRole('columnheader', { name: /Thao tác/i })).not.toBeInTheDocument();
   });
 
   it('shows write actions when the user has the permissions', async () => {
@@ -99,6 +124,7 @@ describe('PositionsPage (Issue #20)', () => {
     expect(screen.getByRole('button', { name: /Import Excel/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Chỉnh sửa Tổng Giám đốc/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Xóa Tổng Giám đốc/ })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /Thao tác/i })).toBeInTheDocument();
   });
 
   it('shows the empty state', async () => {
@@ -111,6 +137,8 @@ describe('PositionsPage (Issue #20)', () => {
     mockApi({ listError: new ApiError(403, { detail: 'positions.messages.permissionDenied' }) });
     renderPage();
     expect(await screen.findByText('Bạn không có quyền thực hiện thao tác này.')).toBeInTheDocument();
+    // Thử lại cũng vẫn bị chặn nên không hiện nút
+    expect(screen.queryByRole('button', { name: /Thử lại/ })).not.toBeInTheDocument();
   });
 
   it('shows an error state with retry that reloads the list', async () => {

@@ -19,7 +19,7 @@ The source reads only the parent views. Recipient and issuing-unit views remain 
 ## Integration requirements
 
 1. Apply the DDL PR before enabling PostgreSQL-backed AI.
-2. Django settings and AI routes are rooted at `backend/config/settings.py` and `backend/config/urls.py`; `backend/django_project/` retains compatibility imports.
+2. Django settings and AI routes are rooted at `backend/config/settings.py` and `backend/config/urls.py`; the former `backend/django_project/` package has been removed.
 3. Create `qlvb_readonly` outside the DDL and set `DB_READONLY_USER` / `DB_READONLY_PASSWORD` from deployment secrets.
 4. The host authentication integration must set `request.employee_id` from the authenticated employee record. If `view_tailieu` is granted and that identity is missing, the request fails closed.
 5. The permission seed must provide the codenames listed above. Cross-check with Group 2's `van_ban_xem_duoc` in tests when that contract is available; do not import it into the runtime path.

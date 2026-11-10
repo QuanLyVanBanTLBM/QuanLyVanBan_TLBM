@@ -1,10 +1,12 @@
 import datetime
-import sys
-from django.core.management.base import BaseCommand
+import os
+from django.contrib.auth.hashers import make_password
 from django.contrib.auth import get_user_model
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from organizations.models import KhoiKhuVuc, DonVi
 from accounts.models import Employee, Position
+from accounts.standard_positions import ADMIN_POSITION, STANDARD_POSITIONS
 
 KHOI_DATA = [
     ("HỘI ĐỒNG QUẢN TRỊ", 1),
@@ -110,99 +112,119 @@ DONVI_DATA = [
     ("GIÁM ĐỊNH VÙNG", "Giám định vùng"),
 ]
 
-POSITION_DATA = [
-    (1, "Quản trị viên"),
-    (2, "Trưởng phòng"),
-    (3, "Phó phòng"),
-    (4, "Chuyên viên"),
-    (5, "Nhân viên"),
-    (6, "Văn thư"),
-    (7, "Lãnh đạo cơ quan"),
-]
+# Danh mục chức vụ chuẩn: 22 chức vụ của giảng viên và 3 chức vụ cũ đang được dùng (xem standard_positions).
+POSITION_DATA = STANDARD_POSITIONS
+
+
+SYSTEM_PASSWORD_PLACEHOLDER = "!system_seed_placeholder"
 
 
 class Command(BaseCommand):
-    help = "Seed database with exact SQL_Fix4 data (Khối, Đơn vị, Chức vụ, Admin)"
+    help = "Seed reference data and bootstrap the system administrator without changing existing accounts"
+
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--demo-data", action="store_true", help="create demo accounts with DEMO_PASSWORD"
+        )
 
     def handle(self, *args, **options):
-        self.stdout.write(self.style.NOTICE("==> Seeding database from SQL_Fix4 specification..."))
+        UserModel = get_user_model()
+        admin = UserModel.objects.filter(username="admin").first()
+        admin_password = os.environ.get("ADMIN_PASSWORD")
+        if admin_password is not None and not admin_password.strip():
+            admin_password = None
+        if (admin is None or admin.password == SYSTEM_PASSWORD_PLACEHOLDER) and not admin_password:
+            raise CommandError("ADMIN_PASSWORD is required to create or initialize the system administrator.")
+        demo_password = os.environ.get("DEMO_PASSWORD")
+        if demo_password is not None and not demo_password.strip():
+            demo_password = None
+        if options["demo_data"] and not demo_password:
+            raise CommandError("DEMO_PASSWORD is required when --demo-data is selected.")
 
+        self.stdout.write(self.style.NOTICE("==> Seeding reference data..."))
         with transaction.atomic():
-            # 1. Seed Khoi / Khu vuc
             khoi_map = {}
             for ten, thu_tu in KHOI_DATA:
-                khoi, created = KhoiKhuVuc.objects.get_or_create(
+                khoi, _ = KhoiKhuVuc.objects.get_or_create(
                     ten=ten,
-                    defaults={"thu_tu_hien_thi": thu_tu}
+                    defaults={"thu_tu_hien_thi": thu_tu},
                 )
                 khoi_map[ten] = khoi
-            self.stdout.write(self.style.SUCCESS(f" [OK] Seeded {len(khoi_map)} Khoi / Khu vuc."))
+            self.stdout.write(self.style.SUCCESS(f" [OK] Reference units: {len(khoi_map)}."))
 
-            # 2. Seed Don vi / Phong ban
-            donvi_count = 0
             for idx, (khoi_ten, donvi_ten) in enumerate(DONVI_DATA, start=1):
                 khoi = khoi_map.get(khoi_ten)
-                if not khoi:
-                    continue
-                # Khóa theo (khối, tên): tên đơn vị không duy nhất (vd "Lãnh đạo khối" có ở 2 khối)
-                DonVi.objects.get_or_create(
-                    khoi=khoi,
-                    ten=donvi_ten,
-                    defaults={
-                        "stt_uu_tien": idx,
-                        "is_public": True,
-                    }
-                )
-                donvi_count += 1
-            self.stdout.write(self.style.SUCCESS(f" [OK] Seeded {donvi_count} Don vi / Phong ban."))
+                if khoi:
+                    DonVi.objects.get_or_create(
+                        khoi=khoi,
+                        ten=donvi_ten,
+                        defaults={"stt_uu_tien": idx, "is_public": True},
+                    )
 
-            # 3. Seed Chuc vu
             pos_map = {}
             for order, name in POSITION_DATA:
                 pos, _ = Position.objects.get_or_create(
                     name=name,
-                    defaults={"display_order": order, "is_public": True}
+                    defaults={"display_order": order, "is_public": True},
                 )
                 pos_map[name] = pos
-            self.stdout.write(self.style.SUCCESS(f" [OK] Seeded {len(pos_map)} Chuc vu."))
+            self.stdout.write(self.style.SUCCESS(f" [OK] Reference positions: {len(pos_map)}."))
 
-            # 4. Seed Admin account
-            UserModel = get_user_model()
             admin_donvi = DonVi.objects.filter(ten="Ban công nghệ thông tin").first() or DonVi.objects.first()
-            admin_chucvu = pos_map.get("Quản trị viên")
-
-            def upsert_employee(username, ho_ten, chuc_vu, don_vi, sdt, **flags):
-                employee = UserModel.objects.filter(username=username).first()
-                if employee is None:
-                    employee = UserModel(username=username, email=f"{username}@baolong.vn")
-                employee.ho_ten = ho_ten
-                employee.ngay_sinh = employee.ngay_sinh or datetime.date(1990, 1, 1)
-                employee.chuc_vu = chuc_vu
-                employee.don_vi = don_vi
-                employee.sdt = sdt
-                employee.trang_thai = Employee.Status.LAM_VIEC
-                employee.is_public = True
-                employee.is_active = True
-                employee.is_staff = flags.get("is_staff", False)
-                employee.is_superuser = flags.get("is_superuser", False)
-                employee.set_password("Admin@123")
-                employee.save()
-                return employee
-
-            upsert_employee(
-                "admin", "Quản trị hệ thống", admin_chucvu, admin_donvi, "0901234567",
-                is_staff=True, is_superuser=True,
+            admin_chucvu = pos_map.get(ADMIN_POSITION)
+            admin_defaults = {
+                "email": "admin@baolong.vn",
+                "password": make_password(admin_password) if admin_password else SYSTEM_PASSWORD_PLACEHOLDER,
+                "ho_ten": "Quản trị hệ thống",
+                "ngay_sinh": datetime.date(1990, 1, 1),
+                "chuc_vu": admin_chucvu,
+                "don_vi": admin_donvi,
+                "sdt": "0901234567",
+                "is_staff": True,
+                "is_superuser": True,
+                "is_active": True,
+            }
+            admin, created = UserModel.objects.get_or_create(username="admin", defaults=admin_defaults)
+            initialized = False
+            if not created and admin.password == SYSTEM_PASSWORD_PLACEHOLDER:
+                # This exact unusable sentinel is not a user credential. Initialize it once;
+                # subsequent seed runs preserve every existing account field.
+                admin.set_password(admin_password)
+                admin.save(update_fields=["password"])
+                initialized = True
+            self.stdout.write(
+                self.style.SUCCESS(
+                    " [OK] System administrator "
+                    + ("created." if created else "initialized from the DDL sentinel." if initialized else "preserved.")
+                )
             )
-            self.stdout.write(self.style.SUCCESS(" [OK] Seeded admin user: admin / Admin@123"))
 
-            # 5. Seed Demo Users for QA Testing
-            demo_users = [
-                ("truongphong_cntt", "Trưởng Phòng CNTT", "Trưởng phòng", admin_donvi, "0901111222"),
-                ("chuyenvien_cntt", "Chuyên Viên CNTT", "Chuyên viên", admin_donvi, "0902222333"),
-                ("vanthu_cntt", "Văn Thư Lưu Trữ", "Văn thư", admin_donvi, "0903333444"),
-            ]
-            for uname, hoten, pos_name, dvi, phone in demo_users:
-                upsert_employee(uname, hoten, pos_map.get(pos_name), dvi, phone)
-            self.stdout.write(self.style.SUCCESS(" [OK] Seeded demo users for Issue #24 testing (Admin@123)."))
+            if options["demo_data"]:
+                demo_users = [
+                    ("truongphong_cntt", "Trưởng Phòng CNTT", "Trưởng phòng", "0901111222"),
+                    ("chuyenvien_cntt", "Chuyên Viên CNTT", "Chuyên viên", "0902222333"),
+                    ("vanthu_cntt", "Văn Thư Lưu Trữ", "Văn thư", "0903333444"),
+                ]
+                created_count = 0
+                for username, full_name, position_name, phone in demo_users:
+                    _, was_created = UserModel.objects.get_or_create(
+                        username=username,
+                        defaults={
+                            "email": f"{username}@baolong.vn",
+                            "password": make_password(demo_password),
+                            "ho_ten": full_name,
+                            "ngay_sinh": datetime.date(1990, 1, 1),
+                            "chuc_vu": pos_map.get(position_name),
+                            "don_vi": admin_donvi,
+                            "sdt": phone,
+                            "trang_thai": Employee.Status.LAM_VIEC,
+                            "is_public": True,
+                            "is_active": True,
+                            "is_staff": False,
+                            "is_superuser": False,
+                        },
+                    )
+                    created_count += int(was_created)
+                self.stdout.write(self.style.SUCCESS(f" [OK] Demo accounts created: {created_count}."))
 
-        self.stdout.write(self.style.SUCCESS("==> Database seeding completed successfully 100%!"))
+        self.stdout.write(self.style.SUCCESS("==> Database seeding completed."))

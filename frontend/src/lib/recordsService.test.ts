@@ -1,5 +1,16 @@
-import { describe, expect, it } from 'vitest';
-import { normalizePage } from '@lib/recordsService';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { normalizePage, recordsService } from '@lib/recordsService';
+import { apiClient } from '@lib/apiClient';
+
+describe('document type detail', () => {
+  afterEach(() => vi.restoreAllMocks());
+  it.each([false, true])('loads the existing Records endpoint (wrapped: %s)', async (wrapped) => {
+    const category = { id: 23, ho_so: 9, ten_loai: 'Category' };
+    const get = vi.spyOn(apiClient, 'get').mockResolvedValue(wrapped ? { data: category } : category);
+    expect(await recordsService.getDocumentType(category.id)).toEqual(category);
+    expect(get).toHaveBeenCalledWith('/api/records/document-types/23/');
+  });
+});
 
 describe('normalizePage', () => {
   it('normalizes a direct array response', () => {

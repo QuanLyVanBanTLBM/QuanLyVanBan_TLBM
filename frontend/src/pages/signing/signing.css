@@ -1,0 +1,29 @@
+/*
+ * Phân hệ Trình ký duyệt nội bộ (Nhóm 5)
+ * Chiếm 100% chiều rộng khung nội dung, đồng bộ layout với toàn hệ thống.
+ */
+.signing-scope {
+  width: 100%;
+}
+
+/* Hộp thoại modal render vào body: giới hạn chiều cao tối đa không vượt viewport */
+.signing-zoom {
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+/* Thanh cuộn điều hướng mượt mà, ẩn scrollbar mặc định tránh vỡ layout trên desktop/Windows */
+.signing-nav-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.signing-nav-scroll::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+

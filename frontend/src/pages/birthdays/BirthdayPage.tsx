@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { apiClient, ApiError } from '@lib/apiClient';
 import { t as translate, useTranslation } from '@i18n/translate';
+import BirthdayEmailLogs from './BirthdayEmailLogs';
 import './BirthdayPage.css';
 
 export interface BirthdayStaff {
@@ -69,7 +70,7 @@ function projectToday(): SelectedDate {
 }
 
 function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof ApiError ? error.message : fallback;
+  return error instanceof ApiError ? translate(error.message) : fallback;
 }
 
 export default function BirthdayPage() {
@@ -618,6 +619,8 @@ export default function BirthdayPage() {
         </section>
 
       </div>
+
+      <BirthdayEmailLogs />
     </main>
   );
 }

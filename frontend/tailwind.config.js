@@ -133,6 +133,10 @@ export default {
         normal: '250ms',
         slow: '400ms',
       },
+      fontSize: {
+        // Loại bỏ hoàn toàn cỡ chữ siêu nhỏ (0.75rem ~ 10.5px); nâng 'xs' lên ngang tầm chữ đọc rõ (0.875rem ~ 13-14px)
+        xs: ['0.875rem', { lineHeight: '1.25rem' }],
+      },
       fontFamily: {
         sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', 'sans-serif'],
       },

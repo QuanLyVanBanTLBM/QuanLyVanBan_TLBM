@@ -20,11 +20,31 @@ CHROMA_DIR = DATA_DIR / "chroma_db"
 DOC_REGISTRY_PATH = DATA_DIR / "doc_registry.json"
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", "smart_documents")
 
-MODEL_PROVIDER = os.getenv("MODEL_PROVIDER", "gemini")  # options: gemini, openai
+MODEL_PROVIDER = "openai"
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-EMBED_MODEL = os.getenv("EMBED_MODEL", "models/gemini-embedding-001")
-LLM_MODEL = os.getenv("LLM_MODEL", "gemini-3.8-flash")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+EMBED_MODEL = os.getenv("EMBED_MODEL", "text-embedding-3-large")
+LLM_MODEL = "gpt-6-luna"
 VISION_MODEL = os.getenv("VISION_MODEL", LLM_MODEL)
+
+# Load persisted AI settings from DATA_DIR if present across workers/restarts
+_settings_file = DATA_DIR / "ai_settings.json"
+if _settings_file.exists():
+    try:
+        import json as _json
+        _stored = _json.loads(_settings_file.read_text(encoding="utf-8"))
+        if isinstance(_stored, dict):
+            if _stored.get("vision_model"):
+                VISION_MODEL = _stored["vision_model"]
+                os.environ["VISION_MODEL"] = VISION_MODEL
+            if _stored.get("gemini_api_key"):
+                GEMINI_API_KEY = _stored["gemini_api_key"]
+                os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
+            if _stored.get("openai_api_key"):
+                OPENAI_API_KEY = _stored["openai_api_key"]
+                os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
+    except Exception:
+        pass
 
 VISION_OCR_ENABLED = os.getenv("VISION_OCR_ENABLED", "true").lower() in {
     "1",
@@ -72,3 +92,10 @@ SOURCE_SCORE_THRESHOLD = 0.15
 
 CHAT_HISTORY_MAX_TURNS = int(os.getenv("CHAT_HISTORY_MAX_TURNS", "4"))
 CHAT_HISTORY_MAX_CHARS = int(os.getenv("CHAT_HISTORY_MAX_CHARS", "800"))
+
+try:
+    from .celery import app as celery_app
+    __all__ = ("celery_app",)
+except ImportError:
+    celery_app = None
+    __all__ = ()

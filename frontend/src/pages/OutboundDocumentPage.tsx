@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { DocumentItem, DocumentFilterParams, PaginatedResponse } from '@app-types/document';
 import FilterBar from '@components/documents/FilterBar';
@@ -11,10 +11,22 @@ import ConfirmModal from '@components/common/ConfirmModal';
 import AlertModal from '@components/common/AlertModal';
 import { Button } from '@components/common/Button';
 import apiClient from '@lib/apiClient';
+import { usePermissions } from '@lib/permissions';
+import { useTranslation } from '@i18n/translate';
 
 export const OutboundDocumentPage: React.FC = () => {
+  const { t } = useTranslation();
+  const { can, isSuperuser, isSystemAdmin } = usePermissions();
+  const isAdmin = Boolean(isSuperuser || isSystemAdmin);
+
+  const canAdd = Boolean(isAdmin || can('add_vanbandi'));
+  const canImport = Boolean(isAdmin || can('import_vanbandi'));
+  const canAddHanChe = Boolean(isAdmin || can('add_han_che_vanbandi'));
+  const canExport = Boolean(isAdmin || can('export_vanbandi'));
+
   const [searchParams, setSearchParams] = useSearchParams();
   const loaiVanBanParam = searchParams.get('loai_van_ban');
+  const phamViParam = searchParams.get('pham_vi');
 
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [totalCount, setTotalCount] = useState<number>(0);
@@ -32,21 +44,98 @@ export const OutboundDocumentPage: React.FC = () => {
     page_size: 10,
     loai: 'DI',
     loai_van_ban: loaiVanBanParam || undefined,
+    ho_so: searchParams.get('ho_so') || undefined,
+    pham_vi: (phamViParam as 'NOI_BO' | 'HAN_CHE' | 'ALL') || 'NOI_BO',
   });
 
-  useEffect(() => {
-    if (loaiVanBanParam) {
-      void Promise.resolve().then(() => {
-        setFilters(prev => (prev.loai_van_ban === loaiVanBanParam ? prev : { ...prev, loai_van_ban: loaiVanBanParam, page: 1 }));
-      });
+  // Hàm đồng bộ trạng thái bộ lọc lên URL query parameters
+  const syncFiltersToUrl = useCallback((currentFilters: DocumentFilterParams) => {
+    const nextParams = new URLSearchParams();
+    if (currentFilters.q) nextParams.set('q', currentFilters.q.trim());
+    if (currentFilters.nam) nextParams.set('nam', String(currentFilters.nam));
+    if (currentFilters.tu_ngay) nextParams.set('tu_ngay', currentFilters.tu_ngay);
+    if (currentFilters.den_ngay) nextParams.set('den_ngay', currentFilters.den_ngay);
+    if (currentFilters.hieu_luc) nextParams.set('hieu_luc', currentFilters.hieu_luc);
+    if (currentFilters.loai_van_ban) nextParams.set('loai_van_ban', String(currentFilters.loai_van_ban));
+    if (currentFilters.ho_so) {
+      nextParams.set('ho_so', currentFilters.ho_so);
+      const dossierName = searchParams.get('ten_ho_so');
+      if (currentFilters.ho_so === searchParams.get('ho_so') && dossierName) {
+        nextParams.set('ten_ho_so', dossierName);
+      }
     }
-  }, [loaiVanBanParam]);
+    if (currentFilters.pham_vi) nextParams.set('pham_vi', String(currentFilters.pham_vi));
+    if (currentFilters.page && currentFilters.page > 1) nextParams.set('page', String(currentFilters.page));
+
+    // Bảo toàn các params trạng thái modal (detail, viewers, action, edit)
+    ['detail', 'viewers', 'action', 'edit'].forEach((key) => {
+      const val = searchParams.get(key);
+      if (val) nextParams.set(key, val);
+    });
+
+    setSearchParams(nextParams, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  // Helper đồng bộ query params của Modal lên URL mà không làm mất các filter
+  const updateModalParam = useCallback((paramsToUpdate: Record<string, string | null>) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      Object.entries(paramsToUpdate).forEach(([key, val]) => {
+        if (val) {
+          next.set(key, val);
+        } else {
+          next.delete(key);
+        }
+      });
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
+
+  const handleFilterChange = (newFilters: DocumentFilterParams) => {
+    setFilters(newFilters);
+    syncFiltersToUrl(newFilters);
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.resolve().then(() => {
+      if (!cancelled) {
+        setFilters(prev => {
+          const nextLoaiVanBan = searchParams.get('loai_van_ban') || undefined;
+          const rawPhamVi = searchParams.get('pham_vi');
+          const nextPhamVi: 'NOI_BO' | 'HAN_CHE' | 'ALL' =
+            rawPhamVi === 'HAN_CHE' || rawPhamVi === 'ALL' || rawPhamVi === 'NOI_BO'
+              ? rawPhamVi
+              : 'NOI_BO';
+          const nextHoSo = searchParams.get('ho_so') || undefined;
+          if (prev.loai_van_ban === nextLoaiVanBan && prev.pham_vi === nextPhamVi && prev.ho_so === nextHoSo) {
+            return prev;
+          }
+          return {
+            ...prev,
+            loai_van_ban: nextLoaiVanBan,
+            pham_vi: nextPhamVi,
+            ho_so: nextHoSo,
+            page: 1,
+          };
+        });
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams]);
 
   const handleClearLoaiVanBan = () => {
-    const nextParams = new URLSearchParams(searchParams);
-    nextParams.delete('loai_van_ban');
-    setSearchParams(nextParams);
-    setFilters(prev => ({ ...prev, loai_van_ban: undefined, page: 1 }));
+    const next = { ...filters, loai_van_ban: undefined, page: 1 };
+    setFilters(next);
+    syncFiltersToUrl(next);
+  };
+
+  const handleClearPhamVi = () => {
+    const next: DocumentFilterParams = { ...filters, pham_vi: 'NOI_BO', page: 1 };
+    setFilters(next);
+    syncFiltersToUrl(next);
   };
 
   // Quản lý modal xem chi tiết & modal danh sách người đọc
@@ -58,21 +147,35 @@ export const OutboundDocumentPage: React.FC = () => {
   const [isFormOpen, setIsFormOpen] = useState<boolean>(false);
   const [editingDoc, setEditingDoc] = useState<DocumentItem | null>(null);
   const [isImportOpen, setIsImportOpen] = useState<boolean>(false);
+  const [importMenuOpen, setImportMenuOpen] = useState<boolean>(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState<boolean>(false);
+  const [importPhamVi, setImportPhamVi] = useState<'NOI_BO' | 'HAN_CHE'>('NOI_BO');
+  const importMenuRef = useRef<HTMLDivElement>(null);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (importMenuRef.current && !importMenuRef.current.contains(e.target as Node)) {
+        setImportMenuOpen(false);
+      }
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setExportMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const [pendingDelete, setPendingDelete] = useState<{ id: number; soHieu: string } | null>(null);
   const [alertMsg, setAlertMsg] = useState<string>('');
   const [isAlertOpen, setIsAlertOpen] = useState<boolean>(false);
   const [availableYears, setAvailableYears] = useState<number[]>([]);
-  const [stats, setStats] = useState<{
-    total: number;
-    active: number;
-    partial: number;
-    replaced: number;
-  }>({
-    total: 0,
-    active: 0,
-    partial: 0,
-    replaced: 0,
-  });
+  const [availableDocTypes, setAvailableDocTypes] = useState<string[]>([]);
+  const [availableFolders, setAvailableFolders] = useState<string[]>([]);
+  const [folderDocTypesMap, setFolderDocTypesMap] = useState<Record<string, string[]>>({});
+  const [recordDossiers, setRecordDossiers] = useState<Array<{ id: number | string; ten_ho_so: string; so_ky_hieu?: string }>>([]);
+  const [recordDocTypes, setRecordDocTypes] = useState<Array<{ id: number | string; ten_loai: string; ho_so?: number | string; ten_ho_so?: string }>>([]);
+  const [allStatsItems, setAllStatsItems] = useState<DocumentItem[]>([]);
 
   // Lấy danh sách các năm thực tế có văn bản đi trong CSDL
   const fetchYears = useCallback(async () => {
@@ -89,22 +192,182 @@ export const OutboundDocumentPage: React.FC = () => {
   // Lấy thống kê số lượng văn bản đi theo trạng thái
   const fetchStats = useCallback(async () => {
     try {
-      const extraQuery = filters.loai_van_ban ? `&loai_van_ban=${encodeURIComponent(String(filters.loai_van_ban))}` : '';
-      const res = await apiClient.get<PaginatedResponse<DocumentItem>>(`/api/documents/?loai=DI&page_size=1000${extraQuery}`);
+      const res = await apiClient.get<PaginatedResponse<DocumentItem>>('/api/documents/?loai=DI&page_size=1000');
       const items = res && Array.isArray(res.results) ? res.results : (Array.isArray(res) ? (res as DocumentItem[]) : []);
-      const active = items.filter((d) => d.hieu_luc === 'CON_HIEU_LUC').length;
-      const partial = items.filter((d) => d.hieu_luc === 'CON_HIEU_LUC_1_PHAN').length;
-      const replaced = items.filter((d) => d.hieu_luc === 'HET_VA_THAY_THE').length;
-      setStats({
-        total: items.length,
-        active,
-        partial,
-        replaced,
+      setAllStatsItems(items);
+
+      // 2. Lấy danh mục hồ sơ và loại văn bản từ Nhóm 3 (app records) để đồng bộ danh mục hệ thống
+      const recordsFolders: string[] = [];
+      const recordsFolderTypeMap: Record<string, Set<string>> = {};
+
+      try {
+        const dossiersRes = await apiClient.get<unknown>('/api/records/dossiers/?page_size=100');
+        const rawDossiers = Array.isArray(dossiersRes)
+          ? dossiersRes
+          : (dossiersRes as { results?: Array<{ ten_ho_so?: string }>; items?: Array<{ ten_ho_so?: string }> })?.results
+          || (dossiersRes as { results?: Array<{ ten_ho_so?: string }>; items?: Array<{ ten_ho_so?: string }> })?.items
+          || [];
+
+        if (Array.isArray(rawDossiers) && rawDossiers.length > 0) {
+          const parsedDossiers: Array<{ id: number | string; ten_ho_so: string; so_ky_hieu?: string }> = [];
+          rawDossiers.forEach((d) => {
+            const rawD = d as { id?: number | string; ten_ho_so?: string; so_ky_hieu?: string };
+            const name = rawD?.ten_ho_so?.trim();
+            if (name) {
+              recordsFolders.push(name);
+              parsedDossiers.push({
+                id: rawD.id ?? '',
+                ten_ho_so: name,
+                so_ky_hieu: rawD.so_ky_hieu,
+              });
+            }
+          });
+          setRecordDossiers(parsedDossiers);
+        }
+      } catch {
+        // Fallback an toàn nếu API records chưa sẵn sàng
+      }
+
+      try {
+        const docTypesRes = await apiClient.get<unknown>('/api/records/document-types/?page_size=100');
+        const rawDocTypes = Array.isArray(docTypesRes)
+          ? docTypesRes
+          : (docTypesRes as { results?: Array<{ ten_ho_so?: string; ten_loai?: string }>; items?: Array<{ ten_ho_so?: string; ten_loai?: string }> })?.results
+          || (docTypesRes as { results?: Array<{ ten_ho_so?: string; ten_loai?: string }>; items?: Array<{ ten_ho_so?: string; ten_loai?: string }> })?.items
+          || [];
+
+        if (Array.isArray(rawDocTypes) && rawDocTypes.length > 0) {
+          const parsedDocTypes: Array<{ id: number | string; ten_loai: string; ho_so?: number | string; ten_ho_so?: string }> = [];
+          rawDocTypes.forEach((dt) => {
+            const rawDt = dt as { id?: number | string; ten_ho_so?: string; ten_loai?: string; ho_so?: number | string | { id?: number | string } };
+            const folderName = rawDt?.ten_ho_so?.trim();
+            const typeName = rawDt?.ten_loai?.trim();
+            const rawHoSo = rawDt?.ho_so;
+            let hoSoId: number | string | undefined = undefined;
+            if (typeof rawHoSo === 'string' || typeof rawHoSo === 'number') {
+              hoSoId = rawHoSo;
+            } else if (rawHoSo && typeof rawHoSo === 'object' && 'id' in rawHoSo) {
+              hoSoId = rawHoSo.id;
+            }
+            if (typeName) {
+              parsedDocTypes.push({
+                id: rawDt.id ?? '',
+                ten_loai: typeName,
+                ho_so: hoSoId,
+                ten_ho_so: folderName,
+              });
+            }
+            if (folderName && typeName) {
+              if (!recordsFolderTypeMap[folderName]) {
+                recordsFolderTypeMap[folderName] = new Set<string>();
+              }
+              recordsFolderTypeMap[folderName].add(typeName);
+            }
+          });
+          setRecordDocTypes(parsedDocTypes);
+        }
+      } catch {
+        // Fallback an toàn
+      }
+
+      // Trích xuất các Loại văn bản và ánh xạ Danh mục hồ sơ -> Loại văn bản thực tế từ các văn bản trong hệ thống
+      const extractedTypes = new Set<string>();
+      const extractedFolders = new Set<string>();
+      const folderTypeMapping: Record<string, Set<string>> = {};
+
+      const typeMapping: Record<string, string> = {
+        'QĐ': 'Quyết định',
+        'QD': 'Quyết định',
+        'TB': 'Thông báo',
+        'CV': 'Công văn',
+        'HD': 'Hướng dẫn',
+        'KH': 'Kế hoạch',
+        'CT': 'Chỉ thị',
+        'BC': 'Báo cáo',
+        'TTR': 'Tờ trình',
+        'NQ': 'Nghị quyết',
+      };
+
+      items.forEach((d) => {
+        const rawItem = d as unknown as Record<string, unknown>;
+        const rawDocType = rawItem.ten_loai_van_ban || rawItem.loai_van_ban;
+        let detectedType = typeof rawDocType === 'string' && rawDocType.trim() ? rawDocType.trim() : '';
+
+        if (!detectedType) {
+          const match = d.so_hieu ? d.so_hieu.match(/\/([A-ZĐ]+)(?:-|$)/i) : null;
+          if (match && typeMapping[match[1].toUpperCase()]) {
+            detectedType = typeMapping[match[1].toUpperCase()];
+          } else if (d.trich_yeu) {
+            const trichYeuUpper = d.trich_yeu.trim().toUpperCase();
+            for (const name of Object.values(typeMapping)) {
+              if (trichYeuUpper.startsWith(name.toUpperCase())) {
+                detectedType = name;
+                break;
+              }
+            }
+          }
+        }
+
+        if (detectedType) {
+          extractedTypes.add(detectedType);
+        }
+
+        const rawFolder = rawItem.danh_muc_ho_so || rawItem.ho_so;
+        if (typeof rawFolder === 'string' && rawFolder.trim()) {
+          const folderName = rawFolder.trim();
+          extractedFolders.add(folderName);
+          if (!folderTypeMapping[folderName]) {
+            folderTypeMapping[folderName] = new Set<string>();
+          }
+          if (detectedType) {
+            folderTypeMapping[folderName].add(detectedType);
+          }
+        }
       });
+
+      // Gộp danh mục hồ sơ: giữ nguyên thứ tự chuẩn theo ID / mức ưu tiên của Nhóm 3 (Hồ sơ chung lên đầu)
+      // Bất kỳ hồ sơ nào do người dùng nhập tay ngoài danh mục của Nhóm 3 sẽ được nối tiếp phía sau
+      const extraFolders = Array.from(extractedFolders).filter(
+        (f) => !recordsFolders.some((rf) => rf.trim().toLowerCase() === f.trim().toLowerCase())
+      ).sort((a, b) => a.localeCompare(b, 'vi'));
+
+      const combinedOrderedFolders = [...recordsFolders, ...extraFolders];
+
+      // Đảm bảo "Hồ sơ chung" (nếu có) luôn luôn đứng vị trí đầu tiên
+      const hscIndex = combinedOrderedFolders.findIndex(
+        (f) => f.trim().toLowerCase() === 'hồ sơ chung'
+      );
+      if (hscIndex > 0) {
+        const [hsc] = combinedOrderedFolders.splice(hscIndex, 1);
+        combinedOrderedFolders.unshift(hsc);
+      }
+
+      const serializableFolderMap: Record<string, string[]> = {};
+
+      // Xây dựng bản đồ ánh xạ Hồ sơ -> Loại văn bản kết hợp
+      combinedOrderedFolders.forEach((folder) => {
+        const fromRecords = recordsFolderTypeMap[folder] ? Array.from(recordsFolderTypeMap[folder]) : [];
+        const fromDocuments = folderTypeMapping[folder] ? Array.from(folderTypeMapping[folder]) : [];
+        const combinedTypes = Array.from(new Set([...fromRecords, ...fromDocuments])).sort((a, b) => a.localeCompare(b, 'vi'));
+        if (combinedTypes.length > 0) {
+          serializableFolderMap[folder] = combinedTypes;
+        }
+      });
+
+      // Nếu có hồ sơ trong folderTypeMapping chưa có trong combinedOrderedFolders
+      Object.entries(folderTypeMapping).forEach(([folder, typeSet]) => {
+        if (!serializableFolderMap[folder]) {
+          serializableFolderMap[folder] = Array.from(typeSet).sort((a, b) => a.localeCompare(b, 'vi'));
+        }
+      });
+
+      setAvailableDocTypes(Array.from(extractedTypes).sort((a, b) => a.localeCompare(b, 'vi')));
+      setAvailableFolders(combinedOrderedFolders);
+      setFolderDocTypesMap(serializableFolderMap);
     } catch {
       // Giữ nguyên trạng thái hiện tại nếu lỗi
     }
-  }, [filters.loai_van_ban]);
+  }, []);
 
   useEffect(() => {
     let ignore = false;
@@ -135,6 +398,9 @@ export const OutboundDocumentPage: React.FC = () => {
       if (filters.den_ngay) params.append('den_ngay', filters.den_ngay);
       if (filters.hieu_luc) params.append('hieu_luc', filters.hieu_luc);
       if (filters.loai_van_ban) params.append('loai_van_ban', String(filters.loai_van_ban));
+      if (filters.ho_so) params.append('ho_so', filters.ho_so.trim());
+      const targetPhamVi = filters.pham_vi || 'NOI_BO';
+      if (targetPhamVi !== 'ALL') params.append('pham_vi', targetPhamVi);
 
       const endpoint = `/api/documents/?${params.toString()}`;
       const response = await apiClient.get<PaginatedResponse<DocumentItem>>(endpoint);
@@ -177,20 +443,21 @@ export const OutboundDocumentPage: React.FC = () => {
 
   // Đổi trang
   const handlePageChange = (newPage: number) => {
-    setFilters((prev) => ({ ...prev, page: newPage }));
+    const next = { ...filters, page: newPage };
+    setFilters(next);
+    syncFiltersToUrl(next);
   };
 
   // Đổi số dòng / trang
   const handlePageSizeChange = (newPageSize: number) => {
-    setFilters((prev) => ({ ...prev, page_size: newPageSize, page: 1 }));
+    const next = { ...filters, page_size: newPageSize, page: 1 };
+    setFilters(next);
+    syncFiltersToUrl(next);
   };
 
   // Đặt lại bộ lọc
   const handleResetFilters = () => {
-    const nextParams = new URLSearchParams(searchParams);
-    nextParams.delete('loai_van_ban');
-    setSearchParams(nextParams);
-    setFilters({
+    const defaultFilters: DocumentFilterParams = {
       q: '',
       nam: '',
       tu_ngay: '',
@@ -200,26 +467,117 @@ export const OutboundDocumentPage: React.FC = () => {
       page_size: 10,
       loai: 'DI',
       loai_van_ban: undefined,
-    });
+      ho_so: undefined,
+      pham_vi: filters.pham_vi || 'NOI_BO',
+    };
+    setFilters(defaultFilters);
+    syncFiltersToUrl(defaultFilters);
   };
 
-  // Mở modal xem chi tiết
+  // Mở modal xem chi tiết và đồng bộ URL query param `detail`
   const handleViewDetail = (id: number) => {
     setSelectedDocId(id);
     setIsDetailOpen(true);
+    updateModalParam({ detail: String(id), viewers: null, action: null, edit: null });
   };
 
-  // Mở modal xem danh sách người đã đọc
+  const handleCloseDetail = () => {
+    setIsDetailOpen(false);
+    setSelectedDocId(null);
+    updateModalParam({ detail: null });
+  };
+
+  // Mở modal xem danh sách người đã đọc và đồng bộ URL query param `viewers`
   const handleViewHistory = (id: number) => {
     setSelectedDocId(id);
     setIsViewersOpen(true);
+    updateModalParam({ viewers: String(id), detail: null, action: null, edit: null });
   };
+
+  const handleCloseHistory = () => {
+    setIsViewersOpen(false);
+    setSelectedDocId(null);
+    updateModalParam({ viewers: null });
+  };
+
+  // Mở modal thêm mới và đồng bộ URL query param `action=create`
+  const handleOpenCreate = () => {
+    setEditingDoc(null);
+    setIsFormOpen(true);
+    updateModalParam({ action: 'create', detail: null, viewers: null, edit: null });
+  };
+
+  // Mở modal sửa và đồng bộ URL query param `edit=id`
+  const handleOpenEdit = (doc: DocumentItem) => {
+    setEditingDoc(doc);
+    setIsFormOpen(true);
+    updateModalParam({ edit: String(doc.id), detail: null, viewers: null, action: null });
+  };
+
+  const handleCloseForm = () => {
+    setIsFormOpen(false);
+    setEditingDoc(null);
+    updateModalParam({ action: null, edit: null });
+  };
+
+  // Lắng nghe URL query params để tự động mở modal tương ứng khi truy cập link trực tiếp
+  useEffect(() => {
+    let cancelled = false;
+    Promise.resolve().then(() => {
+      if (!cancelled) {
+        const detailParam = searchParams.get('detail');
+        const viewersParam = searchParams.get('viewers');
+        const actionParam = searchParams.get('action');
+        const editParam = searchParams.get('edit');
+
+        if (detailParam && !isNaN(Number(detailParam))) {
+          setSelectedDocId(Number(detailParam));
+          setIsDetailOpen(true);
+        } else {
+          setIsDetailOpen(false);
+        }
+
+        if (viewersParam && !isNaN(Number(viewersParam))) {
+          setSelectedDocId(Number(viewersParam));
+          setIsViewersOpen(true);
+        } else {
+          setIsViewersOpen(false);
+        }
+
+        if (actionParam === 'create') {
+          setEditingDoc(null);
+          setIsFormOpen(true);
+        } else if (editParam && !isNaN(Number(editParam))) {
+          const editId = Number(editParam);
+          const found = documents.find((d) => d.id === editId);
+          if (found) {
+            setEditingDoc(found);
+            setIsFormOpen(true);
+          } else {
+            apiClient.get<DocumentItem>(`/api/documents/${editId}/?loai=DI`)
+              .then(res => {
+                if (!cancelled && res) {
+                  setEditingDoc(res);
+                  setIsFormOpen(true);
+                }
+              })
+              .catch(() => undefined);
+          }
+        } else if (!actionParam && !editParam) {
+          setIsFormOpen(false);
+        }
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams, documents]);
 
   // Thực hiện xóa sau khi xác nhận ConfirmModal
   const doDelete = async () => {
     if (!pendingDelete) return;
     try {
-      await apiClient.delete(`/api/documents/${pendingDelete.id}/`);
+      await apiClient.delete(`/api/documents/${pendingDelete.id}/?loai=DI`);
       setPendingDelete(null);
       setAlertMsg(`Đã xóa văn bản "${pendingDelete.soHieu}" thành công.`);
       setIsAlertOpen(true);
@@ -234,8 +592,8 @@ export const OutboundDocumentPage: React.FC = () => {
     }
   };
 
-  // Xuất file Excel văn bản đi
-  const handleExportExcel = async () => {
+  // Xuất file Excel văn bản đi (theo phạm vi: Nội bộ, Hạn chế hoặc Tất cả)
+  const handleExportExcel = async (exportPhamVi: 'NOI_BO' | 'HAN_CHE' | 'ALL' = 'NOI_BO') => {
     try {
       const token = localStorage.getItem('tlbm_access_token') || localStorage.getItem('tlbm_token') || '';
       const params = new URLSearchParams();
@@ -246,6 +604,9 @@ export const OutboundDocumentPage: React.FC = () => {
       if (filters.den_ngay) params.append('den_ngay', filters.den_ngay);
       if (filters.hieu_luc) params.append('hieu_luc', filters.hieu_luc);
       if (filters.loai_van_ban) params.append('loai_van_ban', String(filters.loai_van_ban));
+      if (exportPhamVi !== 'ALL') {
+        params.append('pham_vi', exportPhamVi);
+      }
 
       const res = await fetch(`/api/documents/export/?${params.toString()}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -255,7 +616,8 @@ export const OutboundDocumentPage: React.FC = () => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `Danh_Sach_Van_Ban_Di_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      const phamViSuffix = exportPhamVi === 'HAN_CHE' ? 'Han_Che' : exportPhamVi === 'ALL' ? 'Tat_Ca' : 'Noi_Bo';
+      a.download = `Danh_Sach_Van_Ban_Di_${phamViSuffix}_${new Date().toISOString().slice(0, 10)}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (e: unknown) {
@@ -264,10 +626,80 @@ export const OutboundDocumentPage: React.FC = () => {
     }
   };
 
-  // Thống kê số lượng: Tổng văn bản đi còn hiệu lực (gộp cả Còn hiệu lực và Còn hiệu lực 1 phần)
-  const countActive = stats.total > 0
-    ? (stats.active + stats.partial)
-    : documents.filter((d) => d.hieu_luc === 'CON_HIEU_LUC' || d.hieu_luc === 'CON_HIEU_LUC_1_PHAN').length;
+  const currentPhamVi = filters.pham_vi || 'NOI_BO';
+
+  // Tra cứu Tên hồ sơ và Tên loại văn bản thân thiện từ danh mục Nhóm 3 khi URL truyền mã ID tham chiếu
+  const resolvedRecordLabels = useMemo(() => {
+    let resolvedDocType = '';
+    let resolvedFolder = '';
+
+    if (filters.loai_van_ban) {
+      const lvStr = String(filters.loai_van_ban).trim();
+      const matchedType = recordDocTypes.find((dt) => String(dt.id) === lvStr);
+      if (matchedType) {
+        resolvedDocType = matchedType.ten_loai;
+        if (matchedType.ten_ho_so) {
+          resolvedFolder = matchedType.ten_ho_so;
+        } else if (matchedType.ho_so) {
+          const matchedDossier = recordDossiers.find((d) => String(d.id) === String(matchedType.ho_so));
+          if (matchedDossier) {
+            resolvedFolder = matchedDossier.ten_ho_so;
+          }
+        }
+      } else if (!/^\d+$/.test(lvStr)) {
+        resolvedDocType = lvStr;
+      }
+    }
+
+    if (!resolvedFolder && filters.ho_so) {
+      const hsStr = String(filters.ho_so).trim();
+      const matchedDossier = recordDossiers.find((d) => String(d.id) === hsStr);
+      if (matchedDossier) {
+        resolvedFolder = matchedDossier.ten_ho_so;
+      } else {
+        const urlTenHoSo = searchParams.get('ten_ho_so');
+        if (urlTenHoSo && urlTenHoSo.trim()) {
+          resolvedFolder = urlTenHoSo.trim();
+        } else if (!/^\d+$/.test(hsStr)) {
+          resolvedFolder = hsStr;
+        }
+      }
+    } else if (!resolvedFolder && searchParams.get('ten_ho_so')) {
+      resolvedFolder = searchParams.get('ten_ho_so')!.trim();
+    }
+
+    return {
+      docTypeName: resolvedDocType,
+      dossierName: resolvedFolder,
+    };
+  }, [filters.loai_van_ban, filters.ho_so, recordDocTypes, recordDossiers, searchParams]);
+
+  // Thống kê số lượng: Tổng văn bản đi còn hiệu lực (gộp cả Còn hiệu lực và Còn hiệu lực 1 phần theo đúng phạm vi)
+  const countActive = useMemo(() => {
+    // Khi đang tham chiếu từ phân hệ Hồ sơ (có lọc theo loai_van_ban hoặc ho_so):
+    // Đếm theo số lượng văn bản thực tế của tập kết quả tham chiếu theo đúng phạm vi hiện tại
+    if (filters.loai_van_ban || filters.ho_so) {
+      if (totalCount === 0) return 0;
+      if (filters.hieu_luc === 'HIEU_LUC') return totalCount;
+      const activeInCurrent = documents.filter(
+        (d) => d.hieu_luc === 'CON_HIEU_LUC' || d.hieu_luc === 'CON_HIEU_LUC_1_PHAN'
+      ).length;
+      if (totalCount <= documents.length) {
+        return activeInCurrent;
+      }
+      const ratio = documents.length > 0 ? activeInCurrent / documents.length : 1;
+      return Math.round(ratio * totalCount);
+    }
+
+    const sourceList = allStatsItems.length > 0 ? allStatsItems : documents;
+    return sourceList.filter((d) => {
+      const isActive = d.hieu_luc === 'CON_HIEU_LUC' || d.hieu_luc === 'CON_HIEU_LUC_1_PHAN';
+      if (!isActive) return false;
+      if (currentPhamVi === 'ALL') return true;
+      const docPhamVi = d.pham_vi || 'NOI_BO';
+      return docPhamVi === currentPhamVi;
+    }).length;
+  }, [allStatsItems, documents, currentPhamVi, filters.loai_van_ban, filters.ho_so, filters.hieu_luc, totalCount]);
 
   return (
     <div className="w-full p-2 sm:p-4 md:p-6 animate-in fade-in duration-150">
@@ -278,50 +710,149 @@ export const OutboundDocumentPage: React.FC = () => {
             <span className="w-8 h-8 rounded-lg bg-primary-subtle text-primary flex items-center justify-center font-bold text-sm">
               <i className="fa-solid fa-paper-plane text-base" />
             </span>
-            <h1 className="text-xl md:text-2xl font-bold text-main m-0">Quản Lý Văn Bản Đi</h1>
+            <h1 className="text-xl md:text-2xl font-bold text-main m-0">{t('pages.documents_outgoing.title') || 'Quản Lý Văn Bản Đi'}</h1>
           </div>
           <p className="text-xs md:text-sm text-secondary m-0">
-            Theo dõi, tra cứu, quản lý và số hóa toàn bộ hệ thống văn bản phát hành nội bộ và gửi cơ quan bên ngoài.
+            {t('pages.documents_outgoing.desc') || 'Theo dõi, tra cứu, quản lý và số hóa toàn bộ hệ thống văn bản phát hành nội bộ và gửi cơ quan bên ngoài.'}
           </p>
         </div>
 
         {/* Các nút hành động chính (Thêm mới, Nhập Excel, Xuất Excel, Làm mới) */}
         <div className="flex items-center gap-2 flex-wrap">
-          <Button
-            type="button"
-            variant="primary"
-            size="sm"
-            icon="fa-plus"
-            onClick={() => {
-              setEditingDoc(null);
-              setIsFormOpen(true);
-            }}
-            title="Thêm văn bản đi mới"
-          >
-            Thêm mới
-          </Button>
+          {canAdd && (
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              icon="fa-plus"
+              onClick={handleOpenCreate}
+              title={t('documents_incoming_page.addBtn') || 'Thêm mới'}
+            >
+              {t('documents_incoming_page.addBtn') || 'Thêm mới'}
+            </Button>
+          )}
 
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            icon="fa-file-excel"
-            onClick={() => setIsImportOpen(true)}
-            title="Nhập danh sách từ tệp Excel"
-          >
-            Nhập Excel
-          </Button>
+          {/* Dropdown Import Excel */}
+          {canImport && (
+            <div className="relative" ref={importMenuRef}>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                icon="fa-file-excel"
+                onClick={() => {
+                  setImportMenuOpen((prev) => !prev);
+                  setExportMenuOpen(false);
+                }}
+                className={`transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 ${importMenuOpen ? 'border-primary/50 shadow-xs bg-surface-elevated' : ''}`}
+                title={t('documents_ui.actions.importExcelTitle') || 'Nhập danh sách từ tệp Excel'}
+              >
+                <span>{t('documents_ui.actions.importExcel') || 'Import Excel'}</span>
+                <i className={`fa-solid fa-chevron-down text-[10px] ml-1 text-secondary transition-transform duration-200 ${importMenuOpen ? 'rotate-180' : ''}`} />
+              </Button>
 
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            icon="fa-file-export"
-            onClick={handleExportExcel}
-            title="Xuất dữ liệu ra file Excel"
-          >
-            Xuất Excel
-          </Button>
+              {importMenuOpen && (
+                <div className="absolute left-0 sm:right-0 sm:left-auto top-full mt-2 w-56 p-1.5 bg-surface/95 backdrop-blur-md border border-border-subtle rounded-2xl shadow-xl z-50 animate-in fade-in zoom-in-95 duration-150 space-y-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setImportMenuOpen(false);
+                      setImportPhamVi('NOI_BO');
+                      setIsImportOpen(true);
+                    }}
+                    className="group w-full text-left px-3 py-2.5 text-xs font-semibold text-main hover:text-primary rounded-xl transition-all duration-150 hover:-translate-y-[1px] hover:shadow-md hover:bg-white dark:hover:bg-slate-800 border border-transparent hover:border-slate-200/80 dark:hover:border-slate-700/80 flex items-center gap-2.5 cursor-pointer"
+                  >
+                    <span className="w-6 h-6 rounded-lg bg-surface-elevated group-hover:bg-primary/10 flex items-center justify-center transition-colors">
+                      <i className="fa-regular fa-file-lines text-secondary group-hover:text-primary text-xs transition-colors" />
+                    </span>
+                    <span>{t('documents_ui.actions.importInternal') || 'Nhập văn bản thường'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!canAddHanChe}
+                    title={!canAddHanChe ? (t('documents_ui.formModal.scopeRestrictedNoPermission') || 'Bạn chưa được cấp quyền thêm văn bản hạn chế.') : undefined}
+                    onClick={() => {
+                      setImportMenuOpen(false);
+                      setImportPhamVi('HAN_CHE');
+                      setIsImportOpen(true);
+                    }}
+                    className="group w-full text-left px-3 py-2.5 text-xs font-semibold text-main hover:text-primary rounded-xl transition-all duration-150 hover:-translate-y-[1px] hover:shadow-md hover:bg-white dark:hover:bg-slate-800 border border-transparent hover:border-slate-200/80 dark:hover:border-slate-700/80 flex items-center gap-2.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none"
+                  >
+                    <span className="w-6 h-6 rounded-lg bg-surface-elevated group-hover:bg-primary/10 flex items-center justify-center transition-colors">
+                      <i className="fa-solid fa-shield-halved text-secondary group-hover:text-primary text-xs transition-colors" />
+                    </span>
+                    <span>{t('documents_ui.actions.importRestricted') || 'Nhập văn bản hạn chế'}</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Dropdown Xuất Excel */}
+          {canExport && (
+            <div className="relative" ref={exportMenuRef}>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                icon="fa-file-export"
+                onClick={() => {
+                  setExportMenuOpen((prev) => !prev);
+                  setImportMenuOpen(false);
+                }}
+                className={`transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 ${exportMenuOpen ? 'border-primary/50 shadow-xs bg-surface-elevated' : ''}`}
+                title={t('documents_ui.actions.exportExcelTitle') || 'Xuất dữ liệu ra file Excel'}
+              >
+                <span>{t('documents_ui.actions.exportExcel') || 'Xuất Excel'}</span>
+                <i className={`fa-solid fa-chevron-down text-[10px] ml-1 text-secondary transition-transform duration-200 ${exportMenuOpen ? 'rotate-180' : ''}`} />
+              </Button>
+
+              {exportMenuOpen && (
+                <div className="absolute left-0 sm:right-0 sm:left-auto top-full mt-2 w-56 p-1.5 bg-surface/95 backdrop-blur-md border border-border-subtle rounded-2xl shadow-xl z-50 animate-in fade-in zoom-in-95 duration-150 space-y-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExportMenuOpen(false);
+                      handleExportExcel('NOI_BO');
+                    }}
+                    className="group w-full text-left px-3 py-2.5 text-xs font-semibold text-main hover:text-primary rounded-xl transition-all duration-150 hover:-translate-y-[1px] hover:shadow-md hover:bg-white dark:hover:bg-slate-800 border border-transparent hover:border-slate-200/80 dark:hover:border-slate-700/80 flex items-center gap-2.5 cursor-pointer"
+                  >
+                    <span className="w-6 h-6 rounded-lg bg-surface-elevated group-hover:bg-primary/10 flex items-center justify-center transition-colors">
+                      <i className="fa-regular fa-file-lines text-secondary group-hover:text-primary text-xs transition-colors" />
+                    </span>
+                    <span>{t('documents_ui.actions.exportInternal') || 'Xuất văn bản thường'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExportMenuOpen(false);
+                      handleExportExcel('HAN_CHE');
+                    }}
+                    className="group w-full text-left px-3 py-2.5 text-xs font-semibold text-main hover:text-primary rounded-xl transition-all duration-150 hover:-translate-y-[1px] hover:shadow-md hover:bg-white dark:hover:bg-slate-800 border border-transparent hover:border-slate-200/80 dark:hover:border-slate-700/80 flex items-center gap-2.5 cursor-pointer"
+                  >
+                    <span className="w-6 h-6 rounded-lg bg-surface-elevated group-hover:bg-primary/10 flex items-center justify-center transition-colors">
+                      <i className="fa-solid fa-shield-halved text-secondary group-hover:text-primary text-xs transition-colors" />
+                    </span>
+                    <span>{t('documents_ui.actions.exportRestricted') || 'Xuất văn bản hạn chế'}</span>
+                  </button>
+                  <div className="h-px bg-border-subtle my-1 mx-2" />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExportMenuOpen(false);
+                      handleExportExcel('ALL');
+                    }}
+                    className="group w-full text-left px-3 py-2.5 text-xs font-semibold text-main hover:text-primary rounded-xl transition-all duration-150 hover:-translate-y-[1px] hover:shadow-md hover:bg-white dark:hover:bg-slate-800 border border-transparent hover:border-slate-200/80 dark:hover:border-slate-700/80 flex items-center gap-2.5 cursor-pointer"
+                  >
+                    <span className="w-6 h-6 rounded-lg bg-surface-elevated group-hover:bg-primary/10 flex items-center justify-center transition-colors">
+                      <i className="fa-solid fa-layer-group text-secondary group-hover:text-primary text-xs transition-colors" />
+                    </span>
+                    <span>{t('documents_ui.actions.exportAll') || 'Xuất tất cả văn bản'}</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           <Button
             type="button"
@@ -333,9 +864,9 @@ export const OutboundDocumentPage: React.FC = () => {
               fetchStats();
             }}
             isLoading={isLoading}
-            title="Làm mới danh sách"
+            title={t('documents_ui.actions.refreshTitle') || 'Làm mới danh sách'}
           >
-            Làm mới
+            {t('documents_ui.actions.refresh') || 'Làm mới'}
           </Button>
         </div>
       </div>
@@ -349,10 +880,15 @@ export const OutboundDocumentPage: React.FC = () => {
               <i className="fa-solid fa-file-circle-check" />
             </div>
             <div>
-              <span className="text-sm text-muted block mb-0.5 font-medium">Tổng số văn bản đi</span>
+              <span className="text-sm text-muted block mb-0.5 font-medium">
+                <span>{t('documents_ui.topCard.totalOutbound') || 'Tổng số văn bản đi'}</span>
+                {currentPhamVi === 'HAN_CHE' && <span className="ml-1 text-rose-500 font-semibold">{t('documents_ui.topCard.scopeRestricted') || '(Hạn chế)'}</span>}
+                {currentPhamVi === 'ALL' && <span className="ml-1 text-primary font-semibold">{t('documents_ui.topCard.scopeAll') || '(Tất cả)'}</span>}
+                {currentPhamVi === 'NOI_BO' && <span className="ml-1 text-secondary font-medium">{t('documents_ui.topCard.scopeInternal') || '(Nội bộ)'}</span>}
+              </span>
               <div className="flex items-baseline gap-2">
                 <span className="text-2xl sm:text-3xl font-bold text-main">{countActive}</span>
-                <span className="text-sm text-muted font-medium">văn bản còn hiệu lực</span>
+                <span className="text-sm text-muted font-medium">{t('documents_ui.topCard.activeDocs') || 'văn bản còn hiệu lực'}</span>
               </div>
             </div>
           </div>
@@ -361,22 +897,24 @@ export const OutboundDocumentPage: React.FC = () => {
           <div className="flex items-center">
             <button
               type="button"
-              onClick={() =>
-                setFilters((prev) => ({
-                  ...prev,
-                  hieu_luc: prev.hieu_luc === 'HIEU_LUC' ? '' : 'HIEU_LUC',
+              onClick={() => {
+                const next: DocumentFilterParams = {
+                  ...filters,
+                  hieu_luc: filters.hieu_luc === 'HIEU_LUC' ? '' : 'HIEU_LUC',
                   page: 1,
-                }))
-              }
+                };
+                setFilters(next);
+                syncFiltersToUrl(next);
+              }}
               className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
                 filters.hieu_luc === 'HIEU_LUC'
                   ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/25 ring-2 ring-emerald-600/30'
                   : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20'
               }`}
-              title="Lọc danh sách theo văn bản còn hiệu lực (bao gồm cả hiệu lực 1 phần)"
+              title={t('documents_ui.topCard.activeFilterTitle') || 'Lọc danh sách theo văn bản còn hiệu lực (bao gồm cả hiệu lực 1 phần)'}
             >
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>Còn hiệu lực</span>
+              <span>{t('documents_ui.topCard.activeBtn') || 'Còn hiệu lực'}</span>
               <span
                 className={`ml-1 px-2.5 py-0.5 rounded-full text-xs font-bold ${
                   filters.hieu_luc === 'HIEU_LUC'
@@ -397,29 +935,123 @@ export const OutboundDocumentPage: React.FC = () => {
           <div className="flex items-center gap-2">
             <i className="fa-solid fa-filter text-primary" />
             <span>
-              Đang lọc danh sách theo Loại văn bản (từ phân hệ Hồ sơ): <strong>#{filters.loai_van_ban}</strong>
+              {t('documents_ui.scopeTabs.loaiVanBanFilterNotice') || 'Đang lọc danh sách theo Loại văn bản (từ phân hệ Hồ sơ):'}{' '}
+              {resolvedRecordLabels.docTypeName ? (
+                <>
+                  <strong className="text-primary font-bold">{resolvedRecordLabels.docTypeName}</strong>{' '}
+                  <strong className="text-primary/70 font-semibold">#{filters.loai_van_ban}</strong>
+                </>
+              ) : (
+                <strong className="text-primary font-bold">#{filters.loai_van_ban}</strong>
+              )}
+              {resolvedRecordLabels.dossierName && (
+                <span className="ml-1 text-secondary font-medium">
+                  (thuộc Danh mục: <strong>{resolvedRecordLabels.dossierName}</strong>)
+                </span>
+              )}
             </span>
           </div>
           <button
             type="button"
             onClick={handleClearLoaiVanBan}
             className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-surface hover:bg-surface-elevated text-secondary hover:text-main text-xs border border-border-subtle transition-all cursor-pointer shadow-2xs"
-            title="Xóa bộ lọc loại văn bản"
+            title={t('documents_ui.scopeTabs.clearLoaiVanBanTitle') || 'Xóa bộ lọc loại văn bản'}
           >
             <i className="fa-solid fa-xmark text-danger" />
-            <span>Bỏ lọc</span>
+            <span>{t('documents_ui.scopeTabs.clearFilter') || 'Bỏ lọc'}</span>
           </button>
         </div>
       )}
 
+      {/* 3.1. Thanh Chuyển Tab Chuyên Biệt: Nội bộ vs Hạn chế vs Tất cả (Giải pháp 1) */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div className="inline-flex p-1 bg-surface border border-border-subtle rounded-xl shadow-2xs">
+          <button
+            type="button"
+            onClick={() => {
+              const next: DocumentFilterParams = { ...filters, pham_vi: 'NOI_BO', page: 1 };
+              setFilters(next);
+              syncFiltersToUrl(next);
+            }}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
+              filters.pham_vi === 'NOI_BO' || !filters.pham_vi
+                ? 'bg-primary text-white shadow-xs'
+                : 'text-secondary hover:text-main hover:bg-canvas/60'
+            }`}
+          >
+            <i className="fa-solid fa-folder-open text-xs" />
+            <span>{t('documents_ui.scopeTabs.internal') || 'Văn bản Nội bộ'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              const next: DocumentFilterParams = { ...filters, pham_vi: 'HAN_CHE', page: 1 };
+              setFilters(next);
+              syncFiltersToUrl(next);
+            }}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
+              filters.pham_vi === 'HAN_CHE'
+                ? 'bg-rose-600 text-white shadow-xs'
+                : 'text-secondary hover:text-main hover:bg-canvas/60'
+            }`}
+          >
+            <i className={`fa-solid fa-shield-halved text-xs ${filters.pham_vi === 'HAN_CHE' ? 'text-white' : 'text-rose-500'}`} />
+            <span>{t('documents_ui.scopeTabs.restricted') || 'Văn bản Hạn chế'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              const next: DocumentFilterParams = { ...filters, pham_vi: 'ALL', page: 1 };
+              setFilters(next);
+              syncFiltersToUrl(next);
+            }}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all cursor-pointer ${
+              filters.pham_vi === 'ALL'
+                ? 'bg-canvas-subtle text-main font-semibold border border-border-subtle'
+                : 'text-muted hover:text-secondary hover:bg-canvas/60'
+            }`}
+          >
+            <span>{t('documents_ui.scopeTabs.all') || 'Tất cả'}</span>
+          </button>
+        </div>
+
+        {filters.pham_vi === 'HAN_CHE' && (
+          <div className="flex items-center justify-between gap-3 px-4 py-2.5 my-1 bg-amber-500/10 border border-amber-500/30 rounded-xl text-xs text-amber-800 dark:text-amber-300 shadow-2xs w-full">
+            <div className="flex items-center gap-2">
+              <i className="fa-solid fa-shield-halved text-amber-600 dark:text-amber-400" />
+              <span>
+                {t('documents_ui.scopeTabs.restrictedNotice') || 'Đang lọc danh sách theo phạm vi: Văn bản hạn chế (Mật) — Chỉ hiển thị văn bản bạn có thẩm quyền tiếp cận.'}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={handleClearPhamVi}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-surface hover:bg-surface-elevated text-secondary hover:text-main text-xs border border-border-subtle transition-all cursor-pointer shadow-2xs"
+              title={t('documents_ui.scopeTabs.clearFilterTitle') || 'Xóa bộ lọc phạm vi'}
+            >
+              <i className="fa-solid fa-xmark text-danger" />
+              <span>{t('documents_ui.scopeTabs.clearFilter') || 'Bỏ lọc'}</span>
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* 4. Thanh Tìm Kiếm & Bộ Lọc Đa Tiêu Chí */}
       <FilterBar
         filters={filters}
-        onFilterChange={setFilters}
+        onFilterChange={handleFilterChange}
         onSearch={fetchDocuments}
         onReset={handleResetFilters}
         isLoading={isLoading}
         availableYears={availableYears}
+        availableFolders={availableFolders}
+        availableDocTypes={availableDocTypes}
+        folderDocTypesMap={folderDocTypesMap}
+        recordDossiers={recordDossiers}
+        recordDocTypes={recordDocTypes}
+        documentType="DI"
       />
 
       {/* Thông báo lỗi nếu có */}
@@ -451,10 +1083,7 @@ export const OutboundDocumentPage: React.FC = () => {
         onViewDetail={handleViewDetail}
         onViewHistory={handleViewHistory}
         loai="DI"
-        onEdit={(doc) => {
-          setEditingDoc(doc);
-          setIsFormOpen(true);
-        }}
+        onEdit={handleOpenEdit}
         onDelete={(id, soHieu) => {
           setPendingDelete({ id, soHieu });
         }}
@@ -463,27 +1092,25 @@ export const OutboundDocumentPage: React.FC = () => {
       {/* 6. Modals Nghiệp Vụ */}
       <DocumentDetailModal
         isOpen={isDetailOpen}
-        onClose={() => setIsDetailOpen(false)}
+        onClose={handleCloseDetail}
         documentId={selectedDocId}
+        loai="DI"
       />
 
       <DocumentViewersModal
         isOpen={isViewersOpen}
-        onClose={() => setIsViewersOpen(false)}
+        onClose={handleCloseHistory}
         documentId={selectedDocId}
+        loai="DI"
       />
 
       <DocumentFormModal
         open={isFormOpen}
         initial={editingDoc}
         defaultLoai="DI"
-        onClose={() => {
-          setIsFormOpen(false);
-          setEditingDoc(null);
-        }}
+        onClose={handleCloseForm}
         onSaved={() => {
-          setIsFormOpen(false);
-          setEditingDoc(null);
+          handleCloseForm();
           fetchDocuments();
           fetchYears();
           fetchStats();
@@ -492,6 +1119,8 @@ export const OutboundDocumentPage: React.FC = () => {
 
       <ImportExcelModal
         open={isImportOpen}
+        loai="DI"
+        phamVi={importPhamVi}
         onClose={() => setIsImportOpen(false)}
         onImported={() => {
           setIsImportOpen(false);

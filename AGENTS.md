@@ -70,16 +70,16 @@ Mọi Pull Request bắt buộc trình bày đầy đủ các phần:
 ---
 
 ## 4. Các Invariant Kỹ thuật Bắt buộc
-- **i18n (Trụ cột 1)**: 100% text trên giao diện React phải dùng `t('namespace.key')`. Mọi key mới phải có đầy đủ cả 2 nhánh trong `frontend/src/i18n/vi.json` và `frontend/src/i18n/en.json` (kiểm bằng `pnpm --dir frontend check:i18n`). Không dùng dạng `lang === 'en' ? ... : ...` trong component.
+- **i18n (Trụ cột 1)**: 100% text trên giao diện React phải dùng `t('namespace.key')`. Mỗi module giữ từ điển riêng tại `frontend/src/i18n/<module>/vi.json` và `en.json`; mọi key mới phải có đầy đủ cả 2 nhánh trong file của module mình, không khai báo key đã có ở module khác (kiểm bằng `pnpm --dir frontend check:i18n`). Không dùng dạng `lang === 'en' ? ... : ...` trong component.
 - **Design Tokens (Trụ cột 3)**: Không dùng mã màu Hex (`#...`) hay font-size pixel trong CSS. Bắt buộc dùng `var(--color-...)` và `var(--font-...)` từ `src/styles/global.css` (kiểm bằng `pnpm --dir frontend check:tokens`).
-- **Git Flow**: Không commit/push trực tiếp vào `main`. Kiểm tra `git status` trước khi commit, không dùng `git add .` bừa bãi.
+- **Git Flow**: Không commit/push trực tiếp vào `main` và `staging`. Mọi thay đổi đi theo vòng đời Issue → Nhánh → PR (mục 8). Kiểm tra `git status` trước khi commit, không dùng `git add .` bừa bãi.
 
 ---
 
 ## 5. CƠ SỞ DỮ LIỆU: MỘT NGUỒN SCHEMA, MỘT CÁCH DỰNG DB
 
 - **Nguồn schema duy nhất**: `docs/common/database/release_DDL.sql`. Model và migration Django phải sinh ra đúng schema này (bảng, cột, kiểu, NULL, DEFAULT, constraint, index, ENUM, function, trigger, view, dữ liệu seed). Khi code và DDL khác nhau, DDL là chuẩn.
-- **Cách dựng DB duy nhất**: `scripts/build_db.py` (nạp DDL rồi đồng bộ trạng thái migration; collation ICU `vi-VN`). Local, CI và staging đều dùng script này. Không dựng DB bằng tay, không chạy `migrate` lên DB staging. Chi tiết: `docs/common/database/build_db_runbook.md`.
+- **Cách dựng DB duy nhất**: `scripts/build_db.py` (nạp DDL rồi đồng bộ trạng thái migration; collation ICU `vi-VN`). Local, CI và staging đều dùng script này. Không dựng DB bằng tay, không chạy `migrate` bằng tay lên DB staging (deploy tự nâng cấp DB bằng migration). Chi tiết: `docs/common/database/build_db_runbook.md`.
 - **Chỉ PostgreSQL 16**: không dùng SQLite cho phát triển hay kiểm thử. Test backend chạy trên PostgreSQL.
 - **Đổi schema** (thêm/sửa/xoá bảng, cột, constraint, ENUM, function, trigger, view, seed) phải nằm trong **cùng một PR** gồm:
   1. sửa `release_DDL.sql`;
@@ -90,6 +90,7 @@ Mọi Pull Request bắt buộc trình bày đầy đủ các phần:
   - Không thêm dòng mới để PR qua được CI. Lệch mới phải sửa bằng migration hoặc bằng thay đổi DDL theo quy trình trên.
   - Sửa xong lệch nào thì xoá đúng dòng đó (CI báo lỗi khi baseline còn dòng đã hết lệch).
   - Khi conflict ở file này: merge `staging` vào nhánh, chạy lại `.github/scripts/compare_schema_ddl.py --write-baseline` trên DB dựng như CI, giữ kết quả mới, không ghép dòng bằng tay.
+- **Mỗi app một nhánh migration**: mỗi app có `migrations/max_migration.txt` ghi tên migration mới nhất. Thêm migration xong chạy `python .github/scripts/check_max_migration.py --write` và commit file này cùng migration. Hai PR cùng thêm migration cho một app sẽ conflict ở file này; PR sau merge `staging`, đánh lại số migration của mình nối tiếp migration trên `staging` (không sửa migration đã có trên `staging`), rồi chạy lại `--write`.
 - **Function/trigger/view tạo bằng migration** (`RunSQL`) phải chép nguyên văn từ `release_DDL.sql`; bước so schema so nguyên văn, khác một khoảng trắng cũng bị coi là lệch.
 - **Sau khi pull code có đổi schema**: `pnpm db:migrate` (đồng bộ migration mới); nếu `release_DDL.sql` đổi thì `pnpm db:reset` (dựng lại DB local từ DDL).
 
@@ -117,6 +118,26 @@ Mọi Pull Request bắt buộc trình bày đầy đủ các phần:
   - Backend: `manage.py check`, `makemigrations --check --dry-run`, `migrate`, `migrate --check`, so schema với DDL (`.github/scripts/compare_schema_ddl.py` + baseline), `scripts/build_db.py --seed` + smoke ENUM/trigger/function/view, `manage.py test` trên PostgreSQL.
   - Frontend: `pnpm install --frozen-lockfile`, `lint`, `check:i18n`, `check:tokens`, `test`, `build`.
   - Không tắt rule lint, không bỏ qua hay loại trừ test để qua gate.
-- **Merge**: PR vào `staging` qua được gate thì nhóm sở hữu module tự merge và chịu trách nhiệm về thay đổi.
+- **Merge**: PR vào `staging` gắn issue và qua toàn bộ CI thì nhóm sở hữu module tự merge bằng nút Merge trên PR và chịu trách nhiệm về thay đổi. Người merge theo dõi job deploy staging sau merge.
 - **Môi trường local**: dùng các lệnh `pnpm` trong `package.json` (`db:setup`, `db:start`, `db:migrate`, `db:reset`, `runserver`, `dev`); hướng dẫn đầy đủ trong `README.md`. PostgreSQL local chạy bằng `compose.yaml` (collation ICU `vi-VN`).
-- **Staging**: mỗi lần deploy backend, DB staging được dựng lại từ `release_DDL.sql` (dữ liệu staging là dữ liệu thử nghiệm, không lưu lâu dài). Deploy bằng `deploy/deploy.sh` (job CI hoặc `pnpm deploy:staging`); không deploy hay sửa DB staging bằng tay.
+- **Staging**: merge vào `staging` thì CI tự deploy bằng `deploy/deploy.sh` ở chế độ giữ dữ liệu (`DB_MODE=sync`): sao lưu, chạy thử migration trên bản sao, rồi nâng cấp DB bằng migration. Dựng lại DB (`rebuild`) chỉ khi chọn có chủ đích. Không deploy, không sửa DB hay cấu hình server staging bằng tay; thay đổi cấu hình server đi qua PR vào `deploy/`.
+
+---
+
+## 8. VÒNG ĐỜI CÔNG VIỆC: ISSUE → NHÁNH → PR → STAGING
+
+- **Mỗi vấn đề một issue.** Lỗi, tính năng, việc kỹ thuật đều mở issue trước khi code (mẫu tại `.github/ISSUE_TEMPLATE/`), có label nhóm. Việc lớn tách thành nhiều issue con, mỗi issue làm xong được trong vài ngày.
+- **Mỗi nhánh gắn đúng một issue.**
+  - Tạo từ `staging` mới nhất: `git fetch origin && git switch -c feat/<số-issue>-<mô-tả-ngắn> origin/staging`.
+  - Tiền tố: `feat/`, `fix/`, `docs/`, `chore/`, `refactor/`; không dùng tiền tố `codex`. Ví dụ: `fix/164-tim-kiem-ho-so`.
+  - Một nhánh không gom nhiều issue; phát sinh vấn đề khác trong lúc làm thì mở issue mới và nhánh mới.
+- **Mỗi PR gắn issue của nhánh.** PR vào `staging`, mô tả có dòng `Closes #<số>` (hoặc `Refs #<số>` khi issue chưa xong hẳn). PR không gắn issue thì không merge.
+- **Vòng đời nhánh kết thúc khi merge vào `staging`.**
+  - Merge xong người merge xoá nhánh (nút Delete branch trên PR); issue tự đóng qua `Closes #`.
+  - Không tiếp tục commit lên nhánh đã merge. Sửa tiếp hoặc lỗi phát sinh sau merge: issue mới, nhánh mới từ `staging`.
+  - Không dùng nhánh nhóm dài hạn làm nhánh trung gian; PR đi thẳng vào `staging`.
+- **Giữ nhánh ngắn để tránh conflict.**
+  - Trong lúc làm, merge `staging` vào nhánh ít nhất mỗi ngày làm việc và trước khi merge.
+  - Mở draft PR sớm để nhóm khác thấy file đang bị sửa.
+  - Hai issue cùng sửa một file dùng chung thì làm tuần tự, issue sau chờ PR trước merge.
+- **PR không còn phù hợp** (đã có thay đổi khác thay thế, nhánh nguồn mất) thì đóng kèm lý do và số PR/commit thay thế; phần còn thiếu mở issue mới.

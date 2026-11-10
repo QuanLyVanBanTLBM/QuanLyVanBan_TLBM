@@ -101,6 +101,11 @@ export const recordsService = {
     return normalizePage<DocumentType>(response);
   },
 
+  async getDocumentType(id: EntityId): Promise<DocumentType> {
+    const response = await apiClient.get<unknown>(`/api/records/document-types/${id}/`);
+    return unwrapEntity<DocumentType>(response);
+  },
+
   async listDocumentTypes(dossierId: EntityId, query: ListQuery): Promise<PageResult<DocumentType>> {
     const response = await apiClient.get<unknown>(
       `/api/records/dossiers/${dossierId}/document-types/${queryString(query)}`

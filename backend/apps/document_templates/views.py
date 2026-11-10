@@ -1,25 +1,184 @@
 import io
-from datetime import datetime
+from datetime import datetime, date
 import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db.models import Q
 from django.http import HttpResponse
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import filters, permissions, status, viewsets
+from rest_framework import exceptions, filters, permissions, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 
+class StandardResourcePagination(PageNumberPagination):
+    """
+    Cấu trúc phân trang chuẩn REST framework: count, next, previous, results.
+    Mặc định 20 bản ghi/trang, hỗ trợ tham số page_size (tối đa 100 bản ghi/trang).
+    """
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
+from authorization.permissions import is_system_admin, require_permission
+from .selectors import visible_resources
 from .filters import TaiLieuChiTietFilter
-from .models import DanhMucTaiLieu, LoaiTaiLieu, TaiLieuChiTiet, ChiTietTaiLieuAttachment
+from .models import DanhMucTaiLieu, LoaiTaiLieu, TaiLieuChiTiet, ChiTietTaiLieuAttachment, template_disk_path
 from .serializers import (
     DanhMucTaiLieuSerializer,
     LoaiTaiLieuSerializer,
     TaiLieuChiTietSerializer,
     ChiTietTaiLieuAttachmentSerializer,
 )
+
+
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework.authentication import SessionAuthentication
+
+
+class TicketOrJWTAuthentication(JWTAuthentication):
+    """
+    Xác thực kép bảo mật cho phân hệ tài liệu:
+    1. Chuẩn REST API: HTTP Header Authorization: Bearer <token>
+    2. Vé xem tạm thời dùng 1 lần (Single-Use Short-Lived Ticket, Burn on Read) qua query parameter `ticket`.
+       Vé chỉ có hiệu lực tối đa 60 giây và bị hủy ngay lập tức khi sử dụng.
+    Tuyệt đối KHÔNG chấp nhận access token qua query parameter `token` để ngăn chặn rò rỉ token trên URL!
+    """
+    def authenticate(self, request):
+        # 1. Thử xác thực qua Authorization Header
+        header = self.get_header(request)
+        if header is not None:
+            raw_token = self.get_raw_token(header)
+            if raw_token:
+                validated_token = self.get_validated_token(raw_token)
+                return self.get_user(validated_token), validated_token
+
+        # 2. Thử xác thực qua vé dùng có chữ ký số `ticket` (Cryptographically Signed Short-Lived Ticket)
+        query_dict = getattr(request, 'query_params', None)
+        if query_dict is None:
+            query_dict = getattr(request, 'GET', {})
+
+        ticket = query_dict.get('ticket')
+        if ticket:
+            from django.core.signing import TimestampSigner, BadSignature, SignatureExpired
+            signer = TimestampSigner(salt='doc_view_ticket')
+            raw_ticket = ticket[3:] if ticket.startswith('vt_') else ticket
+            try:
+                ticket_data = signer.unsign_object(raw_ticket, max_age=60)
+            except (BadSignature, SignatureExpired):
+                raise exceptions.PermissionDenied("Vé xem tài liệu không hợp lệ hoặc đã hết hạn.")
+
+            from django.contrib.auth import get_user_model
+            UserModel = get_user_model()
+            user_id = ticket_data.get('user_id')
+            user = UserModel.objects.filter(id=user_id, is_active=True).first()
+            if not user:
+                raise exceptions.PermissionDenied("Tài khoản liên kết với vé không còn hoạt động.")
+
+            # Gắn metadata vé vào request để view kiểm tra attachment ID
+            request._view_ticket_data = ticket_data
+            return (user, None)
+
+        return None
+
+
+def can_user_modify_document(user, doc, perm_codename):
+    """
+    Kiểm tra quyền sở hữu (RBAC) khi Cập nhật, Xóa và Đổi hiệu lực tài liệu:
+    - Quản trị hệ thống (superuser, is_staff hoặc nhóm ADMIN) có toàn quyền.
+    - Người trực tiếp tạo ra tài liệu (nguoi_tao == user hoặc nguoi_tao_id == user.id) luôn có quyền trên tài liệu của mình.
+    - Cán bộ có quyền perm_codename ('change_tailieu' hoặc 'delete_tailieu'):
+      + Chỉ có quyền trên tài liệu thuộc cùng phòng ban / đơn vị của mình.
+      + Tuyệt đối KHÔNG được sửa, xóa hoặc đổi hiệu lực tài liệu của phòng ban khác!
+    """
+    if not user or not user.is_authenticated:
+        return False
+
+    # 1. Quản trị viên tối cao / Admin
+    if getattr(user, 'is_staff', False) or is_system_admin(user):
+        return True
+
+    # 2. Người trực tiếp tạo tài liệu
+    if doc.nguoi_tao_id and doc.nguoi_tao_id == user.id:
+        return True
+
+    # 3. Phải có quyền RBAC tương ứng
+    if not user.has_perm(perm_codename):
+        return False
+
+    # 4. Xác định đơn vị sở hữu của tài liệu
+    doc_don_vi_id = doc.don_vi_id
+    if not doc_don_vi_id and doc.nguoi_tao_id and hasattr(doc.nguoi_tao, 'don_vi_id'):
+        doc_don_vi_id = doc.nguoi_tao.don_vi_id
+
+    user_don_vi_id = getattr(user, 'don_vi_id', None)
+
+    # Nếu cả 2 phía đều có thông tin đơn vị ID:
+    if user_don_vi_id is not None and doc_don_vi_id is not None:
+        return user_don_vi_id == doc_don_vi_id
+
+    # Kiểm tra theo tên phòng ban (đơn vị hoặc nơi ban hành)
+    user_dept = None
+    if hasattr(user, 'don_vi') and user.don_vi:
+        user_dept = getattr(user.don_vi, 'ten', None)
+    if not user_dept and hasattr(user, 'profile'):
+        user_dept = getattr(user.profile, 'department', None)
+
+    doc_dept = None
+    if doc.noi_ban_hanh:
+        doc_dept = doc.noi_ban_hanh
+    elif doc.nguoi_tao_id:
+        if hasattr(doc.nguoi_tao, 'don_vi') and doc.nguoi_tao.don_vi:
+            doc_dept = getattr(doc.nguoi_tao.don_vi, 'ten', None)
+        elif hasattr(doc.nguoi_tao, 'profile'):
+            doc_dept = getattr(doc.nguoi_tao.profile, 'department', None)
+
+    if user_dept and doc_dept:
+        return user_dept.strip().lower() == doc_dept.strip().lower()
+
+    # Nếu tài liệu có đơn vị mà user không khớp đơn vị đó -> Chặn quyền của phòng ban khác
+    if doc_don_vi_id is not None or doc_dept is not None:
+        return False
+
+    return True
+
+
+class CanChangeTaiLieu(permissions.BasePermission):
+    """
+    Quyền sửa và đổi hiệu lực tài liệu (RBAC contract & kiểm tra sở hữu phòng ban):
+    - Quản trị viên tối cao (is_superuser) có toàn quyền trên mọi tài liệu.
+    - Người trực tiếp tạo ra tài liệu đó (nguoi_tao == request.user).
+    - Cán bộ có quyền change_tailieu chỉ được sửa/đổi hiệu lực tài liệu thuộc cùng phòng ban.
+      Không được phép sửa tài liệu của phòng ban khác!
+    """
+    message = "roles.messages.permissionDenied"
+
+    def has_permission(self, request, view):
+        user = request.user
+        return bool(user and user.is_authenticated)
+
+    def has_object_permission(self, request, view, obj):
+        return can_user_modify_document(request.user, obj, "change_tailieu")
+
+
+class CanDeleteTaiLieu(permissions.BasePermission):
+    """
+    Quyền xóa tài liệu (RBAC contract & kiểm tra sở hữu phòng ban):
+    - Quản trị viên tối cao (is_superuser) có toàn quyền trên mọi tài liệu.
+    - Người trực tiếp tạo ra tài liệu đó (nguoi_tao == request.user).
+    - Cán bộ có quyền delete_tailieu chỉ được xóa tài liệu thuộc cùng phòng ban.
+      Không được phép xóa tài liệu của phòng ban khác!
+    """
+    message = "roles.messages.permissionDenied"
+
+    def has_permission(self, request, view):
+        user = request.user
+        return bool(user and user.is_authenticated)
+
+    def has_object_permission(self, request, view, obj):
+        return can_user_modify_document(request.user, obj, "delete_tailieu")
 
 
 class DanhMucTaiLieuViewSet(viewsets.ModelViewSet):
@@ -30,13 +189,24 @@ class DanhMucTaiLieuViewSet(viewsets.ModelViewSet):
     - Tìm kiếm theo tên tài liệu, số ký hiệu
     - Xuất Excel danh mục Cấp 1
     """
+    authentication_classes = [JWTAuthentication, SessionAuthentication]
     queryset = DanhMucTaiLieu.objects.select_related('nguoi_lap').all()
     serializer_class = DanhMucTaiLieuSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResourcePagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['ten_tai_lieu', 'ky_hieu', 'ghi_chu']
     ordering_fields = ['stt_uu_tien', 'id', 'created_at', 'ten_tai_lieu']
     ordering = ['stt_uu_tien', 'id']
+
+    def get_permissions(self):
+        if self.action == "create":
+            return [permissions.IsAuthenticated(), require_permission("add_loaitailieubieumau")()]
+        if self.action in ["update", "partial_update"]:
+            return [permissions.IsAuthenticated(), require_permission("change_loaitailieubieumau")()]
+        if self.action == "destroy":
+            return [permissions.IsAuthenticated(), require_permission("delete_loaitailieubieumau")()]
+        return [permissions.IsAuthenticated(), require_permission("view_loaitailieubieumau")()]
 
     def perform_create(self, serializer):
         kwargs = {}
@@ -120,12 +290,22 @@ class LoaiTaiLieuViewSet(viewsets.ModelViewSet):
     """
     queryset = LoaiTaiLieu.objects.select_related('dm_tai_lieu').all()
     serializer_class = LoaiTaiLieuSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResourcePagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['dm_tai_lieu', 'is_public']
     search_fields = ['ten_loai', 'ghi_chu']
     ordering_fields = ['id', 'ten_loai', 'created_at']
     ordering = ['id']
+
+    def get_permissions(self):
+        if self.action == "create":
+            return [permissions.IsAuthenticated(), require_permission("add_loaitailieubieumau")()]
+        if self.action in ["update", "partial_update"]:
+            return [permissions.IsAuthenticated(), require_permission("change_loaitailieubieumau")()]
+        if self.action == "destroy":
+            return [permissions.IsAuthenticated(), require_permission("delete_loaitailieubieumau")()]
+        return [permissions.IsAuthenticated(), require_permission("view_loaitailieubieumau")()]
 
 
 class TaiLieuChiTietViewSet(viewsets.ModelViewSet):
@@ -138,47 +318,37 @@ class TaiLieuChiTietViewSet(viewsets.ModelViewSet):
     - Bộ lọc đa tiêu chí: dm_tai_lieu, loai_tai_lieu, nam, hieu_luc, search
     - Xuất Excel danh sách tài liệu theo đúng bộ lọc tìm kiếm
     """
+    authentication_classes = [JWTAuthentication, SessionAuthentication]
     serializer_class = TaiLieuChiTietSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResourcePagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_class = TaiLieuChiTietFilter
     search_fields = ['tieu_de', 'ky_hieu', 'noi_ban_hanh', 'ghi_chu']
     ordering_fields = ['ngay_dang', 'id', 'tieu_de', 'ky_hieu']
     ordering = ['-ngay_dang', '-id']
 
+    def get_permissions(self):
+        if self.action == "create":
+            return [permissions.IsAuthenticated(), require_permission("add_tailieu")()]
+        if self.action in ["update", "partial_update", "toggle_validity"]:
+            return [permissions.IsAuthenticated(), CanChangeTaiLieu()]
+        if self.action == "destroy":
+            return [permissions.IsAuthenticated(), CanDeleteTaiLieu()]
+        return [permissions.IsAuthenticated(), require_permission("view_tailieu")()]
+
     def get_queryset(self):
         qs = TaiLieuChiTiet.objects.select_related(
             'dm_tai_lieu', 'nguoi_tao'
         ).prefetch_related('loai_tai_lieu', 'attachments').all()
 
-        user = self.request.user
-        # Người dùng chưa đăng nhập: chỉ thấy tài liệu công khai (TAT_CA)
-        if not user or not user.is_authenticated:
-            return qs.filter(hien_thi='TAT_CA')
-
-        # Quản trị viên và Staff: thấy toàn bộ
-        if user.is_superuser or user.is_staff:
-            return qs
-
-        # Người dùng đăng nhập: thấy tài liệu TAT_CA, hoặc do chính mình tạo, hoặc cùng đơn vị/phòng ban
-        user_dept = ""
-        if hasattr(user, "profile"):
-            user_dept = getattr(user.profile, "department", "")
-        user_don_vi_id = getattr(user, "don_vi_id", None)
-
-        q_filter = Q(hien_thi='TAT_CA') | Q(nguoi_tao=user)
-        if user_don_vi_id:
-            q_filter |= Q(hien_thi='NOI_BO_PHONG_BAN', don_vi_id=user_don_vi_id)
-        if user_dept:
-            q_filter |= Q(hien_thi='NOI_BO_PHONG_BAN', nguoi_tao__profile__department=user_dept)
-
-        return qs.filter(q_filter).distinct()
+        return visible_resources(qs, self.request.user)
 
     def perform_create(self, serializer):
         kwargs = {}
         if self.request.user and self.request.user.is_authenticated:
             kwargs['nguoi_tao'] = self.request.user
-            if 'don_vi_id' not in serializer.validated_data and hasattr(self.request.user, 'don_vi_id'):
+            if serializer.validated_data.get('don_vi_id') is None and hasattr(self.request.user, 'don_vi_id'):
                 kwargs['don_vi_id'] = getattr(self.request.user, 'don_vi_id')
         serializer.save(**kwargs)
 
@@ -207,12 +377,22 @@ class TaiLieuChiTietViewSet(viewsets.ModelViewSet):
             else:
                 obj.hieu_luc = 'CON_HIEU_LUC'
 
-        if link_thay_the is not None:
-            obj.link_thay_the = link_thay_the
-        if ngay_het_hieu_luc is not None:
-            obj.ngay_het_hieu_luc = ngay_het_hieu_luc
+        if obj.hieu_luc == 'CON_HIEU_LUC':
+            obj.link_thay_the = ''
+            if ngay_het_hieu_luc is not None:
+                obj.ngay_het_hieu_luc = ngay_het_hieu_luc if ngay_het_hieu_luc != '' else None
+            else:
+                obj.ngay_het_hieu_luc = None
+        else:
+            if link_thay_the is not None:
+                obj.link_thay_the = link_thay_the
+            if ngay_het_hieu_luc is not None:
+                obj.ngay_het_hieu_luc = ngay_het_hieu_luc if ngay_het_hieu_luc != '' else None
 
         try:
+            if obj.hieu_luc in ('HET_HIEU_LUC', 'HET_VA_THAY_THE') and not obj.ngay_het_hieu_luc:
+                from django.utils import timezone
+                obj.ngay_het_hieu_luc = timezone.localdate()
             obj.full_clean()
             obj.save()
         except DjangoValidationError as e:
@@ -230,10 +410,12 @@ class TaiLieuChiTietViewSet(viewsets.ModelViewSet):
         Xuất danh sách tài liệu chi tiết sang file Excel (.xlsx) theo đúng bộ lọc tìm kiếm hiện tại
         """
         filtered_qs = self.filter_queryset(self.get_queryset())
+        lang = request.query_params.get('lang', 'vi')
+        is_en = (lang == 'en')
 
         wb = openpyxl.Workbook()
         ws = wb.active
-        ws.title = "DanhSachTaiLieu"
+        ws.title = "DocumentList" if is_en else "DanhSachTaiLieu"
 
         # Cấu hình phong cách bảng tính
         title_font = Font(name="Arial", size=14, bold=True, color="1E3A8A")
@@ -253,7 +435,11 @@ class TaiLieuChiTietViewSet(viewsets.ModelViewSet):
         # Tiêu đề bảng
         ws.merge_cells("A1:L1")
         title_cell = ws["A1"]
-        title_cell.value = "DANH SÁCH TÀI LIỆU VÀ BIỂU MẪU CHUNG"
+        title_cell.value = (
+            "COMMON DOCUMENTS AND TEMPLATES DIRECTORY"
+            if is_en
+            else "DANH SÁCH TÀI LIỆU VÀ BIỂU MẪU CHUNG"
+        )
         title_cell.font = title_font
         title_cell.alignment = Alignment(horizontal="center", vertical="center")
         ws.row_dimensions[1].height = 35
@@ -261,26 +447,45 @@ class TaiLieuChiTietViewSet(viewsets.ModelViewSet):
         # Dòng thời gian xuất
         ws.merge_cells("A2:L2")
         sub_cell = ws["A2"]
-        sub_cell.value = f"Ngày xuất báo cáo: {datetime.now().strftime('%d/%m/%Y %H:%M')} | Tổng số tài liệu: {filtered_qs.count()}"
+        if is_en:
+            sub_cell.value = f"Export date: {datetime.now().strftime('%d/%m/%Y %H:%M')} | Total documents: {filtered_qs.count()}"
+        else:
+            sub_cell.value = f"Ngày xuất báo cáo: {datetime.now().strftime('%d/%m/%Y %H:%M')} | Tổng số tài liệu: {filtered_qs.count()}"
         sub_cell.font = Font(name="Arial", size=10, italic=True, color="475569")
         sub_cell.alignment = Alignment(horizontal="center", vertical="center")
         ws.row_dimensions[2].height = 20
 
         # Header
-        headers = [
-            "STT",
-            "Số ký hiệu",
-            "Tiêu đề tài liệu",
-            "Danh mục Cấp 1",
-            "Loại tài liệu Cấp 2",
-            "Nơi ban hành",
-            "Ngày đăng",
-            "Hiệu lực",
-            "Ngày hết hiệu lực",
-            "Văn bản thay thế",
-            "Phạm vi hiển thị",
-            "Người tạo",
-        ]
+        if is_en:
+            headers = [
+                "No.",
+                "Document Code",
+                "Document Title",
+                "Category (Level 1)",
+                "Document Type (Level 2)",
+                "Issuing Authority",
+                "Published Date",
+                "Status",
+                "Expiration Date",
+                "Replacement Document",
+                "Visibility Scope",
+                "Created By",
+            ]
+        else:
+            headers = [
+                "STT",
+                "Số ký hiệu",
+                "Tiêu đề tài liệu",
+                "Danh mục Cấp 1",
+                "Loại tài liệu Cấp 2",
+                "Nơi ban hành",
+                "Ngày đăng",
+                "Hiệu lực",
+                "Ngày hết hiệu lực",
+                "Văn bản thay thế",
+                "Phạm vi hiển thị",
+                "Người tạo",
+            ]
         ws.append([])  # Dòng trống row 3
         ws.append(headers)  # Row 4
         ws.row_dimensions[4].height = 28
@@ -302,7 +507,26 @@ class TaiLieuChiTietViewSet(viewsets.ModelViewSet):
                 if doc.nguoi_tao else ""
             )
 
-            is_expired = doc.hieu_luc in ['HET_HIEU_LUC', 'HET_VA_THAY_THE']
+            is_expired = doc.is_expired
+            effective_status = doc.effective_hieu_luc
+
+            if is_en:
+                hieu_luc_map = {
+                    'CON_HIEU_LUC': 'Active',
+                    'CON_HIEU_LUC_1_PHAN': 'Partially Active',
+                    'HET_HIEU_LUC': 'Expired',
+                    'HET_VA_THAY_THE': 'Expired & Replaced',
+                }
+                hieu_luc_display = hieu_luc_map.get(effective_status, effective_status)
+                hien_thi_map = {
+                    'TAT_CA': 'Public / All',
+                    'PHONG_BAN': 'Internal Department',
+                }
+                hien_thi_display = hien_thi_map.get(doc.hien_thi, doc.get_hien_thi_display())
+            else:
+                hieu_luc_vn_map = dict(TaiLieuChiTiet.HIEU_LUC_CHOICES)
+                hieu_luc_display = hieu_luc_vn_map.get(effective_status, effective_status)
+                hien_thi_display = doc.get_hien_thi_display()
 
             row_data = [
                 idx,
@@ -312,10 +536,10 @@ class TaiLieuChiTietViewSet(viewsets.ModelViewSet):
                 loai_names,
                 doc.noi_ban_hanh or "",
                 ngay_dang_str,
-                doc.get_hieu_luc_display(),
+                hieu_luc_display,
                 ngay_het_str,
                 doc.link_thay_the or "",
-                doc.get_hien_thi_display(),
+                hien_thi_display,
                 nguoi_tao_str,
             ]
             ws.append(row_data)
@@ -358,7 +582,8 @@ class TaiLieuChiTietViewSet(viewsets.ModelViewSet):
             content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
         date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-        response["Content-Disposition"] = f'attachment; filename="Danh_sach_tai_lieu_{date_str}.xlsx"'
+        prefix = "Document_List" if is_en else "Danh_sach_tai_lieu"
+        response["Content-Disposition"] = f'attachment; filename="{prefix}_{date_str}.xlsx"'
         return response
 
 
@@ -366,23 +591,224 @@ class ChiTietTaiLieuAttachmentViewSet(viewsets.ModelViewSet):
     """
     ViewSet cho Tệp đính kèm tài liệu (1-N Hướng A):
     - Quản lý danh sách, upload, xóa mềm tệp đính kèm theo DDL Base
-    - Chuẩn hóa tên cột nguoi_tao_id, created_at (PR #96 / PR #101)
+    - Chống lỗ hổng IDOR rò rỉ tệp nội bộ: lọc tệp theo visible_resources của tài liệu cha
+    - Kiểm soát chặt quyền xóa mềm và upload tệp
     """
-    queryset = ChiTietTaiLieuAttachment.objects.filter(is_deleted=False).select_related('document', 'nguoi_tao')
+    authentication_classes = [TicketOrJWTAuthentication, SessionAuthentication]
     serializer_class = ChiTietTaiLieuAttachmentSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResourcePagination
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['document']
     search_fields = ['name']
+    ordering_fields = ['id', 'created_at', 'name', 'file_size']
+    ordering = ['id']
+
+    def get_permissions(self):
+        if self.action in ['create', 'destroy', 'issue_view_ticket']:
+            return [permissions.IsAuthenticated()]
+        return [permissions.IsAuthenticated(), require_permission("view_tailieu")()]
+
+    def get_queryset(self):
+        user = self.request.user
+        # Bảo vệ IDOR: Chỉ cho phép truy vấn tệp thuộc về các tài liệu mà người dùng có quyền xem
+        visible_docs = visible_resources(TaiLieuChiTiet.objects.all(), user)
+        return ChiTietTaiLieuAttachment.objects.filter(
+            is_deleted=False,
+            document__in=visible_docs
+        ).select_related('document', 'nguoi_tao')
 
     def perform_create(self, serializer):
-        kwargs = {}
-        if self.request.user and self.request.user.is_authenticated:
-            kwargs['nguoi_tao'] = self.request.user
-        serializer.save(**kwargs)
+        user = self.request.user
+        if not user or not user.is_authenticated:
+            raise exceptions.PermissionDenied("roles.messages.permissionDenied")
+        doc = serializer.validated_data.get('document')
+        if not doc or not can_user_modify_document(user, doc, "change_tailieu"):
+            raise exceptions.PermissionDenied("roles.messages.permissionDenied")
+        serializer.save(nguoi_tao=user)
 
     def perform_destroy(self, instance):
+        user = self.request.user
+        if not user or not user.is_authenticated:
+            raise exceptions.PermissionDenied("roles.messages.permissionDenied")
+        doc = instance.document
+        if not doc or not can_user_modify_document(user, doc, "delete_tailieu"):
+            raise exceptions.PermissionDenied("roles.messages.permissionDenied")
         instance.is_deleted = True
         instance.save()
+
+    @action(detail=True, methods=['post'], url_path='ticket')
+    def issue_view_ticket(self, request, pk=None):
+        """
+        Cấp vé xem tài liệu tạm thời dùng 1 lần (Single-Use Short-Lived Ticket).
+        Chỉ dành cho người dùng đã đăng nhập hợp lệ.
+        Vé có thời hạn tối đa 60 giây và sẽ bị hủy ngay lập tức khi tệp được tải (Burn on Read).
+        """
+        user = request.user
+        if not user or not user.is_authenticated:
+            raise exceptions.NotAuthenticated("Yêu cầu đăng nhập để lấy vé xem tài liệu.")
+
+        att = self.get_object()
+        from django.core.signing import TimestampSigner
+        signer = TimestampSigner(salt='doc_view_ticket')
+        payload = {
+            "att_id": att.id,
+            "user_id": user.id,
+        }
+        raw_ticket = signer.sign_object(payload)
+        ticket = f"vt_{raw_ticket}"
+
+        ext = att.name.split('.')[-1].lower() if '.' in att.name else ''
+        pdf_hash = "#view=Fit&navpanes=0" if ext == 'pdf' else ""
+        view_url = f"/api/resources/attachments/{att.id}/view/?ticket={ticket}{pdf_hash}"
+        download_url = f"/api/resources/attachments/{att.id}/download/?ticket={ticket}"
+
+        return Response({
+            "ticket": ticket,
+            "expires_in": 60,
+            "view_url": view_url,
+            "download_url": download_url,
+        })
+
+    @action(detail=True, methods=['get'], url_path='view')
+    def view_file(self, request, pk=None):
+        """
+        Mở xem trực tiếp tệp trong tab trình duyệt (inline display, không bắt buộc tải về)
+        """
+        import os
+        import mimetypes
+        from django.http import FileResponse, Http404
+
+        att = self.get_object()
+        if hasattr(request, '_view_ticket_data'):
+            allowed_att_id = request._view_ticket_data.get('att_id')
+            if allowed_att_id and allowed_att_id != att.id:
+                raise exceptions.PermissionDenied("Vé không áp dụng cho tài liệu này.")
+
+        disk_path = template_disk_path(att.path)
+        if not disk_path or not os.path.exists(disk_path):
+            raise Http404("Tệp không tồn tại trên máy chủ")
+
+        content_type, _ = mimetypes.guess_type(disk_path)
+        if not content_type:
+            ext = att.name.split('.')[-1].lower() if '.' in att.name else ''
+            if ext == 'pdf':
+                content_type = 'application/pdf'
+            elif ext in ['xlsx', 'xls']:
+                content_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' if ext == 'xlsx' else 'application/vnd.ms-excel'
+            elif ext in ['png', 'jpg', 'jpeg']:
+                content_type = f'image/{ext}'
+            else:
+                content_type = 'application/octet-stream'
+
+        from urllib.parse import quote
+        encoded_name = quote(att.name)
+        response = FileResponse(open(disk_path, 'rb'), content_type=content_type, as_attachment=False)
+        response['Content-Disposition'] = f'inline; filename="{encoded_name}"; filename*=UTF-8\'\'{encoded_name}'
+        return response
+
+    @action(detail=True, methods=['get'], url_path='download')
+    def download_file(self, request, pk=None):
+        """
+        Tải tệp đính kèm về máy (as_attachment=True)
+        """
+        import os
+        import mimetypes
+        from django.http import FileResponse, Http404
+
+        att = self.get_object()
+        if hasattr(request, '_view_ticket_data'):
+            allowed_att_id = request._view_ticket_data.get('att_id')
+            if allowed_att_id and allowed_att_id != att.id:
+                raise exceptions.PermissionDenied("Vé không áp dụng cho tài liệu này.")
+
+        disk_path = template_disk_path(att.path)
+        if not disk_path or not os.path.exists(disk_path):
+            raise Http404("Tệp không tồn tại trên máy chủ")
+
+        content_type, _ = mimetypes.guess_type(disk_path)
+        if not content_type:
+            content_type = 'application/octet-stream'
+
+        from urllib.parse import quote
+        encoded_name = quote(att.name)
+        response = FileResponse(open(disk_path, 'rb'), content_type=content_type, as_attachment=True, filename=att.name)
+        response['Content-Disposition'] = f'attachment; filename="{encoded_name}"; filename*=UTF-8\'\'{encoded_name}'
+        return response
+
+    @action(detail=True, methods=['get'], url_path='preview')
+    def preview(self, request, pk=None):
+        """
+        API xem trước chi tiết tệp đính kèm:
+        - Excel (.xlsx, .xls): đọc dữ liệu các sheet trả về mảng bảng tính JSON
+        - PDF: trả về thông tin và URL trực tiếp
+        - Image: trả về thông tin và URL trực tiếp
+        - Khác: trả về thông tin tệp
+        """
+        att = self.get_object()
+        file_name = att.name
+        ext = file_name.split('.')[-1].lower() if '.' in file_name else ''
+        file_url = att.path
+
+        if ext in ['xlsx', 'xls']:
+            sheets_data = []
+            try:
+                import os
+                disk_path = template_disk_path(file_url)
+                if disk_path and os.path.exists(disk_path):
+                    wb = openpyxl.load_workbook(disk_path, data_only=True)
+                    for s_name in wb.sheetnames[:5]:
+                        ws = wb[s_name]
+                        rows_data = []
+                        for row in ws.iter_rows(max_row=100, max_col=26, values_only=True):
+                            row_vals = [
+                                cell.strftime('%d/%m/%Y') if isinstance(cell, (datetime, date))
+                                else str(cell) if cell is not None
+                                else ""
+                                for cell in row
+                            ]
+                            if any(v != "" for v in row_vals):
+                                rows_data.append(row_vals)
+                        sheets_data.append({
+                            'name': s_name,
+                            'rows': rows_data
+                        })
+                    wb.close()
+            except Exception:
+                pass
+            return Response({
+                'id': att.id,
+                'name': att.name,
+                'file_type': 'EXCEL',
+                'file_size': att.file_size,
+                'file_url': file_url,
+                'sheets': sheets_data
+            })
+
+        if ext == 'pdf':
+            return Response({
+                'id': att.id,
+                'name': att.name,
+                'file_type': 'PDF',
+                'file_size': att.file_size,
+                'file_url': file_url,
+            })
+
+        if ext in ['png', 'jpg', 'jpeg', 'webp', 'gif']:
+            return Response({
+                'id': att.id,
+                'name': att.name,
+                'file_type': 'IMAGE',
+                'file_size': att.file_size,
+                'file_url': file_url,
+            })
+
+        return Response({
+            'id': att.id,
+            'name': att.name,
+            'file_type': ext.upper() or 'DOCUMENT',
+            'file_size': att.file_size,
+            'file_url': file_url,
+        })
 
 

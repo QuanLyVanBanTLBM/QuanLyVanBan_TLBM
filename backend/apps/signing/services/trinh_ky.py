@@ -3,13 +3,13 @@ Hồ sơ trình ký, lượt trình và snapshot người ký — Phase 7 (#80; 
 
 Vòng đời yêu cầu: NHAP -> CHO_KY (gui) -> HOAN_THANH | TU_CHOI | HUY; NHAP -> HUY.
 TU_CHOI là kết thúc; trình lại tạo yêu cầu mới có `ho_so_goc` trỏ về yêu cầu bị từ chối.
-Cấp ký mở tuần tự theo `thu_tu`; người trong cùng cấp ký song song (ký chính chờ ký nháy chặn).
+Cấp ký mở tuần tự theo `thu_tu`; người trong cùng cấp ký song song.
 """
 
 import io
 from datetime import timedelta
 
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status
@@ -19,11 +19,12 @@ from ..errors import ConflictError, SigningError
 from ..models import (
     SigningAttempt, SigningAuditLog, SigningProcess, SigningRequest, SigningRequestStep, SigningRequestStepSigner,
 )
-from ..permissions import HUY_TRINH_KY, XEM_NHAT_KY, co_quyen
+from ..permissions import HUY_TRINH_KY, KY_TRINH_KY, XEM_NHAT_KY, XEM_TAT_CA, co_quyen
 from ..storage import StorageError, get_storage
 from ..tich_hop import to_chuc
-from ..tich_hop.van_ban import kiem_tra_van_ban_trinh_ky
+from ..tich_hop.van_ban import kiem_tra_van_ban_trinh_ky, ma_van_ban_di_xem_duoc
 from . import process as process_service
+from . import quyen_ky, thong_bao
 from .audit import ghi_nhat_ky
 
 LOAI = "signing_request"
@@ -59,7 +60,7 @@ def _so_trang_hoac_loi(data):
 
     try:
         reader = PdfReader(io.BytesIO(data))
-        if reader.is_encrypted and not reader.decrypt(""):
+        if reader.is_encrypted:
             return 0, "tep_pdf_co_mat_khau"
         so_trang = len(reader.pages)
         return so_trang, (None if so_trang > 0 else "tep_khong_phai_pdf")
@@ -73,15 +74,45 @@ def doc_tep_pdf(tep):
         raise _loi("thieu_tep", "Cần tải lên tệp PDF dự thảo.", tep=["Bắt buộc."])
     if tep.size > TEP_TOI_DA:
         raise _loi("tep_qua_lon", "Tệp vượt quá 20 MB.", tep=["Tối đa 20 MB."])
-    data = tep.read()
+    return kiem_tra_du_lieu_pdf(tep.read())
+
+
+def kiem_tra_du_lieu_pdf(data):
+    """Kiểm dung lượng và nội dung PDF đã đọc từ nguồn upload hoặc bản ghi văn bản đi."""
+    if len(data) > TEP_TOI_DA:
+        raise _loi("tep_qua_lon", "Tệp vượt quá 20 MB.", tep=["Tối đa 20 MB."])
     if not data.startswith(CHU_KY_PDF):
         raise _loi("tep_khong_phai_pdf", "Chỉ nhận tệp PDF.", tep=["Không phải tệp PDF."])
     so_trang, loi_pdf = _so_trang_hoac_loi(data)
     if loi_pdf == "tep_pdf_co_mat_khau":
-        raise _loi(loi_pdf, "Không nhận PDF có mật khẩu.", tep=["Gỡ mật khẩu trước khi tải lên."])
+        raise _loi(loi_pdf, "Không hỗ trợ tệp PDF có mật khẩu bảo vệ.", tep=["Không hỗ trợ tệp PDF có mật khẩu bảo vệ."])
     if loi_pdf:
         raise _loi(loi_pdf, "Tệp PDF hỏng hoặc không có trang.", tep=["Không đọc được tệp PDF."])
     return data, so_trang
+
+
+def doc_tep_dinh_kem_pdf(nguoi, van_ban_id, tep_dinh_kem_id):
+    """Đọc và kiểm PDF đính kèm của đúng văn bản đi mà người trình được phép xem."""
+    from documents.models import VanBanDiAttachment
+
+    van_ban = kiem_tra_van_ban_trinh_ky(nguoi, enums.LoaiVanBan.VAN_BAN_DI, van_ban_id)
+    tep_dinh_kem = VanBanDiAttachment.objects.filter(
+        document_id=van_ban.pk, pk=tep_dinh_kem_id, is_deleted=False,
+    ).first()
+    if tep_dinh_kem is None or not tep_dinh_kem.file:
+        raise _loi("khong_tim_thay_tep_dinh_kem", "Không tìm thấy tệp đính kèm của văn bản đi.",
+                   status.HTTP_404_NOT_FOUND, tep_dinh_kem_id=["Tệp không tồn tại hoặc đã bị xóa."])
+    if not (tep_dinh_kem.name or "").lower().endswith(".pdf"):
+        raise _loi("tep_khong_phai_pdf", "Chỉ chọn tệp PDF đính kèm.", tep_dinh_kem_id=["Tệp không phải PDF."])
+    try:
+        if tep_dinh_kem.file.size > TEP_TOI_DA:
+            raise _loi("tep_qua_lon", "Tệp vượt quá 20 MB.", tep_dinh_kem_id=["Tối đa 20 MB."])
+        with tep_dinh_kem.file.open("rb") as stored:
+            data = stored.read(TEP_TOI_DA + 1)
+    except (FileNotFoundError, OSError, ValueError) as exc:
+        raise _loi("khong_doc_duoc_tep_dinh_kem", "Không đọc được tệp đính kèm trên máy chủ.",
+                   status.HTTP_503_SERVICE_UNAVAILABLE, tep_dinh_kem_id=["Không đọc được tệp."]) from exc
+    return kiem_tra_du_lieu_pdf(data)
 
 
 def luu_du_lieu_pdf(data):
@@ -141,15 +172,18 @@ def _kiem_tra_quy_trinh(quy_trinh, nguoi_tao):
 
 def trinh_ky_xem_duoc(nguoi):
     """
-    Người tạo, người ký của bất kỳ lượt trình nào (kể cả người được ủy quyền), và người có quyền
-    xem nhật ký trình ký (kiểm toán) xem được hồ sơ. Không mở quyền xem chỉ vì tên tab.
+    Người tạo, người ký của bất kỳ lượt trình nào, người có quyền xem nhật ký trình ký (kiểm toán) xem được hồ sơ.
+    Người có quyền xem tất cả hồ sơ trình ký (`view_all_trinhky`) xem được mọi hồ sơ nháp (chưa gắn văn bản)
+    và hồ sơ gắn văn bản đi mà họ xem được theo quy tắc của module Văn bản (`van_ban_xem_duoc`), nên hồ sơ của
+    văn bản hạn chế không bị lộ. Quyền này chỉ mở việc xem, không mở ký, hủy, trả lại hay sửa.
     """
     queryset = SigningRequest.objects.select_related("quy_trinh", "create_by")
     if co_quyen(nguoi, XEM_NHAT_KY):
         return queryset
-    return queryset.filter(
-        Q(create_by=nguoi) | Q(luot_trinh_set__cap_ky_set__nguoi_ky_set__nguoi_ky=nguoi)
-    ).distinct()
+    dieu_kien = Q(create_by=nguoi) | Q(luot_trinh_set__cap_ky_set__nguoi_ky_set__nguoi_ky=nguoi)
+    if co_quyen(nguoi, XEM_TAT_CA):
+        dieu_kien |= Q(van_ban_id__isnull=True) | Q(van_ban_id__in=ma_van_ban_di_xem_duoc(nguoi))
+    return queryset.filter(dieu_kien).distinct()
 
 
 def dang_cho_toi_ky(nguoi):
@@ -162,6 +196,45 @@ def dang_cho_toi_ky(nguoi):
         luot_trinh_set__cap_ky_set__nguoi_ky_set__trang_thai=enums.TrangThaiNguoiKy.CHO_KY,
         luot_trinh_set__cap_ky_set__nguoi_ky_set__thoi_diem_mo__isnull=False,
     ).distinct()
+
+
+# ── Quy tắc số hồ sơ theo văn bản đi ────────────────────────────────────────
+
+TRANG_THAI_DANG_MO = (enums.TrangThaiYeuCau.NHAP, enums.TrangThaiYeuCau.CHO_KY)
+
+
+def _kiem_tra_van_ban_co_the_trinh(document_type, van_ban_id, tru=None):
+    """
+    Mỗi văn bản chỉ có một hồ sơ đang mở và tối đa một hồ sơ hoàn tất. Hồ sơ bị từ chối hoặc hủy không chặn gửi lại.
+    Khóa advisory theo văn bản (giữ đến hết transaction) để hai yêu cầu đồng thời không cùng qua.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_advisory_xact_lock(hashtext(%s), %s)", [f"signing:{document_type}", van_ban_id])
+    da_hoan_tat = SigningRequest.objects.filter(
+        document_type=document_type,
+        van_ban_id=van_ban_id,
+        trang_thai=enums.TrangThaiYeuCau.HOAN_THANH,
+    )
+    if tru is not None:
+        da_hoan_tat = da_hoan_tat.exclude(pk=tru)
+    ho_so_hoan_tat = da_hoan_tat.order_by("pk").first()
+    if ho_so_hoan_tat is not None:
+        raise ConflictError(
+            code="van_ban_da_co_ho_so_hoan_tat",
+            detail=f"Văn bản đi đã có hồ sơ trình ký #{ho_so_hoan_tat.pk} hoàn tất. Tạo văn bản đi mới nếu cần ký bản khác.",
+            fields={"van_ban_id": [f"Đã có hồ sơ hoàn tất #{ho_so_hoan_tat.pk}."]},
+        )
+    dang_mo = SigningRequest.objects.filter(document_type=document_type, van_ban_id=van_ban_id,
+                                            trang_thai__in=TRANG_THAI_DANG_MO)
+    if tru is not None:
+        dang_mo = dang_mo.exclude(pk=tru)
+    ho_so = dang_mo.order_by("pk").first()
+    if ho_so is not None:
+        raise ConflictError(
+            code="van_ban_da_co_ho_so_dang_mo",
+            detail=f"Văn bản đã có hồ sơ trình ký #{ho_so.pk} đang mở. Hoàn tất hoặc hủy hồ sơ đó trước khi trình hồ sơ mới.",
+            fields={"van_ban_id": [f"Đang có hồ sơ #{ho_so.pk}."]},
+        )
 
 
 # ── Chống trùng thao tác (header Idempotency-Key, plan mục 7.5) ─────────────
@@ -178,20 +251,63 @@ def _thao_tac_da_xu_ly(hanh_dong, khoa_chong_trung, yeu_cau):
     return da_co
 
 
+# ── Văn bản trình ký (#275 mục 3) ───────────────────────────────────────────
+# Hồ sơ dùng tệp PDF đính kèm của văn bản đi, hoặc một PDF dự thảo chưa vào sổ (số hiệu tham chiếu tùy chọn,
+# trích yếu bắt buộc). Văn bản đi chỉ có tối đa một hồ sơ đang mở và một hồ sơ hoàn tất.
+
+
+def _kiem_tra_van_ban_gan(nguoi, document_type, van_ban_id, tru=None):
+    if van_ban_id is None:
+        return
+    kiem_tra_van_ban_trinh_ky(nguoi, document_type, van_ban_id)
+    _kiem_tra_van_ban_co_the_trinh(document_type, van_ban_id, tru=tru)
+
+
+def _kiem_tra_trich_yeu(trich_yeu):
+    s = (trich_yeu or "").strip()
+    if not s:
+        raise _loi("thieu_van_ban_trinh_ky", "Chọn văn bản đi có sẵn hoặc nhập trích yếu cho PDF dự thảo chưa vào sổ.",
+                   trich_yeu_van_ban=["Bắt buộc khi không gắn bản ghi văn bản đi."])
+    if len(s) > 1000:
+        raise _loi("trich_yeu_qua_dai", "Trích yếu văn bản không được vượt quá 1000 ký tự.",
+                   trich_yeu_van_ban=["Tối đa 1000 ký tự."])
+
+
 # ── Tạo, sửa nháp ───────────────────────────────────────────────────────────
 
 
 @transaction.atomic
-def tao_nhap(nguoi_tao, *, document_type, van_ban_id, quy_trinh, muc_do, tep, han_chot=None, ghi_chu="",
-             dia_chi_ip=None):
-    kiem_tra_van_ban_trinh_ky(nguoi_tao, document_type, van_ban_id)
+def tao_nhap(nguoi_tao, *, quy_trinh, tep=None, tep_dinh_kem_id=None, document_type=None, van_ban_id=None,
+             so_hieu_van_ban="", trich_yeu_van_ban="", han_chot=None, ghi_chu="", dia_chi_ip=None):
+    if van_ban_id is not None:
+        if tep is not None:
+            raise _loi("du_lieu_tep_khong_hop_le", "Văn bản đi có sẵn phải dùng tệp đính kèm trên bản ghi.",
+                       tep=["Không tải thêm PDF khi đã chọn văn bản đi."])
+        if tep_dinh_kem_id is None:
+            raise _loi("thieu_tep_dinh_kem", "Chọn tệp PDF đính kèm của văn bản đi.",
+                       tep_dinh_kem_id=["Bắt buộc."])
+        if document_type not in (None, enums.LoaiVanBan.VAN_BAN_DI):
+            kiem_tra_van_ban_trinh_ky(nguoi_tao, document_type, van_ban_id)
+        document_type = enums.LoaiVanBan.VAN_BAN_DI
+        so_hieu_van_ban = trich_yeu_van_ban = ""  # văn bản đi là nguồn mô tả
+        data, _ = doc_tep_dinh_kem_pdf(nguoi_tao, van_ban_id, tep_dinh_kem_id)
+    else:
+        if tep_dinh_kem_id is not None:
+            raise _loi("tep_dinh_kem_khong_hop_le", "Tệp đính kèm chỉ dùng khi chọn văn bản đi.",
+                       tep_dinh_kem_id=["Không áp dụng cho PDF dự thảo chưa vào sổ."])
+        document_type = None
+        _kiem_tra_trich_yeu(trich_yeu_van_ban)
+        data, _ = doc_tep_pdf(tep)
+    if van_ban_id is not None:
+        _kiem_tra_van_ban_co_the_trinh(document_type, van_ban_id)
     quy_trinh = SigningProcess.objects.get(pk=quy_trinh.pk)
     _kiem_tra_quy_trinh(quy_trinh, nguoi_tao)
     _kiem_tra_han_chot(han_chot)
-    vi_tri, ma_bam = luu_tep_pdf(tep)
+    vi_tri, ma_bam = luu_du_lieu_pdf(data)
     yeu_cau = SigningRequest.objects.create(
-        document_type=document_type, van_ban_id=van_ban_id, quy_trinh=quy_trinh,
-        phien_ban_quy_trinh=quy_trinh.phien_ban, muc_do=muc_do, han_chot=han_chot, ghi_chu=ghi_chu,
+        document_type=document_type, van_ban_id=van_ban_id, so_hieu_van_ban=so_hieu_van_ban.strip(),
+        trich_yeu_van_ban=trich_yeu_van_ban.strip(), quy_trinh=quy_trinh,
+        phien_ban_quy_trinh=quy_trinh.phien_ban, han_chot=han_chot, ghi_chu=ghi_chu,
         phien_ban_van_ban="1", vi_tri_luu_tep=vi_tri, ma_bam_tai_lieu=ma_bam, create_by=nguoi_tao,
     )
     ghi_nhat_ky(nguoi_tao, LOAI, yeu_cau.pk, "TAO_TRINH_KY", trinh_ky=yeu_cau,
@@ -201,15 +317,73 @@ def tao_nhap(nguoi_tao, *, document_type, van_ban_id, quy_trinh, muc_do, tep, ha
 
 
 @transaction.atomic
+def lien_ket_van_ban_di(yeu_cau, nguoi, *, van_ban_id, dia_chi_ip=None):
+    """Liên kết một PDF đã hoàn tất duyệt nội bộ với bản ghi văn bản đi đã đăng ký."""
+    yeu_cau = _khoa_yeu_cau(yeu_cau.pk)
+    _yeu_cau_nguoi_tao(yeu_cau, nguoi)
+    if yeu_cau.trang_thai != enums.TrangThaiYeuCau.HOAN_THANH:
+        raise ConflictError(code="ho_so_chua_hoan_tat", detail="Chỉ liên kết sau khi hồ sơ hoàn tất duyệt nội bộ.")
+    if yeu_cau.van_ban_id is not None:
+        raise ConflictError(code="ho_so_da_lien_ket_van_ban", detail="Hồ sơ đã gắn với văn bản đi.")
+    luot = luot_hien_hanh(yeu_cau)
+    if (luot is None or luot.trang_thai != enums.TrangThaiLuotTrinh.HOAN_THANH
+            or luot.trang_thai_tep_hoan_tat != enums.TrangThaiTepHoanTat.THANH_CONG
+            or not luot.vi_tri_tep_hoan_tat or not luot.ma_bam_tep_hoan_tat):
+        raise ConflictError(code="tep_hoan_tat_chua_san_sang",
+                            detail="Tệp hoàn tất chưa được tạo thành công; hãy thử lại sau khi tệp sẵn sàng.")
+    van_ban = kiem_tra_van_ban_trinh_ky(nguoi, enums.LoaiVanBan.VAN_BAN_DI, van_ban_id)
+    _kiem_tra_van_ban_co_the_trinh(enums.LoaiVanBan.VAN_BAN_DI, van_ban.pk, tru=yeu_cau.pk)
+    yeu_cau.document_type = enums.LoaiVanBan.VAN_BAN_DI
+    yeu_cau.van_ban_id = van_ban.pk
+    yeu_cau.so_hieu_van_ban = ""
+    yeu_cau.trich_yeu_van_ban = ""
+    yeu_cau.update_by = nguoi
+    yeu_cau.save(update_fields=["document_type", "van_ban_id", "so_hieu_van_ban", "trich_yeu_van_ban",
+                                 "update_by", "update_at"])
+    so_hieu = van_ban.so_hieu or ""
+    ghi_nhat_ky(nguoi, LOAI, yeu_cau.pk, "LIEN_KET_VAN_BAN_DI", trinh_ky=yeu_cau, luot_trinh=luot,
+                trang_thai_truoc=yeu_cau.trang_thai, trang_thai_sau=yeu_cau.trang_thai,
+                chi_tiet=f"#{van_ban.pk} · {so_hieu}", dia_chi_ip=dia_chi_ip,
+                du_lieu_kem_theo={"van_ban_id": van_ban.pk, "so_hieu": so_hieu})
+    return yeu_cau
+
+
+@transaction.atomic
 def cap_nhat_nhap(yeu_cau, nguoi, *, tep=None, dia_chi_ip=None, **thay_doi):
-    """Sửa hồ sơ NHAP (mức độ, hạn chót, ghi chú, tệp). Thay tệp tăng `phien_ban_van_ban`."""
+    """Sửa hồ sơ NHAP (hạn chót, ghi chú, tệp; số hiệu tham chiếu, trích yếu khi dùng PDF dự thảo chưa vào sổ). Thay tệp tăng
+    `phien_ban_van_ban`."""
     yeu_cau = _khoa_yeu_cau(yeu_cau.pk)
     _yeu_cau_nguoi_tao(yeu_cau, nguoi)
     if yeu_cau.trang_thai != enums.TrangThaiYeuCau.NHAP:
         raise ConflictError(code="ho_so_khong_o_trang_thai_nhap", detail="Chỉ sửa được hồ sơ nháp.")
     if "han_chot" in thay_doi:
         _kiem_tra_han_chot(thay_doi["han_chot"])
+    nhap_tay = {k for k in ("so_hieu_van_ban", "trich_yeu_van_ban") if k in thay_doi}
+    if nhap_tay and yeu_cau.van_ban_id is not None:
+        raise _loi("van_ban_da_gan", "Hồ sơ gắn văn bản đi; số hiệu, trích yếu lấy theo văn bản đi.",
+                   **{k: ["Không sửa được khi đã gắn văn bản đi."] for k in nhap_tay})
+    for k in nhap_tay:
+        thay_doi[k] = thay_doi[k].strip()
+    if "trich_yeu_van_ban" in thay_doi:
+        _kiem_tra_trich_yeu(thay_doi["trich_yeu_van_ban"])
+    quy_trinh_cu = None
+    phien_ban_cu = yeu_cau.phien_ban_quy_trinh
+    quy_trinh_moi = thay_doi.pop("quy_trinh", None)
     fields = []
+    if quy_trinh_moi is not None:
+        quy_trinh_cu = SigningProcess.objects.get(pk=yeu_cau.quy_trinh_id)
+        if quy_trinh_cu.trang_thai == enums.TrangThaiQuyTrinh.HOAT_DONG:
+            raise ConflictError(code="quy_trinh_chua_ngung",
+                                detail="Chỉ chuyển bản nháp khi phiên bản quy trình hiện tại đã ngừng.")
+        quy_trinh_moi = SigningProcess.objects.select_for_update().get(pk=quy_trinh_moi.pk)
+        if (quy_trinh_moi.ma_quy_trinh != quy_trinh_cu.ma_quy_trinh
+                or quy_trinh_moi.phien_ban <= phien_ban_cu):
+            raise ConflictError(code="quy_trinh_thay_the_khong_hop_le",
+                                detail="Chỉ chuyển sang phiên bản mới hơn của cùng quy trình.")
+        _kiem_tra_quy_trinh(quy_trinh_moi, nguoi)
+        yeu_cau.quy_trinh = quy_trinh_moi
+        yeu_cau.phien_ban_quy_trinh = quy_trinh_moi.phien_ban
+        fields += ["quy_trinh", "phien_ban_quy_trinh"]
     for ten, gia_tri in thay_doi.items():
         setattr(yeu_cau, ten, gia_tri)
         fields.append(ten)
@@ -219,8 +393,14 @@ def cap_nhat_nhap(yeu_cau, nguoi, *, tep=None, dia_chi_ip=None, **thay_doi):
         fields += ["vi_tri_luu_tep", "ma_bam_tai_lieu", "phien_ban_van_ban"]
     yeu_cau.update_by = nguoi
     yeu_cau.save(update_fields=fields + ["update_by", "update_at"])
+    du_lieu_kem_theo = {"truong": sorted(set(fields))}
+    if quy_trinh_cu is not None and quy_trinh_moi is not None:
+        du_lieu_kem_theo["quy_trinh_cu"] = {"id": quy_trinh_cu.pk, "phien_ban": phien_ban_cu}
+        du_lieu_kem_theo["quy_trinh_moi"] = {
+            "id": quy_trinh_moi.pk, "phien_ban": quy_trinh_moi.phien_ban,
+        }
     ghi_nhat_ky(nguoi, LOAI, yeu_cau.pk, "SUA_NHAP_TRINH_KY", trinh_ky=yeu_cau, dia_chi_ip=dia_chi_ip,
-                du_lieu_kem_theo={"truong": sorted(set(fields))})
+                du_lieu_kem_theo=du_lieu_kem_theo)
     return yeu_cau
 
 
@@ -241,13 +421,15 @@ def _xac_dinh_nguoi_ky(yeu_cau, cau_hinh, chon_nguoi_ky):
         return None, {"loai": "khong_co_ung_vien", "cau_hinh": cau_hinh.pk, "chuc_vu_id": cau_hinh.chuc_vu_id}
     if len(ung_vien) == 1:
         return ung_vien[0], None
+    bi_khoa = quyen_ky.ids_dang_bi_khoa()
     da_chon = chon_nguoi_ky.get(str(cau_hinh.pk))
     for nguoi in ung_vien:
         if nguoi.pk == da_chon:
             return nguoi, None
     return None, {
         "loai": "can_chon_nguoi_ky", "cau_hinh": cau_hinh.pk,
-        "ung_vien": [{"id": u.pk, "ten": to_chuc.ten_hien_thi(u)} for u in ung_vien],
+        "ung_vien": [{"id": u.pk, "ten": to_chuc.ten_hien_thi(u), "co_quyen_ky": co_quyen(u, KY_TRINH_KY),
+                      "bi_khoa_quyen_ky": u.pk in bi_khoa} for u in ung_vien],
     }
 
 
@@ -265,25 +447,23 @@ def _han_xu_ly(cap, thoi_diem_mo, han_chot, so_cap_chua_mo):
 
 
 def mo_nguoi_ky_trong_cap(cap, thoi_diem):
-    """
-    Mở người ký trong cấp đang ký. Ký nháy mở ngay; ký chính chỉ mở khi mọi người ký nháy có
-    `chan_ky_chinh` đã ký (plan mục 3.2). Trả danh sách người ký vừa được mở.
-    """
-    nguoi_ky = list(cap.nguoi_ky_set.select_for_update().order_by("pk"))
-    con_chan = any(
-        n.vai_tro_ky == enums.VaiTroKy.KY_NHAY and n.chan_ky_chinh and n.trang_thai != enums.TrangThaiNguoiKy.DA_KY
-        for n in nguoi_ky
-    )
+    """Mở mọi người ký còn chờ trong cấp đang ký. Trả danh sách người ký vừa được mở."""
     vua_mo = []
-    for n in nguoi_ky:
+    for n in cap.nguoi_ky_set.select_for_update().order_by("pk"):
         if n.thoi_diem_mo is not None or n.trang_thai != enums.TrangThaiNguoiKy.CHO_KY:
-            continue
-        if n.vai_tro_ky == enums.VaiTroKy.KY_CHINH and con_chan:
             continue
         n.thoi_diem_mo = thoi_diem
         n.save(update_fields=["thoi_diem_mo"])
         vua_mo.append(n)
+        thong_bao.can_ky(n)
     return vua_mo
+
+
+def dung_cap_dang_mo(luot):
+    """Lượt kết thúc (từ chối, hủy): cấp đang ký chuyển TAM_DUNG để không còn hiện "đang ký"; người ký chưa ký giữ
+    CHO_KY làm lịch sử (giao diện hiển thị theo trạng thái lượt). Trả số cấp đã dừng."""
+    return SigningRequestStep.objects.filter(luot_trinh=luot, trang_thai=enums.TrangThaiCapKy.DANG_KY).update(
+        trang_thai=enums.TrangThaiCapKy.TAM_DUNG)
 
 
 def mo_cap(luot, cap, thoi_diem, nguoi_thuc_hien):
@@ -301,7 +481,8 @@ def mo_cap(luot, cap, thoi_diem, nguoi_thuc_hien):
 
 def tao_luot_trinh(yeu_cau, nguoi, *, chon_nguoi_ky, khoa_chong_trung, vi_tri_ky=None, luot_truoc=None):
     """
-    Khóa tệp/mã băm hiện tại của hồ sơ, snapshot cấp, người ký và vị trí ký, mở cấp đầu.
+    Khóa tệp/mã băm hiện tại của hồ sơ, snapshot cấp, người ký và vị trí ký. Trả (lượt, cấp đầu); người gọi mở cấp
+    đầu bằng `mo_cap` sau khi ghi nhật ký gửi để lịch sử đúng thứ tự (gửi rồi mới mở cấp).
     `vi_tri_ky`: {id người ký cấu hình: {trang_ky, toa_do_x, toa_do_y, chieu_rong_khung, chieu_cao_khung}}.
     """
     cau_hinh_cap = list(
@@ -319,12 +500,32 @@ def tao_luot_trinh(yeu_cau, nguoi, *, chon_nguoi_ky, khoa_chong_trung, vi_tri_ky
             tai_khoan, van_de = _xac_dinh_nguoi_ky(yeu_cau, cau_hinh, chon_nguoi_ky)
             if van_de:
                 loi.append(van_de)
+            elif not co_quyen(tai_khoan, KY_TRINH_KY):
+                loi.append({"loai": "nguoi_ky_thieu_quyen_ky", "cau_hinh": cau_hinh.pk, "nguoi_ky": tai_khoan.pk,
+                            "ten": to_chuc.ten_hien_thi(tai_khoan) or tai_khoan.get_username()})
+            elif quyen_ky.khoa_dang_hieu_luc(tai_khoan) is not None:
+                loi.append({"loai": "nguoi_ky_bi_khoa_quyen_ky", "cau_hinh": cau_hinh.pk, "nguoi_ky": tai_khoan.pk,
+                            "ten": to_chuc.ten_hien_thi(tai_khoan) or tai_khoan.get_username()})
             elif any(t.pk == tai_khoan.pk for _, t in nguoi_cap):
                 loi.append({"loai": "nguoi_ky_trung_trong_cap", "cau_hinh": cau_hinh.pk, "nguoi_ky": tai_khoan.pk})
             else:
                 nguoi_cap.append((cau_hinh, tai_khoan))
         xac_dinh.append((cap, nguoi_cap))
     if loi:
+        thieu_quyen = [v for v in loi if v["loai"] == "nguoi_ky_thieu_quyen_ky"]
+        if thieu_quyen:
+            raise SigningError(
+                code="nguoi_ky_thieu_quyen_ky",
+                detail="Có người ký không có quyền ký trình ký; chọn người khác hoặc cấp quyền trước khi gửi.",
+                fields={"nguoi_ky": loi},
+            )
+        bi_khoa_quyen = [v for v in loi if v["loai"] == "nguoi_ky_bi_khoa_quyen_ky"]
+        if bi_khoa_quyen:
+            raise SigningError(
+                code="nguoi_ky_bi_khoa_quyen_ky",
+                detail="Người này tạm thời không có quyền ký; chọn người khác hoặc liên hệ quản trị viên.",
+                fields={"nguoi_ky": loi},
+            )
         can_chon = [v for v in loi if v["loai"] == "can_chon_nguoi_ky"]
         raise SigningError(
             code="can_chon_nguoi_ky" if len(can_chon) == len(loi) else "khong_xac_dinh_duoc_nguoi_ky",
@@ -348,14 +549,14 @@ def tao_luot_trinh(yeu_cau, nguoi, *, chon_nguoi_ky, khoa_chong_trung, vi_tri_ky
         cap_dau = cap_dau or cap_luot
         for cau_hinh, tai_khoan in nguoi_cap:
             SigningRequestStepSigner.objects.create(
-                buoc_ky=cap_luot, nguoi_ky=tai_khoan, chuc_vu_id=cau_hinh.chuc_vu_id,
+                buoc_ky=cap_luot, nguoi_ky=tai_khoan,
+                chuc_vu_id=cau_hinh.chuc_vu_id or getattr(tai_khoan, "chuc_vu_id", None),
                 ten_nguoi_ky=to_chuc.ten_hien_thi(tai_khoan) or tai_khoan.get_username(),
                 ten_chuc_vu=to_chuc.ten_chuc_vu(tai_khoan) or None,
-                vai_tro_ky=cau_hinh.vai_tro_ky, chan_ky_chinh=cau_hinh.chan_ky_chinh,
+                vai_tro_ky=cau_hinh.vai_tro_ky,
                 **vi_tri_ky.get(str(cau_hinh.pk), {}),
             )
-    mo_cap(luot, cap_dau, thoi_diem, nguoi)
-    return luot
+    return luot, cap_dau
 
 
 # ── Gửi, hủy, trình lại ─────────────────────────────────────────────────────
@@ -379,11 +580,11 @@ def gui(yeu_cau, nguoi, *, khoa_chong_trung, chon_nguoi_ky=None, vi_tri_ky=None,
     _yeu_cau_nguoi_tao(yeu_cau, nguoi)
     if yeu_cau.trang_thai != enums.TrangThaiYeuCau.NHAP:
         raise ConflictError(code="ho_so_khong_o_trang_thai_nhap", detail="Chỉ gửi được hồ sơ nháp.")
-    kiem_tra_van_ban_trinh_ky(nguoi, yeu_cau.document_type, yeu_cau.van_ban_id)
+    _kiem_tra_van_ban_gan(nguoi, yeu_cau.document_type, yeu_cau.van_ban_id, tru=yeu_cau.pk)
     _kiem_tra_quy_trinh(yeu_cau.quy_trinh, nguoi)
     _kiem_tra_han_chot(yeu_cau.han_chot)
-    luot = tao_luot_trinh(yeu_cau, nguoi, chon_nguoi_ky=chon_nguoi_ky or {}, khoa_chong_trung=khoa_chong_trung,
-                          vi_tri_ky=vi_tri_ky)
+    luot, cap_dau = tao_luot_trinh(yeu_cau, nguoi, chon_nguoi_ky=chon_nguoi_ky or {},
+                                   khoa_chong_trung=khoa_chong_trung, vi_tri_ky=vi_tri_ky)
     yeu_cau.trang_thai = enums.TrangThaiYeuCau.CHO_KY
     yeu_cau.ngay_gui = luot.thoi_diem_gui
     yeu_cau.update_by = nguoi
@@ -392,6 +593,7 @@ def gui(yeu_cau, nguoi, *, khoa_chong_trung, chon_nguoi_ky=None, vi_tri_ky=None,
                 trang_thai_truoc=enums.TrangThaiYeuCau.NHAP, trang_thai_sau=yeu_cau.trang_thai,
                 dia_chi_ip=dia_chi_ip, du_lieu_kem_theo={"khoa_chong_trung": khoa_chong_trung,
                                                        "ma_bam_tai_lieu": luot.ma_bam_tai_lieu})
+    mo_cap(luot, cap_dau, luot.thoi_diem_gui, nguoi)  # sau nhật ký gửi để dòng thời gian đúng thứ tự
     return yeu_cau
 
 
@@ -419,6 +621,7 @@ def huy(yeu_cau, nguoi, *, khoa_chong_trung, ly_do="", dia_chi_ip=None):
         luot.thoi_diem_huy = thoi_diem
         luot.update_by = nguoi
         luot.save(update_fields=["trang_thai", "thoi_diem_huy", "update_by", "update_at"])
+        dung_cap_dang_mo(luot)
     truoc = yeu_cau.trang_thai
     yeu_cau.trang_thai = enums.TrangThaiYeuCau.HUY
     yeu_cau.ngay_huy = thoi_diem
@@ -428,13 +631,15 @@ def huy(yeu_cau, nguoi, *, khoa_chong_trung, ly_do="", dia_chi_ip=None):
     ghi_nhat_ky(nguoi, LOAI, yeu_cau.pk, "HUY_TRINH_KY", trinh_ky=yeu_cau, luot_trinh=luot,
                 trang_thai_truoc=truoc, trang_thai_sau=yeu_cau.trang_thai, chi_tiet=ly_do, dia_chi_ip=dia_chi_ip,
                 du_lieu_kem_theo={"khoa_chong_trung": khoa_chong_trung, "huy_thay": not la_nguoi_tao})
+    thong_bao.su_kien(yeu_cau, luot, "HUY", nguoi)
     return yeu_cau
 
 
 @transaction.atomic
 def trinh_lai(yeu_cau, nguoi, *, khoa_chong_trung, han_chot=None, dia_chi_ip=None):
     """
-    Tạo hồ sơ NHAP mới từ hồ sơ bị từ chối (plan mục 3.3): giữ văn bản, tệp của lượt cuối, mức độ;
+    Tạo hồ sơ NHAP mới từ hồ sơ bị từ chối (plan mục 3.3): giữ văn bản trình ký (văn bản đi hoặc nhập tay), tệp của
+    lượt cuối;
     dùng phiên bản đang hoạt động của cùng mã quy trình; `ho_so_goc` trỏ về hồ sơ cũ.
     """
     da_xu_ly = _thao_tac_da_xu_ly("TRINH_LAI", khoa_chong_trung, yeu_cau)
@@ -447,7 +652,7 @@ def trinh_lai(yeu_cau, nguoi, *, khoa_chong_trung, han_chot=None, dia_chi_ip=Non
     _yeu_cau_nguoi_tao(yeu_cau, nguoi)
     if yeu_cau.trang_thai != enums.TrangThaiYeuCau.TU_CHOI:
         raise ConflictError(code="chi_trinh_lai_ho_so_bi_tu_choi", detail="Chỉ trình lại hồ sơ bị từ chối.")
-    kiem_tra_van_ban_trinh_ky(nguoi, yeu_cau.document_type, yeu_cau.van_ban_id)
+    _kiem_tra_van_ban_gan(nguoi, yeu_cau.document_type, yeu_cau.van_ban_id)
     quy_trinh = SigningProcess.objects.filter(
         ma_quy_trinh=yeu_cau.quy_trinh.ma_quy_trinh, trang_thai=enums.TrangThaiQuyTrinh.HOAT_DONG,
     ).first()
@@ -458,8 +663,9 @@ def trinh_lai(yeu_cau, nguoi, *, khoa_chong_trung, han_chot=None, dia_chi_ip=Non
     _kiem_tra_han_chot(han_chot)
     luot = luot_hien_hanh(yeu_cau)
     moi = SigningRequest.objects.create(
-        document_type=yeu_cau.document_type, van_ban_id=yeu_cau.van_ban_id, quy_trinh=quy_trinh,
-        phien_ban_quy_trinh=quy_trinh.phien_ban, muc_do=yeu_cau.muc_do, han_chot=han_chot,
+        document_type=yeu_cau.document_type, van_ban_id=yeu_cau.van_ban_id,
+        so_hieu_van_ban=yeu_cau.so_hieu_van_ban, trich_yeu_van_ban=yeu_cau.trich_yeu_van_ban, quy_trinh=quy_trinh,
+        phien_ban_quy_trinh=quy_trinh.phien_ban, han_chot=han_chot,
         ghi_chu=yeu_cau.ghi_chu, phien_ban_van_ban=luot.phien_ban_van_ban, vi_tri_luu_tep=luot.vi_tri_luu_tep,
         ma_bam_tai_lieu=luot.ma_bam_tai_lieu, ho_so_goc=yeu_cau, create_by=nguoi,
     )
