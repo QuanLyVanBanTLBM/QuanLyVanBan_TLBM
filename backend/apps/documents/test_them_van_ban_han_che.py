@@ -120,8 +120,8 @@ class ThemVanBanHanCheTest(TestCase):
         wb = openpyxl.load_workbook(generate_excel_template("DI", "HAN_CHE"))
         wb.active.append([
             so_hieu, "Hạn chế", "22/09/2026", "22/09/2026",
-            "Trích yếu hợp lệ cho văn bản hạn chế", "Ban Giám hiệu",
-            self.recipient.username, "Hội đồng trường", "Hiệu trưởng", "Hiệu trưởng", "CON_HIEU_LUC", "", "",
+            "Trích yếu hợp lệ cho văn bản hạn chế", "Hồ sơ tài liệu mật", "Báo cáo", "Ban Giám hiệu",
+            self.recipient.username, "Hội đồng trường", "Hiệu trưởng", "Hiệu trưởng", "CON_HIEU_LUC", "", "", "",
         ])
         stream = io.BytesIO()
         wb.save(stream)
@@ -150,12 +150,13 @@ class ThemVanBanHanCheTest(TestCase):
         wb = openpyxl.load_workbook(generate_excel_template("DI", "NOI_BO"))
         wb.active.append([
             "09/DI-NB-OK", "Nội bộ", "22/09/2026", "22/09/2026",
-            "Trích yếu hợp lệ cho văn bản nội bộ", "Ban Giám hiệu",
-            "Hội đồng trường", "Hiệu trưởng", "Hiệu trưởng", "CON_HIEU_LUC", "", "",
+            "Trích yếu hợp lệ cho văn bản nội bộ", "Hồ sơ Hành chính - Quản trị", "Công văn", "Ban Giám hiệu",
+            "Hội đồng trường", "Hiệu trưởng", "Hiệu trưởng", "CON_HIEU_LUC", "", "", "",
         ])
         stream = io.BytesIO()
         wb.save(stream)
         stream.seek(0)
+        return stream
         result = import_from_excel(stream, "DI", self.adder, pham_vi="NOI_BO")
         self.assertEqual(result["created"], 1, result)
 

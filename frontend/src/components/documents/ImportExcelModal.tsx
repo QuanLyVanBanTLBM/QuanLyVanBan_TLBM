@@ -315,8 +315,8 @@ export default function ImportExcelModal({ open, onClose, onImported, loai = 'DE
               <i className={`fa-solid ${phamVi === 'HAN_CHE' ? 'fa-shield-halved text-amber-600' : 'fa-circle-info text-primary'} text-sm shrink-0`} />
               <span className="text-xs text-main">
                 {phamVi === 'HAN_CHE'
-                  ? 'Tải biểu mẫu Excel hạn chế (có cột gán quyền xem cho CBNV nhận).'
-                  : 'Chưa có file mẫu? Tải file mẫu chuẩn để nhập dữ liệu đúng định dạng.'}
+                  ? 'Tải biểu mẫu Excel hạn chế (đầy đủ cột Danh mục hồ sơ, Loại văn bản và gán quyền cán bộ nhận).'
+                  : 'Chưa có file mẫu? Tải file mẫu chuẩn (đã bổ sung cột Danh mục hồ sơ & Loại văn bản).'}
               </span>
             </div>
             <Button
@@ -329,6 +329,14 @@ export default function ImportExcelModal({ open, onClose, onImported, loai = 'DE
             >
               Tải file mẫu
             </Button>
+          </div>
+
+          {/* Quy tắc nghiệp vụ tự khớp Hồ sơ & Loại VB */}
+          <div className="px-3 py-2 rounded-xl bg-surface-subtle border border-border-subtle text-[11px] text-muted flex items-start gap-2">
+            <i className="fa-solid fa-wand-magic-sparkles text-primary mt-0.5 shrink-0" />
+            <span className="leading-relaxed">
+              <strong className="text-main font-semibold">Quy tắc tự khớp:</strong> Cột <span className="font-semibold text-main">Danh mục hồ sơ</span> và <span className="font-semibold text-main">Loại văn bản</span> là bắt buộc. Hệ thống tự động phân cấp khớp hồ sơ và loại văn bản sẵn có, hoặc tự động tạo mới an toàn nếu chưa tồn tại.
+            </span>
           </div>
 
           {/* Step 2: Vùng chọn hoặc kéo thả file Excel */}

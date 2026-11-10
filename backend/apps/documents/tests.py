@@ -1900,8 +1900,8 @@ class VanBanDiServiceTests(TestCase):
         ws = wb.active
         ws.append([
             "123/TB-HC-OK", "Hạn chế", "22/09/2026", "22/09/2026",
-            "Trích yếu hợp lệ cho văn bản hạn chế", "Ban Giám hiệu",
-            self.recipient.username, "Hội đồng trường", "Hiệu trưởng", "Hiệu trưởng", "CON_HIEU_LUC", "", ""
+            "Trích yếu hợp lệ cho văn bản hạn chế", "Hồ sơ tài liệu mật", "Báo cáo", "Ban Giám hiệu",
+            self.recipient.username, "Hội đồng trường", "Hiệu trưởng", "Hiệu trưởng", "CON_HIEU_LUC", "", "", ""
         ])
         bio = io.BytesIO()
         wb.save(bio)
