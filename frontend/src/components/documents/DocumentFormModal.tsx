@@ -8,7 +8,7 @@ import { Button, Select, SelectOption } from '@components/common';
 import AlertModal from '@components/common/AlertModal';
 import { useTranslation } from '@i18n/translate';
 import { usePermissions } from '@lib/permissions';
-import AttachmentPreviewModal, { AttachmentPreviewTarget } from './AttachmentPreviewModal';
+import { previewAttachmentInNewTab, AttachmentPreviewTarget } from '@lib/filePreview';
 
 export type InitialDocType =
   | DocumentItem
@@ -395,7 +395,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
     if (!raw) return [];
     return raw.split(',').map((s) => s.trim()).filter(Boolean);
   });
-  const [previewTarget, setPreviewTarget] = useState<AttachmentPreviewTarget | null>(null);
+  const [previewingName, setPreviewingName] = useState<string | null>(null);
   const [isScopeDropdownOpen, setIsScopeDropdownOpen] = useState(false);
   const scopeDropdownRef = useRef<HTMLDivElement | null>(null);
   const [existingAttachments, setExistingAttachments] = useState<ExistingAttachment[]>(() =>
@@ -517,7 +517,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
       const initialUnits = initialUnitsRaw ? initialUnitsRaw.split(',').map((s) => s.trim()).filter(Boolean) : [];
       setSelectedRecipientUnits(initialUnits);
       setIsScopeDropdownOpen(false);
-      setPreviewTarget(null);
+      setPreviewingName(null);
       setStaff([]);
       setUnitSearch('');
       setIsUnitDropdownOpen(false);
@@ -1166,6 +1166,18 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
   function handleRemoveExistingAttachment(id: number) {
     setExistingAttachments(prev => prev.filter(att => att.id !== id));
     setDeletedAttachmentIds(prev => (prev.includes(id) ? prev : [...prev, id]));
+  }
+
+  async function handlePreviewAttachment(target: AttachmentPreviewTarget) {
+    if (previewingName) return;
+    try {
+      setPreviewingName(target.name);
+      await previewAttachmentInNewTab(target);
+    } catch (err) {
+      console.error('Lỗi khi mở xem trước tệp trong tab mới:', err);
+    } finally {
+      setPreviewingName(null);
+    }
   }
 
 
@@ -2978,17 +2990,21 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                       <div
                         role="button"
                         tabIndex={0}
-                        onClick={() => setPreviewTarget({ name: att.file_name, size: att.file_size, url: att.file })}
+                        onClick={() => void handlePreviewAttachment({ name: att.file_name, size: att.file_size, url: att.file })}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault();
-                            setPreviewTarget({ name: att.file_name, size: att.file_size, url: att.file });
+                            void handlePreviewAttachment({ name: att.file_name, size: att.file_size, url: att.file });
                           }
                         }}
                         className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden cursor-pointer group text-left focus:outline-none"
-                        title="Bấm để xem trước tệp này"
+                        title="Nhấp để xem trước tệp trong tab mới"
                       >
-                        <i className={`${getFileIcon(att.file_name)} text-sm shrink-0 group-hover:scale-110 transition-transform`} />
+                        {previewingName === att.file_name ? (
+                          <i className="fa-solid fa-circle-notch fa-spin text-primary text-sm shrink-0" />
+                        ) : (
+                          <i className={`${getFileIcon(att.file_name)} text-sm shrink-0 group-hover:scale-110 transition-transform`} />
+                        )}
                         <span className="truncate text-main group-hover:text-primary group-hover:underline font-medium min-w-0 flex-1" title={att.file_name}>
                           {att.file_name}
                         </span>
@@ -2997,6 +3013,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                             ({formatFileSize(att.file_size)})
                           </span>
                         )}
+                        <i className="fa-solid fa-arrow-up-right-from-square text-[10px] text-muted/60 group-hover:text-primary shrink-0 transition-colors ml-0.5" />
                       </div>
                       <div className="flex items-center gap-1 shrink-0 ml-2">
                         <a
@@ -3090,25 +3107,30 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                           tabIndex={0}
                           onClick={(e) => {
                             e.stopPropagation();
-                            setPreviewTarget({ name: file.name, size: file.size, file });
+                            void handlePreviewAttachment({ name: file.name, size: file.size, file });
                           }}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' || e.key === ' ') {
                               e.preventDefault();
                               e.stopPropagation();
-                              setPreviewTarget({ name: file.name, size: file.size, file });
+                              void handlePreviewAttachment({ name: file.name, size: file.size, file });
                             }
                           }}
                           className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden cursor-pointer group text-left focus:outline-none"
-                          title="Bấm để xem trước tệp này"
+                          title="Nhấp để xem trước tệp trong tab mới"
                         >
-                          <i className={`${getFileIcon(file.name)} text-sm shrink-0 group-hover:scale-110 transition-transform`} />
+                          {previewingName === file.name ? (
+                            <i className="fa-solid fa-circle-notch fa-spin text-primary text-sm shrink-0" />
+                          ) : (
+                            <i className={`${getFileIcon(file.name)} text-sm shrink-0 group-hover:scale-110 transition-transform`} />
+                          )}
                           <span className="truncate text-main group-hover:text-primary group-hover:underline font-medium min-w-0 flex-1" title={file.name}>
                             {file.name}
                           </span>
                           <span className="text-xs text-muted shrink-0 whitespace-nowrap">
                             ({formatFileSize(file.size)})
                           </span>
+                          <i className="fa-solid fa-arrow-up-right-from-square text-[10px] text-muted/60 group-hover:text-primary shrink-0 transition-colors ml-0.5" />
                         </div>
                         <button
                           type="button"
@@ -3440,12 +3462,6 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
           </div>
         </div>
       )}
-      {/* Modal xem trước tệp đính kèm (hỗ trợ PDF, DOCX, Ảnh PNG/JPG...) */}
-      <AttachmentPreviewModal
-        isOpen={Boolean(previewTarget)}
-        onClose={() => setPreviewTarget(null)}
-        target={previewTarget}
-      />
     </div>,
     document.body
   );

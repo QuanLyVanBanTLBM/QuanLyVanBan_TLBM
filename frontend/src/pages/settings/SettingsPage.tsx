@@ -73,8 +73,6 @@ export default function SettingsPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
 
-  const [aiModel, setAiModel] = useState<'gemini'>('gemini');
-
   // Trạng thái cấu hình âm thanh & bảo mật phiên làm việc (hoạt động thực tế)
   const [notifUrgent, setNotifUrgent] = useState<boolean>(() => soundAlert.isUrgentSoundEnabled());
   const [secAutoLock, setSecAutoLock] = useState<boolean>(() => {
@@ -88,14 +86,13 @@ export default function SettingsPage() {
   const handleSaveSettings = () => {
     localStorage.setItem('tlbm_interface_style', 'modern');
     document.documentElement.setAttribute('data-ui-style', 'modern');
-    localStorage.setItem('tlbm_ai_model', aiModel);
+    localStorage.removeItem('tlbm_ai_model');
     localStorage.setItem('tlbm_notif_sound_urgent', String(notifUrgent));
     soundAlert.setUrgentSoundEnabled(notifUrgent);
     localStorage.setItem('tlbm_sec_auto_lock', String(secAutoLock));
     localStorage.setItem('tlbm_sec_lock_timeout', String(secLockTimeout));
 
     window.dispatchEvent(new Event('tlbm_settings_updated'));
-    window.dispatchEvent(new Event('tlbm_ai_model_updated'));
     window.dispatchEvent(new Event('tlbm_sound_settings_updated'));
     setShowSavedToast(true);
     setTimeout(() => setShowSavedToast(false), 3500);
@@ -104,19 +101,17 @@ export default function SettingsPage() {
   const handleResetSettings = () => {
     localStorage.setItem('tlbm_interface_style', 'modern');
     document.documentElement.setAttribute('data-ui-style', 'modern');
-    setAiModel('gemini');
+    localStorage.removeItem('tlbm_ai_model');
     setNotifUrgent(true);
     setSecAutoLock(true);
     setSecLockTimeout(15);
 
-    localStorage.setItem('tlbm_ai_model', 'gemini');
     localStorage.setItem('tlbm_notif_sound_urgent', 'true');
     localStorage.setItem('tlbm_sec_auto_lock', 'true');
     localStorage.setItem('tlbm_sec_lock_timeout', '15');
     soundAlert.setUrgentSoundEnabled(true);
 
     window.dispatchEvent(new Event('tlbm_settings_updated'));
-    window.dispatchEvent(new Event('tlbm_ai_model_updated'));
     window.dispatchEvent(new Event('tlbm_sound_settings_updated'));
     setShowSavedToast(true);
     setTimeout(() => setShowSavedToast(false), 3500);
@@ -290,12 +285,12 @@ export default function SettingsPage() {
           </div>
           <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-primary-subtle text-primary border border-primary/30 flex items-center gap-1.5 shadow-2xs">
             <i className="fa-solid fa-circle-check text-xs" />
-            <span>{t('settings.aiModelActive')}GEMINI 1.5</span>
+            <span>{t('settings.aiModelActive')}OPENAI · GPT-6-LUNA</span>
           </span>
         </div>
 
         <div className="pt-1">
-          {/* Google Gemini 1.5 - Mô hình AI độc quyền duy nhất của hệ thống */}
+          {/* Fixed OpenAI model used by the AI system */}
           <div className="p-5 rounded-2xl border-2 border-primary bg-primary-subtle/20 shadow-xs ring-1 ring-primary/40 flex flex-col md:flex-row md:items-center justify-between gap-5 transition-all select-none">
             <div className="flex items-start gap-4 flex-1">
               <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-primary to-indigo-500 text-white flex items-center justify-center text-xl shrink-0 shadow-sm shadow-primary/30">
@@ -304,15 +299,15 @@ export default function SettingsPage() {
               <div className="flex flex-col gap-1.5 flex-1">
                 <div className="flex items-center gap-2.5 flex-wrap">
                   <span className="text-base font-bold text-main">
-                    {t('settings.aiModelGemini')}
+                    {t('settings.aiModelLuna6')}
                   </span>
                   <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-success/15 text-success border border-success/30 flex items-center gap-1">
                     <i className="fa-solid fa-check text-[10px]" />
-                    <span>{t('settings.aiModelGeminiBadge')}</span>
+                    <span>{t('settings.aiModelLuna6Badge')}</span>
                   </span>
                 </div>
                 <p className="text-xs text-secondary leading-relaxed max-w-2xl">
-                  {t('settings.aiModelGeminiDesc')}
+                  {t('settings.aiModelLuna6Desc')}
                 </p>
                 <div className="flex items-center gap-2 flex-wrap pt-1">
                   <span className="px-2.5 py-1 rounded-lg text-xs font-medium bg-surface text-text-muted border border-border-subtle flex items-center gap-1.5">
@@ -332,11 +327,8 @@ export default function SettingsPage() {
             </div>
 
             <div className="shrink-0 flex items-center md:flex-col md:items-end gap-1.5 text-xs border-t md:border-t-0 md:border-l border-border-subtle/80 pt-3 md:pt-0 md:pl-5">
-              <span className="font-semibold text-primary">Google DeepMind</span>
-              <span className="text-[11px] text-muted font-mono">v1.5 Flash & Pro</span>
-              <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-surface border border-border-subtle text-text-muted mt-1">
-                API Ready
-              </span>
+              <span className="font-semibold text-primary">OpenAI</span>
+              <span className="text-[11px] text-muted font-mono">gpt-6-luna</span>
             </div>
           </div>
         </div>
