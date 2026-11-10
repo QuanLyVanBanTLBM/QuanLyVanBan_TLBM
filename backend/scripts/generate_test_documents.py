@@ -155,7 +155,7 @@ DOCUMENTS_DATA = [
                 "content": (
                     "Điều 1. Kiến trúc mô hình ngôn ngữ và Vector Store\n"
                     "Trợ lý ảo AI TLBM vận hành trên nền tảng kỹ thuật RAG tiên tiến:\n"
-                    "- LLM Model mặc định: Google Gemini 3.8 Flash (tích hợp cơ chế tự động fallback khi nghẽn mạng).\n"
+                    "- LLM Model mặc định: OpenAI gpt-6-luna.\n"
                     "- Vector Database: ChromaDB lưu trữ cục bộ tại đường dẫn `./data/chroma_db` bảo mật tuyệt đối không gửi dữ liệu ra cloud công cộng.\n"
                     "- Cơ chế phân đoạn tri thức Parent-Child Chunking:\n"
                     "  + Parent Chunk (Sơ cấp): Kích thước 1.500 ký tự (Overlap 300 ký tự) cung cấp ngữ cảnh đầy đủ cho câu trả lời.\n"

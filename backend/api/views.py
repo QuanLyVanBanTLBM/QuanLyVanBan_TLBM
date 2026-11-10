@@ -419,22 +419,14 @@ def ai_settings(request):
         if not is_ai_admin(request.user):
             return JsonResponse(info)
 
-        gemini_k = (active.get("gemini_api_key") or getattr(config, "GEMINI_API_KEY", "") or os.getenv("GEMINI_API_KEY", "")).strip()
         openai_k = (active.get("openai_api_key") or getattr(config, "OPENAI_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")).strip()
-        keys = {
-            "gemini": gemini_k,
-            "openai": openai_k,
-        }
-        masked_keys = {
-            p_name: f"{k[:6]}...{k[-4:]}" if len(k) > 10 else ("********" if k else "")
-            for p_name, k in keys.items()
-        }
+        masked_key = f"{openai_k[:6]}...{openai_k[-4:]}" if len(openai_k) > 10 else ("********" if openai_k else "")
         return JsonResponse({
             **info,
-            "has_api_key": bool(keys.get(provider)),
-            "api_key_masked": masked_keys.get(provider, ""),
-            "api_keys": {name: bool(k) for name, k in keys.items()},
-            "api_key_masked_by_provider": masked_keys,
+            "has_api_key": bool(openai_k),
+            "api_key_masked": masked_key,
+            "api_keys": {"openai": bool(openai_k)},
+            "api_key_masked_by_provider": {"openai": masked_key},
             "model_options": model_options,
         })
 
@@ -451,9 +443,7 @@ def ai_settings(request):
         return _error("Provider được hỗ trợ là 'openai'.", code="provider_not_supported")
 
     active = get_active_ai_settings()
-    existing_key = active.get(f"{provider}_api_key") or (
-        getattr(config, "GEMINI_API_KEY", "") if provider == "gemini" else getattr(config, "OPENAI_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")
-    )
+    existing_key = active.get("openai_api_key") or getattr(config, "OPENAI_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")
     key = str(payload.get("api_key") or existing_key).strip()
     if not key:
         return _error(f"Vui lòng cung cấp API key {provider.upper()}.", code="api_key_required")
@@ -469,30 +459,13 @@ def ai_settings(request):
     # Collection is isolated per provider (smart_documents vs smart_documents_openai),
     # preventing dimension mismatch errors when switching providers.
 
-    if provider == "gemini":
-        check = urllib.request.Request(
-            "https://generativelanguage.googleapis.com/v1beta/models",
-            headers={"x-goog-api-key": key},
-        )
-    else:
-        check = urllib.request.Request("https://api.openai.com/v1/models", headers={"Authorization": f"Bearer {key}"})
+    check = urllib.request.Request("https://api.openai.com/v1/models", headers={"Authorization": f"Bearer {key}"})
     try:
         with urllib.request.urlopen(check, timeout=10) as response:
             catalog = json.loads(response.read().decode("utf-8"))
-        if provider == "gemini":
-            available_models = {
-                str(item.get("name", "")).removeprefix("models/")
-                for item in catalog.get("models", [])
-                if "generateContent" in item.get("supportedGenerationMethods", [])
-            }
-            embedding_available = any(
-                str(item.get("name", "")) == embed for item in catalog.get("models", [])
-            )
-        else:
-            available_models = {item.get("id") for item in catalog.get("data", [])}
-            embedding_available = embed in available_models
-        # gpt-6-luna is an internal custom alias that maps to gpt-4o-mini
-        if llm not in available_models and llm != "gpt-6-luna":
+        available_models = {item.get("id") for item in catalog.get("data", [])}
+        embedding_available = embed in available_models
+        if llm not in available_models:
             return _error("API key không có quyền sử dụng mô hình đã chọn.", 400, "model_access_denied")
         if not embedding_available:
             return _error("API key không có quyền sử dụng mô hình embedding mặc định của provider.", 400, "embedding_access_denied")
@@ -507,8 +480,8 @@ def ai_settings(request):
     updates = {
         "provider": provider,
         "MODEL_PROVIDER": provider,
-        f"{provider}_api_key": key,
-        f"{'GEMINI' if provider == 'gemini' else 'OPENAI'}_API_KEY": key,
+        "openai_api_key": key,
+        "OPENAI_API_KEY": key,
         "llm_model": llm,
         "LLM_MODEL": llm,
         "embed_model": embed,
@@ -526,7 +499,7 @@ def ai_settings(request):
 
     if hasattr(rag_service, "sync_documents_if_needed"):
         try:
-            rag_service.sync_documents_if_needed(provider)
+            rag_service.sync_documents_if_needed()
         except Exception:
             logger.exception("Failed to auto-sync documents for provider %s", provider)
 

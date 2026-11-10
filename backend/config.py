@@ -20,11 +20,10 @@ DOC_REGISTRY_PATH = DATA_DIR / "doc_registry.json"
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", "smart_documents")
 
 MODEL_PROVIDER = "openai"
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-EMBED_MODEL = os.getenv("EMBED_MODEL", "text-embedding-3-large")
+EMBED_MODEL = "text-embedding-3-large"
 LLM_MODEL = "gpt-6-luna"
-VISION_MODEL = os.getenv("VISION_MODEL", LLM_MODEL)
+VISION_MODEL = LLM_MODEL
 
 VISION_OCR_ENABLED = os.getenv("VISION_OCR_ENABLED", "true").lower() in {
     "1",
@@ -60,7 +59,7 @@ ALLOWED_EXTENSIONS = (
     ".html", ".htm",
     ".json",
     ".xml",
-    # Ảnh — xử lý qua Vision OCR + RapidOCR
+# Image OCR uses OpenAI gpt-6-luna Vision
     ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif", ".gif",
 )
 

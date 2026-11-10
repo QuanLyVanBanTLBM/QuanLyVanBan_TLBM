@@ -27,8 +27,8 @@ Module 8 phụ trách xây dựng Trợ lý ảo AI thông minh, hỗ trợ cán
 
 - 🔍 **Tra cứu văn bản ngữ cảnh**: Tìm kiếm thông tin chính xác theo Số hiệu, Trích yếu, Ngày ban hành, Đơn vị ban hành.
 - 🎯 **Nguyên tắc "Zero-Hallucination"**: Chỉ trả lời dựa trên tài liệu được cấp phép; từ chối khi không có dữ liệu nguồn để bảo đảm tính chuẩn xác của văn bản hành chính.
-- 🛡️ **Bảo mật & Phân quyền RBAC**: Yêu cầu quyền `use_aiassistant` để tương tác; chức năng quản trị kho tài liệu và cài đặt AI dành riêng cho Quản trị viên (`is_superuser`).
-- ⚡ **Đa mô hình AI (LLM)**: Tích hợp Google Gemini (mặc định: `gemini-3.8-flash` với cơ chế tự động chuyển đổi fallback) và OpenAI GPT qua cấu hình giao diện.
+- Phân quyền RBAC: cần quyền `use_aiassistant` để chat; quản trị kho tài liệu chỉ dành cho superuser.
+- Trợ lý AI sử dụng cố định OpenAI `gpt-6-luna` cho ngôn ngữ và hình ảnh.
 - 📄 **Xử lý tệp đa định dạng**: Hỗ trợ PDF, DOCX, TXT, CSV, PPTX, Markdown, ảnh số hóa văn bản (Vision OCR).
 - 💬 **Giao diện hiện đại**: Tích hợp trực tiếp vào App Shell chuẩn Staging (React + TypeScript + Vite), hỗ trợ Dark/Light theme và đa ngôn ngữ (Tiếng Việt, Tiếng Anh).
 
@@ -40,7 +40,7 @@ Module 8 phụ trách xây dựng Trợ lý ảo AI thông minh, hỗ trợ cán
 |---|---|
 | **Frontend** | React 19, TypeScript, Vite, Vanilla CSS Tokens, Axios / Fetch API Client |
 | **Backend** | Python 3.12+, Django 6.1, Django REST Framework, SimpleJWT |
-| **RAG & AI Engine** | LlamaIndex, ChromaDB, Gemini REST Client, OpenAI API |
+| **RAG & AI Engine** | LlamaIndex, ChromaDB, OpenAI `gpt-6-luna` API |
 | **Cơ sở dữ liệu** | PostgreSQL 16 (với các Database View `ai_*` và role `qlvb_readonly`) |
 | **CI / Quality Gate** | GitHub Actions, Django test runner |
 
@@ -68,7 +68,7 @@ pnpm bootstrap
 
 `pnpm bootstrap` chạy `pnpm setup:frontend` (cài gói giao diện theo lockfile) và `pnpm db:setup` (khởi động PostgreSQL 16 + pgAdmin bằng `compose.yaml`, tạo `backend/.venv`, dựng DB `qlvb_dev` từ `docs/common/database/release_DDL.sql` kèm dữ liệu mẫu). DB đã dựng đúng bản DDL hiện tại thì được giữ nguyên.
 
-Khóa Gemini và cấu hình email/ký: sao chép `.env.example` thành `.env` ở thư mục gốc và điền giá trị cần dùng. Kết nối DB do các lệnh `pnpm` tự đặt, không khai báo trong `.env`.
+Khóa OpenAI và cấu hình email/ký: sao chép `.env.example` thành `.env` ở thư mục gốc và điền giá trị cần dùng. Kết nối DB do các lệnh `pnpm` tự đặt, không khai báo trong `.env`.
 
 Tệp nghiệp vụ tải lên (đính kèm văn bản, công việc, biểu mẫu) lưu theo cây `<module>/YYYY/MM/DD/<uuid>.<ext>` dưới `DOCUMENT_STORAGE_ROOT`. Chạy local (`DJANGO_DEBUG=true`) để trống biến này thì dùng thư mục `storage/` ở thư mục gốc dự án (đã gitignore). Staging/production bắt buộc đặt biến là thư mục tuyệt đối đã tồn tại, ngoài thư mục release, user chạy service ghi được; chi tiết sao lưu trong `docs/common/database/backup_restore_runbook.md`.
 
@@ -140,7 +140,6 @@ Các cổng chỉ bind vào `127.0.0.1`. Cổng bị trùng thì đặt biến m
 │   │   ├── ai_access.py              # Xác thực người dùng & kiểm tra quyền RBAC
 │   │   ├── rag_service.py            # Xử lý RAG, ChromaDB & System Prompt
 │   │   ├── sql_document_source.py    # Truy vấn an toàn qua Database View ai_*
-│   │   └── gemini_service.py         # Kết nối Gemini REST LLM & Embeddings
 │   └── tests/                        # Bộ kiểm thử đơn vị cho AI Module
 ├── frontend/
 │   ├── src/pages/ai/                 # Giao diện Chatbox chính (AiAssistantPage.tsx)
