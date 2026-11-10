@@ -53,6 +53,12 @@ class AIAccessTests(TestCase):
         response = self.client.post("/api/ai/chat", {"question": "Tìm văn bản"}, format="json")
         self.assertEqual(response.status_code, 403)
 
+    def test_chat_denies_before_validating_body(self):
+        self.client.force_authenticate(self.no_perm)
+        for body in ({}, {"question": ""}, {"question": "x" * 5000}, {"question": "ok", "history": "sai"}):
+            response = self.client.post("/api/ai/chat", body, format="json")
+            self.assertEqual(response.status_code, 403, body)
+
     def test_categories_require_ai_permission(self):
         self.client.force_authenticate(self.no_perm)
         self.assertEqual(self.client.get("/api/ai/categories").status_code, 403)
