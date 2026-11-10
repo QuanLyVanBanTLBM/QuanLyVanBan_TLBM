@@ -1896,12 +1896,14 @@ class VanBanDiServiceTests(TestCase):
         self.assertIn("chỉ chứa dòng ví dụ mẫu", res5["errors"][0]["message"])
 
         # 6. Import mẫu Hạn chế với dữ liệu thực và cán bộ nhận thành công
+        from records.models import HoSo
+        HoSo.objects.get_or_create(ten_ho_so="Hồ sơ tài liệu mật", defaults={"so_ky_hieu": "HS-TLM", "nguoi_lap": self.creator})
         wb = openpyxl.load_workbook(generate_excel_template("DI", "HAN_CHE"))
         ws = wb.active
         ws.append([
             "123/TB-HC-OK", "Hạn chế", "22/09/2026", "22/09/2026",
-            "Trích yếu hợp lệ cho văn bản hạn chế", "Ban Giám hiệu",
-            self.recipient.username, "Hội đồng trường", "Hiệu trưởng", "Hiệu trưởng", "CON_HIEU_LUC", "", ""
+            "Trích yếu hợp lệ cho văn bản hạn chế", "Hồ sơ tài liệu mật", "Báo cáo", "Ban Giám hiệu",
+            self.recipient.username, "Hội đồng trường", "Hiệu trưởng", "Hiệu trưởng", "CON_HIEU_LUC", "", "", ""
         ])
         bio = io.BytesIO()
         wb.save(bio)
