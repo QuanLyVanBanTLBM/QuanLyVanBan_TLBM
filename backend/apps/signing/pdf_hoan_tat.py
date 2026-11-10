@@ -27,6 +27,19 @@ from .services.bang_chung import ma_hoa_chuan
 KY_TU_KIEM_TRA = "ăâđêôơưĂÂĐÊÔƠƯạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ"
 
 UNG_VIEN_PHONG_CHU = [
+    # Ưu tiên phông Times New Roman chuẩn thể thức văn bản hành chính (Nghị định 30/2020/NĐ-CP)
+    (r"C:\Windows\Fonts\times.ttf", r"C:\Windows\Fonts\timesbd.ttf"),
+    ("/usr/share/fonts/truetype/msttcorefonts/times.ttf", "/usr/share/fonts/truetype/msttcorefonts/timesbd.ttf"),
+    ("/usr/share/fonts/truetype/msttcorefonts/Times_New_Roman.ttf",
+     "/usr/share/fonts/truetype/msttcorefonts/Times_New_Roman_Bold.ttf"),
+    ("/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
+     "/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf"),
+    ("/usr/share/fonts/truetype/liberation2/LiberationSerif-Regular.ttf",
+     "/usr/share/fonts/truetype/liberation2/LiberationSerif-Bold.ttf"),
+    ("/System/Library/Fonts/Supplemental/Times New Roman.ttf",
+     "/System/Library/Fonts/Supplemental/Times New Roman Bold.ttf"),
+    ("/Library/Fonts/Times New Roman.ttf", "/Library/Fonts/Times New Roman Bold.ttf"),
+    # Phông dự phòng khi hệ thống chưa cài đặt Times New Roman:
     ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
     ("/usr/share/fonts/dejavu/DejaVuSans.ttf", "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf"),
     ("/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf", "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf"),
@@ -95,33 +108,54 @@ def _gio_vn(iso):
 
 
 def _khoi_chu_ky(c, khung, nguoi_ky, anh, phong, phong_dam):
-    """Dán ảnh chữ ký (snapshot lúc ký) vào khung; chưa có ảnh thì in khối chữ "ĐÃ KÝ DUYỆT"."""
+    """Dán ảnh chữ ký và họ tên người ký vào khung theo chuẩn thể thức văn bản hành chính (Nghị định 30/2020/NĐ-CP):
+    - Ảnh chữ ký đặt ở phần trên.
+    - Họ và tên người ký đặt ở dưới chữ ký: in đậm, full in hoa, màu đen chuẩn văn bản.
+    - Tự động co cỡ chữ nếu tên dài để vừa khít chiều rộng khung, đảm bảo không bao giờ xuống dòng.
+    - Không vẽ khung viền hộp chữ nhật bao quanh chữ ký (loại bỏ ô màu xanh / c.rect).
+    """
     from reportlab.lib.colors import Color
     from reportlab.lib.utils import ImageReader
 
     x, y, rong, cao = khung
-    ck = nguoi_ky["chu_ky"]
-    co_chu = max(4.5, min(8.0, cao / 6))
-    cao_dong = co_chu * 1.25
-    xanh = Color(0.05, 0.25, 0.6)
-    c.setFillColor(xanh)
+    c.setFillColor(Color(0, 0, 0))
+
+    ten_in_hoa = str(nguoi_ky.get("ten_nguoi_ky") or "").strip().upper()
+
+    # Tính cỡ chữ khởi điểm theo chiều cao khung, tự co nếu tên dài để luôn trên 1 dòng
+    co_chu = max(5.5, min(10.5, cao * 0.22))
+    chieu_rong_toi_da = max(rong * 0.95, 10.0)
+    if ten_in_hoa:
+        while co_chu > 4.0 and c.stringWidth(ten_in_hoa, phong_dam, co_chu) > chieu_rong_toi_da:
+            co_chu -= 0.25
+
+    cao_dong = co_chu * 1.3
+
     if anh:
-        # Ảnh ở phần trên khung, hai dòng chú thích (tên, thời điểm) ở đáy khung
-        chu_thich = [nguoi_ky["ten_nguoi_ky"], _gio_vn(ck["ngay_ky"])]
-        cao_chu = cao_dong * len(chu_thich) + co_chu * 0.4
-        c.drawImage(ImageReader(io.BytesIO(anh)), x, y + cao_chu, rong, max(cao - cao_chu, 1),
-                    preserveAspectRatio=True, anchor="c", mask="auto")
-        c.setFont(phong, co_chu)
-        for i, dong in enumerate(chu_thich):
-            c.drawCentredString(x + rong / 2, y + co_chu * 0.4 + cao_dong * (len(chu_thich) - 1 - i), dong[:60])
+        # Ảnh ở trên, tên người ký ở dưới chữ ký
+        cao_anh = max(cao - cao_dong - co_chu * 0.25, 1)
+        y_anh = y + cao_dong + co_chu * 0.25
+        c.drawImage(
+            ImageReader(io.BytesIO(anh)),
+            x,
+            y_anh,
+            rong,
+            cao_anh,
+            preserveAspectRatio=True,
+            anchor="c",
+            mask="auto",
+        )
+        if ten_in_hoa:
+            c.setFont(phong_dam, co_chu)
+            c.drawCentredString(x + rong / 2, y + co_chu * 0.2, ten_in_hoa)
         return
-    dong_chu = [d for d in ("ĐÃ KÝ DUYỆT", nguoi_ky["ten_nguoi_ky"], nguoi_ky.get("ten_chuc_vu") or "",
-                            _gio_vn(ck["ngay_ky"])) if d]
-    c.setStrokeColor(xanh)
-    c.setLineWidth(0.6)
-    c.rect(x, y, rong, cao)
-    for i, dong in enumerate(dong_chu):  # từ trên xuống trong khung
-        c.setFont(phong_dam if i == 0 else phong, co_chu)
+
+    # Fallback khi chưa có ảnh chữ ký: không vẽ viền ô vuông (bỏ ô màu xanh), in chữ ký duyệt trang nhã
+    dong_chu = [d for d in ("ĐÃ KÝ DUYỆT", ten_in_hoa, nguoi_ky.get("ten_chuc_vu") or "") if d]
+    for i, dong in enumerate(dong_chu):
+        font = phong_dam if i in (0, 1) else phong
+        size = co_chu if i == 1 else max(co_chu * 0.85, 4.5)
+        c.setFont(font, size)
         c.drawCentredString(x + rong / 2, y + cao - (i + 1) * cao_dong, dong[:60])
 
 
@@ -186,8 +220,6 @@ def _trang_phe_duyet(noi_dung, ma_bam_bang_chung, phong, phong_dam):
         for n in cap["nguoi_ky"]:
             ck = n["chu_ky"] or {}
             ten = escape(n["ten_nguoi_ky"]) + (f"<br/>{escape(n['ten_chuc_vu'])}" if n.get("ten_chuc_vu") else "")
-            if ck:
-                ten += f"<br/><font size=6.5>Khóa {escape(ck['dau_van_tay_khoa'][:16])}…</font>"
             ghi_chu = ("Trễ hạn. " if ck.get("ky_tre_han") else "") + (ck.get("ghi_chu_ky") or "")
             dong.append([p(f"{cap['cap_ky']}. {cap['ten_cap_ky']}"), Paragraph(ten, thuong),
                          p(VAI_TRO.get(n["vai_tro_ky"], n["vai_tro_ky"])), p(_gio_vn(ck.get("ngay_ky"))), p(ghi_chu)])
@@ -207,8 +239,8 @@ def _trang_phe_duyet(noi_dung, ma_bam_bang_chung, phong, phong_dam):
         p("Tệp này chưa cấp số, chưa ký số pháp lý và không thay cho văn bản ban hành.", nho), Spacer(1, 5 * mm),
         bang_tt, Spacer(1, 6 * mm), p("Các cấp ký duyệt", dam), Spacer(1, 2 * mm), bang_ky, Spacer(1, 6 * mm),
         p(f"Mã băm bằng chứng (SHA-256): {ma_bam_bang_chung}", nho),
-        p("Các trang trước là nguyên văn tệp gốc, chỉ thêm dòng nhận diện ở chân trang. Mỗi chữ ký Ed25519 được "
-          "ký trên mã băm SHA-256 của tệp gốc; bằng chứng đầy đủ (chữ ký, khóa công khai) đính kèm trong tệp "
+        p("Các trang trước là nguyên văn tệp gốc, chỉ thêm dòng nhận diện ở chân trang. Việc duyệt được xác nhận "
+          "bằng PIN của người ký; bản ghi xác nhận và ảnh chữ ký đính kèm trong tệp "
           f"bang-chung-{luot['id']}.json và xem được qua API /api/v1/signing/trinh-ky/{ho_so['id']}/bang-chung/.",
           nho),
     ])

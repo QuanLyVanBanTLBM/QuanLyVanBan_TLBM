@@ -93,6 +93,24 @@ describe('CategoryManagementModal Component (Issue #233)', () => {
     expect(screen.getByText('Biểu mẫu chung')).toBeInTheDocument();
   });
 
+  it('formats category creation date (ngay_lap) as dd/mm/yyyy in the category table', () => {
+    render(
+      <CategoryManagementModal
+        isOpen={true}
+        onClose={onClose}
+        categories={mockCategories}
+        types={mockTypes}
+        onSaveCategory={onSaveCategory}
+        onDeleteCategory={onDeleteCategory}
+        onSaveType={onSaveType}
+        onDeleteType={onDeleteType}
+      />
+    );
+
+    // mockCategories[0].ngay_lap is '2026-01-01', which should be formatted as '01/01/2026'
+    expect(screen.getByText('01/01/2026')).toBeInTheDocument();
+  });
+
   it('submits category creation and awaits onSaveCategory', async () => {
     onSaveCategory.mockResolvedValueOnce(undefined);
 

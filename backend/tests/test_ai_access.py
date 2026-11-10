@@ -89,6 +89,8 @@ class AIAccessTests(TestCase):
         response = self.client.get("/api/ai/settings")
         self.assertEqual(response.status_code, 200)
         self.assertIn("api_key_masked", response.json())
+        self.assertEqual(response.json()["provider"], "openai")
+        self.assertEqual(response.json()["model_options"]["openai"]["llm_models"], ["gpt-6-luna"])
 
     def test_chat_passes_authenticated_employee_id_not_request_body(self):
         self.client.force_authenticate(self.ai_user)
@@ -122,7 +124,7 @@ class AIAccessTests(TestCase):
         fake_rag = SimpleNamespace(setup_llamaindex=MagicMock())
         response_body = {
             "data": [
-                {"id": "gpt-4o-mini"},
+                {"id": "gpt-6-luna"},
                 {"id": "text-embedding-3-small"},
                 {"id": "text-embedding-3-large"},
             ]
@@ -143,6 +145,57 @@ class AIAccessTests(TestCase):
                     "backend.api.views.config",
                     MODEL_PROVIDER="openai",
                     BASE_DIR=Path(temp_dir),
+                    DATA_DIR=Path(temp_dir) / "data",
+                    LLM_MODEL="gpt-6-luna",
+                    EMBED_MODEL="text-embedding-3-large",
+                    VISION_MODEL="gpt-6-luna",
+                ),
+            ):
+                response = self.client.post(
+                    "/api/ai/settings",
+                    {
+                        "provider": "openai",
+                        "api_key": "test-openai-key",
+                        "llm_model": "gpt-6-luna",
+                    },
+                    format="json",
+                )
+
+        self.assertEqual(response.status_code, 200)
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.get_header("Authorization"), "Bearer test-openai-key")
+
+    def test_switch_from_legacy_gemini_config_to_openai_succeeds(self):
+        self.client.force_authenticate(self.superuser)
+        fake_rag = SimpleNamespace(
+            setup_llamaindex=MagicMock(),
+            sync_documents_if_needed=MagicMock(),
+        )
+        response_body = {
+            "data": [
+                {"id": "gpt-4o-mini"},
+                {"id": "text-embedding-3-large"},
+            ]
+        }
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(response_body).encode()
+        mock_response.__enter__.return_value = mock_response
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            (temp_path / "backend").mkdir()
+            (temp_path / "data").mkdir()
+            with (
+                patch.dict(sys.modules, {"backend.services.rag_service": fake_rag}),
+                patch("backend.services.rag_service", fake_rag, create=True),
+                patch.dict("os.environ", {}, clear=False),
+                patch("backend.api.views.config.OPENAI_API_KEY", "", create=True),
+                patch("backend.api.views.urllib.request.urlopen", return_value=mock_response),
+                patch.multiple(
+                    "backend.api.views.config",
+                    MODEL_PROVIDER="gemini",
+                    BASE_DIR=temp_path,
+                    DATA_DIR=temp_path / "data",
                     LLM_MODEL="gemini-3.8-flash",
                     EMBED_MODEL="models/gemini-embedding-001",
                     VISION_MODEL="gemini-3.8-flash",
@@ -152,12 +205,12 @@ class AIAccessTests(TestCase):
                     "/api/ai/settings",
                     {
                         "provider": "openai",
-                        "api_key": "test-openai-key",
-                        "llm_model": "gpt-4o-mini",
+                        "api_key": "sk-mock-key-1234567890",
+                        "llm_model": "gpt-6-luna",
                     },
                     format="json",
                 )
 
         self.assertEqual(response.status_code, 200)
-        request = urlopen.call_args.args[0]
-        self.assertEqual(request.get_header("Authorization"), "Bearer test-openai-key")
+        self.assertEqual(response.json()["provider"], "openai")
+        self.assertEqual(response.json()["llm_model"], "gpt-6-luna")

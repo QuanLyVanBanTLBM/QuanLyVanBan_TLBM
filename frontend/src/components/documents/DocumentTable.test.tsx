@@ -3,14 +3,20 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import DocumentTable from './DocumentTable';
 import { DocumentItem } from '@app-types/document';
 
-const permissionState = vi.hoisted(() => ({ isSystemAdmin: false }));
+const permissionState = vi.hoisted(() => ({ isSystemAdmin: false, permissions: [] as string[] }));
 vi.mock('@lib/permissions', () => ({
-  usePermissions: () => ({ loaded: true, isSuperuser: false, isSystemAdmin: permissionState.isSystemAdmin, can: () => false }),
+  usePermissions: () => ({
+    loaded: true,
+    isSuperuser: false,
+    isSystemAdmin: permissionState.isSystemAdmin,
+    can: (p: string) => permissionState.permissions.includes(p),
+  }),
 }));
 
 describe('DocumentTable Component', () => {
   afterEach(() => {
     permissionState.isSystemAdmin = false;
+    permissionState.permissions = [];
   });
 
   const mockDocuments: DocumentItem[] = [
@@ -460,6 +466,164 @@ describe('DocumentTable Component', () => {
     // Tiêu đề cột STT
     expect(screen.getByText('STT')).toBeInTheDocument();
     expect(screen.getAllByText('Số đến: #4').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('renders "Đổi hiệu lực" when user only has change_hieu_luc permission on expired document', () => {
+    permissionState.permissions = ['change_hieu_luc_vanbanden'];
+    const expiredDoc: DocumentItem = {
+      ...mockDocuments[1], // hieu_luc: 'HET_HIEU_LUC'
+      can_edit: false,
+      can_edit_full: false,
+      can_change_hieu_luc: true,
+      pham_vi: 'NOI_BO',
+    };
+
+    render(
+      <DocumentTable
+        documents={[expiredDoc]}
+        totalCount={1}
+        page={1}
+        pageSize={10}
+        loai="DEN"
+        onPageChange={vi.fn()}
+        onViewDetail={vi.fn()}
+        onEdit={vi.fn()}
+        onViewHistory={vi.fn()}
+      />
+    );
+
+    // Mở menu 3 chấm
+    const menuBtn = screen.getByTitle('Tác vụ');
+    fireEvent.click(menuBtn);
+
+    expect(screen.getByText('Đổi hiệu lực')).toBeInTheDocument();
+  });
+
+  it('renders "Chỉnh sửa" when user has full edit permission', () => {
+    permissionState.permissions = ['change_vanbanden', 'change_hieu_luc_vanbanden'];
+    const doc: DocumentItem = {
+      ...mockDocuments[0],
+      can_edit: true,
+      can_edit_full: true,
+      pham_vi: 'NOI_BO',
+    };
+
+    render(
+      <DocumentTable
+        documents={[doc]}
+        totalCount={1}
+        page={1}
+        pageSize={10}
+        loai="DEN"
+        onPageChange={vi.fn()}
+        onViewDetail={vi.fn()}
+        onEdit={vi.fn()}
+        onViewHistory={vi.fn()}
+      />
+    );
+
+    const menuBtn = screen.getByTitle('Tác vụ');
+    fireEvent.click(menuBtn);
+
+    expect(screen.getByText('Chỉnh sửa')).toBeInTheDocument();
+  });
+
+  it('renders "Đổi hiệu lực" for outbound expired document with change_hieu_luc_vanbandi', () => {
+    permissionState.permissions = ['change_hieu_luc_vanbandi'];
+    const expiredOutDoc: DocumentItem = {
+      ...mockDocuments[1],
+      loai: 'DI',
+      can_edit: false,
+      can_edit_full: false,
+      can_change_hieu_luc: true,
+      pham_vi: 'NOI_BO',
+    };
+
+    render(
+      <DocumentTable
+        documents={[expiredOutDoc]}
+        totalCount={1}
+        page={1}
+        pageSize={10}
+        loai="DI"
+        onPageChange={vi.fn()}
+        onViewDetail={vi.fn()}
+        onEdit={vi.fn()}
+        onViewHistory={vi.fn()}
+      />
+    );
+
+    const menuBtn = screen.getByTitle('Tác vụ');
+    fireEvent.click(menuBtn);
+
+    expect(screen.getByText('Đổi hiệu lực')).toBeInTheDocument();
+  });
+
+  it('strictly protects inbound restricted documents (HAN_CHE) from change_hieu_luc', () => {
+    permissionState.permissions = ['change_hieu_luc_vanbanden'];
+    const restrictedInDoc: DocumentItem = {
+      ...mockDocuments[0],
+      pham_vi: 'HAN_CHE',
+      can_edit: false,
+      can_edit_full: false,
+      can_change_hieu_luc: true,
+    };
+
+    render(
+      <DocumentTable
+        documents={[restrictedInDoc]}
+        totalCount={1}
+        page={1}
+        pageSize={10}
+        loai="DEN"
+        onPageChange={vi.fn()}
+        onViewDetail={vi.fn()}
+        onEdit={vi.fn()}
+        onViewHistory={vi.fn()}
+      />
+    );
+
+    // Mở menu 3 chấm
+    const menuBtn = screen.getByTitle('Tác vụ');
+    fireEvent.click(menuBtn);
+
+    // Tuyệt đối không có nút Đổi hiệu lực hay Chỉnh sửa cho văn bản hạn chế khi chỉ có quyền đổi hiệu lực
+    expect(screen.queryByText('Đổi hiệu lực')).not.toBeInTheDocument();
+    expect(screen.queryByText('Chỉnh sửa')).not.toBeInTheDocument();
+    expect(screen.getByText('Xem chi tiết')).toBeInTheDocument();
+  });
+
+  it('strictly protects outbound restricted documents (HAN_CHE) from change_hieu_luc', () => {
+    permissionState.permissions = ['change_hieu_luc_vanbandi'];
+    const restrictedOutDoc: DocumentItem = {
+      ...mockDocuments[0],
+      loai: 'DI',
+      pham_vi: 'HAN_CHE',
+      can_edit: false,
+      can_edit_full: false,
+      can_change_hieu_luc: true,
+    };
+
+    render(
+      <DocumentTable
+        documents={[restrictedOutDoc]}
+        totalCount={1}
+        page={1}
+        pageSize={10}
+        loai="DI"
+        onPageChange={vi.fn()}
+        onViewDetail={vi.fn()}
+        onEdit={vi.fn()}
+        onViewHistory={vi.fn()}
+      />
+    );
+
+    const menuBtn = screen.getByTitle('Tác vụ');
+    fireEvent.click(menuBtn);
+
+    expect(screen.queryByText('Đổi hiệu lực')).not.toBeInTheDocument();
+    expect(screen.queryByText('Chỉnh sửa')).not.toBeInTheDocument();
+    expect(screen.getByText('Xem chi tiết')).toBeInTheDocument();
   });
 });
 

@@ -941,5 +941,18 @@ describe('OrganizationsPage Component (Issue #19)', () => {
       expect(container.querySelector('table')!.className).toContain('units-table');
       expect((container.firstElementChild as HTMLElement).className).toContain('pb-24');
     });
+
+    it('địa chỉ Đơn vị ẩn trên điện thoại (dưới md, cùng mốc với dạng thẻ) và hiện từ md trở lên', async () => {
+      mockApi();
+      renderPage();
+      await screen.findByRole('button', { name: 'Khối A' });
+      openUnitsTab();
+      const row = (await screen.findByText('Phòng Kế toán')).closest('tr')!;
+
+      const address = within(row).getByText('Tầng 2').closest('div')!;
+      expect(address.className).toContain('hidden');
+      expect(address.className).toContain('md:flex');
+      expect(address.querySelector('.fa-location-dot')).toBeInTheDocument();
+    });
   });
 });

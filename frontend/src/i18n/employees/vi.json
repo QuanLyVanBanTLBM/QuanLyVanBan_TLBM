@@ -30,7 +30,9 @@
       "exporting": "Đang xuất tệp...",
       "changePassword": "Đổi mật khẩu",
       "editUsername": "Chỉnh sửa tên đăng nhập",
-      "cancelUsernameEdit": "Hủy chỉnh sửa tên đăng nhập"
+      "cancelUsernameEdit": "Hủy chỉnh sửa tên đăng nhập",
+      "editBirthday": "Nhập ngày sinh mới",
+      "cancelBirthdayEdit": "Hủy sửa ngày sinh"
     },
     "table": {
       "employee": "Cán bộ nhân viên",
@@ -101,6 +103,7 @@
       "statusNotice": "Lưu ý: Chuyển sang 'Nghỉ việc' sẽ tự động vô hiệu hóa tài khoản đăng nhập.",
       "birthdayFormat": "Định dạng: DD/MM/YYYY (Ví dụ: 15/06/2003)",
       "birthdayMaskedTooltip": "Năm sinh của người khác được ẩn để bảo vệ thông tin cá nhân.",
+      "birthdayEditMasked": "Năm sinh hiện tại vẫn được ẩn. Nhập ngày sinh mới để cập nhật.",
       "masked": "Đã che năm",
       "groupsHidden": "Danh sách nhóm quyền bị ẩn theo quyền riêng tư bảo mật.",
       "selfEditNotice": "Bạn đang cập nhật hồ sơ của chính mình. Chỉ có thể chỉnh sửa thông tin liên hệ và ngày sinh; các thông tin tổ chức do Quản trị viên quản lý."

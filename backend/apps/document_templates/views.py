@@ -55,21 +55,20 @@ class TicketOrJWTAuthentication(JWTAuthentication):
                 validated_token = self.get_validated_token(raw_token)
                 return self.get_user(validated_token), validated_token
 
-        # 2. Thử xác thực qua vé dùng 1 lần `ticket` (Burn on Read)
+        # 2. Thử xác thực qua vé dùng có chữ ký số `ticket` (Cryptographically Signed Short-Lived Ticket)
         query_dict = getattr(request, 'query_params', None)
         if query_dict is None:
             query_dict = getattr(request, 'GET', {})
 
         ticket = query_dict.get('ticket')
         if ticket:
-            from django.core.cache import cache
-            cache_key = f"doc_view_ticket:{ticket}"
-            ticket_data = cache.get(cache_key)
-            if not ticket_data:
+            from django.core.signing import TimestampSigner, BadSignature, SignatureExpired
+            signer = TimestampSigner(salt='doc_view_ticket')
+            raw_ticket = ticket[3:] if ticket.startswith('vt_') else ticket
+            try:
+                ticket_data = signer.unsign_object(raw_ticket, max_age=60)
+            except (BadSignature, SignatureExpired):
                 raise exceptions.PermissionDenied("Vé xem tài liệu không hợp lệ hoặc đã hết hạn.")
-
-            # BURN ON READ: Hủy vé ngay lập tức khi sử dụng
-            cache.delete(cache_key)
 
             from django.contrib.auth import get_user_model
             UserModel = get_user_model()
@@ -349,7 +348,7 @@ class TaiLieuChiTietViewSet(viewsets.ModelViewSet):
         kwargs = {}
         if self.request.user and self.request.user.is_authenticated:
             kwargs['nguoi_tao'] = self.request.user
-            if 'don_vi_id' not in serializer.validated_data and hasattr(self.request.user, 'don_vi_id'):
+            if serializer.validated_data.get('don_vi_id') is None and hasattr(self.request.user, 'don_vi_id'):
                 kwargs['don_vi_id'] = getattr(self.request.user, 'don_vi_id')
         serializer.save(**kwargs)
 
@@ -650,17 +649,18 @@ class ChiTietTaiLieuAttachmentViewSet(viewsets.ModelViewSet):
             raise exceptions.NotAuthenticated("Yêu cầu đăng nhập để lấy vé xem tài liệu.")
 
         att = self.get_object()
-        import secrets
-        from django.core.cache import cache
-        ticket = f"vt_{secrets.token_urlsafe(32)}"
-        cache_data = {
+        from django.core.signing import TimestampSigner
+        signer = TimestampSigner(salt='doc_view_ticket')
+        payload = {
             "att_id": att.id,
             "user_id": user.id,
         }
-        # Lưu vé vào cache với TTL 60 giây
-        cache.set(f"doc_view_ticket:{ticket}", cache_data, timeout=60)
+        raw_ticket = signer.sign_object(payload)
+        ticket = f"vt_{raw_ticket}"
 
-        view_url = f"/api/resources/attachments/{att.id}/view/?ticket={ticket}"
+        ext = att.name.split('.')[-1].lower() if '.' in att.name else ''
+        pdf_hash = "#view=Fit&navpanes=0" if ext == 'pdf' else ""
+        view_url = f"/api/resources/attachments/{att.id}/view/?ticket={ticket}{pdf_hash}"
         download_url = f"/api/resources/attachments/{att.id}/download/?ticket={ticket}"
 
         return Response({

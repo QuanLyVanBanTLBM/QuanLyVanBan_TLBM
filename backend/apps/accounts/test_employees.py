@@ -37,6 +37,7 @@ from accounts.models import (
 )
 from accounts.excel_cbnv import import_cbnv_from_excel
 from accounts.views_employee import _run_employee_import_job
+from accounts.standard_positions import STANDARD_POSITIONS
 
 User = get_user_model()
 
@@ -1396,7 +1397,7 @@ class EmployeePermissionSecurityTests(EmployeeBaseTestCase):
         res_delete_denied = self.client.delete(del_url)
         self.assertEqual(res_delete_denied.status_code, status.HTTP_403_FORBIDDEN)
 
-        # 3. User có quyền delete_cbnv -> DELETE thành công 204
+        # 3. RBAC delete_cbnv không cấp quyền xóa CBNV cho user không phải superuser.
         deleter_user = User.objects.create_user(
             username="deleter_user",
             email="deleter@baolong.vn",
@@ -1407,8 +1408,13 @@ class EmployeePermissionSecurityTests(EmployeeBaseTestCase):
         )
         deleter_user.user_permissions.add(self.perm_delete)
         self.client.force_authenticate(user=deleter_user)
-        res_delete_ok = self.client.delete(del_url, {"password": "DeleterPassword123"}, format="json")
-        self.assertEqual(res_delete_ok.status_code, status.HTTP_204_NO_CONTENT)
+        res_delete_denied = self.client.delete(del_url, {"password": "DeleterPassword123"}, format="json")
+        self.assertEqual(res_delete_denied.status_code, status.HTTP_403_FORBIDDEN)
+
+        # Chỉ superuser mới được xóa hồ sơ nhân viên.
+        self.client.force_authenticate(user=self.admin_user)
+        res_delete_admin = self.client.delete(del_url, {"password": "SuperPassword123"}, format="json")
+        self.assertEqual(res_delete_admin.status_code, status.HTTP_204_NO_CONTENT)
 
     def test_superuser_bypasses_all_permission_gates(self):
         """Superuser không cần gán quyền lẻ tẻ, luôn vượt qua tất cả các chốt kiểm tra."""
@@ -1488,7 +1494,7 @@ class EmployeePermissionSecurityTests(EmployeeBaseTestCase):
             format="json",
         )
         self.assertEqual(res_del_su.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(res_del_su.data["detail"], "employees.messages.cannotDeleteSuperuser")
+        self.assertEqual(res_del_su.data["detail"], "roles.messages.permissionDenied")
 
         # 4. User có change_full_cbnv (nhưng không phải superuser) cố chuyển superuser thành nghỉ việc -> 403
         hr_user = User.objects.create_user(
@@ -1858,7 +1864,7 @@ class SeedDbCommandTests(APITestCase):
         }):
             call_command("seed_db", demo_data=True, verbosity=0)
         self.assertEqual(DonVi.objects.count(), 82)
-        self.assertEqual(Position.objects.count(), 25)
+        self.assertEqual(Position.objects.count(), len(STANDARD_POSITIONS))
         self.assertEqual(User.objects.get(username="admin").password, first_password_hash)
         preserved_demo = User.objects.get(username="truongphong_cntt")
         self.assertEqual(preserved_demo.password, existing_demo_hash)
@@ -2174,6 +2180,8 @@ class EmployeeDefaultGroupAssignmentTests(EmployeeBaseTestCase):
             ("Tổng Giám đốc", "BGD"),
             ("Chủ tịch HĐQT", "BGD"),
             ("Giám đốc Khối", "TP"),
+            ("Giám đốc Ban", "TP"),
+            ("Phụ trách Ban", "TP"),
             ("Trưởng phòng", "TP"),
             ("Chuyên viên", "CV"),
             ("Nhân viên", "CV"),

@@ -1,4 +1,13 @@
 -- =====================================================================
+-- CẤP QUYỀN THÊM, SỬA DANH MỤC HỒ SƠ VÀ LOẠI VĂN BẢN CHO VĂN THƯ (Nhóm 7; đánh dấu [VTHS] tại vị trí)
+-- Căn cứ: bảng phân quyền Danh mục hồ sơ và Loại văn bản do nhóm Hồ sơ (Nhóm 3) gửi, nhóm trưởng chốt làm theo (issue #647):
+--   BGD, CV, TP chỉ xem; VT xem, thêm, sửa, không xóa; ADMIN đủ 4. Hai màn hình dùng chung mã view/add/change/delete_hoso.
+--   Đảo lại quyết định 03/11 ([VTQ], issue #513) đã gỡ add_hoso, change_hoso khỏi VT. Không thêm mã quyền mới.
+--   Migration authorization 0019_van_thu_them_sua_ho_so bổ sung hai lượt gán cho nhóm VT trên DB đã seed từ trước.
+-- Quy mô sau [VTHS] (cộng sau [GQVC]): giữ 83 quyền thao tác; thêm 2 lượt phân quyền (VT +2): 201 -> 203;
+--   nhóm VT 33 -> 35 quyền.
+-- =====================================================================
+-- =====================================================================
 -- CHO QUẢN TRỊ VIÊN XÓA VĂN BẢN HẠN CHẾ (Nhóm 7; đánh dấu [XVHC] tại vị trí)
 -- Căn cứ: Quản trị viên xóa được văn bản hạn chế hết hiệu lực (issue #610); trigger prevent_delete_van_ban_han_che
 --   chặn mọi lệnh xóa nên API trả 403 dù cờ can_delete đúng. Hàm chỉ chặn khi phiên không đặt
@@ -271,8 +280,8 @@
 -- - FK signing_attempt -> request, signing_signature, signing_manifest đổi sang
 -- ON DELETE RESTRICT.
 -- - Trigger chặn xóa cứng attempt đã kích hoạt, chữ ký số và manifest đã chốt.
--- - Trình ký: backend lưu private key Ed25519 dạng mã hóa trong signing_key_unlock;
---   khóa AES dẫn xuất từ SIGNING_KEY_PEPPER ngoài CSDL, độc lập PIN để recovery giữ cùng khóa.
+-- - Thiết kế khóa Ed25519 cũ là lịch sử, thay bằng xác nhận ký PIN ở issue #596.
+--   Hash tài liệu và bản ghi xác nhận PIN thay cho public key và chữ ký mật mã.
 -- 9) [Phan Tạ Hữu Đức & Chỉ đạo GVHD 25/09/2026] Chuẩn hóa phân hệ Công việc:
 -- - Phân quyền duyệt/hủy duyệt theo Object-level trong task_participant (Người tạo,
 -- Chủ trì CHU_TRI, Chỉ đạo CHI_DAO); bỏ kiểm tra 3 lớp cứng và không chặn duyệt bằng approve_congviec.
@@ -351,8 +360,6 @@ CREATE TYPE signing_attempt_status AS ENUM ('DRAFT','CHO_KY','YEU_CAU_SUA','HOAN
 
 CREATE TYPE signing_step_status    AS ENUM ('CHO_KY','DA_KY','TU_CHOI','BO_QUA','YEU_CAU_SUA','THU_HOI');
 
-
-CREATE TYPE signing_verify_status  AS ENUM ('CHUA_XAC_MINH','HOP_LE','KHONG_HOP_LE');
 
 CREATE TYPE signing_manifest_status AS ENUM ('DRAFT','FINAL');
 
@@ -451,7 +458,7 @@ CREATE TABLE accounts_employee (
     sdt VARCHAR(20), -- SĐT cá nhân / SĐT bàn
     don_vi_id BIGINT NOT NULL REFERENCES organizations_donvi (id) ON DELETE RESTRICT,
     username VARCHAR(150) NOT NULL UNIQUE, -- auto = local-part email
-    password VARCHAR(255) NOT NULL, -- lưu hash (vd pbkdf2/argon2), KHÔNG lưu plaintext
+    password VARCHAR(255) NOT NULL, -- lưu hash mật khẩu, KHÔNG lưu plaintext
     is_active BOOLEAN NOT NULL DEFAULT TRUE, -- Cờ khóa tài khoản nhân viên nghỉ việc (chuẩn Django)
     is_staff BOOLEAN NOT NULL DEFAULT FALSE, -- Quyền đăng nhập trang quản trị
     is_superuser BOOLEAN NOT NULL DEFAULT FALSE, -- Quyền quản trị tối cao
@@ -1440,50 +1447,23 @@ CREATE TABLE signing_request_step_signer (
 CREATE INDEX idx_signing_request_step_signer_buoc ON signing_request_step_signer (buoc_ky_id);
 CREATE INDEX idx_signing_request_step_signer_nguoi ON signing_request_step_signer (nguoi_ky_id);
 
--- 9.8. Quản lý khóa ký số (private key mã hóa trong DB; chỉ giải mã trong bộ nhớ khi ký)
-CREATE TABLE signing_key (
+-- 9.8. Lưu verifier PIN ký và bộ đếm sai theo ngày/chu kỳ
+CREATE TABLE signing_pin_credential (
     id BIGSERIAL PRIMARY KEY,
-    nguoi_so_huu_id BIGINT NOT NULL REFERENCES accounts_employee (id) ON DELETE RESTRICT,
-    ma_khoa VARCHAR(100) NOT NULL UNIQUE,
-    dau_van_tay VARCHAR(64) NOT NULL UNIQUE,
-    thuat_toan VARCHAR(50) NOT NULL DEFAULT 'Ed25519',
-    khoa_cong_khai TEXT NOT NULL,
-    trang_thai VARCHAR(20) NOT NULL DEFAULT 'CHO_KICH_HOAT',
-    thoi_diem_xac_minh_so_huu TIMESTAMPTZ,
-    thoi_diem_kich_hoat TIMESTAMPTZ,
-    ngay_hieu_luc TIMESTAMPTZ NOT NULL,
-    ngay_het_han TIMESTAMPTZ,
-    ngay_thu_hoi TIMESTAMPTZ,
-    ghi_chu TEXT NOT NULL DEFAULT '',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    khoa_thay_the_id BIGINT REFERENCES signing_key (id) ON DELETE RESTRICT,
-    CONSTRAINT chk_signing_key_hoat_dong_da_xac_minh CHECK (
-        NOT (trang_thai = 'HOAT_DONG') OR thoi_diem_xac_minh_so_huu IS NOT NULL
-    )
-);
-
-CREATE UNIQUE INDEX uq_signing_key_mot_khoa_hoat_dong ON signing_key (nguoi_so_huu_id) WHERE (trang_thai = 'HOAT_DONG');
-CREATE INDEX idx_signing_key_khoa_thay_the ON signing_key (khoa_thay_the_id);
-CREATE INDEX idx_signing_key_nguoi_so_huu ON signing_key (nguoi_so_huu_id);
-
--- 9.8b. Private key mã hóa AES-256-GCM bằng HKDF(SIGNING_KEY_PEPPER, salt), độc lập với PIN.
--- PIN chỉ được giữ dưới dạng verifier Argon2id; email recovery thay verifier nhưng giữ nguyên khóa/ciphertext.
-CREATE TABLE signing_key_unlock (
-    id BIGSERIAL PRIMARY KEY,
-    khoa_id BIGINT NOT NULL UNIQUE REFERENCES signing_key (id) ON DELETE CASCADE,
+    nguoi_dung_id BIGINT NOT NULL UNIQUE REFERENCES accounts_employee (id) ON DELETE CASCADE,
     ma_bam_xac_minh_pin TEXT NOT NULL,
-    khoa_bi_mat_ma_hoa TEXT NOT NULL,
-    tham_so_kdf JSONB NOT NULL,
-    so_lan_sai INTEGER NOT NULL DEFAULT 0 CHECK (so_lan_sai >= 0),
-    khoa_den TIMESTAMPTZ, -- NULL: không bị khóa
+    so_lan_sai_ngay SMALLINT NOT NULL DEFAULT 0 CHECK (so_lan_sai_ngay >= 0),
+    so_lan_sai_chu_ky SMALLINT NOT NULL DEFAULT 0 CHECK (so_lan_sai_chu_ky >= 0),
+    ngay_dem_sai DATE,
+    khoa_den TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TRIGGER trg_signing_key_unlock_updated_at BEFORE UPDATE ON signing_key_unlock
+CREATE TRIGGER trg_signing_pin_credential_updated_at BEFORE UPDATE ON signing_pin_credential
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- 9.8c. Quản lý ảnh chữ ký cá nhân (Nhóm 5)
+-- 9.8a. Quản lý ảnh chữ ký cá nhân (Nhóm 5)
 CREATE TABLE signing_user_signature (
     id BIGSERIAL PRIMARY KEY,
     nguoi_dung_id BIGINT NOT NULL UNIQUE REFERENCES accounts_employee (id) ON DELETE CASCADE,
@@ -1497,48 +1477,21 @@ CREATE TABLE signing_user_signature (
 CREATE TRIGGER trg_signing_user_signature_updated_at BEFORE UPDATE ON signing_user_signature
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- 9.8c2. Mã xác thực đặt lại PIN gửi qua email (Nhóm 5): lưu mã đã băm, gắn với khóa đang hoạt động lúc gửi
-CREATE TABLE signing_pin_reset_code (
+-- 9.8b. OTP một lần để tạo hoặc khôi phục PIN; OTP chỉ lưu dạng HMAC, PIN mới lưu dạng verifier
+CREATE TABLE signing_pin_otp_challenge (
     id BIGSERIAL PRIMARY KEY,
     nguoi_dung_id BIGINT NOT NULL REFERENCES accounts_employee (id) ON DELETE CASCADE,
-    khoa_id BIGINT REFERENCES signing_key (id) ON DELETE RESTRICT,
+    pin_moi_verifier TEXT NOT NULL,
     ma_bam VARCHAR(64) NOT NULL,
+    kenh VARCHAR(10) NOT NULL,
     het_han TIMESTAMPTZ NOT NULL,
-    so_lan_sai INTEGER NOT NULL DEFAULT 0,
+    so_lan_sai SMALLINT NOT NULL DEFAULT 0 CHECK (so_lan_sai >= 0),
     da_dung_luc TIMESTAMPTZ,
+    da_huy_luc TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_signing_pin_reset_user ON signing_pin_reset_code (nguoi_dung_id, created_at);
-
--- 9.8c3. Nonce challenge chứng minh sở hữu khóa đã dùng (Nhóm 5, issue #507): mỗi challenge xác minh thành công một lần
-CREATE TABLE signing_challenge_da_dung (
-    id BIGSERIAL PRIMARY KEY,
-    nguoi_dung_id BIGINT NOT NULL REFERENCES accounts_employee (id) ON DELETE CASCADE,
-    nonce VARCHAR(64) NOT NULL,
-    het_han TIMESTAMPTZ NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT uq_signing_challenge_da_dung UNIQUE (nguoi_dung_id, nonce)
-);
-
-CREATE INDEX idx_signing_challenge_het_han ON signing_challenge_da_dung (het_han);
-
--- 9.8c4. Mã xác thực MFA khi ký gửi qua email và phiên đã xác thực (Nhóm 5): lưu mã đã băm; dòng đã dùng gắn với access token
-CREATE TABLE signing_mfa_otp (
-    id BIGSERIAL PRIMARY KEY,
-    nguoi_dung_id BIGINT NOT NULL REFERENCES accounts_employee (id) ON DELETE CASCADE,
-    muc_dich VARCHAR(20) NOT NULL DEFAULT 'KY',
-    ma_bam VARCHAR(64) NOT NULL,
-    het_han TIMESTAMPTZ NOT NULL,
-    so_lan_sai INTEGER NOT NULL DEFAULT 0,
-    da_dung_luc TIMESTAMPTZ,
-    phien_jti VARCHAR(64),
-    phien_het_han TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX idx_signing_mfa_otp_user ON signing_mfa_otp (nguoi_dung_id, muc_dich, created_at);
-CREATE INDEX idx_signing_mfa_otp_phien ON signing_mfa_otp (nguoi_dung_id, phien_jti);
+CREATE INDEX idx_signing_pin_otp_user ON signing_pin_otp_challenge (nguoi_dung_id, created_at);
 
 -- 9.8d. [v1] Khóa quyền ký của tài khoản do quản trị viên đặt (Nhóm 5, issue #449) — bảng trạng thái.
 -- Một tài khoản có tối đa một dòng đang hiệu lực (bat_lai_luc IS NULL). khoa_den NULL: khóa đến khi được bật lại.
@@ -1570,22 +1523,16 @@ CREATE INDEX idx_signing_right_lock_nguoi_bat_lai ON signing_right_lock (nguoi_b
 CREATE TRIGGER trg_signing_right_lock_updated_at BEFORE UPDATE ON signing_right_lock
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- 9.9. Chữ ký số điện tử (Bảo toàn bằng chứng pháp lý — Bất biến không thể sửa/xóa)
--- Issue #47 P0.3: Chặn DELETE và chặn UPDATE mọi cột, CHỈ CHO PHÉP cập nhật trang_thai_xac_minh và thoi_diem_xac_minh
+-- 9.9. Xác nhận ký bằng PIN (bất biến, không lưu dữ liệu khóa hoặc chữ ký mật mã)
 CREATE TABLE signing_signature (
     id BIGSERIAL PRIMARY KEY,
     luot_trinh_id BIGINT NOT NULL REFERENCES signing_attempt (id) ON DELETE RESTRICT,
     buoc_ky_id BIGINT NOT NULL REFERENCES signing_request_step_signer (id) ON DELETE RESTRICT,
-    khoa_ky_id BIGINT NOT NULL REFERENCES signing_key (id) ON DELETE RESTRICT,
     hash_tai_lieu VARCHAR(64) NOT NULL,
-    thuat_toan VARCHAR(50) NOT NULL,
-    chu_ky_so TEXT NOT NULL,
     ghi_chu_ky TEXT NOT NULL DEFAULT '',
     ky_tre_han BOOLEAN NOT NULL DEFAULT false,
     so_giay_tre INTEGER CHECK (so_giay_tre >= 0),
     ngay_ky TIMESTAMPTZ NOT NULL DEFAULT now(),
-    trang_thai_xac_minh VARCHAR(20) NOT NULL DEFAULT 'HOP_LE',
-    thoi_diem_xac_minh TIMESTAMPTZ,
     vi_tri_anh_chu_ky VARCHAR(500) NOT NULL DEFAULT '',
     ma_bam_anh_chu_ky VARCHAR(64) NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -1593,7 +1540,6 @@ CREATE TABLE signing_signature (
 );
 
 CREATE INDEX idx_signing_signature_buoc_ky ON signing_signature (buoc_ky_id);
-CREATE INDEX idx_signing_signature_khoa_ky ON signing_signature (khoa_ky_id);
 CREATE INDEX idx_signing_signature_luot_trinh ON signing_signature (luot_trinh_id);
 
 -- Gắn FK chu_ky_hien_hanh_id trên signing_request_step_signer trỏ tới signing_signature
@@ -1603,20 +1549,12 @@ ALTER TABLE signing_request_step_signer
 
 CREATE INDEX idx_signing_request_step_signer_chuky ON signing_request_step_signer (chu_ky_hien_hanh_id);
 
--- Trigger bảo vệ chữ ký số: Chặn tuyệt đối xóa chữ ký và chặn sửa đổi (trừ kết quả xác minh)
+-- Trigger bảo vệ xác nhận ký: không cho sửa hoặc xóa sau khi đã ghi.
 CREATE OR REPLACE FUNCTION prevent_delete_or_tamper_signing_signature()
 RETURNS TRIGGER AS $$
 BEGIN
-    IF TG_OP = 'DELETE' THEN
-        RAISE EXCEPTION 'Bảo toàn bằng chứng pháp lý: Chữ ký số điện tử (signing_signature id=%) là bất biến và không thể xóa khỏi CSDL.', OLD.id;
-    ELSIF TG_OP = 'UPDATE' THEN
-        IF (to_jsonb(OLD) - 'trang_thai_xac_minh' - 'thoi_diem_xac_minh')
-           IS DISTINCT FROM
-           (to_jsonb(NEW) - 'trang_thai_xac_minh' - 'thoi_diem_xac_minh') THEN
-            RAISE EXCEPTION 'Bảo toàn bằng chứng pháp lý: Không được phép sửa đổi thông tin cốt lõi của chữ ký số (signing_signature id=%). Chỉ cho phép cập nhật kết quả xác minh.', OLD.id;
-        END IF;
-    END IF;
-    RETURN NEW;
+    RAISE EXCEPTION 'Bảo toàn bằng chứng: Xác nhận ký (signing_signature id=%) là bất biến và không thể sửa hoặc xóa.', OLD.id;
+    RETURN OLD;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -2206,7 +2144,7 @@ FROM (
 ) AS source (stt_uu_tien, dia_chi, dien_thoai, is_public)
 WHERE unit.stt_uu_tien = source.stt_uu_tien;
 
--- 3) Seed 25 Chức vụ chuẩn (STT 1 = cao nhất: 22 chức vụ của đặc tả, giữ "Quản trị viên",
+-- 3) Seed 27 Chức vụ chuẩn (STT 1 = cao nhất: 24 chức vụ của đặc tả, giữ "Quản trị viên",
 --    "Lãnh đạo cơ quan", "Văn thư" chèn theo cấp bậc) và Tài khoản quản trị hệ thống mẫu
 --    (Idempotent, không hard-code ID)
 INSERT INTO
@@ -2232,17 +2170,19 @@ FROM (
         (12, 'Trợ lý TGĐ'),
         (13, 'Giám đốc'),
         (14, 'Phó Giám đốc'),
-        (15, 'Trưởng Ban'),
-        (16, 'Phó Ban'),
-        (17, 'Trưởng Bộ phận'),
-        (18, 'Trưởng nhóm'),
-        (19, 'Trưởng phòng'),
-        (20, 'Phó phòng'),
-        (21, 'Chuyên viên'),
-        (22, 'Văn thư'),
-        (23, 'Kiểm toán viên'),
-        (24, 'Nhân viên'),
-        (25, 'Thành viên')
+        (15, 'Giám đốc Ban'),
+        (16, 'Phụ trách Ban'),
+        (17, 'Trưởng Ban'),
+        (18, 'Phó Ban'),
+        (19, 'Trưởng Bộ phận'),
+        (20, 'Trưởng nhóm'),
+        (21, 'Trưởng phòng'),
+        (22, 'Phó phòng'),
+        (23, 'Chuyên viên'),
+        (24, 'Văn thư'),
+        (25, 'Kiểm toán viên'),
+        (26, 'Nhân viên'),
+        (27, 'Thành viên')
     ) AS x (stt, ten)
 WHERE
     NOT EXISTS (
@@ -2938,7 +2878,7 @@ WHERE
     ) ON CONFLICT (group_id, permission_id) DO NOTHING;
 
 -- [VTQ] Nhóm VT (Văn thư): xem, thêm, import văn bản đến/đi, xuất Excel văn bản đến, đổi hiệu lực;
--- [XHHL] xem văn bản đến/đi hết hiệu lực; [TVHC] thêm văn bản đến/đi hạn chế;
+-- [XHHL] xem văn bản đến/đi hết hiệu lực; [TVHC] thêm văn bản đến/đi hạn chế; [VTHS] thêm, sửa hồ sơ và loại văn bản;
 --   không sửa/xóa văn bản đến/đi, không gửi mail toàn hệ thống; xem hồ sơ, tài liệu biểu mẫu; quyền chung của CBNV
 INSERT INTO
     auth_group_permissions (group_id, permission_id)
@@ -2966,6 +2906,9 @@ WHERE
         'view_het_hieu_luc_vanbandi',
         'add_han_che_vanbandi',
         'view_hoso',
+        -- [VTHS]
+        'add_hoso',
+        'change_hoso',
         'view_tailieu',
         'view_trinhky',
         'send_trinhky',

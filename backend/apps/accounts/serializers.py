@@ -347,6 +347,8 @@ POSITION_DEFAULT_GROUP_CODES = {
     "Giám đốc Vùng": ["TP"],
     "Giám đốc": ["TP"],
     "Phó Giám đốc": ["TP"],
+    "Giám đốc Ban": ["TP"],
+    "Phụ trách Ban": ["TP"],
     "Trưởng Ban": ["TP"],
     "Phó Ban": ["TP"],
     "Trưởng Bộ phận": ["TP"],

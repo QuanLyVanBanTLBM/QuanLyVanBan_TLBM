@@ -15,7 +15,6 @@ from signing.storage import get_storage
 from signing.tich_hop import to_chuc
 
 from .helpers import dat_anh_chu_ky
-from .test_hanh_dong_ky_phase8 import ky_so
 from .test_hoan_tat_phase10 import HoanTatBase
 from .test_hoan_thien_80 import anh_png
 from .test_trinh_ky_phase7 import BASE, pdf_mau, tep_pdf
@@ -111,8 +110,7 @@ class TepHoanTatCoAnhMayChuTests(HoanTatBase):
         self.hash = hashlib.sha256(tep).hexdigest()
 
     def ky_tep(self, user):
-        private, _ = self.khoa[user.pk]
-        return self.ky(user, hash_tai_lieu=self.hash, chu_ky_so=ky_so(private, self.hash))
+        return self.ky(user, hash_tai_lieu=self.hash)
 
     def test_image_is_in_evidence_and_final_pdf(self):
         self.assertEqual(self.ky_tep(self.ky1).status_code, 200)

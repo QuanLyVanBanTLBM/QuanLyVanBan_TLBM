@@ -2,7 +2,7 @@
 Dữ liệu mẫu phân hệ Trình ký (Nhóm 5): `manage.py seed_signing_demo [--reset]` — chạy lại không nhân bản dữ liệu.
 Tự đủ trên DB vừa `migrate` (đơn vị, chức vụ, nhóm quyền chuẩn có sẵn từ migration; thiếu đơn vị thì tạo).
 
-Tạo qua chính các service nghiệp vụ (tạo nháp, gửi, ký Ed25519, từ chối, trả sửa, trao đổi, gửi bản sửa, hủy,
+Tạo qua chính các service nghiệp vụ (tạo nháp, gửi, xác nhận PIN, từ chối, trả sửa, trao đổi, gửi bản sửa, hủy,
 trình lại) nên lịch sử, bằng chứng, tệp hoàn tất và thông báo nhất quán như thao tác thật:
 
 - 5 tài khoản: admin (quản trị), vanthu (văn thư, tạo và trình), chuyenvien (soạn nháp), truongphong (trưởng
@@ -22,18 +22,13 @@ trình lại) nên lịch sử, bằng chứng, tệp hoàn tất và thông bá
 - `--email-domain <miền>`: gán email <username>@<miền> cho tài khoản mẫu chưa có email; không có email thì chỉ có
   thông báo trong ứng dụng, không có email.
 
-Ký mẫu dùng khóa Ed25519 tạm sinh trong bộ nhớ; private key được lưu mã hóa để gọi service ký rồi xóa cùng PIN khi
-thu hồi khóa tạm. Người dùng tự tạo khóa ký của mình ở trang Cấu hình khóa ký. Hồ sơ nhận diện qua ghi chú
-"Dữ liệu mẫu <mã>:".
+Ký mẫu dùng PIN ngẫu nhiên cho tài khoản demo. Hồ sơ nhận diện qua ghi chú "Dữ liệu mẫu <mã>:".
 """
 
-import base64
 import io
 import os
 from datetime import timedelta
 
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -49,10 +44,10 @@ from organizations.models import DonVi, KhoiKhuVuc
 from signing import enums
 from signing import crypto
 from signing.models import (
-    SigningAttempt, SigningKey, SigningProcess, SigningRequest, SigningRequestStep, SigningUserSignature,
+    SigningAttempt, SigningProcess, SigningRequest, SigningRequestStep, SigningUserSignature,
 )
 from signing.pdf_hoan_tat import tim_phong_chu
-from signing.services import hanh_dong_ky, keys, pin as pin_service, process, thong_bao, trinh_ky, yeu_cau_sua
+from signing.services import hanh_dong_ky, pin as pin_service, process, thong_bao, trinh_ky, yeu_cau_sua
 from signing.storage import get_storage
 
 TIEN_TO = "Dữ liệu mẫu"
@@ -139,38 +134,13 @@ def tao_pdf(tieu_de, dong_phu):
     return buf.getvalue()
 
 
-class KhoaTam:
-    """Khóa Ed25519 tạm của một người ký (khóa bí mật chỉ trong bộ nhớ)."""
+class PinTam:
+    """PIN ngẫu nhiên phục vụ luồng ký dữ liệu mẫu."""
 
     def __init__(self, nguoi):
         self.nguoi = nguoi
         self.pin = f"{int.from_bytes(os.urandom(4), 'big') % 1_000_000:06d}"
-        self.rieng = Ed25519PrivateKey.generate()
-        cong_khai = self.rieng.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
-        bay_gio = timezone.now()
-        self.khoa = keys.dang_ky(nguoi, ma_khoa=f"DLM-{nguoi.username}-{bay_gio:%Y%m%d%H%M%S%f}",
-                                 khoa_cong_khai=base64.b64encode(cong_khai).decode(),
-                                 ngay_hieu_luc=bay_gio - timedelta(minutes=1), ghi_chu=f"{TIEN_TO}: khóa tạm")
-        thach_thuc = keys.thach_thuc_so_huu(self.khoa)
-        keys.xac_minh_so_huu(self.khoa, nguoi, thach_thuc, self.ky(thach_thuc.encode()))
-        private_pkcs8 = self.rieng.private_bytes(
-            serialization.Encoding.DER,
-            serialization.PrivateFormat.PKCS8,
-            serialization.NoEncryption(),
-        )
-        tham_so_kdf = {
-            "thuat_toan": pin_service.KDF_THUAT_TOAN,
-            **pin_service.KDF_SAN,
-            "salt": base64.b64encode(os.urandom(pin_service.KDF_SALT_BYTES)).decode("ascii"),
-        }
-        pin_service.dat_pin(
-            self.khoa, nguoi, self.pin, base64.b64encode(private_pkcs8).decode("ascii"), tham_so_kdf,
-        )
-        cu = SigningKey.objects.filter(nguoi_so_huu=nguoi, trang_thai=enums.TrangThaiKhoa.HOAT_DONG).first()
-        self.khoa = keys.xoay_vong(cu, self.khoa, nguoi) if cu else keys.kich_hoat(self.khoa, nguoi)
-
-    def ky(self, du_lieu):
-        return base64.b64encode(self.rieng.sign(du_lieu)).decode()
+        pin_service.dat_pin(nguoi, self.pin)
 
 
 class Command(BaseCommand):
@@ -186,7 +156,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         self.mat_khau = (os.environ.get("DEMO_PASSWORD") or "").strip()
-        self.khoa_tam = {}
+        self.pin_tam = {}
         self.dem = 0
         self.lan_chay = f"{timezone.now():%Y%m%d%H%M%S%f}"
         nguoi = self._tai_khoan(options["dat_lai_mat_khau"], options["email_domain"].strip().lstrip("@"))
@@ -194,11 +164,7 @@ class Command(BaseCommand):
         if options["reset"]:
             self._reset(nguoi)
         quy_trinh = self._quy_trinh(nguoi)
-        try:
-            self._ho_so(nguoi, quy_trinh)
-        finally:
-            for k in self.khoa_tam.values():
-                keys.thu_hoi(k.khoa, k.nguoi, f"{TIEN_TO}: thu hồi khóa tạm sau khi ký mẫu")
+        self._ho_so(nguoi, quy_trinh)
         so_nhac = thong_bao.nhac_han()
         self.stdout.write(self.style.SUCCESS(
             f"Xong: {self.dem} hồ sơ mẫu mới, {so_nhac} thông báo nhắc hạn mới. "
@@ -366,9 +332,9 @@ class Command(BaseCommand):
         return SigningRequest.objects.filter(ghi_chu__startswith=f"{TIEN_TO} {ma}:", ho_so_goc__isnull=True).exists()
 
     def _ky(self, ho_so, nguoi, ghi_chu=""):
-        k = self.khoa_tam[nguoi.pk]
+        k = self.pin_tam[nguoi.pk]
         ma_bam = trinh_ky.luot_hien_hanh(SigningRequest.objects.get(pk=ho_so.pk)).ma_bam_tai_lieu
-        return hanh_dong_ky.ky(ho_so, nguoi, pin=k.pin, khoa_ky=k.khoa.pk, hash_tai_lieu=ma_bam,
+        return hanh_dong_ky.ky(ho_so, nguoi, pin=k.pin, hash_tai_lieu=ma_bam,
                                ghi_chu_ky=ghi_chu,
                                khoa_chong_trung=self._khoa(ho_so.pk, f"ky-{nguoi.pk}-{timezone.now().timestamp()}"))
 
@@ -393,10 +359,10 @@ class Command(BaseCommand):
     def _ho_so(self, n, qt):
         hai_cap, mot_cap, song_song = qt["QT-TK-HAI-CAP"], qt["QT-TK-MOT-CAP"], qt["QT-TK-SONG-SONG"]
 
-        # Khóa tạm cho người ký, tạo trước (ngoài transaction từng hồ sơ) và chỉ khi còn hồ sơ cần ký chưa tạo
+        # PIN cho tài khoản demo, tạo trước khi gửi hồ sơ cần ký
         if any(not self._co_roi(m) for m in ("M03", "M04", "M05", "M07", "M10")):
             for u in ("truongphong", "giamdoc", "admin"):
-                self.khoa_tam[n[u].pk] = KhoaTam(n[u])
+                self.pin_tam[n[u].pk] = PinTam(n[u])
 
         with transaction.atomic():
             self._tao("M01", "nháp do chuyên viên soạn, chưa gửi", n["chuyenvien"], mot_cap, gui=False)

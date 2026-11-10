@@ -1,71 +1,46 @@
-"""Bọc private key Ed25519 bằng server pepper; PIN là yếu tố xác nhận riêng cho thao tác ký."""
+"""Xác minh PIN ký bằng PBKDF2-SHA256 và bí mật máy chủ riêng."""
 
+import hashlib
 import hmac
 import logging
 import re
 from datetime import timedelta
 
 from django.conf import settings
+from django.contrib.auth.hashers import check_password, make_password
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import status
 
-from .. import crypto, enums
-from ..errors import ConflictError, SigningError
-from ..models import SigningKey, SigningKeyUnlock
+from ..errors import SigningError
+from ..models import SigningPinCredential
 from .audit import ghi_nhat_ky
-from .keys import _chu_so_huu
 
 logger = logging.getLogger(__name__)
-
-LOAI = "signing_key"
-SO_LAN_SAI_TOI_DA_MOI_NGAY = 15
-KDF_THUAT_TOAN = "argon2id"
-KDF_SAN = {"m": 64 * 1024, "t": 3, "p": 1, "phien_ban": 19}
-KDF_KHOA_HOP_LE = {"thuat_toan", "m", "t", "p", "phien_ban", "salt"}
-KDF_SALT_BYTES = 16
 PIN_HOP_LE = re.compile(r"^\d{6}$")
-TRANG_THAI_DAT_PIN = (enums.TrangThaiKhoa.CHO_KICH_HOAT, enums.TrangThaiKhoa.HOAT_DONG)
+SO_LAN_SAI_TOI_DA_MOI_NGAY = 10
+SO_LAN_SAI_MOI_CHU_KY = 5
+THOI_GIAN_KHOA = timedelta(minutes=30)
 
 
 def _bi_mat_may_chu():
-    """Giữ SIGNING_PIN_SECRET riêng cho HMAC mã đặt lại PIN qua email (#478)."""
-    bi_mat = getattr(settings, "SIGNING_PIN_SECRET", "")
-    if not bi_mat:
+    secret = getattr(settings, "SIGNING_PIN_SECRET", "")
+    if not secret:
         if not settings.DEBUG:
-            logger.error("Thiếu SIGNING_PIN_SECRET khi DEBUG = False: từ chối thao tác PIN (signing.E001).")
+            logger.error("Thiếu SIGNING_PIN_SECRET: từ chối thao tác PIN (signing.E001).")
             raise SigningError(
                 code="chua_cau_hinh_bi_mat_pin",
                 detail="Chức năng PIN chưa được cấu hình trên máy chủ. Liên hệ quản trị hệ thống.",
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
-        bi_mat = settings.SECRET_KEY
-    return bi_mat.encode()
-
-
-def _pepper_khoa_ky():
-    pepper = getattr(settings, "SIGNING_KEY_PEPPER", "")
-    if not pepper:
-        if not settings.DEBUG:
-            logger.error("Thiếu SIGNING_KEY_PEPPER khi DEBUG = False: từ chối thao tác khóa ký (signing.E005).")
-            raise SigningError(
-                code="chua_cau_hinh_pepper_khoa_ky",
-                detail="Chức năng khóa ký chưa được cấu hình trên máy chủ. Liên hệ quản trị hệ thống.",
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
-        pepper = settings.SECRET_KEY
-    elif pepper == settings.SECRET_KEY or pepper == getattr(settings, "SIGNING_PIN_SECRET", ""):
-        logger.error("SIGNING_KEY_PEPPER phải tách biệt với bí mật khác (signing.E006).")
+        secret = settings.SECRET_KEY
+    if secret == settings.SECRET_KEY and not settings.DEBUG:
         raise SigningError(
-            code="chua_cau_hinh_pepper_khoa_ky",
-            detail="Cấu hình pepper khóa ký không hợp lệ. Liên hệ quản trị hệ thống.",
+            code="chua_cau_hinh_bi_mat_pin",
+            detail="Cấu hình PIN không hợp lệ. Liên hệ quản trị hệ thống.",
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
-    return pepper.encode()
-
-
-def _aad(key):
-    return f"tlbm-signing-private-key-v1:{key.pk}:{key.dau_van_tay}".encode()
+    return secret.encode()
 
 
 def kiem_tra_pin(pin, field="pin"):
@@ -77,70 +52,27 @@ def kiem_tra_pin(pin, field="pin"):
     return pin
 
 
-def kiem_tra_tham_so_kdf(tham_so):
-    """Chỉ chấp nhận mức Argon2id đã chốt để tránh tham số thấp hoặc request gây cạn tài nguyên."""
-    if not isinstance(tham_so, dict) or set(tham_so) != KDF_KHOA_HOP_LE:
-        raise SigningError(
-            code="tham_so_kdf_khong_hop_le",
-            detail="Tham số KDF phải có đúng các khóa: thuat_toan, m, t, p, phien_ban, salt.",
-            fields={"tham_so_kdf": ["Sai cấu trúc."]},
-        )
-    if str(tham_so["thuat_toan"]).lower() != KDF_THUAT_TOAN:
-        raise SigningError(code="tham_so_kdf_khong_hop_le", detail="Chỉ chấp nhận Argon2id.",
-                           fields={"tham_so_kdf": ["Sai thuật toán."]})
-    for field, expected in KDF_SAN.items():
-        value = tham_so[field]
-        if isinstance(value, bool) or not isinstance(value, int) or value != expected:
-            raise SigningError(code="tham_so_kdf_khong_hop_le",
-                               detail=f"Tham số Argon2id '{field}' phải bằng {expected}.",
-                               fields={"tham_so_kdf": [f"Sai giá trị '{field}'."]})
-    salt = tham_so["salt"]
-    if not isinstance(salt, str) or crypto.decode_b64_exact(salt, KDF_SALT_BYTES) is None:
-        raise SigningError(code="tham_so_kdf_khong_hop_le",
-                           detail=f"'salt' phải là Base64 của đúng {KDF_SALT_BYTES} byte ngẫu nhiên.",
-                           fields={"tham_so_kdf": ["Sai giá trị 'salt'."]})
-    return {"thuat_toan": KDF_THUAT_TOAN, **KDF_SAN, "salt": salt}
+def _preimage(pin):
+    kiem_tra_pin(pin)
+    return hmac.new(_bi_mat_may_chu(), b"signing-pin-verifier-v1:" + pin.encode(), hashlib.sha256).hexdigest()
 
 
-def _khoa_ma_hoa(tham_so, pepper):
-    return crypto.derive_signing_key_encryption_key(
-        pepper, crypto.decode_b64_exact(tham_so["salt"], KDF_SALT_BYTES),
+def tao_verifier(pin):
+    return make_password(_preimage(pin), hasher="pbkdf2_sha256")
+
+
+def _dau_ngay_ke_tiep(bay_gio):
+    dia_phuong = timezone.localtime(bay_gio)
+    return (dia_phuong + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _loi_khoa_tam(het_han, so_lan_con_lai=0):
+    return SigningError(
+        code="pin_bi_khoa_tam_thoi",
+        detail="Đã nhập sai PIN 5 lần liên tiếp. Tạm khóa nhập PIN trong 30 phút.",
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        fields={"so_lan_con_lai": [so_lan_con_lai], "thu_lai_sau": [het_han.isoformat()]},
     )
-
-
-def bam_pin(pin, tham_so, pepper):
-    """Tạo verifier Argon2id độc lập với khóa AES; tham số/KDF vẫn được chốt tại máy chủ."""
-    return crypto.derive_signing_pin_verifier(
-        pin, pepper, crypto.decode_b64_exact(tham_so["salt"], KDF_SALT_BYTES),
-        memory_cost=tham_so["m"], time_cost=tham_so["t"], parallelism=tham_so["p"],
-    )
-
-
-def _giai_ma_khoa(key, unlock, tham_so, pepper):
-    kek = _khoa_ma_hoa(tham_so, pepper)
-    try:
-        private_key = crypto.decrypt_signing_private_key(unlock.khoa_bi_mat_ma_hoa, kek, _aad(key))
-    except ValueError:
-        return None
-    if not crypto.signing_private_key_matches_public(private_key, key.khoa_cong_khai):
-        raise SigningError(code="khoa_bi_mat_khong_khop",
-                           detail="Khóa bí mật đã mã hóa không khớp với khóa công khai.",
-                           status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    return private_key
-
-
-def _giai_ma_private_key_input(value, key):
-    private_key = crypto.decode_b64_exact(value, crypto.PRIVATE_KEY_PKCS8_BYTES)
-    if private_key is None or not crypto.signing_private_key_matches_public(private_key, key.khoa_cong_khai):
-        raise SigningError(code="khoa_bi_mat_khong_hop_le",
-                           detail="Private key Ed25519 không hợp lệ hoặc không khớp khóa công khai.",
-                           fields={"khoa_bi_mat_pkcs8": ["Không khớp khóa công khai."]})
-    return private_key
-
-
-def _ma_hoa_khoa(private_key, key, tham_so, pepper):
-    kek = _khoa_ma_hoa(tham_so, pepper)
-    return crypto.encrypt_signing_private_key(private_key, kek, _aad(key))
 
 
 def _loi_het_luot(het_ngay):
@@ -149,136 +81,118 @@ def _loi_het_luot(het_ngay):
         detail=(f"Đã nhập sai PIN {SO_LAN_SAI_TOI_DA_MOI_NGAY} lần trong ngày; thử lại sau "
                 f"{timezone.localtime(het_ngay):%d/%m/%Y %H:%M} hoặc liên hệ quản trị viên."),
         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-        fields={"thu_lai_sau": [het_ngay.isoformat()]},
+        fields={"so_lan_con_lai": [0], "thu_lai_sau": [het_ngay.isoformat()]},
     )
 
 
-def _dau_ngay_ke_tiep(bay_gio):
-    dia_phuong = timezone.localtime(bay_gio)
-    return (dia_phuong + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+def dat_pin(nguoi_dung, pin, *, dia_chi_ip=None):
+    """Lưu PIN mới sau khi lớp OTP đã xác minh mã; thao tác reset bộ đếm/khóa PIN."""
+    return dat_verifier(nguoi_dung, tao_verifier(pin), dia_chi_ip=dia_chi_ip)
 
 
-def _khoa_ky_va_pin(key, nguoi_thuc_hien):
-    # PIN attempts serialize on the unlock row. Locking signing_key here can deadlock
-    # with the signing transaction, which locks the request first then inserts a signature.
-    key = SigningKey.objects.get(pk=key.pk)
-    _chu_so_huu(key, nguoi_thuc_hien)
-    unlock = SigningKeyUnlock.objects.select_for_update().filter(khoa_id=key.pk).first()
-    if unlock is None:
-        raise ConflictError(code="pin_chua_dat", detail="Khóa ký chưa được đặt PIN.")
-    return key, unlock
-
-
-def _xac_minh(key, nguoi_thuc_hien, pin, trang_thai_cho_phep, khi_dung, dia_chi_ip):
-    """Giải mã dưới row lock; commit bộ đếm PIN sai trước khi trả lỗi."""
-    pin = kiem_tra_pin(pin)
-    pepper = _pepper_khoa_ky()
-    loi = None
+def dat_verifier(nguoi_dung, verifier, *, dia_chi_ip=None, du_lieu_kem_theo=None):
+    """Ghi verifier đã tạo từ PIN rõ hoặc OTP đã xác minh, không nhận plaintext PIN."""
     with transaction.atomic():
-        key, unlock = _khoa_ky_va_pin(key, nguoi_thuc_hien)
-        if key.trang_thai not in trang_thai_cho_phep:
-            raise ConflictError(code="khoa_khong_dung_trang_thai",
-                                detail="Khóa ký không ở trạng thái cho phép thao tác này.")
-        bay_gio = timezone.now()
-        if unlock.so_lan_sai and timezone.localdate(unlock.updated_at) < timezone.localdate(bay_gio):
-            unlock.so_lan_sai = 0
-            unlock.save(update_fields=["so_lan_sai", "updated_at"])
-        if unlock.so_lan_sai >= SO_LAN_SAI_TOI_DA_MOI_NGAY:
-            raise _loi_het_luot(_dau_ngay_ke_tiep(bay_gio))
-
-        try:
-            tham_so = kiem_tra_tham_so_kdf(unlock.tham_so_kdf)
-        except SigningError as exc:
-            raise SigningError(code="khoa_bi_mat_khong_doc_duoc",
-                               detail="Cấu hình khóa ký trong CSDL không hợp lệ.",
-                               status_code=status.HTTP_500_INTERNAL_SERVER_ERROR) from exc
-
-        verifier = bam_pin(pin, tham_so, pepper)
-        if hmac.compare_digest(verifier, unlock.ma_bam_xac_minh_pin or ""):
-            private_key = _giai_ma_khoa(key, unlock, tham_so, pepper)
-            if private_key is None:
-                raise SigningError(
-                    code="khoa_bi_mat_khong_doc_duoc",
-                    detail="Không thể mở khóa ký hiện tại. Hãy liên hệ quản trị hệ thống.",
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                )
-            if unlock.so_lan_sai:
-                unlock.so_lan_sai = 0
-                unlock.save(update_fields=["so_lan_sai", "updated_at"])
-            return khi_dung(key, unlock, private_key)
-
-        unlock.so_lan_sai += 1
-        ghi_nhat_ky(nguoi_thuc_hien, LOAI, key.pk, "PIN_SAI",
-                    du_lieu_kem_theo={"so_lan_sai": unlock.so_lan_sai}, dia_chi_ip=dia_chi_ip)
-        unlock.save(update_fields=["so_lan_sai", "updated_at"])
-        if unlock.so_lan_sai >= SO_LAN_SAI_TOI_DA_MOI_NGAY:
-            ghi_nhat_ky(nguoi_thuc_hien, LOAI, key.pk, "PIN_HET_LUOT",
-                        du_lieu_kem_theo={"so_lan_sai": unlock.so_lan_sai}, dia_chi_ip=dia_chi_ip)
-        con_lai = max(SO_LAN_SAI_TOI_DA_MOI_NGAY - unlock.so_lan_sai, 0)
-        loi = SigningError(code="pin_khong_dung", detail=f"PIN không đúng. Còn {con_lai} lần thử trong ngày.",
-                           fields={"so_lan_con_lai": [con_lai]})
-    raise loi
+        credential = SigningPinCredential.objects.select_for_update().filter(nguoi_dung=nguoi_dung).first()
+        la_khoi_phuc = credential is not None
+        if credential is None:
+            credential = SigningPinCredential.objects.create(
+                nguoi_dung=nguoi_dung, ma_bam_xac_minh_pin=verifier,
+            )
+        else:
+            credential.ma_bam_xac_minh_pin = verifier
+            credential.so_lan_sai_ngay = 0
+            credential.so_lan_sai_chu_ky = 0
+            credential.ngay_dem_sai = None
+            credential.khoa_den = None
+            credential.save(update_fields=[
+                "ma_bam_xac_minh_pin", "so_lan_sai_ngay", "so_lan_sai_chu_ky", "ngay_dem_sai", "khoa_den", "updated_at",
+            ])
+        ghi_nhat_ky(
+            nguoi_dung, "signing_pin_credential", credential.pk,
+            "KHOI_PHUC_PIN" if la_khoi_phuc else "TAO_PIN",
+            dia_chi_ip=dia_chi_ip,
+            du_lieu_kem_theo={"bo_dem_sai_dat_lai": la_khoi_phuc, **(du_lieu_kem_theo or {})},
+        )
+    return credential
 
 
-@transaction.atomic
-def dat_pin(key, nguoi_thuc_hien, pin, khoa_bi_mat_pkcs8, tham_so_kdf, dia_chi_ip=None):
-    """Đặt PIN lần đầu, mã hóa PKCS#8 server-side và chỉ lưu ciphertext + salt/KDF."""
-    pin = kiem_tra_pin(pin)
-    tham_so = kiem_tra_tham_so_kdf(tham_so_kdf)
-    key = SigningKey.objects.select_for_update().get(pk=key.pk)
-    _chu_so_huu(key, nguoi_thuc_hien)
-    if key.trang_thai not in TRANG_THAI_DAT_PIN:
-        raise ConflictError(code="khoa_khong_dung_trang_thai",
-                            detail="Chỉ đặt PIN cho khóa đang chờ kích hoạt hoặc đang hoạt động.")
-    if SigningKeyUnlock.objects.filter(khoa=key).exists():
-        raise ConflictError(code="pin_da_dat", detail="Khóa ký đã có PIN; dùng chức năng đổi PIN.")
-    private_key = _giai_ma_private_key_input(khoa_bi_mat_pkcs8, key)
-    pepper = _pepper_khoa_ky()
-    unlock = SigningKeyUnlock.objects.create(
-        khoa=key,
-        ma_bam_xac_minh_pin=bam_pin(pin, tham_so, pepper),
-        khoa_bi_mat_ma_hoa=_ma_hoa_khoa(private_key, key, tham_so, pepper),
-        tham_so_kdf=tham_so,
+def _ghi_nhat_loi(nguoi_dung, credential, *, hanh_dong, ip, so_lan_con_lai, thoi_diem):
+    ghi_nhat_ky(
+        nguoi_dung, "signing_pin_credential", credential.pk, hanh_dong,
+        dia_chi_ip=ip,
+        du_lieu_kem_theo={
+            "so_lan_sai_ngay": credential.so_lan_sai_ngay,
+            "so_lan_sai_chu_ky": credential.so_lan_sai_chu_ky,
+            "so_lan_con_lai": so_lan_con_lai,
+            "khoa_den": credential.khoa_den.isoformat() if credential.khoa_den else None,
+            "thoi_diem": thoi_diem.isoformat(),
+        },
     )
-    ghi_nhat_ky(nguoi_thuc_hien, LOAI, key.pk, "DAT_PIN",
-                du_lieu_kem_theo={"tham_so_kdf": {k: v for k, v in tham_so.items() if k != "salt"}},
-                dia_chi_ip=dia_chi_ip)
-    return unlock
 
 
-def mo_khoa_ky(key, nguoi_thuc_hien, pin, dia_chi_ip=None):
-    """Xác minh PIN và trả private bytes chỉ cho luồng ký nội bộ; API không serialize giá trị này."""
+def _xac_thuc_trong_giao_dich(nguoi_dung, pin, dia_chi_ip):
+    """Đọc và cập nhật một lần thử trong transaction đã khóa credential."""
+    bay_gio = timezone.now()
+    hom_nay = timezone.localdate(bay_gio)
+    credential = SigningPinCredential.objects.select_for_update().filter(nguoi_dung=nguoi_dung).first()
+    if credential is None:
+        raise SigningError(code="pin_chua_dat", detail="Tài khoản chưa tạo PIN ký.")
 
-    def khi_dung(key, unlock, private_key):
-        ghi_nhat_ky(nguoi_thuc_hien, LOAI, key.pk, "MO_KHOA_KY", dia_chi_ip=dia_chi_ip)
-        return private_key
+    if credential.ngay_dem_sai != hom_nay:
+        credential.so_lan_sai_ngay = 0
+        credential.ngay_dem_sai = hom_nay
+        if not credential.khoa_den or credential.khoa_den <= bay_gio:
+            credential.so_lan_sai_chu_ky = 0
+            credential.khoa_den = None
+        credential.save(update_fields=["so_lan_sai_ngay", "so_lan_sai_chu_ky", "ngay_dem_sai", "khoa_den", "updated_at"])
 
-    return _xac_minh(key, nguoi_thuc_hien, pin, (enums.TrangThaiKhoa.HOAT_DONG,), khi_dung, dia_chi_ip)
+    if credential.so_lan_sai_ngay >= SO_LAN_SAI_TOI_DA_MOI_NGAY:
+        return _loi_het_luot(_dau_ngay_ke_tiep(bay_gio))
+    if credential.khoa_den and credential.khoa_den > bay_gio:
+        return _loi_khoa_tam(credential.khoa_den)
+    if credential.khoa_den:
+        credential.khoa_den = None
+        credential.so_lan_sai_chu_ky = 0
+        credential.save(update_fields=["khoa_den", "so_lan_sai_chu_ky", "updated_at"])
+
+    if check_password(_preimage(pin), credential.ma_bam_xac_minh_pin):
+        if credential.so_lan_sai_chu_ky or credential.khoa_den:
+            credential.so_lan_sai_chu_ky = 0
+            credential.khoa_den = None
+            credential.save(update_fields=["so_lan_sai_chu_ky", "khoa_den", "updated_at"])
+        return True
+
+    credential.so_lan_sai_ngay += 1
+    credential.so_lan_sai_chu_ky += 1
+    so_lan_con_lai = max(0, SO_LAN_SAI_MOI_CHU_KY - credential.so_lan_sai_chu_ky)
+    hanh_dong = "PIN_SAI"
+    if credential.so_lan_sai_chu_ky >= SO_LAN_SAI_MOI_CHU_KY:
+        credential.khoa_den = bay_gio + THOI_GIAN_KHOA
+        hanh_dong = "KHOA_PIN_30_PHUT"
+    credential.save(update_fields=[
+        "so_lan_sai_ngay", "so_lan_sai_chu_ky", "ngay_dem_sai", "khoa_den", "updated_at",
+    ])
+    _ghi_nhat_loi(
+        nguoi_dung, credential, hanh_dong=hanh_dong, ip=dia_chi_ip,
+        so_lan_con_lai=so_lan_con_lai, thoi_diem=bay_gio,
+    )
+    if credential.so_lan_sai_ngay >= SO_LAN_SAI_TOI_DA_MOI_NGAY:
+        return _loi_het_luot(_dau_ngay_ke_tiep(bay_gio))
+    if credential.khoa_den:
+        return _loi_khoa_tam(credential.khoa_den, so_lan_con_lai)
+    return SigningError(
+        code="pin_khong_dung",
+        detail=f"PIN không đúng. Còn {so_lan_con_lai} lần thử; nhập sai đủ 5 lần sẽ tạm khóa 30 phút.",
+        fields={"so_lan_con_lai": [so_lan_con_lai]},
+    )
 
 
-def doi_pin(key, nguoi_thuc_hien, pin_cu, pin_moi, tham_so_kdf, dia_chi_ip=None):
-    """Xác minh PIN cũ, đổi verifier và mã hóa lại cùng private key với salt mới."""
-    pin_moi = kiem_tra_pin(pin_moi, "pin_moi")
-    if pin_moi == pin_cu:
-        raise SigningError(code="pin_moi_trung_pin_cu", detail="PIN mới phải khác PIN hiện tại.",
-                           fields={"pin_moi": ["Trùng PIN hiện tại."]})
-    tham_so = kiem_tra_tham_so_kdf(tham_so_kdf)
-    pepper = _pepper_khoa_ky()
-
-    def khi_dung(key, unlock, private_key):
-        if tham_so["salt"] == (unlock.tham_so_kdf or {}).get("salt"):
-            raise SigningError(code="salt_trung_salt_cu", detail="Đổi PIN phải dùng salt mới.",
-                               fields={"tham_so_kdf": ["'salt' trùng salt hiện tại."]})
-        unlock.ma_bam_xac_minh_pin = bam_pin(pin_moi, tham_so, pepper)
-        unlock.khoa_bi_mat_ma_hoa = _ma_hoa_khoa(private_key, key, tham_so, pepper)
-        unlock.tham_so_kdf = tham_so
-        unlock.so_lan_sai = 0
-        unlock.khoa_den = None
-        unlock.save(update_fields=["ma_bam_xac_minh_pin", "khoa_bi_mat_ma_hoa", "tham_so_kdf",
-                                   "so_lan_sai", "khoa_den", "updated_at"])
-        ghi_nhat_ky(nguoi_thuc_hien, LOAI, key.pk, "DOI_PIN",
-                    du_lieu_kem_theo={"tham_so_kdf": {k: v for k, v in tham_so.items() if k != "salt"}},
-                    dia_chi_ip=dia_chi_ip)
-        return unlock
-
-    return _xac_minh(key, nguoi_thuc_hien, pin_cu, TRANG_THAI_DAT_PIN, khi_dung, dia_chi_ip)
+def xac_thuc(nguoi_dung, pin, *, dia_chi_ip=None):
+    """Xác minh PIN, nối 5 lần sai thành chu kỳ khóa 30 phút, tối đa 10 lần/ngày."""
+    kiem_tra_pin(pin)
+    with transaction.atomic():
+        ket_qua = _xac_thuc_trong_giao_dich(nguoi_dung, pin, dia_chi_ip)
+    if isinstance(ket_qua, SigningError):
+        raise ket_qua
+    return ket_qua

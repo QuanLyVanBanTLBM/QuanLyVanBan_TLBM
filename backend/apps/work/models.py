@@ -227,7 +227,7 @@ class TaskQuerySet(models.QuerySet):
 
         Bậc ưu tiên (cao → thấp):
           1. User là chủ trì/tham gia, việc còn phải làm (Chờ xử lý hoặc Đang xử lý).
-          2. User là chỉ đạo/chủ trì, việc đang Chờ duyệt (chờ chính user duyệt minh chứng).
+          2. User là chỉ đạo/chủ trì/người tạo, việc đang Chờ duyệt (chờ chính user duyệt minh chứng).
           3. User là chủ trì/tham gia, việc đã trễ (Quá hạn hoặc Chưa hoàn thành).
           4. Các việc còn lại user có quyền xem.
         Trong cùng một bậc: sắp theo due_date tăng dần (do view order_by đảm nhận).
@@ -252,7 +252,8 @@ class TaskQuerySet(models.QuerySet):
                     then=Value(1),
                 ),
                 When(
-                    (Q(_is_dir=True) | Q(_is_host=True)) & Q(status=TaskStatus.CHO_DUYET),
+                    (Q(_is_dir=True) | Q(_is_host=True) | Q(created_by=user))
+                    & Q(status=TaskStatus.CHO_DUYET),
                     then=Value(2),
                 ),
                 When(
@@ -272,8 +273,9 @@ class TaskQuerySet(models.QuerySet):
         2. Quyền `view_all_congviec`: xem toàn bộ công việc.
         3. Quyền `view_dept_congviec`: xem công việc gắn với đơn vị của chính mình.
 
-        Công việc đang ẩn (hien_thi = false) chỉ người tạo, quản trị viên và người có
-        quyền xem toàn hệ thống mới thấy.
+        Công việc đang ẩn (hien_thi = false) chỉ người liên quan (người tạo và người được giao),
+        quản trị viên và người có quyền xem toàn hệ thống mới thấy; quyền xem theo phòng ban
+        không thấy việc ẩn.
         """
         if user is None or not user.is_authenticated:
             return self.none()
@@ -283,7 +285,7 @@ class TaskQuerySet(models.QuerySet):
         is_participant = Exists(
             TaskParticipant.objects.filter(task=OuterRef("pk"), user=user)
         )
-        condition = Q(created_by=user) | Q(is_public=True, is_participant=True)
+        condition = Q(created_by=user) | Q(is_participant=True)
 
         don_vi_id = user_don_vi_id(user)
         if don_vi_id and user_has_task_permission(user, PERM_VIEW_DEPT_TASK):

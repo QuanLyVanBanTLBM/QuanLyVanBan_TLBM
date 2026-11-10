@@ -29,10 +29,6 @@ anyio==4.15.1
     #   httpx2
     #   openai
     #   watchfiles
-argon2-cffi==25.1.0
-    # via -r backend/requirements.txt
-argon2-cffi-bindings==26.1.0
-    # via argon2-cffi
 asgiref==3.12.1
     # via
     #   django
@@ -62,7 +58,6 @@ certifi==2026.10.18
     #   requests
 cffi==2.1.1
     # via
-    #   argon2-cffi-bindings
     #   cryptography
 charset-normalizer==3.5.2
     # via

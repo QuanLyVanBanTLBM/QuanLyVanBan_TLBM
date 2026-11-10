@@ -31,6 +31,7 @@ from backend.services.document_service import (
 )
 from backend.services.sql_document_source import SqlDocumentAccessError
 from backend.services.ai_model_config import MODEL_CONFIG
+from backend.services.ai_settings_service import get_active_ai_settings, save_ai_settings
 
 _jobs = {}
 _jobs_lock = threading.Lock()
@@ -397,29 +398,46 @@ def ai_settings(request):
         denied = _require_ai_access(request)
         if denied:
             return denied
+        active = get_active_ai_settings()
+        provider = "openai"
+        provider_cfg = MODEL_CONFIG[provider]
+        llm = active.get("llm_model") or provider_cfg["default_llm"]
+        embed = active.get("embed_model") or provider_cfg["embed_model"]
+        vision = active.get("vision_model") or llm
+
         model_options = {
             name: {"llm_models": list(values["llm_models"]), "embed_model": values["embed_model"]}
             for name, values in MODEL_CONFIG.items()
         }
-        info = {"status": "ok", "provider": config.MODEL_PROVIDER, "llm_model": config.LLM_MODEL, "embed_model": config.EMBED_MODEL, "vision_model": config.VISION_MODEL}
+        info = {
+            "status": "ok",
+            "provider": provider,
+            "llm_model": llm,
+            "embed_model": embed,
+            "vision_model": vision,
+        }
         if not is_ai_admin(request.user):
             return JsonResponse(info)
+
+        gemini_k = (active.get("gemini_api_key") or getattr(config, "GEMINI_API_KEY", "") or os.getenv("GEMINI_API_KEY", "")).strip()
+        openai_k = (active.get("openai_api_key") or getattr(config, "OPENAI_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")).strip()
         keys = {
-            "gemini": config.GEMINI_API_KEY,
-            "openai": os.getenv("OPENAI_API_KEY", ""),
+            "gemini": gemini_k,
+            "openai": openai_k,
         }
         masked_keys = {
-            provider_name: f"{key[:6]}...{key[-4:]}" if len(key) > 10 else ("********" if key else "")
-            for provider_name, key in keys.items()
+            p_name: f"{k[:6]}...{k[-4:]}" if len(k) > 10 else ("********" if k else "")
+            for p_name, k in keys.items()
         }
         return JsonResponse({
             **info,
-            "has_api_key": bool(keys.get(config.MODEL_PROVIDER)),
-            "api_key_masked": masked_keys.get(config.MODEL_PROVIDER, ""),
-            "api_keys": {name: bool(key) for name, key in keys.items()},
+            "has_api_key": bool(keys.get(provider)),
+            "api_key_masked": masked_keys.get(provider, ""),
+            "api_keys": {name: bool(k) for name, k in keys.items()},
             "api_key_masked_by_provider": masked_keys,
             "model_options": model_options,
         })
+
     denied = _require_ai_admin(request)
     if denied:
         return denied
@@ -430,22 +448,27 @@ def ai_settings(request):
         return _error("Cấu hình không hợp lệ.")
     provider = str(payload.get("provider", "")).lower().strip()
     if provider not in MODEL_CONFIG:
-        return _error("Provider phải là 'gemini' hoặc 'openai'.", code="provider_not_supported")
-    key = str(payload.get("api_key") or (config.GEMINI_API_KEY if provider == "gemini" else os.getenv("OPENAI_API_KEY", ""))).strip()
+        return _error("Provider được hỗ trợ là 'openai'.", code="provider_not_supported")
+
+    active = get_active_ai_settings()
+    existing_key = active.get(f"{provider}_api_key") or (
+        getattr(config, "GEMINI_API_KEY", "") if provider == "gemini" else getattr(config, "OPENAI_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")
+    )
+    key = str(payload.get("api_key") or existing_key).strip()
     if not key:
         return _error(f"Vui lòng cung cấp API key {provider.upper()}.", code="api_key_required")
     if "\n" in key or "\r" in key:
         return _error("API key không hợp lệ.", code="invalid_api_key")
+
     provider_config = MODEL_CONFIG[provider]
     llm = str(payload.get("llm_model") or provider_config["default_llm"]).strip()
     if llm not in provider_config["llm_models"]:
         return _error("Mô hình LLM không nằm trong danh sách được hỗ trợ.", code="model_not_supported")
     embed = provider_config["embed_model"]
-    if provider != config.MODEL_PROVIDER:
-        from backend.services import rag_service
 
-        if rag_service.get_chroma_collection().count() > 0:
-            return _error("Đổi nhà cung cấp sẽ đổi kích thước vector. Hãy xóa và lập chỉ mục lại kho tài liệu trước khi chuyển provider.", 409, "provider_switch_reindex_required")
+    # Collection is isolated per provider (smart_documents vs smart_documents_openai),
+    # preventing dimension mismatch errors when switching providers.
+
     if provider == "gemini":
         check = urllib.request.Request(
             "https://generativelanguage.googleapis.com/v1beta/models",
@@ -468,7 +491,8 @@ def ai_settings(request):
         else:
             available_models = {item.get("id") for item in catalog.get("data", [])}
             embedding_available = embed in available_models
-        if llm not in available_models:
+        # gpt-6-luna is an internal custom alias that maps to gpt-4o-mini
+        if llm not in available_models and llm != "gpt-6-luna":
             return _error("API key không có quyền sử dụng mô hình đã chọn.", 400, "model_access_denied")
         if not embedding_available:
             return _error("API key không có quyền sử dụng mô hình embedding mặc định của provider.", 400, "embedding_access_denied")
@@ -478,31 +502,39 @@ def ai_settings(request):
     except (urllib.error.URLError, TimeoutError, ValueError, KeyError):
         logger.exception("AI provider model catalog check failed provider=%s", provider)
         return _error("Không thể kết nối nhà cung cấp để xác thực cấu hình.", 503, "provider_unavailable")
+
     vision = llm
-    updates = {"MODEL_PROVIDER": provider, f"{'GEMINI' if provider == 'gemini' else 'OPENAI'}_API_KEY": key, "LLM_MODEL": llm, "EMBED_MODEL": embed, "VISION_MODEL": vision}
-    for name, value in updates.items():
-        os.environ[name] = value
-        setattr(config, name, value)
-    target_env_paths = [config.BASE_DIR / "backend" / ".env"]
-    root_env = config.BASE_DIR / ".env"
-    if root_env.exists():
-        target_env_paths.append(root_env)
-    for env_path in target_env_paths:
-        lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
-        seen = set()
-        output = []
-        for line in lines:
-            name = line.split("=", 1)[0].strip() if "=" in line else ""
-            if name in updates:
-                output.append(f"{name}={updates[name]}")
-                seen.add(name)
-            else:
-                output.append(line)
-        output.extend(f"{name}={value}" for name, value in updates.items() if name not in seen)
-        env_path.write_text("\n".join(output) + "\n", encoding="utf-8")
+    updates = {
+        "provider": provider,
+        "MODEL_PROVIDER": provider,
+        f"{provider}_api_key": key,
+        f"{'GEMINI' if provider == 'gemini' else 'OPENAI'}_API_KEY": key,
+        "llm_model": llm,
+        "LLM_MODEL": llm,
+        "embed_model": embed,
+        "EMBED_MODEL": embed,
+        "vision_model": vision,
+        "VISION_MODEL": vision,
+    }
+    save_ai_settings(updates)
+
     from backend.services import rag_service
 
     for name, value in updates.items():
         setattr(rag_service, name, value)
     rag_service.setup_llamaindex()
-    return JsonResponse({"success": True, "message": f"Đã cập nhật cấu hình {provider.upper()}.", "provider": provider, "llm_model": llm, "embed_model": embed, "api_key_masked": f"{key[:6]}...{key[-4:]}" if len(key) > 10 else "********"})
+
+    if hasattr(rag_service, "sync_documents_if_needed"):
+        try:
+            rag_service.sync_documents_if_needed(provider)
+        except Exception:
+            logger.exception("Failed to auto-sync documents for provider %s", provider)
+
+    return JsonResponse({
+        "success": True,
+        "message": f"Đã cập nhật cấu hình {provider.upper()}.",
+        "provider": provider,
+        "llm_model": llm,
+        "embed_model": embed,
+        "api_key_masked": f"{key[:6]}...{key[-4:]}" if len(key) > 10 else "********",
+    })

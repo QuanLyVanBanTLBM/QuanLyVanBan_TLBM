@@ -24,8 +24,8 @@ describe('FloatingAIBox', () => {
     vi.clearAllMocks();
     Element.prototype.scrollIntoView = vi.fn();
     mockedGetAISettings.mockResolvedValue({
-      provider: 'gemini',
-      llm_model: 'gemini-3.8-flash',
+      provider: 'openai',
+      llm_model: 'gpt-6-luna',
     });
   });
 
@@ -39,7 +39,7 @@ describe('FloatingAIBox', () => {
     await waitFor(() => expect(mockedGetAISettings).toHaveBeenCalled());
 
     fireEvent.click(screen.getByRole('button', { name: 'floatingAI.openTitle' }));
-    expect(await screen.findByText('gemini-3.8-flash')).toBeInTheDocument();
+    expect(await screen.findByText('gpt-6-luna')).toBeInTheDocument();
 
     fireEvent.change(screen.getByRole('textbox', { name: 'floatingAI.placeholder' }), {
       target: { value: 'Test question' },
@@ -57,7 +57,7 @@ describe('FloatingAIBox', () => {
     fireEvent.click(screen.getByRole('button', { name: 'floatingAI.openTitle' }));
 
     await waitFor(() => expect(mockedGetAISettings).toHaveBeenCalled());
-    expect(screen.queryByText('gemini-3.8-flash')).not.toBeInTheDocument();
+    expect(screen.queryByText('gpt-6-luna')).not.toBeInTheDocument();
     expect(screen.queryByText('gpt-4o')).not.toBeInTheDocument();
   });
 

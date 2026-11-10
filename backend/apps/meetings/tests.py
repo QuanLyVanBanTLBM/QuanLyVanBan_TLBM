@@ -451,6 +451,48 @@ class MeetingBookingAPITestCase(APITestCase):
         for item in results:
             self.assertEqual(item["room"], self.room1.id)
 
+    def test_list_bookings_ordered_by_time_and_cancelled_at_bottom(self):
+        """Danh sách lịch đặt theo ngày phải sắp xếp theo start_time và đẩy lịch CANCELLED xuống cuối."""
+        test_date = self.booking_date + timedelta(days=2)
+        # Tạo 3 lịch trên cùng ngày:
+        # Lịch 1: 08:00 (CANCELLED)
+        MeetingBooking.objects.create(
+            room=self.room1,
+            organizer=self.user1,
+            title="Lịch 1 - Hủy sớm",
+            date=test_date,
+            start_time=time(8, 0),
+            end_time=time(9, 0),
+            trang_thai=MeetingBooking.Status.CANCELLED,
+        )
+        # Lịch 2: 14:00 (CONFIRMED)
+        MeetingBooking.objects.create(
+            room=self.room1,
+            organizer=self.user1,
+            title="Lịch 2 - Chiều",
+            date=test_date,
+            start_time=time(14, 0),
+            end_time=time(15, 0),
+            trang_thai=MeetingBooking.Status.CONFIRMED,
+        )
+        # Lịch 3: 09:30 (CONFIRMED)
+        MeetingBooking.objects.create(
+            room=self.room1,
+            organizer=self.user1,
+            title="Lịch 3 - Sáng",
+            date=test_date,
+            start_time=time(9, 30),
+            end_time=time(10, 30),
+            trang_thai=MeetingBooking.Status.CONFIRMED,
+        )
+
+        self.client.force_authenticate(user=self.user1)
+        res = self.client.get(f"/api/meeting-bookings/?date={test_date.isoformat()}")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        results = res.data.get("results", [])
+        titles = [item["title"] for item in results]
+        self.assertEqual(titles, ["Lịch 3 - Sáng", "Lịch 2 - Chiều", "Lịch 1 - Hủy sớm"])
+
     def test_create_booking_success(self):
         """Tạo lịch đặt phòng mới thành công và tự gán organizer."""
         self.client.force_authenticate(user=self.user2)

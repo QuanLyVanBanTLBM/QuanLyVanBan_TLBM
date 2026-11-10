@@ -334,7 +334,7 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
                 </div>
               ) : ticketViewUrl ? (
                 <iframe
-                  src={`${ticketViewUrl}#toolbar=1&navpanes=1`}
+                  src={ticketViewUrl.includes("#") ? `${ticketViewUrl}&toolbar=1` : `${ticketViewUrl}#view=Fit&navpanes=0&toolbar=1`}
                   className="w-full h-full border-0 bg-white"
                   title={file.name}
                 />
