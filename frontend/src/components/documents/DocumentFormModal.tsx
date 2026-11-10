@@ -8,6 +8,7 @@ import { Button, Select, SelectOption } from '@components/common';
 import AlertModal from '@components/common/AlertModal';
 import { useTranslation } from '@i18n/translate';
 import { usePermissions } from '@lib/permissions';
+import AttachmentPreviewModal, { AttachmentPreviewTarget } from './AttachmentPreviewModal';
 
 export type InitialDocType =
   | DocumentItem
@@ -389,7 +390,14 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
   const [units, setUnits] = useState<string[]>(DEFAULT_UNITS);
   const [staff, setStaff] = useState<UserOption[]>([]);
   const [isStaffLoading, setIsStaffLoading] = useState(false);
-  const [selectedUnit, setSelectedUnit] = useState<string>(() => (initDoc?.don_vi_nhan as string) || '');
+  const [selectedRecipientUnits, setSelectedRecipientUnits] = useState<string[]>(() => {
+    const raw = (initDoc?.don_vi_nhan as string) || '';
+    if (!raw) return [];
+    return raw.split(',').map((s) => s.trim()).filter(Boolean);
+  });
+  const [previewTarget, setPreviewTarget] = useState<AttachmentPreviewTarget | null>(null);
+  const [isScopeDropdownOpen, setIsScopeDropdownOpen] = useState(false);
+  const scopeDropdownRef = useRef<HTMLDivElement | null>(null);
   const [existingAttachments, setExistingAttachments] = useState<ExistingAttachment[]>(() =>
     initDoc?.attachments && Array.isArray(initDoc.attachments) ? (initDoc.attachments as ExistingAttachment[]) : []
   );
@@ -505,7 +513,11 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
       } else {
         setExistingAttachments([]);
       }
-      setSelectedUnit((initDoc?.don_vi_nhan as string) || '');
+      const initialUnitsRaw = (initDoc?.don_vi_nhan as string) || '';
+      const initialUnits = initialUnitsRaw ? initialUnitsRaw.split(',').map((s) => s.trim()).filter(Boolean) : [];
+      setSelectedRecipientUnits(initialUnits);
+      setIsScopeDropdownOpen(false);
+      setPreviewTarget(null);
       setStaff([]);
       setUnitSearch('');
       setIsUnitDropdownOpen(false);
@@ -574,30 +586,41 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
     setUnits(DEFAULT_UNITS);
   }
 
-  async function fetchStaffByUnit(unit: string) {
-    if (!unit) {
+  async function fetchStaffByUnits(unitList: string[]) {
+    if (!unitList || unitList.length === 0) {
       setStaff([]);
       setIsStaffLoading(false);
       return;
     }
     setIsStaffLoading(true);
-    // Bóc tách tên gốc nếu có kèm tên khối, ví dụ: "Lãnh đạo khối (KHỐI HỖ TRỢ)" -> "Lãnh đạo khối"
-    const cleanUnit = unit.replace(/\s*\([^)]*\)$/, '').trim();
     try {
-      const data = await apiClient.get<UserOption[] | PaginatedResponse<UserOption>>(
-        `/api/accounts/staffs/?department=${encodeURIComponent(cleanUnit)}`
+      const results = await Promise.all(
+        unitList.map(async (unit) => {
+          const cleanUnit = unit.replace(/\s*\([^)]*\)$/, '').trim();
+          try {
+            const data = await apiClient.get<UserOption[] | PaginatedResponse<UserOption>>(
+              `/api/accounts/staffs/?department=${encodeURIComponent(cleanUnit)}`
+            );
+            const list: UserOption[] = Array.isArray(data) ? data : data?.results || [];
+            if (list.length > 0) return list;
+          } catch {
+            // Use fallback
+          }
+          return MOCK_STAFF_BY_UNIT[cleanUnit] || MOCK_STAFF_BY_UNIT[unit] || [];
+        })
       );
-      const list: UserOption[] = Array.isArray(data) ? data : data?.results || [];
-      if (list.length > 0) {
-        setStaff(list);
-        return;
-      }
+      const staffMap = new Map<number, UserOption>();
+      results.flat().forEach((u) => {
+        if (!staffMap.has(u.id)) {
+          staffMap.set(u.id, u);
+        }
+      });
+      setStaff(Array.from(staffMap.values()));
     } catch {
-      // Use fallback
+      // Fallback
     } finally {
       setIsStaffLoading(false);
     }
-    setStaff(MOCK_STAFF_BY_UNIT[cleanUnit] || MOCK_STAFF_BY_UNIT[unit] || []);
   }
 
   useEffect(() => {
@@ -633,12 +656,13 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
         }
       }
 
-      const initialUnit = (initDoc?.don_vi_nhan as string) || '';
+      const initialUnitsRaw = (initDoc?.don_vi_nhan as string) || '';
+      const initialUnits = initialUnitsRaw ? initialUnitsRaw.split(',').map((s) => s.trim()).filter(Boolean) : [];
       Promise.resolve().then(() => {
         if (cancelled) return;
         void fetchUnits();
-        if (initialUnit) {
-          void fetchStaffByUnit(initialUnit);
+        if (initialUnits.length > 0) {
+          void fetchStaffByUnits(initialUnits);
         } else {
           // Bắt buộc chọn đơn vị trước, không nạp trước tất cả cán bộ khi chưa chọn đơn vị
           setStaff([]);
@@ -737,8 +761,11 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                 })
               );
             }
-            // 2. Tự động xác định đơn vị nhận và nạp/tích chọn đúng cán bộ nhận đã phân công
-            let resolvedUnit = (detail.don_vi_nhan as string) || '';
+            // 2. Tự động xác định danh sách các đơn vị nhận và nạp/tích chọn đúng cán bộ nhận đã phân công
+            let resolvedUnits: string[] = [];
+            if (detail.don_vi_nhan) {
+              resolvedUnits = String(detail.don_vi_nhan).split(',').map((s) => s.trim()).filter(Boolean);
+            }
             const recipientList = (detail.nguoi_nhan_list || []) as Array<{
               id: number;
               username?: string;
@@ -747,13 +774,16 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
               department?: string;
               don_vi_ten?: string;
             }>;
-            if (!resolvedUnit && recipientList.length > 0) {
-              resolvedUnit = recipientList[0].don_vi_ten || recipientList[0].department || '';
-            }
+            recipientList.forEach((r) => {
+              const d = r.don_vi_ten || r.department;
+              if (d && !resolvedUnits.includes(d)) {
+                resolvedUnits.push(d);
+              }
+            });
 
-            if (resolvedUnit) {
-              setSelectedUnit(resolvedUnit);
-              void fetchStaffByUnit(resolvedUnit);
+            if (resolvedUnits.length > 0) {
+              setSelectedRecipientUnits(resolvedUnits);
+              void fetchStaffByUnits(resolvedUnits);
             }
 
             if (recipientList.length > 0) {
@@ -788,21 +818,26 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initDoc?.don_vi_nhan, initDoc?.linkThayThe, initDoc?.link_thay_the, initial?.id]);
 
-  function handleUnitChange(unit: string) {
-    setSelectedUnit(unit);
-    setIsStaffDropdownOpen(false);
-    setStaffSearch('');
-    if (!unit) {
-      setStaff([]);
-      // Xóa cán bộ đã chọn khi hủy chọn đơn vị
-      setForm(prev => ({ ...prev, nguoi_nhan: [] }));
+  function handleToggleRecipientUnit(unit: string) {
+    let nextUnits: string[];
+    if (selectedRecipientUnits.includes(unit)) {
+      nextUnits = selectedRecipientUnits.filter((u) => u !== unit);
     } else {
-      // Khi đổi sang đơn vị khác, làm mới lại danh sách cán bộ nhận đã chọn
-      if (unit !== selectedUnit) {
-        setForm(prev => ({ ...prev, nguoi_nhan: [] }));
-      }
-      void fetchStaffByUnit(unit);
+      nextUnits = [...selectedRecipientUnits, unit];
     }
+    setSelectedRecipientUnits(nextUnits);
+    if (nextUnits.length === 0) {
+      setStaff([]);
+      setForm((prev) => ({ ...prev, nguoi_nhan: [] }));
+    } else {
+      void fetchStaffByUnits(nextUnits);
+    }
+  }
+
+  function handleClearAllRecipientUnits() {
+    setSelectedRecipientUnits([]);
+    setStaff([]);
+    setForm((prev) => ({ ...prev, nguoi_nhan: [] }));
   }
 
   // Quản lý ManyToMany đơn vị phòng ban nội bộ (chỉ chọn từ CSDL, không tự tạo)
@@ -844,7 +879,8 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
     return staff.filter(s => {
       const name = (s.ho_ten || s.full_name || '').toLowerCase();
       const username = (s.username || '').toLowerCase();
-      return name.includes(term) || username.includes(term);
+      const dept = (s.don_vi_ten || s.department || '').toLowerCase();
+      return name.includes(term) || username.includes(term) || dept.includes(term);
     });
   }, [staff, staffSearch]);
 
@@ -869,6 +905,9 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
       }
       if (recipientUnitDropdownRef.current && !recipientUnitDropdownRef.current.contains(e.target as Node)) {
         setIsRecipientUnitDropdownOpen(false);
+      }
+      if (scopeDropdownRef.current && !scopeDropdownRef.current.contains(e.target as Node)) {
+        setIsScopeDropdownOpen(false);
       }
       if (hieuLucDropdownRef.current && !hieuLucDropdownRef.current.contains(e.target as Node)) {
         setIsHieuLucDropdownOpen(false);
@@ -1261,7 +1300,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
       }
     }
     if (form.pham_vi === 'HAN_CHE') {
-      if (!selectedUnit) {
+      if (selectedRecipientUnits.length === 0) {
         setAlertMsg('Văn bản hạn chế bắt buộc phải chọn Đơn vị nhận trước (*)');
         setAlertOpen(true);
         return;
@@ -1272,7 +1311,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
         return;
       }
     }
-    if (form.nguoi_nhan && form.nguoi_nhan.length > 0 && !selectedUnit) {
+    if (form.nguoi_nhan && form.nguoi_nhan.length > 0 && selectedRecipientUnits.length === 0) {
       setAlertMsg('Vui lòng chọn đơn vị nhận trước khi chọn cán bộ (*)');
       setAlertOpen(true);
       return;
@@ -1336,8 +1375,8 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
         });
       }
 
-      if (selectedUnit) {
-        payload.append('don_vi_nhan', selectedUnit);
+      if (selectedRecipientUnits.length > 0) {
+        payload.append('don_vi_nhan', selectedRecipientUnits.join(', '));
       }
 
       if (deletedAttachmentIds.length > 0) {
@@ -1656,43 +1695,147 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                   )}
                 </label>
                 {form.loai === 'MAT' ? (
-                  <select
-                    value="HAN_CHE"
-                    disabled
-                    className="w-full text-sm bg-surface border border-border-subtle rounded-xl px-3 py-2 text-main focus:outline-none transition-fast opacity-80 cursor-not-allowed"
+                  <div
+                    className="w-full h-10 text-sm bg-surface border border-border-subtle rounded-xl px-3 py-2 text-main flex items-center justify-between opacity-80 cursor-not-allowed select-none"
                     title="Văn bản mật bắt buộc lưu hành ở phạm vi hạn chế"
                   >
-                    <option value="HAN_CHE">{t('documents_ui.formModal.scopeConfidentialOnly') || 'Hạn chế (Chỉ người nhận xem)'}</option>
-                  </select>
+                    <div className="flex items-center gap-2 truncate">
+                      <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0" />
+                      <span className="text-xs truncate font-medium">
+                        {t('documents_ui.formModal.scopeConfidentialOnly') || 'Hạn chế (Chỉ người nhận xem)'}
+                      </span>
+                    </div>
+                    <i className="fa-solid fa-lock text-xs text-muted/60 shrink-0" />
+                  </div>
                 ) : (
-                  <select
-                    value={form.pham_vi}
-                    disabled={Boolean(initial?.id) && !isAdmin}
-                    onChange={e => {
-                      const newScope = e.target.value as 'NOI_BO' | 'HAN_CHE';
-                      setForm(prev => ({
-                        ...prev,
-                        pham_vi: newScope,
-                        gui_mail_toan_he_thong: newScope === 'HAN_CHE' ? false : prev.gui_mail_toan_he_thong,
-                      }));
-                      setReplacementSuggestions([]);
-                    }}
-                    className="w-full text-sm bg-surface border border-border-subtle rounded-xl px-3 py-2 text-main focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-fast disabled:opacity-60 disabled:cursor-not-allowed"
-                    title={
-                      Boolean(initial?.id) && !isAdmin
-                        ? (t('documents_ui.formModal.scopeAdminOnlyTooltip') || 'Chỉ Quản trị viên (Admin) mới có quyền thay đổi phạm vi lưu hành của văn bản sau khi thêm.')
-                        : 'Chọn phạm vi lưu hành'
-                    }
-                  >
-                    <option value="NOI_BO">{t('documents_ui.formModal.scopeInternal') || 'Nội bộ (Toàn cơ quan)'}</option>
-                    <option
-                      value="HAN_CHE"
-                      disabled={!canAddHanChe && form.pham_vi !== 'HAN_CHE'}
-                      title={!canAddHanChe ? (t('documents_ui.formModal.scopeRestrictedNoPermission') || 'Bạn chưa được cấp quyền thêm văn bản hạn chế.') : undefined}
+                  <div className="relative" ref={scopeDropdownRef}>
+                    <button
+                      type="button"
+                      disabled={Boolean(initial?.id) && !isAdmin}
+                      onClick={() => setIsScopeDropdownOpen((prev) => !prev)}
+                      className={`w-full h-10 text-sm bg-surface border rounded-xl px-3 py-2 flex items-center justify-between text-left transition-fast ${
+                        Boolean(initial?.id) && !isAdmin
+                          ? 'opacity-60 cursor-not-allowed border-border-subtle'
+                          : 'cursor-pointer hover:border-border-subtle/80 focus:outline-none'
+                      } ${isScopeDropdownOpen ? 'border-primary ring-1 ring-primary' : 'border-border-subtle'}`}
+                      title={
+                        Boolean(initial?.id) && !isAdmin
+                          ? (t('documents_ui.formModal.scopeAdminOnlyTooltip') || 'Chỉ Quản trị viên (Admin) mới có quyền thay đổi phạm vi lưu hành của văn bản sau khi thêm.')
+                          : 'Chọn phạm vi lưu hành'
+                      }
                     >
-                      {t('documents_ui.formModal.scopeRestrictedOption') || 'Hạn chế (Chỉ người nhận xem)'}
-                    </option>
-                  </select>
+                      <div className="flex items-center gap-2 truncate min-w-0">
+                        <span
+                          className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                            form.pham_vi === 'HAN_CHE' ? 'bg-rose-500' : 'bg-blue-500'
+                          }`}
+                        />
+                        <span className="truncate text-main text-xs font-medium">
+                          {form.pham_vi === 'HAN_CHE'
+                            ? (t('documents_ui.formModal.scopeRestrictedOption') || 'Hạn chế (Chỉ người nhận xem)')
+                            : (t('documents_ui.formModal.scopeInternal') || 'Nội bộ (Toàn cơ quan)')}
+                        </span>
+                      </div>
+                      <i
+                        className={`fa-solid fa-chevron-down text-muted text-xs transition-transform duration-200 shrink-0 ml-2 ${
+                          isScopeDropdownOpen ? 'rotate-180' : ''
+                        }`}
+                      />
+                    </button>
+
+                    {isScopeDropdownOpen && (
+                      <div className="absolute left-0 right-0 top-full mt-1 bg-surface border border-border-subtle rounded-xl shadow-2xl z-30 p-1.5 space-y-1 animate-fadeIn">
+                        {/* Option 1: Nội bộ */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setForm((prev) => ({
+                              ...prev,
+                              pham_vi: 'NOI_BO',
+                            }));
+                            setReplacementSuggestions([]);
+                            setIsScopeDropdownOpen(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-lg text-xs flex items-center justify-between transition-fast cursor-pointer ${
+                            form.pham_vi === 'NOI_BO'
+                              ? 'bg-blue-500/10 text-blue-600 font-semibold'
+                              : 'text-secondary hover:bg-hover hover:text-main'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 truncate">
+                            <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0" />
+                            <span className="truncate">{t('documents_ui.formModal.scopeInternal') || 'Nội bộ (Toàn cơ quan)'}</span>
+                          </div>
+                          {form.pham_vi === 'NOI_BO' && <i className="fa-solid fa-check text-xs text-blue-600 shrink-0" />}
+                        </button>
+
+                        {/* Option 2: Hạn chế */}
+                        <button
+                          type="button"
+                          disabled={!canAddHanChe && form.pham_vi !== 'HAN_CHE'}
+                          onClick={() => {
+                            setForm((prev) => ({
+                              ...prev,
+                              pham_vi: 'HAN_CHE',
+                              gui_mail_toan_he_thong: false,
+                            }));
+                            setReplacementSuggestions([]);
+                            setIsScopeDropdownOpen(false);
+                          }}
+                          title={
+                            !canAddHanChe && form.pham_vi !== 'HAN_CHE'
+                              ? (t('documents_ui.formModal.scopeRestrictedNoPermission') || 'Bạn chưa được cấp quyền thêm văn bản hạn chế.')
+                              : undefined
+                          }
+                          className={`w-full text-left px-3 py-2 rounded-lg text-xs flex items-center justify-between transition-fast ${
+                            !canAddHanChe && form.pham_vi !== 'HAN_CHE'
+                              ? 'opacity-50 cursor-not-allowed text-muted'
+                              : form.pham_vi === 'HAN_CHE'
+                              ? 'bg-rose-500/10 text-rose-600 font-semibold cursor-pointer'
+                              : 'text-secondary hover:bg-hover hover:text-main cursor-pointer'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 truncate">
+                            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0" />
+                            <span className="truncate">{t('documents_ui.formModal.scopeRestrictedOption') || 'Hạn chế (Chỉ người nhận xem)'}</span>
+                          </div>
+                          {form.pham_vi === 'HAN_CHE' && <i className="fa-solid fa-check text-xs text-rose-600 shrink-0" />}
+                        </button>
+                      </div>
+                    )}
+                    {/* Accessible/form-compatible select for screen readers and automated tests */}
+                    <select
+                      aria-label="Phạm vi lưu hành"
+                      className="sr-only"
+                      tabIndex={-1}
+                      value={form.pham_vi}
+                      disabled={!canEditGeneral}
+                      onChange={(e) => {
+                        const val = e.target.value as 'NOI_BO' | 'HAN_CHE';
+                        setForm((prev) => ({
+                          ...prev,
+                          pham_vi: val,
+                          ...(val === 'HAN_CHE' ? { gui_mail_toan_he_thong: false } : {}),
+                        }));
+                        setReplacementSuggestions([]);
+                      }}
+                    >
+                      <option value="NOI_BO">
+                        {t('documents_ui.formModal.scopeInternal') || 'Nội bộ (Toàn cơ quan)'}
+                      </option>
+                      <option
+                        value="HAN_CHE"
+                        disabled={!canAddHanChe && form.pham_vi !== 'HAN_CHE'}
+                        title={
+                          !canAddHanChe && form.pham_vi !== 'HAN_CHE'
+                            ? (t('documents_ui.formModal.scopeRestrictedNoPermission') || 'Bạn chưa được cấp quyền thêm văn bản hạn chế.')
+                            : undefined
+                        }
+                      >
+                        {t('documents_ui.formModal.scopeRestrictedOption') || 'Hạn chế (Chỉ người nhận xem)'}
+                      </option>
+                    </select>
+                  </div>
                 )}
               </div>
             </div>
@@ -2449,31 +2592,63 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
             {/* Phân phối đơn vị & cán bộ */}
             <div className="grid grid-cols-12 gap-3.5">
               <div className="col-span-12 sm:col-span-6">
-                <label className="block text-xs font-semibold text-secondary mb-1.5">
-                  {t('documents_ui.formModal.receivingUnit') || 'Đơn vị nhận / chủ trì xử lý'}
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-semibold text-secondary flex items-center gap-1">
+                    <span>{t('documents_ui.formModal.receivingUnit') || 'Đơn vị nhận / chủ trì xử lý'}</span>
+                    {selectedRecipientUnits.length > 0 && (
+                      <span className="text-[11px] text-primary font-medium">
+                        ({selectedRecipientUnits.length} đơn vị)
+                      </span>
+                    )}
+                  </label>
+                  {selectedRecipientUnits.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleClearAllRecipientUnits}
+                      className="text-[11px] text-muted hover:text-rose-500 transition-colors cursor-pointer"
+                    >
+                      Bỏ chọn tất cả
+                    </button>
+                  )}
+                </div>
+
                 <div className="relative" ref={recipientUnitDropdownRef}>
                   <button
                     type="button"
                     onClick={() => setIsRecipientUnitDropdownOpen(prev => !prev)}
-                    className="w-full text-sm bg-surface border border-border-subtle rounded-xl px-3 py-2 text-main flex items-center justify-between text-left focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-fast cursor-pointer"
+                    className="w-full h-10 text-sm bg-surface border border-border-subtle rounded-xl px-3 py-2 text-main flex items-center justify-between text-left focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-fast cursor-pointer"
                   >
-                    <span className={`truncate ${selectedUnit ? 'font-medium text-main' : 'text-muted'}`}>
-                      {selectedUnit || (t('documents_ui.formModal.selectReceivingUnit') || '-- Chọn đơn vị nhận --')}
-                    </span>
+                    <div className="flex items-center gap-1.5 truncate min-w-0">
+                      {selectedRecipientUnits.length === 0 ? (
+                        <span className="text-muted text-xs truncate">
+                          {t('documents_ui.formModal.selectReceivingUnit') || '-- Chọn đơn vị nhận --'}
+                        </span>
+                      ) : selectedRecipientUnits.length === 1 ? (
+                        <span className="truncate font-medium text-main text-xs">{selectedRecipientUnits[0]}</span>
+                      ) : (
+                        <>
+                          <span className="inline-flex items-center justify-center bg-primary/10 text-primary font-semibold text-xs px-2 py-0.5 rounded-full shrink-0">
+                            {selectedRecipientUnits.length} đơn vị
+                          </span>
+                          <span className="truncate font-medium text-main text-xs">
+                            {selectedRecipientUnits.join(', ')}
+                          </span>
+                        </>
+                      )}
+                    </div>
                     <div className="flex items-center gap-1.5 ml-2 shrink-0">
-                      {selectedUnit && (
+                      {selectedRecipientUnits.length > 0 && (
                         <span
                           role="button"
                           tabIndex={0}
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleUnitChange('');
+                            handleClearAllRecipientUnits();
                           }}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' || e.key === ' ') {
                               e.stopPropagation();
-                              handleUnitChange('');
+                              handleClearAllRecipientUnits();
                             }
                           }}
                           className="w-4 h-4 rounded-full flex items-center justify-center hover:bg-rose-500/20 text-muted hover:text-rose-500 transition-fast text-[11px] cursor-pointer"
@@ -2503,7 +2678,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                             <button
                               type="button"
                               onClick={() => setRecipientUnitSearch('')}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-main text-xs"
+                              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-main text-xs cursor-pointer"
                             >
                               <i className="fa-solid fa-xmark text-[10px]" />
                             </button>
@@ -2512,37 +2687,28 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                       </div>
 
                       <div className="max-h-52 overflow-y-auto p-1 space-y-0.5 custom-scrollbar">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            handleUnitChange('');
-                            setIsRecipientUnitDropdownOpen(false);
-                            setRecipientUnitSearch('');
-                          }}
-                          className={`w-full text-left px-3 py-2 rounded-lg text-xs flex items-center justify-between transition-fast cursor-pointer ${
-                            !selectedUnit ? 'bg-primary/10 text-primary font-semibold' : 'text-muted hover:bg-hover hover:text-main'
-                          }`}
-                        >
-                          <span>{t('documents_ui.formModal.selectReceivingUnit') || '-- Chọn đơn vị nhận --'}</span>
-                          {!selectedUnit && <i className="fa-solid fa-check text-xs text-primary" />}
-                        </button>
-
                         {filteredRecipientUnits.map(u => {
-                          const isSelected = selectedUnit === u;
+                          const isSelected = selectedRecipientUnits.includes(u);
                           return (
                             <button
-                              key={u}
                               type="button"
-                              onClick={() => {
-                                handleUnitChange(u);
-                                setIsRecipientUnitDropdownOpen(false);
-                                setRecipientUnitSearch('');
-                              }}
-                              className={`w-full text-left px-3 py-2 rounded-lg text-xs flex items-center justify-between transition-fast cursor-pointer ${
+                              key={u}
+                              onClick={() => handleToggleRecipientUnit(u)}
+                              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs transition-fast cursor-pointer text-left ${
                                 isSelected ? 'bg-primary/10 text-primary font-semibold' : 'hover:bg-hover text-secondary hover:text-main'
                               }`}
                             >
-                              <span className="truncate pr-2">{u}</span>
+                              <div className="flex items-center gap-2 truncate pr-2">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  readOnly
+                                  tabIndex={-1}
+                                  aria-label={u}
+                                  className="rounded border-border-subtle text-primary focus:ring-primary pointer-events-none shrink-0"
+                                />
+                                <span className="truncate">{u}</span>
+                              </div>
                               {isSelected && <i className="fa-solid fa-check text-xs text-primary shrink-0" />}
                             </button>
                           );
@@ -2555,6 +2721,22 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                           </div>
                         )}
                       </div>
+
+                      <div className="p-2 border-t border-border-subtle/70 bg-canvas/40 flex items-center justify-between">
+                        <span className="text-[11px] text-muted">
+                          Đã chọn: <strong className="text-main font-semibold">{selectedRecipientUnits.length}</strong> đơn vị
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsRecipientUnitDropdownOpen(false);
+                            setRecipientUnitSearch('');
+                          }}
+                          className="px-3 py-1 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary-hover transition-fast cursor-pointer shadow-xs"
+                        >
+                          Xong
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -2564,7 +2746,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-semibold text-secondary flex items-center gap-1">
                     <span>Cán bộ nhận / xử lý</span>
-                    {!selectedUnit ? (
+                    {selectedRecipientUnits.length === 0 ? (
                       <span className="text-[11px] text-muted font-normal">(Chưa chọn đơn vị)</span>
                     ) : (
                       <span className="text-[11px] text-primary font-medium">
@@ -2572,7 +2754,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                       </span>
                     )}
                   </label>
-                  {selectedUnit && staff.length > 0 && form.nguoi_nhan.length > 0 && (
+                  {selectedRecipientUnits.length > 0 && staff.length > 0 && form.nguoi_nhan.length > 0 && (
                     <button
                       type="button"
                       onClick={() => setForm(prev => ({ ...prev, nguoi_nhan: [] }))}
@@ -2583,9 +2765,9 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                   )}
                 </div>
 
-                {!selectedUnit ? (
+                {selectedRecipientUnits.length === 0 ? (
                   <div
-                    className="w-full text-sm bg-slate-100/70 dark:bg-slate-800/60 border border-border-subtle rounded-xl px-3 py-2 text-muted flex items-center justify-between cursor-not-allowed select-none opacity-80"
+                    className="w-full h-10 text-sm bg-slate-100/70 dark:bg-slate-800/60 border border-border-subtle rounded-xl px-3 py-2 text-muted flex items-center justify-between cursor-not-allowed select-none opacity-80"
                     title="Vui lòng chọn đơn vị nhận trước"
                   >
                     <div className="flex items-center gap-2 truncate">
@@ -2595,7 +2777,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                     <i className="fa-solid fa-chevron-down text-muted/60 text-xs shrink-0" />
                   </div>
                 ) : isStaffLoading ? (
-                  <div className="w-full text-sm bg-surface border border-border-subtle rounded-xl px-3 py-2 text-muted flex items-center justify-between select-none">
+                  <div className="w-full h-10 text-sm bg-surface border border-border-subtle rounded-xl px-3 py-2 text-muted flex items-center justify-between select-none">
                     <div className="flex items-center gap-2">
                       <i className="fa-solid fa-circle-notch fa-spin text-primary text-xs" />
                       <span className="text-xs">Đang tải danh sách cán bộ...</span>
@@ -2603,10 +2785,10 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                     <i className="fa-solid fa-chevron-down text-muted/60 text-xs shrink-0" />
                   </div>
                 ) : staff.length === 0 ? (
-                  <div className="w-full text-sm bg-surface border border-border-subtle rounded-xl px-3 py-2 text-muted flex items-center justify-between select-none">
+                  <div className="w-full h-10 text-sm bg-surface border border-border-subtle rounded-xl px-3 py-2 text-muted flex items-center justify-between select-none">
                     <div className="flex items-center gap-2">
                       <i className="fa-solid fa-user-slash text-xs text-muted/70" />
-                      <span className="text-xs">Đơn vị này hiện chưa có cán bộ nào</span>
+                      <span className="text-xs">Các đơn vị này hiện chưa có cán bộ nào</span>
                     </div>
                     <i className="fa-solid fa-chevron-down text-muted/60 text-xs shrink-0" />
                   </div>
@@ -2615,7 +2797,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                     <button
                       type="button"
                       onClick={() => setIsStaffDropdownOpen(prev => !prev)}
-                      className={`w-full text-sm bg-surface border rounded-xl px-3 py-2 flex items-center justify-between text-left focus:outline-none transition-fast cursor-pointer ${
+                      className={`w-full h-10 text-sm bg-surface border rounded-xl px-3 py-2 flex items-center justify-between text-left focus:outline-none transition-fast cursor-pointer ${
                         isStaffDropdownOpen
                           ? 'border-primary ring-1 ring-primary'
                           : 'border-border-subtle hover:border-border-subtle/80'
@@ -2629,7 +2811,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                             </span>
                             <span className="truncate text-main text-xs font-medium">
                               {form.nguoi_nhan.length === staff.length
-                                ? 'Tất cả cán bộ trong đơn vị'
+                                ? 'Tất cả cán bộ của các đơn vị đã chọn'
                                 : staff
                                     .filter(s => form.nguoi_nhan.includes(s.id))
                                     .map(s => s.ho_ten || s.full_name || s.username)
@@ -2670,7 +2852,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
 
                     {isStaffDropdownOpen && (
                       <div className="absolute left-0 right-0 top-full mt-1 bg-surface border border-border-subtle rounded-xl shadow-2xl z-30 overflow-hidden animate-fadeIn">
-                        {/* 1 nút Chọn tất cả duy nhất (tick là chọn hết, hủy tick là bỏ chọn hết) */}
+                        {/* 1 nút Chọn tất cả duy nhất */}
                         <div className="flex items-center justify-between px-3 py-2 border-b border-border-subtle/70 bg-canvas/40">
                           <label className="flex items-center gap-2 cursor-pointer select-none text-xs font-semibold text-main hover:text-primary transition-fast">
                             <input
@@ -2698,7 +2880,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                                 type="text"
                                 value={staffSearch}
                                 onChange={e => setStaffSearch(e.target.value)}
-                                placeholder="Gõ tên hoặc @username để lọc..."
+                                placeholder="Gõ tên, @username hoặc đơn vị để lọc..."
                                 className="w-full text-xs bg-surface border border-border-subtle rounded-lg pl-7 pr-7 py-1.5 text-main placeholder:text-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-fast"
                               />
                               {staffSearch && (
@@ -2718,6 +2900,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                         <div className="max-h-56 overflow-y-auto p-1 space-y-0.5 custom-scrollbar">
                           {filteredStaff.map(s => {
                             const isSelected = form.nguoi_nhan.includes(s.id);
+                            const deptName = s.don_vi_ten || s.department || '';
                             return (
                               <label
                                 key={s.id}
@@ -2729,6 +2912,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                                   <input
                                     type="checkbox"
                                     checked={isSelected}
+                                    aria-label={s.ho_ten || s.full_name || s.username}
                                     onChange={e => {
                                       const checked = e.target.checked;
                                       setForm(prev => ({
@@ -2742,6 +2926,11 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                                   />
                                   <span className="truncate">{s.ho_ten || s.full_name || s.username}</span>
                                   <span className="text-[11px] text-muted shrink-0">(@{s.username})</span>
+                                  {deptName && (
+                                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-surface border border-border-subtle text-muted shrink-0 truncate max-w-[120px]" title={deptName}>
+                                      {deptName}
+                                    </span>
+                                  )}
                                 </div>
                                 {isSelected && <i className="fa-solid fa-check text-xs text-primary shrink-0" />}
                               </label>
@@ -2786,9 +2975,21 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                       key={att.id}
                       className="flex items-center justify-between p-2.5 bg-surface border border-border-subtle rounded-xl text-xs overflow-hidden min-w-0"
                     >
-                      <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
-                        <i className={`${getFileIcon(att.file_name)} text-sm shrink-0`} />
-                        <span className="truncate text-main font-medium min-w-0 flex-1" title={att.file_name}>
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setPreviewTarget({ name: att.file_name, size: att.file_size, url: att.file })}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setPreviewTarget({ name: att.file_name, size: att.file_size, url: att.file });
+                          }
+                        }}
+                        className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden cursor-pointer group text-left focus:outline-none"
+                        title="Bấm để xem trước tệp này"
+                      >
+                        <i className={`${getFileIcon(att.file_name)} text-sm shrink-0 group-hover:scale-110 transition-transform`} />
+                        <span className="truncate text-main group-hover:text-primary group-hover:underline font-medium min-w-0 flex-1" title={att.file_name}>
                           {att.file_name}
                         </span>
                         {att.file_size && (
@@ -2884,9 +3085,25 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                         key={idx}
                         className="flex items-center justify-between p-2 px-3 bg-surface border border-border-subtle rounded-xl text-xs overflow-hidden min-w-0"
                       >
-                        <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
-                          <i className={`${getFileIcon(file.name)} text-sm shrink-0`} />
-                          <span className="truncate text-main font-medium min-w-0 flex-1" title={file.name}>
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPreviewTarget({ name: file.name, size: file.size, file });
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setPreviewTarget({ name: file.name, size: file.size, file });
+                            }
+                          }}
+                          className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden cursor-pointer group text-left focus:outline-none"
+                          title="Bấm để xem trước tệp này"
+                        >
+                          <i className={`${getFileIcon(file.name)} text-sm shrink-0 group-hover:scale-110 transition-transform`} />
+                          <span className="truncate text-main group-hover:text-primary group-hover:underline font-medium min-w-0 flex-1" title={file.name}>
                             {file.name}
                           </span>
                           <span className="text-xs text-muted shrink-0 whitespace-nowrap">
@@ -3223,6 +3440,12 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
           </div>
         </div>
       )}
+      {/* Modal xem trước tệp đính kèm (hỗ trợ PDF, DOCX, Ảnh PNG/JPG...) */}
+      <AttachmentPreviewModal
+        isOpen={Boolean(previewTarget)}
+        onClose={() => setPreviewTarget(null)}
+        target={previewTarget}
+      />
     </div>,
     document.body
   );
