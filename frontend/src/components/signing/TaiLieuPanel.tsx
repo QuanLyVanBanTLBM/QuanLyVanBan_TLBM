@@ -35,6 +35,10 @@ export default function TaiLieuPanel({ hoSo }: { hoSo: HoSoChiTiet }) {
     [JSON.stringify(await signingApi.bangChung(hoSo.id), null, 2)], { type: 'application/json' },
   ), tenBangChungTaiVe(hoSo.id));
 
+  const coChuKy = hoSo.luot_trinh.some((l) =>
+    (l.cap_ky || []).some((c) => c.nguoi_ky.some((n) => n.trang_thai === 'DA_KY' && n.chu_ky))
+  );
+
   const dong = (khoa: string, nhan: string, phu: string, onTai: () => void) => (
     <li key={khoa} className="flex flex-wrap items-center justify-between gap-2 py-2">
       <div className="min-w-0">
@@ -56,6 +60,9 @@ export default function TaiLieuPanel({ hoSo }: { hoSo: HoSoChiTiet }) {
           hoSo.luot_trinh.length > 1 ? `${t('chiTiet.banLuot')} (${t('chiTiet.luot', { so: l.so_luot })})` : t('chiTiet.banLuot'),
           dinhDangNgay(l.thoi_diem_gui, lang),
           () => tai(() => signingApi.tepCuaLuot(hoSo.id, l.id), tenTepTaiVe(hoSo.id, 'LUOT', l.so_luot))))}
+        {hoSo.trang_thai !== 'HOAN_THANH' && coChuKy && dong('da-ky-tien-trinh',
+          t('chiTiet.banDaKy'), '',
+          () => tai(() => signingApi.tepDaKy(hoSo.id), tenTepTaiVe(hoSo.id, 'DA_KY')))}
         {hoSo.trang_thai === 'HOAN_THANH' && dong('hoan-tat',
           t('chiTiet.tepHoanTat'), '',
           () => tai(() => signingApi.tepHoanTat(hoSo.id), tenTepTaiVe(hoSo.id, 'HOAN_TAT')))}

@@ -34,6 +34,7 @@ urlpatterns = [
          name="trinh-ky-lien-ket-van-ban-di"),
     path("trinh-ky/<int:pk>/", views.TrinhKyDetailView.as_view(), name="trinh-ky-detail"),
     path("trinh-ky/<int:pk>/tep/", views.TrinhKyTepView.as_view(), name="trinh-ky-tep"),
+    path("trinh-ky/<int:pk>/tep-da-ky/", views.TrinhKyTepDaKyView.as_view(), name="trinh-ky-tep-da-ky"),
     path("trinh-ky/<int:pk>/gui/", views.TrinhKyActionView.as_view(action="gui"), name="trinh-ky-gui"),
     path("trinh-ky/<int:pk>/huy/", views.TrinhKyActionView.as_view(action="huy"), name="trinh-ky-huy"),
     path("trinh-ky/<int:pk>/trinh-lai/", views.TrinhKyActionView.as_view(action="trinh-lai"),
