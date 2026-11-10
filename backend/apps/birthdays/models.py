@@ -73,8 +73,25 @@ class BirthdayEmailStatus(models.TextChoices):
     RETRY = "RETRY", "Chờ gửi lại"
 
 
+class BirthdayEmailSource(models.TextChoices):
+    AUTO = "AUTO", "Tự động"
+    MANUAL = "MANUAL", "Thủ công"
+
+
+class BirthdayEmailTemplate(models.Model):
+    name = models.CharField(max_length=120)
+    layout = models.CharField(max_length=2)
+    subject = models.CharField(max_length=255)
+    message = models.TextField()
+    created_at = models.DateTimeField(default=timezone.now, db_default=Now())
+
+    class Meta:
+        db_table = "birthdays_birthdayemailtemplate"
+        ordering = ["-id"]
+
+
 class BirthdayEmailLog(models.Model):
-    """Nhật ký gửi email chúc mừng sinh nhật tự động định kỳ — bảng birthdays_birthdayemaillog theo SQL_Fix4."""
+    """Nhật ký gửi email chúc mừng sinh nhật theo kỳ của từng CBNV."""
 
     employee = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -137,6 +154,13 @@ class BirthdayEmailLog(models.Model):
         blank=True,
         verbose_name="Nhà cung cấp dịch vụ email",
     )
+    delivery_source = models.CharField(
+        max_length=8, choices=BirthdayEmailSource.choices,
+        default=BirthdayEmailSource.AUTO, db_default=BirthdayEmailSource.AUTO,
+    )
+    delivery_snapshot = models.JSONField(null=True, blank=True)
+    last_operator = models.CharField(max_length=150, null=True, blank=True)
+    delivery_uncertain = models.BooleanField(default=False, db_default=False)
     updated_at = models.DateTimeField(
         auto_now=True,
         db_default=DbNow(),

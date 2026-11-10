@@ -111,6 +111,9 @@
               <p class="mail-copy" style="margin:0 0 28px;font-family:Georgia,'Times New Roman',serif;font-size:15px;font-weight:400;line-height:1.72;color:#1e2e42;text-align:justify;">
                 Kính chúc {{ employee_name }} trên cương vị {{ position }} sẽ luôn vững vàng nhiệt huyết, tiếp tục phát huy tối đa năng lực để hoàn thành xuất sắc mọi mục tiêu đề ra, gặt hái thêm nhiều thành công rực rỡ và cùng tập thể {{ brand_name }} lan tỏa những giá trị tốt đẹp đến khách hàng và cộng đồng.
               </p>
+              {% if chuc_danh %}
+              <p class="mail-copy" style="margin:0 0 20px;">Chức danh: <strong>{{ chuc_danh }}</strong></p>
+              {% endif %}
               {% if birthday_card_url %}
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 26px;border-collapse:separate;">
                 <tr>

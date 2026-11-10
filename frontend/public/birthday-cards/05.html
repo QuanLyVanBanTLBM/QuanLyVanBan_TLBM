@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <script src="/birthday-cards/personalize.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Thiệp 05 - Hiện Đại Năng Động (3D Cyber Wave) | Bảo Long Insurance</title>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      background: #020617;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 40px 16px;
+      overflow-x: hidden;
+      perspective: 1200px;
+    }
+    #waveWebGL {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 1;
+    }
+    .sapphire-shell {
+      position: relative;
+      z-index: 10;
+      max-width: 590px;
+      width: 100%;
+      background: rgba(15, 23, 42, 0.82);
+      backdrop-filter: blur(18px);
+      border: 1px solid rgba(56, 189, 248, 0.45);
+      border-radius: 22px;
+      overflow: hidden;
+      color: #f8fafc;
+      box-shadow: 0 25px 60px rgba(2, 132, 199, 0.35);
+    }
+    .sapphire-top {
+      background: linear-gradient(125deg, #0284c7 0%, #2563eb 55%, #1e1b4b 100%);
+      padding: 34px 34px 48px;
+    }
+    .top-chips {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 18px;
+    }
+    .chip-org {
+      background: rgba(255, 255, 255, 0.16);
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1.2px;
+    }
+    .chip-date {
+      background: #facc15;
+      color: #0f172a;
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .sapphire-top h1 {
+      font-size: 30px;
+      font-weight: 800;
+      margin-bottom: 6px;
+    }
+    .sapphire-top p {
+      color: #bae6fd;
+      font-size: 14px;
+    }
+    .holo-badge {
+      margin: -28px 34px 24px;
+      background: linear-gradient(135deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.95));
+      border: 1px solid rgba(56, 189, 248, 0.6);
+      border-radius: 14px;
+      padding: 18px 22px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+    }
+    .hb-col small {
+      display: block;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #94a3b8;
+      margin-bottom: 4px;
+      font-weight: 700;
+    }
+    .hb-col strong {
+      font-size: 14px;
+      color: #38bdf8;
+    }
+    .sapphire-body {
+      padding: 4px 34px 34px;
+    }
+    .sapphire-body p {
+      font-size: 15px;
+      line-height: 1.75;
+      color: #e2e8f0;
+      margin-bottom: 16px;
+    }
+    .cyber-btn {
+      background: linear-gradient(90deg, #0284c7, #38bdf8);
+      color: #0f172a;
+      border: none;
+      padding: 13px 26px;
+      border-radius: 12px;
+      font-weight: 800;
+      font-size: 13.5px;
+      cursor: pointer;
+      box-shadow: 0 0 24px rgba(56, 189, 248, 0.5);
+    }
+    .sapphire-sign {
+      margin-top: 24px;
+      padding: 16px 20px;
+      background: rgba(255, 255, 255, 0.04);
+      border-left: 4px solid #38bdf8;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+    @media (max-width: 520px) {
+      .holo-badge { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="waveWebGL"></canvas>
+
+  <div class="sapphire-shell" id="sapphireCard">
+    <div class="sapphire-top">
+      <div class="top-chips">
+        <span class="chip-org" data-card-field="organization_name">BẢO LONG INSURANCE</span>
+        <span class="chip-date">🎂 SINH NHẬT <span data-card-field="birthday_date">—</span></span>
+      </div>
+      <h1>Happy Birthday, <span data-card-field="employee_name">—</span>!</h1>
+      <p>Chúc mừng ngày đặc biệt của một thành viên xuất sắc trong đại gia đình chúng ta</p>
+    </div>
+
+    <div class="holo-badge">
+      <div class="hb-col">
+        <small>Nhân sự</small>
+        <strong style="color:#fff" data-card-field="employee_name">—</strong>
+      </div>
+      <div class="hb-col">
+        <small>Chức vụ</small>
+        <strong data-card-field="position">—</strong>
+      </div>
+      <div class="hb-col">
+        <small>Phòng ban</small>
+        <strong data-card-field="department">—</strong>
+      </div>
+    </div>
+
+    <div class="sapphire-body">
+      <p>Thân gửi <strong data-card-field="employee_name">—</strong>,</p>
+      <p>
+        Nhân dịp sinh nhật ngày <strong data-card-field="birthday_date">—</strong>, Ban Lãnh đạo và các đồng nghiệp tại <strong data-card-field="organization_name">Bảo Long Insurance</strong> chúc bạn một ngày sinh nhật thật trọn vẹn, ngập tràn tiếng cười và năng lượng tích cực!
+      </p>
+      <p>
+        Sự chủ động, sáng tạo và tinh thần trách nhiệm của bạn ở vị trí <strong style="color:#38bdf8" data-card-field="position">—</strong> đã góp phần quan trọng giúp <strong style="color:#38bdf8" data-card-field="department">—</strong> luôn vận hành hiệu quả và bứt phá mạnh mẽ.
+      </p>
+
+      <div style="margin: 22px 0;">
+        <button class="cyber-btn" id="boostBtn">🚀 Kích Hoạt Pháo Hoa Năng Lượng</button>
+      </div>
+
+      <div class="sapphire-sign">
+        <span style="color:#94a3b8; display:block;">Trân trọng & Thân mến,</span>
+        <strong>Ban Lãnh đạo và tập thể <span data-card-field="organization_name">Bảo Long Insurance</span></strong>
+      </div>
+    </div>
+  </div>
+
+
+</body>
+</html>

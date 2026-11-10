@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <script src="/birthday-cards/personalize.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Thiệp 07 - Đêm Sao Lấp Lánh (3D Starlight Galaxy) | Bảo Long Insurance</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Playfair+Display:wght@700;800&family=Montserrat:wght@600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      background: radial-gradient(circle at center, #1e1b4b 0%, #090d16 70%, #020408 100%);
+      font-family: 'Playfair Display', Georgia, serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 40px 16px;
+      color: #f8fafc;
+      overflow-x: hidden;
+    }
+    #galaxyWebGL {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 1;
+    }
+    .galaxy-card {
+      position: relative;
+      z-index: 10;
+      max-width: 590px;
+      width: 100%;
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(16px);
+      border: 1.5px solid #eab308;
+      border-radius: 20px;
+      box-shadow: 0 0 55px rgba(234, 179, 8, 0.22), 0 30px 60px rgba(0, 0, 0, 0.7);
+      overflow: hidden;
+    }
+    .g-head {
+      padding: 36px 34px 26px;
+      text-align: center;
+      border-bottom: 1px solid rgba(234, 179, 8, 0.3);
+    }
+    .g-brand {
+      font-family: 'Montserrat', sans-serif;
+      font-size: 11px;
+      letter-spacing: 3px;
+      color: #fef08a;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .g-head h1 {
+      font-size: 34px;
+      color: #fde047;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      text-shadow: 0 0 18px rgba(253, 224, 71, 0.45);
+    }
+    .g-profile {
+      margin: 24px 34px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(253, 224, 71, 0.45);
+      border-radius: 14px;
+      padding: 18px 22px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      text-align: center;
+    }
+    .gp-col small {
+      display: block;
+      font-family: 'Montserrat', sans-serif;
+      font-size: 9.5px;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: #94a3b8;
+      margin-bottom: 4px;
+    }
+    .gp-col strong {
+      font-size: 14.5px;
+      color: #fef9c3;
+    }
+    .g-body {
+      padding: 4px 36px 34px;
+    }
+    .g-body p {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 18.5px;
+      line-height: 1.76;
+      color: #e2e8f0;
+      margin-bottom: 15px;
+      text-align: justify;
+    }
+    .star-btn {
+      background: linear-gradient(90deg, #ca8a04, #fde047);
+      color: #0f172a;
+      border: none;
+      padding: 13px 28px;
+      border-radius: 999px;
+      font-family: 'Montserrat', sans-serif;
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      cursor: pointer;
+      box-shadow: 0 0 25px rgba(253, 224, 71, 0.45);
+    }
+    .g-foot {
+      border-top: 1px solid rgba(255, 255, 255, 0.12);
+      padding: 18px 36px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    @media (max-width: 520px) {
+      .g-profile { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="galaxyWebGL"></canvas>
+
+  <div class="galaxy-card" id="gCard">
+    <div class="g-head">
+      <div style="color:#fde047; letter-spacing:10px; margin-bottom:10px;">✦ ★ ✦</div>
+      <div class="g-brand" data-card-field="organization_name">BẢO LONG INSURANCE</div>
+      <h1>Chúc Mừng Sinh Nhật</h1>
+      <p style="color:#cbd5e1; font-size:13.5px; margin-top:6px;">
+        Tỏa sáng rực rỡ trong ngày đặc biệt <strong style="color:#fde047" data-card-field="birthday_date">—</strong>
+      </p>
+    </div>
+
+    <div class="g-profile">
+      <div class="gp-col">
+        <small>Họ và tên</small>
+        <strong data-card-field="employee_name">—</strong>
+      </div>
+      <div class="gp-col">
+        <small>Chức vụ</small>
+        <strong data-card-field="position">—</strong>
+      </div>
+      <div class="gp-col">
+        <small>Phòng ban</small>
+        <strong data-card-field="department">—</strong>
+      </div>
+    </div>
+
+    <div class="g-body">
+      <p>Kính gửi <strong style="color:#fde047" data-card-field="employee_name">—</strong>,</p>
+      <p>
+        Nhân dịp sinh nhật ngày <strong style="color:#fde047" data-card-field="birthday_date">—</strong>, Ban Lãnh đạo và toàn thể đồng nghiệp tại <strong data-card-field="organization_name">Bảo Long Insurance</strong> trân trọng gửi tới đồng chí lời chúc mừng sinh nhật nồng nhiệt nhất!
+      </p>
+      <p>
+        Tại <strong style="color:#fde047" data-card-field="department">—</strong>, nỗ lực bền bỉ và năng lực chuyên môn vững vàng của đồng chí trên cương vị <strong style="color:#fde047" data-card-field="position">—</strong> luôn tỏa sáng như một ngôi sao tiêu biểu.
+      </p>
+
+      <div style="text-align:center; margin: 24px 0 8px;">
+        <button class="star-btn" id="wishStarBtn">🌟 Gửi Điều Ước Lên Ngân Hà</button>
+      </div>
+    </div>
+
+    <div class="g-foot">
+      <div>
+        <small style="color:#94a3b8; display:block;">Trân trọng,</small>
+        <strong style="color:#fde047;">Ban Lãnh đạo & Tập thể <span data-card-field="organization_name">Bảo Long Insurance</span></strong>
+      </div>
+      <div style="font-size:22px;">✨🌌</div>
+    </div>
+  </div>
+
+
+</body>
+</html>

@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <script src="/birthday-cards/personalize.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Thiệp 01 - Hoàng Gia Navy & Vàng Kim 3D | Bảo Long Insurance</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,400&family=Playfair+Display:ital,wght@0,600;0,700;0,800;1,400&family=Montserrat:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      background: radial-gradient(circle at 50% 20%, #102a56 0%, #07142b 60%, #030914 100%);
+      font-family: 'Playfair Display', Georgia, serif;
+      color: #ffffff;
+      overflow-x: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 40px 16px;
+      perspective: 1400px;
+    }
+    #bgWebGL {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 1;
+    }
+    .stage {
+      position: relative;
+      z-index: 10;
+      width: 100%;
+      max-width: 560px;
+      transform-style: preserve-3d;
+    }
+    #dragonCanvas {
+      position: absolute;
+      top: -50px;
+      left: -50px;
+      width: calc(100% + 100px);
+      height: calc(100% + 100px);
+      pointer-events: none;
+      z-index: 20;
+    }
+    .royal-card {
+      background: #ffffff;
+      color: #1e2e42;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 2px solid rgba(223, 178, 102, 0.75);
+      box-shadow: 0 30px 70px rgba(0, 0, 0, 0.65), 0 0 40px rgba(223, 178, 102, 0.25);
+      transform-style: preserve-3d;
+      transition: box-shadow 0.3s ease;
+    }
+    .card-top {
+      background: linear-gradient(160deg, #0b2246 0%, #123366 50%, #07162c 100%);
+      padding: 34px 32px 26px;
+      position: relative;
+      color: #ffffff;
+      border-bottom: 4px solid #dfb266;
+    }
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 22px;
+    }
+    .brand-title {
+      font-family: 'Montserrat', sans-serif;
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: 2px;
+      color: #ffffff;
+    }
+    .brand-sub {
+      font-family: 'Montserrat', sans-serif;
+      font-size: 8.5px;
+      letter-spacing: 2.4px;
+      color: #dfb266;
+      display: block;
+      margin-top: 2px;
+    }
+    .date-pill {
+      background: rgba(223, 178, 102, 0.18);
+      border: 1px solid #dfb266;
+      color: #fde68a;
+      font-family: 'Montserrat', sans-serif;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 6px 14px;
+      border-radius: 999px;
+    }
+    .hero-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+    }
+    .hero-left h2 {
+      font-size: 24px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: #ffffff;
+    }
+    .hero-left h1 {
+      font-size: 34px;
+      letter-spacing: 2.5px;
+      text-transform: uppercase;
+      color: #dfb266;
+      margin: 2px 0 12px;
+      text-shadow: 0 3px 10px rgba(0, 0, 0, 0.4);
+    }
+    .hero-left p {
+      font-family: 'Montserrat', sans-serif;
+      font-size: 9.5px;
+      letter-spacing: 1.6px;
+      color: #e5cb9e;
+      text-transform: uppercase;
+      line-height: 1.6;
+    }
+    .cake-interactive {
+      width: 145px;
+      flex-shrink: 0;
+      cursor: pointer;
+      text-align: center;
+      position: relative;
+    }
+    .flame-group {
+      transform-origin: center bottom;
+      animation: flicker 1.1s infinite alternate ease-in-out;
+      transition: opacity 0.4s ease, transform 0.4s ease;
+    }
+    .flame-group.blown {
+      opacity: 0;
+      transform: scale(0);
+    }
+    @keyframes flicker {
+      0% { transform: scale(0.95, 1.05) rotate(-2deg); }
+      100% { transform: scale(1.08, 0.94) rotate(2deg); }
+    }
+    .profile-strip {
+      background: linear-gradient(90deg, #fdfbf7 0%, #f7f0e2 50%, #fdfbf7 100%);
+      border-bottom: 1px solid #e6d5b8;
+      padding: 16px 32px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      text-align: center;
+    }
+    .ps-item small {
+      display: block;
+      font-family: 'Montserrat', sans-serif;
+      font-size: 9.5px;
+      text-transform: uppercase;
+      letter-spacing: 1.1px;
+      color: #78716c;
+      font-weight: 700;
+      margin-bottom: 3px;
+    }
+    .ps-item strong {
+      font-size: 14.5px;
+      color: #0b2246;
+    }
+    .card-body {
+      padding: 30px 34px 36px;
+      background: #ffffff;
+    }
+    .salutation {
+      font-size: 23px;
+      font-weight: 700;
+      color: #0b2246;
+      margin-bottom: 16px;
+    }
+    .letter-p {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 17.5px;
+      line-height: 1.72;
+      color: #1e2e42;
+      margin-bottom: 15px;
+      text-align: justify;
+      font-weight: 500;
+    }
+    .badge-inline {
+      background: #fef9ee;
+      border: 1px solid #dfb266;
+      color: #85581a;
+      padding: 1px 8px;
+      border-radius: 4px;
+      font-weight: 700;
+    }
+    .interactive-bar {
+      margin: 24px 0 22px;
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .action-btn {
+      background: linear-gradient(135deg, #0b2246, #163b73);
+      color: #fde68a;
+      border: 1.5px solid #dfb266;
+      padding: 12px 22px;
+      border-radius: 999px;
+      font-family: 'Montserrat', sans-serif;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+      box-shadow: 0 8px 20px rgba(11, 34, 70, 0.25);
+    }
+    .action-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 24px rgba(223, 178, 102, 0.4);
+    }
+    .signoff {
+      border-top: 1.5px solid #dfb266;
+      padding-top: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+    .signoff span {
+      font-size: 14px;
+      color: #64748b;
+      display: block;
+    }
+    .signoff strong {
+      font-size: 16px;
+      color: #0b2246;
+    }
+    @media (max-width: 520px) {
+      .hero-row { flex-direction: column; text-align: center; }
+      .profile-strip { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="bgWebGL"></canvas>
+
+  <div class="stage" id="cardStage">
+    <canvas id="dragonCanvas"></canvas>
+
+    <div class="royal-card" id="royalCard">
+      <div class="card-top">
+        <div class="top-bar">
+          <div>
+            <span class="brand-title" data-card-field="organization_name">BẢO LONG INSURANCE</span>
+            <span class="brand-sub">ROYAL BIRTHDAY EDITION</span>
+          </div>
+          <div class="date-pill">🎂 <span data-card-field="birthday_date">—</span></div>
+        </div>
+
+        <div class="hero-row">
+          <div class="hero-left">
+            <h2>Chúc Mừng</h2>
+            <h1>Sinh Nhật</h1>
+            <p>Thêm một tuổi mới • Thêm nhiều giá trị tốt đẹp</p>
+          </div>
+
+          <div class="cake-interactive" id="cakeBox" title="Bấm để thổi nến & ước nguyện!">
+            <svg viewBox="0 0 140 140" width="130" height="130" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <g class="flame-group" id="candleFlames">
+                <circle cx="50" cy="24" r="7" fill="rgba(255,230,120,0.4)"/>
+                <path d="M50 16 C53 22, 53 26, 50 29 C47 26, 47 22, 50 16 Z" fill="#fffbeb"/>
+                <circle cx="70" cy="18" r="9" fill="rgba(255,230,120,0.5)"/>
+                <path d="M70 9 C74 16, 74 21, 70 24 C66 21, 66 16, 70 9 Z" fill="#ffffff"/>
+                <circle cx="90" cy="24" r="7" fill="rgba(255,230,120,0.4)"/>
+                <path d="M90 16 C93 22, 93 26, 90 29 C87 26, 87 22, 90 16 Z" fill="#fffbeb"/>
+              </g>
+              <rect x="47.5" y="30" width="5" height="18" rx="1.5" fill="#dfb266"/>
+              <rect x="67.5" y="25" width="5" height="23" rx="1.5" fill="#dfb266"/>
+              <rect x="87.5" y="30" width="5" height="18" rx="1.5" fill="#dfb266"/>
+              <rect x="35" y="48" width="70" height="25" rx="5" fill="#102a56" stroke="#dfb266" stroke-width="2"/>
+              <path d="M35 56 Q43.75 64 52.5 56 T70 56 T87.5 56 T105 56" stroke="#fde68a" stroke-width="1.6" fill="none"/>
+              <rect x="22" y="73" width="96" height="32" rx="6" fill="#081a36" stroke="#dfb266" stroke-width="2.2"/>
+              <path d="M22 83 Q34 92 46 83 T70 83 T94 83 T118 83" stroke="#dfb266" stroke-width="2" fill="none"/>
+              <ellipse cx="70" cy="107" rx="56" ry="5" fill="#dfb266"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <div class="profile-strip">
+        <div class="ps-item">
+          <small>Cán bộ nhân viên</small>
+          <strong data-card-field="employee_name">—</strong>
+        </div>
+        <div class="ps-item">
+          <small>Chức vụ</small>
+          <strong data-card-field="position">—</strong>
+        </div>
+        <div class="ps-item">
+          <small>Phòng ban / Đơn vị</small>
+          <strong data-card-field="department">—</strong>
+        </div>
+      </div>
+
+      <div class="card-body">
+        <div class="salutation">Kính gửi <span data-card-field="employee_name">—</span>,</div>
+
+        <p class="letter-p">
+          Nhân dịp sinh nhật ngày <strong data-card-field="birthday_date">—</strong> của <strong data-card-field="employee_name">—</strong>, Ban Lãnh đạo cùng toàn thể cán bộ nhân viên <span data-card-field="organization_name">Bảo Long Insurance</span> trân trọng gửi đến đồng chí lời chúc mừng sinh nhật nồng nhiệt và tốt đẹp nhất.
+        </p>
+
+        <p class="letter-p">
+          Ban Lãnh đạo ghi nhận và trân trọng cảm ơn những nỗ lực, cống hiến và tinh thần trách nhiệm mà <strong data-card-field="employee_name">—</strong> đã không ngừng đóng góp cho sự phát triển vững mạnh của <span class="badge-inline" data-card-field="department">—</span> cũng như ngôi nhà chung <span data-card-field="organization_name">Bảo Long Insurance</span>.
+        </p>
+
+        <p class="letter-p">
+          Kính chúc đồng chí trên cương vị <span class="badge-inline" data-card-field="position">—</span> luôn vững vàng nhiệt huyết, phát huy tối đa năng lực để hoàn thành xuất sắc mọi mục tiêu đề ra và gặt hái thêm nhiều thành công rực rỡ.
+        </p>
+
+        <div class="interactive-bar">
+          <button class="action-btn" id="wishBtn">✨ Thổi Nến & Nhận Pháo Hoa Chúc Mừng</button>
+        </div>
+
+        <div class="signoff">
+          <div>
+            <span>Thân mến,</span>
+            <strong>Ban Lãnh đạo và tập thể <span data-card-field="organization_name">Bảo Long Insurance</span></strong>
+          </div>
+          <div style="color:#dfb266; font-size:20px;">✦ ❧ ✦</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+</body>
+</html>

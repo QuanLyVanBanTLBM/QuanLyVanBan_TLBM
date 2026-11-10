@@ -1910,12 +1910,25 @@ CREATE TABLE birthdays_birthdayemaillog (
     opened_at TIMESTAMPTZ,
     clicked_count INTEGER NOT NULL DEFAULT 0,
     email_provider VARCHAR(50),
+    delivery_source VARCHAR(8) NOT NULL DEFAULT 'AUTO',
+    delivery_snapshot JSONB,
+    last_operator VARCHAR(150),
+    delivery_uncertain BOOLEAN NOT NULL DEFAULT false,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT uq_emaillog_employee_date UNIQUE (employee_id, sent_date)
 );
 
 CREATE TRIGGER trg_emaillog_updated_at BEFORE UPDATE ON birthdays_birthdayemaillog
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TABLE birthdays_birthdayemailtemplate (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(120) NOT NULL,
+    layout VARCHAR(2) NOT NULL,
+    subject VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT statement_timestamp()
+);
 
 COMMIT;
 

@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <script src="/birthday-cards/personalize.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Thiệp 03 - Tối Giản Tinh Tế (Editorial Kinetic) | Bảo Long Insurance</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      background: #efeae1;
+      color: #1c1917;
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 40px 16px;
+      overflow-x: hidden;
+    }
+    #silkCanvas {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 1;
+      opacity: 0.65;
+    }
+    .editorial-paper {
+      position: relative;
+      z-index: 10;
+      max-width: 600px;
+      width: 100%;
+      background: #fffdf9;
+      border: 1px solid #d6d3cd;
+      padding: 48px 46px;
+      box-shadow: 0 25px 60px rgba(28, 25, 23, 0.12);
+    }
+    .header-meta {
+      display: flex;
+      justify-content: space-between;
+      border-bottom: 2px solid #1c1917;
+      padding-bottom: 14px;
+      margin-bottom: 30px;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 2.2px;
+      text-transform: uppercase;
+    }
+    .big-heading {
+      font-size: 46px;
+      line-height: 1.1;
+      font-weight: 600;
+      margin-bottom: 24px;
+    }
+    .big-heading em {
+      font-style: italic;
+      color: #9a6b26;
+      display: block;
+      margin-top: 4px;
+    }
+    .dossier-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      border-top: 1px solid #1c1917;
+      border-bottom: 1px solid #1c1917;
+      padding: 16px 0;
+      margin-bottom: 28px;
+      gap: 12px;
+    }
+    .d-cell small {
+      display: block;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 9.5px;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: #78716c;
+      margin-bottom: 4px;
+      font-weight: 700;
+    }
+    .d-cell strong {
+      font-size: 16px;
+      color: #1c1917;
+    }
+    .editorial-copy p {
+      font-size: 19px;
+      line-height: 1.78;
+      color: #292524;
+      margin-bottom: 18px;
+      text-align: justify;
+    }
+    .dropcap::first-letter {
+      float: left;
+      font-size: 54px;
+      line-height: 0.82;
+      padding-right: 12px;
+      padding-top: 4px;
+      color: #9a6b26;
+      font-weight: 700;
+    }
+    .editorial-btn {
+      background: #1c1917;
+      color: #fffdf9;
+      border: 1px solid #1c1917;
+      padding: 13px 28px;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      cursor: pointer;
+      margin: 10px 0 26px;
+      transition: all 0.25s;
+    }
+    .editorial-btn:hover {
+      background: #9a6b26;
+      border-color: #9a6b26;
+    }
+    .editorial-footer {
+      border-top: 1px solid #e7e5e4;
+      padding-top: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+    @media (max-width: 520px) {
+      .editorial-paper { padding: 30px 22px; }
+      .dossier-grid { grid-template-columns: 1fr; }
+      .big-heading { font-size: 34px; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="silkCanvas"></canvas>
+
+  <article class="editorial-paper" id="paperCard">
+    <div class="header-meta">
+      <span data-card-field="organization_name">BẢO LONG INSURANCE</span>
+      <span>EDITION • <strong data-card-field="birthday_date">—</strong></span>
+    </div>
+
+    <h1 class="big-heading">
+      Chúc mừng sinh nhật
+      <em data-card-field="employee_name">—</em>
+    </h1>
+
+    <div class="dossier-grid">
+      <div class="d-cell">
+        <small>Nhân sự</small>
+        <strong data-card-field="employee_name">—</strong>
+      </div>
+      <div class="d-cell">
+        <small>Chức vụ</small>
+        <strong data-card-field="position">—</strong>
+      </div>
+      <div class="d-cell">
+        <small>Phòng ban</small>
+        <strong data-card-field="department">—</strong>
+      </div>
+    </div>
+
+    <div class="editorial-copy">
+      <p class="dropcap">
+        Nhân dịp sinh nhật ngày <strong data-card-field="birthday_date">—</strong>, Ban Lãnh đạo cùng toàn thể cán bộ nhân viên <span data-card-field="organization_name">Bảo Long Insurance</span> trân trọng gửi tới <strong data-card-field="employee_name">—</strong> lời chúc sức khỏe, hạnh phúc và bình an.
+      </p>
+      <p>
+        Mỗi chặng đường phát triển của <strong data-card-field="department">—</strong> đều mang đậm dấu ấn đóng góp, sự chuyên nghiệp và tinh thần trách nhiệm của đồng chí trên cương vị <strong data-card-field="position">—</strong>.
+      </p>
+      <p>
+        Chúc <strong data-card-field="employee_name">—</strong> đón một tuổi mới với thật nhiều cảm hứng sáng tạo, hoàn thành xuất sắc mọi mục tiêu công việc và tận hưởng trọn vẹn niềm vui bên gia đình.
+      </p>
+    </div>
+
+    <button class="editorial-btn" id="toastBtn">🥂 Nâng Ly Chúc Mừng Tuổi Mới</button>
+
+    <div class="editorial-footer">
+      <div>
+        <div style="font-style:italic; color:#78716c; font-size:15px;">Trân trọng gửi lời chúc tốt đẹp nhất,</div>
+        <strong style="font-size:17px;">Ban Lãnh đạo và tập thể <span data-card-field="organization_name">Bảo Long Insurance</span></strong>
+      </div>
+      <div style="font-size:26px; color:#9a6b26;">❦</div>
+    </div>
+  </article>
+
+
+</body>
+</html>
