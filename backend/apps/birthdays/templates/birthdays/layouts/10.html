@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ subject }}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: #f3e8ff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+      padding: 32px 16px;
+      color: #1e1b4b;
+    }
+    .festive-card {
+      max-width: 600px;
+      margin: 0 auto;
+      background: #ffffff;
+      border-radius: 20px;
+      overflow: hidden;
+      border: 3px solid #7c3aed;
+      box-shadow: 0 18px 0 #4c1d95, 0 26px 40px rgba(76, 29, 149, 0.2);
+    }
+    .festive-banner {
+      background: linear-gradient(135deg, #7c3aed 0%, #db2777 100%);
+      padding: 36px 32px;
+      text-align: center;
+      color: #ffffff;
+      position: relative;
+    }
+    .confetti-dots {
+      font-size: 18px;
+      letter-spacing: 8px;
+      margin-bottom: 10px;
+    }
+    .festive-banner h1 {
+      font-size: 34px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+      text-shadow: 0 3px 0 rgba(0,0,0,0.18);
+    }
+    .festive-banner .date-tag {
+      display: inline-block;
+      background: #fde047;
+      color: #1e1b4b;
+      font-weight: 800;
+      font-size: 13px;
+      padding: 6px 18px;
+      border-radius: 999px;
+      box-shadow: 0 4px 0 rgba(0,0,0,0.15);
+    }
+    .member-spotlight {
+      margin: 26px 32px 16px;
+      background: #faf5ff;
+      border: 2px dashed #c084fc;
+      border-radius: 16px;
+      padding: 20px;
+      text-align: center;
+    }
+    .member-spotlight h2 {
+      font-size: 24px;
+      color: #5b21b6;
+      margin-bottom: 10px;
+    }
+    .role-badges {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .r-badge {
+      background: #ede9fe;
+      color: #5b21b6;
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .r-badge.pink {
+      background: #fce7f3;
+      color: #9d174d;
+    }
+    .festive-body {
+      padding: 12px 34px 34px;
+    }
+    .festive-body p {
+      font-size: 15.5px;
+      line-height: 1.75;
+      color: #312e81;
+      margin-bottom: 16px;
+    }
+    .pop-btn-wrap {
+      text-align: center;
+      margin: 26px 0 18px;
+    }
+    .pop-btn {
+      display: inline-block;
+      background: #fde047;
+      color: #1e1b4b;
+      border: 2px solid #1e1b4b;
+      box-shadow: 0 5px 0 #1e1b4b;
+      padding: 13px 28px;
+      border-radius: 12px;
+      font-weight: 800;
+      font-size: 14px;
+      text-decoration: none;
+      text-transform: uppercase;
+    }
+    .festive-footer {
+      background: #f5f3ff;
+      padding: 18px 34px;
+      border-top: 2px solid #ede9fe;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="festive-card">
+    <div class="festive-banner">
+      <div class="confetti-dots">🎊 🎈 🎂 🎈 🎊</div>
+      <h1>Happy Birthday!</h1>
+      <span class="date-tag">NGÀY SINH NHẬT: <span>{{ birthday_date }}</span> • <span>{{ organization_name }}</span></span>
+    </div>
+
+    <div class="member-spotlight">
+      <h2>{{ employee_name }}</h2>
+      <div class="role-badges">
+        <span class="r-badge">💼 Chức vụ: <span>{{ position }}</span></span>
+        <span class="r-badge pink">🏢 Đơn vị: <span>{{ department }}</span></span>
+      </div>
+    </div>
+
+    <div class="festive-body">
+      {% if chuc_danh %}<p>Chức danh: <strong>{{ chuc_danh }}</strong></p>{% endif %}
+      {{ greeting|linebreaks }}
+
+      <div class="pop-btn-wrap">
+        {% if birthday_card_url %}<a href="{{ birthday_card_url }}" class="pop-btn">🎉 Bấm Để Mở Thiệp Sinh Nhật</a>{% endif %}
+      </div>
+    </div>
+
+    <div class="festive-footer">
+      <div>
+        <span style="color:#6d28d9; font-size:12px; font-weight:700;">GỬI TỪ ĐẠI GIA ĐÌNH</span><br>
+        <strong>Ban Lãnh đạo & Tập thể <span>{{ brand_name }}</span></strong>
+      </div>
+      <div style="font-size:24px;">🥳🎁</div>
+    </div>
+  </div>
+</body>
+</html>

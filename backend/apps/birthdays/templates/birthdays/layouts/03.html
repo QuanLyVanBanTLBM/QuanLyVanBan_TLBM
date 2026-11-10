@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ subject }}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: #f4f1ea;
+      font-family: 'Georgia', serif;
+      padding: 36px 16px;
+      color: #1c1917;
+    }
+    .editorial-shell {
+      max-width: 580px;
+      margin: 0 auto;
+      background: #fffdf9;
+      border: 1px solid #d6d3cd;
+      padding: 44px 42px;
+      box-shadow: 0 12px 30px rgba(28, 25, 23, 0.06);
+    }
+    .top-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 2px solid #1c1917;
+      padding-bottom: 14px;
+      margin-bottom: 28px;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 11px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+    .editorial-title {
+      font-size: 40px;
+      line-height: 1.15;
+      font-weight: 400;
+      letter-spacing: -0.5px;
+      margin-bottom: 20px;
+      color: #1c1917;
+    }
+    .editorial-title em {
+      font-style: italic;
+      color: #9a6b26;
+    }
+    .staff-dossier {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      border-top: 1px solid #d6d3cd;
+      border-bottom: 1px solid #d6d3cd;
+      padding: 16px 0;
+      margin-bottom: 28px;
+      gap: 12px;
+    }
+    .dossier-col span {
+      display: block;
+      font-family: Arial, sans-serif;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1.4px;
+      color: #78716c;
+      margin-bottom: 4px;
+    }
+    .dossier-col strong {
+      font-size: 14px;
+      color: #1c1917;
+    }
+    .letter-text p {
+      font-size: 15.5px;
+      line-height: 1.82;
+      color: #292524;
+      margin-bottom: 18px;
+      text-align: justify;
+    }
+    .dropcap::first-letter {
+      float: left;
+      font-size: 46px;
+      line-height: 0.85;
+      padding-right: 10px;
+      padding-top: 4px;
+      color: #9a6b26;
+      font-weight: 700;
+    }
+    .minimal-btn {
+      display: inline-block;
+      margin: 12px 0 28px;
+      padding: 12px 24px;
+      border: 1.5px solid #1c1917;
+      color: #1c1917;
+      text-decoration: none;
+      font-family: Arial, sans-serif;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      transition: all 0.2s;
+    }
+    .footer-sig {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-top: 1px solid #e7e5e4;
+      padding-top: 20px;
+    }
+    .footer-sig .label {
+      font-size: 13px;
+      color: #78716c;
+      font-style: italic;
+    }
+    .footer-sig .sender {
+      font-size: 15px;
+      font-weight: 700;
+      margin-top: 4px;
+    }
+    @media (max-width: 500px) {
+      .editorial-shell { padding: 28px 22px; }
+      .staff-dossier { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="editorial-shell">
+    <div class="top-meta">
+      <span>{{ organization_name }}</span>
+      <span>NGÀY SINH: <strong>{{ birthday_date }}</strong></span>
+    </div>
+
+    <h1 class="editorial-title">
+      Chúc mừng sinh nhật<br>
+      <em>{{ employee_name }}</em>
+    </h1>
+
+    <div class="staff-dossier">
+      <div class="dossier-col">
+        <span>Họ và tên</span>
+        <strong>{{ employee_name }}</strong>
+      </div>
+      <div class="dossier-col">
+        <span>Chức vụ</span>
+        <strong>{{ position }}</strong>
+      </div>
+      <div class="dossier-col">
+        <span>Phòng ban</span>
+        <strong>{{ department }}</strong>
+      </div>
+    </div>
+
+    <div class="letter-text">
+      {% if chuc_danh %}<p>Chức danh: <strong>{{ chuc_danh }}</strong></p>{% endif %}
+      {{ greeting|linebreaks }}
+    </div>
+
+    {% if birthday_card_url %}<a href="{{ birthday_card_url }}" class="minimal-btn">Mở Thiệp Chúc Mừng →</a>{% endif %}
+
+    <div class="footer-sig">
+      <div>
+        <div class="label">Trân trọng gửi lời chúc tốt đẹp nhất,</div>
+        <div class="sender">Ban Lãnh đạo và tập thể <span>{{ brand_name }}</span></div>
+      </div>
+      <div style="font-size: 22px; color: #9a6b26;">❦</div>
+    </div>
+  </div>
+</body>
+</html>

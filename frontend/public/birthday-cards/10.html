@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <script src="/birthday-cards/personalize.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Thiệp 10 - Bữa Tiệc Sắc Màu 3D (Festive Party) | Bảo Long Insurance</title>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800;900&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      background: linear-gradient(135deg, #4c1d95 0%, #7c3aed 50%, #db2777 100%);
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 40px 16px;
+      overflow-x: hidden;
+    }
+    #partyWebGL {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 1;
+    }
+    .party-card {
+      position: relative;
+      z-index: 10;
+      max-width: 590px;
+      width: 100%;
+      background: #ffffff;
+      border-radius: 24px;
+      border: 4px solid #1e1b4b;
+      box-shadow: 0 18px 0 #1e1b4b, 0 30px 60px rgba(0, 0, 0, 0.4);
+      overflow: hidden;
+    }
+    .party-top {
+      background: linear-gradient(135deg, #7c3aed 0%, #db2777 100%);
+      padding: 36px 32px;
+      text-align: center;
+      color: #ffffff;
+    }
+    .party-top h1 {
+      font-size: 38px;
+      font-weight: 900;
+      text-transform: uppercase;
+      text-shadow: 0 4px 0 rgba(0, 0, 0, 0.2);
+      margin: 8px 0;
+    }
+    .party-tag {
+      display: inline-block;
+      background: #fde047;
+      color: #1e1b4b;
+      font-weight: 800;
+      font-size: 12.5px;
+      padding: 6px 18px;
+      border-radius: 999px;
+      border: 2px solid #1e1b4b;
+    }
+    .spotlight {
+      margin: 24px 32px 14px;
+      background: #faf5ff;
+      border: 2.5px dashed #a855f7;
+      border-radius: 16px;
+      padding: 18px;
+      text-align: center;
+    }
+    .spotlight h2 {
+      font-size: 24px;
+      color: #5b21b6;
+      margin-bottom: 10px;
+    }
+    .badges {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .b-chip {
+      background: #ede9fe;
+      color: #5b21b6;
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 800;
+    }
+    .b-chip.pink {
+      background: #fce7f3;
+      color: #9d174d;
+    }
+    .party-body {
+      padding: 10px 34px 32px;
+      color: #1e1b4b;
+    }
+    .party-body p {
+      font-size: 15.5px;
+      line-height: 1.75;
+      margin-bottom: 15px;
+    }
+    .cannon-btn {
+      background: #fde047;
+      color: #1e1b4b;
+      border: 2.5px solid #1e1b4b;
+      box-shadow: 0 5px 0 #1e1b4b;
+      padding: 13px 28px;
+      border-radius: 14px;
+      font-weight: 900;
+      font-size: 14px;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: transform 0.1s;
+    }
+    .cannon-btn:active {
+      transform: translateY(3px);
+      box-shadow: 0 2px 0 #1e1b4b;
+    }
+    .party-foot {
+      background: #f5f3ff;
+      padding: 18px 34px;
+      border-top: 2px solid #ede9fe;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="partyWebGL"></canvas>
+
+  <div class="party-card" id="pCard">
+    <div class="party-top">
+      <div style="font-size:22px; letter-spacing:8px;">🎊 🎈 🎂 🎈 🎊</div>
+      <h1>Happy Birthday!</h1>
+      <span class="party-tag">SINH NHẬT <span data-card-field="birthday_date">—</span> • <span data-card-field="organization_name">BẢO LONG INSURANCE</span></span>
+    </div>
+
+    <div class="spotlight">
+      <h2 data-card-field="employee_name">—</h2>
+      <div class="badges">
+        <span class="b-chip">💼 Chức vụ: <span data-card-field="position">—</span></span>
+        <span class="b-chip pink">🏢 Đơn vị: <span data-card-field="department">—</span></span>
+      </div>
+    </div>
+
+    <div class="party-body">
+      <p>Chào <strong data-card-field="employee_name">—</strong>,</p>
+      <p>
+        Chúc mừng ngày sinh nhật <strong data-card-field="birthday_date">—</strong>! Đại gia đình <strong data-card-field="organization_name">Bảo Long Insurance</strong> chúc bạn một tuổi mới rực rỡ sắc màu, tràn đầy năng lượng và ngập tràn những điều tuyệt vời nhất!
+      </p>
+      <p>
+        Cảm ơn bạn vì đã luôn cháy hết mình trên cương vị <strong data-card-field="position">—</strong> và cùng tập thể <strong data-card-field="department">—</strong> tạo nên biết bao dấu ấn đáng tự hào.
+      </p>
+
+      <div style="text-align:center; margin: 22px 0 8px;">
+        <button class="cannon-btn" id="cannonBtn">🎉 Bắn Đại Bác Pháo Giấy Chúc Mừng!</button>
+      </div>
+    </div>
+
+    <div class="party-foot">
+      <div>
+        <small style="color:#6d28d9; font-weight:800; display:block;">GỬI TỪ ĐẠI GIA ĐÌNH</small>
+        <strong>Ban Lãnh đạo & Tập thể <span data-card-field="organization_name">Bảo Long Insurance</span></strong>
+      </div>
+      <div style="font-size:26px;">🥳🎁</div>
+    </div>
+  </div>
+
+
+</body>
+</html>

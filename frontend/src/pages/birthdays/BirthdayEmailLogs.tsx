@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { ApiError, apiClient } from '@lib/apiClient';
 import { useTranslation } from '@i18n/translate';
+import { Button } from '@components/common/Button';
+import BirthdayEmailComposer from './BirthdayEmailComposer';
+import { birthdayEmailError, type DeliveryResult } from './emailDelivery';
 
 type EmailStatus = 'PENDING' | 'SENDING' | 'SUCCESS' | 'FAILED' | 'RETRY';
 type StatusFilter = EmailStatus | 'ALL';
@@ -17,6 +20,12 @@ interface BirthdayEmailLog {
   retry_count: number;
   error_message: string;
   smtp_response_code: string;
+  delivery_source: 'AUTO' | 'MANUAL';
+  delivery_uncertain: boolean;
+  template_version: string | null;
+  last_operator: string | null;
+  can_retry: boolean;
+  current_recipient: string | null;
 }
 
 interface BirthdayEmailLogsResponse {
@@ -84,6 +93,9 @@ export default function BirthdayEmailLogs() {
   const [status, setStatus] = useState<StatusFilter>('ALL');
   const [page, setPage] = useState(1);
   const [retry, setRetry] = useState(0);
+  const [showComposer, setShowComposer] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const [actionNotice, setActionNotice] = useState<{ key: string; error: boolean } | null>(null);
   const [loadState, setLoadState] = useState<LoadState>({ key: '', data: null, error: null });
   const selectedDateRef = useRef(initialToday);
   const followTodayRef = useRef(true);
@@ -164,6 +176,35 @@ export default function BirthdayEmailLogs() {
     setPage(1);
   };
 
+  const deliveryFinished = (log: DeliveryResult) => {
+    setShowComposer(false);
+    setActionNotice({
+      key: log.delivery_uncertain ? 'needsReview' : log.trang_thai === 'SUCCESS' ? 'sent' : 'sendFailed',
+      error: log.trang_thai !== 'SUCCESS',
+    });
+    returnToToday();
+    setStatus('ALL');
+    setRetry((value) => value + 1);
+  };
+
+  const retryEmail = async (log: BirthdayEmailLog) => {
+    const recipient = log.current_recipient;
+    if (!recipient || !window.confirm(t('birthdayPage.manualEmail.retryConfirm', { email: recipient }))) return;
+    setRetrying(true);
+    setActionNotice(null);
+    try {
+      const response = await apiClient.post<{ log: DeliveryResult }>(
+        `/api/birthdays/logs/${log.id}/retry/`, { recipient },
+      );
+      deliveryFinished(response.log);
+    } catch (reason) {
+      setActionNotice({ key: birthdayEmailError(reason), error: true });
+      setRetry((value) => value + 1);
+    } finally {
+      setRetrying(false);
+    }
+  };
+
   return (
     <section
       aria-labelledby="birthday-email-logs-title"
@@ -220,10 +261,26 @@ export default function BirthdayEmailLogs() {
           >
             {t('birthdayPage.emailLogs.refresh')}
           </button>
+          {data && !error && (
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => { setActionNotice(null); setShowComposer(true); }}
+              className="min-h-9"
+            >
+              {t('birthdayPage.manualEmail.open')}
+            </Button>
+          )}
         </div>
       </header>
 
       <div className="mt-4">
+        {actionNotice && (
+          <p className={actionNotice.error ? 'mb-3 text-sm text-danger' : 'mb-3 text-sm text-success'}
+            role={actionNotice.error ? 'alert' : 'status'}>
+            {t(actionNotice.key.includes('.') ? actionNotice.key : `birthdayPage.manualEmail.${actionNotice.key}`)}
+          </p>
+        )}
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-secondary">
           <p>{t('birthdayPage.emailLogs.viewingDate', { date: displayDate(selectedDate) })}</p>
           {!loading && !error && data && (
@@ -258,6 +315,7 @@ export default function BirthdayEmailLogs() {
                     <th scope="col" className="px-3 py-2.5 font-semibold">{t('birthdayPage.emailLogs.sentAt')}</th>
                     <th scope="col" className="px-3 py-2.5 font-semibold">{t('birthdayPage.emailLogs.status')}</th>
                     <th scope="col" className="px-3 py-2.5 font-semibold">{t('birthdayPage.emailLogs.retries')}</th>
+                    <th scope="col" className="px-3 py-2.5 font-semibold">{t('birthdayPage.manualEmail.source')}</th>
                     <th scope="col" className="px-3 py-2.5 font-semibold">{t('birthdayPage.emailLogs.details')}</th>
                   </tr>
                 </thead>
@@ -276,8 +334,21 @@ export default function BirthdayEmailLogs() {
                         </span>
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums">{log.retry_count}</td>
+                      <td className="px-3 py-3 text-secondary">
+                        {t(log.delivery_source === 'MANUAL' ? 'birthdayPage.manualEmail.manual' : 'birthdayPage.manualEmail.automatic')}
+                        {log.last_operator && <p className="text-xs">{log.last_operator}</p>}
+                        {log.template_version && <p className="text-xs">{log.template_version}</p>}
+                      </td>
                       <td className="max-w-sm px-3 py-3 text-secondary">
-                        {log.error_message || log.smtp_response_code || '—'}
+                        {log.delivery_uncertain ? t('birthdayPage.manualEmail.needsReview') : log.error_message || log.smtp_response_code || '—'}
+                        {log.can_retry && (
+                          <button
+                            type="button" onClick={() => void retryEmail(log)} disabled={retrying || !log.current_recipient}
+                            className="mt-1 block whitespace-nowrap font-semibold text-primary hover:underline disabled:opacity-50"
+                          >
+                            {t('birthdayPage.manualEmail.retry')}
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -316,6 +387,13 @@ export default function BirthdayEmailLogs() {
           </>
         )}
       </div>
+      {showComposer && (
+        <BirthdayEmailComposer
+          initialYear={projectToday().slice(0, 4)}
+          onClose={() => setShowComposer(false)}
+          onDelivered={deliveryFinished}
+        />
+      )}
     </section>
   );
 }
