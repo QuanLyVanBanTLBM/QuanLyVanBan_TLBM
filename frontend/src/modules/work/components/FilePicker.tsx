@@ -34,6 +34,22 @@ export function fileIconClass(fileName: string): string {
   return 'fa-solid fa-file';
 }
 
+/** Mở file mới chọn (File object) trong tab mới. Ảnh/PDF xem trực tiếp; doc/docx tải về. */
+export function previewLocalFile(file: File): void {
+  const url = URL.createObjectURL(file);
+  const ext = fileExtension(file.name);
+  if (['pdf', 'jpg', 'jpeg', 'png'].includes(ext)) {
+    window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } else {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = file.name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5_000);
+  }
+}
+
 /** Trả về câu lỗi nêu rõ cách khắc phục, hoặc null khi file hợp lệ. */
 export function validateWorkFile(file: File): string | null {
   const extension = fileExtension(file.name);
@@ -173,20 +189,29 @@ export default function FilePicker({
               }}
             >
               <i className={fileIconClass(file.name)} style={{ color: 'var(--color-primary)' }} />
-              <span
+              <button
+                type="button"
+                onClick={() => previewLocalFile(file)}
+                title={file.name}
                 style={{
                   flex: 1,
                   minWidth: 0,
+                  padding: 0,
+                  border: 'none',
+                  background: 'transparent',
+                  color: 'var(--color-primary)',
                   fontSize: '0.84rem',
-                  color: 'var(--text-main)',
+                  fontWeight: 600,
+                  fontFamily: 'inherit',
+                  textAlign: 'left',
+                  cursor: 'pointer',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
                 }}
-                title={file.name}
               >
                 {file.name}
-              </span>
+              </button>
               <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>{formatFileSize(file.size)}</span>
               <button
                 type="button"

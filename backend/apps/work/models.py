@@ -226,8 +226,8 @@ class TaskQuerySet(models.QuerySet):
         YÊU CẦU: gọi SAU .with_status() vì cần cột annotate `status`.
 
         Bậc ưu tiên (cao → thấp):
-          1. User là chủ trì/tham gia, việc còn phải làm (Chờ xử lý hoặc Đang xử lý).
-          2. User là chỉ đạo/chủ trì/người tạo, việc đang Chờ duyệt (chờ chính user duyệt minh chứng).
+          1. User là chỉ đạo/chủ trì/người tạo, việc đang Chờ duyệt (chờ chính user duyệt minh chứng).
+          2. User là chủ trì/tham gia, việc còn phải làm (Chờ xử lý hoặc Đang xử lý).
           3. User là chủ trì/tham gia, việc đã trễ (Quá hạn hoặc Chưa hoàn thành).
           4. Các việc còn lại user có quyền xem.
         Trong cùng một bậc: sắp theo due_date tăng dần (do view order_by đảm nhận).
@@ -247,13 +247,13 @@ class TaskQuerySet(models.QuerySet):
         ).annotate(
             priority_bucket=Case(
                 When(
-                    (Q(_is_host=True) | Q(_is_part=True))
-                    & Q(status__in=[TaskStatus.CHO_XU_LY, TaskStatus.DANG_XU_LY]),
+                    (Q(_is_dir=True) | Q(_is_host=True) | Q(created_by=user))
+                    & Q(status=TaskStatus.CHO_DUYET),
                     then=Value(1),
                 ),
                 When(
-                    (Q(_is_dir=True) | Q(_is_host=True) | Q(created_by=user))
-                    & Q(status=TaskStatus.CHO_DUYET),
+                    (Q(_is_host=True) | Q(_is_part=True))
+                    & Q(status__in=[TaskStatus.CHO_XU_LY, TaskStatus.DANG_XU_LY]),
                     then=Value(2),
                 ),
                 When(
