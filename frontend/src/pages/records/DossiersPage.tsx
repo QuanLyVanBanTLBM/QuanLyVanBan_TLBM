@@ -230,30 +230,34 @@ export default function DossiersPage() {
           </div>
         ) : (
           <>
-            <div className="p-4">
-              <Table>
+            <div className="p-2 sm:p-4">
+              <Table className="table-fixed sm:table-auto">
                 <TableHeader><TableRow>
-                  <TableHead className="w-20">{t('records.table.index')}</TableHead>
-                  <TableHead>{t('records.dossiers.reference')}</TableHead>
-                  <TableHead>{t('records.dossiers.name')}</TableHead>
-                  <TableHead>{t('records.dossiers.creator')}</TableHead>
-                  <TableHead>{t('records.table.createdDate')}</TableHead>
-                  <TableHead className="text-right">{t('records.table.action')}</TableHead>
+                  <TableHead className="w-10 px-1 sm:w-20 sm:px-4">{t('records.table.index')}</TableHead>
+                  <TableHead className="hidden sm:table-cell">{t('records.dossiers.reference')}</TableHead>
+                  <TableHead className="px-2 sm:px-4">{t('records.dossiers.name')}</TableHead>
+                  <TableHead className="hidden sm:table-cell">{t('records.dossiers.creator')}</TableHead>
+                  <TableHead className="hidden sm:table-cell">{t('records.table.createdDate')}</TableHead>
+                  <TableHead className="w-36 px-1 text-right sm:w-auto sm:px-4">{t('records.table.action')}</TableHead>
                 </TableRow></TableHeader>
                 <TableBody>
                   {items.map((item, index) => (
                     <TableRow key={item.id} className="cursor-pointer" onClick={() => navigate(`/records/${item.id}/document-types`, { state: { dossier: item } })}>
-                      <TableCell>{item.stt_uu_tien ?? (page - 1) * PAGE_SIZE + index + 1}</TableCell>
-                      <TableCell><Badge variant="secondary">{item.so_ky_hieu || '—'}</Badge></TableCell>
-                      <TableCell><div className="font-semibold text-main">{item.ten_ho_so}</div>{item.ghi_chu && <div className="mt-1 max-w-sm truncate text-xs text-muted">{item.ghi_chu}</div>}</TableCell>
-                      <TableCell>{creatorName(item.nguoi_lap)}</TableCell>
-                      <TableCell className="whitespace-nowrap">{displayDate(item.ngay_lap, currentLang === 'vi' ? 'vi-VN' : 'en-US')}</TableCell>
-                      <TableCell>
-                        <div className="flex justify-end gap-1">
-                          <Button type="button" size="sm" variant="ghost" icon="fa-folder-open" onClick={(event) => { event.stopPropagation(); navigate(`/records/${item.id}/document-types`, { state: { dossier: item } }); }} aria-label={t('records.dossiers.viewDocumentTypesLabel', { name: item.ten_ho_so })}>{t('records.actions.view')}</Button>
-                          <Button type="button" size="sm" variant="ghost" icon="fa-pen" onClick={(event) => { event.stopPropagation(); setSaveError(null); setEditing(item); }} aria-label={t('records.dossiers.editLabel', { name: item.ten_ho_so })} />
+                      <TableCell className="break-words px-1 sm:px-4">{item.stt_uu_tien ?? (page - 1) * PAGE_SIZE + index + 1}</TableCell>
+                      <TableCell className="hidden sm:table-cell"><Badge variant="secondary">{item.so_ky_hieu || '—'}</Badge></TableCell>
+                      <TableCell className="px-2 sm:px-4">
+                        <div className="break-words font-semibold text-main sm:break-normal">{item.ten_ho_so}</div>
+                        <div className="mt-1 break-all text-xs text-secondary sm:hidden">{item.so_ky_hieu || '—'}</div>
+                        {item.ghi_chu && <div className="mt-1 hidden max-w-sm truncate text-xs text-muted sm:block">{item.ghi_chu}</div>}
+                      </TableCell>
+                      <TableCell className="hidden sm:table-cell">{creatorName(item.nguoi_lap)}</TableCell>
+                      <TableCell className="hidden whitespace-nowrap sm:table-cell">{displayDate(item.ngay_lap, currentLang === 'vi' ? 'vi-VN' : 'en-US')}</TableCell>
+                      <TableCell className="px-1 sm:px-4">
+                        <div className="flex justify-end sm:gap-1">
+                          <Button type="button" size="sm" variant="ghost" icon="fa-folder-open" className="h-11 w-11 shrink-0 sm:h-auto sm:w-auto" title={t('records.actions.view')} onClick={(event) => { event.stopPropagation(); navigate(`/records/${item.id}/document-types`, { state: { dossier: item } }); }} aria-label={t('records.dossiers.viewDocumentTypesLabel', { name: item.ten_ho_so })}><span className="sr-only sm:not-sr-only">{t('records.actions.view')}</span></Button>
+                          <Button type="button" size="sm" variant="ghost" icon="fa-pen" className="h-11 w-11 shrink-0 sm:h-auto sm:w-auto" title={t('records.actions.edit')} onClick={(event) => { event.stopPropagation(); setSaveError(null); setEditing(item); }} aria-label={t('records.dossiers.editLabel', { name: item.ten_ho_so })} />
                           {!item.is_he_thong && (
-                            <Button type="button" size="sm" variant="ghost" icon="fa-trash" className="text-danger hover:text-danger" onClick={(event) => { event.stopPropagation(); setDeleting(item); }} aria-label={t('records.dossiers.deleteLabel', { name: item.ten_ho_so })} />
+                            <Button type="button" size="sm" variant="ghost" icon="fa-trash" className="h-11 w-11 shrink-0 text-danger hover:text-danger sm:h-auto sm:w-auto" title={t('records.actions.delete')} onClick={(event) => { event.stopPropagation(); setDeleting(item); }} aria-label={t('records.dossiers.deleteLabel', { name: item.ten_ho_so })} />
                           )}
                         </div>
                       </TableCell>
