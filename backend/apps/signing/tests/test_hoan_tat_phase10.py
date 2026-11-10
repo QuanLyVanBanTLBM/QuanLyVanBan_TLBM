@@ -216,4 +216,4 @@ class DinhDangChuKyTests(HoanTatBase):
         self.assertEqual(len(draw_centred_calls), 1)
         args, _ = draw_centred_calls[0]
         self.assertEqual(args[2], "NGUYỄN VĂN LONG HOÀNG NAM")
-        c.rect.assert_not_called()
+        c.rect.assert_called_once_with(98.5, 198.5, 83, 53, fill=1, stroke=0)
