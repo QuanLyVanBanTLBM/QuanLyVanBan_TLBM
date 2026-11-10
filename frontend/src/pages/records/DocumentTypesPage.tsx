@@ -370,59 +370,67 @@ export default function DocumentTypesPage() {
           </div>
         ) : (
           <>
-            <div className="p-4">
-              <Table>
+            <div className="p-2 sm:p-4">
+              <Table className="table-fixed sm:table-auto">
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-20">{t('records.table.index')}</TableHead>
-                    <TableHead>{t('records.documentTypes.name')}</TableHead>
-                    {!dossierId && <TableHead>{t('records.common.dossier')}</TableHead>}
-                    <TableHead>{t('records.table.createdDate')}</TableHead>
-                    <TableHead>{t('records.table.note')}</TableHead>
-                    <TableHead className="text-right">{t('records.table.action')}</TableHead>
+                    <TableHead className="w-10 px-1 sm:w-20 sm:px-4">{t('records.table.index')}</TableHead>
+                    <TableHead className="px-2 sm:px-4">{t('records.documentTypes.name')}</TableHead>
+                    {!dossierId && <TableHead className="hidden sm:table-cell">{t('records.common.dossier')}</TableHead>}
+                    <TableHead className="hidden sm:table-cell">{t('records.table.createdDate')}</TableHead>
+                    <TableHead className="hidden sm:table-cell">{t('records.table.note')}</TableHead>
+                    <TableHead className="w-36 px-1 text-right sm:w-auto sm:px-4">{t('records.table.action')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {items.map((item, index) => (
                     <TableRow key={item.id} className="cursor-pointer" onClick={() => setSelectedCategory(item)}>
-                      <TableCell>{(page - 1) * PAGE_SIZE + index + 1}</TableCell>
-                      <TableCell>
-                        <button type="button" className="cursor-pointer text-left font-semibold text-primary hover:underline"
+                      <TableCell className="break-words px-1 sm:px-4">{(page - 1) * PAGE_SIZE + index + 1}</TableCell>
+                      <TableCell className="px-2 sm:px-4">
+                        <button type="button" className="max-w-full cursor-pointer break-words text-left font-semibold text-primary hover:underline sm:break-normal"
                           onClick={(event) => { event.stopPropagation(); setSelectedCategory(item); }}>{item.ten_loai}</button>
+                        {!dossierId && <div className="mt-1 break-words text-xs text-secondary sm:hidden">{item.ten_ho_so || `#${typeof item.ho_so === 'object' ? item.ho_so.id : item.ho_so}`}</div>}
                       </TableCell>
-                      {!dossierId && <TableCell>{item.ten_ho_so || `#${typeof item.ho_so === 'object' ? item.ho_so.id : item.ho_so}`}</TableCell>}
-                      <TableCell className="whitespace-nowrap">{displayDate(item.ngay_lap)}</TableCell>
-                      <TableCell>
+                      {!dossierId && <TableCell className="hidden sm:table-cell">{item.ten_ho_so || `#${typeof item.ho_so === 'object' ? item.ho_so.id : item.ho_so}`}</TableCell>}
+                      <TableCell className="hidden whitespace-nowrap sm:table-cell">{displayDate(item.ngay_lap)}</TableCell>
+                      <TableCell className="hidden sm:table-cell">
                         <span className="block max-w-md truncate text-secondary">
                           {item.ghi_chu || '—'}
                         </span>
                       </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex flex-wrap justify-end gap-2">
+                      <TableCell className="px-1 text-right sm:px-4">
+                        <div className="flex justify-end sm:flex-wrap sm:gap-2">
                         <Button
                           type="button"
                           size="sm"
                           variant="ghost"
                           icon="fa-folder-open"
+                          className="h-11 w-11 shrink-0 sm:h-auto sm:w-auto"
+                          aria-label={t('records.actions.viewDocuments')}
+                          title={t('records.actions.viewDocuments')}
                           onClick={(event) => {
                             event.stopPropagation();
                             setSelectedCategory(item);
                           }}
                         >
-                          {t('records.actions.viewDocuments')}
+                          <span className="sr-only sm:not-sr-only">{t('records.actions.viewDocuments')}</span>
                         </Button>
                         {canEdit && (
                           <Button type="button" size="sm" variant="ghost" icon="fa-pen"
+                            className="h-11 w-11 shrink-0 sm:h-auto sm:w-auto"
+                            title={t('records.actions.edit')}
                             aria-label={t('records.documentTypes.editLabel', { name: item.ten_loai })}
                             onClick={(event) => { event.stopPropagation(); setSaveError(null); setEditing(item); }}>
-                            {t('records.actions.edit')}
+                            <span className="sr-only sm:not-sr-only">{t('records.actions.edit')}</span>
                           </Button>
                         )}
                         {canDelete && (
                           <Button type="button" size="sm" variant="ghost" icon="fa-trash"
+                            className="h-11 w-11 shrink-0 sm:h-auto sm:w-auto"
+                            title={t('records.actions.delete')}
                             aria-label={t('records.documentTypes.deleteLabel', { name: item.ten_loai })}
                             onClick={(event) => { event.stopPropagation(); setDeleteError(null); setDeleting(item); }}>
-                            {t('records.actions.delete')}
+                            <span className="sr-only sm:not-sr-only">{t('records.actions.delete')}</span>
                           </Button>
                         )}
                         </div>
