@@ -47,13 +47,15 @@ function KhungKy({ k, onKeo }: { k: KhungHienThi; onKeo?: Props['onKeo'] }) {
   const keo = useRef<{ px: number; py: number; x: number; y: number; rect: DOMRect } | null>(null);
   const coTheKeo = k.kieu === 'dat' && onKeo;
   const mau = {
-    dat: 'border-primary bg-primary-subtle text-primary cursor-move',
-    da_ky: 'border-success bg-success-subtle text-success',
-    cho: 'border-dashed border-warning bg-warning-subtle text-warning-text',
+    dat: 'border-2 border-dashed border-primary bg-primary/5 hover:bg-primary/10 text-primary cursor-move',
+    da_ky: k.anhUrl
+      ? 'border border-transparent bg-transparent text-main'
+      : 'border border-dashed border-border-subtle bg-transparent text-main',
+    cho: 'border-2 border-dashed border-warning/80 bg-transparent text-warning-text',
   }[k.kieu];
   return (
     <div
-      className={`absolute flex flex-col items-center justify-center overflow-hidden rounded-xs border-2 px-1 text-center text-xs font-semibold leading-tight select-none ${mau}`}
+      className={`absolute flex flex-col items-center justify-center overflow-hidden rounded-xs px-1 text-center text-xs font-semibold leading-tight select-none ${mau}`}
       style={{ left: `${k.x}%`, top: `${k.y}%`, width: `${k.w}%`, height: `${k.h}%` }}
       onPointerDown={(e) => {
         if (!coTheKeo) return;
@@ -75,9 +77,25 @@ function KhungKy({ k, onKeo }: { k: KhungHienThi; onKeo?: Props['onKeo'] }) {
       onClick={(e) => e.stopPropagation()}
       data-testid={`khung-${k.id}`}
     >
-      {k.anhUrl && <img src={k.anhUrl} alt="" className="max-h-[70%] max-w-full object-contain" />}
-      <span className="font-bold truncate max-w-full">{k.nhan}</span>
-      {k.phu && <span className="truncate max-w-full">{k.phu}</span>}
+      {k.anhUrl && (
+        <img
+          src={k.anhUrl}
+          alt=""
+          className="max-h-[70%] max-w-full object-contain pointer-events-none select-none"
+        />
+      )}
+      <span
+        className="font-bold uppercase truncate max-w-full whitespace-nowrap tracking-tight leading-normal"
+        style={{ fontFamily: '"Times New Roman", Times, serif' }}
+        title={k.nhan}
+      >
+        {k.nhan}
+      </span>
+      {k.phu && !k.anhUrl && (
+        <span className="truncate max-w-full text-[11px] opacity-80 whitespace-nowrap">
+          {k.phu}
+        </span>
+      )}
     </div>
   );
 }
