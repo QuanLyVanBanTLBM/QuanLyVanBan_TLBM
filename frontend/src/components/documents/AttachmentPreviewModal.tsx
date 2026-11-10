@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { apiClientBlob } from '@lib/apiClient';
 import { formatFileSize } from '@lib/fileUtils';
+import { extractDocxParagraphs } from '@lib/filePreview';
 
 export interface AttachmentPreviewTarget {
   name: string;
@@ -14,60 +15,6 @@ export interface AttachmentPreviewModalProps {
   isOpen: boolean;
   onClose: () => void;
   target: AttachmentPreviewTarget | null;
-}
-
-/**
- * Trích xuất các đoạn văn bản (paragraphs) từ tệp Word (.docx) bằng native Web Streams API
- * hoàn toàn không cần thư viện ngoài.
- */
-async function extractDocxParagraphs(arrayBuffer: ArrayBuffer): Promise<string[]> {
-  const uint8 = new Uint8Array(arrayBuffer);
-  const view = new DataView(uint8.buffer, uint8.byteOffset, uint8.byteLength);
-
-  let offset = 0;
-  while (offset < uint8.length - 4) {
-    // 0x04034b50 là Local file header signature trong định dạng ZIP
-    if (view.getUint32(offset, true) === 0x04034b50) {
-      const compMethod = view.getUint16(offset + 8, true);
-      const compSize = view.getUint32(offset + 18, true);
-      const nameLen = view.getUint16(offset + 26, true);
-      const extraLen = view.getUint16(offset + 28, true);
-      const nameBytes = uint8.subarray(offset + 30, offset + 30 + nameLen);
-      const name = new TextDecoder('utf-8').decode(nameBytes);
-      const dataStart = offset + 30 + nameLen + extraLen;
-
-      if (name === 'word/document.xml') {
-        const compressedData = uint8.subarray(dataStart, dataStart + compSize);
-        let xmlStr = '';
-        if (compMethod === 0) {
-          xmlStr = new TextDecoder('utf-8').decode(compressedData);
-        } else if (compMethod === 8) {
-          // DecompressionStream('deflate-raw') hỗ trợ chuẩn trong mọi trình duyệt hiện đại
-          const ds = new DecompressionStream('deflate-raw');
-          const writer = ds.writable.getWriter();
-          writer.write(compressedData);
-          void writer.close();
-          const response = new Response(ds.readable);
-          xmlStr = await response.text();
-        }
-
-        // Tách các thẻ đoạn văn bản <w:p>
-        const paragraphs = xmlStr.match(/<w:p[\s>].*?<\/w:p>/g) || [];
-        const lines = paragraphs
-          .map((p) => {
-            const texts = p.match(/<w:t[\s>].*?<\/w:t>/g) || [];
-            return texts.map((t) => t.replace(/<[^>]+>/g, '')).join('');
-          })
-          .filter((line) => line.trim().length > 0);
-
-        return lines;
-      }
-      offset = dataStart + compSize;
-    } else {
-      offset++;
-    }
-  }
-  return [];
 }
 
 export const AttachmentPreviewModal: React.FC<AttachmentPreviewModalProps> = ({
