@@ -165,11 +165,16 @@ function ChiTietHoSo({ id }: { id: number }) {
     }
   };
 
+  const coChuKy = (luot?.cap_ky || []).some((c) => c.nguoi_ky.some((n) => n.trang_thai === 'DA_KY' && n.chu_ky));
+
   const taiTepHienTai = async () => {
     try {
       if (hoSo.trang_thai === 'HOAN_THANH') {
         const b = await signingApi.tepHoanTat(hoSo.id);
         luuTep(b, tenTepTaiVe(hoSo.id, 'HOAN_TAT'));
+      } else if (coChuKy) {
+        const b = await signingApi.tepDaKy(hoSo.id);
+        luuTep(b, tenTepTaiVe(hoSo.id, 'DA_KY'));
       } else if (tep) {
         luuTep(new Blob([tep], { type: 'application/pdf' }), tenTepTaiVe(hoSo.id, 'DU_THAO'));
       }
@@ -184,6 +189,9 @@ function ChiTietHoSo({ id }: { id: number }) {
     try {
       if (hoSo.trang_thai === 'HOAN_THANH') {
         const b = await signingApi.tepHoanTat(hoSo.id);
+        inPdf(b);
+      } else if (coChuKy) {
+        const b = await signingApi.tepDaKy(hoSo.id);
         inPdf(b);
       } else if (tep) {
         inPdf(new Blob([tep], { type: 'application/pdf' }));
