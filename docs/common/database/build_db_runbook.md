@@ -145,7 +145,13 @@ sudo apt-get install postgresql-16-pgvector
 sudo -u postgres psql -d postgres -Atc "SELECT default_version FROM pg_available_extensions WHERE name='vector'"
 ```
 
-Lệnh kiểm tra phải trả về `0.7.0` trở lên. Cài package chỉ bổ sung extension files cho server; migration mới đăng ký extension và thêm bảng/index vào DB, không rebuild/reset DB. `deploy.sh` cũng kiểm tra prerequisite này trước khi dừng service hoặc tạo backup; nếu thiếu, deployment dừng và hướng dẫn cài package.
+Lệnh kiểm tra phải trả về `0.7.0` trở lên. Cài package chỉ bổ sung extension files cho server; do `vector` không phải trusted extension, quản trị viên PostgreSQL phải bật extension một lần trong đúng DB ứng dụng sau khi package có sẵn:
+
+```bash
+sudo -u postgres psql -d "$DB_NAME" -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION IF NOT EXISTS vector;'
+```
+
+Đây là thay đổi additive ở catalog của DB, không rebuild/reset DB và không sửa bảng/dữ liệu nghiệp vụ hiện có. Nếu extension đã có nhưng cũ, quản trị viên nâng cấp nó bằng `ALTER EXTENSION vector UPDATE;`. Migration ứng dụng chỉ thêm bảng/index AI sau khi extension tương thích đã được bật. `deploy.sh` kiểm tra server files, phiên bản extension trong DB đích và phiên bản tối thiểu bằng truy vấn chỉ đọc, trước khi dừng service hoặc tạo backup; nếu thiếu/sai phiên bản, deployment dừng và hướng dẫn prerequisite còn thiếu.
 
 - User deploy là user chạy script, có quyền ghi `/srv/qlvb` và `~/deploy`, có role PostgreSQL cùng tên (kết nối qua socket `/var/run/postgresql`, peer) để restore vào DB tạm, và `python3` (3.12) kèm `venv`.
 - Quyền `sudo` không mật khẩu đã dùng: `sudo -n -u postgres /usr/bin/createdb`, `sudo -n -u postgres /usr/bin/dropdb`, `sudo -n /usr/bin/systemctl stop qlvb-backend`, `sudo -n /usr/bin/systemctl restart qlvb-backend`, và ba lệnh nginx (đúng nguyên văn, không thêm quyền ghi khác vào `/etc/nginx`):
