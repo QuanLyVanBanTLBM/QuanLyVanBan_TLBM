@@ -1311,20 +1311,23 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
         }
       }
     }
-    if (form.pham_vi === 'HAN_CHE') {
-      if (selectedRecipientUnits.length === 0) {
-        setAlertMsg('Văn bản hạn chế bắt buộc phải chọn Đơn vị nhận trước (*)');
-        setAlertOpen(true);
-        return;
-      }
-      if (!form.nguoi_nhan || form.nguoi_nhan.length === 0) {
-        setAlertMsg('Văn bản hạn chế bắt buộc phải chọn ít nhất một cán bộ nhận / xử lý (*)');
-        setAlertOpen(true);
-        return;
-      }
+    if (!form.nguoi_ky?.trim()) {
+      setAlertMsg('Vui lòng nhập họ và tên Người ký văn bản (*)');
+      setAlertOpen(true);
+      return;
     }
-    if (form.nguoi_nhan && form.nguoi_nhan.length > 0 && selectedRecipientUnits.length === 0) {
-      setAlertMsg('Vui lòng chọn đơn vị nhận trước khi chọn cán bộ (*)');
+    if (!form.chuc_vu?.trim()) {
+      setAlertMsg('Vui lòng nhập Chức vụ người ký (*)');
+      setAlertOpen(true);
+      return;
+    }
+    if (selectedRecipientUnits.length === 0) {
+      setAlertMsg('Vui lòng chọn Đơn vị nhận / chủ trì xử lý (*)');
+      setAlertOpen(true);
+      return;
+    }
+    if (!form.nguoi_nhan || form.nguoi_nhan.length === 0) {
+      setAlertMsg('Vui lòng chọn ít nhất một Cán bộ nhận / xử lý (*)');
       setAlertOpen(true);
       return;
     }
@@ -2075,12 +2078,14 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
               {/* Người ký */}
               <div className="col-span-12 sm:col-span-6">
                 <label className="block text-xs font-semibold text-secondary mb-1.5">
-                  {t('documents_ui.formModal.signer') || 'Người ký văn bản'}
+                  {t('documents_ui.formModal.signer') || 'Người ký văn bản'}{' '}
+                  <span className="text-rose-500">*</span>
                 </label>
                 <input
                   disabled={!canEditGeneral} value={form.nguoi_ky}
                   onChange={e => setForm({ ...form, nguoi_ky: e.target.value })}
                   placeholder={t('documents_ui.formModal.signerPlaceholder') || 'Họ và tên người ký (VD: Nguyễn Văn A)'}
+                  required
                   className="w-full text-sm bg-surface border border-border-subtle rounded-xl px-3 py-2 text-main placeholder:text-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-fast"
                 />
               </div>
@@ -2088,12 +2093,14 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
               {/* Chức vụ */}
               <div className="col-span-12 sm:col-span-6">
                 <label className="block text-xs font-semibold text-secondary mb-1.5">
-                  {t('documents_ui.formModal.position') || 'Chức vụ người ký'}
+                  {t('documents_ui.formModal.position') || 'Chức vụ người ký'}{' '}
+                  <span className="text-rose-500">*</span>
                 </label>
                 <input
                   disabled={!canEditGeneral} value={form.chuc_vu}
                   onChange={e => setForm({ ...form, chuc_vu: e.target.value })}
                   placeholder={t('documents_ui.formModal.positionPlaceholder') || 'VD: Thứ trưởng, Giám đốc, Hiệu trưởng...'}
+                  required
                   className="w-full text-sm bg-surface border border-border-subtle rounded-xl px-3 py-2 text-main placeholder:text-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-fast"
                 />
               </div>
@@ -2607,6 +2614,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-semibold text-secondary flex items-center gap-1">
                     <span>{t('documents_ui.formModal.receivingUnit') || 'Đơn vị nhận / chủ trì xử lý'}</span>
+                    <span className="text-rose-500">*</span>
                     {selectedRecipientUnits.length > 0 && (
                       <span className="text-[11px] text-primary font-medium">
                         ({selectedRecipientUnits.length} đơn vị)
@@ -2758,6 +2766,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-semibold text-secondary flex items-center gap-1">
                     <span>Cán bộ nhận / xử lý</span>
+                    <span className="text-rose-500">*</span>
                     {selectedRecipientUnits.length === 0 ? (
                       <span className="text-[11px] text-muted font-normal">(Chưa chọn đơn vị)</span>
                     ) : (

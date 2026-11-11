@@ -1,12 +1,16 @@
 import io
 import openpyxl
+from datetime import datetime
+from django.db import models
 from django.test import TestCase
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from documents.models import (
     VanBanDen,
     VanBanDi,
     PhamVi,
     LoaiVanBan,
+    HieuLuc,
     VanBanDenHoSo,
     VanBanDenDanhmuc,
     VanBanDiHoSo,
@@ -20,28 +24,135 @@ from documents.services import (
     ensure_standard_hoso_and_doc_types,
 )
 from records.models import HoSo, LoaiVanBan as RecordLoaiVanBan
+from organizations.models import DonVi, KhoiKhuVuc
+from accounts.models import Employee, EmployeeAssignment, Position
 
 User = get_user_model()
 
 
 class ExcelAutoHierarchyAndValidationTests(TestCase):
     def setUp(self):
-        self.user = User.objects.create_user(
-            username="vanthu_test",
-            password="password123",
-            email="vanthu@test.com",
-            is_staff=True,
-            is_superuser=True,
+        # Thiết lập cơ cấu tổ chức chuẩn
+        khoi = KhoiKhuVuc.objects.first()
+        if not khoi:
+            khoi = KhoiKhuVuc.objects.create(ten="KHỐI CÔNG NGHỆ THÔNG TIN")
+
+        self.dv_cntt = DonVi.objects.filter(ten="Ban công nghệ thông tin").first()
+        if not self.dv_cntt:
+            max_stt = (DonVi.objects.aggregate(m=models.Max("stt_uu_tien"))["m"] or 0) + 1
+            self.dv_cntt = DonVi.objects.create(khoi=khoi, ten="Ban công nghệ thông tin", stt_uu_tien=max_stt)
+
+        self.dv_hcth = DonVi.objects.filter(ten="Ban hành chính quản trị").first() or DonVi.objects.filter(ten__icontains="hành chính").first()
+        if not self.dv_hcth:
+            max_stt = (DonVi.objects.aggregate(m=models.Max("stt_uu_tien"))["m"] or 0) + 1
+            self.dv_hcth = DonVi.objects.create(khoi=khoi, ten="Ban hành chính quản trị", stt_uu_tien=max_stt)
+
+        self.dv_bgd = DonVi.objects.filter(ten="Ban tổng giám đốc").first() or DonVi.objects.filter(ten__icontains="tổng giám đốc").first()
+        if not self.dv_bgd:
+            max_stt = (DonVi.objects.aggregate(m=models.Max("stt_uu_tien"))["m"] or 0) + 1
+            self.dv_bgd = DonVi.objects.create(khoi=khoi, ten="Ban tổng giám đốc", stt_uu_tien=max_stt)
+
+        # Thiết lập Cán bộ chuẩn
+        self.admin = User.objects.filter(username="admin").first()
+        if not self.admin:
+            self.admin = User.objects.create_user(
+                username="admin",
+                password="password123",
+                email="admin@test.com",
+                ho_ten="Quản trị hệ thống",
+                don_vi=self.dv_cntt,
+                is_staff=True,
+                is_superuser=True,
+            )
+        else:
+            self.admin.don_vi = self.dv_cntt
+            self.admin.save(update_fields=["don_vi"])
+
+        self.cb_cntt = User.objects.filter(username="chuyenvien_cntt").first()
+        if not self.cb_cntt:
+            self.cb_cntt = User.objects.create_user(
+                username="chuyenvien_cntt",
+                password="password123",
+                email="cv_cntt@test.com",
+                ho_ten="Nguyễn Văn CNTT",
+                don_vi=self.dv_cntt,
+            )
+        else:
+            self.cb_cntt.don_vi = self.dv_cntt
+            self.cb_cntt.save(update_fields=["don_vi"])
+
+        self.cb_hcth = User.objects.filter(username="vanthu_hcth").first()
+        if not self.cb_hcth:
+            self.cb_hcth = User.objects.create_user(
+                username="vanthu_hcth",
+                password="password123",
+                email="vt_hcth@test.com",
+                ho_ten="Trần Thị Văn Thư",
+                don_vi=self.dv_hcth,
+            )
+
+        # Cán bộ kiêm nhiệm (thuộc dv_cntt nhưng kiêm nhiệm thêm dv_bgd)
+        self.cb_kiem_nhiem = User.objects.filter(username="cb_kiemnhiem").first()
+        if not self.cb_kiem_nhiem:
+            self.cb_kiem_nhiem = User.objects.create_user(
+                username="cb_kiemnhiem",
+                password="password123",
+                email="kn@test.com",
+                ho_ten="Lê Kiêm Nhiệm",
+                don_vi=self.dv_cntt,
+            )
+        pos = Position.objects.first()
+        EmployeeAssignment.objects.filter(employee=self.cb_kiem_nhiem, don_vi=self.dv_bgd).delete()
+        EmployeeAssignment.objects.create(
+            employee=self.cb_kiem_nhiem,
+            don_vi=self.dv_bgd,
+            chuc_vu=pos,
         )
+
+        # Tạo sẵn danh mục hồ sơ và loại văn bản chuẩn
         ensure_standard_hoso_and_doc_types()
 
-    def test_01_all_four_templates_contain_new_columns_and_comments(self):
-        """4 biểu mẫu Excel đều có đủ 2 cột 'Danh mục hồ sơ' và 'Loại văn bản' kèm tooltip comment."""
+        self.hs_hcqt = HoSo.objects.filter(so_ky_hieu="HS-HCQT").first()
+        if not self.hs_hcqt:
+            self.hs_hcqt = HoSo.objects.create(
+                ten_ho_so="Hồ sơ Hành chính - Quản trị",
+                so_ky_hieu="HS-HCQT",
+                nguoi_lap=self.admin,
+            )
+        self.lvb_congvan, _ = RecordLoaiVanBan.objects.get_or_create(
+            ho_so=self.hs_hcqt,
+            ten_loai="Công văn",
+        )
+        self.lvb_thongbao, _ = RecordLoaiVanBan.objects.get_or_create(
+            ho_so=self.hs_hcqt,
+            ten_loai="Thông báo",
+        )
+
+    def test_01_all_four_templates_contain_17_columns_and_comments(self):
+        """Cả 4 biểu mẫu Excel đều có đủ đúng 17 cột đồng bộ kèm tooltip comment cho các cột quan trọng."""
         templates_to_test = [
             ("DEN", "NOI_BO", "Mẫu VB Đến - Nội bộ"),
             ("DEN", "HAN_CHE", "Mẫu VB Đến - Hạn chế"),
             ("DI", "NOI_BO", "Mẫu VB Đi - Nội bộ"),
             ("DI", "HAN_CHE", "Mẫu VB Đi - Hạn chế"),
+        ]
+
+        expected_cols = [
+            "Số, ký hiệu VB",
+            "Phạm vi",
+            "Trích yếu nội dung",
+            "Danh mục hồ sơ (Số ký hiệu)",
+            "Loại văn bản",
+            "Nơi ban hành",
+            "Đơn vị nhận / chủ trì",
+            "Cán bộ nhận / xử lý",
+            "Người ký",
+            "Chức vụ",
+            "Hiệu lực",
+            "Ngày hết hiệu lực",
+            "Tệp đính kèm",
+            "Link văn bản thay thế",
+            "Ghi chú",
         ]
 
         for loai, pham_vi, expected_title in templates_to_test:
@@ -52,308 +163,355 @@ class ExcelAutoHierarchyAndValidationTests(TestCase):
             self.assertEqual(ws.title, expected_title)
             headers = [cell.value for cell in ws[1] if cell.value]
 
-            self.assertIn("Danh mục hồ sơ", headers, f"Thiếu cột 'Danh mục hồ sơ' trong template {loai}-{pham_vi}")
-            self.assertIn("Loại văn bản", headers, f"Thiếu cột 'Loại văn bản' trong template {loai}-{pham_vi}")
+            self.assertEqual(len(headers), 17, f"Template {loai}-{pham_vi} phải có đúng 17 cột (thực tế: {len(headers)})")
 
-            # Kiểm tra tooltip comment cho 2 cột mới
-            hoso_col_idx = headers.index("Danh mục hồ sơ") + 1
-            loaivb_col_idx = headers.index("Loại văn bản") + 1
+            for col in expected_cols:
+                self.assertIn(col, headers, f"Thiếu cột '{col}' trong template {loai}-{pham_vi}")
 
-            cell_hoso = ws.cell(row=1, column=hoso_col_idx)
-            cell_loaivb = ws.cell(row=1, column=loaivb_col_idx)
+            # Kiểm tra tooltip comment cho các cột quan trọng
+            for col_name in [
+                "Danh mục hồ sơ (Số ký hiệu)",
+                "Loại văn bản",
+                "Đơn vị nhận / chủ trì",
+                "Cán bộ nhận / xử lý",
+                "Người ký",
+                "Chức vụ",
+                "Tệp đính kèm",
+                "Ngày hết hiệu lực",
+            ]:
+                col_idx = headers.index(col_name) + 1
+                cell = ws.cell(row=1, column=col_idx)
+                self.assertIsNotNone(cell.comment, f"Cột '{col_name}' thiếu tooltip comment trong {loai}-{pham_vi}")
 
-            self.assertIsNotNone(cell_hoso.comment, f"Cột 'Danh mục hồ sơ' thiếu comment trong {loai}-{pham_vi}")
-            self.assertIn("BẮT BUỘC", cell_hoso.comment.text)
-
-            self.assertIsNotNone(cell_loaivb.comment, f"Cột 'Loại văn bản' thiếu comment trong {loai}-{pham_vi}")
-            self.assertIn("BẮT BUỘC", cell_loaivb.comment.text)
-
-    def test_02_block_import_when_danh_muc_ho_so_or_loai_van_ban_missing(self):
-        """Chặn toàn bộ file (created: 0) nếu bất kỳ dòng nào thiếu Danh mục hồ sơ hoặc Loại văn bản."""
-        # 1. Thiếu Danh mục hồ sơ ở dòng 2
+    def test_02_block_import_when_mandatory_fields_missing(self):
+        """Chặn toàn bộ file (created: 0) nếu bất kỳ ô nào thuộc 14 cột bắt buộc bị để trống."""
+        # Test thiếu Tệp đính kèm
         wb = openpyxl.load_workbook(generate_excel_template("DEN", "NOI_BO"))
         ws = wb.active
-        # Dòng 2 có loại văn bản nhưng thiếu danh mục hồ sơ
         ws.append([
-            "101/DEN-TEST", "Nội bộ", "15/10/2026 09:00:00", "15/10/2026",
-            "Trích yếu hợp lệ", "", "Công văn", "Bộ GD&ĐT", "Nguyễn Văn A", "Cục trưởng",
-            "CON_HIEU_LUC", "", "", "",
+            "101/CV-TEST", "Nội bộ", "15/10/2026 08:30:00", "15/10/2026",
+            "Trích yếu công văn đến", "HS-HCQT", "Công văn", "Bộ GD&ĐT",
+            "Ban công nghệ thông tin", "chuyenvien_cntt", "Nguyễn Văn Ký", "Trưởng ban",
+            "Còn hiệu lực", "", "", "", "",  # Tệp đính kèm để trống (cột 15)
         ])
         bio = io.BytesIO()
         wb.save(bio)
         bio.seek(0)
 
-        res = import_from_excel(bio, "DEN", self.user, pham_vi="NOI_BO")
-        self.assertEqual(res["created"], 0, "Phải chặn toàn bộ file nếu thiếu Danh mục hồ sơ")
-        self.assertTrue(any("Danh mục hồ sơ" in e["message"] for e in res["errors"]))
-        self.assertFalse(VanBanDen.objects.filter(so_hieu="101/DEN-TEST").exists())
+        res = import_from_excel(bio, "DEN", self.admin, pham_vi="NOI_BO")
+        self.assertEqual(res["created"], 0, "Bắt buộc phải chặn import khi thiếu tệp đính kèm")
+        self.assertTrue(any("Tệp đính kèm" in e["message"] for e in res["errors"]))
 
-        # 2. Thiếu Loại văn bản ở dòng 2
+        # Test thiếu Người ký và Chức vụ
         wb2 = openpyxl.load_workbook(generate_excel_template("DI", "NOI_BO"))
         ws2 = wb2.active
         ws2.append([
-            "102/DI-TEST", "Nội bộ", "15/10/2026", "15/10/2026",
-            "Trích yếu hợp lệ", "Hồ sơ Quản trị", "", "Bộ GD&ĐT", "UBND Tỉnh", "Trần Văn B", "Chủ tịch",
-            "CON_HIEU_LUC", "", "", "",
+            "102/DI-TEST", "Nội bộ", "16/10/2026", "16/10/2026",
+            "Trích yếu công văn đi", "HS-HCQT", "Công văn", "Ban công nghệ thông tin",
+            "Phòng Hành chính - Tổng hợp", "vanthu_hcth", "", "",  # Người ký, Chức vụ trống
+            "Còn hiệu lực", "", "tap_tin.pdf", "", "",
         ])
         bio2 = io.BytesIO()
         wb2.save(bio2)
         bio2.seek(0)
 
-        res2 = import_from_excel(bio2, "DI", self.user, pham_vi="NOI_BO")
-        self.assertEqual(res2["created"], 0, "Phải chặn toàn bộ file nếu thiếu Loại văn bản")
-        self.assertTrue(any("Loại văn bản" in e["message"] for e in res2["errors"]))
-        self.assertFalse(VanBanDi.objects.filter(so_hieu="102/DI-TEST").exists())
+        res2 = import_from_excel(bio2, "DI", self.admin, pham_vi="NOI_BO")
+        self.assertEqual(res2["created"], 0, "Bắt buộc phải chặn import khi thiếu Người ký / Chức vụ")
+        self.assertTrue(any("Người ký" in e["message"] for e in res2["errors"]))
 
-        # 3. Thiếu cả hai ở dòng 2
-        wb3 = openpyxl.load_workbook(generate_excel_template("DI", "HAN_CHE"))
+    def test_03_allow_three_optional_fields_empty(self):
+        """3 cột DUY NHẤT được phép để trống: Ngày hết hiệu lực, Link thay thế, Ghi chú."""
+        wb = openpyxl.load_workbook(generate_excel_template("DEN", "NOI_BO"))
+        ws = wb.active
+        ws.append([
+            "201/CV-VALID", "Nội bộ", "15/10/2026 08:30:00", "15/10/2026",
+            "Trích yếu công văn đầy đủ trường", "HS-HCQT", "Công văn", "Bộ GD&ĐT",
+            "Ban công nghệ thông tin", "chuyenvien_cntt", "Nguyễn Văn Ký", "Trưởng ban",
+            "Còn hiệu lực", "", "Cong_van_201.pdf", "", "",  # 3 cột để trống: ngày hết hạn, link thay thế, ghi chú
+        ])
+        bio = io.BytesIO()
+        wb.save(bio)
+        bio.seek(0)
+
+        res = import_from_excel(bio, "DEN", self.admin, pham_vi="NOI_BO")
+        self.assertEqual(res["created"], 1, "Để trống 3 trường tùy chọn hợp lệ phải import thành công")
+        doc = VanBanDen.objects.filter(so_hieu="201/CV-VALID").first()
+        self.assertIsNotNone(doc)
+        self.assertIsNone(doc.ngay_het_hieu_luc)
+        self.assertEqual(doc.link_thay_the, "")
+        self.assertEqual(doc.ghi_chu, "")
+        self.assertEqual(doc.nguoi_ky, "Nguyễn Văn Ký")
+        self.assertEqual(doc.chuc_vu, "Trưởng ban")
+
+    def test_04_strict_hierarchy_pair_1_hoso_and_doc_type(self):
+        """Cặp 1: Danh mục hồ sơ (Số ký hiệu) -> Loại văn bản: Phải tồn tại và đúng hồ sơ."""
+        # 1. Hồ sơ không tồn tại trong hệ thống
+        wb = openpyxl.load_workbook(generate_excel_template("DEN", "NOI_BO"))
+        ws = wb.active
+        ws.append([
+            "301/CV-ERR-HS", "Nội bộ", "15/10/2026 08:30:00", "15/10/2026",
+            "Trích yếu test", "HS-KHONG-TON-TAI", "Công văn", "Bộ GD&ĐT",
+            "Ban công nghệ thông tin", "chuyenvien_cntt", "Nguyễn Văn A", "Giám đốc",
+            "Còn hiệu lực", "", "file.pdf", "", "",
+        ])
+        bio = io.BytesIO()
+        wb.save(bio)
+        bio.seek(0)
+
+        res = import_from_excel(bio, "DEN", self.admin, pham_vi="NOI_BO")
+        self.assertEqual(res["created"], 0)
+        self.assertTrue(any("không tồn tại trong hệ thống" in e["message"] for e in res["errors"]))
+
+        # 2. Loại văn bản không trực thuộc hồ sơ đã chọn
+        wb2 = openpyxl.load_workbook(generate_excel_template("DEN", "NOI_BO"))
+        ws2 = wb2.active
+        ws2.append([
+            "302/CV-ERR-LVB", "Nội bộ", "15/10/2026 08:30:00", "15/10/2026",
+            "Trích yếu test", "HS-HCQT", "Loại Văn Bản Ma Quái", "Bộ GD&ĐT",
+            "Ban công nghệ thông tin", "chuyenvien_cntt", "Nguyễn Văn A", "Giám đốc",
+            "Còn hiệu lực", "", "file.pdf", "", "",
+        ])
+        bio2 = io.BytesIO()
+        wb2.save(bio2)
+        bio2.seek(0)
+
+        res2 = import_from_excel(bio2, "DEN", self.admin, pham_vi="NOI_BO")
+        self.assertEqual(res2["created"], 0)
+        self.assertTrue(any("không tồn tại trong Danh mục hồ sơ" in e["message"] for e in res2["errors"]))
+
+    def test_05_strict_hierarchy_pair_2_don_vi_and_can_bo(self):
+        """Cặp 2: Đơn vị nhận -> Cán bộ xử lý: Phải tồn tại và cán bộ phải thuộc biên chế hoặc kiêm nhiệm của đơn vị."""
+        # 1. Đơn vị nhận không tồn tại
+        wb = openpyxl.load_workbook(generate_excel_template("DI", "NOI_BO"))
+        ws = wb.active
+        ws.append([
+            "401/DI-ERR-DV", "Nội bộ", "15/10/2026", "15/10/2026",
+            "Trích yếu", "HS-HCQT", "Công văn", "Ban công nghệ thông tin",
+            "Phòng Ban Ảo Không Tồn Tại", "chuyenvien_cntt", "Lê Văn Ký", "Hiệu trưởng",
+            "Còn hiệu lực", "", "tep.pdf", "", "",
+        ])
+        bio = io.BytesIO()
+        wb.save(bio)
+        bio.seek(0)
+
+        res = import_from_excel(bio, "DI", self.admin, pham_vi="NOI_BO")
+        self.assertEqual(res["created"], 0)
+        self.assertTrue(any("không tồn tại trong cơ cấu tổ chức" in e["message"] for e in res["errors"]))
+
+        # 2. Cán bộ không tồn tại
+        wb2 = openpyxl.load_workbook(generate_excel_template("DI", "NOI_BO"))
+        ws2 = wb2.active
+        ws2.append([
+            "402/DI-ERR-CB", "Nội bộ", "15/10/2026", "15/10/2026",
+            "Trích yếu", "HS-HCQT", "Công văn", "Ban công nghệ thông tin",
+            "Ban công nghệ thông tin", "user_khong_ton_tai_999", "Lê Văn Ký", "Hiệu trưởng",
+            "Còn hiệu lực", "", "tep.pdf", "", "",
+        ])
+        bio2 = io.BytesIO()
+        wb2.save(bio2)
+        bio2.seek(0)
+
+        res2 = import_from_excel(bio2, "DI", self.admin, pham_vi="NOI_BO")
+        self.assertEqual(res2["created"], 0)
+        self.assertTrue(any("không tồn tại trong hệ thống" in e["message"] for e in res2["errors"]))
+
+        # 3. Cán bộ thuộc đơn vị khác (chuyenvien_cntt không thuộc dv_hcth)
+        wb3 = openpyxl.load_workbook(generate_excel_template("DI", "NOI_BO"))
         ws3 = wb3.active
         ws3.append([
-            "103/DI-HC-TEST", "Hạn chế", "15/10/2026", "15/10/2026",
-            "Trích yếu hợp lệ", "", "", "Bộ GD&ĐT", self.user.username, "UBND Tỉnh", "Trần Văn B", "Chủ tịch",
-            "CON_HIEU_LUC", "", "", "",
+            "403/DI-ERR-WRONG-DEPT", "Nội bộ", "15/10/2026", "15/10/2026",
+            "Trích yếu", "HS-HCQT", "Công văn", "Ban công nghệ thông tin",
+            self.dv_hcth.ten, "chuyenvien_cntt", "Lê Văn Ký", "Hiệu trưởng",
+            "Còn hiệu lực", "", "tep.pdf", "", "",
         ])
         bio3 = io.BytesIO()
         wb3.save(bio3)
         bio3.seek(0)
 
-        res3 = import_from_excel(bio3, "DI", self.user, pham_vi="HAN_CHE")
-        self.assertEqual(res3["created"], 0, "Phải chặn toàn bộ file nếu thiếu cả 2 trường bắt buộc")
-        self.assertTrue(any("Danh mục hồ sơ, Loại văn bản" in e["message"] for e in res3["errors"]))
+        res3 = import_from_excel(bio3, "DI", self.admin, pham_vi="NOI_BO")
+        self.assertEqual(res3["created"], 0)
+        self.assertTrue(any("không thuộc biên chế hoặc kiêm nhiệm" in e["message"] for e in res3["errors"]))
 
-    def test_03_allow_optional_fields_empty(self):
-        """Các trường tùy chọn (Tệp đính kèm, Link thay thế, Ghi chú, Nơi ban hành,...) để trống vẫn import thành công."""
+        # 4. Cán bộ kiêm nhiệm của đơn vị -> Hợp lệ và Thành công
+        wb4 = openpyxl.load_workbook(generate_excel_template("DI", "NOI_BO"))
+        ws4 = wb4.active
+        ws4.append([
+            "404/DI-OK-ASSIGNMENT", "Nội bộ", "15/10/2026", "15/10/2026",
+            "Trích yếu", "HS-HCQT", "Công văn", "Ban công nghệ thông tin",
+            self.dv_bgd.ten, "cb_kiemnhiem", "Lê Văn Ký", "Hiệu trưởng",
+            "Còn hiệu lực", "", "tep.pdf", "", "",
+        ])
+        bio4 = io.BytesIO()
+        wb4.save(bio4)
+        bio4.seek(0)
+
+        res4 = import_from_excel(bio4, "DI", self.admin, pham_vi="NOI_BO")
+        self.assertEqual(res4["created"], 1, "Cán bộ có EmployeeAssignment tại đơn vị phải import thành công")
+        doc4 = VanBanDi.objects.filter(so_hieu="404/DI-OK-ASSIGNMENT").first()
+        self.assertTrue(doc4.nguoi_nhan.filter(username="cb_kiemnhiem").exists())
+
+    def test_06_replacement_link_validation(self):
+        """Link thay thế: Bắt buộc văn bản bị thay thế phải có sẵn, cùng phân hệ và cùng phạm vi."""
+        # Tạo sẵn 1 VB Đến - Nội bộ
+        doc_den_noibo = VanBanDen.objects.create(
+            so_hieu="OLD-DEN-NB-01",
+            trich_yeu="Văn bản cũ đến nội bộ",
+            pham_vi=PhamVi.NOI_BO,
+            hieu_luc=HieuLuc.CON_HIEU_LUC,
+            nguoi_ky="Trưởng ban A",
+            chuc_vu="Trưởng ban",
+        )
+
+        # 1. Số hiệu thay thế không tồn tại
         wb = openpyxl.load_workbook(generate_excel_template("DEN", "NOI_BO"))
         ws = wb.active
-        # Điền đầy đủ số hiệu, trích yếu, hồ sơ, loại vb. Để trống toàn bộ các cột tùy chọn phía sau.
         ws.append([
-            "201/DEN-OPTIONAL", "Nội bộ", "15/10/2026 09:00:00", "15/10/2026",
-            "Trích yếu kiểm tra trường tùy chọn", "Hồ sơ Tiếp nhận", "Công văn", "", "", "",
-            "CON_HIEU_LUC", "", "", "",
+            "501/DEN-TEST", "Nội bộ", "15/10/2026 08:30:00", "15/10/2026",
+            "Văn bản mới", "HS-HCQT", "Công văn", "Bộ GD&ĐT",
+            "Ban công nghệ thông tin", "chuyenvien_cntt", "Nguyễn Văn Ký", "Trưởng ban",
+            "Còn hiệu lực", "", "file.pdf", "SO-HIEU-KHONG-TON-TAI", "",
         ])
         bio = io.BytesIO()
         wb.save(bio)
         bio.seek(0)
 
-        res = import_from_excel(bio, "DEN", self.user, pham_vi="NOI_BO")
-        self.assertEqual(res["created"], 1)
-        doc = VanBanDen.objects.filter(so_hieu="201/DEN-OPTIONAL").first()
-        self.assertIsNotNone(doc)
+        res = import_from_excel(bio, "DEN", self.admin, pham_vi="NOI_BO")
+        self.assertEqual(res["created"], 0)
+        self.assertTrue(any("không tồn tại trong hệ thống" in e["message"] for e in res["errors"]))
 
-    def test_04_auto_hierarchy_level_1_then_level_2(self):
-        """Cơ chế tự động phân cấp 1 rồi mới tới 2:
-        - Hồ sơ chưa có -> Tự tạo mới an toàn.
-        - Loại văn bản con được tạo hoặc khớp CHÍNH XÁC trực thuộc Hồ sơ Cấp 1.
-        - Khóa chặt quan hệ cha - con, không lấy Loại VB của hồ sơ khác."""
-        # Tạo trước Hồ sơ A đã có Loại văn bản "Báo cáo"
-        hoso_a = HoSo.objects.create(
-            ten_ho_so="Hồ sơ Phòng Đào Tạo",
-            so_ky_hieu="HS-PDT",
-            nguoi_lap=self.user,
-        )
-        lvb_a = RecordLoaiVanBan.objects.create(
-            ho_so=hoso_a,
-            ten_loai="Báo cáo",
-        )
+        # 2. Số hiệu thay thế tồn tại ở phân hệ khác (Import Đi nhưng link đến VB Đến)
+        wb2 = openpyxl.load_workbook(generate_excel_template("DI", "NOI_BO"))
+        ws2 = wb2.active
+        ws2.append([
+            "502/DI-TEST", "Nội bộ", "15/10/2026", "15/10/2026",
+            "Văn bản mới", "HS-HCQT", "Công văn", "Ban công nghệ thông tin",
+            "Phòng Hành chính - Tổng hợp", "vanthu_hcth", "Lê Văn Ký", "Hiệu trưởng",
+            "Còn hiệu lực", "", "file.pdf", "OLD-DEN-NB-01", "",
+        ])
+        bio2 = io.BytesIO()
+        wb2.save(bio2)
+        bio2.seek(0)
 
-        # Import 1 văn bản đi vào Hồ sơ mới "Hồ sơ Khảo Thí" cũng có Loại VB tên "Báo cáo"
-        wb = openpyxl.load_workbook(generate_excel_template("DI", "NOI_BO"))
+        res2 = import_from_excel(bio2, "DI", self.admin, pham_vi="NOI_BO")
+        self.assertEqual(res2["created"], 0)
+        self.assertTrue(any("không cùng phân hệ" in e["message"] for e in res2["errors"]))
+
+        # 3. Số hiệu thay thế cùng phân hệ Đến và cùng phạm vi Nội bộ -> Thành công
+        wb3 = openpyxl.load_workbook(generate_excel_template("DEN", "NOI_BO"))
+        ws3 = wb3.active
+        ws3.append([
+            "503/DEN-OK", "Nội bộ", "15/10/2026 08:30:00", "15/10/2026",
+            "Văn bản mới thay thế", "HS-HCQT", "Công văn", "Bộ GD&ĐT",
+            "Ban công nghệ thông tin", "chuyenvien_cntt", "Nguyễn Văn Ký", "Trưởng ban",
+            "Còn hiệu lực", "", "file.pdf", "OLD-DEN-NB-01", "",
+        ])
+        bio3 = io.BytesIO()
+        wb3.save(bio3)
+        bio3.seek(0)
+
+        res3 = import_from_excel(bio3, "DEN", self.admin, pham_vi="NOI_BO")
+        self.assertEqual(res3["created"], 1)
+        doc3 = VanBanDen.objects.filter(so_hieu="503/DEN-OK").first()
+        self.assertEqual(doc3.link_thay_the, "OLD-DEN-NB-01")
+
+    def test_07_ngay_het_hieu_luc_field_handling(self):
+        """Cột Ngày hết hiệu lực: Nếu nhập thì phải lưu vào CSDL; nếu sai format thì chặn."""
+        # 1. Sai định dạng ngày
+        wb = openpyxl.load_workbook(generate_excel_template("DEN", "NOI_BO"))
         ws = wb.active
         ws.append([
-            "301/DI-HIERARCHY", "Nội bộ", "20/10/2026", "20/10/2026",
-            "Báo cáo kết quả khảo thí", "Hồ sơ Khảo Thí", "Báo cáo", "Phòng KT", "Toàn trường", "Hiệu trưởng", "Hiệu trưởng",
-            "CON_HIEU_LUC", "", "", "",
+            "601/DEN-DATE-ERR", "Nội bộ", "15/10/2026 08:30:00", "15/10/2026",
+            "Trích yếu test", "HS-HCQT", "Công văn", "Bộ GD&ĐT",
+            "Ban công nghệ thông tin", "chuyenvien_cntt", "Nguyễn Văn Ký", "Trưởng ban",
+            "Còn hiệu lực", "ngay-khong-hop-le", "file.pdf", "", "",
         ])
         bio = io.BytesIO()
         wb.save(bio)
         bio.seek(0)
 
-        res = import_from_excel(bio, "DI", self.user, pham_vi="NOI_BO")
-        self.assertEqual(res["created"], 1)
+        res = import_from_excel(bio, "DEN", self.admin, pham_vi="NOI_BO")
+        self.assertEqual(res["created"], 0)
+        self.assertTrue(any("Ngày hết hiệu lực" in e["message"] for e in res["errors"]))
 
-        doc = VanBanDi.objects.get(so_hieu="301/DI-HIERARCHY")
-
-        # 1. Kiểm tra Hồ sơ mới được tự tạo đúng
-        hoso_b = HoSo.objects.filter(ten_ho_so="Hồ sơ Khảo Thí").first()
-        self.assertIsNotNone(hoso_b)
-        self.assertNotEqual(hoso_b.id, hoso_a.id)
-
-        # 2. Kiểm tra junction VanBanDiHoSo
-        di_hoso = VanBanDiHoSo.objects.filter(vanbandi=doc).first()
-        self.assertIsNotNone(di_hoso)
-        self.assertEqual(di_hoso.hoso_id, hoso_b.id)
-
-        # 3. Kiểm tra junction VanBanDiDanhmuc
-        di_danhmuc = VanBanDiDanhmuc.objects.filter(vanbandi=doc).first()
-        self.assertIsNotNone(di_danhmuc)
-
-        # 4. CỰC KỲ QUAN TRỌNG: Loại văn bản được liên kết PHẢI thuộc Hồ sơ B (hoso_b), TUYỆT ĐỐI KHÔNG phải lvb_a của hoso_a!
-        lvb_assigned = RecordLoaiVanBan.objects.get(pk=di_danhmuc.loaivanban_id)
-        self.assertEqual(lvb_assigned.ten_loai, "Báo cáo")
-        self.assertEqual(lvb_assigned.ho_so_id, hoso_b.id, "Loại văn bản phải trực thuộc đúng Hồ sơ Cấp 1 vừa import")
-        self.assertNotEqual(lvb_assigned.id, lvb_a.id, "Tuyệt đối không lấy nhầm loại văn bản của hồ sơ khác")
-
-    def test_05_match_existing_hoso_and_doc_type(self):
-        """Nếu Hồ sơ và Loại văn bản đã có sẵn thì khớp chính xác mà không tạo trùng lặp."""
-        hoso = HoSo.objects.create(
-            ten_ho_so="Hồ sơ Khen Thưởng",
-            so_ky_hieu="HS-KT",
-            nguoi_lap=self.user,
-        )
-        lvb = RecordLoaiVanBan.objects.create(
-            ho_so=hoso,
-            ten_loai="Quyết định",
-        )
-
-        initial_hoso_count = HoSo.objects.count()
-        initial_lvb_count = RecordLoaiVanBan.objects.count()
-
-        wb = openpyxl.load_workbook(generate_excel_template("DI", "NOI_BO"))
-        ws = wb.active
-        ws.append([
-            "401/DI-MATCH", "Nội bộ", "25/10/2026", "25/10/2026",
-            "Quyết định khen thưởng", "Hồ sơ Khen Thưởng", "Quyết định", "BGH", "Toàn trường", "Hiệu trưởng", "Hiệu trưởng",
-            "CON_HIEU_LUC", "", "", "",
+        # 2. Hợp lệ định dạng ngày DD/MM/YYYY
+        wb2 = openpyxl.load_workbook(generate_excel_template("DEN", "NOI_BO"))
+        ws2 = wb2.active
+        ws2.append([
+            "602/DEN-DATE-OK", "Nội bộ", "15/10/2026 08:30:00", "15/10/2026",
+            "Trích yếu test", "HS-HCQT", "Công văn", "Bộ GD&ĐT",
+            "Ban công nghệ thông tin", "chuyenvien_cntt", "Nguyễn Văn Ký", "Trưởng ban",
+            "Còn hiệu lực", "31/12/2026", "file.pdf", "", "",
         ])
-        bio = io.BytesIO()
-        wb.save(bio)
-        bio.seek(0)
+        bio2 = io.BytesIO()
+        wb2.save(bio2)
+        bio2.seek(0)
 
-        res = import_from_excel(bio, "DI", self.user, pham_vi="NOI_BO")
-        self.assertEqual(res["created"], 1)
+        res2 = import_from_excel(bio2, "DEN", self.admin, pham_vi="NOI_BO")
+        self.assertEqual(res2["created"], 1)
+        doc2 = VanBanDen.objects.filter(so_hieu="602/DEN-DATE-OK").first()
+        self.assertIsNotNone(doc2.ngay_het_hieu_luc)
+        local_dt = timezone.localtime(doc2.ngay_het_hieu_luc)
+        self.assertEqual(local_dt.strftime("%d/%m/%Y"), "31/12/2026")
 
-        # Số lượng hồ sơ và loại VB không được tăng thêm
-        self.assertEqual(HoSo.objects.count(), initial_hoso_count)
-        self.assertEqual(RecordLoaiVanBan.objects.count(), initial_lvb_count)
-
-        doc = VanBanDi.objects.get(so_hieu="401/DI-MATCH")
-        self.assertTrue(VanBanDiHoSo.objects.filter(vanbandi=doc, hoso_id=hoso.id).exists())
-        self.assertTrue(VanBanDiDanhmuc.objects.filter(vanbandi=doc, loaivanban_id=lvb.id).exists())
-
-    def test_06_export_contains_danh_muc_ho_so_and_loai_van_ban(self):
-        """Export Excel xuất đúng Danh mục hồ sơ và Loại văn bản từ junction tables."""
-        hoso = HoSo.objects.create(
-            ten_ho_so="Hồ sơ Lưu Trữ 2026",
-            so_ky_hieu="HS-LT26",
-            nguoi_lap=self.user,
-        )
-        lvb = RecordLoaiVanBan.objects.create(
-            ho_so=hoso,
-            ten_loai="Chỉ thị",
-        )
-
+    def test_08_export_contains_all_17_columns(self):
+        """Export ra Excel chứa đủ 17 cột, bao gồm ngày hết hiệu lực, đơn vị nhận, cán bộ nhận, hồ sơ, loại vb."""
         doc = VanBanDen.objects.create(
-            nam=2026,
-            so_hieu="501/DEN-EXP",
-            trich_yeu="Chỉ thị về phòng chống thiên tai",
-            nguoi_tao=self.user,
+            so_hieu="701/DEN-EXPORT",
+            trich_yeu="Văn bản kiểm tra export",
+            pham_vi=PhamVi.NOI_BO,
+            hieu_luc=HieuLuc.CON_HIEU_LUC,
+            ngay_het_hieu_luc=timezone.make_aware(datetime(2026, 12, 31, 0, 0)),
+            nguoi_ky="Nguyễn Văn Ký",
+            chuc_vu="Trưởng ban",
         )
-        VanBanDenHoSo.objects.create(vanbanden=doc, hoso_id=hoso.id)
-        VanBanDenDanhmuc.objects.create(vanbanden=doc, loaivanban_id=lvb.id)
+        VanBanDenHoSo.objects.create(vanbanden=doc, hoso_id=self.hs_hcqt.id)
+        VanBanDenDanhmuc.objects.create(vanbanden=doc, loaivanban_id=self.lvb_congvan.id)
+        from documents.models import VanBanDenDonViNhan
+        VanBanDenDonViNhan.objects.create(vanbanden=doc, donvi_id=self.dv_cntt.id)
+        doc.nguoi_nhan.add(self.cb_cntt)
 
-        export_bio = export_to_excel(VanBanDen.objects.filter(pk=doc.id), "DEN")
-        wb = openpyxl.load_workbook(export_bio)
+        qs = VanBanDen.objects.filter(pk=doc.pk)
+        bio = export_to_excel(qs, "DEN", pham_vi="NOI_BO")
+
+        wb = openpyxl.load_workbook(bio)
         ws = wb.active
 
         headers = [cell.value for cell in ws[1] if cell.value]
-        self.assertIn("Danh mục hồ sơ", headers)
-        self.assertIn("Loại văn bản", headers)
+        self.assertIn("STT", headers)
+        self.assertIn("Số đến", headers)
+        self.assertIn("Ngày hết hiệu lực", headers)
+        self.assertIn("Đơn vị nhận / chủ trì", headers)
+        self.assertIn("Cán bộ nhận / xử lý", headers)
 
-        hoso_col_idx = headers.index("Danh mục hồ sơ") + 1
-        loaivb_col_idx = headers.index("Loại văn bản") + 1
+        het_col_idx = headers.index("Ngày hết hiệu lực") + 1
+        dv_col_idx = headers.index("Đơn vị nhận / chủ trì") + 1
+        cb_col_idx = headers.index("Cán bộ nhận / xử lý") + 1
 
-        exported_hoso_val = ws.cell(row=2, column=hoso_col_idx).value
-        exported_loaivb_val = ws.cell(row=2, column=loaivb_col_idx).value
+        val_het = ws.cell(row=2, column=het_col_idx).value
+        val_dv = ws.cell(row=2, column=dv_col_idx).value
+        val_cb = ws.cell(row=2, column=cb_col_idx).value
 
-        self.assertEqual(exported_hoso_val, "Hồ sơ Lưu Trữ 2026")
-        self.assertEqual(exported_loaivb_val, "Chỉ thị")
+        self.assertEqual(val_het, "31/12/2026")
+        self.assertIn("Ban công nghệ thông tin", str(val_dv))
+        self.assertIn("chuyenvien_cntt", str(val_cb))
 
-    def test_07_user_without_add_hoso_permission_blocked_when_importing_new_hoso(self):
-        """Cán bộ thiếu quyền records.add_hoso sẽ bị chặn toàn bộ file nếu import hồ sơ mới chưa có trong CSDL."""
-        chuyenvien = User.objects.create_user(
-            username="chuyenvien_normal",
-            password="password123",
-            email="cv@test.com",
-            is_staff=False,
-            is_superuser=False,
-        )
-
+    def test_09_no_auto_creation_of_unregistered_entities(self):
+        """Không tự tiện tạo mới bất kỳ thực thể nào (Hồ sơ, Loại VB, Đơn vị, Cán bộ) khi import."""
         wb = openpyxl.load_workbook(generate_excel_template("DEN", "NOI_BO"))
         ws = wb.active
         ws.append([
-            "701/DEN-NO-PERM", "Nội bộ", "28/10/2026 09:00:00", "28/10/2026",
-            "Công văn chứa hồ sơ chưa từng tồn tại", "Hồ sơ Bí Mật Tự Phát 999", "Công văn", "Bộ GD&ĐT",
-            "Nguyễn Văn X", "Chuyên viên", "CON_HIEU_LUC", "", "", "",
+            "801/DEN-UNREGISTERED", "Nội bộ", "15/10/2026 08:30:00", "15/10/2026",
+            "Trích yếu test", "HS-CHUA-DANG-KY", "Loại Chưa Đăng Ký", "Bộ GD&ĐT",
+            "Đơn Vị Chưa Đăng Ký", "canbo_chua_dang_ky", "Nguyễn Văn Ký", "Trưởng ban",
+            "Còn hiệu lực", "", "file.pdf", "", "",
         ])
         bio = io.BytesIO()
         wb.save(bio)
         bio.seek(0)
 
-        res = import_from_excel(bio, "DEN", chuyenvien, pham_vi="NOI_BO")
-        self.assertEqual(res["created"], 0, "Chuyên viên không có quyền add_hoso phải bị chặn toàn bộ file")
-        self.assertTrue(any("không có quyền tạo mới hồ sơ" in e["message"] for e in res["errors"]))
-        self.assertFalse(HoSo.objects.filter(ten_ho_so="Hồ sơ Bí Mật Tự Phát 999").exists())
-        self.assertFalse(VanBanDen.objects.filter(so_hieu="701/DEN-NO-PERM").exists())
-
-    def test_08_user_without_add_hoso_permission_can_import_existing_hoso(self):
-        """Cán bộ thiếu quyền records.add_hoso vẫn import thành công nếu sử dụng hồ sơ ĐÃ CÓ SẴN."""
-        chuyenvien = User.objects.create_user(
-            username="chuyenvien_existing",
-            password="password123",
-            email="cv_existing@test.com",
-            is_staff=False,
-            is_superuser=False,
-        )
-
-        # Sử dụng hồ sơ chuẩn "Hồ sơ Hành chính - Quản trị" đã có sẵn
-        wb = openpyxl.load_workbook(generate_excel_template("DEN", "NOI_BO"))
-        ws = wb.active
-        ws.append([
-            "801/DEN-EXISTING-HS", "Nội bộ", "29/10/2026 09:00:00", "29/10/2026",
-            "Công văn nhập vào hồ sơ có sẵn", "Hồ sơ Hành chính - Quản trị", "Công văn", "Bộ GD&ĐT",
-            "Nguyễn Văn Y", "Chuyên viên", "CON_HIEU_LUC", "", "", "",
-        ])
-        bio = io.BytesIO()
-        wb.save(bio)
-        bio.seek(0)
-
-        res = import_from_excel(bio, "DEN", chuyenvien, pham_vi="NOI_BO")
-        self.assertEqual(res["created"], 1, "Chuyên viên dùng hồ sơ có sẵn phải import thành công")
-        doc = VanBanDen.objects.filter(so_hieu="801/DEN-EXISTING-HS").first()
-        self.assertIsNotNone(doc)
-        hs = HoSo.objects.filter(ten_ho_so="Hồ sơ Hành chính - Quản trị").first()
-        self.assertTrue(VanBanDenHoSo.objects.filter(vanbanden=doc, hoso_id=hs.id).exists())
-
-    def test_09_user_with_add_hoso_permission_can_auto_create_new_hoso(self):
-        """Cán bộ được cấp quyền records.add_hoso (hoặc Văn thư/Admin) tự động tạo mới hồ sơ khi import."""
-        from django.contrib.auth.models import Permission
-
-        canbo_with_perm = User.objects.create_user(
-            username="canbo_has_perm",
-            password="password123",
-            email="cb_perm@test.com",
-            is_staff=False,
-            is_superuser=False,
-        )
-        perm = Permission.objects.filter(codename="add_hoso").first()
-        if perm:
-            canbo_with_perm.user_permissions.add(perm)
-
-        wb = openpyxl.load_workbook(generate_excel_template("DI", "NOI_BO"))
-        ws = wb.active
-        ws.append([
-            "901/DI-NEW-HS-OK", "Nội bộ", "30/10/2026", "30/10/2026",
-            "Quyết định thành lập ban dự án", "Hồ sơ Dự Án Chuyển Đổi Số 2026", "Quyết định", "BGH",
-            "Toàn trường", "Hiệu trưởng", "Hiệu trưởng", "CON_HIEU_LUC", "", "", "",
-        ])
-        bio = io.BytesIO()
-        wb.save(bio)
-        bio.seek(0)
-
-        res = import_from_excel(bio, "DI", canbo_with_perm, pham_vi="NOI_BO")
-        self.assertEqual(res["created"], 1)
-
-        new_hs = HoSo.objects.filter(ten_ho_so="Hồ sơ Dự Án Chuyển Đổi Số 2026").first()
-        self.assertIsNotNone(new_hs)
-        doc = VanBanDi.objects.filter(so_hieu="901/DI-NEW-HS-OK").first()
-        self.assertTrue(VanBanDiHoSo.objects.filter(vanbandi=doc, hoso_id=new_hs.id).exists())
+        res = import_from_excel(bio, "DEN", self.admin, pham_vi="NOI_BO")
+        self.assertEqual(res["created"], 0)
+        self.assertFalse(HoSo.objects.filter(so_ky_hieu="HS-CHUA-DANG-KY").exists())
+        self.assertFalse(RecordLoaiVanBan.objects.filter(ten_loai="Loại Chưa Đăng Ký").exists())
+        self.assertFalse(DonVi.objects.filter(ten="Đơn Vị Chưa Đăng Ký").exists())
+        self.assertFalse(User.objects.filter(username="canbo_chua_dang_ky").exists())
