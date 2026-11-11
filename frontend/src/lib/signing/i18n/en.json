@@ -621,6 +621,10 @@
     "chinhSuaLai": "Edit again",
     "dongYApDung": "Apply image",
     "ketQuaCat": "Cropped image",
-    "thuPhong": "Zoom"
+    "thuPhong": "Zoom",
+    "phongTo": "Zoom in",
+    "thuNho": "Zoom out",
+    "datLaiViTri": "Reset",
+    "huongDanCat": "Drag to move, scroll or pinch to zoom."
   }
 }

@@ -145,6 +145,13 @@ describe('PinPage: ảnh chữ ký cá nhân', () => {
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:anh-chu-ky');
   });
 
+  it('đặt ảnh chữ ký trên nền giấy sáng cố định để nét mực rõ ở giao diện tối', async () => {
+    api.tepAnhChuKyCaNhan.mockResolvedValue(new Blob(['x'], { type: 'image/png' }));
+    moVoiAnh();
+    const image = await screen.findByRole('img', { name: 'Ảnh chữ ký cá nhân' });
+    expect(image.parentElement).toHaveClass('signing-chuky-giay');
+  });
+
   it('không tải ảnh nếu tài khoản không có ảnh chữ ký', async () => {
     moTrang();
     await screen.findByText('Chưa thiết lập ảnh chữ ký cá nhân');

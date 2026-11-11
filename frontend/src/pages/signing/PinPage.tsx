@@ -206,7 +206,7 @@ export default function PinPage() {
           <p className="text-sm text-secondary">{t('pin.chuKyCaNhanMoTa')}</p>
           {anhChuKy ? (
             <div className="space-y-3">
-              <div className="flex items-center justify-center rounded-lg border border-border-subtle p-4">
+              <div className="signing-chuky-giay flex items-center justify-center rounded-lg p-4" data-testid="nen-anh-chu-ky">
                 <img src={anhChuKy} alt={t('pin.chuKyCaNhan')} className="max-h-32 rounded object-contain" />
               </div>
               <div className="flex gap-2">
