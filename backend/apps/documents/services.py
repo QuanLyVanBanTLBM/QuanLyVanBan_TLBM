@@ -595,6 +595,8 @@ EXCEL_COLUMNS = {
         ("ngay_den", "Ngày đến", 18),
         ("ngay_van_ban", "Ngày văn bản", 18),
         ("trich_yeu", "Trích yếu nội dung", 65),
+        ("danh_muc_ho_so", "Danh mục hồ sơ", 32),
+        ("ten_loai_van_ban", "Loại văn bản", 26),
         ("noi_ban_hanh", "Nơi ban hành", 32),
         ("nguoi_ky", "Người ký", 22),
         ("chuc_vu", "Chức vụ", 20),
@@ -609,6 +611,8 @@ EXCEL_COLUMNS = {
         ("ngay_den", "Ngày đến", 18),
         ("ngay_van_ban", "Ngày văn bản", 18),
         ("trich_yeu", "Trích yếu nội dung", 65),
+        ("danh_muc_ho_so", "Danh mục hồ sơ", 32),
+        ("ten_loai_van_ban", "Loại văn bản", 26),
         ("noi_ban_hanh", "Nơi ban hành", 32),
         ("nguoi_nhan", "Cán bộ nhận (Username)", 30),
         ("don_vi_nhan", "Đơn vị nhận", 28),
@@ -625,6 +629,8 @@ EXCEL_COLUMNS = {
         ("ngay_ban_hanh", "Ngày ban hành", 18),
         ("ngay_van_ban", "Ngày văn bản", 18),
         ("trich_yeu", "Trích yếu nội dung", 65),
+        ("danh_muc_ho_so", "Danh mục hồ sơ", 32),
+        ("ten_loai_van_ban", "Loại văn bản", 26),
         ("noi_ban_hanh", "Nơi ban hành", 32),
         ("don_vi_nhan", "Nơi nhận / Đơn vị nhận", 30),
         ("nguoi_ky", "Người ký", 22),
@@ -640,6 +646,8 @@ EXCEL_COLUMNS = {
         ("ngay_ban_hanh", "Ngày ban hành", 18),
         ("ngay_van_ban", "Ngày văn bản", 18),
         ("trich_yeu", "Trích yếu nội dung", 65),
+        ("danh_muc_ho_so", "Danh mục hồ sơ", 32),
+        ("ten_loai_van_ban", "Loại văn bản", 26),
         ("noi_ban_hanh", "Nơi ban hành", 32),
         ("nguoi_nhan", "Cán bộ nhận (Username)", 30),
         ("don_vi_nhan", "Nơi nhận / Đơn vị nhận", 30),
@@ -665,6 +673,8 @@ SAMPLE_DATA = {
         "ngay_den": "15/09/2026 08:30:00",
         "ngay_van_ban": "14/09/2026",
         "trich_yeu": "V/v hướng dẫn công tác tuyển sinh và đào tạo năm học 2026-2027",
+        "danh_muc_ho_so": "Hồ sơ công văn đến",
+        "ten_loai_van_ban": "Công văn",
         "noi_ban_hanh": "Bộ Giáo dục và Đào tạo",
         "nguoi_ky": "Nguyễn Văn A",
         "chuc_vu": "Thứ trưởng",
@@ -679,6 +689,8 @@ SAMPLE_DATA = {
         "ngay_den": "18/09/2026 09:15:00",
         "ngay_van_ban": "17/09/2026",
         "trich_yeu": "Thông báo danh sách điều động thanh tra công tác tài chính nội bộ (Hạn chế)",
+        "danh_muc_ho_so": "Hồ sơ tài liệu mật",
+        "ten_loai_van_ban": "Thông báo",
         "noi_ban_hanh": "Sở Giáo dục và Đào tạo",
         "nguoi_nhan": "admin, kietlt",
         "don_vi_nhan": "Ban Giám hiệu",
@@ -695,6 +707,8 @@ SAMPLE_DATA = {
         "ngay_ban_hanh": "20/09/2026",
         "ngay_van_ban": "20/09/2026",
         "trich_yeu": "Quyết định về việc ban hành quy chế chi tiêu nội bộ năm học 2026",
+        "danh_muc_ho_so": "Hồ sơ Hành chính - Quản trị",
+        "ten_loai_van_ban": "Quyết định",
         "noi_ban_hanh": "Phòng Hành chính - Tổng hợp",
         "don_vi_nhan": "Toàn thể các đơn vị",
         "nguoi_ky": "Lê Văn D",
@@ -710,6 +724,8 @@ SAMPLE_DATA = {
         "ngay_ban_hanh": "22/09/2026",
         "ngay_van_ban": "22/09/2026",
         "trich_yeu": "Báo cáo rà soát đánh giá quy hoạch cán bộ chủ chốt giai đoạn 2026-2030 (Hạn chế)",
+        "danh_muc_ho_so": "Hồ sơ tài liệu mật",
+        "ten_loai_van_ban": "Báo cáo",
         "noi_ban_hanh": "Ban Giám hiệu",
         "nguoi_nhan": "admin, kietlt",
         "don_vi_nhan": "Hội đồng trường",
@@ -729,6 +745,16 @@ SAMPLE_DATA[LoaiVanBan.DI] = SAMPLE_DATA[(LoaiVanBan.DI, PhamVi.NOI_BO)]
 SAMPLE_DATA[LoaiVanBan.MAT] = SAMPLE_DATA[(LoaiVanBan.DEN, PhamVi.HAN_CHE)]
 
 HEADER_COMMENTS = {
+    "danh_muc_ho_so": (
+        "• BẮT BUỘC: Tên hoặc Số/Ký hiệu Hồ sơ lưu trữ.\n"
+        "• Hệ thống tự động khớp nếu đã có, hoặc tự tạo mới nếu chưa có.\n"
+        "• Không được để trống (thiếu sẽ bị chặn import)."
+    ),
+    "ten_loai_van_ban": (
+        "• BẮT BUỘC: Tên loại văn bản (Công văn, Quyết định, Báo cáo...).\n"
+        "• Tự động khớp hoặc tạo mới trực thuộc đúng Danh mục hồ sơ đã chọn.\n"
+        "• Không được để trống (thiếu sẽ bị chặn import)."
+    ),
     "tep_dinh_kem": (
         "• Tên file đính kèm trong kho tệp lịch sử (oldfile).\n"
         "• Cấu trúc: oldfile/<loai>/<pham_vi>/YYYY/MM/DD/<ten_file>.\n"
@@ -750,6 +776,8 @@ HEADER_COMMENTS = {
 }
 
 COMMENT_SIZES = {
+    "danh_muc_ho_so": (400, 95),
+    "ten_loai_van_ban": (400, 95),
     "tep_dinh_kem": (380, 110),
     "link_thay_the": (250, 85),
     "hieu_luc": (380, 135),
@@ -852,6 +880,14 @@ HEADER_TO_FIELD = {
     "Ngày văn bản": "ngay_van_ban",
     "Trích yếu nội dung": "trich_yeu",
     "Trích yếu": "trich_yeu",
+    "Danh mục hồ sơ": "danh_muc_ho_so",
+    "Danh mục": "danh_muc_ho_so",
+    "Hồ sơ": "danh_muc_ho_so",
+    "Mã hồ sơ": "danh_muc_ho_so",
+    "Số ký hiệu hồ sơ": "danh_muc_ho_so",
+    "Loại văn bản": "ten_loai_van_ban",
+    "Tên loại văn bản": "ten_loai_van_ban",
+    "Loại VB": "ten_loai_van_ban",
     "Nơi ban hành": "noi_ban_hanh",
     "Phòng ban": "noi_ban_hanh",
     "Đơn vị ban hành": "noi_ban_hanh",
@@ -979,6 +1015,37 @@ def _clean_attachment_name(name: str) -> str:
     s = unicodedata.normalize("NFC", str(name)).strip()
     s = re.sub(r"\s+\.([a-zA-Z0-9]+)$", r".\1", s)
     return s.lower()
+
+
+def can_create_hoso_permission(user) -> bool:
+    """
+    Kiểm tra người dùng có quyền tạo mới Danh mục hồ sơ / Loại văn bản hay không.
+    Theo quy ước Nhóm 3 & Nhóm 7 (Issue #647, release_DDL.sql [VTHS], migration 0019):
+    - Admin (is_superuser=True hoặc mã nhóm ADMIN hoặc is_system_admin(user)) có đủ quyền.
+    - Văn thư (VT) được cấp quyền add_hoso (dùng chung cho cả Hồ sơ và Loại văn bản).
+    - Bất kỳ cán bộ nào được cấp quyền records.add_hoso / add_hoso trong phân hệ Phân quyền.
+    """
+    if not user or not getattr(user, "is_authenticated", False):
+        return False
+    if getattr(user, "is_superuser", False):
+        return True
+    try:
+        from authorization.permissions import is_system_admin
+        if is_system_admin(user):
+            return True
+    except Exception:
+        pass
+    try:
+        if user.has_perm("records.add_hoso") or user.has_perm("add_hoso"):
+            return True
+        if hasattr(user, "groups") and user.groups.filter(groupinfo__ma_nhom_quyen__in=["VT", "ADMIN"]).exists():
+            return True
+        perms = getattr(user, "_user_permissions_cache", None) or set()
+        if any("add_hoso" in str(p) for p in perms):
+            return True
+    except Exception:
+        pass
+    return False
 
 
 def import_from_excel(file_obj, loai: str, user, pham_vi: str = None, attachments: list = None) -> dict:
@@ -1148,6 +1215,90 @@ def import_from_excel(file_obj, loai: str, user, pham_vi: str = None, attachment
             }],
         }
 
+    # 4. Pha 1: Pre-validation quét toàn bộ file để kiểm tra bắt buộc Hồ sơ & Loại văn bản (Fail-fast / Chặn toàn bộ)
+    has_hoso_col = any(f == "danh_muc_ho_so" for f in col_map.values())
+    has_loaivb_col = any(f == "ten_loai_van_ban" for f in col_map.values())
+
+    if has_hoso_col and not has_loaivb_col:
+        return {
+            "created": 0,
+            "errors": [{
+                "row": 1,
+                "message": "File Excel thiếu cột bắt buộc 'Loại văn bản'. Vui lòng sử dụng đúng biểu mẫu của hệ thống."
+            }],
+        }
+    if has_loaivb_col and not has_hoso_col:
+        return {
+            "created": 0,
+            "errors": [{
+                "row": 1,
+                "message": "File Excel thiếu cột bắt buộc 'Danh mục hồ sơ'. Vui lòng sử dụng đúng biểu mẫu của hệ thống."
+            }],
+        }
+
+    missing_required_row_errors = []
+    if has_hoso_col or has_loaivb_col:
+        can_add_hs = can_create_hoso_permission(user)
+        try:
+            from records.models import HoSo
+            existing_hs_names = set(HoSo.objects.values_list("ten_ho_so", flat=True))
+            existing_hs_codes = set(HoSo.objects.values_list("so_ky_hieu", flat=True))
+        except Exception:
+            existing_hs_names = set()
+            existing_hs_codes = set()
+
+        for r_idx, r in enumerate(rows[1:], start=2):
+            r_text = " ".join(str(v) for v in r if v)
+            if "xóa trước khi import" in r_text.lower() or not any(v for v in r):
+                continue
+
+            r_hoso = ""
+            r_loaivb = ""
+            for c_idx, f_name in col_map.items():
+                val = r[c_idx] if c_idx < len(r) else None
+                str_val = str(val).strip() if val is not None else ""
+                if f_name == "danh_muc_ho_so":
+                    r_hoso = str_val
+                elif f_name == "ten_loai_van_ban":
+                    r_loaivb = str_val
+
+            missing_items = []
+            if has_hoso_col and not r_hoso:
+                missing_items.append("Danh mục hồ sơ")
+            if has_loaivb_col and not r_loaivb:
+                missing_items.append("Loại văn bản")
+
+            if missing_items:
+                missing_required_row_errors.append({
+                    "row": r_idx,
+                    "message": f"Dòng {r_idx} thiếu thông tin bắt buộc: {', '.join(missing_items)}. Vui lòng điền đầy đủ trước khi import."
+                })
+                continue
+
+            # Kiểm tra phân quyền: Nếu hồ sơ chưa có trong CSDL mà user không có quyền add_hoso -> Chặn ngay
+            if has_hoso_col and r_hoso and not can_add_hs:
+                hs_exists = (
+                    r_hoso.isdigit() and HoSo.objects.filter(pk=int(r_hoso)).exists()
+                ) or any(
+                    r_hoso.lower() == (name or "").lower() for name in existing_hs_names
+                ) or any(
+                    r_hoso.lower() == (code or "").lower() for code in existing_hs_codes
+                )
+                if not hs_exists:
+                    missing_required_row_errors.append({
+                        "row": r_idx,
+                        "message": (
+                            f"Dòng {r_idx}: Danh mục hồ sơ '{r_hoso}' chưa tồn tại trong hệ thống và tài khoản của bạn "
+                            f"không có quyền tạo mới hồ sơ. Vui lòng chọn hồ sơ đã có sẵn hoặc liên hệ Quản trị viên / Văn thư để được hỗ trợ."
+                        )
+                    })
+
+    if missing_required_row_errors:
+        return {
+            "created": 0,
+            "errors": missing_required_row_errors,
+        }
+
     created_count = 0
     errors = []
 
@@ -1226,6 +1377,23 @@ def import_from_excel(file_obj, loai: str, user, pham_vi: str = None, attachment
             if "nguoi_tao" in model_fields and user and user.is_authenticated and "nguoi_tao" not in payload:
                 payload["nguoi_tao"] = user
             created_doc = model.objects.create(**payload)
+
+            # 0. Liên kết Hồ sơ và Loại văn bản (theo nguyên tắc phân cấp 1 rồi mới tới 2, bảo đảm Database Trigger)
+            raw_hoso = doc_data.get("danh_muc_ho_so")
+            raw_loaivb = doc_data.get("ten_loai_van_ban")
+            if raw_hoso or raw_loaivb:
+                hs, lvb = ensure_hoso_and_doc_type(raw_hoso, raw_loaivb, creator=user)
+                if hs:
+                    if loai_str in ("DI", "VANBANDI"):
+                        from .models import VanBanDiHoSo, VanBanDiDanhmuc
+                        VanBanDiHoSo.objects.create(vanbandi=created_doc, hoso_id=hs.id)
+                        if lvb:
+                            VanBanDiDanhmuc.objects.create(vanbandi=created_doc, loaivanban_id=lvb.id)
+                    else:
+                        from .models import VanBanDenHoSo, VanBanDenDanhmuc
+                        VanBanDenHoSo.objects.create(vanbanden=created_doc, hoso_id=hs.id)
+                        if lvb:
+                            VanBanDenDanhmuc.objects.create(vanbanden=created_doc, loaivanban_id=lvb.id)
 
             # 1. Liên kết cán bộ nhận (nguoi_nhan) từ username trong file Excel
             raw_nguoi_nhan = doc_data.get("nguoi_nhan")
@@ -1535,7 +1703,35 @@ def export_to_excel(queryset, loai: str, pham_vi: str = None) -> io.BytesIO:
 
         for col_idx, (field_name, _, _) in enumerate(columns, start=col_offset):
             val = getattr(doc, field_name, "")
-            if field_name == "tep_dinh_kem":
+            if field_name == "danh_muc_ho_so":
+                hs_val = getattr(doc, "_danh_muc_ho_so", None) or getattr(doc, "danh_muc_ho_so", "")
+                if not hs_val and hasattr(doc, "hoso"):
+                    first_hs = doc.hoso.first()
+                    if first_hs:
+                        try:
+                            from records.models import HoSo
+                            hs_obj = HoSo.objects.filter(pk=first_hs.hoso_id).first()
+                            if hs_obj:
+                                hs_val = hs_obj.ten_ho_so
+                        except Exception:
+                            pass
+                val = hs_val or ""
+            elif field_name == "ten_loai_van_ban":
+                lvb_val = getattr(doc, "_ten_loai_van_ban", None) or getattr(doc, "ten_loai_van_ban", "")
+                if not lvb_val and hasattr(doc, "danhmuc"):
+                    first_dm = doc.danhmuc.first()
+                    if first_dm:
+                        try:
+                            from records.models import LoaiVanBan as RecordLoaiVanBan
+                            lvb_obj = RecordLoaiVanBan.objects.filter(pk=first_dm.loaivanban_id).first()
+                            if lvb_obj:
+                                lvb_val = lvb_obj.ten_loai
+                        except Exception:
+                            pass
+                if not lvb_val:
+                    lvb_val = infer_doc_type(getattr(doc, "so_hieu", ""), getattr(doc, "trich_yeu", ""))
+                val = lvb_val or ""
+            elif field_name == "tep_dinh_kem":
                 val = tep_dinh_kem_text
             elif field_name == "pham_vi":
                 val = "Hạn chế" if is_doc_han_che else "Nội bộ"
@@ -1727,8 +1923,11 @@ def ensure_standard_hoso_and_doc_types():
 
 def ensure_hoso_and_doc_type(ho_so_name: str, loai_van_ban_name: str = "", creator=None):
     """
-    Tìm hoặc tự động tạo HoSo và LoaiVanBan an toàn để liên kết với văn bản Đến/Đi,
-    đảm bảo không bao giờ bị mất dữ liệu Danh mục hồ sơ & Loại văn bản khi lưu.
+    Tìm hoặc tự động tạo HoSo và LoaiVanBan an toàn theo nguyên tắc phân cấp 1 rồi mới tới 2:
+    - Cấp 1 (Hồ sơ): Nếu tìm thấy theo tên hoặc số ký hiệu -> Lấy hồ sơ đó. Nếu chưa có -> Tự tạo mới hồ sơ an toàn.
+    - Cấp 2 (Loại văn bản): Khóa chặt quan hệ cha - con: Bắt buộc chỉ tìm kiếm hoặc tạo mới loại văn bản
+      BÊN TRONG CHÍNH HỒ SƠ hs đã xác định ở Cấp 1. Tuyệt đối không lấy loại văn bản của hồ sơ khác để
+      bảo đảm không bao giờ vi phạm Database Trigger PostgreSQL (trg_*_danhmuc_cross_ref).
     """
     try:
         from records.models import HoSo, LoaiVanBan as RecordLoaiVanBan
@@ -1750,20 +1949,24 @@ def ensure_hoso_and_doc_type(ho_so_name: str, loai_van_ban_name: str = "", creat
     User = get_user_model()
     admin_u = creator or User.objects.filter(is_superuser=True).first() or User.objects.first()
 
+    clean_hs = str(ho_so_name or "").strip()
+    clean_lvb = str(loai_van_ban_name or "").strip()
+
     hs = None
-    if ho_so_name and str(ho_so_name).strip():
-        clean_hs = str(ho_so_name).strip()
+    if clean_hs:
         if clean_hs.isdigit():
             hs = HoSo.objects.filter(pk=int(clean_hs)).first()
         if not hs:
             hs = HoSo.objects.filter(ten_ho_so__iexact=clean_hs).first() or HoSo.objects.filter(so_ky_hieu__iexact=clean_hs).first()
-        if not hs and admin_u:
+        if not hs and admin_u and can_create_hoso_permission(admin_u):
+            # Tạo mới Hồ sơ an toàn với mã chống trùng lặp
             words = clean_hs.split()
-            abbr = "".join(w[0].upper() for w in words if w) or "HS"
-            so_kh = f"HS-{abbr}"[:250]
+            abbr = "".join(w[0].upper() for w in words if w.isalnum()) or "HS"
+            base_so_kh = f"HS-{abbr}"[:240]
+            so_kh = base_so_kh
             counter = 1
             while HoSo.objects.filter(so_ky_hieu=so_kh).exists():
-                so_kh = f"HS-{abbr}-{counter}"[:250]
+                so_kh = f"{base_so_kh}-{counter}"[:250]
                 counter += 1
             try:
                 hs = HoSo.objects.create(
@@ -1774,43 +1977,38 @@ def ensure_hoso_and_doc_type(ho_so_name: str, loai_van_ban_name: str = "", creat
             except Exception:
                 hs = HoSo.objects.filter(ten_ho_so__iexact=clean_hs).first() or HoSo.objects.filter(so_ky_hieu__iexact=so_kh).first()
 
+    if not hs:
+        # Fallback an toàn nếu clean_hs rỗng: ưu tiên hồ sơ hệ thống HSC
+        hs = HoSo.objects.filter(is_he_thong=True).first() or HoSo.objects.first()
+
     lvb = None
-    if loai_van_ban_name and str(loai_van_ban_name).strip():
-        clean_lvb = str(loai_van_ban_name).strip()
+    if hs and clean_lvb:
         if clean_lvb.isdigit():
-            lvb = RecordLoaiVanBan.objects.filter(pk=int(clean_lvb)).first()
-        if not lvb and hs:
+            lvb = RecordLoaiVanBan.objects.filter(pk=int(clean_lvb), ho_so=hs).first()
+        if not lvb:
             lvb = RecordLoaiVanBan.objects.filter(ten_loai__iexact=clean_lvb, ho_so=hs).first()
-            if not lvb:
-                try:
-                    lvb = RecordLoaiVanBan.objects.create(
-                        ho_so=hs,
-                        ten_loai=clean_lvb,
-                    )
-                except Exception:
-                    lvb = RecordLoaiVanBan.objects.filter(ten_loai__iexact=clean_lvb, ho_so=hs).first()
         if not lvb:
-            lvb = RecordLoaiVanBan.objects.filter(ten_loai__iexact=clean_lvb).first()
+            # Tự động tạo Loại văn bản con trực thuộc chính Hồ sơ hs (khóa quan hệ cha - con)
+            try:
+                lvb = RecordLoaiVanBan.objects.create(
+                    ho_so=hs,
+                    ten_loai=clean_lvb,
+                )
+            except Exception:
+                lvb = RecordLoaiVanBan.objects.filter(ten_loai__iexact=clean_lvb, ho_so=hs).first()
+
+    if hs and not lvb:
+        # Nếu clean_lvb rỗng hoặc chưa có, lấy loại văn bản con đầu tiên của chính hs
+        lvb = RecordLoaiVanBan.objects.filter(ho_so=hs).first()
         if not lvb:
-            target_hs = hs or HoSo.objects.filter(is_he_thong=True).first() or HoSo.objects.first()
-            if not target_hs and admin_u:
-                try:
-                    target_hs = HoSo.objects.create(
-                        ten_ho_so="Hồ sơ chung",
-                        so_ky_hieu="HSC",
-                        nguoi_lap=admin_u,
-                        is_he_thong=True,
-                    )
-                except Exception:
-                    target_hs = HoSo.objects.filter(so_ky_hieu="HSC").first() or HoSo.objects.first()
-            if target_hs:
-                try:
-                    lvb = RecordLoaiVanBan.objects.create(
-                        ho_so=target_hs,
-                        ten_loai=clean_lvb,
-                    )
-                except Exception:
-                    lvb = RecordLoaiVanBan.objects.filter(ten_loai__iexact=clean_lvb, ho_so=target_hs).first() or RecordLoaiVanBan.objects.filter(ten_loai__iexact=clean_lvb).first()
+            default_name = clean_lvb or "Chung"
+            try:
+                lvb = RecordLoaiVanBan.objects.create(
+                    ho_so=hs,
+                    ten_loai=default_name,
+                )
+            except Exception:
+                lvb = RecordLoaiVanBan.objects.filter(ho_so=hs).first()
 
     return hs, lvb
 
