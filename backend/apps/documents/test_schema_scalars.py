@@ -117,7 +117,7 @@ class DocumentSchemaScalarTests(TestCase):
 
         with transaction.atomic():
             with connection.cursor() as cursor:
-                cursor.execute("DROP VIEW IF EXISTS ai_vanbanden")
+                cursor.execute("DROP VIEW IF EXISTS ai_vanbanden CASCADE")
                 cursor.execute(
                     "ALTER TABLE documents_vanbanden "
                     "DROP CONSTRAINT chk_vanbanden_link_thay_the"
@@ -166,7 +166,7 @@ class DocumentSchemaScalarTests(TestCase):
 
         with transaction.atomic():
             with connection.cursor() as cursor:
-                cursor.execute("DROP VIEW IF EXISTS ai_vanbanden")
+                cursor.execute("DROP VIEW IF EXISTS ai_vanbanden CASCADE")
                 cursor.execute(
                     "ALTER TABLE documents_vanbanden "
                     "DROP CONSTRAINT chk_vanbanden_link_thay_the"

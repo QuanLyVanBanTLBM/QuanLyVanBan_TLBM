@@ -204,6 +204,8 @@ kombu[redis]==5.7.0
     # via celery
 kubernetes==37.0.1
     # via chromadb
+legacy-doc==0.2.1
+    # via -r backend/requirements.txt
 llama-index-core==0.14.25
     # via
     #   -r backend/requirements.txt

@@ -11,11 +11,12 @@ from django.db import DatabaseError, connections, transaction
 from django.test import SimpleTestCase, TransactionTestCase
 
 from document_templates.models import DanhMucTaiLieu, TaiLieuChiTiet
-from documents.models import PhamVi, VanBanDen, VanBanDi
+from documents.models import PhamVi, VanBanDen, VanBanDenAttachment, VanBanDi
 from organizations.models import DonVi, KhoiKhuVuc
 
 
-MIGRATION = importlib.import_module("documents.migrations.0010_ai_metadata_views")
+BASE_MIGRATION = importlib.import_module("documents.migrations.0010_ai_metadata_views")
+MIGRATION = importlib.import_module("documents.migrations.0014_ai_user_scoped_attachments")
 VIEW_NAMES = {
     "ai_vanbanden",
     "ai_vanbanden_nguoinhan",
@@ -25,8 +26,13 @@ VIEW_NAMES = {
     "ai_vanbandi_nguoinhan",
     "ai_vanbandi_donvinhan",
     "ai_tailieu",
+    "ai_vanbanden_attachment",
+    "ai_vanbandi_attachment",
 }
-PARENT_VIEWS = {"ai_vanbanden", "ai_vanbandi", "ai_tailieu"}
+PARENT_VIEWS = {
+    "ai_vanbanden", "ai_vanbandi", "ai_tailieu",
+    "ai_vanbanden_attachment", "ai_vanbandi_attachment",
+}
 AUXILIARY_VIEWS = VIEW_NAMES - PARENT_VIEWS
 CANONICAL_AUXILIARY_VIEW_COLUMNS = {
     "ai_vanbanden_nguoinhan": ("vanbanden_id", "employee_id"),
@@ -120,7 +126,7 @@ class AIMetadataViewColumnOrderTests(TransactionTestCase):
                     for view_name in CANONICAL_V2_AUXILIARY_VIEW_SQL
                 }
 
-                for statement in MIGRATION.FORWARD_SQL:
+                for statement in BASE_MIGRATION.FORWARD_SQL:
                     cursor.execute(statement)
 
                 current_oids = {
@@ -137,8 +143,8 @@ class AIMetadataViewColumnOrderTests(TransactionTestCase):
 
 
 class AIMetadataViewsMigrationContractTests(SimpleTestCase):
-    def test_migration_creates_all_eight_security_barrier_views(self):
-        sql = "\n".join(MIGRATION.FORWARD_SQL)
+    def test_migrations_create_all_ten_security_barrier_views(self):
+        sql = "\n".join((*BASE_MIGRATION.FORWARD_SQL, *MIGRATION.FORWARD_SQL))
         created = set(
             re.findall(
                 r"CREATE\s+OR\s+REPLACE\s+VIEW\s+(ai_[a-z_]+)\s+WITH\s*\(security_barrier\)",
@@ -148,7 +154,7 @@ class AIMetadataViewsMigrationContractTests(SimpleTestCase):
         )
         self.assertEqual(created, VIEW_NAMES)
 
-    def test_role_grants_match_the_canonical_three_view_contract(self):
+    def test_role_grants_match_the_canonical_five_view_contract(self):
         sql = "\n".join(MIGRATION.FORWARD_SQL)
         grant = re.search(
             r"GRANT\s+SELECT\s+ON(.*?)TO\s+qlvb_readonly",
@@ -181,7 +187,7 @@ class AIMetadataViewsMigrationContractTests(SimpleTestCase):
         self.assertNotIn("read_text(", sql)
 
     def test_canonical_document_and_employee_filters_are_present(self):
-        sql = "\n".join(MIGRATION.FORWARD_SQL)
+        sql = "\n".join((*BASE_MIGRATION.FORWARD_SQL, *MIGRATION.FORWARD_SQL))
         self.assertIn("pham_vi = 'NOI_BO' AND hien_thi IS TRUE", sql)
         self.assertIn("current_setting('qlvb.employee_id', true)", sql)
         self.assertIn("e.is_active IS TRUE", sql)
@@ -190,8 +196,7 @@ class AIMetadataViewsMigrationContractTests(SimpleTestCase):
         self.assertIn("t.hien_thi::text = 'NOI_BO_PHONG_BAN'", sql)
 
     def test_graph_waits_for_both_source_scalar_migrations(self):
-        self.assertIn(("documents", "0009_schema_scalars"), MIGRATION.Migration.dependencies)
-        self.assertIn(("document_templates", "0004_schema_scalars"), MIGRATION.Migration.dependencies)
+        self.assertIn(("documents", "0013_cho_admin_xoa_van_ban_han_che"), MIGRATION.Migration.dependencies)
 
 
 class AIMetadataViewsPostgreSQLAccessTests(TransactionTestCase):
@@ -300,6 +305,12 @@ class AIMetadataViewsPostgreSQLAccessTests(TransactionTestCase):
             trich_yeu="Restricted outgoing document",
             pham_vi=PhamVi.HAN_CHE, hien_thi=True,
         )
+        self.restricted_incoming.nguoi_nhan.add(self.employee_a)
+        self.restricted_attachment = VanBanDenAttachment.objects.create(
+            document=self.restricted_incoming,
+            name="restricted-policy.pdf",
+            file="van-ban-den/han-che/restricted-policy.pdf",
+        )
 
         category = DanhMucTaiLieu.objects.create(
             stt_uu_tien=29001,
@@ -335,6 +346,8 @@ class AIMetadataViewsPostgreSQLAccessTests(TransactionTestCase):
                     "SELECT set_config('qlvb.employee_id', %s, TRUE)",
                     [identity],
                 )
+                cursor.execute("SELECT set_config('qlvb.can_view_vanbanden', 'on', TRUE)")
+                cursor.execute("SELECT set_config('qlvb.can_view_vanbandi', 'on', TRUE)")
                 cursor.execute(f"SELECT id FROM {view_name} ORDER BY id")
                 return {row[0] for row in cursor.fetchall()}
 
@@ -345,7 +358,7 @@ class AIMetadataViewsPostgreSQLAccessTests(TransactionTestCase):
                     cursor.execute(f"SELECT * FROM {relation} LIMIT 1")
                     cursor.fetchall()
 
-    def test_only_three_parent_views_are_readable(self):
+    def test_only_approved_parent_and_attachment_views_are_readable(self):
         with connections["readonly"].cursor() as cursor:
             cursor.execute("SELECT current_user")
             self.assertEqual(cursor.fetchone()[0], "qlvb_readonly")
@@ -428,15 +441,25 @@ class AIMetadataViewsPostgreSQLAccessTests(TransactionTestCase):
         ):
             self._assert_read_denied(relation)
 
-    def test_document_views_exclude_hidden_and_restricted_rows(self):
-        incoming = self._readonly_ids("ai_vanbanden")
-        outgoing = self._readonly_ids("ai_vanbandi")
+    def test_document_views_follow_employee_acl_and_expose_only_authorized_attachments(self):
+        incoming = self._readonly_ids("ai_vanbanden", self.employee_a.pk)
+        outgoing = self._readonly_ids("ai_vanbandi", self.employee_a.pk)
         self.assertIn(self.visible_incoming.pk, incoming)
-        self.assertNotIn(self.hidden_incoming.pk, incoming)
-        self.assertNotIn(self.restricted_incoming.pk, incoming)
+        self.assertIn(self.hidden_incoming.pk, incoming)
+        self.assertIn(self.restricted_incoming.pk, incoming)
         self.assertIn(self.visible_outgoing.pk, outgoing)
-        self.assertNotIn(self.hidden_outgoing.pk, outgoing)
+        self.assertIn(self.hidden_outgoing.pk, outgoing)
         self.assertNotIn(self.restricted_outgoing.pk, outgoing)
+
+        other_employee = self._readonly_ids("ai_vanbanden", self.employee_b.pk)
+        self.assertNotIn(self.restricted_incoming.pk, other_employee)
+        anonymous = self._readonly_ids("ai_vanbanden")
+        self.assertNotIn(self.restricted_incoming.pk, anonymous)
+
+        visible_attachments = self._readonly_ids("ai_vanbanden_attachment", self.employee_a.pk)
+        hidden_attachments = self._readonly_ids("ai_vanbanden_attachment", self.employee_b.pk)
+        self.assertIn(self.restricted_attachment.pk, visible_attachments)
+        self.assertNotIn(self.restricted_attachment.pk, hidden_attachments)
 
     def test_template_view_requires_matching_active_working_employee_unit(self):
         anonymous = self._readonly_ids("ai_tailieu")

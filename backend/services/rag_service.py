@@ -1,5 +1,6 @@
 import re
 import shutil
+import tempfile
 import unicodedata
 import base64
 import io
@@ -11,6 +12,7 @@ import uuid
 import urllib.request
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import lru_cache
 from pathlib import Path
 
 import chromadb
@@ -1005,6 +1007,12 @@ def read_document_pages(file_path: Path):
     if suffix == ".docx":
         return [{"text": read_docx_with_vision(file_path), "page": None, "reader": "docx+vision"}]
 
+    if suffix == ".doc":
+        from legacy_doc import extract_text
+
+        result = extract_text(file_path.read_bytes())
+        return [{"text": result.text, "page": None, "reader": "legacy-doc"}]
+
     if suffix == ".txt":
         return [{"text": read_txt(file_path), "page": None, "reader": "txt"}]
 
@@ -1119,6 +1127,7 @@ def build_parent_child_documents(file_path: Path, page_items, category: str = ""
                 "category": category,
             }
             metadata.update({key: value for key, value in source_metadata.items() if value is not None})
+            metadata.update(item.get("metadata") or {})
 
             if item["page"] is not None:
                 metadata["page"] = item["page"]
@@ -1617,8 +1626,108 @@ def _insert_documents(documents):
     )
 
 
+AI_ATTACHMENT_SUFFIXES = frozenset({".pdf", ".doc", ".docx", ".jpg", ".jpeg", ".png"})
+
+
+@lru_cache(maxsize=2048)
+def _local_attachment_digest(path, signature):
+    """Reuse hashes for unchanged local files; never cache extracted document text."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as source:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(block)
+    stat = os.stat(path)
+    if (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns) != signature:
+        raise OSError("Attachment changed while hashing")
+    return digest.hexdigest()
+
+
+def _authorized_attachment_fingerprints(record):
+    """Hash only paths returned by the current user's SQL-filtered attachment view."""
+    from document_storage import get_document_storage
+
+    storage = get_document_storage()
+    fingerprints = []
+    for attachment in record.get("attachments", []):
+        suffix = (
+            Path(str(attachment.get("name") or "")).suffix.lower()
+            or Path(str(attachment.get("path") or "")).suffix.lower()
+        )
+        fingerprint = {"attachment": attachment, "suffix": suffix, "sha256": None}
+        if suffix not in AI_ATTACHMENT_SUFFIXES:
+            logger.warning(
+                "Skipping unsupported AI attachment format for document=%s attachment=%s",
+                record.get("source_id"), attachment.get("id"),
+            )
+            fingerprints.append(fingerprint)
+            continue
+        try:
+            name = str(attachment.get("path") or "")
+            if os.name == "posix":
+                path = storage.path(name)
+                stat = os.stat(path)
+                signature = (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+                fingerprint["sha256"] = _local_attachment_digest(path, signature)
+            else:
+                digest = hashlib.sha256()
+                with storage.open(name, "rb") as source:
+                    for block in iter(lambda: source.read(1024 * 1024), b""):
+                        digest.update(block)
+                fingerprint["sha256"] = digest.hexdigest()
+        except Exception:
+            logger.exception(
+                "Could not read authorized AI attachment for document=%s attachment=%s",
+                record.get("source_id"), attachment.get("id"),
+            )
+        fingerprints.append(fingerprint)
+    return fingerprints
+
+
+def _read_authorized_attachment_pages(record, fingerprints):
+    """Extract text from supported files after authorization and cache checks."""
+    from document_storage import get_document_storage
+
+    storage = get_document_storage()
+    extracted_pages = []
+    extraction_pending = any(
+        item["suffix"] in AI_ATTACHMENT_SUFFIXES and not item["sha256"]
+        for item in fingerprints
+    )
+    for fingerprint in fingerprints:
+        attachment = fingerprint["attachment"]
+        suffix = fingerprint["suffix"]
+        if not fingerprint["sha256"]:
+            continue
+        try:
+            with tempfile.TemporaryDirectory(prefix="qlvb-ai-attachment-") as temp_dir:
+                temp_path = Path(temp_dir) / f"attachment{suffix}"
+                with storage.open(str(attachment.get("path") or ""), "rb") as source:
+                    with temp_path.open("wb") as target:
+                        shutil.copyfileobj(source, target)
+                pages = read_document_pages(temp_path)
+            for page in pages:
+                text = str(page.get("text") or "").strip()
+                if text:
+                    extracted_pages.append({
+                        "text": f"Tệp đính kèm: {attachment.get('name') or 'Tài liệu'}\n{text}",
+                        "page": page.get("page"),
+                        "reader": page.get("reader"),
+                        "metadata": {
+                            "file_name": attachment.get("name") or record.get("display_name") or "Tài liệu",
+                            "document_title": record.get("display_name") or "Tài liệu",
+                        },
+                    })
+        except Exception:
+            extraction_pending = True
+            logger.exception(
+                "Could not extract authorized AI attachment for document=%s attachment=%s",
+                record.get("source_id"), attachment.get("id"),
+            )
+    return extracted_pages, extraction_pending
+
+
 def index_sql_document(record):
-    """Index only metadata returned by an authorized ai_* view; never read attachments."""
+    """Index metadata and current attachment text for one currently authorized record."""
     setup_llamaindex()
     source_type = record["source_type"]
     source_id = int(record["source_id"])
@@ -1641,25 +1750,37 @@ def index_sql_document(record):
         for label, field in fields
         if record.get(field) is not None and str(record[field]).strip()
     )
+    attachment_fingerprints = _authorized_attachment_fingerprints(record)
+    attachment_hashes = ";".join(
+        f"{item['attachment'].get('id')}:{item['attachment'].get('name')}:{item['suffix']}:{item['sha256'] or 'unavailable'}"
+        for item in attachment_fingerprints
+    )
     content_hash = hashlib.sha256(
-        f"sql-metadata-v1\0{metadata_text}\0{record.get('updated_at') or ''}".encode("utf-8")
+        f"sql-user-content-v3\0{metadata_text}\0{attachment_hashes}\0{record.get('updated_at') or ''}".encode("utf-8")
     ).hexdigest()
 
     collection = get_chroma_collection()
     cached = collection.get(where={"sql_doc_key": key}, include=["metadatas"])
     cached_metadata = cached.get("metadatas", [])
-    if metadata_text.strip() and cached_metadata and all(
+    if cached_metadata and all(
         metadata is not None
         and metadata.get("source_hash") == content_hash
-        and metadata.get("sql_content_version") == "metadata-v1"
+        and metadata.get("sql_content_version") == "document-and-attachments-v3"
+        and not metadata.get("attachment_extraction_pending")
         for metadata in cached_metadata
     ):
         return key
 
-    # Old SQL vectors may contain attachment text. Removal must succeed before new
-    # safe chunks are written; otherwise the request fails closed.
+    # Avoid OCR and file parsing when the metadata and all currently authorized files
+    # are unchanged. If parsing fails later, old vectors are removed before rebuilding.
+    attachment_pages, extraction_pending = _read_authorized_attachment_pages(record, attachment_fingerprints)
+    attachment_text = "\n\n".join(page["text"] for page in attachment_pages)
+    content_text = "\n\n".join(part for part in (metadata_text, attachment_text) if part)
+
+    # Remove stale text before indexing, including content from attachments that were
+    # removed, replaced, or no longer returned by the authorization-filtered view.
     collection.delete(where={"sql_doc_key": key})
-    if len(metadata_text.strip()) < 20:
+    if len(content_text.strip()) < 20:
         return None
 
     source_metadata = {
@@ -1668,10 +1789,12 @@ def index_sql_document(record):
         "sql_doc_type": source_type,
         "sql_doc_id": source_id,
         "source_hash": content_hash,
-        "sql_content_version": "metadata-v1",
+        "sql_content_version": "document-and-attachments-v3",
+        "attachment_extraction_pending": extraction_pending,
         "file_name": title,
     }
-    page_items = [{"text": metadata_text, "page": None, "reader": "ai-sql-view"}]
+    page_items = [{"text": metadata_text, "page": None, "reader": "ai-sql-view"}] if metadata_text else []
+    page_items.extend(attachment_pages)
     documents = build_parent_child_documents(
         Path(f"{source_type}-{source_id}.txt"),
         page_items,
@@ -2037,6 +2160,34 @@ def generate_conversational_response(question: str, history=None, language: str 
     return "Xin chào bạn! Mình là Trợ lý AI TLBM. Mình luôn sẵn sàng lắng nghe và hỗ trợ bạn tra cứu văn bản, quy trình nội bộ khi cần nhé!"
 
 
+def _fallback_query_filter(filename, allowed_keys):
+    target = {"file_name": filename}
+    if allowed_keys is None:
+        return target
+    sources = [{"source_class": "ai_knowledge_base"}]
+    if allowed_keys:
+        sources.append({"sql_doc_key": {"$in": list(allowed_keys)}})
+    source_filter = {"$or": sources} if len(sources) > 1 else sources[0]
+    return {"$and": [target, source_filter]}
+
+
+def _authorized_fallback_nodes(chroma_res, allowed_keys):
+    from llama_index.core.schema import TextNode
+
+    nodes = []
+    for doc_text, meta in zip(chroma_res.get("documents", []), chroma_res.get("metadatas", [])):
+        meta = meta or {}
+        if allowed_keys is not None and not (
+            meta.get("sql_doc_key") in allowed_keys
+            or meta.get("source_class") == "ai_knowledge_base"
+        ):
+            continue
+        nodes.append(TextNode(text=doc_text, metadata=meta))
+        if len(nodes) == 10:
+            break
+    return nodes
+
+
 def ask_document(question: str, history=None, category: str | None = None, user=None, employee_id=None, filename: str | None = None, language: str = "vi"):
     question = (question or "").strip()
     if is_inappropriate_message(question):
@@ -2140,6 +2291,21 @@ def ask_document(question: str, history=None, category: str | None = None, user=
                 filters=source_filters,
                 condition=FilterCondition.OR,
             )
+            if clean_filename:
+                target_filter = MetadataFilters(
+                    filters=[
+                        MetadataFilter(
+                            key="file_name",
+                            value=clean_filename,
+                            operator=FilterOperator.EQ,
+                        )
+                    ],
+                    condition=FilterCondition.AND,
+                )
+                source_filter = MetadataFilters(
+                    filters=[source_filter, target_filter],
+                    condition=FilterCondition.AND,
+                )
             retriever_kwargs["filters"] = source_filter
             retriever_kwargs["similarity_top_k"] = max(SIMILARITY_TOP_K * 3, 20)
         elif target_filters:
@@ -2157,16 +2323,12 @@ def ask_document(question: str, history=None, category: str | None = None, user=
             if not nodes:
                 print(f"⚠️ Retriever không trả về node cho {clean_filename}, thực hiện fallback từ ChromaDB")
                 fallback_collection = get_chroma_collection()
+                fallback_where = _fallback_query_filter(clean_filename, allowed_keys if sql_mode else None)
                 chroma_res = fallback_collection.get(
-                    where={"file_name": clean_filename},
+                    where=fallback_where,
                     include=["documents", "metadatas"],
                 )
-                from llama_index.core.schema import TextNode
-                fallback_nodes = []
-                for doc_text, meta in zip(chroma_res.get("documents", []), chroma_res.get("metadatas", [])):
-                    fallback_nodes.append(TextNode(text=doc_text, metadata=meta))
-                if fallback_nodes:
-                    nodes = fallback_nodes[:10]
+                nodes = _authorized_fallback_nodes(chroma_res, allowed_keys if sql_mode else None)
         if sql_mode and nodes:
             nodes = [
                 node for node in nodes
