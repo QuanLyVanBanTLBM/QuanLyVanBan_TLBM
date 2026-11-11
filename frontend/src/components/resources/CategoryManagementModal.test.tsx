@@ -485,5 +485,77 @@ describe('CategoryManagementModal Component (Issue #233)', () => {
     // Nút dropdown hiển thị Thư mục 8 đã chọn
     expect(screen.getByRole('button', { name: /Thư mục 8/i })).toBeInTheDocument();
   });
+
+  it('displays fixed and read-only creation date with tooltip in category form', () => {
+    render(
+      <CategoryManagementModal
+        isOpen={true}
+        onClose={onClose}
+        categories={mockCategories}
+        types={mockTypes}
+        onSaveCategory={onSaveCategory}
+        onDeleteCategory={onDeleteCategory}
+        onSaveType={onSaveType}
+        onDeleteType={onDeleteType}
+      />
+    );
+
+    // Mở modal Thêm mới
+    const addBtn = screen.getByTitle('Thêm mới');
+    fireEvent.click(addBtn);
+
+    // Kiểm tra nhãn Ngày lập (Cố định theo ngày tạo)
+    expect(screen.getByText('Ngày lập (Cố định theo ngày tạo)')).toBeInTheDocument();
+
+    // Ô input ngày lập phải là readOnly và disabled
+    const dateInput = screen.getByTitle('Cố định theo ngày tạo của thư mục');
+    expect(dateInput).toBeInTheDocument();
+    expect(dateInput).toHaveAttribute('readonly');
+    expect(dateInput).toBeDisabled();
+  });
+
+  it('displays continuous sequential row numbers in STT column even when categories have gap in stt_uu_tien, and suggests lowest missing integer for new category', () => {
+    const gapCategories: ResourceCategory[] = [
+      { id: 1, stt_uu_tien: 1, ten_tai_lieu: 'Thư mục 1' },
+      { id: 2, stt_uu_tien: 2, ten_tai_lieu: 'Thư mục 2' },
+      { id: 3, stt_uu_tien: 3, ten_tai_lieu: 'Thư mục 3' },
+      { id: 8, stt_uu_tien: 8, ten_tai_lieu: 'Thư mục 8' },
+      { id: 9, stt_uu_tien: 9, ten_tai_lieu: 'Thư mục 9' },
+    ];
+
+    render(
+      <CategoryManagementModal
+        isOpen={true}
+        onClose={onClose}
+        categories={gapCategories}
+        types={mockTypes}
+        onSaveCategory={onSaveCategory}
+        onDeleteCategory={onDeleteCategory}
+        onSaveType={onSaveType}
+        onDeleteType={onDeleteType}
+      />
+    );
+
+    // Các dòng trên bảng phải hiển thị STT liên tục 1, 2, 3, 4, 5 thay vì 1, 2, 3, 8, 9
+    const rows = screen.getAllByRole('row');
+    // rows[0] is thead, rows[1..5] are the 5 category rows
+    expect(rows[1]).toHaveTextContent('1');
+    expect(rows[1]).toHaveTextContent('Thư mục 1');
+    expect(rows[2]).toHaveTextContent('2');
+    expect(rows[2]).toHaveTextContent('Thư mục 2');
+    expect(rows[3]).toHaveTextContent('3');
+    expect(rows[3]).toHaveTextContent('Thư mục 3');
+    expect(rows[4]).toHaveTextContent('4');
+    expect(rows[4]).toHaveTextContent('Thư mục 8');
+    expect(rows[5]).toHaveTextContent('5');
+    expect(rows[5]).toHaveTextContent('Thư mục 9');
+
+    // Mở popup Thêm mới: stt_uu_tien gợi ý phải là 4 (lấp đầy khoảng trống nhỏ nhất chưa dùng)
+    const addBtn = screen.getByTitle('Thêm mới');
+    fireEvent.click(addBtn);
+
+    const orderInput = screen.getByPlaceholderText('VD: 1, 2, 3...') as HTMLInputElement;
+    expect(orderInput.value).toBe('4');
+  });
 });
 
