@@ -37,7 +37,7 @@ describe('two-level record navigation', () => {
     fireEvent.click(await within(screen.getByRole('dialog')).findByRole('link', { name: 'View documents' }));
     await screen.findByText('Destination');
     const url = new URL(screen.getByTestId('location').textContent!, 'https://local.invalid');
-    expect(url.pathname).toBe('/documents/incoming');
+    expect(url.pathname).toBe('/documents/outgoing');
     expect(url.searchParams.get('ho_so')).toBe('9'); expect(url.searchParams.get('loai_van_ban')).toBe('23');
     expect(url.searchParams.get('ten_ho_so')).toBe(dossier.ten_ho_so);
   });
