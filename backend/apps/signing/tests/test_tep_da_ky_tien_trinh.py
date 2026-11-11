@@ -9,7 +9,6 @@ from django.contrib.auth import get_user_model
 from django.test import SimpleTestCase, override_settings
 from pypdf import PdfReader
 
-from ..pdf_hoan_tat import dung_tep_da_ky_tien_trinh, dung_tep_hoan_tat, go_net_dut_trong_vung
 
 from .helpers import cap_quyen
 from .test_hanh_dong_ky_phase8 import KyBase
@@ -151,6 +150,8 @@ class GoNetDutKhungKyTests(SimpleTestCase):
         }
 
     def test_tien_trinh_go_net_dut_o_da_ky_va_chua_ky(self):
+        from signing.pdf_hoan_tat import dung_tep_da_ky_tien_trinh
+
         goc = _pdf_khung_net_dut_lon()
         ra = dung_tep_da_ky_tien_trinh(goc, self._noi_dung())
         lenh = [op for op, _ in _lenh_trang(ra)]
@@ -159,6 +160,8 @@ class GoNetDutKhungKyTests(SimpleTestCase):
         self.assertIn("TIEU DE GIU NGUYEN", PdfReader(io.BytesIO(ra)).pages[0].extract_text())
 
     def test_tep_goc_khong_bi_sua(self):
+        from signing.pdf_hoan_tat import dung_tep_da_ky_tien_trinh
+
         goc = _pdf_khung_net_dut_lon()
         ban_sao = bytes(goc)
         dung_tep_da_ky_tien_trinh(goc, self._noi_dung())
@@ -166,6 +169,8 @@ class GoNetDutKhungKyTests(SimpleTestCase):
         self.assertEqual([op for op, _ in _lenh_trang(goc)].count("S"), 4)
 
     def test_tep_hoan_tat_go_net_dut(self):
+        from signing.pdf_hoan_tat import dung_tep_hoan_tat
+
         goc = _pdf_khung_net_dut_lon()
         noi_dung = self._noi_dung()
         noi_dung["ho_so"].update({"quy_trinh": {"ma": "QT", "ten": "Quy trình", "phien_ban": 1},
@@ -180,6 +185,7 @@ class GoNetDutKhungKyTests(SimpleTestCase):
 
     def test_net_dut_ngoai_vung_ky_va_vien_trang_duoc_giu(self):
         from reportlab.pdfgen import canvas
+        from signing.pdf_hoan_tat import go_net_dut_trong_vung
 
         buf = io.BytesIO()
         c = canvas.Canvas(buf, pagesize=(595, 842))
