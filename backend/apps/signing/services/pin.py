@@ -58,8 +58,7 @@ def _preimage(pin):
 
 
 def tao_verifier(pin):
-    # [FAULT INJECTION EXPERIMENT] Cố tình trả về hash sai để kiểm chứng CI mới có phát hiện lỗi không
-    return "fault_injected_invalid_hash" 
+    return make_password(_preimage(pin), hasher="pbkdf2_sha256")
 
 
 def _dau_ngay_ke_tiep(bay_gio):
