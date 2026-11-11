@@ -400,3 +400,19 @@ EMPLOYEE_EMAIL_ALLOWED_DOMAINS = tuple(
     for domain in os.getenv("EMPLOYEE_EMAIL_ALLOWED_DOMAINS", "").split(",")
     if domain.strip()
 )
+
+# Log một dòng tóm tắt cho mỗi request chat AI (backend/services/ai_logging.py).
+# Logger "qlvb.ai" riêng để không đổi cấu hình log của các module khác.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "ai": {"format": "%(asctime)s %(levelname)s %(name)s %(message)s"},
+    },
+    "handlers": {
+        "ai_console": {"class": "logging.StreamHandler", "formatter": "ai"},
+    },
+    "loggers": {
+        "qlvb.ai": {"handlers": ["ai_console"], "level": "INFO", "propagate": False},
+    },
+}

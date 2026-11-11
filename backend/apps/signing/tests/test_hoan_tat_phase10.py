@@ -216,4 +216,26 @@ class DinhDangChuKyTests(HoanTatBase):
         self.assertEqual(len(draw_centred_calls), 1)
         args, _ = draw_centred_calls[0]
         self.assertEqual(args[2], "NGUYỄN VĂN LONG HOÀNG NAM")
-        c.rect.assert_called_once_with(98.5, 198.5, 83, 53, fill=1, stroke=0)
+        # Đệm 25% nhưng chặn trần: ngang min(20, 20) = 20, dọc min(12,5; 14) = 12,5
+        c.rect.assert_called_once_with(80, 187.5, 120, 75, fill=1, stroke=0)
+
+    def test_nen_trang_che_het_net_dut_placeholder_rong_hon_khung_ky(self):
+        from unittest.mock import MagicMock
+        from signing.pdf_hoan_tat import _khoi_chu_ky
+
+        c = MagicMock()
+        c.stringWidth.return_value = 10
+        khung = (200, 300, 100, 60)  # x, y, rộng, cao (pt)
+        # Placeholder nét đứt của văn bản gốc rộng hơn và lệch khung ký (nhô ra 12pt ngang, 8pt dọc mỗi cạnh)
+        trai, duoi = khung[0] - 12, khung[1] - 8
+        phai, tren = khung[0] + khung[2] + 12, khung[1] + khung[3] + 8
+
+        _khoi_chu_ky(c, khung, {"ten_nguoi_ky": "Nguyễn Văn A"}, None, "PhongThuong", "PhongDam")
+
+        c.rect.assert_called_once()
+        x, y, rong, cao = c.rect.call_args.args
+        self.assertLessEqual(x, trai)
+        self.assertLessEqual(y, duoi)
+        self.assertGreaterEqual(x + rong, phai)
+        self.assertGreaterEqual(y + cao, tren)
+        self.assertEqual(c.rect.call_args.kwargs, {"fill": 1, "stroke": 0})  # nền trắng, không vẽ viền

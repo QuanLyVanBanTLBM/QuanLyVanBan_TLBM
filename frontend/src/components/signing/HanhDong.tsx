@@ -75,6 +75,7 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
   const thieuPin = !toi?.da_dat_pin;
   const hienThieu = thieuAnh || thieuPin;
   const khoaTamThoi = Boolean(khoaPinDen && khoaPinDen.getTime() > bayGio);
+  const biKhoaQuyenKy = Boolean(toi?.khoa_quyen_ky);
   const khoaNhap = thieuAnh || thieuPin || khoaTamThoi;
 
   useEffect(() => {
@@ -145,8 +146,8 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
     });
   });
 
-  const nut = (loai: LoaiHopThoai, nhan: string, icon: string, variant: 'primary' | 'secondary' | 'danger' | 'outline' = 'secondary') => (
-    <Button size="sm" variant={variant} icon={icon} onClick={() => {
+  const nut = (loai: LoaiHopThoai, nhan: string, icon: string, variant: 'primary' | 'secondary' | 'danger' | 'outline' = 'secondary', voHieu = false) => (
+    <Button size="sm" variant={variant} icon={icon} disabled={voHieu} title={voHieu ? t('hanhDong.kyBiKhoa') : undefined} onClick={() => {
       setMo(loai);
     }}>{nhan}</Button>
   );
@@ -161,9 +162,10 @@ export default function HanhDong({ hoSo, luot, maBamTepDangXem, onXong }: Props)
         </Button>
       )}
       {dangMoChoToi && luot?.trang_thai === 'CHO_KY' && <>
-        {nut('ky', t('hanhDong.kyDuyet'), 'fa-signature', 'primary')}
+        {nut('ky', t('hanhDong.kyDuyet'), 'fa-signature', 'primary', biKhoaQuyenKy)}
         {nut('sua', t('hanhDong.traLaiSua'), 'fa-rotate-left', 'outline')}
         {nut('tu_choi', t('hanhDong.khongDongY'), 'fa-ban', 'danger')}
+        {biKhoaQuyenKy && <p className="basis-full text-xs text-danger" role="status">{t('hanhDong.kyBiKhoa')}</p>}
       </>}
       {daKyTrongCapMo && nut('thu_hoi', t('hanhDong.thuHoi'), 'fa-eraser')}
       {huyDuoc && nut('huy', t('hanhDong.huy'), 'fa-xmark')}
