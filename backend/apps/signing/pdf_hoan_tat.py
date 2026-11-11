@@ -106,6 +106,111 @@ def _phong_chu():
     return _dang_ky_phong(duong_dan[0]), _dang_ky_phong(duong_dan[1])
 
 
+# Lệnh tô nét -> lệnh tương đương không tô nét (giữ nguyên phần tô nền nếu có).
+_BO_NET = {"S": "n", "s": "n", "B": "f", "B*": "f*", "b": "f", "b*": "f*"}
+_LENH_DUONG = {"m", "l", "c", "v", "y", "re", "h"}
+# Đường nét đứt có bao quanh lớn hơn tỉ lệ này diện tích trang không phải khung placeholder (vd. viền trang).
+TI_LE_DIEN_TICH_TOI_DA = 0.5
+
+
+def _nhan_ma_tran(a, b):
+    """Ma trận PDF [a b c d e f] (hàng-vectơ): kết quả = a × b."""
+    return [
+        a[0] * b[0] + a[1] * b[2], a[0] * b[1] + a[1] * b[3],
+        a[2] * b[0] + a[3] * b[2], a[2] * b[1] + a[3] * b[3],
+        a[4] * b[0] + a[5] * b[2] + b[4], a[4] * b[1] + a[5] * b[3] + b[5],
+    ]
+
+
+def _diem(m, x, y):
+    return m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]
+
+
+def _toa_do_duong(lenh, toan_hang):
+    """Các điểm (x, y) mà lệnh dựng đường tham chiếu, trong hệ tọa độ hiện hành (chưa nhân ma trận)."""
+    v = [float(x) for x in toan_hang]
+    if lenh in ("m", "l"):
+        return [(v[0], v[1])]
+    if lenh == "c":
+        return [(v[0], v[1]), (v[2], v[3]), (v[4], v[5])]
+    if lenh in ("v", "y"):
+        return [(v[0], v[1]), (v[2], v[3])]
+    if lenh == "re":
+        return [(v[0], v[1]), (v[0] + v[2], v[1] + v[3])]
+    return []
+
+
+def _gao_nhau(hop, vung):
+    return hop[0] <= vung[2] and hop[2] >= vung[0] and hop[1] <= vung[3] and hop[3] >= vung[1]
+
+
+def go_net_dut_trong_vung(trang, vung_ky):
+    """Bỏ lệnh tô nét của các đường NÉT ĐỨT (lệnh `d` có mảng khác rỗng) giao với một trong các vùng khung ký.
+
+    `vung_ky`: [(x0, y0, x1, y1)] theo điểm PDF của trang. Chỉ sửa luồng nội dung của `trang` trong bản đang dựng
+    (tệp gốc không đổi). Lệnh tô nét đổi thành `n` (hoặc `f` khi vừa tô vừa nét), nên chữ và đường liền lân cận
+    giữ nguyên. Trả số đường đã bỏ nét.
+
+    Giới hạn: chỉ xử lý nét đứt khai báo trực tiếp trong luồng nội dung của trang (`d`, hoặc `/D` trong ExtGState
+    qua `gs`); nét đứt nằm trong Form XObject (`Do`) không bị đụng tới. Đường có bao quanh phủ hơn một nửa
+    diện tích trang (viền trang) được giữ nguyên.
+    """
+    from pypdf.generic import ContentStream, NameObject
+
+    if not vung_ky:
+        return 0
+    contents = trang.get_contents()
+    if contents is None:
+        return 0
+    cs = ContentStream(contents, trang.pdf)
+    hop_trang = trang.mediabox
+    dien_tich_trang = float(hop_trang.width) * float(hop_trang.height)
+    ext = {}
+    tai_nguyen = trang.get("/Resources")
+    if tai_nguyen is not None:
+        ext = (tai_nguyen.get_object().get("/ExtGState") or {})
+        ext = ext.get_object() if hasattr(ext, "get_object") else ext
+
+    ma_tran, net_dut, ngan_xep = [1, 0, 0, 1, 0, 0], False, []
+    diem, bat_dau, so_duong = [], None, 0
+    thao_tac = cs.operations
+    for i, (toan_hang, lenh) in enumerate(thao_tac):
+        lenh = lenh.decode("latin1") if isinstance(lenh, bytes) else str(lenh)
+        if lenh == "q":
+            ngan_xep.append((ma_tran, net_dut))
+        elif lenh == "Q":
+            if ngan_xep:
+                ma_tran, net_dut = ngan_xep.pop()
+        elif lenh == "cm" and len(toan_hang) == 6:
+            ma_tran = _nhan_ma_tran([float(x) for x in toan_hang], ma_tran)
+        elif lenh == "d" and len(toan_hang) == 2:
+            net_dut = len(toan_hang[0]) > 0 and any(float(x) > 0 for x in toan_hang[0])
+        elif lenh == "gs" and toan_hang:
+            try:
+                dash = ext[toan_hang[0]].get_object().get("/D")
+                if dash is not None:
+                    net_dut = len(dash.get_object()[0]) > 0
+            except (KeyError, AttributeError, IndexError, TypeError):
+                pass
+        elif lenh in _LENH_DUONG:
+            if bat_dau is None:
+                bat_dau = i
+            diem += [_diem(ma_tran, x, y) for x, y in _toa_do_duong(lenh, toan_hang)]
+        elif lenh in _BO_NET or lenh in ("f", "F", "f*", "n"):
+            if lenh in _BO_NET and net_dut and diem:
+                xs, ys = [p[0] for p in diem], [p[1] for p in diem]
+                hop = (min(xs), min(ys), max(xs), max(ys))
+                dien_tich = (hop[2] - hop[0]) * (hop[3] - hop[1])
+                if dien_tich <= dien_tich_trang * TI_LE_DIEN_TICH_TOI_DA and any(_gao_nhau(hop, v) for v in vung_ky):
+                    thao_tac[i] = (toan_hang, _BO_NET[lenh].encode())
+                    so_duong += 1
+            diem, bat_dau = [], None
+
+    if so_duong:
+        trang.replace_contents(cs)
+    return so_duong
+
+
 def _gio_vn(iso):
     if not iso:
         return ""
@@ -172,6 +277,28 @@ def _khoi_chu_ky(c, khung, nguoi_ky, anh, phong, phong_dam):
         size = co_chu if i == 1 else max(co_chu * 0.85, 4.5)
         c.setFont(font, size)
         c.drawCentredString(x + rong / 2, y + cao - (i + 1) * cao_dong, dong[:60])
+
+
+def _ghi_vung_khung(vung_theo_trang, vi_tri, tong_so_trang):
+    """Ghi khung ký (mọi người ký, kể cả chưa ký) vào danh sách theo trang để gỡ nét đứt placeholder."""
+    if not vi_tri or not vi_tri.get("trang_ky"):
+        return
+    trang = min(int(vi_tri["trang_ky"]), tong_so_trang)
+    vung_theo_trang.setdefault(trang, []).append(vi_tri)
+
+
+def _vung_trang(danh_sach_vi_tri, hop):
+    """Khung ký (% gốc trên-trái) -> (x0, y0, x1, y1) theo điểm PDF (gốc dưới-trái, đã cộng lệch hộp trang)."""
+    rong, cao = float(hop.width), float(hop.height)
+    dx, dy = float(hop.left), float(hop.bottom)
+    ket_qua = []
+    for vt in danh_sach_vi_tri:
+        x = float(vt["toa_do_x"]) / 100 * rong
+        w = float(vt["chieu_rong_khung"]) / 100 * rong
+        h = float(vt["chieu_cao_khung"]) / 100 * cao
+        y = cao - float(vt["toa_do_y"]) / 100 * cao - h
+        ket_qua.append((x + dx, y + dy, x + w + dx, y + h + dy))
+    return ket_qua
 
 
 def _lop_phu(rong, cao, dong_chan, khoi_ky, phong, phong_dam):
@@ -281,10 +408,12 @@ def dung_tep_hoan_tat(tep_goc: bytes, noi_dung: dict, ma_bam_bang_chung: str, an
     dong_chan = (f"{noi_dung['nhan_dien']} · Hồ sơ trình ký #{ho_so['id']}, lượt {luot['so_luot']} · "
                  f"Mã bằng chứng {ma_bam_bang_chung[:16]}")
     khoi_theo_trang = {}
+    vung_theo_trang = {}
     tong_so_trang = len(trang_goc)
     fallback_dem = 0
     for cap in noi_dung["cap_ky"]:
         for n in cap["nguoi_ky"]:
+            _ghi_vung_khung(vung_theo_trang, n.get("vi_tri"), tong_so_trang)
             if n.get("chu_ky"):
                 vt = n.get("vi_tri")
                 if not vt or not vt.get("trang_ky"):
@@ -305,6 +434,7 @@ def dung_tep_hoan_tat(tep_goc: bytes, noi_dung: dict, ma_bam_bang_chung: str, an
         trang = writer.add_page(trang)
         trang.transfer_rotation_to_content()
         hop = trang.mediabox
+        go_net_dut_trong_vung(trang, _vung_trang(vung_theo_trang.get(so, []), hop))
         lop = _lop_phu(float(hop.width), float(hop.height), dong_chan, khoi_theo_trang.get(so, []), phong, phong_dam)
         trang.merge_transformed_page(PdfReader(io.BytesIO(lop)).pages[0],
                                      Transformation().translate(float(hop.left), float(hop.bottom)))
@@ -340,10 +470,12 @@ def dung_tep_da_ky_tien_trinh(tep_goc: bytes, noi_dung: dict, anh_chu_ky=None) -
     ho_so, luot = noi_dung["ho_so"], noi_dung["luot_trinh"]
     dong_chan = f"{noi_dung['nhan_dien']} · Hồ sơ trình ký #{ho_so['id']}, lượt {luot['so_luot']}"
     khoi_theo_trang = {}
+    vung_theo_trang = {}
     tong_so_trang = len(trang_goc)
     fallback_dem = 0
     for cap in noi_dung["cap_ky"]:
         for n in cap["nguoi_ky"]:
+            _ghi_vung_khung(vung_theo_trang, n.get("vi_tri"), tong_so_trang)
             if n.get("chu_ky"):
                 vt = n.get("vi_tri")
                 if not vt or not vt.get("trang_ky"):
@@ -364,6 +496,7 @@ def dung_tep_da_ky_tien_trinh(tep_goc: bytes, noi_dung: dict, anh_chu_ky=None) -
         trang = writer.add_page(trang)
         trang.transfer_rotation_to_content()
         hop = trang.mediabox
+        go_net_dut_trong_vung(trang, _vung_trang(vung_theo_trang.get(so, []), hop))
         lop = _lop_phu(float(hop.width), float(hop.height), dong_chan, khoi_theo_trang.get(so, []), phong, phong_dam)
         trang.merge_transformed_page(PdfReader(io.BytesIO(lop)).pages[0],
                                      Transformation().translate(float(hop.left), float(hop.bottom)))
