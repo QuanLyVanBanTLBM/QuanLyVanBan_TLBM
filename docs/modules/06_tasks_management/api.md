@@ -94,7 +94,16 @@ Tham số (đều không bắt buộc):
 | `page` | `1` | Trang, bắt đầu từ 1 |
 | `pageSize` | `10` | Số dòng mỗi trang, tối đa 100 (giao diện dùng 10/20/50) |
 
-Chỉ trả về công việc người gọi được xem. Mặc định xếp theo bậc ưu tiên (việc đang chờ chính người gọi hành động lên đầu), cùng bậc thì hạn xử lý gần trước. Bậc 1 gồm việc **Chờ duyệt** mà người gọi là chỉ đạo, chủ trì hoặc người tạo; bậc 2 gồm việc **Chờ xử lý / Đang xử lý** mà người gọi là chủ trì hoặc tham gia.
+Chỉ trả về công việc người gọi được xem. Mặc định xếp **theo trạng thái**, cùng trạng thái thì hạn xử lý gần trước:
+
+1. Chờ duyệt
+2. Chờ xử lý
+3. Đang xử lý
+4. Quá hạn
+5. Chưa hoàn thành
+6. Hoàn thành
+
+Thứ tự này **giống nhau với mọi người xem**, không phụ thuộc vai trò (chủ trì / tham gia / chỉ đạo / người tạo) của người gọi trên từng việc. Truyền `?ordering=...` để thay thứ tự mặc định này.
 
 ```json
 {
