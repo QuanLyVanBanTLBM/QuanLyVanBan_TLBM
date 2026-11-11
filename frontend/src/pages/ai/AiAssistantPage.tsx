@@ -1193,10 +1193,10 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
         .map((message) => ({ role: message.sender === 'user' ? 'user' : 'assistant', content: message.text }));
       const aiMsgId = `ai-${sessionId}-${messageTimestamp}`;
       let accumulatedText = '';
-      let streamedSources: any[] = [];
+      let streamedSources: CitationSource[] = [];
       let messageStreamed = false;
 
-      const updateOrAddAiMessage = (answerText: string, sources: any[]) => {
+      const updateOrAddAiMessage = (answerText: string, sources: CitationSource[]) => {
         const aiMsg: ChatMessage = {
           id: aiMsgId,
           sender: 'ai',
@@ -1233,7 +1233,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
           filename: targetDocument?.filename || null,
           language: currentLang,
           onSources: (sources) => {
-            streamedSources = sources;
+            streamedSources = (sources || []) as CitationSource[];
             if (messageStreamed) {
               updateOrAddAiMessage(accumulatedText, streamedSources);
             }
@@ -1248,7 +1248,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
           },
           onDone: (data) => {
             if (data?.answer) accumulatedText = data.answer;
-            if (Array.isArray(data?.sources)) streamedSources = data.sources;
+            if (Array.isArray(data?.sources)) streamedSources = data.sources as CitationSource[];
             updateOrAddAiMessage(accumulatedText, streamedSources);
           },
         });
@@ -1257,7 +1257,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
           console.warn('Stream failed, falling back to askQuestion:', streamError);
           const response = await askQuestion(text, history, selectedCategory || null, targetDocument?.filename || null, currentLang);
           const aiText = response.answer || response.text;
-          if (typeof aiText !== 'string' || !aiText.trim()) throw new Error('Empty AI response');
+          if (typeof aiText !== 'string' || !aiText.trim()) throw new Error('Empty AI response', { cause: streamError });
           updateOrAddAiMessage(aiText, response.sources || response.citations || []);
         } else {
           throw streamError;

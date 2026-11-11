@@ -32,7 +32,7 @@ describe('FloatingAIBox', () => {
   });
 
   it('uses the configured model and streams chat responses to the UI', async () => {
-    mockedAskQuestionStream.mockImplementation(async (_text, options: any) => {
+    mockedAskQuestionStream.mockImplementation(async (_text, options?: { onDelta?: (d: string, a: string) => void; onDone?: (data: { answer: string; sources: unknown[] }) => void }) => {
       options?.onDelta?.('**A backend answer**', '**A backend answer**');
       options?.onDone?.({ answer: '**A backend answer**', sources: [] });
       return { answer: '**A backend answer**', sources: [] };

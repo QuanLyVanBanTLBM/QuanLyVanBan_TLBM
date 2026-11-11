@@ -368,9 +368,9 @@ export async function apiClientStream(endpoint: string, options: RequestInit = {
   });
 
   if (!response.ok) {
-    let errorData: ApiErrorResponse = {};
+    let errorData: ApiErrorResponse;
     try {
-      errorData = await response.json();
+      errorData = (await response.json()) as ApiErrorResponse;
     } catch {
       errorData = { error: t('common.apiError', { status: String(response.status) }) };
     }

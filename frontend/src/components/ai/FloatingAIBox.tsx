@@ -35,6 +35,9 @@ interface Position {
 const MAX_WIDGET_QUESTION_LENGTH = 4000;
 
 let floatingMsgSeq = 0;
+function getNextAiMessageId(): string {
+  return `ai-${++floatingMsgSeq}`;
+}
 function createBoxMessage(sender: Message['sender'], text: string, extras: Partial<Message> = {}): Message {
   return {
     id: `${sender}-${Date.now().toString(36)}-${++floatingMsgSeq}`,
@@ -485,7 +488,7 @@ export default function FloatingAIBox({ onNavigate }: FloatingAIBoxProps) {
     try {
       let accumulated = '';
       let streamedSources: Source[] = [];
-      const aiMsgId = 'ai-' + Date.now();
+      const aiMsgId = getNextAiMessageId();
       let streamed = false;
 
       try {
