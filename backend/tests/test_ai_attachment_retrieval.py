@@ -2,9 +2,12 @@ import hashlib
 import os
 import tempfile
 import unittest
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+
+import chromadb
 
 from backend.services.rag_service import (
     _authorized_fallback_nodes,
@@ -15,17 +18,23 @@ from backend.services.rag_service import (
 
 
 class AttachmentRetrievalTests(unittest.TestCase):
-    def test_fallback_query_filters_unauthorized_documents_in_postgres_results(self):
-        rows = {
-            "documents": ["restricted"] * 12 + ["allowed"],
-            "metadatas": [{"file_name": "same.pdf", "sql_doc_key": "vanbanden:2"}] * 12
+    def test_fallback_query_filters_unauthorized_documents_in_chroma(self):
+        client = chromadb.EphemeralClient()
+        collection = client.create_collection("ai-test-" + uuid.uuid4().hex)
+        collection.add(
+            ids=[str(i) for i in range(13)],
+            embeddings=[[1.0, 0.0]] * 13,
+            documents=["restricted"] * 12 + ["allowed"],
+            metadatas=[{"file_name": "same.pdf", "sql_doc_key": "vanbanden:2"}] * 12
             + [{"file_name": "same.pdf", "sql_doc_key": "vanbanden:1"}],
-        }
-        query_filter = _fallback_query_filter("same.pdf", {"vanbanden:1"})
-        self.assertEqual(query_filter["$and"][0], {"file_name": "same.pdf"})
-        nodes = _authorized_fallback_nodes(rows, {"vanbanden:1"})
-        self.assertEqual([node.text for node in nodes], ["allowed"])
-        self.assertEqual(_authorized_fallback_nodes(rows, set()), [])
+        )
+        rows = collection.get(
+            where=_fallback_query_filter("same.pdf", {"vanbanden:1"}),
+            include=["documents", "metadatas"],
+        )
+        self.assertEqual(rows["documents"], ["allowed"])
+        self.assertEqual(_authorized_fallback_nodes(rows, {"vanbanden:1"})[0].text, "allowed")
+        self.assertEqual(collection.get(where=_fallback_query_filter("same.pdf", set()))["ids"], [])
 
     def test_fallback_filters_permissions_before_limit(self):
         rows = {

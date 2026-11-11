@@ -15,7 +15,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 DATA_DIR = BASE_DIR / "data"
 DOCS_DIR = DATA_DIR / "docs"
+CHROMA_DIR = DATA_DIR / "chroma_db"
 DOC_REGISTRY_PATH = DATA_DIR / "doc_registry.json"
+COLLECTION_NAME = os.getenv("COLLECTION_NAME", "smart_documents")
 
 MODEL_PROVIDER = "openai"
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")

@@ -3127,27 +3127,3 @@ BEGIN
     END IF;
 END
 $$;
--- AI RAG vectors (issue #719). text-embedding-3-large dimensions stay at 3072.
-CREATE EXTENSION IF NOT EXISTS vector;
-CREATE TABLE IF NOT EXISTS ai_document_embedding (
-    id UUID PRIMARY KEY,
-    source_key VARCHAR(500) UNIQUE NOT NULL,
-    source_type VARCHAR(20) NOT NULL,
-    source_id BIGINT NOT NULL,
-    content_hash VARCHAR(64) NOT NULL,
-    content_text TEXT NOT NULL,
-    embedding vector(3072) NOT NULL,
-    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-CREATE INDEX IF NOT EXISTS ai_document_embedding_metadata_idx ON ai_document_embedding USING GIN (metadata);
-CREATE INDEX IF NOT EXISTS ai_document_embedding_hnsw_idx ON ai_document_embedding
-    USING hnsw ((embedding::halfvec(3072)) halfvec_cosine_ops);
-DO $$
-BEGIN
-    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'qlvb_readonly') THEN
-        GRANT SELECT ON ai_document_embedding TO qlvb_readonly;
-    END IF;
-END
-$$;

@@ -16,8 +16,8 @@ Module 8 phụ trách xây dựng Trợ lý ảo AI thông minh, hỗ trợ cán
    - Truy vấn qua tài khoản chỉ đọc (`qlvb_readonly`) trên các Security Barrier Views: `ai_vanbanden`, `ai_vanbandi`, `ai_tailieu`.
    - Lọc phân quyền tự động theo User Token/Session và phòng ban (`qlvb.employee_id`).
    - Tự động loại trừ 100% các văn bản thuộc phạm vi "HẠN CHẾ" (`pham_vi = 'HAN_CHE'`).
-2. **Kho tài liệu nghiệp vụ (PostgreSQL pgvector)**:
-   - Các tài liệu hướng dẫn, quy định nội bộ được lập chỉ mục vector, lưu trữ trong PostgreSQL bằng pgvector.
+2. **Kho tài liệu nghiệp vụ (Local ChromaDB)**:
+   - Các tài liệu hướng dẫn, quy định nội bộ được lập chỉ mục vector, lưu trữ an toàn trong ChromaDB.
 3. **Thẻ đặc tả nghiệp vụ phân hệ 1–7**:
    - Kiến thức tổng quan về quy trình xử lý văn bản, ký số điện tử và phân quyền hệ thống.
 
@@ -40,7 +40,7 @@ Module 8 phụ trách xây dựng Trợ lý ảo AI thông minh, hỗ trợ cán
 |---|---|
 | **Frontend** | React 19, TypeScript, Vite, Vanilla CSS Tokens, Axios / Fetch API Client |
 | **Backend** | Python 3.12+, Django 6.1, Django REST Framework, SimpleJWT |
-| **RAG & AI Engine** | LlamaIndex, PostgreSQL pgvector, OpenAI `gpt-6-luna` API |
+| **RAG & AI Engine** | LlamaIndex, ChromaDB, OpenAI `gpt-6-luna` API |
 | **Cơ sở dữ liệu** | PostgreSQL 16 (với các Database View `ai_*` và role `qlvb_readonly`) |
 | **CI / Quality Gate** | GitHub Actions, Django test runner |
 
@@ -138,14 +138,14 @@ Các cổng chỉ bind vào `127.0.0.1`. Cổng bị trùng thì đặt biến m
 │   ├── config/                       # Settings & routing tập trung của Django
 │   ├── services/
 │   │   ├── ai_access.py              # Xác thực người dùng & kiểm tra quyền RBAC
-│   │   ├── rag_service.py            # Xử lý RAG, PostgreSQL pgvector & System Prompt
+│   │   ├── rag_service.py            # Xử lý RAG, ChromaDB & System Prompt
 │   │   ├── sql_document_source.py    # Truy vấn an toàn qua Database View ai_*
 │   └── tests/                        # Bộ kiểm thử đơn vị cho AI Module
 ├── frontend/
 │   ├── src/pages/ai/                 # Giao diện Chatbox chính (AiAssistantPage.tsx)
 │   ├── src/components/               # Modal cấu hình AI, thanh điều hướng
 │   └── src/lib/apiClient.ts          # Client gọi API có đính kèm Bearer Token
-├── data/                             # Kho lưu trữ tệp AI và registry JSON
+├── data/                             # Kho lưu trữ tệp, ChromaDB và registry JSON
 └── docs/                             # Tài liệu kỹ thuật, DDL và quy chuẩn dự án
 ```
 

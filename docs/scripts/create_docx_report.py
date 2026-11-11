@@ -267,7 +267,7 @@ def build_report():
     
     add_body(
         "Hệ thống vận hành theo kiến trúc RAG (Retrieval-Augmented Generation) thông qua framework LlamaIndex kết hợp với "
-        "PostgreSQL pgvector Vector Store và Google Gemini Cloud AI / OpenAI GPT. AI tổng hợp dữ liệu từ 3 nguồn tri thức chính:"
+        "ChromaDB Vector Store và Google Gemini Cloud AI / OpenAI GPT. AI tổng hợp dữ liệu từ 3 nguồn tri thức chính:"
     )
     
     add_bullet(
@@ -279,7 +279,7 @@ def build_report():
     add_bullet(
         "Bao gồm các văn bản quy định, hướng dẫn nghiệp vụ, biểu mẫu dùng chung được tải lên và lập chỉ mục bằng kỹ thuật "
         "Parent-Child Chunking (Parent chunk 1500 ký tự, Child chunk 300 ký tự). Nhúng vector qua Gemini Embedding/OpenAI text-embedding.",
-        "2. Kho tài liệu tri thức nội bộ (Local PostgreSQL pgvector): "
+        "2. Kho tài liệu tri thức nội bộ (Local ChromaDB): "
     )
     
     add_bullet(
@@ -297,7 +297,7 @@ def build_report():
     rows_data = [
         ("Frontend Client", "React 19, TypeScript, Vite, Vanilla CSS Tokens, Axios Client"),
         ("Backend Web Server", "Python 3.11+, Django 5 / 6, Django REST Framework, SimpleJWT"),
-        ("AI & RAG Engine", "LlamaIndex, PostgreSQL pgvector, Gemini REST Client (gemini-3.8-flash), OpenAI API"),
+        ("AI & RAG Engine", "LlamaIndex, ChromaDB, Gemini REST Client (gemini-3.8-flash), OpenAI API"),
         ("Vision & OCR Engine", "Gemini Multimodal Vision, RapidOCR (onnxruntime), pdfplumber, pdf2image"),
         ("Cơ sở dữ liệu", "PostgreSQL (với Security Barrier Views ai_* & role qlvb_readonly)"),
     ]
@@ -479,7 +479,7 @@ def build_report():
         "Chỉ có tài khoản Quản trị viên (is_superuser = True) mới có thể gọi các API cấu hình và quản trị kho tri thức:"
     )
     add_bullet("POST /api/upload và POST /api/upload/async (kèm theo dõi tiến trình qua job_id).", "Tải lên tài liệu mới: ")
-    add_bullet("DELETE /api/documents/<filename> hoặc xóa trắng toàn bộ PostgreSQL pgvector qua DELETE /api/documents.", "Xóa tài liệu tri thức: ")
+    add_bullet("DELETE /api/documents/<filename> hoặc xóa trắng toàn bộ ChromaDB qua DELETE /api/documents.", "Xóa tài liệu tri thức: ")
     add_bullet("POST /api/reclassify/<filename> để kích hoạt LLM đọc lại và phân loại lại chủ đề.", "Phân loại lại danh mục: ")
     add_bullet("GET /api/documents/<filename>/preview và /file để xem nội dung raw hoặc tải tệp gốc.", "Xem trước & Tải tệp: ")
     add_bullet("GET / POST /api/settings/ai: Thay đổi nhà cung cấp (Gemini / OpenAI), cập nhật API Key, đổi model LLM và Embeddings.", "Cấu hình tham số AI: ")
@@ -544,7 +544,7 @@ def build_report():
         "đặt ra theo đề bài đồ án môn học ITC và đáp ứng các tiêu chuẩn bảo mật của một phần mềm quản trị văn bản chuyên nghiệp:"
     )
     
-    add_bullet("Kiến trúc RAG hiện đại kết hợp CSDL quan hệ PostgreSQL và Vector Database PostgreSQL pgvector.", "✓ Về công nghệ: ")
+    add_bullet("Kiến trúc RAG hiện đại kết hợp CSDL quan hệ PostgreSQL và Vector Database ChromaDB.", "✓ Về công nghệ: ")
     add_bullet("Đạt chuẩn bảo mật nhiều lớp với Role CSDL chỉ đọc, Security Barrier Views và RBAC nghiêm ngặt.", "✓ Về an toàn dữ liệu: ")
     add_bullet("Loại trừ hoàn toàn hiện tượng 'ảo giác' (Zero-Hallucination), đảm bảo tính chính xác tuyệt đối của văn bản hành chính.", "✓ Về độ tin cậy: ")
     add_bullet("Giao diện Box Chat tiện lợi và Trang làm việc chuyên sâu, hỗ trợ nhập liệu giọng nói và xem trước đa định dạng.", "✓ Về trải nghiệm: ")

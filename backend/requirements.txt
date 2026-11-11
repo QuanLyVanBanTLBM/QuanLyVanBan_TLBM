@@ -39,11 +39,13 @@ reportlab>=4.2,<5
 psycopg[binary]>=3.2.0
 gunicorn>=23,<24
 
-# RAG document readers and OCR.
+# RAG imports used by the integrated assistant and its mandatory regression suite.
+chromadb>=1.5.9,<2
 pdfplumber>=0.11.10,<0.12
 python-docx>=1.2,<2
 legacy-doc==0.2.1
 llama-index-core>=0.14.25,<0.15
+llama-index-vector-stores-chroma>=0.6,<0.7
 pdf2image>=1.17,<2
 Pillow>=13,<14
 rapidocr-onnxruntime>=1.4.4,<2

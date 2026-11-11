@@ -10,7 +10,7 @@ Folder (Thư mục gốc)
         ├── item2 (Tệp 2)
         └── item3 (Tệp 3)
 
-Đồng thời lập chỉ mục (index) toàn bộ vào Vector Database PostgreSQL pgvector
+Đồng thời lập chỉ mục (index) toàn bộ vào Vector Database ChromaDB
 để Trợ lý AI có thể tra cứu và trích dẫn theo đúng cấu trúc phân cấp.
 """
 
@@ -283,7 +283,7 @@ def main():
         print(f"\n   ⚠️ Không thể đồng bộ Django DB: {db_err}")
 
     print("\n" + "=" * 70)
-    print("🚀  LẬP CHỈ MỤC (INDEXING) CẢ 6 TỆP VÀO VECTOR STORE POSTGRESQL PGVECTOR...")
+    print("🚀  LẬP CHỈ MỤC (INDEXING) CẢ 6 TỆP VÀO VECTOR STORE CHROMADB...")
     print("=" * 70)
 
     for doc_path, cat, f_name, i_name in all_indexed:

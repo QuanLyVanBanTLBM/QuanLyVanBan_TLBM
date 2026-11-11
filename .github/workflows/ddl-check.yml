@@ -33,7 +33,7 @@ jobs:
     timeout-minutes: 10
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: postgres:16
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=vi-VN --locale=C.UTF-8"

@@ -1,4 +1,4 @@
-"""Lập chỉ mục (Index) các tài liệu mẫu vào Vector Database PostgreSQL pgvector
+"""Lập chỉ mục (Index) các tài liệu mẫu vào Vector Database ChromaDB
 
 để Trợ lý AI có thể trả lời ngay lập tức khi người dùng đặt câu hỏi.
 """
@@ -27,7 +27,7 @@ DOCS = [
 def main():
     docs_dir = ROOT_DIR / "data" / "docs"
     print("=" * 70)
-    print("🚀 BẮT ĐẦU LẬP CHỈ MỤC (INDEXING) CÁC TÀI LIỆU VÀO POSTGRESQL PGVECTOR")
+    print("🚀 BẮT ĐẦU LẬP CHỈ MỤC (INDEXING) CÁC TÀI LIỆU VÀO CHROMADB")
     print("=" * 70)
 
     for filename, category in DOCS:

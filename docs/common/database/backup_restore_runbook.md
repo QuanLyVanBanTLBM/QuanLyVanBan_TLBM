@@ -10,7 +10,7 @@ Tài liệu này mô tả backup logic do **scripts/backup_restore.py** tạo. C
 | Tệp tải lên | Toàn bộ cây thư mục **MEDIA_ROOT**. | Giá trị **DJANGO_MEDIA_ROOT**; nếu không đặt, Django dùng **media/** cạnh thư mục **backend**. |
 | Tệp nghiệp vụ | Toàn bộ cây thư mục **DOCUMENT_STORAGE_ROOT** (văn bản đến/đi, công việc, biểu mẫu; xem mục Cây thư mục tệp nghiệp vụ). | Giá trị **DOCUMENT_STORAGE_ROOT**; bắt buộc ngoài môi trường dev. |
 | Tệp trình ký | Toàn bộ cây thư mục **SIGNING_DOCUMENT_ROOT**. | Đường dẫn này bắt buộc trong production; storage lưu vị trí tương đối trong CSDL. |
-| AI | Toàn bộ **AI_DATA_DIR**, gồm tài liệu và **doc_registry.json**; embeddings nằm trong PostgreSQL backup. | **backend/config/__init__.py** là module **config** đang được import; mặc định thư mục là **backend/data**, có thể đổi bằng **AI_DATA_DIR**. |
+| AI | Toàn bộ **AI_DATA_DIR**, gồm tài liệu, Chroma và **doc_registry.json**. | **backend/config/__init__.py** là module **config** đang được import; mặc định thư mục là **backend/data**, có thể đổi bằng **AI_DATA_DIR**. |
 | Cấu hình riêng | Tệp được truyền bằng **--private-config**, mặc định triển khai trong source là **/etc/qlvb/backend.env**. | Backup yêu cầu **DJANGO_SECRET_KEY** và **SIGNING_PIN_SECRET** có giá trị literal, không rỗng. |
 
 Bốn data root (**MEDIA_ROOT**, **SIGNING_DOCUMENT_ROOT**, **AI_DATA_DIR**, **DOCUMENT_STORAGE_ROOT**) phải được truyền tường minh và tồn tại. Không suy ra đường dẫn từ thư mục release khi chạy backup. **DJANGO_SECRET_KEY** và **SIGNING_PIN_SECRET** được giữ trong bản sao cấu hình riêng; các giá trị này không nằm trong metadata hoặc stdout. Metadata chỉ ghi tên khóa cần có, tên một số khóa được cấu hình và allowlist cấu hình không bí mật.

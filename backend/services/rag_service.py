@@ -1,4 +1,5 @@
 import re
+import shutil
 import tempfile
 import unicodedata
 import base64
@@ -14,9 +15,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import lru_cache
 from pathlib import Path
 
+import chromadb
 import pdfplumber
 from docx import Document as DocxDocument
-from llama_index.core import Settings
+from llama_index.core import Settings, StorageContext, VectorStoreIndex
 from llama_index.core.node_parser import SentenceSplitter
 from llama_index.core.schema import Document
 from llama_index.core.vector_stores.types import (
@@ -25,6 +27,7 @@ from llama_index.core.vector_stores.types import (
     MetadataFilter,
     MetadataFilters,
 )
+from llama_index.vector_stores.chroma import ChromaVectorStore
 from pdf2image import convert_from_path
 from PIL import Image
 
@@ -34,6 +37,8 @@ from backend.config import (
     CHILD_CHUNK_SIZE,
     CHAT_HISTORY_MAX_CHARS,
     CHAT_HISTORY_MAX_TURNS,
+    CHROMA_DIR,
+    COLLECTION_NAME,
     DOCS_DIR,
     EMBED_MODEL,
     LLM_MODEL,
@@ -1404,43 +1409,40 @@ def format_chat_history(history) -> str:
     return "\n".join(lines)
 
 
-def get_vector_collection():
-    from backend.services.pgvector_store import PgVectorCollection
-    return PgVectorCollection()
+def get_chroma_collection():
+    CHROMA_DIR.mkdir(parents=True, exist_ok=True)
+    client = chromadb.PersistentClient(path=str(CHROMA_DIR))
+    base_name = os.getenv("COLLECTION_NAME", "smart_documents")
+    return client.get_or_create_collection(f"{base_name}_openai")
 
 def sync_documents_if_needed():
-    """Reindex registered documents absent from the PostgreSQL vector store."""
-    from django.db import connection
-    lock_key = 719001
+    """Automatically populate the provider's collection if empty using registered documents."""
     try:
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT pg_advisory_lock(%s)", [lock_key])
-        try:
-            collection = get_vector_collection()
-            from backend.services.document_service import load_registry
-            entries = load_registry()
-            if not entries:
-                return
-            indexed_filenames = collection.indexed_filenames()
-            for entry in entries:
-                filename = entry.get("filename")
-                if not filename or filename in indexed_filenames:
-                    continue
-                path = DOCS_DIR / filename
-                if path.exists():
+        collection = get_chroma_collection()
+        if collection.count() > 0:
+            return
+
+        from backend.services.document_service import load_registry
+        entries = load_registry()
+        if not entries:
+            return
+
+        print(f"🔄 Đang tự động lập chỉ mục {len(entries)} tài liệu cho provider {provider or MODEL_PROVIDER}...")
+        for entry in entries:
+            fn = entry.get("filename")
+            if fn:
+                p = DOCS_DIR / fn
+                if p.exists():
                     try:
-                        index_document(path, category=entry.get("category"), source_metadata={"file_name": filename})
-                    except Exception:
-                        logger.exception("Could not index registered document %s", filename)
-        finally:
-            with connection.cursor() as cursor:
-                cursor.execute("SELECT pg_advisory_unlock(%s)", [lock_key])
-    except Exception:
-        logger.exception("Could not rebuild the PostgreSQL vector index")
+                        index_document(p, category=entry.get("category"), source_metadata={"file_name": fn})
+                    except Exception as exc:
+                        logger.warning("Không thể tự động lập chỉ mục tài liệu %s: %s", fn, exc)
+    except Exception as exc:
+        logger.warning("sync_documents_if_needed encountered error: %s", exc)
 
 
 def resolve_target_filename(filename: str | None) -> str | None:
-    """Đối chiếu và chuẩn hóa tên file chỉ định với danh mục vector."""
+    """Đối chiếu và chuẩn hóa tên file chỉ định với danh mục trong ChromaDB."""
     if not filename or not isinstance(filename, str):
         return None
     raw_name = filename.strip()
@@ -1448,7 +1450,7 @@ def resolve_target_filename(filename: str | None) -> str | None:
         return None
 
     try:
-        collection = get_vector_collection()
+        collection = get_chroma_collection()
         all_docs = collection.get(include=["metadatas"])
         indexed_files = set()
         for m in (all_docs.get("metadatas") or []):
@@ -1501,7 +1503,7 @@ def extract_target_from_question(question: str) -> str | None:
 
     # 3. Phát hiện tên tệp trực tiếp trong câu hỏi
     try:
-        collection = get_vector_collection()
+        collection = get_chroma_collection()
         all_docs = collection.get(include=["metadatas"])
         for m in (all_docs.get("metadatas") or []):
             fn = (m or {}).get("file_name")
@@ -1519,23 +1521,14 @@ def extract_target_from_question(question: str) -> str | None:
 
 def get_index():
     setup_llamaindex()
-    return PgVectorIndex()
 
+    collection = get_chroma_collection()
+    vector_store = ChromaVectorStore(chroma_collection=collection)
 
-class PgVectorRetriever:
-    def __init__(self, embed_model, **kwargs):
-        self.embed_model = embed_model
-        self.limit = kwargs.get("similarity_top_k", SIMILARITY_TOP_K)
-        self.filters = kwargs.get("filters")
-
-    def retrieve(self, query):
-        from backend.services.pgvector_store import similarity_search
-        return similarity_search(query, self.embed_model, self.limit, self.filters)
-
-
-class PgVectorIndex:
-    def as_retriever(self, **kwargs):
-        return PgVectorRetriever(Settings.embed_model, **kwargs)
+    return VectorStoreIndex.from_vector_store(
+        vector_store=vector_store,
+        embed_model=Settings.embed_model,
+    )
 
 
 def index_document(file_path: Path, category=None, source_metadata=None, extra_text=""):
@@ -1561,7 +1554,7 @@ def index_document(file_path: Path, category=None, source_metadata=None, extra_t
     source_metadata["file_path"] = str(DOCS_DIR / logical_filename)
     source_metadata["_upload_ingest_id"] = ingest_id
 
-    collection = get_vector_collection()
+    collection = get_chroma_collection()
     if source_metadata.get("sql_doc_key"):
         existing = collection.get(where={"sql_doc_key": source_metadata["sql_doc_key"]})
     else:
@@ -1611,7 +1604,7 @@ def index_document(file_path: Path, category=None, source_metadata=None, extra_t
         "section_count": len(page_items),
         "text_length": len(text),
         "category": category,
-        "vector_database": "PostgreSQL pgvector",
+        "vector_database": "ChromaDB",
         "rag_framework": "LlamaIndex",
         "chunking": "parent-child",
         "parent_chunk_size": PARENT_CHUNK_SIZE,
@@ -1623,8 +1616,15 @@ def index_document(file_path: Path, category=None, source_metadata=None, extra_t
 
 
 def _insert_documents(documents):
-    from backend.services.pgvector_store import insert_documents
-    return insert_documents(documents, Settings.embed_model)
+    collection = get_chroma_collection()
+    vector_store = ChromaVectorStore(chroma_collection=collection)
+    storage_context = StorageContext.from_defaults(vector_store=vector_store)
+    return VectorStoreIndex.from_documents(
+        documents,
+        storage_context=storage_context,
+        embed_model=Settings.embed_model,
+        show_progress=True,
+    )
 
 
 AI_ATTACHMENT_SUFFIXES = frozenset({".pdf", ".doc", ".docx", ".jpg", ".jpeg", ".png"})
@@ -1760,7 +1760,7 @@ def index_sql_document(record):
         f"sql-user-content-v3\0{metadata_text}\0{attachment_hashes}\0{record.get('updated_at') or ''}".encode("utf-8")
     ).hexdigest()
 
-    collection = get_vector_collection()
+    collection = get_chroma_collection()
     cached = collection.get(where={"sql_doc_key": key}, include=["metadatas"])
     cached_metadata = cached.get("metadatas", [])
     if cached_metadata and all(
@@ -2175,11 +2175,11 @@ def _fallback_query_filter(filename, allowed_keys):
     return {"$and": [target, source_filter]}
 
 
-def _authorized_fallback_nodes(vector_result, allowed_keys):
+def _authorized_fallback_nodes(chroma_res, allowed_keys):
     from llama_index.core.schema import TextNode
 
     nodes = []
-    for doc_text, meta in zip(vector_result.get("documents", []), vector_result.get("metadatas", [])):
+    for doc_text, meta in zip(chroma_res.get("documents", []), chroma_res.get("metadatas", [])):
         meta = meta or {}
         if allowed_keys is not None and not (
             meta.get("sql_doc_key") in allowed_keys
@@ -2230,7 +2230,6 @@ def ask_document(question: str, history=None, category: str | None = None, user=
     )
 
     sql_mode = is_postgres_source()
-    sync_documents_if_needed()
     allowed_keys = None
     if sql_mode:
         with ai_stage("sql_source"):
@@ -2335,17 +2334,17 @@ def ask_document(question: str, history=None, category: str | None = None, user=
                 if (getattr(node, "metadata", {}) or {}).get("file_name") == clean_filename
             ]
             # Nếu retriever không trả về chunk nào (ví dụ câu hỏi quá ngắn hoặc embedding lệch),
-            # thực hiện fallback: lấy trực tiếp tất cả chunk của file đó từ PostgreSQL!
+            # thực hiện fallback: lấy trực tiếp tất cả chunk của file đó từ ChromaDB!
             if not nodes:
-                print(f"⚠️ Retriever không trả về node cho {clean_filename}, thực hiện fallback từ PostgreSQL")
+                print(f"⚠️ Retriever không trả về node cho {clean_filename}, thực hiện fallback từ ChromaDB")
                 set_fields(fallback=True)
-                fallback_collection = get_vector_collection()
+                fallback_collection = get_chroma_collection()
                 fallback_where = _fallback_query_filter(clean_filename, allowed_keys if sql_mode else None)
-                vector_result = fallback_collection.get(
+                chroma_res = fallback_collection.get(
                     where=fallback_where,
                     include=["documents", "metadatas"],
                 )
-                nodes = _authorized_fallback_nodes(vector_result, allowed_keys if sql_mode else None)
+                nodes = _authorized_fallback_nodes(chroma_res, allowed_keys if sql_mode else None)
         if sql_mode and nodes:
             nodes = [
                 node for node in nodes
@@ -2395,31 +2394,69 @@ def ask_document(question: str, history=None, category: str | None = None, user=
 
 
 def clear_vector_database():
-    from django.db import connection
-    with connection.cursor() as cursor:
-        cursor.execute("TRUNCATE TABLE ai_document_embedding")
+    if CHROMA_DIR.exists():
+        shutil.rmtree(CHROMA_DIR)
+
+    CHROMA_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def delete_document_vectors(filename: str):
+    CHROMA_DIR.mkdir(parents=True, exist_ok=True)
+    client = chromadb.PersistentClient(path=str(CHROMA_DIR))
     safe_name = Path(filename).name
-    get_vector_collection().delete(where={"file_name": safe_name})
+
+    base_name = os.getenv("COLLECTION_NAME", "smart_documents")
+    target_collections = [base_name, f"{base_name}_openai"]
+
+    last_error = None
+    for col_name in target_collections:
+        try:
+            col = client.get_collection(col_name)
+            col.delete(where={"file_name": safe_name})
+        except Exception as error:
+            last_error = error
+
+    # If active collection deletion failed critically, re-raise
+    active_col = get_chroma_collection()
+    try:
+        active_col.delete(where={"file_name": safe_name})
+    except Exception as error:
+        print(f"Vector delete failed for {safe_name}: {error}")
+        raise
 
 
 def update_document_category_vectors(filename: str, category: str) -> int:
+    CHROMA_DIR.mkdir(parents=True, exist_ok=True)
+    client = chromadb.PersistentClient(path=str(CHROMA_DIR))
     safe_name = Path(filename).name
     clean_category = (category or "").strip()
+
     if not clean_category:
         return 0
-    collection = get_vector_collection()
-    result = collection.get(where={"file_name": safe_name}, include=["metadatas"])
-    ids = result.get("ids") or []
-    if not ids:
-        return 0
-    metadatas = []
-    for metadata in result.get("metadatas") or []:
-        updated = dict(metadata or {})
-        updated["category"] = clean_category
-        metadatas.append(updated)
-    collection.update(ids=ids, metadatas=metadatas)
-    logger.info("Updated PostgreSQL vector categories for %s (%s chunks)", safe_name, len(ids))
-    return len(ids)
+
+    base_name = os.getenv("COLLECTION_NAME", "smart_documents")
+    target_collections = [base_name, f"{base_name}_openai"]
+    total_updated = 0
+
+    for col_name in target_collections:
+        try:
+            col = client.get_collection(col_name)
+            result = col.get(
+                where={"file_name": safe_name},
+                include=["metadatas"],
+            )
+            ids = result.get("ids") or []
+            if ids:
+                metadatas = result.get("metadatas") or []
+                updated_metadatas = []
+                for metadata in metadatas:
+                    new_metadata = dict(metadata or {})
+                    new_metadata["category"] = clean_category
+                    updated_metadatas.append(new_metadata)
+                col.update(ids=ids, metadatas=updated_metadatas)
+                total_updated += len(ids)
+        except Exception:
+            pass
+
+    print(f"🏷️  Cập nhật category vector cho {safe_name}: {clean_category} ({total_updated} chunks)")
+    return total_updated
