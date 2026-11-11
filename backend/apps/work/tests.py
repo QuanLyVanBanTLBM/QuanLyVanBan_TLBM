@@ -537,15 +537,14 @@ class TaskListApiTests(WorkTestBase):
 
 
 class TaskDefaultOrderingTests(WorkTestBase):
-    """VIỆC 3: thứ tự mặc định 3 tầng, tie-break -id, và ưu tiên ordering theo request."""
+    """VIỆC 3: thứ tự mặc định (trạng thái → hạn), tie-break -id, và ưu tiên ordering theo request."""
 
     def ids(self, response):
         return [item["id"] for item in response.data["results"]]
 
-    def test_thu_tu_mac_dinh_uu_tien_viec_cua_toi(self):
-        # member là THAM_GIA trên mọi việc → tất cả đều là "việc chờ tôi xử lý" (bậc 2).
-        # Chờ xử lý (mới tạo, chưa mở, còn hạn) và Đang xử lý (đã mở, còn hạn) GỘP chung bậc 2,
-        # trong bậc 2 sắp thuần theo hạn xử lý tăng dần (KHÔNG còn tách CHO_XU_LY lên trước).
+    def test_thu_tu_mac_dinh_gom_theo_trang_thai(self):
+        # Issue #737: gom cứng theo trạng thái — toàn bộ "Chờ xử lý" đứng trước toàn bộ
+        # "Đang xử lý", KHÔNG còn gộp chung rồi sắp thuần theo hạn.
         cho_xa = self.make_task(due_offset=10, title="Chờ xử lý - hạn xa")
         cho_gan = self.make_task(due_offset=2, title="Chờ xử lý - hạn gần")
         cho_giua = self.make_task(due_offset=5, title="Chờ xử lý - hạn giữa")
@@ -560,10 +559,11 @@ class TaskDefaultOrderingTests(WorkTestBase):
         response = self.client.get("/api/work/tasks/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-        # Tất cả cùng bậc 2 → sắp theo hạn tăng dần: 1, 2, 3, 5, 10.
+        # Nhóm Chờ xử lý theo hạn tăng dần (2, 5, 10), rồi tới nhóm Đang xử lý (1, 3).
+        # Việc Đang xử lý hạn 1 ngày vẫn xuống dưới việc Chờ xử lý hạn 10 ngày.
         self.assertEqual(
             self.ids(response),
-            [dang_gan.pk, cho_gan.pk, dang_xa.pk, cho_giua.pk, cho_xa.pk],
+            [cho_gan.pk, cho_giua.pk, cho_xa.pk, dang_gan.pk, dang_xa.pk],
         )
 
     def test_cung_trang_thai_cung_han_sap_theo_id_giam_dan(self):
@@ -593,74 +593,106 @@ class TaskDefaultOrderingTests(WorkTestBase):
 
 
 class TaskPrioritySortTests(WorkTestBase):
-    """Sắp xếp ưu tiên: đưa việc đang CHỜ CHÍNH USER HÀNH ĐỘNG lên đầu (priority_bucket)."""
+    """
+    Sắp xếp mặc định: gom CỨNG THEO TRẠNG THÁI, giống nhau với mọi người xem (issue #737).
+    Chờ duyệt → Chờ xử lý → Đang xử lý → Quá hạn → Chưa hoàn thành → Hoàn thành.
+    """
 
     def ids(self, response):
         return [item["id"] for item in response.data["results"]]
 
     def bucket_of(self, task, user):
-        qs = Task.objects.visible_to(user).with_status().with_priority_for(user)
+        qs = Task.objects.visible_to(user).with_status().with_status_priority()
         return qs.values_list("priority_bucket", flat=True).get(pk=task.pk)
 
-    def test_chu_tri_cho_duyet_truoc_phai_lam_truoc_qua_han(self):
-        # host là CHU_TRI của mọi việc: bậc 1 (chờ duyệt) < bậc 2 (phải làm) < bậc 3 (quá hạn).
-        viec_cho_duyet = self.make_task(due_offset=8, title="Chờ duyệt - bậc 1")
-        self.add_evidence(viec_cho_duyet)
-        viec_phai_lam = self.make_task(due_offset=10, title="Chờ xử lý - bậc 2")
-        viec_qua_han = self.make_task(
-            created_offset=-5, due_offset=-1, title="Quá hạn - bậc 3"
+    def make_moi_trang_thai(self):
+        """Mỗi trạng thái một việc, cố tình tạo theo thứ tự ĐẢO so với thứ tự mong đợi."""
+        hoan_thanh = self.make_task(
+            due_offset=1, title="Hoàn thành", approved_at=timezone.now(), approved_by=self.host
+        )
+        chua_hoan_thanh = self.make_task(
+            created_offset=-5, due_offset=-1, title="Chưa hoàn thành",
+            first_opened_at=timezone.now(),
+        )
+        qua_han = self.make_task(created_offset=-5, due_offset=-2, title="Quá hạn")
+        dang_xu_ly = self.make_task(
+            due_offset=9, title="Đang xử lý", first_opened_at=timezone.now()
+        )
+        cho_xu_ly = self.make_task(due_offset=8, title="Chờ xử lý")
+        cho_duyet = self.make_task(due_offset=10, title="Chờ duyệt")
+        self.add_evidence(cho_duyet)
+        return cho_duyet, cho_xu_ly, dang_xu_ly, qua_han, chua_hoan_thanh, hoan_thanh
+
+    def test_bac_uu_tien_dung_theo_tung_trang_thai(self):
+        cho_duyet, cho_xu_ly, dang_xu_ly, qua_han, chua_hoan_thanh, hoan_thanh = (
+            self.make_moi_trang_thai()
         )
 
-        self.assertEqual(self.status_of(viec_cho_duyet), TaskStatus.CHO_DUYET)
-        self.assertEqual(self.status_of(viec_phai_lam), TaskStatus.CHO_XU_LY)
-        self.assertEqual(self.status_of(viec_qua_han), TaskStatus.QUA_HAN)
+        mong_doi = [
+            (cho_duyet, TaskStatus.CHO_DUYET, 1),
+            (cho_xu_ly, TaskStatus.CHO_XU_LY, 2),
+            (dang_xu_ly, TaskStatus.DANG_XU_LY, 3),
+            (qua_han, TaskStatus.QUA_HAN, 4),
+            (chua_hoan_thanh, TaskStatus.CHUA_HOAN_THANH, 5),
+            (hoan_thanh, TaskStatus.HOAN_THANH, 6),
+        ]
+        for task, trang_thai, bac in mong_doi:
+            with self.subTest(trang_thai=trang_thai):
+                self.assertEqual(self.status_of(task), trang_thai)
+                self.assertEqual(self.bucket_of(task, self.host), bac)
 
-        self.assertEqual(self.bucket_of(viec_cho_duyet, self.host), 1)
-        self.assertEqual(self.bucket_of(viec_phai_lam, self.host), 2)
-        self.assertEqual(self.bucket_of(viec_qua_han, self.host), 3)
+    def test_danh_sach_sap_dung_thu_tu_trang_thai(self):
+        cho_duyet, cho_xu_ly, dang_xu_ly, qua_han, chua_hoan_thanh, hoan_thanh = (
+            self.make_moi_trang_thai()
+        )
 
         self.login(self.host)
         response = self.client.get("/api/work/tasks/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Chờ duyệt đứng đầu DÙ hạn xa nhất (10 ngày); Hoàn thành xuống cuối DÙ hạn gần nhất.
         self.assertEqual(
             self.ids(response),
-            [viec_cho_duyet.pk, viec_phai_lam.pk, viec_qua_han.pk],
+            [
+                cho_duyet.pk,
+                cho_xu_ly.pk,
+                dang_xu_ly.pk,
+                qua_han.pk,
+                chua_hoan_thanh.pk,
+                hoan_thanh.pk,
+            ],
         )
 
-    def test_chi_dao_chi_uu_tien_viec_cho_minh_duyet(self):
-        # Chỉ đạo chỉ được nâng ưu tiên với việc Chờ duyệt (bậc 1); các trạng thái khác về bậc 4.
-        viec_cho_duyet = self.make_task(due_offset=5, title="Chờ duyệt")
-        self.add_evidence(viec_cho_duyet)
-        viec_cho_xu_ly = self.make_task(due_offset=2, title="Chờ xử lý")
+    def test_thu_tu_giong_nhau_voi_moi_nguoi_xem(self):
+        """Bỏ ưu tiên theo vai trò: chủ trì, tham gia, chỉ đạo, người tạo đều thấy một thứ tự."""
+        tasks = self.make_moi_trang_thai()
+        mong_doi = [task.pk for task in tasks]
 
-        # Chỉ đạo KHÔNG phải chủ trì/tham gia nên việc Chờ xử lý không vào bậc 2.
-        self.assertEqual(self.bucket_of(viec_cho_duyet, self.director), 1)
-        self.assertEqual(self.bucket_of(viec_cho_xu_ly, self.director), 4)
+        for nguoi_xem in (self.host, self.member, self.director, self.creator):
+            with self.subTest(nguoi_xem=nguoi_xem.username):
+                self.login(nguoi_xem)
+                response = self.client.get("/api/work/tasks/")
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                self.assertEqual(self.ids(response), mong_doi)
 
-        self.login(self.director)
+    def test_tham_gia_thay_cho_duyet_tren_qua_han(self):
+        """
+        Chống tái phát issue #737: trước đây bậc 1 chỉ xét chỉ đạo/chủ trì/người tạo nên
+        cán bộ THAM GIA thấy việc Chờ duyệt của mình rơi xuống đáy, dưới cả việc Quá hạn.
+        """
+        qua_han = self.make_task(created_offset=-5, due_offset=-3, title="Quá hạn - hạn sớm nhất")
+        cho_duyet = self.make_task(due_offset=12, title="Chờ duyệt - hạn xa nhất")
+        self.add_evidence(cho_duyet)
+
+        self.assertEqual(self.bucket_of(cho_duyet, self.member), 1)
+        self.assertEqual(self.bucket_of(qua_han, self.member), 4)
+
+        self.login(self.member)
         response = self.client.get("/api/work/tasks/")
-        # Việc chờ chính chỉ đạo duyệt (bậc 1) đứng trước việc chờ xử lý (bậc 4),
-        # dù việc chờ xử lý có hạn gần hơn.
-        self.assertEqual(self.ids(response), [viec_cho_duyet.pk, viec_cho_xu_ly.pk])
+        self.assertEqual(self.ids(response), [cho_duyet.pk, qua_han.pk])
 
-    def test_nguoi_tao_uu_tien_viec_cho_minh_duyet(self):
-        # Người tạo (không phải chủ trì/chỉ đạo) cũng là người duyệt: việc Chờ duyệt vào bậc 1.
-        viec_cho_duyet = self.make_task(due_offset=8, title="Chờ duyệt")
-        self.add_evidence(viec_cho_duyet)
-        viec_cho_xu_ly = self.make_task(due_offset=2, title="Chờ xử lý")
-        self.assertEqual(self.status_of(viec_cho_duyet), TaskStatus.CHO_DUYET)
-
-        self.assertEqual(self.bucket_of(viec_cho_duyet, self.creator), 1)
-        # Việc chưa nộp bằng chứng: người tạo không phải hành động nên về bậc 4.
-        self.assertEqual(self.bucket_of(viec_cho_xu_ly, self.creator), 4)
-
-        self.login(self.creator)
-        response = self.client.get("/api/work/tasks/")
-        self.assertEqual(self.ids(response), [viec_cho_duyet.pk, viec_cho_xu_ly.pk])
-
-    def test_cung_bac_sap_theo_han_tang_dan(self):
-        han_gan = self.make_task(due_offset=2, title="Bậc 2 - hạn gần")
-        han_xa = self.make_task(due_offset=9, title="Bậc 2 - hạn xa")
+    def test_cung_trang_thai_sap_theo_han_tang_dan(self):
+        han_gan = self.make_task(due_offset=2, title="Chờ xử lý - hạn gần")
+        han_xa = self.make_task(due_offset=9, title="Chờ xử lý - hạn xa")
 
         self.assertEqual(self.bucket_of(han_gan, self.host), 2)
         self.assertEqual(self.bucket_of(han_xa, self.host), 2)
@@ -669,15 +701,19 @@ class TaskPrioritySortTests(WorkTestBase):
         response = self.client.get("/api/work/tasks/")
         self.assertEqual(self.ids(response), [han_gan.pk, han_xa.pk])
 
-    def test_uu_tien_khac_nhau_theo_nguoi_xem(self):
-        # Cùng một việc Chờ duyệt: chủ trì xếp bậc 1 (chờ mình duyệt),
-        # còn cán bộ tham gia xếp bậc 4 (không còn việc phải làm trên việc này).
-        viec = self.make_task(due_offset=5, title="Chờ duyệt")
-        self.add_evidence(viec)
-        self.assertEqual(self.status_of(viec), TaskStatus.CHO_DUYET)
+    def test_cung_trang_thai_luon_nam_lien_ke(self):
+        """Hai việc cùng trạng thái không bị việc trạng thái khác chen vào giữa."""
+        cho_xu_ly_gan = self.make_task(due_offset=1, title="Chờ xử lý - hạn gần")
+        cho_duyet = self.make_task(due_offset=3, title="Chờ duyệt")
+        self.add_evidence(cho_duyet)
+        cho_xu_ly_xa = self.make_task(due_offset=5, title="Chờ xử lý - hạn xa")
 
-        self.assertEqual(self.bucket_of(viec, self.host), 1)
-        self.assertEqual(self.bucket_of(viec, self.member), 4)
+        self.login(self.host)
+        response = self.client.get("/api/work/tasks/")
+        self.assertEqual(
+            self.ids(response),
+            [cho_duyet.pk, cho_xu_ly_gan.pk, cho_xu_ly_xa.pk],
+        )
 
     def test_ordering_thu_cong_bo_qua_uu_tien(self):
         # ?ordering=due_date → tôn trọng lựa chọn sort của người dùng, không ép priority.
@@ -688,27 +724,8 @@ class TaskPrioritySortTests(WorkTestBase):
         self.login(self.host)
         response = self.client.get("/api/work/tasks/", {"ordering": "due_date"})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        # Thuần theo hạn tăng dần: hạn gần (bậc 2) rồi hạn xa (bậc 1) — priority bị bỏ qua.
+        # Thuần theo hạn tăng dần: hạn gần (Chờ xử lý) rồi hạn xa (Chờ duyệt) — priority bị bỏ qua.
         self.assertEqual(self.ids(response), [viec_cho_xu_ly.pk, viec_cho_duyet.pk])
-
-    def test_cho_duyet_xep_truoc_cho_xu_ly_cung_user(self):
-        # host vừa là chủ trì task CHO_XU_LY (bậc 2) vừa là chủ trì task CHO_DUYET (bậc 1).
-        viec_cho_xu_ly = self.make_task(due_offset=2, title="Chờ xử lý")
-        viec_cho_duyet = self.make_task(due_offset=8, title="Chờ duyệt")
-        self.add_evidence(viec_cho_duyet)
-
-        self.assertEqual(self.status_of(viec_cho_xu_ly), TaskStatus.CHO_XU_LY)
-        self.assertEqual(self.status_of(viec_cho_duyet), TaskStatus.CHO_DUYET)
-
-        self.assertEqual(self.bucket_of(viec_cho_duyet, self.host), 1)
-        self.assertEqual(self.bucket_of(viec_cho_xu_ly, self.host), 2)
-
-        self.login(self.host)
-        response = self.client.get("/api/work/tasks/")
-        self.assertEqual(
-            self.ids(response),
-            [viec_cho_duyet.pk, viec_cho_xu_ly.pk],
-        )
 
 
 class EmployeeInfoSerializerTests(WorkTestBase):

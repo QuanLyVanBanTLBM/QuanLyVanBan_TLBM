@@ -218,50 +218,44 @@ class TaskQuerySet(models.QuerySet):
             )
         )
 
-    def with_priority_for(self, user):
+    def with_status_priority(self):
         """
-        Gắn cột `priority_bucket` (1 = cao nhất) để đưa việc đang CHỜ CHÍNH USER HÀNH ĐỘNG
-        lên đầu danh sách. CHỈ SẮP XẾP, không lọc, không ẩn việc nào.
+        Gắn cột `priority_bucket` (1 = trên cùng) để sắp danh sách CỨNG THEO TRẠNG THÁI.
+        CHỈ SẮP XẾP, không lọc, không ẩn việc nào.
 
         YÊU CẦU: gọi SAU .with_status() vì cần cột annotate `status`.
 
-        Bậc ưu tiên (cao → thấp):
-          1. User là chỉ đạo/chủ trì/người tạo, việc đang Chờ duyệt (chờ chính user duyệt minh chứng).
-          2. User là chủ trì/tham gia, việc còn phải làm (Chờ xử lý hoặc Đang xử lý).
-          3. User là chủ trì/tham gia, việc đã trễ (Quá hạn hoặc Chưa hoàn thành).
-          4. Các việc còn lại user có quyền xem.
-        Trong cùng một bậc: sắp theo due_date tăng dần (do view order_by đảm nhận).
+        Thứ tự trạng thái (trên → dưới) — PM chốt tại issue #737:
+          1. Chờ duyệt        (cần người có quyền duyệt xử lý ngay)
+          2. Chờ xử lý
+          3. Đang xử lý
+          4. Quá hạn
+          5. Chưa hoàn thành
+          6. Hoàn thành       (đã xong, đẩy xuống cuối)
+        Trong cùng một trạng thái: sắp theo due_date tăng dần (do view order_by đảm nhận).
+
+        Trước đây bậc ưu tiên tính theo VAI TRÒ của người đang xem (chủ trì / tham gia /
+        chỉ đạo / người tạo). Cách đó làm hai việc cùng trạng thái nằm cách xa nhau, và bỏ sót
+        vai trò "tham gia" ở nhánh Chờ duyệt nên việc Chờ duyệt của cán bộ thực hiện rơi
+        xuống đáy danh sách. Nay bỏ hẳn yếu tố vai trò để thứ tự dễ đoán và đồng nhất với
+        mọi người xem.
         """
-        if user is None or not user.is_authenticated:
-            return self.annotate(priority_bucket=Value(4, output_field=IntegerField()))
-
-        def role_exists(role):
-            return Exists(
-                TaskParticipant.objects.filter(task=OuterRef("pk"), user=user, role=role)
-            )
-
+        order = [
+            TaskStatus.CHO_DUYET,
+            TaskStatus.CHO_XU_LY,
+            TaskStatus.DANG_XU_LY,
+            TaskStatus.QUA_HAN,
+            TaskStatus.CHUA_HOAN_THANH,
+            TaskStatus.HOAN_THANH,
+        ]
         return self.annotate(
-            _is_host=role_exists(ParticipantRole.CHU_TRI),
-            _is_part=role_exists(ParticipantRole.THAM_GIA),
-            _is_dir=role_exists(ParticipantRole.CHI_DAO),
-        ).annotate(
             priority_bucket=Case(
-                When(
-                    (Q(_is_dir=True) | Q(_is_host=True) | Q(created_by=user))
-                    & Q(status=TaskStatus.CHO_DUYET),
-                    then=Value(1),
-                ),
-                When(
-                    (Q(_is_host=True) | Q(_is_part=True))
-                    & Q(status__in=[TaskStatus.CHO_XU_LY, TaskStatus.DANG_XU_LY]),
-                    then=Value(2),
-                ),
-                When(
-                    (Q(_is_host=True) | Q(_is_part=True))
-                    & Q(status__in=[TaskStatus.QUA_HAN, TaskStatus.CHUA_HOAN_THANH]),
-                    then=Value(3),
-                ),
-                default=Value(4),
+                *[
+                    When(status=task_status, then=Value(bucket))
+                    for bucket, task_status in enumerate(order, start=1)
+                ],
+                # Phòng thủ: trạng thái lạ (nếu sau này thêm) xuống cuối thay vì chen lên đầu.
+                default=Value(len(order) + 1),
                 output_field=IntegerField(),
             )
         )

@@ -164,15 +164,17 @@ class TaskViewSet(
                 "approved_by__don_vi",
             )
             .prefetch_related(participants)
-            # Thứ tự mặc định ưu tiên theo CHÍNH NGƯỜI ĐANG XEM (chỉ sắp xếp, không lọc):
-            # 1. priority_bucket: việc đang chờ user hành động lên đầu (xem with_priority_for).
-            # 2. Trong mỗi bậc: hạn xử lý gần nhất lên trước (asc).
+            # Thứ tự mặc định gom CỨNG THEO TRẠNG THÁI, giống nhau với mọi người xem
+            # (chỉ sắp xếp, không lọc):
+            # 1. priority_bucket: Chờ duyệt → Chờ xử lý → Đang xử lý → Quá hạn →
+            #    Chưa hoàn thành → Hoàn thành (xem with_status_priority).
+            # 2. Trong mỗi trạng thái: hạn xử lý gần nhất lên trước (asc).
             # 3. Việc không có hạn xuống cuối (nulls_last) — hiện due_date NOT NULL nên là
             #    phòng thủ, chỉ có tác dụng nếu sau này cho phép việc không hạn.
             # Tie-break cuối cùng là -id (luôn unique) để phân trang ổn định tuyệt đối,
             # không để 2 record cùng due_date + cùng timestamp nhảy trang.
             # Khi request có ?ordering=... thì OrderingFilter override thứ tự này.
-            .with_priority_for(self.request.user)
+            .with_status_priority()
             .order_by("priority_bucket", F("due_date").asc(nulls_last=True), "-created_at", "-id")
         )
         if self.action != "list":
