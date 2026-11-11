@@ -6,16 +6,21 @@ import DocumentViewersModal from './DocumentViewersModal';
 import DocumentFormModal, { InitialDocType } from './DocumentFormModal';
 import apiClient, { apiClientBlob, downloadBlob } from '@lib/apiClient';
 import { setLanguage } from '@i18n/translate';
+import { resetPermissionsCache } from '@lib/permissions';
 
-vi.mock('@lib/apiClient', () => ({
-  default: {
-    get: vi.fn(),
-    post: vi.fn(),
-    delete: vi.fn(),
-  },
-  apiClientBlob: vi.fn(),
-  downloadBlob: vi.fn(),
-}));
+vi.mock('@lib/apiClient', () => {
+  const fn = vi.fn();
+  return {
+    default: Object.assign(fn, {
+      get: vi.fn(),
+      post: vi.fn(),
+      put: vi.fn(),
+      delete: vi.fn(),
+    }),
+    apiClientBlob: vi.fn(),
+    downloadBlob: vi.fn(),
+  };
+});
 
 describe('DocumentDetailModal', () => {
   beforeEach(() => {
@@ -752,6 +757,230 @@ describe('DocumentFormModal', () => {
     await waitFor(() => {
       expect(screen.getByText('Nguyễn Văn Lãnh Đạo')).toBeInTheDocument();
     });
+  });
+
+  it('VB Nội bộ cho phép thêm mới khi để trống đơn vị nhận và cán bộ xử lý, gửi chuỗi rỗng trong FormData', async () => {
+    resetPermissionsCache();
+    localStorage.setItem('tlbm_access_token', 'test-token');
+    try {
+      const getHandler = async (url: string) => {
+        if (url.includes('/auth/me/permissions/')) {
+          return { is_superuser: false, permissions: ['view_vanbanden', 'add_vanbanden'] };
+        }
+        if (url.includes('/api/documents/next-so/')) return { next_so: 1 };
+        if (url.includes('/api/organizations/units/')) return ['Phòng Hành chính - Tổng hợp'];
+        return [];
+      };
+      vi.mocked(apiClient.get).mockImplementation(getHandler);
+      vi.mocked(apiClient).mockImplementation((async (url: string, opts?: RequestInit) => {
+        if (!opts?.method || opts.method === 'GET') return getHandler(url);
+        return { id: 901, so_hieu: '99/NB-2026' };
+      }) as unknown as typeof apiClient);
+
+      const onSaved = vi.fn();
+      const onClose = vi.fn();
+      render(<DocumentFormModal open={true} onClose={onClose} onSaved={onSaved} defaultLoai="DEN" />);
+
+      // Kiểm tra nhãn phân phối VB Nội bộ không còn dấu * bắt buộc
+      const unitLabel = await screen.findByText(/Đơn vị nhận \/ chủ trì xử lý/i);
+      const staffLabel = screen.getByText(/Cán bộ nhận \/ xử lý/i);
+      expect(unitLabel.closest('label')?.textContent).not.toContain('*');
+      expect(staffLabel.closest('label')?.textContent).not.toContain('*');
+
+      fireEvent.change(screen.getByPlaceholderText(/VD: 125\/BGDDT-VP/i), { target: { value: '99/NB-2026' } });
+      fireEvent.change(screen.getByPlaceholderText(/Nhập danh mục hồ sơ \(VD:/i), { target: { value: 'Hồ sơ hành chính' } });
+      fireEvent.change(screen.getByPlaceholderText(/Nhập loại văn bản/i), { target: { value: 'Công văn' } });
+      fireEvent.change(screen.getByPlaceholderText(/Ví dụ: Bộ Giáo dục và Đào tạo/i), { target: { value: 'Bộ GD&ĐT' } });
+      fireEvent.change(screen.getByPlaceholderText(/Nhập tóm tắt ngắn gọn/i), { target: { value: 'Nội dung VB nội bộ không bắt buộc người nhận' } });
+      fireEvent.change(screen.getByPlaceholderText(/Họ và tên người ký/i), { target: { value: 'Nguyễn Văn A' } });
+      fireEvent.change(screen.getByPlaceholderText(/VD: Thứ trưởng/i), { target: { value: 'Giám đốc' } });
+
+      fireEvent.submit(screen.getByRole('button', { name: /Lưu văn bản/i }).closest('form')!);
+
+      await waitFor(() => {
+        expect(vi.mocked(apiClient)).toHaveBeenCalledWith(
+          '/api/documents/?loai=DEN',
+          expect.objectContaining({ method: 'POST', body: expect.any(FormData) }),
+        );
+      });
+
+      const postCall = vi.mocked(apiClient).mock.calls.find(
+        ([url, opts]) => typeof url === 'string' && url.includes('/api/documents/?loai=DEN') && (opts as RequestInit | undefined)?.method === 'POST',
+      );
+      expect(postCall).toBeDefined();
+      const init = postCall![1] as { body: FormData };
+      expect(init.body.get('don_vi_nhan')).toBe('');
+      expect(init.body.get('nguoi_nhan')).toBe('');
+      expect(onSaved).toHaveBeenCalled();
+      expect(onClose).toHaveBeenCalled();
+    } finally {
+      localStorage.removeItem('tlbm_access_token');
+      resetPermissionsCache();
+    }
+  });
+
+  it('VB Nội bộ khi sửa và gỡ hết đơn vị nhận sẽ gửi don_vi_nhan rỗng và nguoi_nhan rỗng lên server', async () => {
+    resetPermissionsCache();
+    localStorage.setItem('tlbm_access_token', 'test-token');
+    try {
+      const getHandler = async (url: string) => {
+        if (url.includes('/auth/me/permissions/')) {
+          return { is_superuser: false, permissions: ['view_vanbanden', 'change_vanbanden'] };
+        }
+        if (url.includes('/api/organizations/units/')) return ['Phòng Hành chính - Tổng hợp'];
+        if (url.includes('/api/accounts/staffs/') && url.includes('department=')) {
+          return [{ id: 2, username: 'canbo', ho_ten: 'Trần Cán Bộ', don_vi_ten: 'Phòng Hành chính - Tổng hợp' }];
+        }
+        if (url.match(/\/api\/documents\/55\//)) {
+          return {
+            id: 55,
+            loai: 'DEN',
+            nam: 2026,
+            so_hieu: '55/NB-EDIT',
+            so_thu_tu: 55,
+            danh_muc_ho_so: 'Hồ sơ hành chính',
+            ten_loai_van_ban: 'Công văn',
+            noi_ban_hanh: 'Bộ GD&ĐT',
+            trich_yeu: 'Văn bản sửa bỏ đơn vị nhận',
+            nguoi_ky: 'Nguyễn Văn A',
+            chuc_vu: 'Giám đốc',
+            hieu_luc: 'CON_HIEU_LUC',
+            pham_vi: 'NOI_BO',
+            don_vi_nhan: 'Phòng Hành chính - Tổng hợp',
+            nguoi_nhan: [2],
+            nguoi_nhan_list: [{ id: 2, username: 'canbo', ho_ten: 'Trần Cán Bộ', don_vi_ten: 'Phòng Hành chính - Tổng hợp' }],
+          };
+        }
+        return [];
+      };
+      vi.mocked(apiClient.get).mockImplementation(getHandler);
+      vi.mocked(apiClient).mockImplementation((async (url: string, opts?: RequestInit) => {
+        if (!opts?.method || opts.method === 'GET') return getHandler(url);
+        return { id: 55, so_hieu: '55/NB-EDIT' };
+      }) as unknown as typeof apiClient);
+
+      render(
+        <DocumentFormModal
+          open={true}
+          onClose={vi.fn()}
+          onSaved={vi.fn()}
+          defaultLoai="DEN"
+          initial={{
+            id: 55,
+            loai: 'DEN',
+            nam: 2026,
+            so_hieu: '55/NB-EDIT',
+            so_thu_tu: 55,
+            danh_muc_ho_so: 'Hồ sơ hành chính',
+            ten_loai_van_ban: 'Công văn',
+            noi_ban_hanh: 'Bộ GD&ĐT',
+            trich_yeu: 'Văn bản sửa bỏ đơn vị nhận',
+            nguoi_ky: 'Nguyễn Văn A',
+            chuc_vu: 'Giám đốc',
+            pham_vi: 'NOI_BO',
+            don_vi_nhan: 'Phòng Hành chính - Tổng hợp',
+            nguoi_nhan: [2],
+            hieu_luc: 'CON_HIEU_LUC',
+          } as InitialDocType}
+        />,
+      );
+
+      const clearUnitBtn = await screen.findByTitle('Bỏ chọn đơn vị');
+      fireEvent.click(clearUnitBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Vui lòng chọn đơn vị nhận trước/i)).toBeInTheDocument();
+      });
+
+      fireEvent.submit(screen.getByRole('button', { name: /Cập nhật/i }).closest('form')!);
+
+      await waitFor(() => {
+        expect(vi.mocked(apiClient)).toHaveBeenCalledWith(
+          '/api/documents/55/?loai=DEN',
+          expect.objectContaining({ method: 'PUT', body: expect.any(FormData) }),
+        );
+      });
+
+      const putCall = vi.mocked(apiClient).mock.calls.find(
+        ([url, opts]) => typeof url === 'string' && url.includes('/api/documents/55/?loai=DEN') && (opts as RequestInit | undefined)?.method === 'PUT',
+      );
+      expect(putCall).toBeDefined();
+      const init = putCall![1] as { body: FormData };
+      expect(init.body.get('don_vi_nhan')).toBe('');
+      expect(init.body.get('nguoi_nhan')).toBe('');
+    } finally {
+      localStorage.removeItem('tlbm_access_token');
+      resetPermissionsCache();
+    }
+  });
+
+  it('VB Hạn chế vẫn bắt buộc chọn cả đơn vị nhận và cán bộ xử lý trước khi lưu', async () => {
+    resetPermissionsCache();
+    try {
+      const getHandler = async (url: string) => {
+        if (url.includes('/auth/me/permissions/')) {
+          return {
+            is_superuser: false,
+            permissions: ['view_vanbanden', 'add_vanbanden', 'add_han_che_vanbanden'],
+          };
+        }
+        if (url.includes('/api/documents/next-so/')) return { next_so: 1 };
+        if (url.includes('/api/organizations/units/')) return ['Phòng Hành chính - Tổng hợp'];
+        if (url.includes('/api/accounts/staffs/') && url.includes('department=')) {
+          return [{ id: 2, username: 'canbo', ho_ten: 'Trần Cán Bộ', don_vi_ten: 'Phòng Hành chính - Tổng hợp' }];
+        }
+        return [];
+      };
+      vi.mocked(apiClient.get).mockImplementation(getHandler);
+      vi.mocked(apiClient).mockImplementation((async (url: string, opts?: RequestInit) => {
+        if (!opts?.method || opts.method === 'GET') return getHandler(url);
+        return { id: 999 };
+      }) as unknown as typeof apiClient);
+
+      render(<DocumentFormModal open={true} onClose={vi.fn()} onSaved={vi.fn()} defaultLoai="DEN" />);
+
+      const restrictedOpt = await screen.findByRole('option', { name: /Hạn chế/i }) as HTMLOptionElement;
+      await waitFor(() => expect(restrictedOpt.disabled).toBe(false));
+
+      fireEvent.change(screen.getByLabelText('Phạm vi lưu hành'), { target: { value: 'HAN_CHE' } });
+
+      // Dấu * vẫn hiển thị ở cả hai trường phân phối
+      const unitLabel = screen.getAllByText(/Đơn vị nhận \/ chủ trì xử lý/i).find(el => Boolean(el.closest('label')));
+      const staffLabel = screen.getAllByText(/Cán bộ nhận \/ xử lý/i).find(el => Boolean(el.closest('label')));
+      expect(unitLabel?.closest('label')?.textContent).toContain('*');
+      expect(staffLabel?.closest('label')?.textContent).toContain('*');
+
+      fireEvent.change(screen.getByPlaceholderText(/VD: 125\/BGDDT-VP/i), { target: { value: '88/HC-2026' } });
+      fireEvent.change(screen.getByPlaceholderText(/Nhập danh mục hồ sơ \(VD:/i), { target: { value: 'Hồ sơ mật' } });
+      fireEvent.change(screen.getByPlaceholderText(/Nhập loại văn bản/i), { target: { value: 'Công văn' } });
+      fireEvent.change(screen.getByPlaceholderText(/Ví dụ: Bộ Giáo dục và Đào tạo/i), { target: { value: 'Bộ GD&ĐT' } });
+      fireEvent.change(screen.getByPlaceholderText(/Nhập tóm tắt ngắn gọn/i), { target: { value: 'VB hạn chế bắt buộc phân phối' } });
+      fireEvent.change(screen.getByPlaceholderText(/Họ và tên người ký/i), { target: { value: 'Nguyễn Văn A' } });
+      fireEvent.change(screen.getByPlaceholderText(/VD: Thứ trưởng/i), { target: { value: 'Giám đốc' } });
+
+      // 1. Bỏ trống đơn vị nhận -> báo lỗi
+      fireEvent.submit(screen.getByRole('button', { name: /Lưu văn bản/i }).closest('form')!);
+      await waitFor(() => {
+        expect(screen.getByText(/Vui lòng chọn Đơn vị nhận \/ chủ trì xử lý \(\*\)/i)).toBeInTheDocument();
+      });
+      fireEvent.click(screen.getByRole('button', { name: /Đã hiểu/i }));
+
+      // 2. Chọn đơn vị nhưng chưa chọn cán bộ -> báo lỗi bắt buộc cán bộ
+      fireEvent.click(screen.getByText('-- Chọn đơn vị nhận --'));
+      fireEvent.click(await screen.findByRole('button', { name: /Phòng Hành chính - Tổng hợp/i }));
+      await waitFor(() => expect(screen.getByText(/Chọn cán bộ xử lý/i)).toBeInTheDocument());
+
+      fireEvent.submit(screen.getByRole('button', { name: /Lưu văn bản/i }).closest('form')!);
+      await waitFor(() => {
+        expect(screen.getByText(/Vui lòng chọn ít nhất một Cán bộ nhận \/ xử lý \(\*\)/i)).toBeInTheDocument();
+      });
+      const writeCall = vi.mocked(apiClient).mock.calls.find(
+        ([url, opts]) => typeof url === 'string' && url.includes('/api/documents/') && ((opts as RequestInit | undefined)?.method === 'POST' || (opts as RequestInit | undefined)?.method === 'PUT'),
+      );
+      expect(writeCall).toBeUndefined();
+    } finally {
+      resetPermissionsCache();
+    }
   });
 });
 

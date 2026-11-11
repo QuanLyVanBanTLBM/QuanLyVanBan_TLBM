@@ -128,8 +128,8 @@ class ExcelAutoHierarchyAndValidationTests(TestCase):
             ten_loai="Thông báo",
         )
 
-    def test_01_all_four_templates_contain_17_columns_and_comments(self):
-        """Cả 4 biểu mẫu Excel đều có đủ đúng 17 cột đồng bộ kèm tooltip comment cho các cột quan trọng."""
+    def test_01_all_four_templates_contain_18_columns_and_comments(self):
+        """Cả 4 biểu mẫu Excel đều có đủ đúng 18 cột (cột đầu là Năm) kèm tooltip comment phân biệt theo phạm vi."""
         templates_to_test = [
             ("DEN", "NOI_BO", "Mẫu VB Đến - Nội bộ"),
             ("DEN", "HAN_CHE", "Mẫu VB Đến - Hạn chế"),
@@ -138,6 +138,7 @@ class ExcelAutoHierarchyAndValidationTests(TestCase):
         ]
 
         expected_cols = [
+            "Năm",
             "Số, ký hiệu VB",
             "Phạm vi",
             "Trích yếu nội dung",
@@ -163,13 +164,16 @@ class ExcelAutoHierarchyAndValidationTests(TestCase):
             self.assertEqual(ws.title, expected_title)
             headers = [cell.value for cell in ws[1] if cell.value]
 
-            self.assertEqual(len(headers), 17, f"Template {loai}-{pham_vi} phải có đúng 17 cột (thực tế: {len(headers)})")
+            self.assertEqual(len(headers), 18, f"Template {loai}-{pham_vi} phải có đúng 18 cột (thực tế: {len(headers)})")
+            self.assertEqual(headers[0], "Năm", f"Cột đầu tiên của {loai}-{pham_vi} phải là 'Năm'")
+            self.assertEqual(headers[1], "Số, ký hiệu VB", f"Cột thứ 2 của {loai}-{pham_vi} phải là 'Số, ký hiệu VB'")
 
             for col in expected_cols:
                 self.assertIn(col, headers, f"Thiếu cột '{col}' trong template {loai}-{pham_vi}")
 
             # Kiểm tra tooltip comment cho các cột quan trọng
             for col_name in [
+                "Năm",
                 "Danh mục hồ sơ (Số ký hiệu)",
                 "Loại văn bản",
                 "Đơn vị nhận / chủ trì",
@@ -183,16 +187,25 @@ class ExcelAutoHierarchyAndValidationTests(TestCase):
                 cell = ws.cell(row=1, column=col_idx)
                 self.assertIsNotNone(cell.comment, f"Cột '{col_name}' thiếu tooltip comment trong {loai}-{pham_vi}")
 
+            dv_comment = ws.cell(row=1, column=headers.index("Đơn vị nhận / chủ trì") + 1).comment.text
+            cb_comment = ws.cell(row=1, column=headers.index("Cán bộ nhận / xử lý") + 1).comment.text
+            if pham_vi == "NOI_BO":
+                self.assertIn("TÙY CHỌN", dv_comment)
+                self.assertIn("TÙY CHỌN", cb_comment)
+            else:
+                self.assertIn("BẮT BUỘC", dv_comment)
+                self.assertIn("BẮT BUỘC", cb_comment)
+
     def test_02_block_import_when_mandatory_fields_missing(self):
-        """Chặn toàn bộ file (created: 0) nếu bất kỳ ô nào thuộc 14 cột bắt buộc bị để trống."""
+        """Chặn toàn bộ file (created: 0) nếu bất kỳ ô bắt buộc nào bị để trống."""
         # Test thiếu Tệp đính kèm
         wb = openpyxl.load_workbook(generate_excel_template("DEN", "NOI_BO"))
         ws = wb.active
         ws.append([
-            "101/CV-TEST", "Nội bộ", "15/10/2026 08:30:00", "15/10/2026",
+            2026, "101/CV-TEST", "Nội bộ", "15/10/2026 08:30:00", "15/10/2026",
             "Trích yếu công văn đến", "HS-HCQT", "Công văn", "Bộ GD&ĐT",
             "Ban công nghệ thông tin", "chuyenvien_cntt", "Nguyễn Văn Ký", "Trưởng ban",
-            "Còn hiệu lực", "", "", "", "",  # Tệp đính kèm để trống (cột 15)
+            "Còn hiệu lực", "", "", "", "",  # Tệp đính kèm để trống (cột 16)
         ])
         bio = io.BytesIO()
         wb.save(bio)
@@ -206,7 +219,7 @@ class ExcelAutoHierarchyAndValidationTests(TestCase):
         wb2 = openpyxl.load_workbook(generate_excel_template("DI", "NOI_BO"))
         ws2 = wb2.active
         ws2.append([
-            "102/DI-TEST", "Nội bộ", "16/10/2026", "16/10/2026",
+            2026, "102/DI-TEST", "Nội bộ", "16/10/2026", "16/10/2026",
             "Trích yếu công văn đi", "HS-HCQT", "Công văn", "Ban công nghệ thông tin",
             "Phòng Hành chính - Tổng hợp", "vanthu_hcth", "", "",  # Người ký, Chức vụ trống
             "Còn hiệu lực", "", "tap_tin.pdf", "", "",
@@ -220,23 +233,24 @@ class ExcelAutoHierarchyAndValidationTests(TestCase):
         self.assertTrue(any("Người ký" in e["message"] for e in res2["errors"]))
 
     def test_03_allow_three_optional_fields_empty(self):
-        """3 cột DUY NHẤT được phép để trống: Ngày hết hiệu lực, Link thay thế, Ghi chú."""
+        """Các trường tùy chọn (Năm, Ngày hết hiệu lực, Link thay thế, Ghi chú) được phép để trống."""
         wb = openpyxl.load_workbook(generate_excel_template("DEN", "NOI_BO"))
         ws = wb.active
         ws.append([
-            "201/CV-VALID", "Nội bộ", "15/10/2026 08:30:00", "15/10/2026",
+            "", "201/CV-VALID", "Nội bộ", "15/10/2026 08:30:00", "15/10/2026",
             "Trích yếu công văn đầy đủ trường", "HS-HCQT", "Công văn", "Bộ GD&ĐT",
             "Ban công nghệ thông tin", "chuyenvien_cntt", "Nguyễn Văn Ký", "Trưởng ban",
-            "Còn hiệu lực", "", "Cong_van_201.pdf", "", "",  # 3 cột để trống: ngày hết hạn, link thay thế, ghi chú
+            "Còn hiệu lực", "", "Cong_van_201.pdf", "", "",  # Để trống Năm, ngày hết hạn, link thay thế, ghi chú
         ])
         bio = io.BytesIO()
         wb.save(bio)
         bio.seek(0)
 
         res = import_from_excel(bio, "DEN", self.admin, pham_vi="NOI_BO")
-        self.assertEqual(res["created"], 1, "Để trống 3 trường tùy chọn hợp lệ phải import thành công")
+        self.assertEqual(res["created"], 1, "Để trống các trường tùy chọn hợp lệ phải import thành công")
         doc = VanBanDen.objects.filter(so_hieu="201/CV-VALID").first()
         self.assertIsNotNone(doc)
+        self.assertEqual(doc.nam, timezone.localtime(timezone.now()).year)
         self.assertIsNone(doc.ngay_het_hieu_luc)
         self.assertEqual(doc.link_thay_the, "")
         self.assertEqual(doc.ghi_chu, "")
@@ -249,7 +263,7 @@ class ExcelAutoHierarchyAndValidationTests(TestCase):
         wb = openpyxl.load_workbook(generate_excel_template("DEN", "NOI_BO"))
         ws = wb.active
         ws.append([
-            "301/CV-ERR-HS", "Nội bộ", "15/10/2026 08:30:00", "15/10/2026",
+            2026, "301/CV-ERR-HS", "Nội bộ", "15/10/2026 08:30:00", "15/10/2026",
             "Trích yếu test", "HS-KHONG-TON-TAI", "Công văn", "Bộ GD&ĐT",
             "Ban công nghệ thông tin", "chuyenvien_cntt", "Nguyễn Văn A", "Giám đốc",
             "Còn hiệu lực", "", "file.pdf", "", "",
@@ -266,7 +280,7 @@ class ExcelAutoHierarchyAndValidationTests(TestCase):
         wb2 = openpyxl.load_workbook(generate_excel_template("DEN", "NOI_BO"))
         ws2 = wb2.active
         ws2.append([
-            "302/CV-ERR-LVB", "Nội bộ", "15/10/2026 08:30:00", "15/10/2026",
+            2026, "302/CV-ERR-LVB", "Nội bộ", "15/10/2026 08:30:00", "15/10/2026",
             "Trích yếu test", "HS-HCQT", "Loại Văn Bản Ma Quái", "Bộ GD&ĐT",
             "Ban công nghệ thông tin", "chuyenvien_cntt", "Nguyễn Văn A", "Giám đốc",
             "Còn hiệu lực", "", "file.pdf", "", "",
@@ -285,7 +299,7 @@ class ExcelAutoHierarchyAndValidationTests(TestCase):
         wb = openpyxl.load_workbook(generate_excel_template("DI", "NOI_BO"))
         ws = wb.active
         ws.append([
-            "401/DI-ERR-DV", "Nội bộ", "15/10/2026", "15/10/2026",
+            2026, "401/DI-ERR-DV", "Nội bộ", "15/10/2026", "15/10/2026",
             "Trích yếu", "HS-HCQT", "Công văn", "Ban công nghệ thông tin",
             "Phòng Ban Ảo Không Tồn Tại", "chuyenvien_cntt", "Lê Văn Ký", "Hiệu trưởng",
             "Còn hiệu lực", "", "tep.pdf", "", "",
@@ -302,7 +316,7 @@ class ExcelAutoHierarchyAndValidationTests(TestCase):
         wb2 = openpyxl.load_workbook(generate_excel_template("DI", "NOI_BO"))
         ws2 = wb2.active
         ws2.append([
-            "402/DI-ERR-CB", "Nội bộ", "15/10/2026", "15/10/2026",
+            2026, "402/DI-ERR-CB", "Nội bộ", "15/10/2026", "15/10/2026",
             "Trích yếu", "HS-HCQT", "Công văn", "Ban công nghệ thông tin",
             "Ban công nghệ thông tin", "user_khong_ton_tai_999", "Lê Văn Ký", "Hiệu trưởng",
             "Còn hiệu lực", "", "tep.pdf", "", "",
@@ -319,7 +333,7 @@ class ExcelAutoHierarchyAndValidationTests(TestCase):
         wb3 = openpyxl.load_workbook(generate_excel_template("DI", "NOI_BO"))
         ws3 = wb3.active
         ws3.append([
-            "403/DI-ERR-WRONG-DEPT", "Nội bộ", "15/10/2026", "15/10/2026",
+            2026, "403/DI-ERR-WRONG-DEPT", "Nội bộ", "15/10/2026", "15/10/2026",
             "Trích yếu", "HS-HCQT", "Công văn", "Ban công nghệ thông tin",
             self.dv_hcth.ten, "chuyenvien_cntt", "Lê Văn Ký", "Hiệu trưởng",
             "Còn hiệu lực", "", "tep.pdf", "", "",
@@ -336,7 +350,7 @@ class ExcelAutoHierarchyAndValidationTests(TestCase):
         wb4 = openpyxl.load_workbook(generate_excel_template("DI", "NOI_BO"))
         ws4 = wb4.active
         ws4.append([
-            "404/DI-OK-ASSIGNMENT", "Nội bộ", "15/10/2026", "15/10/2026",
+            2026, "404/DI-OK-ASSIGNMENT", "Nội bộ", "15/10/2026", "15/10/2026",
             "Trích yếu", "HS-HCQT", "Công văn", "Ban công nghệ thông tin",
             self.dv_bgd.ten, "cb_kiemnhiem", "Lê Văn Ký", "Hiệu trưởng",
             "Còn hiệu lực", "", "tep.pdf", "", "",
@@ -366,7 +380,7 @@ class ExcelAutoHierarchyAndValidationTests(TestCase):
         wb = openpyxl.load_workbook(generate_excel_template("DEN", "NOI_BO"))
         ws = wb.active
         ws.append([
-            "501/DEN-TEST", "Nội bộ", "15/10/2026 08:30:00", "15/10/2026",
+            2026, "501/DEN-TEST", "Nội bộ", "15/10/2026 08:30:00", "15/10/2026",
             "Văn bản mới", "HS-HCQT", "Công văn", "Bộ GD&ĐT",
             "Ban công nghệ thông tin", "chuyenvien_cntt", "Nguyễn Văn Ký", "Trưởng ban",
             "Còn hiệu lực", "", "file.pdf", "SO-HIEU-KHONG-TON-TAI", "",
@@ -383,7 +397,7 @@ class ExcelAutoHierarchyAndValidationTests(TestCase):
         wb2 = openpyxl.load_workbook(generate_excel_template("DI", "NOI_BO"))
         ws2 = wb2.active
         ws2.append([
-            "502/DI-TEST", "Nội bộ", "15/10/2026", "15/10/2026",
+            2026, "502/DI-TEST", "Nội bộ", "15/10/2026", "15/10/2026",
             "Văn bản mới", "HS-HCQT", "Công văn", "Ban công nghệ thông tin",
             "Phòng Hành chính - Tổng hợp", "vanthu_hcth", "Lê Văn Ký", "Hiệu trưởng",
             "Còn hiệu lực", "", "file.pdf", "OLD-DEN-NB-01", "",
@@ -400,7 +414,7 @@ class ExcelAutoHierarchyAndValidationTests(TestCase):
         wb3 = openpyxl.load_workbook(generate_excel_template("DEN", "NOI_BO"))
         ws3 = wb3.active
         ws3.append([
-            "503/DEN-OK", "Nội bộ", "15/10/2026 08:30:00", "15/10/2026",
+            2026, "503/DEN-OK", "Nội bộ", "15/10/2026 08:30:00", "15/10/2026",
             "Văn bản mới thay thế", "HS-HCQT", "Công văn", "Bộ GD&ĐT",
             "Ban công nghệ thông tin", "chuyenvien_cntt", "Nguyễn Văn Ký", "Trưởng ban",
             "Còn hiệu lực", "", "file.pdf", "OLD-DEN-NB-01", "",
@@ -420,7 +434,7 @@ class ExcelAutoHierarchyAndValidationTests(TestCase):
         wb = openpyxl.load_workbook(generate_excel_template("DEN", "NOI_BO"))
         ws = wb.active
         ws.append([
-            "601/DEN-DATE-ERR", "Nội bộ", "15/10/2026 08:30:00", "15/10/2026",
+            2026, "601/DEN-DATE-ERR", "Nội bộ", "15/10/2026 08:30:00", "15/10/2026",
             "Trích yếu test", "HS-HCQT", "Công văn", "Bộ GD&ĐT",
             "Ban công nghệ thông tin", "chuyenvien_cntt", "Nguyễn Văn Ký", "Trưởng ban",
             "Còn hiệu lực", "ngay-khong-hop-le", "file.pdf", "", "",
@@ -437,7 +451,7 @@ class ExcelAutoHierarchyAndValidationTests(TestCase):
         wb2 = openpyxl.load_workbook(generate_excel_template("DEN", "NOI_BO"))
         ws2 = wb2.active
         ws2.append([
-            "602/DEN-DATE-OK", "Nội bộ", "15/10/2026 08:30:00", "15/10/2026",
+            2026, "602/DEN-DATE-OK", "Nội bộ", "15/10/2026 08:30:00", "15/10/2026",
             "Trích yếu test", "HS-HCQT", "Công văn", "Bộ GD&ĐT",
             "Ban công nghệ thông tin", "chuyenvien_cntt", "Nguyễn Văn Ký", "Trưởng ban",
             "Còn hiệu lực", "31/12/2026", "file.pdf", "", "",
@@ -453,9 +467,10 @@ class ExcelAutoHierarchyAndValidationTests(TestCase):
         local_dt = timezone.localtime(doc2.ngay_het_hieu_luc)
         self.assertEqual(local_dt.strftime("%d/%m/%Y"), "31/12/2026")
 
-    def test_08_export_contains_all_17_columns(self):
-        """Export ra Excel chứa đủ 17 cột, bao gồm ngày hết hiệu lực, đơn vị nhận, cán bộ nhận, hồ sơ, loại vb."""
+    def test_08_export_contains_all_18_columns(self):
+        """Export ra Excel chứa đủ 18 cột dữ liệu (+ STT, Số đến), bao gồm Năm, ngày hết hiệu lực, đơn vị nhận, cán bộ nhận."""
         doc = VanBanDen.objects.create(
+            nam=2024,
             so_hieu="701/DEN-EXPORT",
             trich_yeu="Văn bản kiểm tra export",
             pham_vi=PhamVi.NOI_BO,
@@ -479,14 +494,18 @@ class ExcelAutoHierarchyAndValidationTests(TestCase):
         headers = [cell.value for cell in ws[1] if cell.value]
         self.assertIn("STT", headers)
         self.assertIn("Số đến", headers)
+        self.assertIn("Năm", headers)
         self.assertIn("Ngày hết hiệu lực", headers)
         self.assertIn("Đơn vị nhận / chủ trì", headers)
         self.assertIn("Cán bộ nhận / xử lý", headers)
+        self.assertEqual(len(headers), 20)
 
+        nam_col_idx = headers.index("Năm") + 1
         het_col_idx = headers.index("Ngày hết hiệu lực") + 1
         dv_col_idx = headers.index("Đơn vị nhận / chủ trì") + 1
         cb_col_idx = headers.index("Cán bộ nhận / xử lý") + 1
 
+        self.assertEqual(str(ws.cell(row=2, column=nam_col_idx).value), "2024")
         val_het = ws.cell(row=2, column=het_col_idx).value
         val_dv = ws.cell(row=2, column=dv_col_idx).value
         val_cb = ws.cell(row=2, column=cb_col_idx).value
@@ -500,7 +519,7 @@ class ExcelAutoHierarchyAndValidationTests(TestCase):
         wb = openpyxl.load_workbook(generate_excel_template("DEN", "NOI_BO"))
         ws = wb.active
         ws.append([
-            "801/DEN-UNREGISTERED", "Nội bộ", "15/10/2026 08:30:00", "15/10/2026",
+            2026, "801/DEN-UNREGISTERED", "Nội bộ", "15/10/2026 08:30:00", "15/10/2026",
             "Trích yếu test", "HS-CHUA-DANG-KY", "Loại Chưa Đăng Ký", "Bộ GD&ĐT",
             "Đơn Vị Chưa Đăng Ký", "canbo_chua_dang_ky", "Nguyễn Văn Ký", "Trưởng ban",
             "Còn hiệu lực", "", "file.pdf", "", "",
@@ -515,3 +534,202 @@ class ExcelAutoHierarchyAndValidationTests(TestCase):
         self.assertFalse(RecordLoaiVanBan.objects.filter(ten_loai="Loại Chưa Đăng Ký").exists())
         self.assertFalse(DonVi.objects.filter(ten="Đơn Vị Chưa Đăng Ký").exists())
         self.assertFalse(User.objects.filter(username="canbo_chua_dang_ky").exists())
+
+    def _to_stream(self, wb):
+        bio = io.BytesIO()
+        wb.save(bio)
+        bio.seek(0)
+        return bio
+
+    def test_10_noibo_optional_recipients_vs_hanche_mandatory(self):
+        """VB Nội bộ (Đến & Đi) cho phép bỏ trống đơn vị/cán bộ hoặc chỉ chọn đơn vị; VB Hạn chế vẫn bắt buộc cả hai."""
+        from documents.models import VanBanDenDonViNhan, VanBanDiDonViNhan
+
+        # 1. Nội bộ Đến & Đi: để trống cả Đơn vị nhận lẫn Cán bộ xử lý -> Thành công
+        for loai, model in (("DEN", VanBanDen), ("DI", VanBanDi)):
+            wb = openpyxl.load_workbook(generate_excel_template(loai, "NOI_BO"))
+            date_val = "15/10/2026 08:30:00" if loai == "DEN" else "15/10/2026"
+            so_hieu = f"901/{loai}-NB-EMPTY"
+            wb.active.append([
+                2026, so_hieu, "Nội bộ", date_val, "15/10/2026",
+                "VB nội bộ toàn cơ quan không chỉ định đích danh", "HS-HCQT", "Công văn", "Ban Giám hiệu",
+                "", "", "Nguyễn Văn Ký", "Trưởng ban",
+                "Còn hiệu lực", "", "file_empty.pdf", "", "",
+            ])
+            res = import_from_excel(self._to_stream(wb), loai, self.admin, pham_vi="NOI_BO")
+            self.assertEqual(res["created"], 1, (loai, res))
+            doc = model.objects.get(so_hieu=so_hieu)
+            self.assertEqual(doc.donvinhan.count(), 0)
+            self.assertEqual(doc.nguoi_nhan.count(), 0)
+
+        # 2. Nội bộ Đến & Đi: có Đơn vị nhận, bỏ trống Cán bộ xử lý -> Thành công
+        for loai, model, link_model in (
+            ("DEN", VanBanDen, VanBanDenDonViNhan),
+            ("DI", VanBanDi, VanBanDiDonViNhan),
+        ):
+            wb = openpyxl.load_workbook(generate_excel_template(loai, "NOI_BO"))
+            date_val = "15/10/2026 08:30:00" if loai == "DEN" else "15/10/2026"
+            so_hieu = f"902/{loai}-NB-UNIT-ONLY"
+            wb.active.append([
+                2026, so_hieu, "Nội bộ", date_val, "15/10/2026",
+                "VB nội bộ chỉ chọn đơn vị", "HS-HCQT", "Công văn", "Ban Giám hiệu",
+                self.dv_cntt.ten, "", "Nguyễn Văn Ký", "Trưởng ban",
+                "Còn hiệu lực", "", "file_unit.pdf", "", "",
+            ])
+            res = import_from_excel(self._to_stream(wb), loai, self.admin, pham_vi="NOI_BO")
+            self.assertEqual(res["created"], 1, (loai, res))
+            doc = model.objects.get(so_hieu=so_hieu)
+            self.assertEqual(link_model.objects.filter(**{("vanbandi" if loai == "DI" else "vanbanden"): doc}).count(), 1)
+            self.assertEqual(doc.nguoi_nhan.count(), 0)
+
+        # 3. Nội bộ: bỏ trống Đơn vị nhận NHƯNG nhập Cán bộ xử lý -> Bị chặn Fail-Fast
+        for loai in ("DEN", "DI"):
+            wb = openpyxl.load_workbook(generate_excel_template(loai, "NOI_BO"))
+            date_val = "15/10/2026 08:30:00" if loai == "DEN" else "15/10/2026"
+            wb.active.append([
+                2026, f"903/{loai}-NB-STAFF-NO-UNIT", "Nội bộ", date_val, "15/10/2026",
+                "Sai phân cấp 2 tầng", "HS-HCQT", "Công văn", "Ban Giám hiệu",
+                "", "chuyenvien_cntt", "Nguyễn Văn Ký", "Trưởng ban",
+                "Còn hiệu lực", "", "file.pdf", "", "",
+            ])
+            res = import_from_excel(self._to_stream(wb), loai, self.admin, pham_vi="NOI_BO")
+            self.assertEqual(res["created"], 0, (loai, res))
+            self.assertTrue(any("Đơn vị nhận" in e["message"] for e in res["errors"]))
+
+        # 4. Hạn chế (Đến & Đi): thiếu Đơn vị nhận hoặc thiếu Cán bộ xử lý đều bị chặn
+        for loai in ("DEN", "DI"):
+            for dv_val, cb_val in (("", ""), (self.dv_cntt.ten, ""), ("", "chuyenvien_cntt")):
+                wb = openpyxl.load_workbook(generate_excel_template(loai, "HAN_CHE"))
+                date_val = "15/10/2026 08:30:00" if loai == "DEN" else "15/10/2026"
+                wb.active.append([
+                    2026, f"904/{loai}-HC-MISSING", "Hạn chế", date_val, "15/10/2026",
+                    "Hạn chế thiếu người/đơn vị nhận", "HS-HCQT", "Công văn", "Ban Giám hiệu",
+                    dv_val, cb_val, "Nguyễn Văn Ký", "Trưởng ban",
+                    "Còn hiệu lực", "", "file.pdf", "", "",
+                ])
+                res = import_from_excel(self._to_stream(wb), loai, self.admin, pham_vi="HAN_CHE")
+                self.assertEqual(res["created"], 0, (loai, dv_val, cb_val, res))
+
+    def test_11_multi_unit_and_multi_staff_comma_and_semicolon(self):
+        """Hỗ trợ nhập nhiều Đơn vị nhận và nhiều Cán bộ xử lý phân tách bằng dấu ',' hoặc ';'."""
+        from documents.models import VanBanDenDonViNhan, VanBanDiDonViNhan
+
+        for loai, model, link_model, field_key in (
+            ("DEN", VanBanDen, VanBanDenDonViNhan, "vanbanden"),
+            ("DI", VanBanDi, VanBanDiDonViNhan, "vanbandi"),
+        ):
+            wb = openpyxl.load_workbook(generate_excel_template(loai, "NOI_BO"))
+            date_val = "15/10/2026 08:30:00" if loai == "DEN" else "15/10/2026"
+            so_hieu = f"910/{loai}-MULTI-OK"
+            wb.active.append([
+                2026, so_hieu, "Nội bộ", date_val, "15/10/2026",
+                "Phối hợp nhiều phòng ban và cán bộ", "HS-HCQT", "Công văn", "Ban Giám hiệu",
+                f"{self.dv_cntt.ten}; {self.dv_hcth.ten}",
+                "chuyenvien_cntt, vanthu_hcth; cb_kiemnhiem",
+                "Nguyễn Văn Ký", "Trưởng ban",
+                "Còn hiệu lực", "", "multi.pdf", "", "",
+            ])
+            res = import_from_excel(self._to_stream(wb), loai, self.admin, pham_vi="NOI_BO")
+            self.assertEqual(res["created"], 1, (loai, res))
+            doc = model.objects.get(so_hieu=so_hieu)
+            linked_dv_ids = set(link_model.objects.filter(**{field_key: doc}).values_list("donvi_id", flat=True))
+            self.assertEqual(linked_dv_ids, {self.dv_cntt.id, self.dv_hcth.id})
+            self.assertEqual(
+                set(doc.nguoi_nhan.values_list("username", flat=True)),
+                {"chuyenvien_cntt", "vanthu_hcth", "cb_kiemnhiem"},
+            )
+
+        # Chặn nếu 1 trong nhiều đơn vị không tồn tại hoặc 1 cán bộ không thuộc đơn vị nào trong danh sách
+        wb_err_dv = openpyxl.load_workbook(generate_excel_template("DEN", "NOI_BO"))
+        wb_err_dv.active.append([
+            2026, "911/DEN-MULTI-BAD-DV", "Nội bộ", "15/10/2026 08:30:00", "15/10/2026",
+            "Thiếu 1 đơn vị", "HS-HCQT", "Công văn", "Ban Giám hiệu",
+            f"{self.dv_cntt.ten}, Đơn Vị Không Tồn Tại", "chuyenvien_cntt",
+            "Nguyễn Văn Ký", "Trưởng ban", "Còn hiệu lực", "", "multi.pdf", "", "",
+        ])
+        res_bad_dv = import_from_excel(self._to_stream(wb_err_dv), "DEN", self.admin, pham_vi="NOI_BO")
+        self.assertEqual(res_bad_dv["created"], 0)
+        self.assertTrue(any("Đơn Vị Không Tồn Tại" in e["message"] for e in res_bad_dv["errors"]))
+
+        wb_err_cb = openpyxl.load_workbook(generate_excel_template("DEN", "NOI_BO"))
+        wb_err_cb.active.append([
+            2026, "912/DEN-MULTI-BAD-CB", "Nội bộ", "15/10/2026 08:30:00", "15/10/2026",
+            "Cán bộ thuộc đơn vị khác", "HS-HCQT", "Công văn", "Ban Giám hiệu",
+            f"{self.dv_hcth.ten}; {self.dv_bgd.ten}", "vanthu_hcth, chuyenvien_cntt",
+            "Nguyễn Văn Ký", "Trưởng ban", "Còn hiệu lực", "", "multi.pdf", "", "",
+        ])
+        res_bad_cb = import_from_excel(self._to_stream(wb_err_cb), "DEN", self.admin, pham_vi="NOI_BO")
+        self.assertEqual(res_bad_cb["created"], 0)
+        self.assertTrue(any("chuyenvien_cntt" in e["message"] for e in res_bad_cb["errors"]))
+
+    def test_12_year_column_arbitrary_years_and_years_endpoint_sync(self):
+        """Import cột Năm hỗ trợ mọi năm dương hợp lệ (1890, 2024, 2150), đánh số riêng từng năm và cập nhật /years/."""
+        from rest_framework.test import APIClient
+
+        # 1. File hợp lệ gồm: năm lịch sử 1890, năm cũ 2024 (2 dòng), năm tương lai 2150, và ô trống -> năm hiện tại
+        wb = openpyxl.load_workbook(generate_excel_template("DEN", "NOI_BO"))
+        ws = wb.active
+        ws.append([
+            1890, "OLD/1890", "Nội bộ", "01/05/1890 08:00:00", "01/05/1890",
+            "Tài liệu lịch sử 1890", "HS-HCQT", "Công văn", "Cơ quan cũ",
+            "", "", "Người ký A", "Giám đốc", "Còn hiệu lực", "", "old_1890.pdf", "", "",
+        ])
+        ws.append([
+            "2024", "2024/01", "Nội bộ", "10/03/2024 08:00:00", "10/03/2024",
+            "Văn bản năm 2024 số 1", "HS-HCQT", "Công văn", "Bộ GD&ĐT",
+            "", "", "Người ký B", "Trưởng ban", "Còn hiệu lực", "", "y2024_1.pdf", "", "",
+        ])
+        ws.append([
+            2024.0, "2024/02", "Nội bộ", "12/03/2024 08:00:00", "12/03/2024",
+            "Văn bản năm 2024 số 2", "HS-HCQT", "Công văn", "Bộ GD&ĐT",
+            "", "", "Người ký B", "Trưởng ban", "Còn hiệu lực", "", "y2024_2.pdf", "", "",
+        ])
+        ws.append([
+            2150, "FUT/2150", "Nội bộ", "01/01/2026 08:00:00", "01/01/2026",
+            "Văn bản vượt 2100", "HS-HCQT", "Công văn", "Bộ GD&ĐT",
+            "", "", "Người ký C", "Trưởng ban", "Còn hiệu lực", "", "fut_2150.pdf", "", "",
+        ])
+        ws.append([
+            "", "NOW/AUTO", "Nội bộ", "15/09/2020 08:00:00", "15/09/2020",
+            "Để trống cột Năm tự lấy năm hiện tại", "HS-HCQT", "Công văn", "Bộ GD&ĐT",
+            "", "", "Người ký D", "Trưởng ban", "Còn hiệu lực", "", "now_auto.pdf", "", "",
+        ])
+
+        res = import_from_excel(self._to_stream(wb), "DEN", self.admin, pham_vi="NOI_BO")
+        self.assertEqual(res["created"], 5, res)
+
+        cur_year = timezone.localtime(timezone.now()).year
+        doc_1890 = VanBanDen.objects.get(so_hieu="OLD/1890")
+        doc_2024_1 = VanBanDen.objects.get(so_hieu="2024/01")
+        doc_2024_2 = VanBanDen.objects.get(so_hieu="2024/02")
+        doc_2150 = VanBanDen.objects.get(so_hieu="FUT/2150")
+        doc_now = VanBanDen.objects.get(so_hieu="NOW/AUTO")
+
+        self.assertEqual(doc_1890.nam, 1890)
+        self.assertEqual(doc_1890.so_thu_tu, 1)
+        self.assertEqual(doc_2024_1.nam, 2024)
+        self.assertEqual(doc_2024_1.so_thu_tu, 1)
+        self.assertEqual(doc_2024_2.nam, 2024)
+        self.assertEqual(doc_2024_2.so_thu_tu, 2)
+        self.assertEqual(doc_2150.nam, 2150)
+        self.assertEqual(doc_2150.so_thu_tu, 1)
+        self.assertEqual(doc_now.nam, cur_year)
+
+        # Kiểm tra endpoint /api/documents/years/?loai=DEN trả đầy đủ các năm vừa import
+        client = APIClient()
+        client.force_authenticate(user=self.admin)
+        years_res = client.get("/api/documents/years/?loai=DEN")
+        self.assertEqual(years_res.status_code, 200)
+        self.assertEqual(years_res.data, sorted({1890, 2024, 2150, cur_year}, reverse=True))
+
+        # 2. Chặn Fail-Fast nếu cột Năm sai định dạng hoặc vượt ngưỡng SmallIntegerField
+        for bad_year in ("khong-phai-nam", 0, -2020, 2024.5, 40000):
+            wb_bad = openpyxl.load_workbook(generate_excel_template("DI", "NOI_BO"))
+            wb_bad.active.append([
+                bad_year, f"BAD/{bad_year}", "Nội bộ", "15/10/2026", "15/10/2026",
+                "Năm lỗi", "HS-HCQT", "Công văn", "Ban Giám hiệu",
+                "", "", "Lê Văn Ký", "Hiệu trưởng", "Còn hiệu lực", "", "bad.pdf", "", "",
+            ])
+            res_bad = import_from_excel(self._to_stream(wb_bad), "DI", self.admin, pham_vi="NOI_BO")
+            self.assertEqual(res_bad["created"], 0, (bad_year, res_bad))
+            self.assertTrue(any("Năm" in e["message"] for e in res_bad["errors"]), (bad_year, res_bad))

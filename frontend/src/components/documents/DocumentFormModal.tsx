@@ -264,6 +264,14 @@ function getFileIcon(fileName: string) {
   return 'fa-solid fa-file text-slate-400';
 }
 
+function parseUnitList(raw?: unknown): string[] {
+  if (!raw) return [];
+  return String(raw)
+    .split(/[,;\n]+/)
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
 function buildInitialForm(initDocInput?: InitialDocType | DocumentFormInput | null, defaultLoai: 'DEN' | 'DI' | 'MAT' = 'DEN'): FormState {
   const now = new Date();
   const defaultDate = toLocalDateString(now);
@@ -340,6 +348,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
 
   // Phân quyền đổi hiệu lực (Nhóm 7 contract: change_hieu_luc_vanbanden / change_hieu_luc_vanbandi)
   const isDi = form.loai === 'DI';
+  const isRestrictedRecipients = form.loai === 'MAT' || form.pham_vi === 'HAN_CHE';
   const hasHieuLucPerm = Boolean(
     !currentSession ||
     isAdmin ||
@@ -513,8 +522,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
       } else {
         setExistingAttachments([]);
       }
-      const initialUnitsRaw = (initDoc?.don_vi_nhan as string) || '';
-      const initialUnits = initialUnitsRaw ? initialUnitsRaw.split(',').map((s) => s.trim()).filter(Boolean) : [];
+      const initialUnits = parseUnitList(initDoc?.don_vi_nhan);
       setSelectedRecipientUnits(initialUnits);
       setIsScopeDropdownOpen(false);
       setPreviewingName(null);
@@ -656,8 +664,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
         }
       }
 
-      const initialUnitsRaw = (initDoc?.don_vi_nhan as string) || '';
-      const initialUnits = initialUnitsRaw ? initialUnitsRaw.split(',').map((s) => s.trim()).filter(Boolean) : [];
+      const initialUnits = parseUnitList(initDoc?.don_vi_nhan);
       Promise.resolve().then(() => {
         if (cancelled) return;
         void fetchUnits();
@@ -762,10 +769,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
               );
             }
             // 2. Tự động xác định danh sách các đơn vị nhận và nạp/tích chọn đúng cán bộ nhận đã phân công
-            let resolvedUnits: string[] = [];
-            if (detail.don_vi_nhan) {
-              resolvedUnits = String(detail.don_vi_nhan).split(',').map((s) => s.trim()).filter(Boolean);
-            }
+            const resolvedUnits = parseUnitList(detail.don_vi_nhan);
             const recipientList = (detail.nguoi_nhan_list || []) as Array<{
               id: number;
               username?: string;
@@ -784,6 +788,9 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
             if (resolvedUnits.length > 0) {
               setSelectedRecipientUnits(resolvedUnits);
               void fetchStaffByUnits(resolvedUnits);
+            } else if ('don_vi_nhan' in detail) {
+              setSelectedRecipientUnits([]);
+              setStaff([]);
             }
 
             if (recipientList.length > 0) {
@@ -794,6 +801,8 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                 typeof u === 'object' && u !== null && 'id' in u ? (u as { id: number }).id : Number(u)
               );
               setForm(prev => ({ ...prev, nguoi_nhan: userIds }));
+            } else if ('nguoi_nhan' in detail || 'nguoi_nhan_list' in detail) {
+              setForm(prev => ({ ...prev, nguoi_nhan: [] }));
             }
             // 3. Tự động điền nơi ban hành
             if (detail.noi_ban_hanh) {
@@ -1321,12 +1330,18 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
       setAlertOpen(true);
       return;
     }
-    if (selectedRecipientUnits.length === 0) {
+    const parsedNam = Number(form.nam);
+    if (!Number.isInteger(parsedNam) || parsedNam < 1 || parsedNam > 32767) {
+      setAlertMsg('Vui lòng nhập Năm hợp lệ (số nguyên dương từ 1 đến 32767)');
+      setAlertOpen(true);
+      return;
+    }
+    if (isRestrictedRecipients && selectedRecipientUnits.length === 0) {
       setAlertMsg('Vui lòng chọn Đơn vị nhận / chủ trì xử lý (*)');
       setAlertOpen(true);
       return;
     }
-    if (!form.nguoi_nhan || form.nguoi_nhan.length === 0) {
+    if (isRestrictedRecipients && (!form.nguoi_nhan || form.nguoi_nhan.length === 0)) {
       setAlertMsg('Vui lòng chọn ít nhất một Cán bộ nhận / xử lý (*)');
       setAlertOpen(true);
       return;
@@ -1384,15 +1399,16 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
         form.hieu_luc === 'CON_HIEU_LUC' ? '' : (form.ngay_het_hieu_luc || '')
       );
 
-      if (Array.isArray(form.nguoi_nhan)) {
-        form.nguoi_nhan.forEach(userId => {
-          if (userId) payload.append('nguoi_nhan', String(userId));
+      const validRecipientIds = Array.isArray(form.nguoi_nhan) ? form.nguoi_nhan.filter(Boolean) : [];
+      if (validRecipientIds.length > 0) {
+        validRecipientIds.forEach(userId => {
+          payload.append('nguoi_nhan', String(userId));
         });
+      } else {
+        payload.append('nguoi_nhan', '');
       }
 
-      if (selectedRecipientUnits.length > 0) {
-        payload.append('don_vi_nhan', selectedRecipientUnits.join(', '));
-      }
+      payload.append('don_vi_nhan', selectedRecipientUnits.join(', '));
 
       if (deletedAttachmentIds.length > 0) {
         deletedAttachmentIds.forEach(id => {
@@ -2614,7 +2630,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-semibold text-secondary flex items-center gap-1">
                     <span>{t('documents_ui.formModal.receivingUnit') || 'Đơn vị nhận / chủ trì xử lý'}</span>
-                    <span className="text-rose-500">*</span>
+                    {isRestrictedRecipients && <span className="text-rose-500">*</span>}
                     {selectedRecipientUnits.length > 0 && (
                       <span className="text-[11px] text-primary font-medium">
                         ({selectedRecipientUnits.length} đơn vị)
@@ -2766,7 +2782,7 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-semibold text-secondary flex items-center gap-1">
                     <span>Cán bộ nhận / xử lý</span>
-                    <span className="text-rose-500">*</span>
+                    {isRestrictedRecipients && <span className="text-rose-500">*</span>}
                     {selectedRecipientUnits.length === 0 ? (
                       <span className="text-[11px] text-muted font-normal">(Chưa chọn đơn vị)</span>
                     ) : (
