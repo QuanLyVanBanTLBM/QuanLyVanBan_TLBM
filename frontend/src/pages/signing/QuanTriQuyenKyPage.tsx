@@ -114,9 +114,9 @@ export default function QuanTriQuyenKyPage() {
         {ds.loi != null && <LoiTai thongBao={loi(ds.loi)} onThuLai={ds.tai} />}
         {ds.duLieu && ds.duLieu.length === 0 && <Rong icon="fa-user-lock">{t('quanTri.khongCoKetQua')}</Rong>}
         {ds.duLieu && ds.duLieu.length > 0 && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
+          <div className="sm:overflow-x-auto">
+            <table className="block w-full text-left text-sm sm:table">
+              <thead className="hidden sm:table-header-group">
                 <tr className="border-b border-border-subtle bg-surface-subtle text-xs font-bold uppercase tracking-wider text-muted">
                   <th className="px-3 py-2">{t('quanTri.cotTaiKhoan')}</th>
                   <th className="px-3 py-2">{t('quanTri.cotPin')}</th>
@@ -124,26 +124,26 @@ export default function QuanTriQuyenKyPage() {
                   <th className="px-3 py-2">{t('quanTri.cotThaoTac')}</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="block sm:table-row-group">
                 {ds.duLieu.map((u) => (
-                  <tr key={u.id} className="border-b border-border-subtle hover:bg-surface-hover align-top">
-                    <td className="px-3 py-2.5">
+                  <tr key={u.id} className="block border-b border-border-subtle hover:bg-surface-hover align-top sm:table-row">
+                    <td className="block px-3 py-1.5 sm:table-cell sm:py-2.5">
                       <div className="font-semibold text-main">{u.ten}</div>
                       <div className="text-xs text-muted">
                         {[u.ten_dang_nhap, u.chuc_vu, u.don_vi].filter(Boolean).join(' · ')}
                       </div>
                     </td>
-                    <td className="px-3 py-2.5">
+                    <td className="block px-3 py-1.5 sm:table-cell sm:py-2.5">
                       {!u.pin ? <span className="text-muted">{t('quanTri.chuaDatPin')}</span>
                         : <div className="space-y-1">
-                          <span className="text-secondary">{t('quanTri.pinSaiTrongNgay', { so: u.pin.so_lan_sai_ngay })}</span>
+                          <div className="text-secondary">{t('quanTri.pinSaiTrongNgay', { so: u.pin.so_lan_sai_ngay })}</div>
                           {u.pin.so_lan_sai_chu_ky > 0 && <div className="text-xs text-muted">{t('quanTri.pinSaiTrongChuKy', { so: u.pin.so_lan_sai_chu_ky })}</div>}
                           {u.pin.khoa_den && new Date(u.pin.khoa_den).getTime() > bayGio
                             ? <Badge variant="danger" size="sm">{t('quanTri.pinBiKhoaDen', { han: ngayGio(u.pin.khoa_den) })}</Badge>
-                            : u.pin.so_lan_sai_ngay === 0 && <span className="text-xs text-muted">{t('quanTri.pinBinhThuong')}</span>}
+                            : u.pin.so_lan_sai_ngay === 0 && <div className="text-xs text-muted">{t('quanTri.pinBinhThuong')}</div>}
                         </div>}
                     </td>
-                    <td className="px-3 py-2.5">
+                    <td className="block px-3 py-1.5 sm:table-cell sm:py-2.5">
                       {u.khoa_quyen_ky
                         ? (
                           <div className="space-y-0.5">
@@ -159,7 +159,7 @@ export default function QuanTriQuyenKyPage() {
                           ? <Badge variant="success" size="sm" withDot>{t('quanTri.quyenBinhThuong')}</Badge>
                           : <Badge variant="secondary" size="sm">{t('quanTri.quyenKhongCo')}</Badge>}
                     </td>
-                    <td className="px-3 py-2.5">
+                    <td className="block px-3 py-1.5 sm:table-cell sm:py-2.5">
                       <div className="flex flex-wrap gap-1.5">
                         {u.khoa_quyen_ky
                           ? <Button size="sm" variant="secondary" icon="fa-lock-open" onClick={() => moHopThoai(u, 'bat_lai')}>

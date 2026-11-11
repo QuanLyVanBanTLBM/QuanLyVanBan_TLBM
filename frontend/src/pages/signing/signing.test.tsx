@@ -272,6 +272,15 @@ describe('HanhDong', () => {
     expect(screen.queryByRole('button', { name: /Hủy hồ sơ/ })).not.toBeInTheDocument();
   });
 
+  it('người ký bị khóa quyền ký: Ký duyệt bị vô hiệu kèm giải thích, các hành động khác giữ nguyên', () => {
+    const biKhoa = { ...TOI, khoa_quyen_ky: { khoa_den: null } };
+    boc(<HanhDong hoSo={hoSo()} luot={hoSo().luot_trinh[0]} maBamTepDangXem={'a'.repeat(64)} onXong={() => undefined} />, biKhoa);
+    expect(screen.getByRole('button', { name: /Ký duyệt/ })).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent(/đang bị quản trị viên khóa/);
+    expect(screen.getByRole('button', { name: /Trả lại để sửa/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Từ chối hồ sơ/ })).toBeEnabled();
+  });
+
   it('người ngoài luồng không thấy hành động ký; người tạo thấy Hủy', () => {
     const nguoiTao = { ...TOI, id: 3 };
     boc(<HanhDong hoSo={hoSo()} luot={hoSo().luot_trinh[0]} maBamTepDangXem={null} onXong={() => undefined} />, nguoiTao);
