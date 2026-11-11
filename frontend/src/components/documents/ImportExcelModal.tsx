@@ -331,11 +331,11 @@ export default function ImportExcelModal({ open, onClose, onImported, loai = 'DE
             </Button>
           </div>
 
-          {/* Quy tắc nghiệp vụ tự khớp Hồ sơ & Loại VB */}
+          {/* Quy tắc nghiệp vụ kiểm tra dữ liệu */}
           <div className="px-3 py-2 rounded-xl bg-surface-subtle border border-border-subtle text-[11px] text-muted flex items-start gap-2">
-            <i className="fa-solid fa-wand-magic-sparkles text-primary mt-0.5 shrink-0" />
+            <i className="fa-solid fa-shield-check text-primary mt-0.5 shrink-0" />
             <span className="leading-relaxed">
-              <strong className="text-main font-semibold">Quy tắc tự khớp:</strong> Cột <span className="font-semibold text-main">Danh mục hồ sơ</span> và <span className="font-semibold text-main">Loại văn bản</span> là bắt buộc. Hệ thống tự động phân cấp khớp hồ sơ và loại văn bản sẵn có, hoặc tự động tạo mới an toàn nếu chưa tồn tại.
+              <strong className="text-main font-semibold">Quy tắc dữ liệu:</strong> Cột <span className="font-semibold text-main">Danh mục hồ sơ</span> (Số ký hiệu), <span className="font-semibold text-main">Loại văn bản</span>, <span className="font-semibold text-main">Đơn vị nhận</span>, <span className="font-semibold text-main">Cán bộ xử lý</span> và <span className="font-semibold text-main">Tệp đính kèm</span> là bắt buộc và phải có sẵn trong hệ thống. Chỉ 3 cột (<span className="text-main font-medium">Ngày hết hiệu lực</span>, <span className="text-main font-medium">Link thay thế</span>, <span className="text-main font-medium">Ghi chú</span>) được phép để trống.
             </span>
           </div>
 
