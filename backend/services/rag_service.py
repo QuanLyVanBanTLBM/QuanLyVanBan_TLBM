@@ -56,6 +56,7 @@ from backend.config import (
     VISION_OCR_PDF_DPI,
     VISION_OCR_TIMEOUT,
 )
+from backend.services.ai_logging import add_count, ai_stage, mark_error, set_fields
 
 logger = logging.getLogger(__name__)
 
@@ -1774,6 +1775,9 @@ def index_sql_document(record):
     # Avoid OCR and file parsing when the metadata and all currently authorized files
     # are unchanged. If parsing fails later, old vectors are removed before rebuilding.
     attachment_pages, extraction_pending = _read_authorized_attachment_pages(record, attachment_fingerprints)
+    add_count("sql_reindexed")
+    if extraction_pending:
+        add_count("sql_extraction_pending")
     attachment_text = "\n\n".join(page["text"] for page in attachment_pages)
     content_text = "\n\n".join(part for part in (metadata_text, attachment_text) if part)
 
@@ -2196,6 +2200,7 @@ def ask_document(question: str, history=None, category: str | None = None, user=
             if str(language).lower().startswith("en")
             else "Mình sẵn sàng hỗ trợ về tài liệu và các chủ đề liên quan. Bạn vui lòng diễn đạt lịch sự hơn nhé."
         )
+        set_fields(answer_mode="inappropriate")
         return {
             "answer": inapp_ans,
             "sources": [],
@@ -2214,6 +2219,7 @@ def ask_document(question: str, history=None, category: str | None = None, user=
     #    đều được ưu tiên tra cứu trực tiếp vào tài liệu đó.
     if not clean_filename and is_conversational_or_emotional(question):
         answer = generate_conversational_response(question, history, language=language)
+        set_fields(answer_mode="conversational")
         return {
             "answer": answer,
             "sources": [],
@@ -2226,17 +2232,25 @@ def ask_document(question: str, history=None, category: str | None = None, user=
     sql_mode = is_postgres_source()
     allowed_keys = None
     if sql_mode:
-        records = accessible_documents(user, employee_id)
+        with ai_stage("sql_source"):
+            records = accessible_documents(user, employee_id)
+        set_fields(
+            sql_docs=len(records),
+            sql_attachments=sum(len(record.get("attachments", [])) for record in records),
+        )
         allowed_keys = set()
-        for record in records:
-            key = index_sql_document(record)
-            if key:
-                allowed_keys.add(key)
+        with ai_stage("sql_index"):
+            for record in records:
+                key = index_sql_document(record)
+                if key:
+                    allowed_keys.add(key)
+        set_fields(sql_allowed=len(allowed_keys))
 
     from backend.services.business_knowledge import match_business_sources
     business_sources = match_business_sources(question)
 
-    setup_llamaindex()
+    with ai_stage("setup"):
+        setup_llamaindex()
     sources = []
     context = ""
     try:
@@ -2312,6 +2326,7 @@ def ask_document(question: str, history=None, category: str | None = None, user=
             retriever_kwargs["filters"] = MetadataFilters(filters=target_filters)
 
         nodes = index.as_retriever(**retriever_kwargs).retrieve(retrieval_query)
+        set_fields(hits=len(nodes or []), target=bool(clean_filename))
         if clean_filename:
             # Đảm bảo chắc chắn 100% chỉ giữ lại các chunk thuộc đúng file được chỉ định
             nodes = [
@@ -2322,6 +2337,7 @@ def ask_document(question: str, history=None, category: str | None = None, user=
             # thực hiện fallback: lấy trực tiếp tất cả chunk của file đó từ ChromaDB!
             if not nodes:
                 print(f"⚠️ Retriever không trả về node cho {clean_filename}, thực hiện fallback từ ChromaDB")
+                set_fields(fallback=True)
                 fallback_collection = get_chroma_collection()
                 fallback_where = _fallback_query_filter(clean_filename, allowed_keys if sql_mode else None)
                 chroma_res = fallback_collection.get(
@@ -2335,6 +2351,7 @@ def ask_document(question: str, history=None, category: str | None = None, user=
                 if (getattr(node, "metadata", {}) or {}).get("sql_doc_key") in allowed_keys
                 or (getattr(node, "metadata", {}) or {}).get("source_class") == "ai_knowledge_base"
             ]
+        set_fields(authz_hits=len(nodes or []))
         document_sources = build_sources(nodes, question) if nodes else []
         document_limit = max(0, MAX_VISIBLE_SOURCES - min(len(business_sources), MAX_VISIBLE_SOURCES))
         # Nếu có tài liệu chỉ định, CHỈ hiển thị sources từ tài liệu đó, KHÔNG chèn business_sources vào
@@ -2345,9 +2362,10 @@ def ask_document(question: str, history=None, category: str | None = None, user=
         if sources:
             context = build_context_from_sources(sources)
     except Exception as error:
+        mark_error("retrieval", type(error).__name__)
         if sql_mode:
             logger.exception("SQL document retrieval failed")
-            raise SqlDocumentAccessError("Khong the truy cap kho tai lieu SQL an toan.") from error
+            raise SqlDocumentAccessError("Khong the truy cap kho tai lieu SQL an toan.", ai_reason=type(error).__name__) from error
         if business_sources and not clean_filename:
             sources = business_sources[:MAX_VISIBLE_SOURCES]
             context = build_context_from_sources(sources)
@@ -2355,18 +2373,23 @@ def ask_document(question: str, history=None, category: str | None = None, user=
         logger.exception("Document retrieval failed")
 
     no_ans = get_no_answer(language)
+    set_fields(sources=len(sources))
     if not sources or not context.strip():
+        set_fields(answer_mode="no_context")
         return {"answer": no_ans, "sources": []}
 
     prompt = build_answer_prompt(question, context, history, clean_filename, language=language)
     try:
-        answer = str(Settings.llm.complete(prompt)).strip()
+        with ai_stage("llm"):
+            answer = str(Settings.llm.complete(prompt)).strip()
     except Exception:
         logger.exception("LLM generation failed")
         raise
 
     if is_no_answer(answer):
+        set_fields(answer_mode="model_no_answer")
         return {"answer": no_ans, "sources": public_sources(sources)}
+    set_fields(answer_mode="llm")
     return {"answer": answer, "sources": public_sources(sources)}
 
 
