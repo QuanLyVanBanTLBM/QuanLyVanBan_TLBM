@@ -257,6 +257,7 @@
   },
   "hanhDong": {
     "kyDuyet": "Ký duyệt",
+    "kyBiKhoa": "Quyền ký đang bị quản trị viên khóa nên chưa thể ký duyệt. Vẫn có thể trả lại để sửa hoặc từ chối.",
     "traLaiSua": "Trả lại để sửa",
     "khongDongY": "Từ chối hồ sơ",
     "thuHoi": "Thu hồi chữ ký",
