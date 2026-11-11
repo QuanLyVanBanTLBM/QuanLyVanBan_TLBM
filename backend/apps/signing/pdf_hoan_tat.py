@@ -52,6 +52,12 @@ UNG_VIEN_PHONG_CHU = [
 
 VAI_TRO = {"KY_CHINH": "Ký chính"}
 
+# Độ đệm nền trắng quanh khung ký (pt): 25% mỗi cạnh, tối thiểu 1,5, tối đa 20 (ngang) / 14 (dọc)
+DEM_NEN_TI_LE = 0.25
+DEM_NEN_TOI_THIEU = 1.5
+DEM_NEN_TOI_DA_X = 20.0
+DEM_NEN_TOI_DA_Y = 14.0
+
 
 class LoiTaoTep(Exception):
     def __init__(self, ma, chi_tiet=""):
@@ -119,10 +125,13 @@ def _khoi_chu_ky(c, khung, nguoi_ky, anh, phong, phong_dam):
 
     x, y, rong, cao = khung
 
-    # Tô nền trắng lót toàn bộ diện tích khung ký (với độ đệm 1.5pt để bao trùm đường viền)
-    # nhằm xóa/che sạch mọi khung nét đứt placeholder, hướng dẫn vị trí ký có sẵn trong văn bản gốc
+    # Tô nền trắng lót khung ký cộng độ đệm để che khung nét đứt placeholder có sẵn trong văn bản gốc.
+    # Placeholder thường rộng hơn và lệch so với khung ký nên độ đệm tính theo tỉ lệ kích thước khung,
+    # có sàn 1,5pt và trần để không che nhầm văn bản lân cận.
+    dem_x = min(max(rong * DEM_NEN_TI_LE, DEM_NEN_TOI_THIEU), DEM_NEN_TOI_DA_X)
+    dem_y = min(max(cao * DEM_NEN_TI_LE, DEM_NEN_TOI_THIEU), DEM_NEN_TOI_DA_Y)
     c.setFillColor(Color(1, 1, 1))
-    c.rect(x - 1.5, y - 1.5, rong + 3, cao + 3, fill=1, stroke=0)
+    c.rect(x - dem_x, y - dem_y, rong + 2 * dem_x, cao + 2 * dem_y, fill=1, stroke=0)
 
     c.setFillColor(Color(0, 0, 0))
 

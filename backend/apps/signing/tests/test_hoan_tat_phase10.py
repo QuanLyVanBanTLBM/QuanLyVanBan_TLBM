@@ -216,4 +216,37 @@ class DinhDangChuKyTests(HoanTatBase):
         self.assertEqual(len(draw_centred_calls), 1)
         args, _ = draw_centred_calls[0]
         self.assertEqual(args[2], "NGUYỄN VĂN LONG HOÀNG NAM")
-        c.rect.assert_called_once_with(98.5, 198.5, 83, 53, fill=1, stroke=0)
+        # Đệm 25% nhưng chặn trần: ngang min(20, 20) = 20, dọc min(12,5; 14) = 12,5
+        c.rect.assert_called_once_with(80, 187.5, 120, 75, fill=1, stroke=0)
+
+    def test_nen_trang_che_het_net_dut_placeholder_rong_hon_khung_ky(self):
+        import shutil
+        import subprocess
+        import tempfile
+
+        from reportlab.lib.colors import Color
+        from reportlab.pdfgen import canvas
+        from signing.pdf_hoan_tat import _khoi_chu_ky
+
+        if not shutil.which("pdftoppm"):
+            self.skipTest("Không có pdftoppm để render ảnh trang")
+        from PIL import Image
+
+        khung = (200, 300, 100, 60)  # x, y, rộng, cao (pt)
+        buf = io.BytesIO()
+        c = canvas.Canvas(buf, pagesize=(400, 500))
+        # Placeholder nét đứt xanh rộng hơn và lệch khung ký (nhô ra ~12pt mỗi cạnh)
+        c.setStrokeColor(Color(0, 0.4, 1))
+        c.setDash(3, 3)
+        c.rect(khung[0] - 12, khung[1] - 8, khung[2] + 24, khung[3] + 16, fill=0, stroke=1)
+        _khoi_chu_ky(c, khung, {"ten_nguoi_ky": "Nguyễn Văn A"}, None, "Helvetica", "Helvetica-Bold")
+        c.save()
+        with tempfile.TemporaryDirectory() as tmp:
+            pdf_path = os.path.join(tmp, "t.pdf")
+            with open(pdf_path, "wb") as f:
+                f.write(buf.getvalue())
+            subprocess.run(["pdftoppm", "-png", "-r", "72", pdf_path, os.path.join(tmp, "t")], check=True)
+            anh = Image.open(next(os.path.join(tmp, n) for n in os.listdir(tmp) if n.endswith(".png"))).convert("RGB")
+        px = anh.tobytes()
+        so_xanh = sum(1 for i in range(0, len(px), 3) if px[i + 2] > 150 and px[i] < 120)
+        self.assertEqual(so_xanh, 0, "Còn điểm ảnh xanh của nét đứt placeholder")
