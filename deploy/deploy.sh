@@ -203,6 +203,12 @@ cd "$REL/backend"
 $PY manage.py check
 $PY manage.py collectstatic --noinput | tail -1
 
+# Kiem tra som ke hoach migration ngay khi server cu van dang phuc vu binh thuong
+MIG_PLAN=$("$PY" manage.py migrate --plan 2>/dev/null || true)
+if [[ "$MIG_PLAN" == *"No planned migration operations."* ]]; then
+  echo "Ke hoach migration: Khong co migration cho tren release moi."
+fi
+
 step "4/9 Cau hinh nginx"
 if [ -z "${CASE_ROOT:-}" ]; then
   TLS_DIR="/etc/qlvb/tls"
