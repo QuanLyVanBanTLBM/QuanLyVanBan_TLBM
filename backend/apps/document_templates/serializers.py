@@ -90,6 +90,7 @@ class TaiLieuChiTietSerializer(serializers.ModelSerializer):
     Serializer cho Chi tiết tài liệu chung (khớp interface ResourceItem của frontend)
     """
     dm_tai_lieu_name = serializers.CharField(source='dm_tai_lieu.ten_tai_lieu', read_only=True)
+    don_vi_name = serializers.SerializerMethodField()
     loai_tai_lieu = serializers.PrimaryKeyRelatedField(
         queryset=LoaiTaiLieu.objects.all(),
         many=True,
@@ -128,6 +129,7 @@ class TaiLieuChiTietSerializer(serializers.ModelSerializer):
             'attachments',
             'hien_thi',
             'don_vi_id',
+            'don_vi_name',
             'nguoi_tao',
             'nguoi_tao_name',
             'can_edit',
@@ -171,6 +173,16 @@ class TaiLieuChiTietSerializer(serializers.ModelSerializer):
         if not obj.nguoi_tao:
             return None
         return obj.nguoi_tao.get_full_name() or obj.nguoi_tao.username
+
+    def get_don_vi_name(self, obj):
+        if not obj.don_vi_id:
+            return None
+        try:
+            from organizations.models import DonVi
+            unit = DonVi.objects.filter(id=obj.don_vi_id).first()
+            return unit.ten if unit else None
+        except Exception:
+            return None
 
     def get_can_edit(self, obj):
         request = self.context.get('request')

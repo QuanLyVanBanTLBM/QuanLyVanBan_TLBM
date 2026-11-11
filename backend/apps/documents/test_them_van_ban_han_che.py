@@ -140,7 +140,7 @@ class ThemVanBanHanCheTest(TestCase):
     def restricted_di_workbook(self, so_hieu):
         wb = openpyxl.load_workbook(generate_excel_template("DI", "HAN_CHE"))
         wb.active.append([
-            so_hieu, "Hạn chế", "22/09/2026", "22/09/2026",
+            2026, so_hieu, "Hạn chế", "22/09/2026", "22/09/2026",
             "Trích yếu hợp lệ cho văn bản hạn chế", "HS-TLM", "Báo cáo", "Ban Giám hiệu",
             self.dv_hdt.ten, self.recipient.username, "Hiệu trưởng", "Hiệu trưởng",
             "CON_HIEU_LUC", "", "tai_lieu_hc.pdf", "", "",
@@ -171,7 +171,7 @@ class ThemVanBanHanCheTest(TestCase):
     def test_import_internal_still_allowed_without_restricted_permission(self):
         wb = openpyxl.load_workbook(generate_excel_template("DI", "NOI_BO"))
         wb.active.append([
-            "09/DI-NB-OK", "Nội bộ", "22/09/2026", "22/09/2026",
+            2026, "09/DI-NB-OK", "Nội bộ", "22/09/2026", "22/09/2026",
             "Trích yếu hợp lệ cho văn bản nội bộ", "HS-HCQT", "Công văn", "Ban Giám hiệu",
             self.dv_hdt.ten, self.recipient.username, "Hiệu trưởng", "Hiệu trưởng",
             "CON_HIEU_LUC", "", "tai_lieu_nb.pdf", "", "",

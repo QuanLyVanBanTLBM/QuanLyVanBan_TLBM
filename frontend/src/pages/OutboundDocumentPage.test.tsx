@@ -177,18 +177,39 @@ describe('OutboundDocumentPage Component (Phân hệ Văn bản Đi)', () => {
       });
     });
 
-    it('làm mới danh sách khi bấm nút Làm mới', async () => {
+    it('làm mới danh sách khi bấm nút Làm mới và cập nhật bộ lọc năm phát hành', async () => {
+      let yearsList = [2026, 2025];
+      mockedApiClient.get.mockImplementation(async (url: string) => {
+        if (url.includes('/auth/me/permissions/')) {
+          return { is_superuser: false, permissions: ALL_OUTBOUND_PERMS };
+        }
+        if (url.includes('/api/documents/years/')) {
+          return yearsList;
+        }
+        if (url.includes('page_size=1000')) {
+          return { count: mockOutboundDocuments.length, results: mockOutboundDocuments };
+        }
+        return { count: mockOutboundDocuments.length, results: mockOutboundDocuments };
+      });
+
       renderComponent();
 
       await waitFor(() => {
         expect(screen.getByText('201/QĐ-TLBM')).toBeInTheDocument();
       });
 
+      yearsList = [2026, 2025, 1890];
       const refreshButton = screen.getByRole('button', { name: /Làm mới/i });
       fireEvent.click(refreshButton);
 
       await waitFor(() => {
         expect(mockedApiClient.get).toHaveBeenCalledWith(expect.stringContaining('loai=DI'));
+        expect(mockedApiClient.get).toHaveBeenCalledWith('/api/documents/years/?loai=DI');
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: /Tất cả các năm/i }));
+      await waitFor(() => {
+        expect(screen.getByText(/Năm 1890/)).toBeInTheDocument();
       });
     });
   });

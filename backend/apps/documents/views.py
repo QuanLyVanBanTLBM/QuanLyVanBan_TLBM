@@ -929,8 +929,8 @@ class DocumentViewSet(viewsets.ViewSet):
         raw_loai = request.query_params.get("loai") or request.query_params.get("type", "DEN")
         model = get_document_model(raw_loai)
         qs = self._get_queryset_for_model(model)
-        years = qs.values_list("nam", flat=True).distinct().order_by("-nam")
-        return Response(list(years))
+        years = qs.exclude(nam__isnull=True).values_list("nam", flat=True).order_by("-nam").distinct()
+        return Response([int(y) for y in years])
 
     @action(detail=False, methods=["get"], url_path="next-so")
     def next_so(self, request):
