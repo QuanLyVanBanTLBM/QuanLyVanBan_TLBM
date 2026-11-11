@@ -89,7 +89,11 @@ jobs:
         env:
           PGPASSWORD: postgres
         run: |
-          psql -h localhost -p 5432 -U postgres -d tlbm_ci -v ON_ERROR_STOP=1 -c "ALTER SYSTEM SET fsync = 'off'; ALTER SYSTEM SET synchronous_commit = 'off'; ALTER SYSTEM SET full_page_writes = 'off'; SELECT pg_reload_conf();"
+          psql -h localhost -p 5432 -U postgres -d tlbm_ci -v ON_ERROR_STOP=1 \
+            -c "ALTER SYSTEM SET fsync = 'off'" \
+            -c "ALTER SYSTEM SET synchronous_commit = 'off'" \
+            -c "ALTER SYSTEM SET full_page_writes = 'off'" \
+            -c "SELECT pg_reload_conf()"
           psql -h localhost -p 5432 -U postgres -d tlbm_ci -v ON_ERROR_STOP=1 -c "CREATE ROLE qlvb_readonly LOGIN PASSWORD 'ci-readonly-only' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT"
 
       - name: One migration leaf per app (max_migration.txt)
@@ -224,7 +228,11 @@ jobs:
         env:
           PGPASSWORD: postgres
         run: |
-          psql -h localhost -p 5432 -U postgres -d tlbm_ci -v ON_ERROR_STOP=1 -c "ALTER SYSTEM SET fsync = 'off'; ALTER SYSTEM SET synchronous_commit = 'off'; ALTER SYSTEM SET full_page_writes = 'off'; SELECT pg_reload_conf();"
+          psql -h localhost -p 5432 -U postgres -d tlbm_ci -v ON_ERROR_STOP=1 \
+            -c "ALTER SYSTEM SET fsync = 'off'" \
+            -c "ALTER SYSTEM SET synchronous_commit = 'off'" \
+            -c "ALTER SYSTEM SET full_page_writes = 'off'" \
+            -c "SELECT pg_reload_conf()"
           psql -h localhost -p 5432 -U postgres -d tlbm_ci -v ON_ERROR_STOP=1 -c "CREATE ROLE qlvb_readonly LOGIN PASSWORD 'ci-readonly-only' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT"
 
       # Runner ubuntu-24.04 thường đã có PostgreSQL 16 client; chỉ cài khi thiếu hoặc sai phiên bản.
