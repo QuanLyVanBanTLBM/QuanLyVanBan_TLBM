@@ -1586,6 +1586,89 @@ class VanBanMatTests(TestCase):
         self.assertTrue(doc.nguoi_nhan.filter(id=self.recipient.id).exists())
 
 
+def _setup_strict_excel_context(creator, extra_users=None):
+    """Khởi tạo dữ liệu nền hợp lệ (Đơn vị, Nhân sự, Hồ sơ & Loại văn bản) cho các test Import Excel."""
+    from django.db.models import Max
+    from organizations.models import DonVi, KhoiKhuVuc
+    from documents.services import ensure_standard_hoso_and_doc_types
+
+    khoi = KhoiKhuVuc.objects.first() or KhoiKhuVuc.objects.create(ten="KHỐI HÀNH CHÍNH")
+    dv = DonVi.objects.filter(ten="Ban công nghệ thông tin").first()
+    if not dv:
+        max_stt = (DonVi.objects.aggregate(m=Max("stt_uu_tien"))["m"] or 0) + 1
+        dv = DonVi.objects.create(khoi=khoi, ten="Ban công nghệ thông tin", stt_uu_tien=max_stt)
+
+    for u in [creator, *(extra_users or [])]:
+        if u and getattr(u, "don_vi_id", None) != dv.id:
+            u.don_vi = dv
+            u.save(update_fields=["don_vi"])
+
+    ensure_standard_hoso_and_doc_types()
+    return dv
+
+
+def _build_strict_excel_workbook(loai, rows, include_so_di=False):
+    """Tạo file Excel đủ chuẩn 14 cột bắt buộc (+ các cột tùy chọn) từ danh sách dict cấu hình từng dòng."""
+    from openpyxl import Workbook
+
+    is_di = str(loai).upper() in ("DI", "VANBANDI")
+    date_header = "Ngày ban hành" if is_di else "Ngày đến"
+    headers = [
+        "Số, ký hiệu VB",
+        "Phạm vi",
+        date_header,
+        "Ngày văn bản",
+        "Trích yếu nội dung",
+        "Danh mục hồ sơ (Số ký hiệu)",
+        "Loại văn bản",
+        "Nơi ban hành",
+        "Đơn vị nhận / chủ trì",
+        "Cán bộ nhận / xử lý",
+        "Người ký",
+        "Chức vụ",
+        "Hiệu lực",
+        "Ngày hết hiệu lực",
+        "Tệp đính kèm",
+        "Link văn bản thay thế",
+        "Ghi chú",
+    ]
+    if include_so_di:
+        headers.insert(1, "Số đi")
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(headers)
+    for row_cfg in rows:
+        dt_val = row_cfg.get("ngay") or "15/09/2026 09:00:00"
+        row_vals = [
+            row_cfg["so_hieu"],
+            row_cfg.get("pham_vi", "Hạn chế" if str(loai).upper() == "MAT" else "Nội bộ"),
+            dt_val,
+            row_cfg.get("ngay_van_ban", "15/09/2026"),
+            row_cfg["trich_yeu"],
+            row_cfg.get("danh_muc_ho_so", "HS-HCQT"),
+            row_cfg.get("ten_loai_van_ban", "Công văn"),
+            row_cfg.get("noi_ban_hanh", "Ban Giám hiệu"),
+            row_cfg.get("don_vi_nhan", "Ban công nghệ thông tin"),
+            row_cfg["nguoi_nhan"],
+            row_cfg.get("nguoi_ky", "Hiệu trưởng"),
+            row_cfg.get("chuc_vu", "Hiệu trưởng"),
+            row_cfg.get("hieu_luc", "CON_HIEU_LUC"),
+            row_cfg.get("ngay_het_hieu_luc", ""),
+            row_cfg.get("tep_dinh_kem", "van_ban_mau.pdf"),
+            row_cfg.get("link_thay_the", ""),
+            row_cfg.get("ghi_chu", ""),
+        ]
+        if include_so_di:
+            row_vals.insert(1, row_cfg.get("so_thu_tu", ""))
+        ws.append(row_vals)
+
+    bio = io.BytesIO()
+    wb.save(bio)
+    bio.seek(0)
+    return bio
+
+
 # ═══════════════════════════════════════════════════════════════════
 # VAN BAN DI SERVICE TESTS (Phụ trách: Nguyễn Anh Đô)
 # ═══════════════════════════════════════════════════════════════════
@@ -1763,19 +1846,26 @@ class VanBanDiServiceTests(TestCase):
         template_bio = generate_excel_template("DI")
         self.assertTrue(template_bio.getvalue().startswith(b"PK"))
 
-        # 2. Import Excel tự cấp Số đi nếu cột trống
-        from openpyxl import Workbook
-        wb = Workbook()
-        ws = wb.active
-        ws.append(["Số, ký hiệu VB", "Số đi", "Ngày ban hành", "Trích yếu nội dung", "Hiệu lực"])
-        ws.append(["11/TB-DI", "", "15/09/2026 09:00:00", "Thông báo tuyển dụng cán bộ mới", "CON_HIEU_LUC"])
-
-        in_bio = io.BytesIO()
-        wb.save(in_bio)
-        in_bio.seek(0)
+        # 2. Import Excel tự cấp Số đi nếu cột trống (đủ chuẩn 14 cột bắt buộc)
+        _setup_strict_excel_context(self.creator, [self.recipient])
+        in_bio = _build_strict_excel_workbook(
+            "DI",
+            [
+                {
+                    "so_hieu": "11/TB-DI",
+                    "so_thu_tu": "",
+                    "ngay": "15/09/2026 09:00:00",
+                    "trich_yeu": "Thông báo tuyển dụng cán bộ mới",
+                    "nguoi_nhan": self.creator.username,
+                    "hieu_luc": "CON_HIEU_LUC",
+                    "tep_dinh_kem": "Thong_bao_tuyen_dung.pdf",
+                }
+            ],
+            include_so_di=True,
+        )
 
         result = import_from_excel(in_bio, "DI", self.creator)
-        self.assertEqual(result["created"], 1)
+        self.assertEqual(result["created"], 1, result)
 
         imported_doc = VanBanDi.objects.filter(so_hieu="11/TB-DI").first()
         self.assertIsNotNone(imported_doc)
@@ -1813,24 +1903,67 @@ class VanBanDiServiceTests(TestCase):
     def test_excel_import_three_validity_states(self):
         """Kiểm tra Import Excel nhận diện chính xác 3 trạng thái hiệu lực cho cả Văn bản Đến và Đi."""
         from documents.services import import_from_excel
-        from openpyxl import Workbook
-        import io
+
+        _setup_strict_excel_context(self.creator, [self.recipient])
+
+        # 0. Kiểm tra quy tắc bắt buộc mới: để trống Hiệu lực bị từ chối Fail-Fast
+        bio_blank = _build_strict_excel_workbook(
+            "DEN",
+            [
+                {
+                    "so_hieu": "90/CV-DEN-BLANK",
+                    "ngay": "15/09/2026 09:00:00",
+                    "trich_yeu": "Văn bản Đến bỏ trống hiệu lực phải bị chặn",
+                    "nguoi_nhan": self.creator.username,
+                    "hieu_luc": "",
+                    "pham_vi": "Nội bộ",
+                }
+            ],
+        )
+        res_blank = import_from_excel(bio_blank, "DEN", self.creator, pham_vi="NOI_BO")
+        self.assertEqual(res_blank["created"], 0, res_blank)
 
         # 1. Test cho Văn bản Đến (Nội bộ & Hạn chế)
-        wb_den = Workbook()
-        ws_den = wb_den.active
-        ws_den.append(["Số, ký hiệu VB", "Ngày đến", "Trích yếu nội dung", "Hiệu lực", "Phạm vi"])
-        ws_den.append(["91/CV-DEN", "15/09/2026 09:00:00", "Văn bản Đến còn hiệu lực (mã enum)", "CON_HIEU_LUC", "Nội bộ"])
-        ws_den.append(["92/CV-DEN", "15/09/2026 09:00:00", "Văn bản Đến hết hiệu lực (chữ)", "Hết hiệu lực", "Nội bộ"])
-        ws_den.append(["93/CV-DEN", "15/09/2026 09:00:00", "Văn bản Đến hết và thay thế (chuẩn hóa về Hết hiệu lực)", "HET_VA_THAY_THE", "Nội bộ"])
-        ws_den.append(["94/CV-DEN", "15/09/2026 09:00:00", "Văn bản Đến để trống hiệu lực (mặc định Còn hiệu lực)", "", "Nội bộ"])
-
-        bio_den = io.BytesIO()
-        wb_den.save(bio_den)
-        bio_den.seek(0)
+        bio_den = _build_strict_excel_workbook(
+            "DEN",
+            [
+                {
+                    "so_hieu": "91/CV-DEN",
+                    "ngay": "15/09/2026 09:00:00",
+                    "trich_yeu": "Văn bản Đến còn hiệu lực (mã enum)",
+                    "nguoi_nhan": self.creator.username,
+                    "hieu_luc": "CON_HIEU_LUC",
+                    "pham_vi": "Nội bộ",
+                },
+                {
+                    "so_hieu": "92/CV-DEN",
+                    "ngay": "15/09/2026 09:00:00",
+                    "trich_yeu": "Văn bản Đến hết hiệu lực (chữ)",
+                    "nguoi_nhan": self.creator.username,
+                    "hieu_luc": "Hết hiệu lực",
+                    "pham_vi": "Nội bộ",
+                },
+                {
+                    "so_hieu": "93/CV-DEN",
+                    "ngay": "15/09/2026 09:00:00",
+                    "trich_yeu": "Văn bản Đến hết và thay thế (chuẩn hóa về Hết hiệu lực)",
+                    "nguoi_nhan": self.creator.username,
+                    "hieu_luc": "HET_VA_THAY_THE",
+                    "pham_vi": "Nội bộ",
+                },
+                {
+                    "so_hieu": "94/CV-DEN",
+                    "ngay": "15/09/2026 09:00:00",
+                    "trich_yeu": "Văn bản Đến còn hiệu lực (chữ)",
+                    "nguoi_nhan": self.creator.username,
+                    "hieu_luc": "Còn hiệu lực",
+                    "pham_vi": "Nội bộ",
+                },
+            ],
+        )
 
         res_den = import_from_excel(bio_den, "DEN", self.creator, pham_vi="NOI_BO")
-        self.assertEqual(res_den["created"], 4)
+        self.assertEqual(res_den["created"], 4, res_den)
 
         self.assertEqual(VanBanDen.objects.get(so_hieu="91/CV-DEN").hieu_luc, HieuLuc.CON_HIEU_LUC)
         self.assertEqual(VanBanDen.objects.get(so_hieu="92/CV-DEN").hieu_luc, HieuLuc.HET_HIEU_LUC)
@@ -1838,19 +1971,38 @@ class VanBanDiServiceTests(TestCase):
         self.assertEqual(VanBanDen.objects.get(so_hieu="94/CV-DEN").hieu_luc, HieuLuc.CON_HIEU_LUC)
 
         # 2. Test cho Văn bản Đi (Nội bộ & Hạn chế)
-        wb_di = Workbook()
-        ws_di = wb_di.active
-        ws_di.append(["Số, ký hiệu VB", "Ngày ban hành", "Trích yếu nội dung", "Hiệu lực", "Phạm vi"])
-        ws_di.append(["91/TB-DI", "15/09/2026 09:00:00", "Văn bản Đi còn hiệu lực một phần (chữ)", "Còn hiệu lực một phần", "Nội bộ"])
-        ws_di.append(["92/TB-DI", "15/09/2026 09:00:00", "Văn bản Đi hết hiệu lực (mã enum)", "HET_HIEU_LUC", "Nội bộ"])
-        ws_di.append(["93/TB-DI", "15/09/2026 09:00:00", "Văn bản Đi còn hiệu lực 1 phần", "CON_HIEU_LUC_1_PHAN", "Nội bộ"])
-
-        bio_di = io.BytesIO()
-        wb_di.save(bio_di)
-        bio_di.seek(0)
+        bio_di = _build_strict_excel_workbook(
+            "DI",
+            [
+                {
+                    "so_hieu": "91/TB-DI",
+                    "ngay": "15/09/2026 09:00:00",
+                    "trich_yeu": "Văn bản Đi còn hiệu lực một phần (chữ)",
+                    "nguoi_nhan": self.creator.username,
+                    "hieu_luc": "Còn hiệu lực một phần",
+                    "pham_vi": "Nội bộ",
+                },
+                {
+                    "so_hieu": "92/TB-DI",
+                    "ngay": "15/09/2026 09:00:00",
+                    "trich_yeu": "Văn bản Đi hết hiệu lực (mã enum)",
+                    "nguoi_nhan": self.creator.username,
+                    "hieu_luc": "HET_HIEU_LUC",
+                    "pham_vi": "Nội bộ",
+                },
+                {
+                    "so_hieu": "93/TB-DI",
+                    "ngay": "15/09/2026 09:00:00",
+                    "trich_yeu": "Văn bản Đi còn hiệu lực 1 phần",
+                    "nguoi_nhan": self.creator.username,
+                    "hieu_luc": "CON_HIEU_LUC_1_PHAN",
+                    "pham_vi": "Nội bộ",
+                },
+            ],
+        )
 
         res_di = import_from_excel(bio_di, "DI", self.creator, pham_vi="NOI_BO")
-        self.assertEqual(res_di["created"], 3)
+        self.assertEqual(res_di["created"], 3, res_di)
 
         self.assertEqual(VanBanDi.objects.get(so_hieu="91/TB-DI").hieu_luc, HieuLuc.CON_HIEU_LUC_1_PHAN)
         self.assertEqual(VanBanDi.objects.get(so_hieu="92/TB-DI").hieu_luc, HieuLuc.HET_HIEU_LUC)
@@ -1896,20 +2048,26 @@ class VanBanDiServiceTests(TestCase):
         self.assertIn("chỉ chứa dòng ví dụ mẫu", res5["errors"][0]["message"])
 
         # 6. Import mẫu Hạn chế với dữ liệu thực và cán bộ nhận thành công
-        from records.models import HoSo
-        HoSo.objects.get_or_create(ten_ho_so="Hồ sơ tài liệu mật", defaults={"so_ky_hieu": "HS-TLM", "nguoi_lap": self.creator})
+        from records.models import HoSo, LoaiVanBan as RecordLoaiVanBan
+        dv = _setup_strict_excel_context(self.creator, [self.recipient])
+        hs_tlm, _ = HoSo.objects.get_or_create(
+            so_ky_hieu="HS-TLM",
+            defaults={"ten_ho_so": "Hồ sơ tài liệu mật", "nguoi_lap": self.creator},
+        )
+        RecordLoaiVanBan.objects.get_or_create(ho_so=hs_tlm, ten_loai="Báo cáo")
         wb = openpyxl.load_workbook(generate_excel_template("DI", "HAN_CHE"))
         ws = wb.active
         ws.append([
             "123/TB-HC-OK", "Hạn chế", "22/09/2026", "22/09/2026",
-            "Trích yếu hợp lệ cho văn bản hạn chế", "Hồ sơ tài liệu mật", "Báo cáo", "Ban Giám hiệu",
-            self.recipient.username, "Hội đồng trường", "Hiệu trưởng", "Hiệu trưởng", "CON_HIEU_LUC", "", "", ""
+            "Trích yếu hợp lệ cho văn bản hạn chế", "HS-TLM", "Báo cáo", "Ban Giám hiệu",
+            dv.ten, self.recipient.username, "Hiệu trưởng", "Hiệu trưởng",
+            "CON_HIEU_LUC", "", "Bao_cao_hc.pdf", "", ""
         ])
         bio = io.BytesIO()
         wb.save(bio)
         bio.seek(0)
         res6 = import_from_excel(bio, "DI", self.creator, pham_vi="HAN_CHE")
-        self.assertEqual(res6["created"], 1)
+        self.assertEqual(res6["created"], 1, res6)
         doc_hc = VanBanDi.objects.filter(so_hieu="123/TB-HC-OK").first()
         self.assertIsNotNone(doc_hc)
         self.assertEqual(doc_hc.pham_vi, PhamVi.HAN_CHE)
@@ -2027,18 +2185,25 @@ class VanBanMatServiceTests(TestCase):
     def test_mat_excel_import_strict_validation(self):
         """Import Excel VB Mật: kiểm tra chặt chẽ bắt buộc, áp pham_vi=HAN_CHE và cấm gửi mail."""
         from documents.services import import_from_excel
-        from openpyxl import Workbook
-        wb = Workbook()
-        ws = wb.active
-        ws.append(["Số, ký hiệu VB", "Ngày ban hành", "Trích yếu nội dung", "Hiệu lực"])
-        ws.append(["99/MẬT-BGH", "10/10/2026 08:30:00", "Hồ sơ công tác nhân sự bảo mật", "CON_HIEU_LUC"])
 
-        in_bio = io.BytesIO()
-        wb.save(in_bio)
-        in_bio.seek(0)
+        _setup_strict_excel_context(self.creator, [self.recipient])
+        in_bio = _build_strict_excel_workbook(
+            "MAT",
+            [
+                {
+                    "so_hieu": "99/MẬT-BGH",
+                    "ngay": "10/10/2026 08:30:00",
+                    "trich_yeu": "Hồ sơ công tác nhân sự bảo mật",
+                    "nguoi_nhan": self.creator.username,
+                    "hieu_luc": "CON_HIEU_LUC",
+                    "pham_vi": "Hạn chế",
+                    "tep_dinh_kem": "Nhan_su_mat.pdf",
+                }
+            ],
+        )
 
         result = import_from_excel(in_bio, "MAT", self.creator)
-        self.assertEqual(result["created"], 1)
+        self.assertEqual(result["created"], 1, result)
 
         imported = VanBanMat.objects.filter(so_hieu="99/MẬT-BGH").first()
         self.assertIsNotNone(imported)
@@ -2744,8 +2909,8 @@ class ExcelAttachmentAndOldfileTests(APITestCase):
         from pathlib import Path
         from django.test import override_settings
         from documents.services import import_from_excel
-        from openpyxl import Workbook
-        import io
+
+        _setup_strict_excel_context(self.user)
 
         with tempfile.TemporaryDirectory() as temp_oldfile_dir:
             temp_oldfile = Path(temp_oldfile_dir)
@@ -2756,20 +2921,28 @@ class ExcelAttachmentAndOldfileTests(APITestCase):
             real_file.write_bytes(b"%PDF-1.4 test oldfile content")
 
             with override_settings(OLDFILE_STORAGE_ROOT=str(temp_oldfile)):
-                wb = Workbook()
-                ws = wb.active
-                ws.append(["Số, ký hiệu VB", "Ngày đến", "Trích yếu nội dung", "Hiệu lực", "Phạm vi", "Tệp đính kèm"])
-                # Dòng 1: có file tồn tại thật
-                ws.append(["101/CV-OLD", "15/09/2026 08:30:00", "Công văn cũ có file thật", "CON_HIEU_LUC", "Nội bộ", "To_trinh_goc.pdf"])
-                # Dòng 2: file không tồn tại
-                ws.append(["102/CV-OLD", "15/09/2026 08:30:00", "Công văn cũ file không tồn tại", "CON_HIEU_LUC", "Nội bộ", "File_ao.pdf"])
-
-                bio = io.BytesIO()
-                wb.save(bio)
-                bio.seek(0)
+                bio = _build_strict_excel_workbook(
+                    "DEN",
+                    [
+                        {
+                            "so_hieu": "101/CV-OLD",
+                            "ngay": "15/09/2026 08:30:00",
+                            "trich_yeu": "Công văn cũ có file thật",
+                            "nguoi_nhan": self.user.username,
+                            "tep_dinh_kem": "To_trinh_goc.pdf",
+                        },
+                        {
+                            "so_hieu": "102/CV-OLD",
+                            "ngay": "15/09/2026 08:30:00",
+                            "trich_yeu": "Công văn cũ file không tồn tại",
+                            "nguoi_nhan": self.user.username,
+                            "tep_dinh_kem": "File_ao.pdf",
+                        },
+                    ],
+                )
 
                 res = import_from_excel(bio, "DEN", self.user, pham_vi="NOI_BO")
-                self.assertEqual(res["created"], 2)
+                self.assertEqual(res["created"], 2, res)
 
                 # Dòng 1 gắn attachment thành công
                 doc1 = VanBanDen.objects.get(so_hieu="101/CV-OLD")
@@ -2790,20 +2963,27 @@ class ExcelAttachmentAndOldfileTests(APITestCase):
     def test_import_excel_with_uploaded_attachments_success(self):
         """Import Excel nạp trực tiếp danh sách attachments tải lên và liên kết chính xác."""
         from documents.services import import_from_excel
-        from openpyxl import Workbook
-        import io
 
-        wb = Workbook()
-        ws = wb.active
-        ws.append(["Số, ký hiệu VB", "Ngày đến", "Trích yếu nội dung", "Hiệu lực", "Phạm vi", "Tệp đính kèm"])
-        # Dòng 1: Gắn 2 tệp tải lên
-        ws.append(["103/CV-NEW", "20/10/2026 09:00:00", "Công văn kèm 2 file tải lên", "CON_HIEU_LUC", "Nội bộ", "CV_DinhKem_1.pdf; CV_DinhKem_2.docx"])
-        # Dòng 2: Tệp không có trong danh sách tải lên
-        ws.append(["104/CV-NEW", "20/10/2026 09:00:00", "Công văn tệp không có", "CON_HIEU_LUC", "Nội bộ", "Khong_Co.pdf"])
-
-        bio = io.BytesIO()
-        wb.save(bio)
-        bio.seek(0)
+        _setup_strict_excel_context(self.user)
+        bio = _build_strict_excel_workbook(
+            "DEN",
+            [
+                {
+                    "so_hieu": "103/CV-NEW",
+                    "ngay": "20/10/2026 09:00:00",
+                    "trich_yeu": "Công văn kèm 2 file tải lên",
+                    "nguoi_nhan": self.user.username,
+                    "tep_dinh_kem": "CV_DinhKem_1.pdf; CV_DinhKem_2.docx",
+                },
+                {
+                    "so_hieu": "104/CV-NEW",
+                    "ngay": "20/10/2026 09:00:00",
+                    "trich_yeu": "Công văn tệp không có",
+                    "nguoi_nhan": self.user.username,
+                    "tep_dinh_kem": "Khong_Co.pdf",
+                },
+            ],
+        )
 
         uploaded_files = [
             SimpleUploadedFile("CV_DinhKem_1.pdf", b"%PDF-1.4 sample content 1", content_type="application/pdf"),
@@ -2811,7 +2991,7 @@ class ExcelAttachmentAndOldfileTests(APITestCase):
         ]
 
         res = import_from_excel(bio, "DEN", self.user, pham_vi="NOI_BO", attachments=uploaded_files)
-        self.assertEqual(res["created"], 2)
+        self.assertEqual(res["created"], 2, res)
 
         doc1 = VanBanDen.objects.get(so_hieu="103/CV-NEW")
         self.assertEqual(doc1.attachments.count(), 2)
@@ -2869,20 +3049,22 @@ class ExcelAttachmentAndOldfileTests(APITestCase):
 
     def test_api_import_excel_with_attachments_endpoint(self):
         """API endpoint /api/documents/import/ nhận file Excel và multipart attachments."""
-        from openpyxl import Workbook
-        import io
-
         self.user.is_superuser = True
         self.user.save()
+        _setup_strict_excel_context(self.user)
 
-        wb = Workbook()
-        ws = wb.active
-        ws.append(["Số, ký hiệu VB", "Ngày đến", "Trích yếu nội dung", "Hiệu lực", "Phạm vi", "Tệp đính kèm"])
-        ws.append(["105/CV-API", "25/10/2026 14:00:00", "Công văn test qua API kèm file", "CON_HIEU_LUC", "Nội bộ", "API_Doc.pdf"])
-
-        excel_bio = io.BytesIO()
-        wb.save(excel_bio)
-        excel_bio.seek(0)
+        excel_bio = _build_strict_excel_workbook(
+            "DEN",
+            [
+                {
+                    "so_hieu": "105/CV-API",
+                    "ngay": "25/10/2026 14:00:00",
+                    "trich_yeu": "Công văn test qua API kèm file",
+                    "nguoi_nhan": self.user.username,
+                    "tep_dinh_kem": "API_Doc.pdf",
+                }
+            ],
+        )
 
         excel_file = SimpleUploadedFile("van_ban_import.xlsx", excel_bio.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         pdf_file = SimpleUploadedFile("API_Doc.pdf", b"%PDF-1.4 test api attachment", content_type="application/pdf")
@@ -2895,7 +3077,7 @@ class ExcelAttachmentAndOldfileTests(APITestCase):
             },
             format="multipart",
         )
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         self.assertEqual(response.data.get("created"), 1)
 
         doc = VanBanDen.objects.get(so_hieu="105/CV-API")
@@ -2906,24 +3088,27 @@ class ExcelAttachmentAndOldfileTests(APITestCase):
     def test_import_excel_outbound_with_multiple_attachments_and_normalization(self):
         """Import Văn bản Đi với 2 tệp đính kèm (có khoảng trắng thừa trước đuôi file) vẫn nhận diện đủ cả 2."""
         from documents.services import import_from_excel
-        from openpyxl import Workbook
-        import io
 
-        wb = Workbook()
-        ws = wb.active
-        ws.append(["Số, ký hiệu VB", "Ngày ban hành", "Trích yếu nội dung", "Hiệu lực", "Phạm vi", "Tệp đính kèm"])
+        _setup_strict_excel_context(self.user)
         # Ghi 2 tệp trong đó tệp 1 có khoảng trắng thừa trước dấu chấm (.pdf)
-        ws.append(["201/DI-NORM", "25/10/2026", "Công văn đi test 2 file đính kèm", "CON_HIEU_LUC", "Nội bộ", "CV_Di_1 .pdf; CV_Di_2.docx"])
-
-        excel_bio = io.BytesIO()
-        wb.save(excel_bio)
-        excel_bio.seek(0)
+        excel_bio = _build_strict_excel_workbook(
+            "DI",
+            [
+                {
+                    "so_hieu": "201/DI-NORM",
+                    "ngay": "25/10/2026",
+                    "trich_yeu": "Công văn đi test 2 file đính kèm",
+                    "nguoi_nhan": self.user.username,
+                    "tep_dinh_kem": "CV_Di_1 .pdf; CV_Di_2.docx",
+                }
+            ],
+        )
 
         f1 = SimpleUploadedFile("CV_Di_1.pdf", b"%PDF-1.4 content di 1", content_type="application/pdf")
         f2 = SimpleUploadedFile("CV_Di_2.docx", b"content di 2", content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
         res = import_from_excel(excel_bio, "DI", self.user, pham_vi="NOI_BO", attachments=[f1, f2])
-        self.assertEqual(res["created"], 1)
+        self.assertEqual(res["created"], 1, res)
 
         doc = VanBanDi.objects.get(so_hieu="201/DI-NORM")
         self.assertEqual(doc.attachments.count(), 2)
@@ -2934,25 +3119,28 @@ class ExcelAttachmentAndOldfileTests(APITestCase):
     def test_import_excel_with_smart_extension_matching(self):
         """Khớp thông minh định dạng tệp: Excel ghi .doc nhưng tệp tải lên là .docx (hoặc không ghi đuôi) vẫn nhận đủ."""
         from documents.services import import_from_excel
-        from openpyxl import Workbook
-        import io
 
-        wb = Workbook()
-        ws = wb.active
-        ws.append(["Số, ký hiệu VB", "Ngày ban hành", "Trích yếu nội dung", "Hiệu lực", "Phạm vi", "Tệp đính kèm"])
-        # Cột tệp ghi: 1 file pdf, 1 file .doc (nhưng thực tế là .docx), 1 file không đuôi (nhưng thực tế là .xlsx)
-        ws.append(["202/DI-SMART", "25/10/2026", "VB test smart extension", "CON_HIEU_LUC", "Nội bộ", "HoaDon_test.pdf; QNA.doc; BangLuong"])
-
-        excel_bio = io.BytesIO()
-        wb.save(excel_bio)
-        excel_bio.seek(0)
+        _setup_strict_excel_context(self.user)
+        # Cột tệp ghi: 1 file pdf, 1 file .doc (nhưng thực tế là .docx), 1 file không đuôi (nhưng thực tế là .png)
+        excel_bio = _build_strict_excel_workbook(
+            "DI",
+            [
+                {
+                    "so_hieu": "202/DI-SMART",
+                    "ngay": "25/10/2026",
+                    "trich_yeu": "VB test smart extension",
+                    "nguoi_nhan": self.user.username,
+                    "tep_dinh_kem": "HoaDon_test.pdf; QNA.doc; BangLuong",
+                }
+            ],
+        )
 
         f1 = SimpleUploadedFile("HoaDon_test.pdf", b"%PDF-1.4 sample", content_type="application/pdf")
         f2 = SimpleUploadedFile("QNA.docx", b"docx sample content", content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
         f3 = SimpleUploadedFile("BangLuong.png", b"\x89PNG\r\n\x1a\n sample", content_type="image/png")
 
         res = import_from_excel(excel_bio, "DI", self.user, pham_vi="NOI_BO", attachments=[f1, f2, f3])
-        self.assertEqual(res["created"], 1)
+        self.assertEqual(res["created"], 1, res)
         self.assertEqual(len(res["errors"]), 0)
 
         doc = VanBanDi.objects.get(so_hieu="202/DI-SMART")

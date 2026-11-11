@@ -9,13 +9,16 @@ import openpyxl
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, Permission
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import models
 from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APIClient
 
 from authorization.models import GroupInfo
 from documents.models import PhamVi, VanBanDen, VanBanDi
-from documents.services import generate_excel_template, import_from_excel
+from documents.services import ensure_standard_hoso_and_doc_types, generate_excel_template, import_from_excel
+from organizations.models import DonVi, KhoiKhuVuc
+from records.models import HoSo, LoaiVanBan as RecordLoaiVanBan
 
 MODELS = {"DEN": VanBanDen, "DI": VanBanDi}
 
@@ -48,6 +51,24 @@ class ThemVanBanHanCheTest(TestCase):
         self.staff.is_staff = True
         self.staff.save()
         self.recipient = user_with("thc_nhan", group="CV")
+
+        khoi = KhoiKhuVuc.objects.first() or KhoiKhuVuc.objects.create(ten="KHỐI HÀNH CHÍNH")
+        self.dv_hdt = DonVi.objects.filter(ten="Hội đồng trường").first()
+        if not self.dv_hdt:
+            max_stt = (DonVi.objects.aggregate(m=models.Max("stt_uu_tien"))["m"] or 0) + 1
+            self.dv_hdt = DonVi.objects.create(khoi=khoi, ten="Hội đồng trường", stt_uu_tien=max_stt)
+        self.recipient.don_vi = self.dv_hdt
+        self.recipient.save(update_fields=["don_vi"])
+
+        ensure_standard_hoso_and_doc_types()
+        self.hs_tlm = HoSo.objects.filter(so_ky_hieu="HS-TLM").first()
+        if not self.hs_tlm:
+            self.hs_tlm = HoSo.objects.create(
+                ten_ho_so="Hồ sơ tài liệu mật",
+                so_ky_hieu="HS-TLM",
+                nguoi_lap=self.admin_group_user,
+            )
+        RecordLoaiVanBan.objects.get_or_create(ho_so=self.hs_tlm, ten_loai="Báo cáo")
 
     def post_document(self, user, loai, pham_vi, so_hieu):
         client = APIClient()
@@ -120,8 +141,9 @@ class ThemVanBanHanCheTest(TestCase):
         wb = openpyxl.load_workbook(generate_excel_template("DI", "HAN_CHE"))
         wb.active.append([
             so_hieu, "Hạn chế", "22/09/2026", "22/09/2026",
-            "Trích yếu hợp lệ cho văn bản hạn chế", "Hồ sơ tài liệu mật", "Báo cáo", "Ban Giám hiệu",
-            self.recipient.username, "Hội đồng trường", "Hiệu trưởng", "Hiệu trưởng", "CON_HIEU_LUC", "", "", "",
+            "Trích yếu hợp lệ cho văn bản hạn chế", "HS-TLM", "Báo cáo", "Ban Giám hiệu",
+            self.dv_hdt.ten, self.recipient.username, "Hiệu trưởng", "Hiệu trưởng",
+            "CON_HIEU_LUC", "", "tai_lieu_hc.pdf", "", "",
         ])
         stream = io.BytesIO()
         wb.save(stream)
@@ -150,13 +172,13 @@ class ThemVanBanHanCheTest(TestCase):
         wb = openpyxl.load_workbook(generate_excel_template("DI", "NOI_BO"))
         wb.active.append([
             "09/DI-NB-OK", "Nội bộ", "22/09/2026", "22/09/2026",
-            "Trích yếu hợp lệ cho văn bản nội bộ", "Hồ sơ Hành chính - Quản trị", "Công văn", "Ban Giám hiệu",
-            "Hội đồng trường", "Hiệu trưởng", "Hiệu trưởng", "CON_HIEU_LUC", "", "", "",
+            "Trích yếu hợp lệ cho văn bản nội bộ", "HS-HCQT", "Công văn", "Ban Giám hiệu",
+            self.dv_hdt.ten, self.recipient.username, "Hiệu trưởng", "Hiệu trưởng",
+            "CON_HIEU_LUC", "", "tai_lieu_nb.pdf", "", "",
         ])
         stream = io.BytesIO()
         wb.save(stream)
         stream.seek(0)
-        return stream
         result = import_from_excel(stream, "DI", self.adder, pham_vi="NOI_BO")
         self.assertEqual(result["created"], 1, result)
 
