@@ -22,7 +22,7 @@
     "clearSearch": "Clear search",
     "searchDocsPlaceholder": "Search documents...",
     "dropzoneText": "Drag & drop or Click to upload",
-    "dropzoneSub": "Supported: PDF, DOCX, TXT, CSV, PPTX, MD, HTML, JSON, XML, and images",
+    "dropzoneSub": "Supported: PDF, DOC, DOCX, TXT, CSV, PPTX, MD, HTML, JSON, XML, and images",
     "emptySessions": "No conversations yet.",
     "emptySessionsSearch": "No matching conversations found.",
     "emptyDocs": "No documents in knowledge base.",
@@ -81,7 +81,8 @@
       "loading": "Loading document content...",
       "noContent": "(No content)",
       "part": "Section {num}",
-      "fileArchive": "Storage filename"
+      "fileArchive": "Storage filename",
+      "unableToLoadImage": "Unable to load preview image."
     },
     "inline": {
       "unableToLoadDocumentContent": "Unable to load document content.",
@@ -107,6 +108,12 @@
       "helpful": "Helpful",
       "needsImprovement": "Needs improvement",
       "read": "Read",
+      "stopReading": "Stop reading",
+      "retrySend": "Retry",
+      "reclassifyDoc": "Reclassify document topic",
+      "reclassifying": "Reclassifying...",
+      "reclassifySuccess": "Reclassified \"{filename}\" to \"{category}\".",
+      "reclassifyFailed": "Failed to reclassify document.",
       "targeted": "Targeted",
       "clearTargetedDocument": "Clear targeted document",
       "processingDocument": "Processing document...",
@@ -123,6 +130,22 @@
       "aiAssistantIsSearchingThe": "AI Assistant is searching the TLBM document database and synthesizing response...",
       "dropToTargetThisDocument": "Drop to target this document for queries",
       "askAboutValue": "Ask about \"{value}\"..."
+    },
+    "settingsModal": {
+      "title": "AI Model & API Key Settings",
+      "subtitle": "Configure OpenAI API Key and language model for the AI Assistant.",
+      "providerLabel": "Provider",
+      "llmModelLabel": "Language Model (LLM)",
+      "apiKeyLabel": "OpenAI API Key",
+      "apiKeyPlaceholder": "Enter sk-... to set a new API Key",
+      "apiKeyCurrent": "Current: {masked}",
+      "apiKeyNotConfigured": "No API Key configured yet.",
+      "apiKeyRequired": "Please enter a valid OpenAI API Key.",
+      "save": "Save settings",
+      "saving": "Verifying & saving...",
+      "cancel": "Cancel",
+      "saveSuccess": "AI settings updated successfully.",
+      "saveFailed": "Failed to save AI settings."
     },
     "defaultSession": {
       "title": "New Conversation",

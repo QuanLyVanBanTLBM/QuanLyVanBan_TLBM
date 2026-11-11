@@ -1,4 +1,5 @@
 import re
+import shutil
 import tempfile
 import unicodedata
 import base64
@@ -124,8 +125,11 @@ def setup_llamaindex():
         active = {}
 
     provider = "openai"
-    llm_model = "gpt-6-luna"
-    embed_model = "text-embedding-3-large"
+    provider_default_llm = getattr(config, "LLM_MODEL", None) or "gpt-6-luna"
+    provider_default_embed = getattr(config, "EMBED_MODEL", None) or "text-embedding-3-large"
+    llm_model = str(active.get("llm_model") or provider_default_llm).strip() or "gpt-6-luna"
+    embed_model = str(active.get("embed_model") or provider_default_embed).strip() or "text-embedding-3-large"
+    vision_model = str(active.get("vision_model") or llm_model).strip() or llm_model
     openai_key = (
         active.get("openai_api_key")
         or getattr(config, "OPENAI_API_KEY", None)
@@ -136,7 +140,7 @@ def setup_llamaindex():
     MODEL_PROVIDER = provider
     LLM_MODEL = llm_model
     EMBED_MODEL = embed_model
-    VISION_MODEL = llm_model
+    VISION_MODEL = vision_model
     if not openai_key:
         raise RuntimeError("OPENAI_API_KEY is not configured")
     import llama_index.llms.openai.utils as openai_utils
@@ -154,7 +158,8 @@ def setup_llamaindex():
 
     embed_model_name = embed_model if "text-embedding" in embed_model else "text-embedding-3-large"
     Settings.embed_model = OpenAIEmbedding(model_name=embed_model_name, api_key=openai_key)
-    Settings.llm = OpenAI(model=llm_model, temperature=1.0, request_timeout=180.0, api_key=openai_key)
+    temp = 1.0 if ("luna" in llm_model or llm_model.startswith(("o1", "o3", "o4"))) else 0.1
+    Settings.llm = OpenAI(model=llm_model, temperature=temp, request_timeout=180.0, api_key=openai_key)
     print(f"✅ OpenAI LLM: {llm_model}")
     print(f"✅ OpenAI Embed: {embed_model_name}")
 
@@ -260,6 +265,32 @@ def is_inappropriate_message(text: str) -> bool:
 
 def is_no_answer(answer: str) -> bool:
     normalized = normalize_for_match(answer)
+    if not normalized:
+        return True
+    exact_templates = (
+        "xin loi, thong tin ban hoi khong co",
+        "xin loi thong tin ban hoi khong co",
+        "sorry, the information you asked for is not",
+    )
+    if any(normalized.startswith(tpl) for tpl in exact_templates):
+        return True
+
+    refusal_starts = (
+        "xin loi",
+        "toi khong tim thay",
+        "khong tim thay",
+        "khong co thong tin",
+        "khong du thong tin",
+        "khong the tra loi",
+        "tai lieu duoc cung cap khong",
+        "tai lieu khong",
+        "sorry",
+        "i am sorry",
+        "i'm sorry",
+        "not found in the provided",
+        "unable to answer",
+        "cannot answer",
+    )
     patterns = (
         "khong tim thay",
         "toi khong tim thay",
@@ -291,7 +322,13 @@ def is_no_answer(answer: str) -> bool:
         "does not contain information",
         "outside the scope",
     )
-    return any(pattern in normalized for pattern in patterns)
+    if not any(pattern in normalized for pattern in patterns):
+        return False
+    # Do not wipe out detailed grounded partial answers that include citations or bullet points.
+    has_grounded_structure = bool(re.search(r"\[\d+\]", answer or "")) or "\n-" in (answer or "") or "\n1." in (answer or "")
+    if any(normalized.startswith(prefix) for prefix in refusal_starts):
+        return not has_grounded_structure or len(normalized) < 220
+    return len(normalized) < 180 and not has_grounded_structure
 
 
 def is_good_text(text: str) -> bool:
@@ -363,8 +400,9 @@ def call_vision_ocr(image, prompt: str = VISION_OCR_PROMPT) -> str:
         if not openai_key:
             raise RuntimeError("OPENAI_API_KEY is not configured")
 
+        vision_model_name = active.get("vision_model") or VISION_MODEL or LLM_MODEL
         response = OpenAI(api_key=openai_key, timeout=VISION_OCR_TIMEOUT).chat.completions.create(
-            model=LLM_MODEL,
+            model=vision_model_name,
             messages=[{
                 "role": "user",
                 "content": [
@@ -584,40 +622,77 @@ def read_txt(file_path: Path) -> str:
     return file_path.read_text(encoding="utf-8", errors="ignore").strip()
 
 
+def _extract_docx_paragraph_text(para, omath_tag: str, mt_tag: str) -> str:
+    text = para.text.strip()
+    omml_equations = []
+    try:
+        for math_elem in para._element.iter(omath_tag):
+            eq_text_parts = [
+                t.text.strip()
+                for t in math_elem.iter(mt_tag)
+                if t.text and t.text.strip()
+            ]
+            if eq_text_parts:
+                omml_equations.append(f"[EQUATION: {' '.join(eq_text_parts)}]")
+    except Exception:
+        pass
+    if text or omml_equations:
+        return (text + " " + " ".join(omml_equations)).strip()
+    return ""
+
+
+def _extract_docx_table_lines(table, omath_tag: str, mt_tag: str) -> list[str]:
+    rows_out = []
+    for row_idx, row in enumerate(table.rows):
+        cells = []
+        seen_tcs = set()
+        for cell in row.cells:
+            tc_id = id(cell._tc)
+            if tc_id in seen_tcs:
+                continue
+            seen_tcs.add(tc_id)
+            cell_parts = [
+                part
+                for p in cell.paragraphs
+                if (part := _extract_docx_paragraph_text(p, omath_tag, mt_tag))
+            ]
+            cell_text = " ".join(cell_parts).replace("\n", " ").replace("|", "/").strip()
+            cells.append(cell_text)
+        if any(cells):
+            rows_out.append("| " + " | ".join(cells) + " |")
+            if row_idx == 0 and len(table.rows) > 1:
+                rows_out.append("|" + "|".join(["---"] * len(cells)) + "|")
+    return rows_out
+
+
 def read_docx(file_path: Path) -> str:
-    """Đọc text từ DOCX, bao gồm cả equations/formulas (OMML)."""
+    """Đọc text từ DOCX theo thứ tự văn bản, bao gồm cả bảng biểu và equations/formulas (OMML)."""
+    from docx.table import Table
+    from docx.text.paragraph import Paragraph
+
     doc = DocxDocument(str(file_path))
-    paragraphs = []
+    blocks = []
 
-    # Namespace OMML đã được python-docx đăng ký sẵn — dùng Clark notation thay vì prefix
-    MATH_NS   = 'http://schemas.openxmlformats.org/officeDocument/2006/math'
-    OMATH_TAG = f'{{{MATH_NS}}}oMath'
-    MT_TAG    = f'{{{MATH_NS}}}t'
+    MATH_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math"
+    OMATH_TAG = f"{{{MATH_NS}}}oMath"
+    MT_TAG = f"{{{MATH_NS}}}t"
+    W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    P_TAG = f"{{{W_NS}}}p"
+    TBL_TAG = f"{{{W_NS}}}tbl"
 
-    for para in doc.paragraphs:
-        text = para.text.strip()
+    for child in doc.element.body.iterchildren():
+        if child.tag == P_TAG:
+            para = Paragraph(child, doc)
+            line = _extract_docx_paragraph_text(para, OMATH_TAG, MT_TAG)
+            if line:
+                blocks.append(line)
+        elif child.tag == TBL_TAG:
+            table = Table(child, doc)
+            table_lines = _extract_docx_table_lines(table, OMATH_TAG, MT_TAG)
+            if table_lines:
+                blocks.append("\n".join(table_lines))
 
-        # Trích xuất equations từ OMML bằng cách duyệt XML trực tiếp
-        omml_equations = []
-        try:
-            for math_elem in para._element.iter(OMATH_TAG):
-                eq_text_parts = [
-                    t.text.strip()
-                    for t in math_elem.iter(MT_TAG)
-                    if t.text and t.text.strip()
-                ]
-                if eq_text_parts:
-                    omml_equations.append(f"[EQUATION: {' '.join(eq_text_parts)}]")
-        except Exception:
-            pass  # Bỏ qua nếu parse XML lỗi, vẫn giữ text thường
-
-        if text or omml_equations:
-            combined = text
-            if omml_equations:
-                combined = (combined + ' ' + ' '.join(omml_equations)).strip()
-            paragraphs.append(combined)
-
-    return "\n".join(paragraphs)
+    return "\n".join(blocks)
 
 
 def read_docx_images(file_path: Path):
@@ -640,6 +715,9 @@ def read_docx_images(file_path: Path):
                         image.load()
                 except Exception as error:
                     print(f"Could not read DOCX image {name}: {error}")
+                    continue
+
+                if image.width < 48 and image.height < 48:
                     continue
 
                 vision_text = extract_image_vision_text(image, f"{file_path.name} image {index}")
@@ -1061,12 +1139,28 @@ def chunk_text(text: str, chunk_size: int, overlap: int):
 
     chunks = []
     start = 0
-    step = max(chunk_size - overlap, 1)
 
     while start < len(clean_text):
-        end = min(start + chunk_size, len(clean_text))
+        while start < len(clean_text) and clean_text[start].isspace():
+            start += 1
+        if start >= len(clean_text):
+            break
+
+        raw_end = min(start + chunk_size, len(clean_text))
+        end = raw_end
+        if raw_end < len(clean_text) and not clean_text[raw_end].isspace():
+            floor_idx = start + int(chunk_size * 0.7)
+            ws_pos = clean_text.rfind(" ", floor_idx, raw_end)
+            if ws_pos > start:
+                end = ws_pos
+
+        chunk_str = clean_text[start:end].strip()
+        if not chunk_str:
+            end = raw_end
+            chunk_str = clean_text[start:end].strip()
+
         chunks.append({
-            "text": clean_text[start:end].strip(),
+            "text": chunk_str,
             "start": start,
             "end": end,
         })
@@ -1074,12 +1168,27 @@ def chunk_text(text: str, chunk_size: int, overlap: int):
         if end >= len(clean_text):
             break
 
-        start += step
+        next_start = max(start + 1, end - overlap)
+        if next_start < len(clean_text) and next_start > 0:
+            if not clean_text[next_start].isspace() and not clean_text[next_start - 1].isspace():
+                ws_back = clean_text.rfind(" ", max(start + 1, next_start - 30), next_start)
+                if ws_back != -1 and ws_back + 1 > start:
+                    next_start = ws_back + 1
+        start = next_start
 
     return chunks
 
 
 def parent_for_child(child, parent_chunks):
+    for parent in parent_chunks:
+        if parent["start"] <= child["start"] and child["end"] <= parent["end"]:
+            return parent
+
+    child_text = child.get("text", "")
+    for parent in parent_chunks:
+        if child_text and child_text in parent.get("text", ""):
+            return parent
+
     child_center = (child["start"] + child["end"]) // 2
 
     for parent in parent_chunks:
@@ -1440,8 +1549,32 @@ def sync_documents_if_needed():
         logger.exception("Could not rebuild the PostgreSQL vector index")
 
 
-def resolve_target_filename(filename: str | None) -> str | None:
-    """Đối chiếu và chuẩn hóa tên file chỉ định với danh mục vector."""
+def _get_scoped_indexed_filenames(allowed_keys=None, sql_mode: bool = False) -> list[str]:
+    collection = get_vector_collection()
+    if hasattr(collection, "list_filenames"):
+        return collection.list_filenames(allowed_keys=allowed_keys if sql_mode else None)
+    all_docs = collection.get(include=["metadatas"])
+    indexed_files = set()
+    for m in (all_docs.get("metadatas") or []):
+        meta = m or {}
+        if sql_mode and allowed_keys is not None and not (
+            meta.get("source_class") == "ai_knowledge_base"
+            or meta.get("sql_doc_key") in allowed_keys
+        ):
+            continue
+        fn = meta.get("file_name")
+        if fn:
+            indexed_files.add(fn)
+    return sorted(indexed_files)
+
+
+def resolve_target_filename(
+    filename: str | None,
+    allowed_keys=None,
+    sql_mode: bool = False,
+    require_indexed: bool = False,
+) -> str | None:
+    """Đối chiếu và chuẩn hóa tên file chỉ định với danh mục vector theo quyền hiện tại."""
     if not filename or not isinstance(filename, str):
         return None
     raw_name = filename.strip()
@@ -1449,14 +1582,7 @@ def resolve_target_filename(filename: str | None) -> str | None:
         return None
 
     try:
-        collection = get_vector_collection()
-        all_docs = collection.get(include=["metadatas"])
-        indexed_files = set()
-        for m in (all_docs.get("metadatas") or []):
-            fn = (m or {}).get("file_name")
-            if fn:
-                indexed_files.add(fn)
-
+        indexed_files = _get_scoped_indexed_filenames(allowed_keys=allowed_keys, sql_mode=sql_mode)
         if raw_name in indexed_files:
             return raw_name
 
@@ -1466,51 +1592,64 @@ def resolve_target_filename(filename: str | None) -> str | None:
             if fn.lower() == raw_lower:
                 return fn
 
-        # 2. Khớp theo đuôi tên file (ví dụ item3.docx khớp Folder_folder2_item3.docx, json.docx khớp huongdantaophoto_api_json.docx)
+        # 2. Khớp theo đuôi tên file (ví dụ item3.docx khớp Folder_folder2_item3.docx)
         for fn in indexed_files:
             fn_lower = fn.lower()
-            if fn_lower.endswith(raw_lower) or fn_lower.endswith(f"_{raw_lower}") or raw_lower in fn_lower:
+            if fn_lower.endswith(raw_lower) or fn_lower.endswith(f"_{raw_lower}"):
                 return fn
+        if len(raw_lower) >= 5:
+            for fn in indexed_files:
+                if raw_lower in fn.lower():
+                    return fn
     except Exception as exc:
         print(f"Error resolving target filename: {exc}")
 
-    return raw_name
+    return None if require_indexed else raw_name
 
 
-def extract_target_from_question(question: str) -> str | None:
-    """Tự động phát hiện tên thư mục và tên tệp trong câu hỏi của người dùng."""
+def extract_target_from_question(
+    question: str,
+    allowed_keys=None,
+    sql_mode: bool = False,
+) -> str | None:
+    """Tự động phát hiện tên thư mục và tên tệp đã được lập chỉ mục trong câu hỏi."""
     if not question:
         return None
     q = question.lower()
 
-    # 1. Phát hiện khớp mẫu: folder [1/2] và item [1/2/3]
-    f_match = re.search(r"folder\s*([12])", q)
-    i_match = re.search(r"item\s*([123])", q)
+    # 1. Phát hiện khớp mẫu: folder [1/2] và item [1/2/3] (chỉ trả về nếu tệp thực sự có trong kho)
+    f_match = re.search(r"\bfolder\s*([12])\b", q)
+    i_match = re.search(r"\bitem\s*([123])\b", q)
     if f_match and i_match:
         f_num = f_match.group(1)
         i_num = i_match.group(1)
         candidate = f"Folder_folder{f_num}_item{i_num}.docx"
-        return resolve_target_filename(candidate)
+        matched = resolve_target_filename(
+            candidate, allowed_keys=allowed_keys, sql_mode=sql_mode, require_indexed=True,
+        )
+        if matched:
+            return matched
 
-    # 2. Phát hiện item [123] mà không nói folder -> mặc định kiểm tra folder1
     if i_match and not f_match:
         i_num = i_match.group(1)
         candidate = f"Folder_folder1_item{i_num}.docx"
-        res = resolve_target_filename(candidate)
-        if res:
-            return res
+        matched = resolve_target_filename(
+            candidate, allowed_keys=allowed_keys, sql_mode=sql_mode, require_indexed=True,
+        )
+        if matched:
+            return matched
 
-    # 3. Phát hiện tên tệp trực tiếp trong câu hỏi
+    # 2. Phát hiện tên tệp trực tiếp trong câu hỏi theo danh sách tệp người dùng có quyền xem
     try:
-        collection = get_vector_collection()
-        all_docs = collection.get(include=["metadatas"])
-        for m in (all_docs.get("metadatas") or []):
-            fn = (m or {}).get("file_name")
-            if fn and fn.lower() in q:
+        indexed_files = _get_scoped_indexed_filenames(allowed_keys=allowed_keys, sql_mode=sql_mode)
+        # Ưu tiên khớp tên đầy đủ dài nhất trước
+        for fn in sorted(indexed_files, key=len, reverse=True):
+            fn_lower = fn.lower()
+            if fn_lower in q:
                 return fn
-            if fn and "_" in fn:
+            if "_" in fn:
                 base_part = fn.split("_")[-1].lower()
-                if len(base_part) > 4 and base_part in q:
+                if len(base_part) > 4 and re.search(rf"(?<!\w){re.escape(base_part)}(?!\w)", q):
                     return fn
     except Exception:
         pass
@@ -1564,9 +1703,15 @@ def index_document(file_path: Path, category=None, source_metadata=None, extra_t
 
     collection = get_vector_collection()
     if source_metadata.get("sql_doc_key"):
-        existing = collection.get(where={"sql_doc_key": source_metadata["sql_doc_key"]})
+        existing = collection.get(
+            where={"sql_doc_key": source_metadata["sql_doc_key"]},
+            include=["metadatas"],
+        )
     else:
-        existing = collection.get(where={"file_name": logical_filename})
+        existing = collection.get(
+            where={"$and": [{"file_name": logical_filename}, {"sql_doc_key": {"$exists": False}}]},
+            include=["metadatas"],
+        )
     existing_ids = existing.get("ids") or []
 
     documents = build_parent_child_documents(file_path, page_items, category=category, source_metadata=source_metadata)
@@ -1734,7 +1879,6 @@ def _read_authorized_attachment_pages(record, fingerprints):
 
 def index_sql_document(record):
     """Index metadata and current attachment text for one currently authorized record."""
-    setup_llamaindex()
     source_type = record["source_type"]
     source_id = int(record["source_id"])
     key = f"{source_type}:{source_id}"
@@ -1776,6 +1920,8 @@ def index_sql_document(record):
         for metadata in cached_metadata
     ):
         return key
+
+    setup_llamaindex()
 
     # Avoid OCR and file parsing when the metadata and all currently authorized files
     # are unchanged. If parsing fails later, old vectors are removed before rebuilding.
@@ -2065,7 +2211,8 @@ EMOTIONAL_PATTERNS = (
     # Cảm xúc mệt mỏi, buồn bã, áp lực
     "met moi", "met qua", "met that", "met ghe", "duoi qua", "oai qua",
     "kiet suc", "ap luc", "stress", "chan qua", "chan that", "that vong",
-    "bat luc", "chan nan", "nan long", "nan qua", "sau qua", "tam trang te",
+    "bat luc", "chan nan", "nan long", "nan qua", "sau qua", "buon qua",
+    "buon ngu", "troi dep", "tam trang te",
     "te qua", "khong vui", "be tac", "co don", "chan doi", "sao buon the",
     # Cảm xúc vui vẻ, hào hứng
     "vui qua", "vui that", "vui ghe", "vui mung", "hanh phuc", "thich qua", "tuyet qua",
@@ -2086,21 +2233,32 @@ GREETING_PATTERNS = (
     "xin chao", "chao ban", "hello", "chao bot", "chao tro ly", "hi ban",
     "chao em", "chao anh", "chao chi", "chao buoi sang", "chao ngay moi",
     "good morning", "good afternoon", "good evening", "alo", "hey",
-    "ban la ai", "ban ten gi", "ban khoe khong", "co khoe khong",
-    "khoe khong ban", "dao nay the nao", "hom nay the nao", "ban lam duoc gi",
-    "ban giup duoc gi", "chuc nang cua ban", "gioi thieu ban than",
-    "gioi thieu ve ban", "ai tao ra ban",
     "tam biet", "bye", "bye bye", "hen gap lai", "chuc ngu ngon", "ngu ngon",
     "chuc mot ngay tot lanh",
 )
 
+BOT_SELF_PATTERNS = (
+    "ban la ai", "ban ten gi", "ban khoe khong", "co khoe khong",
+    "khoe khong ban", "dao nay the nao", "hom nay the nao", "ban lam duoc gi",
+    "ban giup duoc gi", "chuc nang cua ban", "gioi thieu ban than",
+    "gioi thieu ve ban", "ai tao ra ban",
+)
+
+
+def _contains_term(normalized: str, term: str) -> bool:
+    if not normalized or not term:
+        return False
+    return bool(re.search(rf"(?<!\w){re.escape(term)}(?!\w)", normalized))
+
 
 def has_doc_terms(normalized: str) -> bool:
-    return any(term in normalized for term in DOC_INQUIRY_TERMS)
+    if re.search(r"\b\w+\.(pdf|docx?|txt|csv|pptx|md|markdown|html?|json|xml|png|jpe?g|webp|tiff?|gif)\b", normalized):
+        return True
+    return any(_contains_term(normalized, term) for term in DOC_INQUIRY_TERMS)
 
 
 def has_inquiry_request(normalized: str) -> bool:
-    return any(req in normalized for req in INQUIRY_REQUEST_WORDS)
+    return any(_contains_term(normalized, req) for req in INQUIRY_REQUEST_WORDS)
 
 
 def is_conversational_or_emotional(question: str) -> bool:
@@ -2108,16 +2266,17 @@ def is_conversational_or_emotional(question: str) -> bool:
     if not norm:
         return True
 
-    # 1. Nếu có từ hỏi, từ khóa nghiệp vụ hoặc dấu ?, ưu tiên tra cứu tài liệu (RAG)
+    # 1. Thuần túy hỏi thăm về bản thân bot (không kèm từ khóa nghiệp vụ/tài liệu)
+    if any(_contains_term(norm, p) for p in BOT_SELF_PATTERNS) and not has_doc_terms(norm):
+        return True
+
+    # 2. Nếu có dấu ?, từ hỏi hoặc từ khóa nghiệp vụ -> ưu tiên tra cứu tài liệu (RAG)
     if "?" in question or has_inquiry_request(norm) or has_doc_terms(norm):
-        # Trừ trường hợp người dùng thuần túy hỏi thăm bot ("bạn khỏe không?", "bạn tên gì?")
-        if any(p in norm for p in GREETING_PATTERNS):
-            return True
         return False
 
-    # 2. Nhận diện biểu lộ cảm xúc hoặc lời chào hỏi xã giao
-    has_emotion = any(p in norm for p in EMOTIONAL_PATTERNS)
-    has_greeting = any(p in norm for p in GREETING_PATTERNS) or norm in (
+    # 3. Nhận diện biểu lộ cảm xúc hoặc lời chào hỏi xã giao thuần túy
+    has_emotion = any(_contains_term(norm, p) for p in EMOTIONAL_PATTERNS)
+    has_greeting = any(_contains_term(norm, p) for p in GREETING_PATTERNS) or norm in (
         "chao", "hi", "alo", "chao nhe", "bye", "cam on", "cam on ban", "thanks", "thank you"
     )
 
@@ -2128,7 +2287,6 @@ def is_conversational_or_emotional(question: str) -> bool:
 
 
 def generate_conversational_response(question: str, history=None, language: str = "vi") -> str:
-    setup_llamaindex()
     is_en = str(language).lower().startswith("en")
     turns = normalize_chat_history(history)
     history_lines = []
@@ -2150,12 +2308,12 @@ def generate_conversational_response(question: str, history=None, language: str 
 
     prompt = "\n".join(prompt_parts)
     try:
+        setup_llamaindex()
         answer = str(Settings.llm.complete(prompt)).strip()
         if answer:
             return answer
-    except Exception:
-        logger.exception("Conversational LLM generation failed")
-        raise
+    except Exception as exc:
+        logger.warning("Conversational LLM generation unavailable, using fallback: %s", exc)
 
     # Fallback tự nhiên nếu có lỗi kết nối
     norm = normalize_for_match(question)
@@ -2215,9 +2373,10 @@ def ask_document(question: str, history=None, category: str | None = None, user=
     from backend.services.faq_response_cache import (
         get_cached_answer, request_is_cacheable, set_cached_answer, sources_are_shareable,
     )
+    conversational = False if filename else is_conversational_or_emotional(question)
     early_cacheable_request = request_is_cacheable(
         question, history=history, filename=filename, category=category,
-        conversational=is_conversational_or_emotional(question),
+        conversational=conversational,
     )
     if early_cacheable_request:
         cached_result = get_cached_answer(question, language)
@@ -2225,23 +2384,9 @@ def ask_document(question: str, history=None, category: str | None = None, user=
             set_fields(cache_hit=True)
             return cached_result
 
-    # Chuẩn hóa và đối chiếu tên file nếu người dùng có chỉ định tài liệu
-    clean_filename = resolve_target_filename(filename) if filename else None
-    if not clean_filename:
-        clean_filename = extract_target_from_question(question)
-        if clean_filename:
-            print(f"🎯 Tự động phát hiện tài liệu từ câu hỏi: {clean_filename}")
-
-    conversational = not clean_filename and is_conversational_or_emotional(question)
-    cacheable_request = request_is_cacheable(
-        question, history=history, filename=filename or clean_filename, category=category,
-        conversational=conversational,
-    )
-
     # Phân loại ý định: Nếu là tin nhắn chào hỏi, xã giao hoặc chia sẻ cảm xúc
-    # CHÚ Ý: Nếu người dùng ĐÃ CHỈ ĐỊNH TÀI LIỆU (clean_filename có giá trị)
-    # -> TUYỆT ĐỐI KHÔNG xếp vào trò chuyện xã giao! Mọi câu hỏi (kể cả câu ngắn 1-2 từ)
-    #    đều được ưu tiên tra cứu trực tiếp vào tài liệu đó.
+    # CHÚ Ý: Nếu người dùng ĐÃ CHỈ ĐỊNH TÀI LIỆU (filename có giá trị)
+    # -> TUYỆT ĐỐI KHÔNG xếp vào trò chuyện xã giao!
     if conversational:
         answer = generate_conversational_response(question, history, language=language)
         set_fields(answer_mode="conversational")
@@ -2271,6 +2416,25 @@ def ask_document(question: str, history=None, category: str | None = None, user=
                 if key:
                     allowed_keys.add(key)
         set_fields(sql_allowed=len(allowed_keys))
+
+    # Đối chiếu tên file theo phạm vi tài liệu mà người dùng được phép truy cập
+    resolved_filename = (
+        resolve_target_filename(filename, allowed_keys=allowed_keys, sql_mode=sql_mode)
+        if filename
+        else None
+    )
+    if not resolved_filename and not filename:
+        resolved_filename = extract_target_from_question(
+            question, allowed_keys=allowed_keys, sql_mode=sql_mode
+        )
+        if resolved_filename:
+            print(f"🎯 Tự động phát hiện tài liệu từ câu hỏi: {resolved_filename}")
+
+    clean_filename = resolved_filename or (Path(filename).name if filename else None)
+    cacheable_request = request_is_cacheable(
+        question, history=history, filename=filename or clean_filename, category=category,
+        conversational=conversational,
+    )
 
     from backend.services.business_knowledge import match_business_sources
     business_sources = match_business_sources(question)
@@ -2331,19 +2495,13 @@ def ask_document(question: str, history=None, category: str | None = None, user=
                 filters=source_filters,
                 condition=FilterCondition.OR,
             )
-            if clean_filename:
-                target_filter = MetadataFilters(
-                    filters=[
-                        MetadataFilter(
-                            key="file_name",
-                            value=clean_filename,
-                            operator=FilterOperator.EQ,
-                        )
-                    ],
+            if target_filters:
+                combined_target_filter = MetadataFilters(
+                    filters=target_filters,
                     condition=FilterCondition.AND,
                 )
                 source_filter = MetadataFilters(
-                    filters=[source_filter, target_filter],
+                    filters=[source_filter, combined_target_filter],
                     condition=FilterCondition.AND,
                 )
             retriever_kwargs["filters"] = source_filter
@@ -2379,12 +2537,15 @@ def ask_document(question: str, history=None, category: str | None = None, user=
             ]
         set_fields(authz_hits=len(nodes or []))
         document_sources = build_sources(nodes, question) if nodes else []
-        document_limit = max(0, MAX_VISIBLE_SOURCES - min(len(business_sources), MAX_VISIBLE_SOURCES))
-        # Nếu có tài liệu chỉ định, CHỈ hiển thị sources từ tài liệu đó, KHÔNG chèn business_sources vào
-        if clean_filename:
+        # Ưu tiên tài liệu thực tế trước, chỉ bổ sung business_sources vào slot còn trống
+        # (và không chèn business_sources khi đang lọc theo file hoặc chủ đề cụ thể)
+        if clean_filename or (category and category.strip()):
             sources = document_sources[:MAX_VISIBLE_SOURCES]
         else:
-            sources = (document_sources[:document_limit] + business_sources)[:MAX_VISIBLE_SOURCES]
+            remaining_slots = max(0, MAX_VISIBLE_SOURCES - len(document_sources))
+            sources = (
+                document_sources[:MAX_VISIBLE_SOURCES] + business_sources[:remaining_slots]
+            )[:MAX_VISIBLE_SOURCES]
         if sources:
             context = build_context_from_sources(sources)
     except Exception as error:
@@ -2392,7 +2553,7 @@ def ask_document(question: str, history=None, category: str | None = None, user=
         if sql_mode:
             logger.exception("SQL document retrieval failed")
             raise SqlDocumentAccessError("Khong the truy cap kho tai lieu SQL an toan.", ai_reason=type(error).__name__) from error
-        if business_sources and not clean_filename:
+        if business_sources and not clean_filename and not (category and category.strip()):
             sources = business_sources[:MAX_VISIBLE_SOURCES]
             context = build_context_from_sources(sources)
         # An unavailable/empty vector store should not prevent general chat or spec answers.
@@ -2414,7 +2575,7 @@ def ask_document(question: str, history=None, category: str | None = None, user=
 
     if is_no_answer(answer):
         set_fields(answer_mode="model_no_answer")
-        return {"answer": no_ans, "sources": public_sources(sources)}
+        return {"answer": no_ans, "sources": []}
     set_fields(answer_mode="llm")
     result = {"answer": answer, "sources": public_sources(sources)}
     if cacheable_request and sources_are_shareable(sources):
@@ -2432,7 +2593,9 @@ def clear_vector_database():
 
 def delete_document_vectors(filename: str):
     safe_name = Path(filename).name
-    get_vector_collection().delete(where={"file_name": safe_name})
+    get_vector_collection().delete(
+        where={"$and": [{"file_name": safe_name}, {"sql_doc_key": {"$exists": False}}]}
+    )
     from backend.services.faq_response_cache import clear_faq_cache
     clear_faq_cache()
 
@@ -2443,7 +2606,10 @@ def update_document_category_vectors(filename: str, category: str) -> int:
     if not clean_category:
         return 0
     collection = get_vector_collection()
-    result = collection.get(where={"file_name": safe_name}, include=["metadatas"])
+    result = collection.get(
+        where={"$and": [{"file_name": safe_name}, {"sql_doc_key": {"$exists": False}}]},
+        include=["metadatas"],
+    )
     ids = result.get("ids") or []
     if not ids:
         return 0
