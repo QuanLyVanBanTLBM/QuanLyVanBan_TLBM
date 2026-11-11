@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { t, useTranslation } from '@i18n/translate';
 import { API_BASE_URL, ApiError, authHeaders, toMessage } from '../api/client';
+import { downloadAttachment } from '../api/taskActions';
 import { createTask, getTask, updateTask } from '../api/tasks';
 import { Attachment, TaskDetail, TaskFormValues } from '../types/task';
 import DateInput, { todayIso } from './DateInput';
@@ -445,13 +446,22 @@ export default function TaskFormModal({ open, taskId, onClose, onSaved }: TaskFo
                           }}
                         >
                           <i className={fileIconClass(file.fileName)} style={{ color: 'var(--color-primary)' }} />
-                          <span
+                          <button
+                            type="button"
+                            onClick={() => downloadAttachment(file).catch((err) => setFormError(toMessage(err)))}
                             title={file.fileName}
                             style={{
                               flex: 1,
                               minWidth: 0,
+                              padding: 0,
+                              border: 'none',
+                              background: 'transparent',
+                              color: removing ? 'var(--text-muted)' : 'var(--color-primary)',
                               fontSize: '0.84rem',
-                              color: 'var(--text-main)',
+                              fontWeight: 600,
+                              fontFamily: 'inherit',
+                              textAlign: 'left',
+                              cursor: 'pointer',
                               overflow: 'hidden',
                               textOverflow: 'ellipsis',
                               whiteSpace: 'nowrap',
@@ -459,7 +469,7 @@ export default function TaskFormModal({ open, taskId, onClose, onSaved }: TaskFo
                             }}
                           >
                             {file.fileName}
-                          </span>
+                          </button>
                           <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
                             {removing ? tr('work.taskForm.willDeleteOnSave') : formatFileSize(file.size)}
                           </span>
