@@ -64,23 +64,38 @@ describe('DocumentTypesPage shared-list handoff', () => {
     await waitFor(() => expect(request).toHaveBeenCalledWith('9', expect.objectContaining({ year: '', page: 1 })));
   });
 
-  it('shows an independent catalog and forwards the clicked category to incoming', async () => {
+  it('shows an independent catalog and forwards the clicked category to outgoing by default', async () => {
     await show();
     fireEvent.click(await screen.findByRole('button', { name: 'Category A' }));
     expect(screen.getByRole('dialog', { name: 'Choose document list' })).toBeInTheDocument();
+    expect(within(screen.getByRole('dialog')).getByRole('combobox')).toHaveValue('DI');
     expect(screen.getByRole('checkbox', { name: 'Restricted documents only' })).toBeInTheDocument();
     fireEvent.click(await within(screen.getByRole('dialog')).findByRole('link', { name: 'View documents' }));
-    expect(await screen.findByTestId('destination')).toHaveTextContent('/documents/incoming?ho_so=9&ten_ho_so=Parent&loai_van_ban=23&pham_vi=NOI_BO');
+    expect(await screen.findByTestId('destination')).toHaveTextContent('/documents/outgoing?ho_so=9&ten_ho_so=Parent&loai_van_ban=23&pham_vi=NOI_BO');
     expect(recordsService.listDocumentTypes).not.toHaveBeenCalled();
   });
   it('keeps outgoing confidential documents in the same kind with HAN_CHE scope', async () => {
     await show('/records/9/document-types');
     fireEvent.click(await screen.findByRole('button', { name: 'Category A' }));
-    fireEvent.change(within(screen.getByRole('dialog')).getByRole('combobox'), { target: { value: 'DI' } });
+    expect(within(screen.getByRole('dialog')).getByRole('combobox')).toHaveValue('DI');
     fireEvent.click(screen.getByRole('checkbox'));
     fireEvent.click(await within(screen.getByRole('dialog')).findByRole('link', { name: 'View documents' }));
     expect(await screen.findByTestId('destination')).toHaveTextContent('/documents/outgoing?ho_so=9&ten_ho_so=Parent&loai_van_ban=23&pham_vi=HAN_CHE');
     expect(recordsService.listDocumentTypeCatalog).not.toHaveBeenCalled();
+  });
+  it('resets to outgoing when reopening the scoped dialog and still allows incoming', async () => {
+    await show('/records/9/document-types');
+    fireEvent.click(await screen.findByRole('button', { name: 'Category A' }));
+    expect(within(screen.getByRole('dialog')).getByRole('combobox')).toHaveValue('DI');
+    fireEvent.change(within(screen.getByRole('dialog')).getByRole('combobox'), { target: { value: 'DEN' } });
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Category A' }));
+    expect(within(screen.getByRole('dialog')).getByRole('combobox')).toHaveValue('DI');
+    expect(screen.getByRole('checkbox')).not.toBeChecked();
+    fireEvent.change(within(screen.getByRole('dialog')).getByRole('combobox'), { target: { value: 'DEN' } });
+    fireEvent.click(await within(screen.getByRole('dialog')).findByRole('link', { name: 'View documents' }));
+    expect(await screen.findByTestId('destination')).toHaveTextContent('/documents/incoming?ho_so=9&ten_ho_so=Parent&loai_van_ban=23&pham_vi=NOI_BO');
   });
   it('allows Escape to close selection without opening a private list', async () => {
     await show();
