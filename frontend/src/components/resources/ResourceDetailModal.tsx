@@ -439,7 +439,11 @@ export const ResourceDetailModal: React.FC<ResourceDetailModalProps> = ({
               {/* Đơn vị sở hữu */}
               <div>
                 <span className="text-xs text-muted block mb-0.5">{t('resourceManagement.fieldScope')}</span>
-                <span className="text-main">{item.don_vi_id ? `Đơn vị #${item.don_vi_id}` : t('resourceManagement.headquarters')}</span>
+                <span className="text-main">
+                  {item.don_vi_name
+                    ? item.don_vi_name
+                    : (item.don_vi_id ? `Đơn vị #${item.don_vi_id}` : t('resourceManagement.headquarters'))}
+                </span>
               </div>
 
               {/* Người tạo */}
