@@ -544,9 +544,9 @@ class TaskDefaultOrderingTests(WorkTestBase):
         return [item["id"] for item in response.data["results"]]
 
     def test_thu_tu_mac_dinh_uu_tien_viec_cua_toi(self):
-        # member là THAM_GIA trên mọi việc → tất cả đều là "việc chờ tôi xử lý" (bậc 1).
-        # Chờ xử lý (mới tạo, chưa mở, còn hạn) và Đang xử lý (đã mở, còn hạn) GỘP chung bậc 1,
-        # trong bậc 1 sắp thuần theo hạn xử lý tăng dần (KHÔNG còn tách CHO_XU_LY lên trước).
+        # member là THAM_GIA trên mọi việc → tất cả đều là "việc chờ tôi xử lý" (bậc 2).
+        # Chờ xử lý (mới tạo, chưa mở, còn hạn) và Đang xử lý (đã mở, còn hạn) GỘP chung bậc 2,
+        # trong bậc 2 sắp thuần theo hạn xử lý tăng dần (KHÔNG còn tách CHO_XU_LY lên trước).
         cho_xa = self.make_task(due_offset=10, title="Chờ xử lý - hạn xa")
         cho_gan = self.make_task(due_offset=2, title="Chờ xử lý - hạn gần")
         cho_giua = self.make_task(due_offset=5, title="Chờ xử lý - hạn giữa")
@@ -561,7 +561,7 @@ class TaskDefaultOrderingTests(WorkTestBase):
         response = self.client.get("/api/work/tasks/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-        # Tất cả cùng bậc 1 → sắp theo hạn tăng dần: 1, 2, 3, 5, 10.
+        # Tất cả cùng bậc 2 → sắp theo hạn tăng dần: 1, 2, 3, 5, 10.
         self.assertEqual(
             self.ids(response),
             [dang_gan.pk, cho_gan.pk, dang_xa.pk, cho_giua.pk, cho_xa.pk],
@@ -603,21 +603,21 @@ class TaskPrioritySortTests(WorkTestBase):
         qs = Task.objects.visible_to(user).with_status().with_priority_for(user)
         return qs.values_list("priority_bucket", flat=True).get(pk=task.pk)
 
-    def test_chu_tri_viec_phai_lam_truoc_cho_duyet_truoc_qua_han(self):
-        # host là CHU_TRI của mọi việc: bậc 1 (phải làm) < bậc 2 (chờ duyệt) < bậc 3 (quá hạn).
-        viec_phai_lam = self.make_task(due_offset=10, title="Chờ xử lý - bậc 1")
-        viec_cho_duyet = self.make_task(due_offset=8, title="Chờ duyệt - bậc 2")
+    def test_chu_tri_cho_duyet_truoc_phai_lam_truoc_qua_han(self):
+        # host là CHU_TRI của mọi việc: bậc 1 (chờ duyệt) < bậc 2 (phải làm) < bậc 3 (quá hạn).
+        viec_cho_duyet = self.make_task(due_offset=8, title="Chờ duyệt - bậc 1")
         self.add_evidence(viec_cho_duyet)
+        viec_phai_lam = self.make_task(due_offset=10, title="Chờ xử lý - bậc 2")
         viec_qua_han = self.make_task(
             created_offset=-5, due_offset=-1, title="Quá hạn - bậc 3"
         )
 
-        self.assertEqual(self.status_of(viec_phai_lam), TaskStatus.CHO_XU_LY)
         self.assertEqual(self.status_of(viec_cho_duyet), TaskStatus.CHO_DUYET)
+        self.assertEqual(self.status_of(viec_phai_lam), TaskStatus.CHO_XU_LY)
         self.assertEqual(self.status_of(viec_qua_han), TaskStatus.QUA_HAN)
 
-        self.assertEqual(self.bucket_of(viec_phai_lam, self.host), 1)
-        self.assertEqual(self.bucket_of(viec_cho_duyet, self.host), 2)
+        self.assertEqual(self.bucket_of(viec_cho_duyet, self.host), 1)
+        self.assertEqual(self.bucket_of(viec_phai_lam, self.host), 2)
         self.assertEqual(self.bucket_of(viec_qua_han, self.host), 3)
 
         self.login(self.host)
@@ -625,33 +625,33 @@ class TaskPrioritySortTests(WorkTestBase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(
             self.ids(response),
-            [viec_phai_lam.pk, viec_cho_duyet.pk, viec_qua_han.pk],
+            [viec_cho_duyet.pk, viec_phai_lam.pk, viec_qua_han.pk],
         )
 
     def test_chi_dao_chi_uu_tien_viec_cho_minh_duyet(self):
-        # Chỉ đạo chỉ được nâng ưu tiên với việc Chờ duyệt (bậc 2); các trạng thái khác về bậc 4.
+        # Chỉ đạo chỉ được nâng ưu tiên với việc Chờ duyệt (bậc 1); các trạng thái khác về bậc 4.
         viec_cho_duyet = self.make_task(due_offset=5, title="Chờ duyệt")
         self.add_evidence(viec_cho_duyet)
         viec_cho_xu_ly = self.make_task(due_offset=2, title="Chờ xử lý")
 
-        # Chỉ đạo KHÔNG phải chủ trì/tham gia nên việc Chờ xử lý không vào bậc 1.
-        self.assertEqual(self.bucket_of(viec_cho_duyet, self.director), 2)
+        # Chỉ đạo KHÔNG phải chủ trì/tham gia nên việc Chờ xử lý không vào bậc 2.
+        self.assertEqual(self.bucket_of(viec_cho_duyet, self.director), 1)
         self.assertEqual(self.bucket_of(viec_cho_xu_ly, self.director), 4)
 
         self.login(self.director)
         response = self.client.get("/api/work/tasks/")
-        # Việc chờ chính chỉ đạo duyệt (bậc 2) đứng trước việc chờ xử lý (bậc 4),
+        # Việc chờ chính chỉ đạo duyệt (bậc 1) đứng trước việc chờ xử lý (bậc 4),
         # dù việc chờ xử lý có hạn gần hơn.
         self.assertEqual(self.ids(response), [viec_cho_duyet.pk, viec_cho_xu_ly.pk])
 
     def test_nguoi_tao_uu_tien_viec_cho_minh_duyet(self):
-        # Người tạo (không phải chủ trì/chỉ đạo) cũng là người duyệt: việc Chờ duyệt vào bậc 2.
+        # Người tạo (không phải chủ trì/chỉ đạo) cũng là người duyệt: việc Chờ duyệt vào bậc 1.
         viec_cho_duyet = self.make_task(due_offset=8, title="Chờ duyệt")
         self.add_evidence(viec_cho_duyet)
         viec_cho_xu_ly = self.make_task(due_offset=2, title="Chờ xử lý")
         self.assertEqual(self.status_of(viec_cho_duyet), TaskStatus.CHO_DUYET)
 
-        self.assertEqual(self.bucket_of(viec_cho_duyet, self.creator), 2)
+        self.assertEqual(self.bucket_of(viec_cho_duyet, self.creator), 1)
         # Việc chưa nộp bằng chứng: người tạo không phải hành động nên về bậc 4.
         self.assertEqual(self.bucket_of(viec_cho_xu_ly, self.creator), 4)
 
@@ -660,24 +660,24 @@ class TaskPrioritySortTests(WorkTestBase):
         self.assertEqual(self.ids(response), [viec_cho_duyet.pk, viec_cho_xu_ly.pk])
 
     def test_cung_bac_sap_theo_han_tang_dan(self):
-        han_gan = self.make_task(due_offset=2, title="Bậc 1 - hạn gần")
-        han_xa = self.make_task(due_offset=9, title="Bậc 1 - hạn xa")
+        han_gan = self.make_task(due_offset=2, title="Bậc 2 - hạn gần")
+        han_xa = self.make_task(due_offset=9, title="Bậc 2 - hạn xa")
 
-        self.assertEqual(self.bucket_of(han_gan, self.host), 1)
-        self.assertEqual(self.bucket_of(han_xa, self.host), 1)
+        self.assertEqual(self.bucket_of(han_gan, self.host), 2)
+        self.assertEqual(self.bucket_of(han_xa, self.host), 2)
 
         self.login(self.host)
         response = self.client.get("/api/work/tasks/")
         self.assertEqual(self.ids(response), [han_gan.pk, han_xa.pk])
 
     def test_uu_tien_khac_nhau_theo_nguoi_xem(self):
-        # Cùng một việc Chờ duyệt: chủ trì xếp bậc 2 (chờ mình duyệt),
+        # Cùng một việc Chờ duyệt: chủ trì xếp bậc 1 (chờ mình duyệt),
         # còn cán bộ tham gia xếp bậc 4 (không còn việc phải làm trên việc này).
         viec = self.make_task(due_offset=5, title="Chờ duyệt")
         self.add_evidence(viec)
         self.assertEqual(self.status_of(viec), TaskStatus.CHO_DUYET)
 
-        self.assertEqual(self.bucket_of(viec, self.host), 2)
+        self.assertEqual(self.bucket_of(viec, self.host), 1)
         self.assertEqual(self.bucket_of(viec, self.member), 4)
 
     def test_ordering_thu_cong_bo_qua_uu_tien(self):
@@ -689,8 +689,27 @@ class TaskPrioritySortTests(WorkTestBase):
         self.login(self.host)
         response = self.client.get("/api/work/tasks/", {"ordering": "due_date"})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        # Thuần theo hạn tăng dần: hạn gần (bậc 1) rồi hạn xa (bậc 2) — priority bị bỏ qua.
+        # Thuần theo hạn tăng dần: hạn gần (bậc 2) rồi hạn xa (bậc 1) — priority bị bỏ qua.
         self.assertEqual(self.ids(response), [viec_cho_xu_ly.pk, viec_cho_duyet.pk])
+
+    def test_cho_duyet_xep_truoc_cho_xu_ly_cung_user(self):
+        # host vừa là chủ trì task CHO_XU_LY (bậc 2) vừa là chủ trì task CHO_DUYET (bậc 1).
+        viec_cho_xu_ly = self.make_task(due_offset=2, title="Chờ xử lý")
+        viec_cho_duyet = self.make_task(due_offset=8, title="Chờ duyệt")
+        self.add_evidence(viec_cho_duyet)
+
+        self.assertEqual(self.status_of(viec_cho_xu_ly), TaskStatus.CHO_XU_LY)
+        self.assertEqual(self.status_of(viec_cho_duyet), TaskStatus.CHO_DUYET)
+
+        self.assertEqual(self.bucket_of(viec_cho_duyet, self.host), 1)
+        self.assertEqual(self.bucket_of(viec_cho_xu_ly, self.host), 2)
+
+        self.login(self.host)
+        response = self.client.get("/api/work/tasks/")
+        self.assertEqual(
+            self.ids(response),
+            [viec_cho_duyet.pk, viec_cho_xu_ly.pk],
+        )
 
 
 class EmployeeInfoSerializerTests(WorkTestBase):
