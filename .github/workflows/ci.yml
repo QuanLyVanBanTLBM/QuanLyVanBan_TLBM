@@ -379,6 +379,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Package release
         run: |
@@ -425,6 +427,23 @@ jobs:
           SSH='ssh -i ~/.ssh/id_ed25519 -p 2150'
           REMOTE="$DEPLOY_USER@$DEPLOY_HOST"
           $SSH "$REMOTE" 'mkdir -p ~/deploy'
+
+          # Kiem tra ban release va trang thai service dang chay thuc te tren host
+          CURRENT_RELEASE=$($SSH "$REMOTE" 'readlink -f /srv/qlvb/current 2>/dev/null || true')
+          PREV_SHA=$(basename "$CURRENT_RELEASE")
+          SERVICE_ACTIVE=$($SSH "$REMOTE" 'systemctl is-active --quiet qlvb-backend && echo 1 || echo 0')
+
+          # Neu service dang hoat dong binh thuong va commit cu hop le: so sanh thay doi backend/infra
+          if [ "$SERVICE_ACTIVE" = "1" ] && [ -n "$PREV_SHA" ] && [ "${RESET_DATABASE:-false}" != "true" ] && git rev-parse --verify "$PREV_SHA^{commit}" >/dev/null 2>&1; then
+            if git diff --quiet "$PREV_SHA" HEAD -- backend scripts deploy docs/common/database .github/scripts .env.example; then
+              echo "==> Khong co thay doi trong backend, scripts, deploy, database giua $PREV_SHA va $SHA7."
+              echo "==> Service qlvb-backend dang active tren host. Bo qua deploy backend de giu on dinh dich vu (0s downtime)."
+              exit 0
+            fi
+            echo "==> Phat hien thay doi trong backend/infra giua $PREV_SHA va $SHA7; bat dau deploy backend..."
+          else
+            echo "==> Tien hanh deploy backend (service_active=$SERVICE_ACTIVE, prev_sha=$PREV_SHA, reset_db=${RESET_DATABASE:-false})..."
+          fi
           $SSH "$REMOTE" '
             ENVF=/etc/qlvb/backend.env
             if [ -f "$ENVF" ] && [ -w "$ENVF" ]; then
