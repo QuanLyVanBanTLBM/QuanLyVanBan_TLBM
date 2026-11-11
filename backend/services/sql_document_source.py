@@ -32,7 +32,14 @@ SQL_VIEW_COLUMNS = {
 
 
 class SqlDocumentAccessError(Exception):
-    """The SQL document source cannot safely serve this chat request."""
+    """The SQL document source cannot safely serve this chat request.
+
+    ``ai_reason`` is a stable code written to the AI trace log to localize the failing branch.
+    """
+
+    def __init__(self, message, ai_reason="sql_access_error"):
+        super().__init__(message)
+        self.ai_reason = ai_reason
 
 
 def is_postgres_source():
@@ -114,7 +121,8 @@ def _assert_readonly_connection(cursor):
     row = cursor.fetchone()
     if not row or row[0] != READONLY_ROLE or row[1] is not True or row[2] is not False or row[3] is not False:
         raise SqlDocumentAccessError(
-            "Kết nối AI không dùng đúng role chỉ đọc qlvb_readonly hoặc role đang có quyền đọc bảng gốc."
+            "Kết nối AI không dùng đúng role chỉ đọc qlvb_readonly hoặc role đang có quyền đọc bảng gốc.",
+            ai_reason="readonly_role_mismatch",
         )
 
 
@@ -122,9 +130,14 @@ def _employee_id_value(employee_id):
     try:
         value = int(employee_id)
     except (TypeError, ValueError):
-        raise SqlDocumentAccessError("Không xác định được mã nhân viên từ phiên đăng nhập QLVB.")
+        reason = "employee_unresolved" if employee_id is None else "employee_id_invalid"
+        raise SqlDocumentAccessError(
+            "Không xác định được mã nhân viên từ phiên đăng nhập QLVB.", ai_reason=reason
+        )
     if value <= 0:
-        raise SqlDocumentAccessError("Mã nhân viên từ phiên đăng nhập QLVB không hợp lệ.")
+        raise SqlDocumentAccessError(
+            "Mã nhân viên từ phiên đăng nhập QLVB không hợp lệ.", ai_reason="employee_id_invalid"
+        )
     return value
 
 
@@ -133,7 +146,9 @@ def accessible_documents(user, employee_id=None):
     if not is_postgres_source():
         return []
     if not has_permission_codename(user, "use_aiassistant"):
-        raise SqlDocumentAccessError("Tài khoản chưa được cấp quyền sử dụng trợ lý AI.")
+        raise SqlDocumentAccessError(
+            "Tài khoản chưa được cấp quyền sử dụng trợ lý AI.", ai_reason="no_ai_permission"
+        )
 
     document_ids = {
         "vanbanden": list(
@@ -146,7 +161,9 @@ def accessible_documents(user, employee_id=None):
     can_read_tailieu = has_permission_codename(user, "view_tailieu")
     employee_id = _employee_id_value(employee_id)
     if "readonly" not in connections.databases:
-        raise SqlDocumentAccessError("Thiếu cấu hình kết nối CSDL chỉ đọc cho AI.")
+        raise SqlDocumentAccessError(
+            "Thiếu cấu hình kết nối CSDL chỉ đọc cho AI.", ai_reason="readonly_alias_missing"
+        )
 
     queries = {
         "vanbanden": """
@@ -240,7 +257,9 @@ def accessible_documents(user, employee_id=None):
     except SqlDocumentAccessError:
         raise
     except Exception as error:
-        raise SqlDocumentAccessError("Không thể truy cập nguồn CSDL chỉ đọc an toàn cho AI.") from error
+        raise SqlDocumentAccessError(
+            "Không thể truy cập nguồn CSDL chỉ đọc an toàn cho AI.", ai_reason="readonly_query_failed"
+        ) from error
 
     return docs
 

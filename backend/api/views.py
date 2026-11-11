@@ -29,6 +29,14 @@ from backend.services.document_service import (
     stage_upload_file,
     update_category_in_registry,
 )
+from backend.services.ai_logging import (
+    end_trace,
+    log_exception,
+    log_summary,
+    mark_error,
+    set_fields,
+    start_trace,
+)
 from backend.services.sql_document_source import SqlDocumentAccessError
 from backend.services.ai_model_config import MODEL_CONFIG
 from backend.services.ai_settings_service import get_active_ai_settings, save_ai_settings
@@ -111,10 +119,23 @@ def ai_health(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def chat(request):
+    trace, token = start_trace(user_id=request.user.pk)
+    status = 500
+    try:
+        response = _answer_chat(request)
+        status = response.status_code
+        return response
+    finally:
+        log_summary(trace, status)
+        end_trace(token)
+
+
+def _answer_chat(request):
     if request.method != "POST":
         return _error("Phương thức không được hỗ trợ.", 405)
     denied = _require_ai_access(request)
     if denied:
+        mark_error("permission", "no_ai_permission")
         return denied
     payload = _json_body(request)
     if not isinstance(payload, dict):
@@ -139,6 +160,13 @@ def chat(request):
 
         # Employee identity is supplied by host auth or resolved through trusted username mapping
         employee_id = resolve_employee_id(request)
+        set_fields(
+            employee_resolved=employee_id is not None,
+            question_chars=len(question),
+            history_items=len(safe_history),
+            has_filename=bool(filename),
+            has_category=bool(category),
+        )
         language = payload.get("language")
         if not language or not isinstance(language, str):
             accept_lang = request.headers.get("Accept-Language", "")
@@ -155,11 +183,13 @@ def chat(request):
             language=language,
         )
         return JsonResponse({"question": question.strip(), "category": category or None, "filename": filename or None, "language": language, **result})
-    except SqlDocumentAccessError:
-        logger.exception("AI SQL source failed for user_id=%s", request.user.pk)
+    except SqlDocumentAccessError as error:
+        mark_error("ask_document", error.ai_reason)
+        log_exception()
         return _error("Không thể truy cập nguồn dữ liệu AI lúc này.", 503)
-    except Exception:
-        logger.exception("AI chat request failed for user_id=%s", request.user.pk)
+    except Exception as error:
+        mark_error("ask_document", type(error).__name__)
+        log_exception()
         return _error("Không thể xử lý yêu cầu lúc này. Vui lòng thử lại sau.", 502)
 
 
