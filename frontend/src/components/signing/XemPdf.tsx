@@ -50,8 +50,9 @@ function KhungKy({ k, onKeo }: { k: KhungHienThi; onKeo?: Props['onKeo'] }) {
     dat: 'border-2 border-dashed border-primary bg-primary/5 hover:bg-primary/10 text-primary cursor-move',
     da_ky: k.anhUrl
       ? 'border border-transparent bg-transparent text-main'
-      : 'border border-dashed border-border-subtle bg-transparent text-main',
-    cho: 'border-2 border-dashed border-warning/80 bg-transparent text-warning-text',
+      : 'border border-border-subtle bg-transparent text-main',
+    // Khung chờ ký dùng viền liền nhạt: nét đứt chỉ dành cho khung đang đặt, tránh chồng nét đứt của PDF gốc
+    cho: 'border border-warning/60 bg-transparent text-warning-text',
   }[k.kieu];
   return (
     <div
@@ -107,11 +108,14 @@ function TrangPdf({ pdf, so, rong, khung, khungDangDat, onDat, onKeo }: {
   const { t } = useSigningT();
   const [loiVe, setLoiVe] = useState<string | null>(null);
   const [lanVe, setLanVe] = useState(0);
+  // Khung đã/chờ ký: nét đứt placeholder của PDF gốc quanh các khung này được che trên canvas (không sửa tệp gốc)
+  const khoaVungChe = JSON.stringify(khung.filter((k) => k.kieu !== 'dat').map((k) => [k.x, k.y, k.w, k.h]));
   useEffect(() => {
     if (!canvas.current || rong <= 0) return undefined;
     setLoiVe(null);
     let huy = false;
-    const ve = veTrang(pdf, so, canvas.current, rong);
+    const vungChe = (JSON.parse(khoaVungChe) as number[][]).map(([x, y, w, h]) => ({ x, y, w, h }));
+    const ve = veTrang(pdf, so, canvas.current, rong, vungChe);
     ve.xong.then(() => !huy && setLoiVe(null), (err) => {
       if (huy || laLoiHuyVe(err)) return;  // lần vẽ bị thay bằng lần mới (đổi kích thước), không phải lỗi
       console.error('Không vẽ được trang PDF', so, err);
@@ -121,7 +125,7 @@ function TrangPdf({ pdf, so, rong, khung, khungDangDat, onDat, onKeo }: {
       huy = true;
       ve.huy();
     };
-  }, [pdf, so, rong, lanVe]);
+  }, [pdf, so, rong, lanVe, khoaVungChe]);
   return (
     <figure className="space-y-1">
       <div
