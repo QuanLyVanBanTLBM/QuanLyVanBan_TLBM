@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import AlertModal from '@components/common/AlertModal';
 import { ActivePageId } from '@app-types/navigation';
 import { pageIdToPath } from '@lib/routes';
@@ -13,7 +13,9 @@ import {
   deleteDocuments,
   deleteDocument,
   previewDocument,
+  reclassifyDocument,
   getAISettings,
+  updateAISettings,
 } from '../../api';
 import { t as translate, useTranslation, type SupportedLanguage } from '@i18n/translate';
 import { usePermissions } from '@lib/permissions';
@@ -24,11 +26,14 @@ interface AiAssistantPageProps {
 }
 
 interface CitationSource {
+  index?: number;
   file_name?: string;
-  page?: number | string;
+  page?: number | string | null;
   section?: string | number;
   chunk_id?: string | number;
-  source_type?: string;
+  source_type?: string | null;
+  source_id?: number | string | null;
+  preview?: string;
   score?: number;
   label?: string;
   code?: string;
@@ -50,6 +55,8 @@ interface ChatMessage {
   citations?: CitationSource[];
   quickPrompts?: string[];
   targetDoc?: TargetDocInfo;
+  isError?: boolean;
+  retryText?: string;
 }
 
 interface ChatSession {
@@ -235,9 +242,12 @@ function getChatStorageKey(username: string): string | null {
 }
 
 // Render a safe Markdown subset with React nodes; raw HTML is always escaped.
-function formatInline(str: string = ''): React.ReactNode[] {
+function formatInline(
+  str: string = '',
+  onInternalLink?: (href: string) => void
+): React.ReactNode[] {
   const parts: React.ReactNode[] = [];
-  const regex = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[[^\]]+\]\((?:https?:\/\/|\/)[^)]+\))/g;
+  const regex = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\$(?!\s)[^$\n]+?(?<!\s)\$(?!\d)|\[[^\]]+\]\((?:https?:\/\/|\/)[^)]+\))/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
@@ -248,17 +258,33 @@ function formatInline(str: string = ''): React.ReactNode[] {
     const token = match[0];
     if (token.startsWith('**') && token.endsWith('**')) {
       parts.push(<strong key={match.index}>{token.slice(2, -2)}</strong>);
+    } else if (token.startsWith('`') && token.endsWith('`')) {
+      parts.push(<code key={match.index} className="rounded bg-surface-hover px-1">{token.slice(1, -1)}</code>);
+    } else if (token.startsWith('$') && token.endsWith('$') && token.length > 2) {
+      parts.push(<code key={match.index} className="ai-math-inline">{token.slice(1, -1)}</code>);
     } else if (token.startsWith('[')) {
       const link = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(token);
       const href = link?.[2];
-      const safeHref = href && (href.startsWith('/') && !href.startsWith('//') || /^https?:\/\//i.test(href));
+      const safeHref = href && ((href.startsWith('/') && !href.startsWith('//')) || /^https?:\/\//i.test(href));
       parts.push(safeHref ? (
-        <a key={match.index} href={href} target={href?.startsWith('/') ? undefined : '_blank'} rel="noreferrer" className="text-primary underline">
+        <a
+          key={match.index}
+          href={href}
+          target={href?.startsWith('/') ? undefined : '_blank'}
+          rel="noreferrer"
+          className="text-primary underline"
+          onClick={
+            href?.startsWith('/') && onInternalLink
+              ? (event) => {
+                  event.preventDefault();
+                  onInternalLink(href);
+                }
+              : undefined
+          }
+        >
           {link?.[1]}
         </a>
       ) : token);
-    } else if (token.startsWith('`') && token.endsWith('`')) {
-      parts.push(<code key={match.index} className="rounded bg-surface-hover px-1">{token.slice(1, -1)}</code>);
     } else {
       parts.push(<em key={match.index}>{token.slice(1, -1)}</em>);
     }
@@ -271,7 +297,13 @@ function formatInline(str: string = ''): React.ReactNode[] {
 }
 
 // Formatter Markdown đa dòng
-function FormattedMessage({ text = '' }: { text: string }) {
+function FormattedMessage({
+  text = '',
+  onInternalLink,
+}: {
+  text: string;
+  onInternalLink?: (href: string) => void;
+}) {
   const lines = text.split('\n');
   const elements: React.ReactNode[] = [];
   const isTableSeparator = (line: string) => /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
@@ -296,6 +328,31 @@ function FormattedMessage({ text = '' }: { text: string }) {
       lineIdx += 1;
       continue;
     }
+    if (trimmed.startsWith('$$')) {
+      const singleLineMatch = /^\$\$(.+)\$\$$/.exec(trimmed);
+      if (singleLineMatch) {
+        elements.push(
+          <pre key={`math-${lineIdx}`} className="ai-math-block">
+            <code>{singleLineMatch[1].trim()}</code>
+          </pre>
+        );
+        lineIdx += 1;
+        continue;
+      }
+      const mathLines: string[] = [];
+      lineIdx += 1;
+      while (lineIdx < lines.length && !lines[lineIdx].trim().startsWith('$$')) {
+        mathLines.push(lines[lineIdx]);
+        lineIdx += 1;
+      }
+      elements.push(
+        <pre key={`math-${lineIdx}`} className="ai-math-block">
+          <code>{mathLines.join('\n')}</code>
+        </pre>
+      );
+      lineIdx += 1;
+      continue;
+    }
     if (!trimmed) {
       elements.push(<div key={`br-${lineIdx}`} className="h-2 my-1" />);
       lineIdx += 1;
@@ -312,20 +369,20 @@ function FormattedMessage({ text = '' }: { text: string }) {
       elements.push(
         <div key={`table-${lineIdx}`} className="my-2 max-w-full overflow-x-auto">
           <table className="w-full border-collapse text-left text-sm">
-            <thead><tr>{headers.map((cell, index) => <th key={index} className="border border-border-subtle bg-surface-hover px-2 py-1">{formatInline(cell)}</th>)}</tr></thead>
-            <tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}>{headers.map((_, cellIndex) => <td key={cellIndex} className="border border-border-subtle px-2 py-1">{formatInline(row[cellIndex] || '')}</td>)}</tr>)}</tbody>
+            <thead><tr>{headers.map((cell, index) => <th key={index} className="border border-border-subtle bg-surface-hover px-2 py-1">{formatInline(cell, onInternalLink)}</th>)}</tr></thead>
+            <tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}>{headers.map((_, cellIndex) => <td key={cellIndex} className="border border-border-subtle px-2 py-1">{formatInline(row[cellIndex] || '', onInternalLink)}</td>)}</tr>)}</tbody>
           </table>
         </div>
       );
       continue;
     }
     if (/^#{1,3}\s/.test(trimmed)) {
-      elements.push(<h4 key={`heading-${lineIdx}`} className="bubble-h4 text-base font-bold my-2 text-primary">{formatInline(trimmed.replace(/^#{1,3}\s+/, ''))}</h4>);
+      elements.push(<h4 key={`heading-${lineIdx}`} className="bubble-h4 text-base font-bold my-2 text-primary">{formatInline(trimmed.replace(/^#{1,3}\s+/, ''), onInternalLink)}</h4>);
       lineIdx += 1;
       continue;
     }
     if (trimmed.startsWith('> ')) {
-      elements.push(<blockquote key={`quote-${lineIdx}`} className="my-1 border-l-2 border-primary ps-3 text-secondary">{formatInline(trimmed.slice(2))}</blockquote>);
+      elements.push(<blockquote key={`quote-${lineIdx}`} className="my-1 border-l-2 border-primary ps-3 text-secondary">{formatInline(trimmed.slice(2), onInternalLink)}</blockquote>);
       lineIdx += 1;
       continue;
     }
@@ -338,11 +395,11 @@ function FormattedMessage({ text = '' }: { text: string }) {
       }
       const List = ordered ? 'ol' : 'ul';
       elements.push(<List key={`list-${lineIdx}`} className={`ps-5 mb-2 space-y-1 text-sm ${ordered ? 'list-decimal' : 'list-disc'}`}>
-        {items.map((item, index) => <li key={index} className="mb-0.5">{formatInline(item)}</li>)}
+        {items.map((item, index) => <li key={index} className="mb-0.5">{formatInline(item, onInternalLink)}</li>)}
       </List>);
       continue;
     }
-    elements.push(<p key={`p-${lineIdx}`} className="bubble-p text-sm leading-relaxed mb-1.5">{formatInline(line)}</p>);
+    elements.push(<p key={`p-${lineIdx}`} className="bubble-p text-sm leading-relaxed mb-1.5">{formatInline(line, onInternalLink)}</p>);
     lineIdx += 1;
   }
 
@@ -357,12 +414,14 @@ interface PreviewModalProps {
 
 interface PreviewData {
   full_text?: string;
-  render_mode?: 'pdf' | 'text';
+  render_mode?: 'pdf' | 'text' | 'image';
   file_url?: string;
   file_type?: string;
   total_pages?: number;
   pages?: Array<{ page?: number; text: string }>;
 }
+
+const IMAGE_PREVIEW_RE = /\.(png|jpe?g|webp|bmp|tiff?|gif)$/i;
 
 function DocumentPreviewModal({ filename, onClose }: PreviewModalProps) {
   const { t, currentLang } = useTranslation();
@@ -374,9 +433,11 @@ function DocumentPreviewModal({ filename, onClose }: PreviewModalProps) {
 
   const displayTitle = filename;
 
-  const isDocx = filename.toLowerCase().endsWith('.docx');
+  const isDocx = filename.toLowerCase().endsWith('.docx') || filename.toLowerCase().endsWith('.doc');
   const isPdf = data?.render_mode === 'pdf' || filename.toLowerCase().endsWith('.pdf');
-  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const isImage = data?.render_mode === 'image' || IMAGE_PREVIEW_RE.test(filename);
+  const needsBinaryBlob = isPdf || isImage;
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -433,7 +494,7 @@ function DocumentPreviewModal({ filename, onClose }: PreviewModalProps) {
   };
 
   useEffect(() => {
-    if (!isPdf) return;
+    if (!needsBinaryBlob) return;
 
     let cancelled = false;
     let objectUrl: string | null = null;
@@ -441,11 +502,15 @@ function DocumentPreviewModal({ filename, onClose }: PreviewModalProps) {
       .then((file) => {
         if (cancelled) return;
         objectUrl = URL.createObjectURL(file);
-        setPdfUrl(objectUrl);
+        setBlobUrl(objectUrl);
       })
       .catch(() => {
         if (!cancelled) {
-          setError(translate('aiAssistant.inline.unableToLoadPdfFile', undefined, currentLang));
+          setError(
+            isImage
+              ? translate('aiAssistant.previewModal.unableToLoadImage', undefined, currentLang)
+              : translate('aiAssistant.inline.unableToLoadPdfFile', undefined, currentLang)
+          );
         }
       });
 
@@ -453,11 +518,11 @@ function DocumentPreviewModal({ filename, onClose }: PreviewModalProps) {
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [filename, isPdf, currentLang]);
+  }, [filename, needsBinaryBlob, isImage, currentLang]);
 
-  const fileUrl = isPdf ? pdfUrl : null;
+  const fileUrl = needsBinaryBlob ? blobUrl : null;
   const iconClass = isPdf ? 'icon-pdf' : isDocx ? 'icon-docx' : 'icon-txt';
-  const iconFa = isPdf ? 'fa-file-pdf' : isDocx ? 'fa-file-word' : 'fa-file-lines';
+  const iconFa = isPdf ? 'fa-file-pdf' : isImage ? 'fa-image' : isDocx ? 'fa-file-word' : 'fa-file-lines';
 
   return (
     <div className="preview-backdrop" onClick={onClose}>
@@ -477,8 +542,8 @@ function DocumentPreviewModal({ filename, onClose }: PreviewModalProps) {
               </div>
               {data && (
                 <div className="preview-meta">
-                  <span className="preview-badge badge-type">{data.file_type || (isPdf ? 'PDF' : 'DOCX')}</span>
-                  {!isPdf && data.total_pages ? (
+                  <span className="preview-badge badge-type">{data.file_type || (isPdf ? 'PDF' : isImage ? 'IMG' : 'DOCX')}</span>
+                  {!needsBinaryBlob && data.total_pages ? (
                     <span className="preview-badge badge-pages">
                       <i className="fa-solid fa-layer-group me-1" />
                       {t('aiAssistant.previewModal.byParts', { count: data.total_pages })}
@@ -494,7 +559,7 @@ function DocumentPreviewModal({ filename, onClose }: PreviewModalProps) {
           </div>
 
           <div className="preview-header-actions">
-            {data && !isPdf && (
+            {data && !needsBinaryBlob && (
               <button
                 type="button"
                 className="preview-action-btn copy-btn"
@@ -516,7 +581,7 @@ function DocumentPreviewModal({ filename, onClose }: PreviewModalProps) {
               <span>{t('aiAssistant.previewModal.download')}</span>
             </button>
 
-            {isPdf && fileUrl && (
+            {needsBinaryBlob && fileUrl && (
               <a
                 href={fileUrl}
                 target="_blank"
@@ -541,7 +606,7 @@ function DocumentPreviewModal({ filename, onClose }: PreviewModalProps) {
         </div>
 
         {/* Tab chuyển đổi toàn văn vs phân đoạn */}
-        {data && !isPdf && (data.total_pages || 0) > 1 && (
+        {data && !needsBinaryBlob && (data.total_pages || 0) > 1 && (
           <div className="preview-tabs">
             <button
               type="button"
@@ -584,7 +649,13 @@ function DocumentPreviewModal({ filename, onClose }: PreviewModalProps) {
             </div>
           )}
 
-          {data && !loading && !isPdf && activeTab === 'full' && (
+          {data && !loading && isImage && fileUrl && (
+            <div className="preview-image-container">
+              <img src={fileUrl} alt={displayTitle} className="preview-image-viewer" />
+            </div>
+          )}
+
+          {data && !loading && !needsBinaryBlob && activeTab === 'full' && (
             <div className="preview-paper">
               <div className="preview-paper-content">
                 {data.full_text || t('aiAssistant.previewModal.noContent')}
@@ -592,7 +663,7 @@ function DocumentPreviewModal({ filename, onClose }: PreviewModalProps) {
             </div>
           )}
 
-          {data && !loading && !isPdf && activeTab === 'pages' && data.pages && (
+          {data && !loading && !needsBinaryBlob && activeTab === 'pages' && data.pages && (
             <div className="preview-pages-container">
               {data.pages.map((page, idx) => (
                 <div key={idx} className="preview-page-card">
@@ -613,6 +684,148 @@ function DocumentPreviewModal({ filename, onClose }: PreviewModalProps) {
   );
 }
 
+interface AiSettingsModalProps {
+  initialConfig: AIConfig | null;
+  onClose: () => void;
+  onSaved: (updated: AIConfig) => void;
+}
+
+function AiSettingsModal({ initialConfig, onClose, onSaved }: AiSettingsModalProps) {
+  const { t } = useTranslation();
+  const modelOptions = (initialConfig?.model_options as { openai?: { llm_models?: string[] } } | undefined)
+    ?.openai?.llm_models || ['gpt-6-luna'];
+  const [llmModel, setLlmModel] = useState(
+    String(initialConfig?.llm_model || modelOptions[0] || 'gpt-6-luna')
+  );
+  const [apiKey, setApiKey] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [onClose]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanKey = apiKey.trim();
+    if (!cleanKey) {
+      setError(t('aiAssistant.settingsModal.apiKeyRequired'));
+      return;
+    }
+    setSaving(true);
+    setError('');
+    try {
+      const updated = await updateAISettings({
+        provider: 'openai',
+        api_key: cleanKey,
+        llm_model: llmModel,
+      });
+      onSaved(updated);
+    } catch (err: unknown) {
+      setError(getSafeApiErrorDetail(err, t('aiAssistant.settingsModal.saveFailed')));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="ai-settings-backdrop" onClick={onClose}>
+      <div className="ai-settings-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={t('aiAssistant.settingsModal.title')}>
+        <div className="ai-settings-header">
+          <h3 className="ai-settings-title">
+            <i className="fa-solid fa-sliders text-primary" />
+            <span>{t('aiAssistant.settingsModal.title')}</span>
+          </h3>
+          <button type="button" className="preview-close-btn" onClick={onClose} title={t('aiAssistant.previewModal.close')}>
+            <i className="fa-solid fa-xmark" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          <div className="ai-settings-body">
+            <p className="ai-settings-subtitle">{t('aiAssistant.settingsModal.subtitle')}</p>
+
+            <div className="ai-settings-field">
+              <label className="ai-settings-label" htmlFor="ai-provider-input">{t('aiAssistant.settingsModal.providerLabel')}</label>
+              <input id="ai-provider-input" className="ai-settings-input" value={String(initialConfig?.provider || 'openai').toUpperCase()} disabled />
+            </div>
+
+            <div className="ai-settings-field">
+              <label className="ai-settings-label" htmlFor="ai-model-select">{t('aiAssistant.settingsModal.llmModelLabel')}</label>
+              <select id="ai-model-select" className="ai-settings-input" value={llmModel} onChange={(e) => setLlmModel(e.target.value)}>
+                {modelOptions.map((modelName) => (
+                  <option key={modelName} value={modelName}>{modelName}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="ai-settings-field">
+              <label className="ai-settings-label" htmlFor="ai-apikey-input">{t('aiAssistant.settingsModal.apiKeyLabel')}</label>
+              <input
+                id="ai-apikey-input"
+                type="password"
+                className="ai-settings-input"
+                placeholder={t('aiAssistant.settingsModal.apiKeyPlaceholder')}
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                autoComplete="off"
+              />
+              <span className="ai-settings-hint">
+                {initialConfig?.api_key_masked
+                  ? t('aiAssistant.settingsModal.apiKeyCurrent', { masked: String(initialConfig.api_key_masked) })
+                  : t('aiAssistant.settingsModal.apiKeyNotConfigured')}
+              </span>
+            </div>
+
+            {error && <div className="ai-settings-error" role="alert">{error}</div>}
+          </div>
+
+          <div className="ai-settings-actions">
+            <button type="button" className="ai-settings-btn-cancel" onClick={onClose} disabled={saving}>
+              {t('aiAssistant.settingsModal.cancel')}
+            </button>
+            <button type="submit" className="ai-settings-btn-save" disabled={saving}>
+              {saving ? t('aiAssistant.settingsModal.saving') : t('aiAssistant.settingsModal.save')}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+const BUSINESS_SPEC_PAGE_MAP: Record<string, ActivePageId> = {
+  'branch-01-dashboard': 'dashboard',
+  'branch-02-documents': 'documents_incoming',
+  'branch-03-records': 'records',
+  'branch-04-templates': 'resources',
+  'branch-05-signing': 'approvals',
+  'branch-06-tasks': 'tasks',
+  'branch-07-system': 'organizations',
+};
+
+function deduplicateCitations(sources: CitationSource[]): CitationSource[] {
+  const seen = new Set<string>();
+  return sources.filter((src) => {
+    const isEntity =
+      src.source_type === 'vanbanden' ||
+      src.source_type === 'vanbandi' ||
+      src.source_type === 'tailieu' ||
+      src.source_type === 'business_spec';
+    const key =
+      isEntity && src.source_id != null
+        ? `${src.source_type}:${src.source_id}`
+        : `${src.source_type || 'doc'}:${src.file_name || src.label || ''}:${src.page ?? src.section ?? ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 // Component Chính AiAssistantPage
 function CitationsBox({
   sources,
@@ -621,10 +834,12 @@ function CitationsBox({
 }: {
   sources?: CitationSource[];
   onPreview?: (filename: string) => void;
-  onNavigate?: (page: ActivePageId) => void;
+  onNavigate?: (page: ActivePageId, urlOverride?: string) => void;
 }) {
   const { t } = useTranslation();
   if (!sources || sources.length === 0) return null;
+
+  const uniqueSources = deduplicateCitations(sources);
 
   return (
     <div className="ai-citations-box">
@@ -634,7 +849,7 @@ function CitationsBox({
       </div>
 
       <div className="citations-list">
-        {sources.map((src, idx) => {
+        {uniqueSources.map((src, idx) => {
           const defaultDocLabel = t('aiAssistant.inline.documentValue', { value: idx + 1 });
           const fileName = src.file_name || src.label || defaultDocLabel;
           const code = src.code || (src.page ? `${t('aiAssistant.inline.page')}${src.page}` : src.section ? `${t('aiAssistant.inline.section')}${src.section}` : `${t('aiAssistant.inline.part')}#${idx + 1}`);
@@ -643,14 +858,22 @@ function CitationsBox({
           const isBusinessSpec = src.source_type === 'business_spec';
 
           const handleClick = () => {
-            const sourcePage: Partial<Record<string, ActivePageId>> = {
-              vanbanden: 'documents_incoming' as ActivePageId,
-              vanbandi: 'documents_outgoing' as ActivePageId,
-              tailieu: 'resources' as ActivePageId,
+            const sqlRouteMap: Partial<Record<string, { page: ActivePageId; path: string }>> = {
+              vanbanden: { page: 'documents_incoming', path: '/documents/incoming' },
+              vanbandi: { page: 'documents_outgoing', path: '/documents/outgoing' },
+              tailieu: { page: 'resources', path: '/resources' },
             };
-            const targetPage = src.targetPage || sourcePage[src.source_type || ''];
-            if (targetPage && onNavigate) {
-              onNavigate(targetPage);
+            const sqlTarget = sqlRouteMap[src.source_type || ''];
+            if (sqlTarget && onNavigate) {
+              const detailUrl = src.source_id != null
+                ? `${sqlTarget.path}?detail=${encodeURIComponent(String(src.source_id))}`
+                : undefined;
+              onNavigate(sqlTarget.page, detailUrl);
+            } else if (isBusinessSpec && onNavigate) {
+              const mappedPage = src.targetPage || BUSINESS_SPEC_PAGE_MAP[String(src.source_id || '')] || 'dashboard';
+              onNavigate(mappedPage);
+            } else if (src.targetPage && onNavigate) {
+              onNavigate(src.targetPage);
             } else if (src.file_name && onPreview) {
               onPreview(src.file_name);
             }
@@ -658,7 +881,7 @@ function CitationsBox({
 
           return (
             <button
-              key={idx}
+              key={`${src.source_type || 'doc'}-${src.source_id ?? src.file_name ?? idx}-${idx}`}
               type="button"
               className={`citation-pill ${isConfidential ? 'confidential' : ''} ${isBusinessSpec ? 'business-spec' : ''} ${src.type || ''}`}
               onClick={handleClick}
@@ -691,11 +914,19 @@ function CitationsBox({
 export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
   const { t, currentLang } = useTranslation();
   const sessionUser = getSessionUser();
+  const location = useLocation();
   const routerNavigate = useNavigate();
-  const navigateToCitation = (page: ActivePageId) => {
+  const navigateToCitation = (page: ActivePageId, urlOverride?: string) => {
+    if (urlOverride) {
+      routerNavigate(urlOverride);
+      return;
+    }
     if (onNavigate) onNavigate(page);
     else routerNavigate(pageIdToPath(page));
   };
+  const handleInternalLink = useCallback((href: string) => {
+    routerNavigate(href);
+  }, [routerNavigate]);
   const { loaded: aiPermissionLoaded, can, isSystemAdmin } = usePermissions();
   // Quản trị hệ thống (superuser hoặc nhóm ADMIN) lấy từ quyền thật, khớp cổng _require_ai_admin của API.
   const currentUser = { ...sessionUser, isAdmin: isSystemAdmin };
@@ -840,6 +1071,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
   };
 
   const setActiveSessionId = (id: string) => {
+    setTargetDocument(null);
     setChatHistoryState((current) => {
       if (current.storageKey !== storageKey) return current;
       return { ...current, activeSessionId: id };
@@ -863,14 +1095,31 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
   const [documents, setDocuments] = useState<DocItem[]>([]);
   const [categories, setCategories] = useState<CategoryItem[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('');
-  const [previewFilename, setPreviewFilename] = useState<string | null>(null);
+  const urlPreviewFilename = useMemo(
+    () => new URLSearchParams(location.search).get('preview'),
+    [location.search]
+  );
+  const [manualPreviewFilename, setManualPreviewFilename] = useState<string | null>(null);
+  const [dismissedUrlPreview, setDismissedUrlPreview] = useState<string | null>(null);
+  const previewFilename =
+    manualPreviewFilename ??
+    (urlPreviewFilename && dismissedUrlPreview !== urlPreviewFilename ? urlPreviewFilename : null);
+  const setPreviewFilename = (filename: string | null) => {
+    setManualPreviewFilename(filename);
+    if (filename === null && urlPreviewFilename) {
+      setDismissedUrlPreview(urlPreviewFilename);
+    }
+  };
   const [aiConfig, setAiConfig] = useState<AIConfig | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // Chat input states
   const [inputVal, setInputVal] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const isGeneratingRef = useRef(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [speakingId, setSpeakingId] = useState<string | null>(null);
+  const [reclassifyingDoc, setReclassifyingDoc] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const [isListening, setIsListening] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -887,7 +1136,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
 
-  // Giải phóng pollTimerRef và recognitionRef khi unmount tránh rò rỉ bộ nhớ
+  // Giải phóng pollTimerRef, recognitionRef và speechSynthesis khi unmount
   useEffect(() => {
     return () => {
       if (pollTimerRef.current !== null) {
@@ -901,6 +1150,9 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
           // ignore
         }
         recognitionRef.current = null;
+      }
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
       }
     };
   }, []);
@@ -980,7 +1232,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
   // Tạo phiên chat mới
   const handleNewChat = () => {
     if (!isChatHistoryReady) return;
-    const newId = `session-${Date.now()}`;
+    const newId = `session-${createMessageTimestamp()}`;
     const newSession = createDefaultSession(newId, currentLang);
     setChatHistoryState((current) => {
       if (current.storageKey !== storageKey) return current;
@@ -993,6 +1245,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     setSidebarTab('sessions');
     setInputVal('');
     setSelectedCategory('');
+    setTargetDocument(null);
     if (typeof window !== 'undefined' && window.innerWidth <= 860) {
       setIsSidebarOpen(false);
     }
@@ -1006,7 +1259,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
         if (current.storageKey !== storageKey) return current;
         const updated = current.sessions.filter((s) => s.id !== id);
         if (updated.length === 0) {
-          const freshId = `session-${Date.now()}`;
+          const freshId = `session-${createMessageTimestamp()}`;
           const freshSession = createDefaultSession(freshId, currentLang);
           return {
             ...current,
@@ -1058,7 +1311,12 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
             const isSuccess = prog.status === 'done' || prog.status === 'completed';
             const isFailed = prog.status === 'error' || prog.status === 'failed';
             setUploadProgress(isFailed
-              ? { ...prog, message: t('aiAssistant.inline.failedToUploadDocument') }
+              ? {
+                  ...prog,
+                  message: typeof prog.message === 'string' && prog.message.trim()
+                    ? prog.message
+                    : t('aiAssistant.inline.failedToUploadDocument'),
+                }
               : prog);
 
             if (isSuccess || isFailed) {
@@ -1134,6 +1392,27 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     }
   };
 
+  const handleReclassifyDoc = async (filename: string) => {
+    if (reclassifyingDoc) return;
+    setReclassifyingDoc(filename);
+    try {
+      const res = await reclassifyDocument(filename);
+      await refreshDocuments();
+      setAiAlertMsg(
+        t('aiAssistant.inline.reclassifySuccess', {
+          filename,
+          category: res?.category || t('aiAssistant.uncategorized'),
+        })
+      );
+      setAiAlertOpen(true);
+    } catch (err: unknown) {
+      setAiAlertMsg(getSafeApiErrorDetail(err, t('aiAssistant.inline.reclassifyFailed')));
+      setAiAlertOpen(true);
+    } finally {
+      setReclassifyingDoc(null);
+    }
+  };
+
   const handleClearAllDocs = async () => {
     if (confirm(t('aiAssistant.clearAllDocsConfirm')) &&
         prompt(t('aiAssistant.clearAllDocsTypeConfirm')) === 'DELETE') {
@@ -1148,7 +1427,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
   };
 
   // Gửi câu hỏi đến AI
-  const handleSend = async (overrideText?: string) => {
+  const handleSend = async (overrideText?: string, removeErrorMsgId?: string) => {
     if (isGeneratingRef.current || !canUseAI || !isChatHistoryReady) return;
     const text = (overrideText ?? inputVal).trim();
     if (!text) return;
@@ -1164,8 +1443,16 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     setIsGenerating(true);
     const sessionId = activeSessionId;
     const sessionAtSend = sessions.find((session) => session.id === sessionId);
-    const currentMessages = sessionAtSend?.messages || [];
+    const baseMessages = (sessionAtSend?.messages || []).filter(
+      (message) => !removeErrorMsgId || message.id !== removeErrorMsgId
+    );
+    const history = baseMessages
+      .filter((message) => !message.id.startsWith('msg-welcome') && !message.isError)
+      .slice(-8)
+      .map((message) => ({ role: message.sender === 'user' ? 'user' : 'assistant', content: message.text }));
+
     const messageTimestamp = createMessageTimestamp();
+    const shouldAppendUserMsg = !removeErrorMsgId;
     const userMsg: ChatMessage = {
       id: `user-${sessionId}-${messageTimestamp}`,
       sender: 'user',
@@ -1173,8 +1460,8 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
       time: new Date().toLocaleTimeString(currentLang === 'en' ? 'en-US' : 'vi-VN', { hour: '2-digit', minute: '2-digit' }),
       targetDoc: targetDocument || undefined,
     };
-    const newMessages = [...currentMessages, userMsg];
-    const isFirstQuestion = !currentMessages.some((message) => message.sender === 'user');
+    const newMessages = shouldAppendUserMsg ? [...baseMessages, userMsg] : baseMessages;
+    const isFirstQuestion = !baseMessages.some((message) => message.sender === 'user');
     const title = isFirstQuestion
       ? (text.length > 60 ? `${text.slice(0, 60).trimEnd()}...` : text)
       : (sessionAtSend?.title || text);
@@ -1183,13 +1470,11 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     updateChatHistory((prev) => prev.map((session) => session.id === sessionId
       ? { ...session, title, snippet: initialSnippet, messages: newMessages }
       : session));
-    setInputVal('');
+    if (shouldAppendUserMsg) {
+      setInputVal('');
+    }
 
     try {
-      const history = newMessages
-        .filter((message) => !message.id.startsWith('msg-welcome'))
-        .slice(-8)
-        .map((message) => ({ role: message.sender === 'user' ? 'user' : 'assistant', content: message.text }));
       const response = await askQuestion(text, history, selectedCategory || null, targetDocument?.filename || null, currentLang);
       const aiText = response.answer || response.text;
       if (typeof aiText !== 'string' || !aiText.trim()) throw new Error('Empty AI response');
@@ -1214,8 +1499,18 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
         : session));
     } catch (error: unknown) {
       console.warn('AI chat request failed:', error);
-      setAiAlertMsg(t('aiAssistant.msg.aiUnavailable'));
-      setAiAlertOpen(true);
+      const errDetail = getSafeApiErrorDetail(error, t('aiAssistant.msg.aiUnavailable'));
+      const errMsg: ChatMessage = {
+        id: `ai-err-${sessionId}-${messageTimestamp}`,
+        sender: 'ai',
+        text: errDetail,
+        time: new Date().toLocaleTimeString(currentLang === 'en' ? 'en-US' : 'vi-VN', { hour: '2-digit', minute: '2-digit' }),
+        isError: true,
+        retryText: text,
+      };
+      updateChatHistory((prev) => prev.map((session) => session.id === sessionId
+        ? { ...session, messages: [...newMessages, errMsg] }
+        : session));
     } finally {
       isGeneratingRef.current = false;
       setIsGenerating(false);
@@ -1228,14 +1523,22 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // Đọc to câu trả lời bằng giọng nói tiếng Việt
-  const handleSpeakText = (text: string) => {
+  // Đọc to / Dừng đọc câu trả lời
+  const handleSpeakText = (msgId: string, text: string) => {
     if ('speechSynthesis' in window) {
+      if (speakingId === msgId) {
+        window.speechSynthesis.cancel();
+        setSpeakingId(null);
+        return;
+      }
       window.speechSynthesis.cancel();
       const cleanText = text.replace(/[*#`_]/g, '');
       const utterance = new SpeechSynthesisUtterance(cleanText);
       utterance.lang = currentLang === 'en' ? 'en-US' : 'vi-VN';
       utterance.rate = 1.0;
+      utterance.onend = () => setSpeakingId(null);
+      utterance.onerror = () => setSpeakingId(null);
+      setSpeakingId(msgId);
       window.speechSynthesis.speak(utterance);
     } else {
       alert(t('aiAssistant.msg.ttsUnsupported'));
@@ -1375,9 +1678,13 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
         .replace(/[\u0300-\u036f]/g, '')
         .replace(/đ/g, 'd')
         .toLowerCase();
-      const rootName = rawCategory && normalizedCategory !== 'chua phan loai'
+      const effectiveCategory = rawCategory && normalizedCategory !== 'chua phan loai'
         ? rawCategory
         : t('aiAssistant.uncategorized');
+
+      const slashIdx = effectiveCategory.indexOf(' / ');
+      const rootName = slashIdx > 0 ? effectiveCategory.slice(0, slashIdx).trim() : effectiveCategory;
+      const subName = slashIdx > 0 ? effectiveCategory.slice(slashIdx + 3).trim() : '';
 
       if (!groups[rootName]) {
         groups[rootName] = {
@@ -1389,7 +1696,14 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
       }
 
       groups[rootName].totalCount += 1;
-      groups[rootName].directDocs.push(doc);
+      if (subName) {
+        if (!groups[rootName].subFolders[subName]) {
+          groups[rootName].subFolders[subName] = { name: subName, docs: [] };
+        }
+        groups[rootName].subFolders[subName].docs.push(doc);
+      } else {
+        groups[rootName].directDocs.push(doc);
+      }
     }
 
     return groups;
@@ -1766,14 +2080,27 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                                               <i className="fa-solid fa-eye" />
                                             </button>
                                             {currentUser.isAdmin && (
-                                              <button
-                                                type="button"
-                                                className="sidebar-doc-btn delete-btn"
-                                                onClick={() => handleDeleteDoc(d.filename)}
-                                                title={t('aiAssistant.deleteDoc')}
-                                              >
-                                                <i className="fa-solid fa-trash" />
-                                              </button>
+                                              <>
+                                                <button
+                                                  type="button"
+                                                  className="sidebar-doc-btn"
+                                                  onClick={() => handleReclassifyDoc(d.filename)}
+                                                  disabled={reclassifyingDoc === d.filename}
+                                                  title={reclassifyingDoc === d.filename ? t('aiAssistant.inline.reclassifying') : t('aiAssistant.inline.reclassifyDoc')}
+                                                  aria-label={`${t('aiAssistant.inline.reclassifyDoc')}: ${d.filename}`}
+                                                >
+                                                  <i className={`fa-solid ${reclassifyingDoc === d.filename ? 'fa-spinner fa-spin' : 'fa-tags'}`} />
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  className="sidebar-doc-btn delete-btn"
+                                                  onClick={() => handleDeleteDoc(d.filename)}
+                                                  title={t('aiAssistant.deleteDoc')}
+                                                  aria-label={`${t('aiAssistant.deleteDoc')}: ${d.filename}`}
+                                                >
+                                                  <i className="fa-solid fa-trash" />
+                                                </button>
+                                              </>
                                             )}
                                           </div>
                                         </div>
@@ -1837,14 +2164,29 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                                     >
                                       <i className="fa-solid fa-eye" />
                                     </button>
-                                    <button
-                                      type="button"
-                                      className="sidebar-doc-btn delete-btn"
-                                      onClick={() => handleDeleteDoc(d.filename)}
-                                      title={t('aiAssistant.deleteDoc')}
-                                    >
-                                      <i className="fa-solid fa-trash" />
-                                    </button>
+                                    {currentUser.isAdmin && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          className="sidebar-doc-btn"
+                                          onClick={() => handleReclassifyDoc(d.filename)}
+                                          disabled={reclassifyingDoc === d.filename}
+                                          title={reclassifyingDoc === d.filename ? t('aiAssistant.inline.reclassifying') : t('aiAssistant.inline.reclassifyDoc')}
+                                          aria-label={`${t('aiAssistant.inline.reclassifyDoc')}: ${d.filename}`}
+                                        >
+                                          <i className={`fa-solid ${reclassifyingDoc === d.filename ? 'fa-spinner fa-spin' : 'fa-tags'}`} />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="sidebar-doc-btn delete-btn"
+                                          onClick={() => handleDeleteDoc(d.filename)}
+                                          title={t('aiAssistant.deleteDoc')}
+                                          aria-label={`${t('aiAssistant.deleteDoc')}: ${d.filename}`}
+                                        >
+                                          <i className="fa-solid fa-trash" />
+                                        </button>
+                                      </>
+                                    )}
                                   </div>
                                 </div>
                               ))}
@@ -1955,6 +2297,18 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
               </div>
             )}
 
+            {currentUser.isAdmin && (
+              <button
+                type="button"
+                className="chat-action-btn"
+                onClick={() => setIsSettingsOpen(true)}
+                title={t('aiAssistant.inline.aiModelApiKeySettings')}
+                aria-label={t('aiAssistant.inline.aiSettings')}
+              >
+                <i className="fa-solid fa-gear" />
+                <span className="hidden xl:inline">{t('aiAssistant.inline.aiSettings')}</span>
+              </button>
+            )}
 
             {/* Nút Xuất file */}
             <button
@@ -2094,7 +2448,21 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                         <span>{msg.targetDoc.label || msg.targetDoc.filename}</span>
                       </div>
                     )}
-                    <FormattedMessage text={displayedText} />
+                    <FormattedMessage text={displayedText} onInternalLink={handleInternalLink} />
+
+                    {msg.isError && msg.retryText && (
+                      <div className="ai-error-retry-row" role="alert">
+                        <button
+                          type="button"
+                          className="ai-error-retry-btn"
+                          disabled={isGenerating || !isChatHistoryReady}
+                          onClick={() => handleSend(msg.retryText, msg.id)}
+                        >
+                          <i className="fa-solid fa-rotate-right" />
+                          <span>{t('aiAssistant.inline.retrySend')}</span>
+                        </button>
+                      </div>
+                    )}
 
                     {/* Dẫn link web & văn bản trích dẫn */}
                     {msg.citations && msg.citations.length > 0 && (
@@ -2140,11 +2508,11 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                       <button
                         type="button"
                         className="msg-tool-btn"
-                        onClick={() => handleSpeakText(displayedText)}
-                        title={t('aiAssistant.readAloud')}
+                        onClick={() => handleSpeakText(msg.id, displayedText)}
+                        title={speakingId === msg.id ? t('aiAssistant.inline.stopReading') : t('aiAssistant.readAloud')}
                       >
-                        <i className="fa-solid fa-volume-high" />
-                        <span>{t('aiAssistant.inline.read')}</span>
+                        <i className={`fa-solid ${speakingId === msg.id ? 'fa-stop' : 'fa-volume-high'}`} />
+                        <span>{speakingId === msg.id ? t('aiAssistant.inline.stopReading') : t('aiAssistant.inline.read')}</span>
                       </button>
                     </div>
                   )}
@@ -2292,7 +2660,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                     e.target.value = '';
                   }
                 }}
-                accept=".pdf,.docx,.txt,.csv,.pptx,.md,.markdown,.html,.htm,.json,.xml,.png,.jpg,.jpeg,.webp,.bmp,.tiff,.tif,.gif"
+                accept=".pdf,.doc,.docx,.txt,.csv,.pptx,.md,.markdown,.html,.htm,.json,.xml,.png,.jpg,.jpeg,.webp,.bmp,.tiff,.tif,.gif"
               />
             )}
 
@@ -2377,8 +2745,25 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
       {/* Modal Xem Trước Tài Liệu */}
       {previewFilename && (
         <DocumentPreviewModal
+          key={previewFilename}
           filename={previewFilename}
           onClose={() => setPreviewFilename(null)}
+        />
+      )}
+
+      {/* Modal Cài đặt Mô hình & API Key AI (Admin) */}
+      {isSettingsOpen && currentUser.isAdmin && (
+        <AiSettingsModal
+          initialConfig={aiConfig}
+          onClose={() => setIsSettingsOpen(false)}
+          onSaved={(updated) => {
+            setAiConfig(updated);
+            setIsSettingsOpen(false);
+            window.dispatchEvent(new CustomEvent('tlbm_ai_config_updated', { detail: updated }));
+            setAiAlertMsg(t('aiAssistant.settingsModal.saveSuccess'));
+            setAiAlertOpen(true);
+            getAISettings().then(setAiConfig).catch(() => {});
+          }}
         />
       )}
 
