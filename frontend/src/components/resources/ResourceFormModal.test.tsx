@@ -209,4 +209,64 @@ describe('ResourceFormModal Component', () => {
     expect(postedDateInput).toBeInTheDocument();
     expect(postedDateInput.value).toBe('24/10/2026');
   });
+
+  it('preserves and displays custom noi_ban_hanh correctly even when don_vi_id belongs to another department', () => {
+    const mockUnits: Unit[] = [
+      { id: 24, khoi: 1, stt_uu_tien: 1, ten: 'Ban công nghệ thông tin', dia_chi: null, dien_thoai: null, email: null, is_public: true, ghi_chu: null, khoi_ten: 'Khối Hỗ trợ' },
+      { id: 25, khoi: 1, stt_uu_tien: 2, ten: 'Ban Kế toán', dia_chi: null, dien_thoai: null, email: null, is_public: true, ghi_chu: null, khoi_ten: 'Khối Kế toán' },
+    ];
+
+    render(
+      <ResourceFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+        categories={mockCategories}
+        types={mockTypes}
+        units={mockUnits}
+        initialData={{
+          id: 4,
+          dm_tai_lieu: 1,
+          loai_tai_lieu: [1],
+          ky_hieu: '04/HSDT-TM-2026',
+          tieu_de: 'Hồ sơ đề xuất báo giá',
+          ngay_dang: '2026-10-24',
+          noi_ban_hanh: 'Khối Phát triển Kinh doanh',
+          don_vi_id: 24,
+          hieu_luc: 'HET_HIEU_LUC',
+          file_dinh_kem: '/media/test.pdf',
+          hien_thi: 'TAT_CA',
+        }}
+      />
+    );
+
+    // Kiểm tra dropdown Nơi ban hành hiển thị đúng "Khối Phát triển Kinh doanh" chứ không bị đổi thành "Ban công nghệ thông tin"
+    expect(screen.getByText('Khối Phát triển Kinh doanh')).toBeInTheDocument();
+  });
+
+  it('does not include the placeholder as a selectable option in authority options list', () => {
+    const mockUnits: Unit[] = [
+      { id: 1, khoi: 1, stt_uu_tien: 1, ten: 'Ban Tổng Giám đốc', dia_chi: null, dien_thoai: null, email: null, is_public: true, ghi_chu: null, khoi_ten: 'Ban Tổng Giám đốc' },
+    ];
+
+    render(
+      <ResourceFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+        categories={mockCategories}
+        types={mockTypes}
+        units={mockUnits}
+      />
+    );
+
+    // Mở menu dropdown Nơi ban hành
+    const authorityBtn = screen.getByRole('button', { name: /Chọn hoặc tìm kiếm phòng ban ban hành/i });
+    fireEvent.click(authorityBtn);
+
+    // Dòng placeholder không được hiển thị như một mục chọn bên trong listbox
+    const listbox = screen.getByRole('listbox');
+    expect(listbox).toBeInTheDocument();
+    expect(listbox.textContent).not.toContain('-- Chọn hoặc tìm kiếm phòng');
+  });
 });
