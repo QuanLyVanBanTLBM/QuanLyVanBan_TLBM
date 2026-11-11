@@ -51,12 +51,13 @@ def has_permission_codename(user, codename):
 
 
 def is_ai_admin(user):
-    """Use the existing Django/admin profile roles for AI knowledge management."""
+    """Use the system admin policy (superuser or ADMIN group) for AI knowledge management."""
     if not getattr(user, "is_authenticated", False) or not getattr(user, "is_active", False):
         return False
     if getattr(user, "is_superuser", False):
         return True
     try:
-        return user.profile.role == "admin"
-    except AttributeError:
+        from authorization.permissions import is_system_admin
+        return bool(is_system_admin(user))
+    except Exception:
         return False

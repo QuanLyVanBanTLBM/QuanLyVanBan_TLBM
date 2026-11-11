@@ -6,11 +6,12 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from django.contrib.auth import get_user_model
-from django.contrib.auth.models import Permission
+from django.contrib.auth.models import Group, Permission
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from backend.services.ai_access import has_permission_codename, is_ai_admin
+from authorization.models import GroupInfo
+from backend.services.ai_access import has_permission_codename, is_ai_admin, resolve_employee_id
 
 User = get_user_model()
 
@@ -39,10 +40,22 @@ class AIAccessTests(TestCase):
         self.assertFalse(has_permission_codename(self.superuser, "use_aiassistant"))
         self.assertFalse(is_ai_admin(self.superuser))
 
-    def test_ai_admin_is_superuser_only(self):
+    def test_ai_admin_is_system_admin_only(self):
         self.assertFalse(is_ai_admin(self.no_perm))
         self.assertFalse(is_ai_admin(self.ai_user))
         self.assertTrue(is_ai_admin(self.superuser))
+
+    def test_ai_admin_grants_admin_group_and_denies_other_groups(self):
+        other_group = Group.objects.create(name="ai_non_admin_group")
+        admin_group = Group.objects.get(pk=GroupInfo.objects.get(ma_nhom_quyen="ADMIN").pk)
+
+        staff_user = User.objects.create_user(username="ai_staff_group", password="test-password")
+        staff_user.groups.add(other_group)
+        admin_group_user = User.objects.create_user(username="ai_admin_group", password="test-password")
+        admin_group_user.groups.add(admin_group)
+
+        self.assertFalse(is_ai_admin(staff_user))
+        self.assertTrue(is_ai_admin(admin_group_user))
 
     def test_chat_requires_authentication(self):
         response = self.client.post("/api/ai/chat", {"question": "Tìm văn bản"}, format="json")

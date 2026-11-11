@@ -6,10 +6,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from backend.services.pgvector_store import _compile_where_dict
 from backend.services.rag_service import (
     _authorized_fallback_nodes,
     _fallback_query_filter,
     _local_attachment_digest,
+    _read_authorized_attachment_pages,
     read_document_pages,
 )
 
@@ -64,4 +66,53 @@ class AttachmentRetrievalTests(unittest.TestCase):
                 pages = read_document_pages(path)
             extract.assert_called_once_with(b"document bytes")
             self.assertEqual(pages[0]["text"], "Nội dung văn bản")
+
+    def test_authorized_attachment_pages_uses_shutil_and_reads_text(self):
+        with tempfile.TemporaryDirectory() as directory:
+            src_path = Path(directory) / "note.txt"
+            src_path.write_text("Nội dung tệp đính kèm hợp lệ", encoding="utf-8")
+            sha = hashlib.sha256(src_path.read_bytes()).hexdigest()
+            record = {"source_id": 10}
+            fingerprints = [
+                {
+                    "attachment": {"id": 101, "name": "note.txt", "path": "note.txt"},
+                    "suffix": ".txt",
+                    "sha256": sha,
+                }
+            ]
+            fake_storage = SimpleNamespace(open=lambda key, mode="rb": src_path.open("rb"))
+            with patch("document_storage.get_document_storage", return_value=fake_storage):
+                pages, pending = _read_authorized_attachment_pages(record, fingerprints)
+            self.assertFalse(pending)
+            self.assertEqual(len(pages), 1)
+            self.assertIn("Nội dung tệp đính kèm hợp lệ", pages[0]["text"])
+
+    def test_compile_where_dict_handles_fallback_query_filter_operators(self):
+        where_dict = _fallback_query_filter("same.pdf", {"vanbanden:1", "vanbandi:2"})
+        sql_fragment, params = _compile_where_dict(where_dict)
+        self.assertIn("AND", sql_fragment)
+        self.assertIn("OR", sql_fragment)
+        self.assertIn("= ANY(%s)", sql_fragment)
+        self.assertTrue(any('"file_name": "same.pdf"' in str(p) for p in params))
+        self.assertTrue(any('"source_class": "ai_knowledge_base"' in str(p) for p in params))
+        self.assertTrue(any(isinstance(p, list) and set(p) == {"vanbanden:1", "vanbandi:2"} for p in params))
+
+    def test_read_docx_extracts_paragraphs_and_tables(self):
+        from docx import Document
+        from backend.services.rag_service import read_docx
+
+        with tempfile.TemporaryDirectory() as directory:
+            doc_path = Path(directory) / "table_sample.docx"
+            doc = Document()
+            doc.add_paragraph("Đoạn mở đầu")
+            table = doc.add_table(rows=2, cols=2)
+            table.cell(0, 0).text = "Cột A"
+            table.cell(0, 1).text = "Cột B"
+            table.cell(1, 0).text = "Giá trị 1"
+            table.cell(1, 1).text = "Giá trị 2"
+            doc.save(str(doc_path))
+            extracted = read_docx(doc_path)
+            self.assertIn("Đoạn mở đầu", extracted)
+            self.assertIn("Cột A | Cột B", extracted)
+            self.assertIn("Giá trị 1 | Giá trị 2", extracted)
 

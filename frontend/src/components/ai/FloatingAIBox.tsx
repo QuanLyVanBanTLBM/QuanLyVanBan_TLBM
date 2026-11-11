@@ -5,12 +5,16 @@ import { t as translate, useTranslation, type SupportedLanguage } from '@i18n/tr
 
 interface FloatingAIBoxProps {
   onNavigate?: (pageId: ActivePageId) => void;
+  onNavigateUrl?: (url: string) => void;
 }
 
 interface Source {
   file_name?: string;
   page?: number | null;
   source_type?: string | null;
+  source_id?: number | string | null;
+  chunk_id?: string | number | null;
+  index?: number | null;
 }
 
 interface Message {
@@ -73,8 +77,40 @@ function safeLinkTarget(href: string): string | null {
   }
 }
 
-function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
-  const pattern = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[[^\]]+\]\((?:https?:\/\/|\/)[^)]+\))/g;
+const BUSINESS_SPEC_PAGE_MAP: Record<string, ActivePageId> = {
+  'branch-01-dashboard': 'dashboard',
+  'branch-02-documents': 'documents_incoming',
+  'branch-03-records': 'records',
+  'branch-04-templates': 'resources',
+  'branch-05-signing': 'approvals',
+  'branch-06-tasks': 'tasks',
+  'branch-07-system': 'organizations',
+};
+
+function deduplicateFloatingSources(sources: Source[]): Source[] {
+  const seen = new Set<string>();
+  return sources.filter((src) => {
+    const isEntity =
+      src.source_type === 'vanbanden' ||
+      src.source_type === 'vanbandi' ||
+      src.source_type === 'tailieu' ||
+      src.source_type === 'business_spec';
+    const key =
+      isEntity && src.source_id != null
+        ? `${src.source_type}:${src.source_id}`
+        : `${src.source_type || 'doc'}:${src.file_name || ''}:${src.page ?? ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function renderInline(
+  text: string,
+  keyPrefix: string,
+  onInternalLink?: (href: string) => void
+): React.ReactNode[] {
+  const pattern = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\$(?!\s)[^$\n]+?(?<!\s)\$(?!\d)|\[[^\]]+\]\((?:https?:\/\/|\/)[^)]+\))/g;
   const nodes: React.ReactNode[] = [];
   let cursor = 0;
   let match: RegExpExecArray | null;
@@ -85,11 +121,27 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
       nodes.push(<strong key={`${keyPrefix}-${match.index}`}>{token.slice(2, -2)}</strong>);
     } else if (token.startsWith('`')) {
       nodes.push(<code key={`${keyPrefix}-${match.index}`} className="rounded bg-surface-hover px-1">{token.slice(1, -1)}</code>);
+    } else if (token.startsWith('$') && token.endsWith('$') && token.length > 2) {
+      nodes.push(<code key={`${keyPrefix}-${match.index}`} className="ai-math-inline">{token.slice(1, -1)}</code>);
     } else if (token.startsWith('[')) {
       const linkMatch = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(token);
       const href = linkMatch ? safeLinkTarget(linkMatch[2]) : null;
       nodes.push(href ? (
-        <a key={`${keyPrefix}-${match.index}`} href={href} target={href.startsWith('/') ? undefined : '_blank'} rel="noreferrer" className="text-primary underline">
+        <a
+          key={`${keyPrefix}-${match.index}`}
+          href={href}
+          target={href.startsWith('/') ? undefined : '_blank'}
+          rel="noreferrer"
+          className="text-primary underline"
+          onClick={
+            href.startsWith('/') && onInternalLink
+              ? (event) => {
+                  event.preventDefault();
+                  onInternalLink(href);
+                }
+              : undefined
+          }
+        >
           {linkMatch?.[1]}
         </a>
       ) : token);
@@ -102,14 +154,21 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
   return nodes;
 }
 
-function FormattedMessage({ text }: { text: string }) {
+function FormattedMessage({
+  text,
+  onInternalLink,
+}: {
+  text: string;
+  onInternalLink?: (href: string) => void;
+}) {
   const lines = text.split('\n');
   const blocks: React.ReactNode[] = [];
   let index = 0;
 
   while (index < lines.length) {
     const line = lines[index];
-    if (line.trim().startsWith('```')) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('```')) {
       const code: string[] = [];
       index += 1;
       while (index < lines.length && !lines[index].trim().startsWith('```')) {
@@ -120,8 +179,24 @@ function FormattedMessage({ text }: { text: string }) {
       index += 1;
       continue;
     }
+    if (trimmed.startsWith('$$')) {
+      const singleLineMatch = /^\$\$(.+)\$\$$/.exec(trimmed);
+      if (singleLineMatch) {
+        blocks.push(<pre key={`math-${index}`} className="ai-math-block"><code>{singleLineMatch[1].trim()}</code></pre>);
+        index += 1;
+        continue;
+      }
+      const mathLines: string[] = [];
+      index += 1;
+      while (index < lines.length && !lines[index].trim().startsWith('$$')) {
+        mathLines.push(lines[index]);
+        index += 1;
+      }
+      blocks.push(<pre key={`math-${index}`} className="ai-math-block"><code>{mathLines.join('\n')}</code></pre>);
+      index += 1;
+      continue;
+    }
 
-    const trimmed = line.trim();
     if (!trimmed) {
       blocks.push(<div key={`space-${index}`} className="h-1" />);
       index += 1;
@@ -139,19 +214,19 @@ function FormattedMessage({ text }: { text: string }) {
       }
       blocks.push(<div key={`table-${index}`} className="my-2 max-w-full overflow-x-auto">
         <table className="w-full border-collapse text-left text-[11px]">
-          <thead><tr>{headers.map((cell, cellIndex) => <th key={cellIndex} className="border border-subtle bg-surface-hover px-2 py-1">{renderInline(cell, `table-head-${index}-${cellIndex}`)}</th>)}</tr></thead>
-          <tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}>{headers.map((_, cellIndex) => <td key={cellIndex} className="border border-subtle px-2 py-1">{renderInline(row[cellIndex] || '', `table-cell-${index}-${rowIndex}-${cellIndex}`)}</td>)}</tr>)}</tbody>
+          <thead><tr>{headers.map((cell, cellIndex) => <th key={cellIndex} className="border border-subtle bg-surface-hover px-2 py-1">{renderInline(cell, `table-head-${index}-${cellIndex}`, onInternalLink)}</th>)}</tr></thead>
+          <tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}>{headers.map((_, cellIndex) => <td key={cellIndex} className="border border-subtle px-2 py-1">{renderInline(row[cellIndex] || '', `table-cell-${index}-${rowIndex}-${cellIndex}`, onInternalLink)}</td>)}</tr>)}</tbody>
         </table>
       </div>);
       continue;
     }
     if (/^#{1,3}\s/.test(trimmed)) {
-      blocks.push(<h4 key={`heading-${index}`} className="my-1 font-bold">{renderInline(trimmed.replace(/^#{1,3}\s+/, ''), `heading-${index}`)}</h4>);
+      blocks.push(<h4 key={`heading-${index}`} className="my-1 font-bold">{renderInline(trimmed.replace(/^#{1,3}\s+/, ''), `heading-${index}`, onInternalLink)}</h4>);
       index += 1;
       continue;
     }
     if (trimmed.startsWith('> ')) {
-      blocks.push(<blockquote key={`quote-${index}`} className="my-1 border-l-2 border-primary ps-2 text-text-secondary">{renderInline(trimmed.slice(2), `quote-${index}`)}</blockquote>);
+      blocks.push(<blockquote key={`quote-${index}`} className="my-1 border-l-2 border-primary ps-2 text-text-secondary">{renderInline(trimmed.slice(2), `quote-${index}`, onInternalLink)}</blockquote>);
       index += 1;
       continue;
     }
@@ -164,17 +239,17 @@ function FormattedMessage({ text }: { text: string }) {
       }
       const List = ordered ? 'ol' : 'ul';
       blocks.push(<List key={`list-${index}`} className={`my-1 space-y-0.5 ps-5 ${ordered ? 'list-decimal' : 'list-disc'}`}>
-        {items.map((item, itemIndex) => <li key={itemIndex}>{renderInline(item, `list-${index}-${itemIndex}`)}</li>)}
+        {items.map((item, itemIndex) => <li key={itemIndex}>{renderInline(item, `list-${index}-${itemIndex}`, onInternalLink)}</li>)}
       </List>);
       continue;
     }
-    blocks.push(<p key={`paragraph-${index}`} className="my-1">{renderInline(line, `paragraph-${index}`)}</p>);
+    blocks.push(<p key={`paragraph-${index}`} className="my-1">{renderInline(line, `paragraph-${index}`, onInternalLink)}</p>);
     index += 1;
   }
   return <div className="break-words">{blocks}</div>;
 }
 
-export default function FloatingAIBox({ onNavigate }: FloatingAIBoxProps) {
+export default function FloatingAIBox({ onNavigate, onNavigateUrl }: FloatingAIBoxProps) {
   const { t, currentLang } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
@@ -514,6 +589,45 @@ export default function FloatingAIBox({ onNavigate }: FloatingAIBoxProps) {
     handleQuickNavigate('ai_assistant');
   };
 
+  const handleInternalLink = (href: string) => {
+    setIsOpen(false);
+    if (onNavigateUrl) {
+      onNavigateUrl(href);
+    }
+  };
+
+  const handleSourceNavigate = (source: Source) => {
+    const sqlRoutes: Record<string, { urlPrefix: string; page: ActivePageId }> = {
+      vanbanden: { urlPrefix: '/documents/incoming', page: 'documents_incoming' },
+      vanbandi: { urlPrefix: '/documents/outgoing', page: 'documents_outgoing' },
+      tailieu: { urlPrefix: '/resources', page: 'resources' },
+    };
+    if (source.source_type && sqlRoutes[source.source_type]) {
+      const entry = sqlRoutes[source.source_type];
+      setIsOpen(false);
+      if (source.source_id != null && onNavigateUrl) {
+        onNavigateUrl(`${entry.urlPrefix}?detail=${encodeURIComponent(String(source.source_id))}`);
+      } else {
+        handleQuickNavigate(entry.page);
+      }
+      return;
+    }
+    if (source.source_type === 'business_spec') {
+      const targetPage = BUSINESS_SPEC_PAGE_MAP[String(source.source_id || '')] || 'ai_assistant';
+      setIsOpen(false);
+      handleQuickNavigate(targetPage);
+      return;
+    }
+    if (source.file_name) {
+      setIsOpen(false);
+      if (onNavigateUrl) {
+        onNavigateUrl(`/ai-assistant?preview=${encodeURIComponent(source.file_name)}`);
+      } else {
+        handleQuickNavigate('ai_assistant');
+      }
+    }
+  };
+
   const modelLabel = aiConfig?.llm_model;
   const sourceTypeLabels: Record<string, string> = {
     vanbanden: t('floatingAI.sourceTypes.incoming'),
@@ -625,18 +739,31 @@ export default function FloatingAIBox({ onNavigate }: FloatingAIBoxProps) {
                     {message.sender === 'ai' && <div className="w-7 h-7 rounded-lg bg-primary-subtle text-primary flex items-center justify-center text-xs shrink-0 mt-0.5"><i className="fa-solid fa-brain" /></div>}
                     <div className="flex flex-col gap-1 max-w-[85%] min-w-0">
                       <div className={`p-3 text-xs leading-relaxed ${message.sender === 'user' ? 'bg-primary text-white rounded-2xl rounded-tr-sm shadow-xs' : 'bg-surface border border-subtle text-text-main rounded-2xl rounded-tl-sm shadow-xs'}`}>
-                        <FormattedMessage text={message.text} />
+                        <FormattedMessage text={message.text} onInternalLink={handleInternalLink} />
                       </div>
-                      {message.sources && message.sources.length > 0 && (
-                        <div className="text-[10px] text-text-muted px-1">
-                          <span className="font-semibold">{t('floatingAI.sources')}: </span>
-                          {message.sources.map((source, index) => (
-                            <span key={`${source.file_name || source.source_type || 'source'}-${index}`}>
-                              {index > 0 ? ', ' : ''}{source.file_name || sourceTypeLabels[source.source_type || ''] || t('floatingAI.documentSource')}{source.page ? `, ${t('floatingAI.page', { page: source.page })}` : ''}
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                      {message.sources && message.sources.length > 0 && (() => {
+                        const visibleSources = deduplicateFloatingSources(message.sources);
+                        return (
+                          <div className="text-[10px] text-text-muted px-1 flex flex-wrap items-center gap-1">
+                            <span className="font-semibold">{t('floatingAI.sources')}:</span>
+                            {visibleSources.map((source, index) => {
+                              const label = `${source.file_name || sourceTypeLabels[source.source_type || ''] || t('floatingAI.documentSource')}${source.page ? `, ${t('floatingAI.page', { page: source.page })}` : ''}`;
+                              return (
+                                <button
+                                  key={`${source.source_type || 'doc'}-${source.source_id ?? source.file_name ?? index}-${index}`}
+                                  type="button"
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-surface hover:bg-primary-subtle text-text-secondary hover:text-primary border border-subtle hover:border-primary/40 transition-colors cursor-pointer"
+                                  onClick={() => handleSourceNavigate(source)}
+                                  title={label}
+                                >
+                                  <i className="fa-solid fa-link text-[9px]" />
+                                  <span className="truncate max-w-[180px]">{label}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
                       {message.quickReplies && message.quickReplies.length > 0 && (
                         <div className="flex flex-col gap-1 mt-1">
                           {message.quickReplies.map((reply, replyIndex) => (
