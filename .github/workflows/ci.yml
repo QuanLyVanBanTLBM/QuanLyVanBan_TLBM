@@ -9,7 +9,6 @@ on:
   push:
     branches:
       - staging
-      - feat/ci-optimization-benchmark
   workflow_dispatch:
     inputs:
       reset_database:
