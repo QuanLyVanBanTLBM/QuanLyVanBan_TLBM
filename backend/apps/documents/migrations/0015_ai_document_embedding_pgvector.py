@@ -4,7 +4,7 @@ from django.db import migrations
 
 FORWARD_SQL = """
 CREATE EXTENSION IF NOT EXISTS vector;
-CREATE TABLE ai_document_embedding (
+CREATE TABLE IF NOT EXISTS ai_document_embedding (
     id UUID PRIMARY KEY,
     source_key VARCHAR(500) UNIQUE NOT NULL,
     source_type VARCHAR(20) NOT NULL,
@@ -16,8 +16,8 @@ CREATE TABLE ai_document_embedding (
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX ai_document_embedding_metadata_idx ON ai_document_embedding USING GIN (metadata);
-CREATE INDEX ai_document_embedding_hnsw_idx ON ai_document_embedding
+CREATE INDEX IF NOT EXISTS ai_document_embedding_metadata_idx ON ai_document_embedding USING GIN (metadata);
+CREATE INDEX IF NOT EXISTS ai_document_embedding_hnsw_idx ON ai_document_embedding
     USING hnsw ((embedding::halfvec(3072)) halfvec_cosine_ops);
 DO $$
 BEGIN
