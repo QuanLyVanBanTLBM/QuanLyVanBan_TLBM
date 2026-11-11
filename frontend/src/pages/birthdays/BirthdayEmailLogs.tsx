@@ -323,7 +323,17 @@ export default function BirthdayEmailLogs() {
                   {logs.map((log) => (
                     <tr key={log.id} className="align-top text-main hover:bg-surface-hover/60">
                       <td className="px-3 py-3 font-semibold">{log.employee_name}</td>
-                      <td className="px-3 py-3 text-secondary">{log.recipient_email || '—'}</td>
+                      <td className="px-3 py-3 text-secondary">
+                        {log.recipient_email || '—'}
+                        {(log.trang_thai === 'FAILED' || log.trang_thai === 'RETRY') && (
+                          <button
+                            type="button" onClick={() => void retryEmail(log)} disabled={retrying || !log.can_retry || !log.current_recipient}
+                            className="mt-1 block whitespace-nowrap font-semibold text-primary hover:underline disabled:opacity-50"
+                          >
+                            {t('birthdayPage.manualEmail.retry')}
+                          </button>
+                        )}
+                      </td>
                       <td className="px-3 py-3 text-secondary">{log.position || '—'}</td>
                       <td className="px-3 py-3 text-secondary">{log.department || '—'}</td>
                       <td className="whitespace-nowrap px-3 py-3">{log.sent_date}</td>
@@ -341,14 +351,6 @@ export default function BirthdayEmailLogs() {
                       </td>
                       <td className="max-w-sm px-3 py-3 text-secondary">
                         {log.delivery_uncertain ? t('birthdayPage.manualEmail.needsReview') : log.error_message || log.smtp_response_code || '—'}
-                        {log.can_retry && (
-                          <button
-                            type="button" onClick={() => void retryEmail(log)} disabled={retrying || !log.current_recipient}
-                            className="mt-1 block whitespace-nowrap font-semibold text-primary hover:underline disabled:opacity-50"
-                          >
-                            {t('birthdayPage.manualEmail.retry')}
-                          </button>
-                        )}
                       </td>
                     </tr>
                   ))}

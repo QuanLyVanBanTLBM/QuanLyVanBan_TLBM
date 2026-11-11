@@ -90,8 +90,10 @@ describe('Birthday email log actions', () => {
     const post = vi.spyOn(apiClient, 'post').mockResolvedValue({ log: { trang_thai: 'SUCCESS' } });
     render(<BirthdayEmailLogs />);
     expect(await screen.findByText('Kết quả gửi chưa xác định. Cần đối soát.')).toBeInTheDocument();
-    const retry = screen.getByRole('button', { name: 'Gửi lại' });
-    fireEvent.click(retry);
+    const retries = screen.getAllByRole('button', { name: 'Gửi lại' });
+    expect(retries[0]).toBeDisabled();
+    expect(retries[1]).toBeEnabled();
+    fireEvent.click(retries[1]);
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining('corrected@example.test'));
     expect(post).toHaveBeenCalledWith('/api/birthdays/logs/2/retry/', { recipient: 'corrected@example.test' });
     expect(await screen.findByText('Đã gửi email sinh nhật.')).toBeInTheDocument();
