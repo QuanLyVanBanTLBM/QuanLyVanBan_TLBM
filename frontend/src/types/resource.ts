@@ -18,6 +18,7 @@ export interface ResourceItem {
   file_dinh_kem: string;
   hien_thi: HienThiType;
   don_vi_id?: number;
+  don_vi_name?: string;
   nguoi_tao?: number;
   nguoi_tao_name?: string;
   attachments?: ResourceAttachment[];
@@ -103,6 +104,7 @@ export interface ResourceFilterState {
   hieu_luc?: HieuLucType;
   nam?: number;
   don_vi_id?: number;
+  don_vi_name?: string;
   search?: string;
   page?: number;
   page_size?: number;

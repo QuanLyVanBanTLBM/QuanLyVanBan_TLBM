@@ -112,7 +112,7 @@ export function t(
 
   if (replacements && typeof result === 'string') {
     Object.entries(replacements).forEach(([k, v]) => {
-      result = result.replace(new RegExp(`{${k}}`, 'g'), String(v));
+      result = result.replace(new RegExp(`\\{+${k}\\}+`, 'g'), String(v));
     });
   }
 
