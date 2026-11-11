@@ -1811,6 +1811,17 @@ def index_sql_document(record):
     return key
 
 
+def delete_sql_document_vectors(source_type: str, source_id: int):
+    """Remove vector chunks associated with an SQL document key from ChromaDB."""
+    setup_llamaindex()
+    key = f"{source_type}:{int(source_id)}"
+    collection = get_chroma_collection()
+    try:
+        collection.delete(where={"sql_doc_key": key})
+    except Exception as error:
+        logger.warning("Could not delete vectors for sql_doc_key=%s: %s", key, error)
+
+
 def build_answer_prompt(question: str, context: str, history, target_filename: str | None = None, language: str = "vi") -> str:
     is_en = str(language).lower().startswith("en")
     # Nếu đang chỉ định một tài liệu cụ thể, không đưa lịch sử cũ của các tài liệu khác vào để tránh rò rỉ ngữ cảnh
@@ -2238,12 +2249,11 @@ def ask_document(question: str, history=None, category: str | None = None, user=
             sql_docs=len(records),
             sql_attachments=sum(len(record.get("attachments", [])) for record in records),
         )
-        allowed_keys = set()
         with ai_stage("sql_index"):
-            for record in records:
-                key = index_sql_document(record)
-                if key:
-                    allowed_keys.add(key)
+            allowed_keys = {
+                f"{record['source_type']}:{record['source_id']}"
+                for record in records
+            }
         set_fields(sql_allowed=len(allowed_keys))
 
     from backend.services.business_knowledge import match_business_sources
