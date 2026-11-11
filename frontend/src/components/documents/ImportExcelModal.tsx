@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@components/common';
-import AlertModal from '@components/common/AlertModal';
+import AlertModal, { AlertVariant } from '@components/common/AlertModal';
 
 interface Props {
   open: boolean;
@@ -9,6 +9,21 @@ interface Props {
   onImported?: () => void;
   loai?: 'DEN' | 'DI' | 'MAT';
   phamVi?: 'NOI_BO' | 'HAN_CHE';
+}
+
+interface ImportErrorItem {
+  row?: number;
+  message: string;
+}
+
+/** Chuẩn hóa thông báo lỗi từng dòng, tránh lặp tiền tố "Dòng X:" nếu backend đã ghi sẵn. */
+function formatImportErrorMessage(err: ImportErrorItem): string {
+  const msg = (err.message || '').trim();
+  if (!msg) return err.row ? `Dòng ${err.row}: Dữ liệu không hợp lệ.` : 'Dữ liệu không hợp lệ.';
+  if (err.row && !/^Dòng\s+\d+\b/i.test(msg)) {
+    return `Dòng ${err.row}: ${msg}`;
+  }
+  return msg;
 }
 
 function getFileIcon(fileName: string) {
@@ -47,7 +62,11 @@ export default function ImportExcelModal({ open, onClose, onImported, loai = 'DE
   const [isDragging, setIsDragging] = useState(false);
   const [loading, setLoading] = useState(false);
   const [alertOpen, setAlertOpen] = useState(false);
+  const [alertTitle, setAlertTitle] = useState('Thông báo hệ thống');
   const [alertMsg, setAlertMsg] = useState('');
+  const [alertDetails, setAlertDetails] = useState<string[]>([]);
+  const [alertVariant, setAlertVariant] = useState<AlertVariant>('info');
+  const [importErrors, setImportErrors] = useState<string[]>([]);
   const [fileWarning, setFileWarning] = useState<string | null>(null);
 
   const [prevOpen, setPrevOpen] = useState(open);
@@ -57,7 +76,25 @@ export default function ImportExcelModal({ open, onClose, onImported, loai = 'DE
       setSelectedFile(null);
       setAttachmentFiles([]);
       setFileWarning(null);
+      setImportErrors([]);
+      setAlertOpen(false);
+      setAlertDetails([]);
     }
+  }
+
+  function showAlert(
+    message: string,
+    options?: {
+      title?: string;
+      details?: string[];
+      variant?: AlertVariant;
+    }
+  ) {
+    setAlertTitle(options?.title ?? 'Thông báo hệ thống');
+    setAlertMsg(message);
+    setAlertDetails(options?.details ?? []);
+    setAlertVariant(options?.variant ?? 'info');
+    setAlertOpen(true);
   }
 
   function checkFileMismatch(file: File): string | null {
@@ -115,12 +152,15 @@ export default function ImportExcelModal({ open, onClose, onImported, loai = 'DE
     const file = files[0];
     const isExcel = /\.(xlsx|xls)$/i.test(file.name);
     if (!isExcel) {
-      setAlertMsg('Chỉ chấp nhận file định dạng Excel (.xlsx hoặc .xls). Vui lòng chọn lại!');
-      setAlertOpen(true);
+      showAlert('Chỉ chấp nhận file định dạng Excel (.xlsx hoặc .xls). Vui lòng chọn lại!', {
+        title: 'Định dạng file không hợp lệ',
+        variant: 'warning',
+      });
       return;
     }
     const warning = checkFileMismatch(file);
     setFileWarning(warning);
+    setImportErrors([]);
     setSelectedFile(file);
   }
 
@@ -150,8 +190,10 @@ export default function ImportExcelModal({ open, onClose, onImported, loai = 'DE
     try {
       const token = localStorage.getItem('tlbm_access_token') || localStorage.getItem('tlbm_token') || '';
       if (import.meta.env.DEV && !token) {
-        setAlertMsg('Tính năng tải dữ liệu mẫu cần kết nối máy chủ Backend. Hiện tại hệ thống đang chạy ở chế độ offline.');
-        setAlertOpen(true);
+        showAlert(
+          'Tính năng tải dữ liệu mẫu cần kết nối máy chủ Backend. Hiện tại hệ thống đang chạy ở chế độ offline.',
+          { title: 'Chưa thể tải file mẫu', variant: 'warning' }
+        );
         return;
       }
       const res = await fetch(`/api/documents/template/?loai=${loai}&pham_vi=${phamVi}`, {
@@ -168,20 +210,39 @@ export default function ImportExcelModal({ open, onClose, onImported, loai = 'DE
       a.click();
       URL.revokeObjectURL(url);
     } catch (error: unknown) {
-      setAlertMsg(error instanceof Error ? error.message : String(error));
-      setAlertOpen(true);
+      showAlert(error instanceof Error ? error.message : String(error), {
+        title: 'Không thể tải file mẫu',
+        variant: 'error',
+      });
     }
+  }
+
+  function openErrorAlert(errors: string[]) {
+    showAlert(
+      errors.length > 1
+        ? `Chưa có văn bản nào được lưu. Vui lòng kiểm tra và sửa đủ ${errors.length} lỗi bên dưới rồi nhập lại:`
+        : 'Chưa có văn bản nào được lưu. Vui lòng kiểm tra lỗi bên dưới rồi nhập lại:',
+      {
+        title: errors.length > 1 ? `Không thể nhập file Excel (${errors.length} lỗi)` : 'Không thể nhập file Excel',
+        details: errors,
+        variant: 'error',
+      }
+    );
   }
 
   async function handleImport() {
     if (!selectedFile) {
-      setAlertMsg('Vui lòng chọn hoặc kéo thả file Excel trước khi bấm Nhập dữ liệu!');
-      setAlertOpen(true);
+      showAlert('Vui lòng chọn hoặc kéo thả file Excel trước khi bấm Nhập dữ liệu!', {
+        title: 'Chưa chọn file Excel',
+        variant: 'warning',
+      });
       return;
     }
     if (fileWarning) {
-      setAlertMsg(fileWarning);
-      setAlertOpen(true);
+      showAlert(fileWarning, {
+        title: 'Cảnh báo không đúng phân hệ',
+        variant: 'warning',
+      });
       return;
     }
     setLoading(true);
@@ -203,40 +264,45 @@ export default function ImportExcelModal({ open, onClose, onImported, loai = 'DE
       const data = await res.json() as {
         message?: string;
         error?: string;
-        errors?: Array<{ row?: number; message: string }>;
+        errors?: ImportErrorItem[];
       };
       if (res.ok) {
-        let msg = data.message || 'Nhập danh sách văn bản thành công!';
-        if (data.errors && data.errors.length > 0) {
-          const warnings = data.errors
-            .slice(0, 5)
-            .map((e) => (e.row ? `Dòng ${e.row}: ${e.message}` : e.message))
-            .join('\n');
-          msg = `${msg}\n\nLưu ý đính kèm:\n${warnings}`;
-        }
-        setAlertMsg(msg);
-        setAlertOpen(true);
+        const msg = data.message || 'Nhập danh sách văn bản thành công!';
+        const warnings = (data.errors ?? []).map(formatImportErrorMessage).filter(Boolean);
+        setImportErrors([]);
+        showAlert(msg, {
+          title: 'Nhập dữ liệu thành công',
+          details: warnings,
+          variant: warnings.length > 0 ? 'warning' : 'success',
+        });
         setSelectedFile(null);
         setAttachmentFiles([]);
         setFileWarning(null);
         onImported?.();
         onClose();
       } else {
-        let msg = data.error || data.message || 'Lỗi nhập dữ liệu từ máy chủ.';
-        if (data.errors && data.errors.length > 0 && !data.error) {
-          const detail = data.errors
-            .slice(0, 3)
-            .map((e) => (e.row ? `Dòng ${e.row}: ${e.message}` : e.message))
-            .join('\n');
-          msg = `${msg}\n\n${detail}`;
+        const detailList = Array.isArray(data.errors)
+          ? data.errors.map(formatImportErrorMessage).filter(Boolean)
+          : [];
+        const fallbackMsg = data.error || data.message || 'Lỗi nhập dữ liệu từ máy chủ.';
+
+        if (detailList.length > 0) {
+          setImportErrors(detailList);
+          openErrorAlert(detailList);
+        } else {
+          setImportErrors([fallbackMsg]);
+          showAlert(fallbackMsg, {
+            title: 'Không thể nhập file Excel',
+            variant: 'error',
+          });
         }
-        setAlertMsg(msg);
-        setAlertOpen(true);
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      setAlertMsg('Lỗi kết nối máy chủ: ' + message);
-      setAlertOpen(true);
+      showAlert('Lỗi kết nối máy chủ: ' + message, {
+        title: 'Lỗi kết nối',
+        variant: 'error',
+      });
     } finally {
       setLoading(false);
     }
@@ -245,20 +311,20 @@ export default function ImportExcelModal({ open, onClose, onImported, loai = 'DE
   if (!open) return null;
 
   const content = (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-2.5 sm:p-4">
       {/* Backdrop */}
       <div className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity" onClick={onClose} />
 
       {/* Modal Dialog */}
-      <div className="bg-surface border border-border-subtle rounded-2xl shadow-2xl z-10 w-[580px] max-w-full max-h-[92vh] flex flex-col p-6 animate-in fade-in zoom-in-95 duration-150">
+      <div className="bg-surface border border-border-subtle rounded-2xl shadow-2xl z-10 w-full max-w-[580px] max-h-[92vh] supports-[max-height:92dvh]:max-h-[92dvh] flex flex-col p-4 sm:p-6 animate-in fade-in zoom-in-95 duration-150">
         {/* Header */}
-        <div className="flex items-center justify-between pb-4 mb-4 border-b border-border-subtle shrink-0">
-          <div className="flex items-center gap-2.5">
-            <span className="w-9 h-9 rounded-xl bg-surface-elevated text-secondary flex items-center justify-center text-lg border border-border-subtle">
+        <div className="flex items-start sm:items-center justify-between gap-2 pb-3 sm:pb-4 mb-3 sm:mb-4 border-b border-border-subtle shrink-0 min-w-0">
+          <div className="flex items-start sm:items-center gap-2.5 min-w-0 flex-1">
+            <span className="w-9 h-9 rounded-xl bg-surface-elevated text-secondary flex items-center justify-center text-base sm:text-lg border border-border-subtle shrink-0">
               <i className="fa-solid fa-file-excel" />
             </span>
-            <div>
-              <h3 className="text-base font-bold text-main m-0 flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <h3 className="text-sm sm:text-base font-bold text-main m-0 flex flex-wrap items-center gap-1.5 sm:gap-2 leading-snug">
                 <span>
                   {loai === 'MAT'
                     ? 'Nhập Văn Bản Mật Từ File Excel'
@@ -272,17 +338,17 @@ export default function ImportExcelModal({ open, onClose, onImported, loai = 'DE
                 </span>
                 {loai !== 'MAT' && (
                   phamVi === 'HAN_CHE' ? (
-                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 inline-flex items-center gap-1">
+                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 inline-flex items-center gap-1 shrink-0">
                       <i className="fa-solid fa-shield-halved text-[10px]" /> Hạn chế
                     </span>
                   ) : (
-                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/30 inline-flex items-center gap-1">
+                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/30 inline-flex items-center gap-1 shrink-0">
                       <i className="fa-solid fa-users text-[10px]" /> Nội bộ
                     </span>
                   )
                 )}
               </h3>
-              <p className="text-xs text-muted m-0">
+              <p className="text-xs text-muted m-0 mt-0.5 break-words">
                 {loai === 'MAT'
                   ? 'Nạp hàng loạt văn bản mật vào cơ sở dữ liệu bảo mật'
                   : phamVi === 'HAN_CHE'
@@ -296,7 +362,7 @@ export default function ImportExcelModal({ open, onClose, onImported, loai = 'DE
           <button
             type="button"
             onClick={onClose}
-            className="w-8 h-8 rounded-lg text-muted hover:text-main hover:bg-hover flex items-center justify-center transition-fast"
+            className="w-8 h-8 rounded-lg text-muted hover:text-main hover:bg-hover flex items-center justify-center transition-fast shrink-0"
             title="Đóng"
           >
             <i className="fa-solid fa-xmark text-sm" />
@@ -304,16 +370,16 @@ export default function ImportExcelModal({ open, onClose, onImported, loai = 'DE
         </div>
 
         {/* Scrollable Body Content */}
-        <div className="flex-1 overflow-y-auto pr-1 space-y-4">
+        <div className="flex-1 min-h-0 overflow-y-auto pr-0.5 sm:pr-1 space-y-3 sm:space-y-4">
           {/* Step 1: Banner tải file mẫu */}
-          <div className={`border rounded-xl p-3 flex items-center justify-between gap-3 ${
+          <div className={`border rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 ${
             phamVi === 'HAN_CHE'
               ? 'bg-amber-500/10 border-amber-500/20'
               : 'bg-primary-subtle border-primary/20'
           }`}>
-            <div className="flex items-center gap-2.5">
-              <i className={`fa-solid ${phamVi === 'HAN_CHE' ? 'fa-shield-halved text-amber-600' : 'fa-circle-info text-primary'} text-sm shrink-0`} />
-              <span className="text-xs text-main">
+            <div className="flex items-start sm:items-center gap-2.5 min-w-0">
+              <i className={`fa-solid ${phamVi === 'HAN_CHE' ? 'fa-shield-halved text-amber-600' : 'fa-circle-info text-primary'} text-sm shrink-0 mt-0.5 sm:mt-0`} />
+              <span className="text-xs text-main leading-relaxed break-words">
                 {phamVi === 'HAN_CHE'
                   ? 'Tải biểu mẫu Excel hạn chế (đầy đủ cột Danh mục hồ sơ, Loại văn bản và gán quyền cán bộ nhận).'
                   : 'Chưa có file mẫu? Tải file mẫu chuẩn (đã bổ sung cột Danh mục hồ sơ & Loại văn bản).'}
@@ -325,16 +391,16 @@ export default function ImportExcelModal({ open, onClose, onImported, loai = 'DE
               size="sm"
               icon="fa-download"
               onClick={downloadTemplate}
-              className="shrink-0 text-xs font-medium"
+              className="w-full sm:w-auto shrink-0 text-xs font-medium"
             >
               Tải file mẫu
             </Button>
           </div>
 
           {/* Quy tắc nghiệp vụ kiểm tra dữ liệu */}
-          <div className="px-3 py-2 rounded-xl bg-surface-subtle border border-border-subtle text-[11px] text-muted flex items-start gap-2">
+          <div className="px-3 py-2 rounded-xl bg-surface-subtle border border-border-subtle text-[11px] text-muted flex items-start gap-2 min-w-0">
             <i className="fa-solid fa-shield-check text-primary mt-0.5 shrink-0" />
-            <span className="leading-relaxed">
+            <span className="leading-relaxed min-w-0 break-words">
               <strong className="text-main font-semibold">Quy tắc dữ liệu:</strong>{' '}
               {(phamVi === 'HAN_CHE' || loai === 'MAT') ? (
                 <>
@@ -372,7 +438,7 @@ export default function ImportExcelModal({ open, onClose, onImported, loai = 'DE
             onDragLeave={() => setIsDragging(false)}
             onDrop={handleDrop}
             onClick={() => fileRef.current?.click()}
-            className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-fast ${isDragging
+            className={`border-2 border-dashed rounded-xl p-4 sm:p-5 text-center cursor-pointer transition-fast ${isDragging
                 ? 'border-primary bg-primary-subtle/40 scale-[1.01]'
                 : selectedFile
                   ? fileWarning
@@ -390,30 +456,30 @@ export default function ImportExcelModal({ open, onClose, onImported, loai = 'DE
             />
 
             {selectedFile ? (
-              <div className="flex items-center justify-center gap-3">
-                <span className={`w-11 h-11 rounded-xl flex items-center justify-center text-xl shrink-0 ${
+              <div className="flex items-center gap-3 min-w-0 text-left">
+                <span className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center text-lg sm:text-xl shrink-0 ${
                   fileWarning ? 'bg-amber-500/10 text-amber-600' : 'bg-emerald-500/10 text-emerald-600'
                 }`}>
                   <i className={`fa-solid ${fileWarning ? 'fa-triangle-exclamation' : 'fa-file-excel'}`} />
                 </span>
-                <div className="text-left overflow-hidden min-w-0">
-                  <div className="text-sm font-semibold text-main truncate max-w-[320px]" title={selectedFile.name}>
+                <div className="overflow-hidden min-w-0 flex-1">
+                  <div className="text-xs sm:text-sm font-semibold text-main truncate" title={selectedFile.name}>
                     {selectedFile.name}
                   </div>
-                  <div className="text-xs text-muted">
+                  <div className="text-[11px] sm:text-xs text-muted">
                     Dung lượng: {(selectedFile.size / 1024).toFixed(1)} KB • Bấm để đổi file khác
                   </div>
                 </div>
               </div>
             ) : (
               <div className="flex flex-col items-center gap-1.5 py-1">
-                <span className="w-11 h-11 rounded-xl bg-surface-subtle text-muted flex items-center justify-center text-lg">
+                <span className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-surface-subtle text-muted flex items-center justify-center text-base sm:text-lg">
                   <i className="fa-solid fa-cloud-arrow-up" />
                 </span>
-                <div className="text-sm font-medium text-main">
+                <div className="text-xs sm:text-sm font-medium text-main">
                   Kéo thả file Excel vào đây, hoặc <span className="text-primary underline">chọn từ máy tính</span>
                 </div>
-                <div className="text-xs text-muted">
+                <div className="text-[11px] sm:text-xs text-muted">
                   Hỗ trợ định dạng: .xlsx, .xls (Tối đa 10MB)
                 </div>
               </div>
@@ -422,19 +488,57 @@ export default function ImportExcelModal({ open, onClose, onImported, loai = 'DE
 
           {/* Warning mismatch banner */}
           {fileWarning && (
-            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs flex items-start gap-2.5 animate-in fade-in duration-150">
+            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs flex items-start gap-2.5 min-w-0 animate-in fade-in duration-150">
               <i className="fa-solid fa-triangle-exclamation text-sm shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
-              <div className="flex-1">
+              <div className="flex-1 min-w-0 break-words">
                 <span className="font-semibold block mb-0.5">Cảnh báo không đúng phân hệ:</span>
                 <p className="m-0 leading-relaxed text-[11px]">{fileWarning}</p>
               </div>
             </div>
           )}
 
+          {/* Danh sách lỗi lưu giữ sau khi đóng popup để dễ đối chiếu và sửa file */}
+          {importErrors.length > 0 && !alertOpen && (
+            <div
+              role="region"
+              aria-label="Danh sách lỗi dữ liệu file Excel"
+              className="p-3 rounded-xl bg-danger-subtle border border-danger-border space-y-2 min-w-0 animate-in fade-in duration-150"
+            >
+              <div className="flex items-center justify-between gap-2 min-w-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <i className="fa-solid fa-circle-exclamation text-danger text-sm shrink-0" />
+                  <span className="text-xs font-semibold text-danger truncate">
+                    Phát hiện {importErrors.length} lỗi trong file (chưa lưu văn bản nào)
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => openErrorAlert(importErrors)}
+                  className="text-[11px] font-medium text-primary hover:underline shrink-0 cursor-pointer"
+                >
+                  Mở rộng
+                </button>
+              </div>
+              <ul className="space-y-1.5 max-h-40 sm:max-h-48 overflow-y-auto pr-1 m-0 p-0 list-none">
+                {importErrors.map((errMsg, idx) => (
+                  <li
+                    key={idx}
+                    className="text-[11px] sm:text-xs leading-relaxed text-main bg-surface border border-border-subtle rounded-lg px-2.5 py-1.5 flex items-start gap-2 min-w-0"
+                  >
+                    <span className="shrink-0 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded bg-danger-subtle text-danger font-semibold text-[10px] tabular-nums mt-0.5">
+                      {idx + 1}
+                    </span>
+                    <span className="min-w-0 flex-1 break-words whitespace-pre-line">{errMsg}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {/* Step 3: Vùng chọn tệp đính kèm đi kèm (Tùy chọn) */}
           <div className="pt-3 border-t border-border-subtle">
-            <div className="flex items-center justify-between mb-2">
-              <div>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+              <div className="min-w-0">
                 <label className="text-xs font-semibold text-main block">
                   Tệp đính kèm đi kèm <span className="text-muted font-normal">(Tùy chọn)</span>
                 </label>
@@ -448,7 +552,7 @@ export default function ImportExcelModal({ open, onClose, onImported, loai = 'DE
                 size="sm"
                 icon="fa-paperclip"
                 onClick={() => attachmentInputRef.current?.click()}
-                className="text-xs shrink-0"
+                className="w-full sm:w-auto text-xs shrink-0"
               >
                 Chọn tệp PDF, Word...
               </Button>
@@ -499,12 +603,13 @@ export default function ImportExcelModal({ open, onClose, onImported, loai = 'DE
         </div>
 
         {/* Footer Actions */}
-        <div className="flex justify-end items-center gap-2.5 mt-4 pt-3 border-t border-border-subtle shrink-0">
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-end items-stretch sm:items-center gap-2 sm:gap-2.5 mt-3 sm:mt-4 pt-3 border-t border-border-subtle shrink-0">
           <Button
             type="button"
             variant="secondary"
             size="sm"
             onClick={onClose}
+            className="w-full sm:w-auto"
           >
             Đóng
           </Button>
@@ -516,13 +621,21 @@ export default function ImportExcelModal({ open, onClose, onImported, loai = 'DE
             onClick={handleImport}
             disabled={!selectedFile || loading || Boolean(fileWarning)}
             isLoading={loading}
+            className="w-full sm:w-auto"
           >
             {loading ? 'Đang nạp dữ liệu...' : 'Bắt đầu Nhập'}
           </Button>
         </div>
       </div>
 
-      <AlertModal open={alertOpen} onClose={() => setAlertOpen(false)} message={alertMsg} />
+      <AlertModal
+        open={alertOpen}
+        onClose={() => setAlertOpen(false)}
+        title={alertTitle}
+        message={alertMsg}
+        details={alertDetails}
+        variant={alertVariant}
+      />
     </div>
   );
 
