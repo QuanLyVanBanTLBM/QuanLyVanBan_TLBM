@@ -199,6 +199,19 @@ if [ "$DB_MODE" = rebuild ] && [ -z "${ADMIN_PASSWORD//[[:space:]]/}" ]; then
   echo "Thieu ADMIN_PASSWORD trong $ENVF; tu choi rebuild truoc khi dung service hoac xoa DB."
   exit 1
 fi
+# The live PostgreSQL server must have pgvector's server files installed before
+# Django can CREATE EXTENSION. Check before touching nginx, stopping the service,
+# or taking a backup so a missing OS package cannot start a doomed deployment.
+pgapp() { PGPASSWORD="${DB_PASSWORD:-}" psql -h "${DB_HOST:-127.0.0.1}" -p "${DB_PORT:-5432}" -U "$DB_USER" -X -At -v ON_ERROR_STOP=1 "$@"; }
+VECTOR_VERSION=$(pgapp -d postgres -c "SELECT default_version FROM pg_available_extensions WHERE name='vector'")
+if [ -z "$VECTOR_VERSION" ]; then
+  echo "PostgreSQL 16 chua co pgvector server extension (vector.control). Cai postgresql-16-pgvector tu PGDG, sau do deploy lai; DB chua bi thay doi."
+  exit 1
+fi
+if [ "$(printf '%s\n' '0.7.0' "$VECTOR_VERSION" | sort -V | head -n 1)" != '0.7.0' ]; then
+  echo "pgvector $VECTOR_VERSION qua cu; can >= 0.7.0 de ho tro halfvec; DB chua bi thay doi."
+  exit 1
+fi
 cd "$REL/backend"
 $PY manage.py check
 $PY manage.py collectstatic --noinput | tail -1
@@ -249,8 +262,6 @@ else
   fi
 fi
 
-# psql bang role ung dung (thong tin tu backend.env)
-pgapp() { PGPASSWORD="${DB_PASSWORD:-}" psql -h "${DB_HOST:-127.0.0.1}" -p "${DB_PORT:-5432}" -U "$DB_USER" -X -At -v ON_ERROR_STOP=1 "$@"; }
 ICU_CREATE=(-T template0 -E UTF8 --locale-provider=icu --icu-locale=vi-VN --locale=C.UTF-8)
 
 step "5/9 Backup truoc khi doi"

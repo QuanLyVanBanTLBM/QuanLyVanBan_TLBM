@@ -137,6 +137,16 @@ Readiness lấy release ID một lần khi process nạp settings từ đường
 
 ### Điều kiện tiên quyết trên host
 
+PostgreSQL 16 chạy trực tiếp trên host cần có server files của pgvector trước khi deploy migration `documents.0015_ai_document_embedding_pgvector`. Cài package từ PostgreSQL APT Repository/PGDG (không dùng bản Ubuntu 24.04 `0.6.0`, vì index dùng `halfvec`, cần pgvector `>= 0.7.0`):
+
+```bash
+sudo apt-get update
+sudo apt-get install postgresql-16-pgvector
+sudo -u postgres psql -d postgres -Atc "SELECT default_version FROM pg_available_extensions WHERE name='vector'"
+```
+
+Lệnh kiểm tra phải trả về `0.7.0` trở lên. Cài package chỉ bổ sung extension files cho server; migration mới đăng ký extension và thêm bảng/index vào DB, không rebuild/reset DB. `deploy.sh` cũng kiểm tra prerequisite này trước khi dừng service hoặc tạo backup; nếu thiếu, deployment dừng và hướng dẫn cài package.
+
 - User deploy là user chạy script, có quyền ghi `/srv/qlvb` và `~/deploy`, có role PostgreSQL cùng tên (kết nối qua socket `/var/run/postgresql`, peer) để restore vào DB tạm, và `python3` (3.12) kèm `venv`.
 - Quyền `sudo` không mật khẩu đã dùng: `sudo -n -u postgres /usr/bin/createdb`, `sudo -n -u postgres /usr/bin/dropdb`, `sudo -n /usr/bin/systemctl stop qlvb-backend`, `sudo -n /usr/bin/systemctl restart qlvb-backend`, và ba lệnh nginx (đúng nguyên văn, không thêm quyền ghi khác vào `/etc/nginx`):
 
