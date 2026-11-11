@@ -229,6 +229,19 @@ describe('XemPdf', () => {
     expect(await screen.findByText(/Không hiển thị được tệp PDF|Không đọc được PDF/)).toBeInTheDocument();
   });
 
+  it('chỉ khung đã/chờ ký được truyền làm vùng che nét đứt; khung đang đặt thì không, và không còn viền nét đứt', async () => {
+    const khung = [
+      { id: 'a', trang: 1, x: 10, y: 20, w: 20, h: 8, nhan: 'A', kieu: 'cho' as const },
+      { id: 'b', trang: 1, x: 50, y: 20, w: 20, h: 8, nhan: 'B', kieu: 'dat' as const },
+    ];
+    pdf.veTrang.mockClear();
+    boc(<XemPdf duLieu={new ArrayBuffer(8)} khung={khung} />);
+    await waitFor(() => expect(pdf.veTrang).toHaveBeenCalled());
+    expect(pdf.veTrang.mock.calls.at(-1)?.[4]).toEqual([{ x: 10, y: 20, w: 20, h: 8 }]);
+    expect(screen.getByTestId('khung-a').className).not.toMatch(/border-dashed/);
+    expect(screen.getByTestId('khung-b').className).toMatch(/border-dashed/);
+  });
+
   it('không mở được PDF: hiện thông báo thay vì vùng trắng', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     pdf.moPdf.mockImplementationOnce(() => tuChoi(new Error('hong')));
