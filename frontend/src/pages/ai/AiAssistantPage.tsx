@@ -1911,7 +1911,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
               <div>
                 <div className="ai-brand-title">
                   <span>{t('aiAssistant.pageTitle')}</span>
-                  <span className="team-badge">LlamaIndex · ChromaDB</span>
+                  <span className="team-badge">LlamaIndex · PostgreSQL pgvector</span>
                 </div>
                 <div className="ai-brand-sub">
                   {t('aiAssistant.pageSubtitle')}

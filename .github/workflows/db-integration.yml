@@ -42,7 +42,7 @@ jobs:
     timeout-minutes: 40
     services:
       postgres:
-        image: postgres:16
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_DB: tlbm_ci
           POSTGRES_USER: postgres

@@ -51,7 +51,7 @@ def create_sample_document(target_dir: Path) -> Path:
         "Điều 3. Quản lý văn bản đến và đi\n"
         "Toàn bộ văn bản đến phải được số hóa qua hệ thống OCR, phân đoạn tri thức "
         "theo cơ chế Parent-Child Chunking đa cấp (đoạn sơ cấp 1500 ký tự và đoạn thứ cấp 300 ký tự). "
-        "Mỗi đoạn văn bản thứ cấp được lập chỉ mục vector tại ChromaDB nhằm phục vụ truy vấn chính xác.\n\n"
+        "Mỗi đoạn văn bản thứ cấp được lập chỉ mục vector tại PostgreSQL pgvector nhằm phục vụ truy vấn chính xác.\n\n"
         "Điều 4. Nguyên tắc trích dẫn Zero-Hallucination\n"
         "Trợ lý AI chỉ được phép phản hồi dựa trên ngữ cảnh được cung cấp từ tài liệu hợp lệ. "
         "Khi tìm thấy đoạn thứ cấp phù hợp, hệ thống tự động liên kết với đoạn sơ cấp cha để cung cấp "

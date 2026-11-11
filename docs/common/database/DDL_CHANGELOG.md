@@ -4,6 +4,7 @@ Mỗi PR sửa `release_DDL.sql` thêm một mục ở đầu danh sách (mới 
 
 | Ngày | PR | Đối tượng thay đổi | Lý do |
 |---|---|---|---|
+| 2026-11-11 | issue #719 | Thﾃｪm `ai_document_embedding` v盻嬖 vector(3072), metadata JSONB, GIN vﾃ HNSW halfvec cosine index; migration `documents.0015_ai_document_embedding_pgvector` | Chuy盻ハ vector RAG sang PostgreSQL pgvector vﾃ gi盻ｯ model embedding 3072 chi盻「u |
 | 2026-11-10 | #703 | Thay view `ai_vanbanden`/`ai_vanbandi` để lọc theo tài khoản, quyền xem, người nhận, đơn vị nhận và hiệu lực; thêm `ai_vanbanden_attachment`, `ai_vanbandi_attachment` chỉ trả tệp chưa xóa gắn với văn bản được phép; migration `documents/0014_ai_user_scoped_attachments` | Cho trợ lý AI truy vấn chéo văn bản và tệp đính kèm trong phạm vi quyền của người đăng nhập qua role chỉ đọc |
 | 2026-11-10 | issue #673 | Thêm bảng `birthdays_birthdayemailtemplate`, thêm cột nguồn gửi, bản chụp nội dung, người thao tác và cờ cần đối soát vào `birthdays_birthdayemaillog`. Migration `birthdays/0005_manual_email_delivery` | Lưu mẫu có thể tái sử dụng và bảo toàn nội dung khi thử gửi lại. Đánh dấu các kết quả cũ chưa xác minh để tránh gửi trùng |
 | 2026-11-07 | issue #646 | Seed `accounts_position`: thêm `Giám đốc Ban` và `Phụ trách Ban` ngay sau `Giám đốc` và `Phó Giám đốc` (25 -> 27 chức vụ); migration `accounts.0015_standard_ban_positions` sắp thứ tự và bổ sung hai chức vụ cho DB đã có dữ liệu | Bổ sung hai chức vụ quản lý ban vào danh mục CBNV; giữ `Phụ trách Ban` ngay sau `Giám đốc Ban` |

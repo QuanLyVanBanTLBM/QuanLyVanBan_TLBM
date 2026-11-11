@@ -306,7 +306,7 @@ def build_chatbox_ui_report():
 
     add_h2("3.2. Thanh Header Trên Cùng Của Khung Chat (Top Stage Header)")
     add_bullet("Nút mở sidebar (fa-bars) tự động xuất hiện khi sidebar đang ở trạng thái đóng.", "Nút mở nhanh: ")
-    add_bullet("Logo robot AI, tiêu đề 'Trợ Lý AI Tra Cứu Quy Trình & Văn Bản', huy hiệu công nghệ 'LlamaIndex · ChromaDB'.", "Bộ nhận diện AI: ")
+    add_bullet("Logo robot AI, tiêu đề 'Trợ Lý AI Tra Cứu Quy Trình & Văn Bản', huy hiệu công nghệ 'LlamaIndex · PostgreSQL pgvector'.", "Bộ nhận diện AI: ")
     add_bullet("Hộp chọn thả xuống (Select Box) cho phép người dùng chọn lọc câu trả lời theo đúng một lĩnh vực tài liệu chuyên môn.", "Bộ lọc chủ đề (Category): ")
     add_bullet("Hiển thị Provider đang hoạt động (GEMINI / OPENAI) và tên Model cụ thể (gemini-3.8-flash) kèm chấm xanh online.", "Live Model Badge: ")
     add_bullet("Nút 'Cài đặt AI' (bánh răng - mở AISettingsModal), Nút 'Xuất' (tải toàn bộ nội dung chat ra tệp Markdown .md), Nút 'Làm mới' (reset phiên).", "Cụm nút công cụ: ")
