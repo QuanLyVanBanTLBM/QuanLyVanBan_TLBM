@@ -15,8 +15,8 @@ class StagingHttpsConfigTests(unittest.TestCase):
         cls.deploy_script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
 
     def test_public_listener_requires_tls_and_certificate_files(self):
-        self.assertRegex(self.config, r"(?m)^\s*listen 8088 ssl;")
-        self.assertRegex(self.config, r"(?m)^\s*listen \[::\]:8088 ssl;")
+        self.assertRegex(self.config, r"(?m)^\s*listen 443 ssl;")
+        self.assertRegex(self.config, r"(?m)^\s*listen \[::\]:443 ssl;")
         self.assertIn("ssl_certificate /etc/qlvb/tls/fullchain.pem;", self.config)
         self.assertIn("ssl_certificate_key /etc/qlvb/tls/privkey.pem;", self.config)
         self.assertIn("ssl_protocols TLSv1.2 TLSv1.3;", self.config)
@@ -26,11 +26,11 @@ class StagingHttpsConfigTests(unittest.TestCase):
             self.config,
             re.compile(
                 r"error_page\s+497\s+=301\s+"
-                r"https://staging-quanlyvanban\.bhbl\.vn:8088\$request_uri;"
+                r"https://staging-quanlyvanban\.bhbl\.vn\$request_uri;"
             ),
         )
         self.assertNotIn(
-            "return 301 http://staging-quanlyvanban.bhbl.vn:8088$request_uri;",
+            "return 301 http://staging-quanlyvanban.bhbl.vn$request_uri;",
             self.config,
         )
 
@@ -45,7 +45,7 @@ class StagingHttpsConfigTests(unittest.TestCase):
             "DJANGO_SECURE_COOKIES",
         ):
             self.assertIn(f'require_true_env "{variable}"', self.deploy_script)
-        self.assertIn("https://staging-quanlyvanban.bhbl.vn:8088", self.deploy_script)
+        self.assertIn("https://staging-quanlyvanban.bhbl.vn", self.deploy_script)
         self.assertIn("-H 'X-Forwarded-Proto: https'", self.deploy_script)
 
     def test_admin_remains_available_only_through_local_ssh_tunnel(self):

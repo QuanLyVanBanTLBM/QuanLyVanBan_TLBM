@@ -168,18 +168,18 @@ if [ -z "${CASE_ROOT:-}" ] && [ -w "$ENVF" ]; then
     echo 'DJANGO_SECURE_COOKIES=true' >> "$ENVF"
   fi
   if grep -q '^[[:space:]]*SIGNING_FRONTEND_URL[[:space:]]*=' "$ENVF"; then
-    if ! grep -q '^[[:space:]]*SIGNING_FRONTEND_URL=.*https://staging-quanlyvanban\.bhbl\.vn:8088' "$ENVF"; then
-      sed -i 's#^[[:space:]]*SIGNING_FRONTEND_URL=.*#SIGNING_FRONTEND_URL=https://staging-quanlyvanban.bhbl.vn:8088#' "$ENVF"
+    if ! grep -q '^[[:space:]]*SIGNING_FRONTEND_URL=https://staging-quanlyvanban\.bhbl\.vn[[:space:]]*$' "$ENVF"; then
+      sed -i 's#^[[:space:]]*SIGNING_FRONTEND_URL=.*#SIGNING_FRONTEND_URL=https://staging-quanlyvanban.bhbl.vn#' "$ENVF"
     fi
   else
-    echo 'SIGNING_FRONTEND_URL=https://staging-quanlyvanban.bhbl.vn:8088' >> "$ENVF"
+    echo 'SIGNING_FRONTEND_URL=https://staging-quanlyvanban.bhbl.vn' >> "$ENVF"
   fi
   if grep -q '^[[:space:]]*DJANGO_CSRF_TRUSTED_ORIGINS[[:space:]]*=' "$ENVF"; then
-    if ! grep -q '^[[:space:]]*DJANGO_CSRF_TRUSTED_ORIGINS=.*https://staging-quanlyvanban\.bhbl\.vn:8088' "$ENVF"; then
-      sed -i 's#^[[:space:]]*DJANGO_CSRF_TRUSTED_ORIGINS=.*#DJANGO_CSRF_TRUSTED_ORIGINS=https://staging-quanlyvanban.bhbl.vn:8088,http://127.0.0.1:8088#' "$ENVF"
+    if ! grep -q '^[[:space:]]*DJANGO_CSRF_TRUSTED_ORIGINS=.*https://staging-quanlyvanban\.bhbl\.vn\($\|,\)' "$ENVF" || grep -q 'https://staging-quanlyvanban\.bhbl\.vn:8088' "$ENVF"; then
+      sed -i 's#^[[:space:]]*DJANGO_CSRF_TRUSTED_ORIGINS=.*#DJANGO_CSRF_TRUSTED_ORIGINS=https://staging-quanlyvanban.bhbl.vn,http://127.0.0.1:8089#' "$ENVF"
     fi
   else
-    echo 'DJANGO_CSRF_TRUSTED_ORIGINS=https://staging-quanlyvanban.bhbl.vn:8088,http://127.0.0.1:8088' >> "$ENVF"
+    echo 'DJANGO_CSRF_TRUSTED_ORIGINS=https://staging-quanlyvanban.bhbl.vn,http://127.0.0.1:8089' >> "$ENVF"
   fi
 fi
 set -a; . "$ENVF"; set +a
@@ -188,11 +188,11 @@ require_true_env "DJANGO_SECURE_SSL_REDIRECT"
 require_true_env "DJANGO_SECURE_COOKIES"
 TRUSTED_ORIGINS=${DJANGO_CSRF_TRUSTED_ORIGINS//[[:space:]]/}
 case ",$TRUSTED_ORIGINS," in
-  *,https://staging-quanlyvanban.bhbl.vn:8088,*) ;;
+  *,https://staging-quanlyvanban.bhbl.vn,*) ;;
   *) echo "DJANGO_CSRF_TRUSTED_ORIGINS phai co origin HTTPS staging trong $ENVF."; exit 1 ;;
 esac
 case ${SIGNING_FRONTEND_URL:-} in
-  https://staging-quanlyvanban.bhbl.vn:8088|https://staging-quanlyvanban.bhbl.vn:8088/) ;;
+  https://staging-quanlyvanban.bhbl.vn|https://staging-quanlyvanban.bhbl.vn/) ;;
   *) echo "SIGNING_FRONTEND_URL phai tro den origin HTTPS staging trong $ENVF."; exit 1 ;;
 esac
 if [ "$DB_MODE" = rebuild ] && [ -z "${ADMIN_PASSWORD//[[:space:]]/}" ]; then

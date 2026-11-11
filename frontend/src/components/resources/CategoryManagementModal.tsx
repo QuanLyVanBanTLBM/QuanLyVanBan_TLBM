@@ -639,11 +639,16 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
     setActiveMenuCatId(null);
   };
 
-  // Tính số thứ tự ưu tiên gợi ý lớn nhất + 1 để tự động điền ban đầu khi tạo mới Thư mục
+  // Tính số thứ tự ưu tiên gợi ý để tự động điền ban đầu khi tạo mới Thư mục:
+  // Lấy số nguyên dương nhỏ nhất chưa được sử dụng (lấp đầy khoảng trống khi các mục trước bị xóa)
   const nextOrderNumber = () => {
     if (categories.length === 0) return 1;
-    const maxOrder = Math.max(...categories.map((c) => c.stt_uu_tien || 0));
-    return maxOrder + 1;
+    const existingOrders = new Set(categories.map((c) => c.stt_uu_tien).filter(Boolean));
+    let next = 1;
+    while (existingOrders.has(next)) {
+      next++;
+    }
+    return next;
   };
 
   // Mở Popup Tạo mới hợp nhất
@@ -1168,12 +1173,13 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                         </td>
                       </tr>
                     ) : (
-                      paginatedCategories.map((cat) => {
+                      paginatedCategories.map((cat, index) => {
                         const childCount = types.filter((t) => t.dm_tai_lieu === cat.id).length;
+                        const rowNumber = (effectiveCatPage - 1) * catPageSize + index + 1;
                         return (
                           <tr key={cat.id} className="hover:bg-surface-elevated/70 transition-colors">
                             <td className="hidden sm:table-cell px-2 sm:px-3 py-3 text-center font-bold text-primary text-xs">
-                              {cat.stt_uu_tien}
+                              {rowNumber}
                             </td>
                             <td className="hidden sm:table-cell px-3 py-3 font-medium text-secondary">
                               {cat.ky_hieu || '-'}
@@ -1675,27 +1681,39 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                         <label className="text-xs font-semibold text-main block mb-1">
                           {t('resourceManagement.catCreatorLabel')}
                         </label>
-                        <input
-                          type="text"
-                          value={catForm.nguoi_lap_name || defaultAdminAuthor}
-                          readOnly
-                          className="w-full px-3 py-2 bg-surface-elevated/70 border border-border-subtle rounded-xl text-xs text-main font-semibold cursor-not-allowed select-none shadow-2xs"
-                          title={t('resourceManagement.adminCreatorTooltip')}
-                        />
+                        <div className="relative">
+                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-muted">
+                            <i className="fa-solid fa-lock text-xs" />
+                          </div>
+                          <input
+                            type="text"
+                            value={catForm.nguoi_lap_name || defaultAdminAuthor}
+                            readOnly
+                            disabled
+                            className="w-full pl-8 pr-3 py-2 bg-surface-elevated/70 border border-border-subtle rounded-xl text-xs text-main font-semibold cursor-not-allowed select-none shadow-2xs"
+                            title={t('resourceManagement.adminCreatorTooltip')}
+                          />
+                        </div>
                       </div>
 
-                      {/* Ngày lập */}
+                      {/* Ngày lập (Cố định theo ngày tạo) */}
                       <div className="sm:col-span-6">
-                        <label className="text-xs font-semibold text-main block mb-1">{t('resourceManagement.colCatDate')}</label>
-                        <input
-                          type="date"
-                          value={catForm.ngay_lap}
-                          onChange={(e) => {
-                            setCatForm({ ...catForm, ngay_lap: e.target.value });
-                            setIsUnifiedDirty(true);
-                          }}
-                          className="w-full px-3 py-2 bg-surface border border-border-subtle rounded-xl text-xs text-main focus:outline-hidden focus:border-primary shadow-2xs"
-                        />
+                        <label className="text-xs font-semibold text-main block mb-1">
+                          {t('resourceManagement.catDateFixedLabel')}
+                        </label>
+                        <div className="relative">
+                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-muted">
+                            <i className="fa-solid fa-lock text-xs" />
+                          </div>
+                          <input
+                            type="text"
+                            value={formatDate(catForm.ngay_lap)}
+                            readOnly
+                            disabled
+                            className="w-full pl-8 pr-3 py-2 bg-surface-elevated/70 border border-border-subtle rounded-xl text-xs text-main font-semibold cursor-not-allowed select-none shadow-2xs"
+                            title={t('resourceManagement.catDateFixedTooltip')}
+                          />
+                        </div>
                       </div>
 
                       {/* Ghi chú */}

@@ -1,3 +1,4 @@
+import atexit
 import datetime
 import shutil
 import tempfile
@@ -35,6 +36,7 @@ from work.models import (
 User = get_user_model()
 
 TEMP_STORAGE_ROOT = tempfile.mkdtemp(prefix="work-tests-")
+atexit.register(shutil.rmtree, TEMP_STORAGE_ROOT, ignore_errors=True)
 
 
 def pdf_file(name="bang-chung.pdf"):
@@ -48,10 +50,7 @@ def pdf_file(name="bang-chung.pdf"):
 class WorkTestBase(APITestCase):
     """Dữ liệu dùng chung: người tạo, chủ trì, chỉ đạo, tham gia, người ngoài, quản trị viên."""
 
-    @classmethod
-    def tearDownClass(cls):
-        super().tearDownClass()
-        shutil.rmtree(TEMP_STORAGE_ROOT, ignore_errors=True)
+
 
     def setUp(self):
         self.today = timezone.localdate()

@@ -151,12 +151,12 @@ DOCUMENTS_DATA = [
         "so_hieu": "08/2026/HD-CNTT",
         "sections": [
             {
-                "heading": "Chương I: KIẾN TRÚC TRỢ LÝ AI VÀ CHỈ MỤC CHROMA-DB",
+                "heading": "Chương I: KIẾN TRÚC TRỢ LÝ AI VÀ CHỈ MỤC PostgreSQL pgvector",
                 "content": (
                     "Điều 1. Kiến trúc mô hình ngôn ngữ và Vector Store\n"
                     "Trợ lý ảo AI TLBM vận hành trên nền tảng kỹ thuật RAG tiên tiến:\n"
                     "- LLM Model mặc định: OpenAI gpt-6-luna.\n"
-                    "- Vector Database: ChromaDB lưu trữ cục bộ tại đường dẫn `./data/chroma_db` bảo mật tuyệt đối không gửi dữ liệu ra cloud công cộng.\n"
+                    "- Vector Database: PostgreSQL pgvector lưu trữ cục bộ tại đường dẫn `./data/PostgreSQL vector store` bảo mật tuyệt đối không gửi dữ liệu ra cloud công cộng.\n"
                     "- Cơ chế phân đoạn tri thức Parent-Child Chunking:\n"
                     "  + Parent Chunk (Sơ cấp): Kích thước 1.500 ký tự (Overlap 300 ký tự) cung cấp ngữ cảnh đầy đủ cho câu trả lời.\n"
                     "  + Child Chunk (Thứ cấp): Kích thước 300 ký tự (Overlap 50 ký tự) dùng để tạo vector embedding tra cứu siêu tốc.\n\n"
@@ -170,7 +170,7 @@ DOCUMENTS_DATA = [
                 "heading": "Chương II: LỊCH SAO LƯU DỮ LIỆU VÀ QUẢN TRỊ AN TOÀN THÔNG TIN",
                 "content": (
                     "Điều 3. Chính sách sao lưu tự động (Backup Policy)\n"
-                    "- Sao lưu hàng ngày: Toàn bộ CSDL PostgreSQL và thư mục `./data/chroma_db` được tự động sao lưu lúc 01:00 sáng hàng ngày.\n"
+                    "- Sao lưu hàng ngày: Toàn bộ CSDL PostgreSQL và thư mục `./data/PostgreSQL vector store` được tự động sao lưu lúc 01:00 sáng hàng ngày.\n"
                     "- Sao lưu tuần: Đóng gói toàn bộ mã nguồn và dữ liệu vào lúc 02:00 sáng Chủ Nhật hàng tuần, lưu trữ tại máy chủ phụ ngoại vi.\n"
                     "- Thời hạn lưu trữ bản sao lưu: Tối thiểu 90 ngày trước khi xoay vòng dữ liệu.\n\n"
                     "Điều 4. Quyền quản trị phân hệ AI\n"
