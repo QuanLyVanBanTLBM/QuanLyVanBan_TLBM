@@ -9,6 +9,7 @@ on:
   push:
     branches:
       - staging
+      - feat/ci-optimization-benchmark
   workflow_dispatch:
     inputs:
       reset_database:
@@ -61,6 +62,7 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+          --tmpfs /var/lib/postgresql/data
     steps:
       - uses: actions/checkout@v4
 
@@ -87,6 +89,7 @@ jobs:
         env:
           PGPASSWORD: postgres
         run: |
+          psql -h localhost -p 5432 -U postgres -d tlbm_ci -v ON_ERROR_STOP=1 -c "ALTER SYSTEM SET fsync = 'off'; ALTER SYSTEM SET synchronous_commit = 'off'; ALTER SYSTEM SET full_page_writes = 'off'; SELECT pg_reload_conf();"
           psql -h localhost -p 5432 -U postgres -d tlbm_ci -v ON_ERROR_STOP=1 -c "CREATE ROLE qlvb_readonly LOGIN PASSWORD 'ci-readonly-only' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT"
 
       - name: One migration leaf per app (max_migration.txt)
@@ -158,11 +161,13 @@ jobs:
 
           class RequiredTestRunner(get_runner(settings)):
               def suite_result(self, suite, result, **kwargs):
+                  print(f"==> Test suite finished. Total tests run: {result.testsRun}, Failures: {len(result.failures)}, Errors: {len(result.errors)}, Skipped: {len(result.skipped)}")
                   if not result.testsRun or result.skipped:
                       raise SystemExit("Django test gate requires discovered tests with zero skips")
                   return super().suite_result(suite, result, **kwargs)
 
-          raise SystemExit(bool(RequiredTestRunner(interactive=False).run_tests([])))
+          settings.PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"] + list(settings.PASSWORD_HASHERS)
+          raise SystemExit(bool(RequiredTestRunner(interactive=False, parallel=4).run_tests([])))
           PY
 
   # Hạ tầng vận hành (deploy, nginx, build_db, backup/restore): chạy song song với `backend`.
@@ -201,6 +206,7 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+          --tmpfs /var/lib/postgresql/data
     steps:
       - uses: actions/checkout@v4
 
@@ -218,6 +224,7 @@ jobs:
         env:
           PGPASSWORD: postgres
         run: |
+          psql -h localhost -p 5432 -U postgres -d tlbm_ci -v ON_ERROR_STOP=1 -c "ALTER SYSTEM SET fsync = 'off'; ALTER SYSTEM SET synchronous_commit = 'off'; ALTER SYSTEM SET full_page_writes = 'off'; SELECT pg_reload_conf();"
           psql -h localhost -p 5432 -U postgres -d tlbm_ci -v ON_ERROR_STOP=1 -c "CREATE ROLE qlvb_readonly LOGIN PASSWORD 'ci-readonly-only' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT"
 
       # Runner ubuntu-24.04 thường đã có PostgreSQL 16 client; chỉ cài khi thiếu hoặc sai phiên bản.
