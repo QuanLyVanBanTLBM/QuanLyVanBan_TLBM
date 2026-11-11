@@ -16,7 +16,11 @@ logger = logging.getLogger(__name__)
 )
 def sync_sql_document_vectors(source_type: str, document_id: int):
     """Celery task to index or remove vectors for a given SQL document in ChromaDB."""
-    from backend.services.rag_service import delete_sql_document_vectors, index_sql_document
+    from backend.services.rag_service import (
+        delete_sql_document_vectors,
+        index_sql_document,
+        is_ai_configured,
+    )
     from backend.services.sql_document_source import get_document_record_for_index
 
     try:
@@ -26,9 +30,15 @@ def sync_sql_document_vectors(source_type: str, document_id: int):
             logger.info("Deleted vector for %s:%s (not visible or deleted)", source_type, document_id)
             return False
 
+        if not is_ai_configured():
+            logger.info("AI chưa được cấu hình (thiếu OPENAI_API_KEY), bỏ qua lập chỉ mục vector cho %s:%s", source_type, document_id)
+            return False
+
         key = index_sql_document(record)
         logger.info("Successfully indexed vector for %s (key=%s)", f"{source_type}:{document_id}", key)
         return key is not None
-    except Exception as error:
-        logger.exception("Failed to sync vector for %s:%s: %s", source_type, document_id, error)
+    except OperationalError:
         raise
+    except Exception as error:
+        logger.warning("Could not sync vector for %s:%s: %s", source_type, document_id, error)
+        return False

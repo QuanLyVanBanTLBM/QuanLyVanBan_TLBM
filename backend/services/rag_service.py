@@ -1811,12 +1811,27 @@ def index_sql_document(record):
     return key
 
 
+def is_ai_configured() -> bool:
+    """Check if OpenAI API key is configured without raising an exception."""
+    try:
+        from backend.services.ai_settings_service import get_active_ai_settings
+        active = get_active_ai_settings()
+    except Exception:
+        active = {}
+    openai_key = (
+        active.get("openai_api_key")
+        or getattr(config, "OPENAI_API_KEY", None)
+        or os.getenv("OPENAI_API_KEY")
+        or ""
+    ).strip()
+    return bool(openai_key)
+
+
 def delete_sql_document_vectors(source_type: str, source_id: int):
     """Remove vector chunks associated with an SQL document key from ChromaDB."""
-    setup_llamaindex()
     key = f"{source_type}:{int(source_id)}"
-    collection = get_chroma_collection()
     try:
+        collection = get_chroma_collection()
         collection.delete(where={"sql_doc_key": key})
     except Exception as error:
         logger.warning("Could not delete vectors for sql_doc_key=%s: %s", key, error)

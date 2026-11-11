@@ -14,7 +14,7 @@ from documents.signals import (
     handle_vanbandi_change,
 )
 from documents.tasks import sync_sql_document_vectors
-from backend.services.rag_service import ask_document, delete_sql_document_vectors
+from backend.services.rag_service import ask_document, delete_sql_document_vectors, is_ai_configured
 from backend.services.sql_document_source import (
     get_all_document_records_for_index,
     get_document_record_for_index,
@@ -22,6 +22,7 @@ from backend.services.sql_document_source import (
 
 
 class CeleryIndexingTaskTests(SimpleTestCase):
+    @patch("backend.services.rag_service.is_ai_configured", return_value=True)
     @patch("backend.services.rag_service.index_sql_document", return_value="vanbanden:1")
     @patch(
         "backend.services.sql_document_source.get_document_record_for_index",
@@ -32,11 +33,28 @@ class CeleryIndexingTaskTests(SimpleTestCase):
             "attachments": [],
         },
     )
-    def test_sync_sql_document_vectors_success(self, mock_get_rec, mock_index):
+    def test_sync_sql_document_vectors_success(self, mock_get_rec, mock_index, _mock_cfg):
         result = sync_sql_document_vectors("vanbanden", 1)
         mock_get_rec.assert_called_once_with("vanbanden", 1)
         mock_index.assert_called_once()
         self.assertTrue(result)
+
+    @patch("backend.services.rag_service.is_ai_configured", return_value=False)
+    @patch("backend.services.rag_service.index_sql_document")
+    @patch(
+        "backend.services.sql_document_source.get_document_record_for_index",
+        return_value={
+            "source_type": "vanbanden",
+            "source_id": 1,
+            "display_name": "VB Đến 1",
+            "attachments": [],
+        },
+    )
+    def test_sync_sql_document_vectors_skips_when_ai_not_configured(self, mock_get_rec, mock_index, _mock_cfg):
+        result = sync_sql_document_vectors("vanbanden", 1)
+        mock_get_rec.assert_called_once_with("vanbanden", 1)
+        mock_index.assert_not_called()
+        self.assertFalse(result)
 
     @patch("backend.services.rag_service.delete_sql_document_vectors")
     @patch("backend.services.sql_document_source.get_document_record_for_index", return_value=None)
@@ -47,12 +65,10 @@ class CeleryIndexingTaskTests(SimpleTestCase):
         self.assertFalse(result)
 
     @patch("backend.services.rag_service.get_chroma_collection")
-    @patch("backend.services.rag_service.setup_llamaindex")
-    def test_delete_sql_document_vectors(self, mock_setup, mock_get_collection):
+    def test_delete_sql_document_vectors(self, mock_get_collection):
         mock_col = MagicMock()
         mock_get_collection.return_value = mock_col
         delete_sql_document_vectors("vanbanden", 42)
-        mock_setup.assert_called_once()
         mock_col.delete.assert_called_once_with(where={"sql_doc_key": "vanbanden:42"})
 
 
