@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivePageId } from '@app-types/navigation';
-import { askQuestion, getAISettings } from '../../api';
+import { askQuestion, askQuestionStream, getAISettings } from '../../api';
 import { t as translate, useTranslation, type SupportedLanguage } from '@i18n/translate';
 
 interface FloatingAIBoxProps {
@@ -483,12 +483,48 @@ export default function FloatingAIBox({ onNavigate }: FloatingAIBoxProps) {
     setIsTyping(true);
 
     try {
-      const response = await askQuestion(text, history);
-      const answer = typeof response?.answer === 'string' && response.answer.trim()
-        ? response.answer
-        : t('floatingAI.emptyResponse');
-      const sources = Array.isArray(response?.sources) ? response.sources as Source[] : [];
-      setMessages((previous) => [...previous, createBoxMessage('ai', answer, { sources })]);
+      let accumulated = '';
+      let streamedSources: Source[] = [];
+      const aiMsgId = 'ai-' + Date.now();
+      let streamed = false;
+
+      try {
+        await askQuestionStream(text, {
+          history,
+          language: currentLang,
+          onSources: (sources) => {
+            streamedSources = sources as Source[];
+          },
+          onDelta: (_delta, full) => {
+            accumulated = full;
+            if (!streamed) {
+              streamed = true;
+              setIsTyping(false);
+              setMessages((prev) => [...prev, createBoxMessage('ai', accumulated, { id: aiMsgId, sources: streamedSources })]);
+            } else {
+              setMessages((prev) => prev.map((m) => (m.id === aiMsgId ? { ...m, text: accumulated, sources: streamedSources } : m)));
+            }
+          },
+          onDone: (data) => {
+            if (data?.answer) accumulated = data.answer;
+            if (Array.isArray(data?.sources)) streamedSources = data.sources as Source[];
+            if (streamed) {
+              setMessages((prev) => prev.map((m) => (m.id === aiMsgId ? { ...m, text: accumulated, sources: streamedSources } : m)));
+            }
+          },
+        });
+      } catch (streamErr) {
+        if (!streamed) {
+          const response = await askQuestion(text, history);
+          const answer = typeof response?.answer === 'string' && response.answer.trim()
+            ? response.answer
+            : t('floatingAI.emptyResponse');
+          const sources = Array.isArray(response?.sources) ? response.sources as Source[] : [];
+          setMessages((previous) => [...previous, createBoxMessage('ai', answer, { sources })]);
+        } else {
+          throw streamErr;
+        }
+      }
     } catch {
       setError('floatingAI.requestFailed');
     } finally {

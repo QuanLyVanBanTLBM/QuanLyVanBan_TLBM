@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import lru_cache
 from pathlib import Path
 
+import time
 import chromadb
 import pdfplumber
 from docx import Document as DocxDocument
@@ -1294,18 +1295,18 @@ def build_context_from_sources(sources):
 def public_sources(sources):
     return [
         {
-            "index": source["index"],
-            "file_name": source["file_name"],
-            "page": source["page"],
-            "section": source["section"],
-            "chunk_id": source["chunk_id"],
+            "index": source.get("index", idx),
+            "file_name": source.get("file_name") or source.get("filename") or "Tài liệu",
+            "page": source.get("page"),
+            "section": source.get("section"),
+            "chunk_id": source.get("chunk_id"),
             "category": source.get("category"),
-            "score": source["score"],
-            "preview": source["preview"],
+            "score": source.get("score"),
+            "preview": source.get("preview") or source.get("text", "")[:180],
             "source_type": source.get("source_type"),
             "source_id": source.get("source_id"),
         }
-        for source in sources
+        for idx, source in enumerate(sources, start=1)
     ]
 
 
@@ -2192,7 +2193,21 @@ def _authorized_fallback_nodes(chroma_res, allowed_keys):
     return nodes
 
 
-def ask_document(question: str, history=None, category: str | None = None, user=None, employee_id=None, filename: str | None = None, language: str = "vi"):
+def format_sse(event: str, data: dict | list | str) -> str:
+    """Format a Server-Sent Event frame with JSON payload."""
+    payload = json.dumps(data, ensure_ascii=False)
+    return f"event: {event}\ndata: {payload}\n\n"
+
+
+def prepare_ask_document(
+    question: str,
+    history=None,
+    category: str | None = None,
+    user=None,
+    employee_id=None,
+    filename: str | None = None,
+    language: str = "vi",
+):
     question = (question or "").strip()
     if is_inappropriate_message(question):
         inapp_ans = (
@@ -2201,7 +2216,7 @@ def ask_document(question: str, history=None, category: str | None = None, user=
             else "Mình sẵn sàng hỗ trợ về tài liệu và các chủ đề liên quan. Bạn vui lòng diễn đạt lịch sự hơn nhé."
         )
         set_fields(answer_mode="inappropriate")
-        return {
+        return "immediate", {
             "answer": inapp_ans,
             "sources": [],
         }
@@ -2220,7 +2235,7 @@ def ask_document(question: str, history=None, category: str | None = None, user=
     if not clean_filename and is_conversational_or_emotional(question):
         answer = generate_conversational_response(question, history, language=language)
         set_fields(answer_mode="conversational")
-        return {
+        return "immediate", {
             "answer": answer,
             "sources": [],
         }
@@ -2258,7 +2273,7 @@ def ask_document(question: str, history=None, category: str | None = None, user=
         # Nếu có tài liệu chỉ định, không trộn history của các tài liệu cũ vào query retrieval
         retrieval_query = build_retrieval_query(question, history if not clean_filename else None)
         retriever_kwargs = {"similarity_top_k": SIMILARITY_TOP_K}
-        
+
         target_filters = []
         if clean_filename:
             target_filters.append(
@@ -2376,9 +2391,34 @@ def ask_document(question: str, history=None, category: str | None = None, user=
     set_fields(sources=len(sources))
     if not sources or not context.strip():
         set_fields(answer_mode="no_context")
-        return {"answer": no_ans, "sources": []}
+        return "immediate", {"answer": no_ans, "sources": []}
 
     prompt = build_answer_prompt(question, context, history, clean_filename, language=language)
+    return "prompt", {
+        "prompt": prompt,
+        "sources": sources,
+        "clean_filename": clean_filename,
+        "no_ans": no_ans,
+    }
+
+
+def ask_document(question: str, history=None, category: str | None = None, user=None, employee_id=None, filename: str | None = None, language: str = "vi"):
+    prep_type, payload = prepare_ask_document(
+        question=question,
+        history=history,
+        category=category,
+        user=user,
+        employee_id=employee_id,
+        filename=filename,
+        language=language,
+    )
+    if prep_type == "immediate":
+        return payload
+
+    prompt = payload["prompt"]
+    sources = payload["sources"]
+    no_ans = payload["no_ans"]
+
     try:
         with ai_stage("llm"):
             answer = str(Settings.llm.complete(prompt)).strip()
@@ -2391,6 +2431,79 @@ def ask_document(question: str, history=None, category: str | None = None, user=
         return {"answer": no_ans, "sources": public_sources(sources)}
     set_fields(answer_mode="llm")
     return {"answer": answer, "sources": public_sources(sources)}
+
+
+def ask_document_stream(
+    question: str,
+    history=None,
+    category: str | None = None,
+    user=None,
+    employee_id=None,
+    filename: str | None = None,
+    language: str = "vi",
+):
+    """Generator yielding Server-Sent Events (SSE) for streaming AI chat responses."""
+    prep_type, payload = prepare_ask_document(
+        question=question,
+        history=history,
+        category=category,
+        user=user,
+        employee_id=employee_id,
+        filename=filename,
+        language=language,
+    )
+
+    if prep_type == "immediate":
+        answer = payload["answer"]
+        sources = payload.get("sources", [])
+        yield format_sse("sources", sources)
+        yield format_sse("delta", {"text": answer})
+        yield format_sse("done", {"answer": answer, "sources": sources})
+        return
+
+    prompt = payload["prompt"]
+    sources = payload["sources"]
+    pub_sources = public_sources(sources)
+    no_ans = payload["no_ans"]
+
+    yield format_sse("sources", pub_sources)
+
+    full_chunks = []
+    first_token_time = None
+    stream_start = time.perf_counter()
+
+    try:
+        with ai_stage("llm"):
+            response_gen = Settings.llm.stream_complete(prompt)
+            for chunk in response_gen:
+                if first_token_time is None:
+                    first_token_time = time.perf_counter()
+                    set_fields(ttft_ms=int((first_token_time - stream_start) * 1000))
+
+                delta = getattr(chunk, "delta", None)
+                if delta is None:
+                    delta = str(chunk)
+                if delta:
+                    full_chunks.append(delta)
+                    yield format_sse("delta", {"text": delta})
+    except Exception:
+        logger.exception("LLM generation stream failed")
+        raise
+
+    full_answer = "".join(full_chunks).strip()
+    if not full_answer:
+        full_answer = no_ans
+        yield format_sse("delta", {"text": full_answer})
+
+    if is_no_answer(full_answer):
+        set_fields(answer_mode="model_no_answer")
+    else:
+        set_fields(answer_mode="llm")
+
+    yield format_sse("done", {
+        "answer": full_answer,
+        "sources": pub_sources,
+    })
 
 
 def clear_vector_database():

@@ -7,6 +7,7 @@ import {
   uploadDocumentAsync,
   getUploadProgress,
   askQuestion,
+  askQuestionStream,
   getDocuments,
   getCategories,
   getDocumentFile,
@@ -1190,28 +1191,78 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
         .filter((message) => !message.id.startsWith('msg-welcome'))
         .slice(-8)
         .map((message) => ({ role: message.sender === 'user' ? 'user' : 'assistant', content: message.text }));
-      const response = await askQuestion(text, history, selectedCategory || null, targetDocument?.filename || null, currentLang);
-      const aiText = response.answer || response.text;
-      if (typeof aiText !== 'string' || !aiText.trim()) throw new Error('Empty AI response');
+      const aiMsgId = `ai-${sessionId}-${messageTimestamp}`;
+      let accumulatedText = '';
+      let streamedSources: any[] = [];
+      let messageStreamed = false;
 
-      const aiMsg: ChatMessage = {
-        id: `ai-${sessionId}-${messageTimestamp}`,
-        sender: 'ai',
-        text: aiText,
-        time: new Date().toLocaleTimeString(currentLang === 'en' ? 'en-US' : 'vi-VN', { hour: '2-digit', minute: '2-digit' }),
-        citations: response.sources || response.citations || [],
-        quickPrompts: [
-          t('aiAssistant.msg.followUpSummary'),
-          t('aiAssistant.msg.followUpFigures'),
-          t('aiAssistant.msg.followUpBasis'),
-        ],
+      const updateOrAddAiMessage = (answerText: string, sources: any[]) => {
+        const aiMsg: ChatMessage = {
+          id: aiMsgId,
+          sender: 'ai',
+          text: answerText,
+          time: new Date().toLocaleTimeString(currentLang === 'en' ? 'en-US' : 'vi-VN', { hour: '2-digit', minute: '2-digit' }),
+          citations: sources,
+          quickPrompts: [
+            t('aiAssistant.msg.followUpSummary'),
+            t('aiAssistant.msg.followUpFigures'),
+            t('aiAssistant.msg.followUpBasis'),
+          ],
+        };
+        const cleanAiText = answerText.replace(/[*#`_\n]/g, ' ').replace(/\s+/g, ' ').trim();
+        const updatedSnippet = cleanAiText.length > 65 ? `${cleanAiText.slice(0, 65)}...` : cleanAiText;
+
+        updateChatHistory((prev) => prev.map((session) => {
+          if (session.id !== sessionId) return session;
+          const exists = session.messages.some((m) => m.id === aiMsgId);
+          const messages = exists
+            ? session.messages.map((m) => (m.id === aiMsgId ? aiMsg : m))
+            : [...session.messages, aiMsg];
+          return {
+            ...session,
+            snippet: updatedSnippet || initialSnippet,
+            messages,
+          };
+        }));
       };
-      const cleanAiText = aiText.replace(/[*#`_\n]/g, ' ').replace(/\s+/g, ' ').trim();
-      const updatedSnippet = cleanAiText.length > 65 ? `${cleanAiText.slice(0, 65)}...` : cleanAiText;
 
-      updateChatHistory((prev) => prev.map((session) => session.id === sessionId
-        ? { ...session, snippet: updatedSnippet || initialSnippet, messages: [...newMessages, aiMsg] }
-        : session));
+      try {
+        await askQuestionStream(text, {
+          history,
+          category: selectedCategory || null,
+          filename: targetDocument?.filename || null,
+          language: currentLang,
+          onSources: (sources) => {
+            streamedSources = sources;
+            if (messageStreamed) {
+              updateOrAddAiMessage(accumulatedText, streamedSources);
+            }
+          },
+          onDelta: (_delta, full) => {
+            accumulatedText = full;
+            if (!messageStreamed) {
+              messageStreamed = true;
+              setIsGenerating(false);
+            }
+            updateOrAddAiMessage(accumulatedText, streamedSources);
+          },
+          onDone: (data) => {
+            if (data?.answer) accumulatedText = data.answer;
+            if (Array.isArray(data?.sources)) streamedSources = data.sources;
+            updateOrAddAiMessage(accumulatedText, streamedSources);
+          },
+        });
+      } catch (streamError: unknown) {
+        if (!messageStreamed) {
+          console.warn('Stream failed, falling back to askQuestion:', streamError);
+          const response = await askQuestion(text, history, selectedCategory || null, targetDocument?.filename || null, currentLang);
+          const aiText = response.answer || response.text;
+          if (typeof aiText !== 'string' || !aiText.trim()) throw new Error('Empty AI response');
+          updateOrAddAiMessage(aiText, response.sources || response.citations || []);
+        } else {
+          throw streamError;
+        }
+      }
     } catch (error: unknown) {
       console.warn('AI chat request failed:', error);
       setAiAlertMsg(t('aiAssistant.msg.aiUnavailable'));
