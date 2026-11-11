@@ -35,7 +35,8 @@ export default function TaiLieuPanel({ hoSo }: { hoSo: HoSoChiTiet }) {
     [JSON.stringify(await signingApi.bangChung(hoSo.id), null, 2)], { type: 'application/json' },
   ), tenBangChungTaiVe(hoSo.id));
 
-  const coChuKy = hoSo.luot_trinh.some((l) =>
+  // Lượt hiện hành là lượt đầu danh sách; endpoint bản đã ký chỉ xét lượt này
+  const coChuKy = (hoSo.luot_trinh.slice(0, 1)).some((l) =>
     (l.cap_ky || []).some((c) => c.nguoi_ky.some((n) => n.trang_thai === 'DA_KY' && n.chu_ky))
   );
 

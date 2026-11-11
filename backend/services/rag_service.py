@@ -1238,6 +1238,7 @@ def build_sources(nodes, question: str):
             "section": metadata.get("section"),
             "chunk_id": chunk_id,
             "category": metadata.get("category"),
+            "source_class": metadata.get("source_class"),
             "score": score,
             "preview": preview,
             "context": normalize_source_text(context),
@@ -1605,6 +1606,10 @@ def index_document(file_path: Path, category=None, source_metadata=None, extra_t
         collection.update(ids=inserted_ids, metadatas=promoted_metadata)
     except Exception:
         logger.exception("Indexed document replacement cleanup failed for %s", logical_filename)
+
+    if source_metadata.get("source_class") == "ai_knowledge_base":
+        from backend.services.faq_response_cache import clear_faq_cache
+        clear_faq_cache()
 
     return {
         "document_count": len(documents),
@@ -2194,6 +2199,7 @@ def _authorized_fallback_nodes(vector_result, allowed_keys):
 
 def ask_document(question: str, history=None, category: str | None = None, user=None, employee_id=None, filename: str | None = None, language: str = "vi"):
     question = (question or "").strip()
+    set_fields(cache_hit=False)
     if is_inappropriate_message(question):
         inapp_ans = (
             "I am ready to assist with documents and related topics. Please express yourself more politely."
@@ -2206,6 +2212,19 @@ def ask_document(question: str, history=None, category: str | None = None, user=
             "sources": [],
         }
 
+    from backend.services.faq_response_cache import (
+        get_cached_answer, request_is_cacheable, set_cached_answer, sources_are_shareable,
+    )
+    early_cacheable_request = request_is_cacheable(
+        question, history=history, filename=filename, category=category,
+        conversational=is_conversational_or_emotional(question),
+    )
+    if early_cacheable_request:
+        cached_result = get_cached_answer(question, language)
+        if cached_result is not None:
+            set_fields(cache_hit=True)
+            return cached_result
+
     # Chuẩn hóa và đối chiếu tên file nếu người dùng có chỉ định tài liệu
     clean_filename = resolve_target_filename(filename) if filename else None
     if not clean_filename:
@@ -2213,11 +2232,17 @@ def ask_document(question: str, history=None, category: str | None = None, user=
         if clean_filename:
             print(f"🎯 Tự động phát hiện tài liệu từ câu hỏi: {clean_filename}")
 
+    conversational = not clean_filename and is_conversational_or_emotional(question)
+    cacheable_request = request_is_cacheable(
+        question, history=history, filename=filename or clean_filename, category=category,
+        conversational=conversational,
+    )
+
     # Phân loại ý định: Nếu là tin nhắn chào hỏi, xã giao hoặc chia sẻ cảm xúc
     # CHÚ Ý: Nếu người dùng ĐÃ CHỈ ĐỊNH TÀI LIỆU (clean_filename có giá trị)
     # -> TUYỆT ĐỐI KHÔNG xếp vào trò chuyện xã giao! Mọi câu hỏi (kể cả câu ngắn 1-2 từ)
     #    đều được ưu tiên tra cứu trực tiếp vào tài liệu đó.
-    if not clean_filename and is_conversational_or_emotional(question):
+    if conversational:
         answer = generate_conversational_response(question, history, language=language)
         set_fields(answer_mode="conversational")
         return {
@@ -2391,18 +2416,25 @@ def ask_document(question: str, history=None, category: str | None = None, user=
         set_fields(answer_mode="model_no_answer")
         return {"answer": no_ans, "sources": public_sources(sources)}
     set_fields(answer_mode="llm")
-    return {"answer": answer, "sources": public_sources(sources)}
+    result = {"answer": answer, "sources": public_sources(sources)}
+    if cacheable_request and sources_are_shareable(sources):
+        set_cached_answer(question, language, answer, result["sources"], eligible_sources=sources)
+    return result
 
 
 def clear_vector_database():
     from django.db import connection
     with connection.cursor() as cursor:
         cursor.execute("TRUNCATE TABLE ai_document_embedding")
+    from backend.services.faq_response_cache import clear_faq_cache
+    clear_faq_cache()
 
 
 def delete_document_vectors(filename: str):
     safe_name = Path(filename).name
     get_vector_collection().delete(where={"file_name": safe_name})
+    from backend.services.faq_response_cache import clear_faq_cache
+    clear_faq_cache()
 
 
 def update_document_category_vectors(filename: str, category: str) -> int:
@@ -2421,5 +2453,7 @@ def update_document_category_vectors(filename: str, category: str) -> int:
         updated["category"] = clean_category
         metadatas.append(updated)
     collection.update(ids=ids, metadatas=metadatas)
+    from backend.services.faq_response_cache import clear_faq_cache
+    clear_faq_cache()
     logger.info("Updated PostgreSQL vector categories for %s (%s chunks)", safe_name, len(ids))
     return len(ids)

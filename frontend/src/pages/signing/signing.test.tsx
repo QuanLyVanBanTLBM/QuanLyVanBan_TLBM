@@ -36,7 +36,7 @@ vi.mock('@lib/signing/api', async () => {
   const actual = await vi.importActual<typeof import('@lib/signing/api')>('@lib/signing/api');
   return { ...actual, signingApi: {
     toi: vi.fn(), danhSach: vi.fn(), thongKe: vi.fn(), taiLieu: vi.fn(), quyTrinh: vi.fn(), donVi: vi.fn(), donViApDungTheoHop: vi.fn(), chiTietQuyTrinh: vi.fn(),
-    xoaQuyTrinh: vi.fn(), taoQuyTrinh: vi.fn(), suaQuyTrinh: vi.fn(), chucVu: vi.fn(), danhBaCanBo: vi.fn(), nguoiKyCoQuyen: vi.fn(), canBoTheoChucVu: vi.fn(), tepCuaLuot: vi.fn(), tepGoc: vi.fn(), tepHoanTat: vi.fn(), bangChung: vi.fn(),
+    xoaQuyTrinh: vi.fn(), taoQuyTrinh: vi.fn(), suaQuyTrinh: vi.fn(), chucVu: vi.fn(), danhBaCanBo: vi.fn(), nguoiKyCoQuyen: vi.fn(), canBoTheoChucVu: vi.fn(), tepCuaLuot: vi.fn(), tepGoc: vi.fn(), tepDaKy: vi.fn(), tepHoanTat: vi.fn(), bangChung: vi.fn(),
     thaoTacQuyTrinh: vi.fn(), ky: vi.fn(),
   } };
 });
@@ -987,10 +987,37 @@ describe('TaiLieuPanel', () => {
     // Tải tệp bằng thẻ <a download>: jsdom chưa hỗ trợ điều hướng, chặn click để không in cảnh báo "Not implemented"
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
     boc(<TaiLieuPanel hoSo={hoSo()} />);
-    expect(screen.getByText('Bản trình ký')).toBeInTheDocument();
+    expect(screen.getByText('Tệp gốc (chưa ký)')).toBeInTheDocument();
+    expect(screen.queryByText('Bản đã ký (tiến trình)')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Tải xuống/ }));
     await waitFor(() => expect(api.tepCuaLuot).toHaveBeenCalledWith(12, 5));
     await waitFor(() => expect(click).toHaveBeenCalledTimes(1));
     click.mockRestore();
+  });
+
+  it('đã có chữ ký ở lượt hiện hành: có mục bản đã ký tiến trình, tải qua tep-da-ky với tên rõ nghĩa; tệp gốc vẫn tải được', async () => {
+    api.tepDaKy.mockResolvedValue(new Blob(['%PDF-'], { type: 'application/pdf' }));
+    URL.createObjectURL = vi.fn(() => 'blob:tep');
+    URL.revokeObjectURL = vi.fn();
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    const co = hoSo();
+    co.luot_trinh[0].cap_ky = [{ nguoi_ky: [{ trang_thai: 'DA_KY', chu_ky: { id: 1 } }] }] as never;
+    boc(<TaiLieuPanel hoSo={co} />);
+    expect(screen.getByText('Tệp gốc (chưa ký)')).toBeInTheDocument();
+    const dongDaKy = screen.getByText('Bản đã ký (tiến trình)').closest('li') as HTMLElement;
+    fireEvent.click(within(dongDaKy).getByRole('button', { name: /Tải xuống/ }));
+    await waitFor(() => expect(api.tepDaKy).toHaveBeenCalledWith(12));
+    await waitFor(() => expect(click).toHaveBeenCalledTimes(1));
+    expect(click.mock.contexts[0]).toHaveProperty('download', 'ho-so-12-da-ky-tien-trinh.pdf');
+    click.mockRestore();
+  });
+
+  it('chữ ký chỉ có ở lượt cũ: không hiện mục bản đã ký tiến trình (endpoint chỉ xét lượt hiện hành)', () => {
+    const co = hoSo();
+    const luotCu = { ...co.luot_trinh[0], id: 4, so_luot: 1,
+      cap_ky: [{ nguoi_ky: [{ trang_thai: 'DA_KY', chu_ky: { id: 1 } }] }] } as never;
+    co.luot_trinh = [{ ...co.luot_trinh[0], id: 5, so_luot: 2 }, luotCu];
+    boc(<TaiLieuPanel hoSo={co} />);
+    expect(screen.queryByText('Bản đã ký (tiến trình)')).not.toBeInTheDocument();
   });
 });
