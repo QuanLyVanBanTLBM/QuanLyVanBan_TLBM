@@ -450,18 +450,18 @@ jobs:
                 fi
               done
               if grep -q "^[[:space:]]*SIGNING_FRONTEND_URL=" "$ENVF"; then
-                if ! grep -q "^[[:space:]]*SIGNING_FRONTEND_URL=.*https://staging-quanlyvanban\.bhbl\.vn:8088" "$ENVF"; then
-                  sed -i "s#^[[:space:]]*SIGNING_FRONTEND_URL=.*#SIGNING_FRONTEND_URL=https://staging-quanlyvanban.bhbl.vn:8088#" "$ENVF"
+                if ! grep -q "^[[:space:]]*SIGNING_FRONTEND_URL=https://staging-quanlyvanban\.bhbl\.vn[[:space:]]*$" "$ENVF"; then
+                  sed -i "s#^[[:space:]]*SIGNING_FRONTEND_URL=.*#SIGNING_FRONTEND_URL=https://staging-quanlyvanban.bhbl.vn#" "$ENVF"
                 fi
               else
-                echo "SIGNING_FRONTEND_URL=https://staging-quanlyvanban.bhbl.vn:8088" >> "$ENVF"
+                echo "SIGNING_FRONTEND_URL=https://staging-quanlyvanban.bhbl.vn" >> "$ENVF"
               fi
               if grep -q "^[[:space:]]*DJANGO_CSRF_TRUSTED_ORIGINS=" "$ENVF"; then
-                if ! grep -q "^[[:space:]]*DJANGO_CSRF_TRUSTED_ORIGINS=.*https://staging-quanlyvanban\.bhbl\.vn:8088" "$ENVF"; then
-                  sed -i "s#^[[:space:]]*DJANGO_CSRF_TRUSTED_ORIGINS=.*#DJANGO_CSRF_TRUSTED_ORIGINS=https://staging-quanlyvanban.bhbl.vn:8088,http://127.0.0.1:8088#" "$ENVF"
+                if ! grep -q "^[[:space:]]*DJANGO_CSRF_TRUSTED_ORIGINS=.*https://staging-quanlyvanban\.bhbl\.vn\($\|,\)" "$ENVF" || grep -q "https://staging-quanlyvanban\.bhbl\.vn:8088" "$ENVF"; then
+                  sed -i "s#^[[:space:]]*DJANGO_CSRF_TRUSTED_ORIGINS=.*#DJANGO_CSRF_TRUSTED_ORIGINS=https://staging-quanlyvanban.bhbl.vn,http://127.0.0.1:8089#" "$ENVF"
                 fi
               else
-                echo "DJANGO_CSRF_TRUSTED_ORIGINS=https://staging-quanlyvanban.bhbl.vn:8088,http://127.0.0.1:8088" >> "$ENVF"
+                echo "DJANGO_CSRF_TRUSTED_ORIGINS=https://staging-quanlyvanban.bhbl.vn,http://127.0.0.1:8089" >> "$ENVF"
               fi
             fi
           '
