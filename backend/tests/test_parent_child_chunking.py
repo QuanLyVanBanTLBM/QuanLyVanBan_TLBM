@@ -189,7 +189,7 @@ class RagRegressionTests(unittest.TestCase):
             "Bước 3: Bàn giao trực tiếp cho người nhận, có ký nhận sổ theo dõi."
         )
 
-        # Giả lập node trả về từ Vector Store (ChromaDB)
+        # Giả lập node trả về từ Vector Store (PostgreSQL pgvector)
         mock_node = MagicMock()
         mock_node.score = 0.88
         mock_node.text = child_text

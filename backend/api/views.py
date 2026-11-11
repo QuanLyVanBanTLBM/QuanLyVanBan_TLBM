@@ -98,7 +98,7 @@ def _run_index_job(job_id, staged_path, filename):
 
 
 def root(request):
-    return JsonResponse({"message": "Quản lý Văn bản TLBM API đang hoạt động", "stack": ["Django", "React", "LlamaIndex", "ChromaDB"]})
+    return JsonResponse({"message": "Quản lý Văn bản TLBM API đang hoạt động", "stack": ["Django", "React", "LlamaIndex", "PostgreSQL pgvector"]})
 
 
 @require_GET
