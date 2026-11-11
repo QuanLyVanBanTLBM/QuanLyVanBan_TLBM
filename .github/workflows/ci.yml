@@ -83,7 +83,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: backend
-        run: pip install -r requirements-linux-py312.lock
+        run: pip install -r requirements-linux-py312.lock tblib
 
       - name: Provision restricted role in disposable PostgreSQL service
         env:
