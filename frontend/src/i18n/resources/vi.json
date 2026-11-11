@@ -307,6 +307,8 @@
     "placeholderCatName": "VD: Tài liệu, Biểu mẫu chung",
     "catCreatorLabel": "Người lập thư mục",
     "adminCreatorTooltip": "Tên tài khoản Quản trị hệ thống (Admin) thực hiện tạo",
+    "catDateFixedLabel": "Ngày lập (Cố định theo ngày tạo)",
+    "catDateFixedTooltip": "Cố định theo ngày tạo của thư mục",
     "placeholderCatNotes": "Mô tả phạm vi áp dụng của thư mục...",
     "quickAddSubtypesLabel": "Thêm nhanh loại tài liệu con thuộc thư mục này (Tùy chọn)",
     "addedCount": "Đã thêm: {count}",

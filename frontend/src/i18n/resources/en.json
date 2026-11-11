@@ -307,6 +307,8 @@
     "placeholderCatName": "Ex: General Documents, Forms",
     "catCreatorLabel": "Folder Creator",
     "adminCreatorTooltip": "Account name of System Administrator (Admin) performing creation",
+    "catDateFixedLabel": "Created Date (Fixed to creation date)",
+    "catDateFixedTooltip": "Fixed to folder creation date",
     "placeholderCatNotes": "Describe applicable scope of the folder...",
     "quickAddSubtypesLabel": "Quickly add sub document types for this folder (Optional)",
     "addedCount": "Added: {count}",
