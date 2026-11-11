@@ -162,7 +162,7 @@ jobs:
                       raise SystemExit("Django test gate requires discovered tests with zero skips")
                   return super().suite_result(suite, result, **kwargs)
 
-          raise SystemExit(bool(RequiredTestRunner(interactive=False).run_tests([])))
+          raise SystemExit(bool(RequiredTestRunner(interactive=False, parallel=4).run_tests([])))
           PY
 
   # Hạ tầng vận hành (deploy, nginx, build_db, backup/restore): chạy song song với `backend`.
