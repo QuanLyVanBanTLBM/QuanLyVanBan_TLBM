@@ -257,6 +257,7 @@
   },
   "hanhDong": {
     "kyDuyet": "Sign and approve",
+    "kyBiKhoa": "Signing rights are locked by an administrator, so approval is unavailable. Returning for edits or rejecting is still possible.",
     "traLaiSua": "Return for changes",
     "khongDongY": "Reject request",
     "thuHoi": "Revoke my signature",
