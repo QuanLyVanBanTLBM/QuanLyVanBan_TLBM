@@ -16,6 +16,13 @@
   /* Font Families */
   --font-size-input: 1rem;
   --color-on-primary: #ffffff;
+
+  /* Vùng xem trước ảnh chữ ký: bộ màu giấy cố định, không đổi theo theme để nét mực tối luôn rõ. */
+  --color-signature-paper: #ffffff;
+  --color-signature-checker: #eef1f5;
+  --color-signature-border: #94a3b8;
+  --color-signature-mask: rgba(15, 23, 42, 0.5);
+  --color-signature-grid: rgba(59, 130, 246, 0.35);
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 
   /* Transitions */

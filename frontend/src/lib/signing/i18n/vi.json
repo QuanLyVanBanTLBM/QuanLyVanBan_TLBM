@@ -621,6 +621,10 @@
     "chinhSuaLai": "Chỉnh sửa lại",
     "dongYApDung": "Xác nhận áp dụng",
     "ketQuaCat": "Ảnh sau khi cắt",
-    "thuPhong": "Thu phóng"
+    "thuPhong": "Thu phóng",
+    "phongTo": "Phóng to",
+    "thuNho": "Thu nhỏ",
+    "datLaiViTri": "Đặt lại",
+    "huongDanCat": "Kéo để di chuyển, lăn chuột hoặc chụm hai ngón để thu phóng."
   }
 }
