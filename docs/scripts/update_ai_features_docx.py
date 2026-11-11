@@ -256,7 +256,7 @@ def build_ai_features_report():
     )
     add_bullet(
         "AI tiếp nhận câu hỏi bằng ngôn ngữ tự nhiên, phân tích ngữ nghĩa và trích xuất đồng thời từ 3 nguồn: "
-        "(1) CSDL PostgreSQL qua các view chỉ đọc an toàn, (2) Kho tri thức vector ChromaDB, và (3) Thẻ đặc tả nghiệp vụ 7 phân hệ.",
+        "(1) CSDL PostgreSQL qua các view chỉ đọc an toàn, (2) Kho tri thức vector PostgreSQL pgvector, và (3) Thẻ đặc tả nghiệp vụ 7 phân hệ.",
         "• Truy vấn đa nguồn đồng thời: "
     )
     add_bullet(
@@ -277,7 +277,7 @@ def build_ai_features_report():
         "Để khắc phục hạn chế cắt vụn văn bản làm mất mạch ý nghĩa, Module 8 áp dụng giải thuật phân đoạn phân cấp:"
     )
     add_bullet(
-        "Kích thước 300 ký tự (Overlap: 50 ký tự). Đoạn nhỏ này được chuyển thành vector nhúng vào ChromaDB "
+        "Kích thước 300 ký tự (Overlap: 50 ký tự). Đoạn nhỏ này được chuyển thành vector nhúng vào PostgreSQL pgvector "
         "để tối ưu hóa điểm tương đồng, giúp việc tìm kiếm từ khóa và ý định câu hỏi đạt độ chính xác cao nhất.",
         "• Phân đoạn con (Child Chunks): "
     )
@@ -460,7 +460,7 @@ def build_ai_features_report():
         
     p_rows = [
         ("LLM_MODEL", "gemini-3.8-flash", "Mô hình ngôn ngữ chính dùng suy luận và trả lời"),
-        ("EMBED_MODEL", "gemini-embedding-001", "Mô hình nhúng vector ngữ nghĩa vào ChromaDB"),
+        ("EMBED_MODEL", "gemini-embedding-001", "Mô hình nhúng vector ngữ nghĩa vào PostgreSQL pgvector"),
         ("VISION_MODEL", "gemini-3.8-flash", "Mô hình thị giác máy tính đọc văn bản scan & LaTeX"),
         ("PARENT_CHUNK_SIZE", "1500 ký tự (Overlap: 300)", "Kích thước đoạn văn bản cha nạp vào Prompt"),
         ("CHILD_CHUNK_SIZE", "300 ký tự (Overlap: 50)", "Kích thước đoạn văn bản con dùng tính vector"),

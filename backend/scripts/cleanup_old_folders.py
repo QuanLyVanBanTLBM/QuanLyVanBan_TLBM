@@ -1,5 +1,5 @@
 """
-Script dọn dẹp toàn bộ các thư mục cũ trong Kho tài liệu AI (doc_registry và ChromaDB),
+Script dọn dẹp toàn bộ các thư mục cũ trong Kho tài liệu AI (doc_registry và PostgreSQL pgvector),
 chỉ giữ lại duy nhất cấu trúc:
 Folder
   ├── folder1
@@ -21,12 +21,10 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8")
 
-import chromadb
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 DATA_DOCS_DIR = ROOT_DIR / "data" / "docs"
 REG_FILE = ROOT_DIR / "data" / "doc_registry.json"
-CHROMA_DIR = ROOT_DIR / "data" / "chroma"
 
 # Các tệp thuộc cấu trúc chuẩn cần giữ lại
 VALID_FILES = {
@@ -68,24 +66,6 @@ def cleanup():
 
     REG_FILE.write_text(json.dumps(new_registry, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"   ✅ Đã cập nhật doc_registry.json ({len(new_registry)} tệp thuộc Folder/folder1 & folder2)")
-
-    # 3. Dọn dẹp vectors thừa trong ChromaDB
-    try:
-        client = chromadb.PersistentClient(path=str(CHROMA_DIR))
-        collection = client.get_or_create_collection(name="tlbm_docs")
-        all_ids = collection.get()
-        if all_ids and "ids" in all_ids and len(all_ids["ids"]) > 0:
-            metas = all_ids.get("metadatas") or []
-            ids_to_delete = []
-            for id_, meta in zip(all_ids["ids"], metas):
-                fn = meta.get("file_name") or meta.get("filename") or ""
-                if fn and fn not in VALID_FILES:
-                    ids_to_delete.append(id_)
-            if ids_to_delete:
-                collection.delete(ids=ids_to_delete)
-                print(f"   🗑️ Đã xóa {len(ids_to_delete)} vector cũ khỏi ChromaDB")
-    except Exception as e:
-        print(f"   ⚠️ Lỗi dọn ChromaDB (bỏ qua): {e}")
 
     print("\n🎉 Hoàn thành dọn dẹp! Bây giờ kho tài liệu chỉ còn duy nhất 1 thư mục 'Folder' với các folder nhỏ 'folder1' và 'folder2'.")
 
