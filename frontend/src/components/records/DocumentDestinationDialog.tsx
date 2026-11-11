@@ -15,7 +15,7 @@ interface Props {
 
 export default function DocumentDestinationDialog({ category, dossierId, onClose, onNavigate }: Props) {
   const { t } = useTranslation();
-  const [direction, setDirection] = React.useState<DocumentDirection>('DEN');
+  const [direction, setDirection] = React.useState<DocumentDirection>('DI');
   const [restricted, setRestricted] = React.useState(false);
   const dialog = React.useRef<HTMLFormElement>(null);
   const [context, setContext] = React.useState<{
