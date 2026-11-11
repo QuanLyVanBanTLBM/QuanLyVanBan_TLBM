@@ -49,6 +49,9 @@ ai_chat request_id=<id> status=<http> error_stage=<stage> error_reason=<reason> 
 | `target` | Request có tài liệu chỉ định hay không |
 | `sources` | Số nguồn đưa vào ngữ cảnh |
 | `answer_mode` | `llm`, `no_context`, `model_no_answer`, `conversational`, `inappropriate` |
+| `cache_hit` | `True` when an exact shared FAQ answer was served from Redis; `False` otherwise |
+
+The FAQ cache excludes requests with history, a selected file/category, or conversational intent. It stores answers only when every cited source is shared AI knowledge or a static business note; SQL-backed official documents and restricted categories are never cached. Entries expire after 12 hours and the namespace is bounded to 1,000 entries, 10 KiB per entry, and 10 MiB of serialized payload. Updating or removing shared AI knowledge invalidates the namespace without flushing Redis or Celery keys.
 
 Không ghi vào log: câu hỏi, lịch sử hội thoại, tên tệp, tiêu đề tài liệu, nội dung tài liệu.
 

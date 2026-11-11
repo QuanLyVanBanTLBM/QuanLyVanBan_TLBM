@@ -181,6 +181,7 @@ cat > "$MOCK_BIN/psql" <<'MOCK'
 #!/usr/bin/env bash
 set -euo pipefail
 case "$*" in
+  *default_version*) if [ -n "${MOCK_PGVECTOR_VERSION-0.8.7}" ]; then echo "$MOCK_PGVECTOR_VERSION"; fi ;;
   *datlocprovider*) echo 'i|vi-VN' ;;
   *shobj_description*)
     hash=$(sha256sum "$RELEASE_DIR/docs/common/database/release_DDL.sql" | awk '{print $1}')
@@ -333,6 +334,7 @@ ENV
   export MOCK_PENDING=0 MOCK_PREFLIGHT_FAIL=0 MOCK_MIGRATION_FAIL=0 MOCK_NON_ATOMIC=0
   export MOCK_ADOPT_FAIL=0 MOCK_SEED_FAIL=0 MOCK_STOP_FAIL=0 MOCK_STOP_LEAVES_ACTIVE=0 MOCK_RESTART_FAIL=0 MOCK_RESTART_FAIL_ONCE=0 MOCK_SYSTEMCTL_QUERY_ERROR=0
   export MOCK_BACKUP_FAIL=0 MOCK_BACKUP_BAD_JSON=0 MOCK_EXTRACT_FAIL=0 MOCK_OMIT_BACKUP_TOOL=0
+  export MOCK_PGVECTOR_VERSION=0.8.7
   export MOCK_MARK_VERSION=3
   export MOCK_HEALTH_CODE=200 MOCK_HEALTH_BODY="{\"status\":\"ready\",\"release\":\"$NAME\"}"
 }
@@ -428,6 +430,24 @@ assert_event_absent stop
 assert_event_absent restart
 assert_event_absent backup
 pass "unexpected service-state query failure aborts without changing service state"
+
+make_case missing-pgvector-extension
+export MOCK_PGVECTOR_VERSION=
+expect_failure
+expect_state "$QLVB_BASE/releases/previous" active
+assert_event_absent stop
+assert_event_absent backup
+grep -q 'postgresql-16-pgvector' "$CASE_ROOT/output.log" || fail "missing pgvector prerequisite was not reported"
+pass "missing pgvector server package aborts before service stop or backup"
+
+make_case old-pgvector-extension
+export MOCK_PGVECTOR_VERSION=0.6.0
+expect_failure
+expect_state "$QLVB_BASE/releases/previous" active
+assert_event_absent stop
+assert_event_absent backup
+grep -q '>= 0.7.0' "$CASE_ROOT/output.log" || fail "old pgvector version requirement was not reported"
+pass "pgvector without halfvec support aborts before service stop or backup"
 
 make_case invalid-release-name
 if ( export PATH="$MOCK_BIN:$PATH"; cd "$CASE_ROOT"; bash "$DEPLOY" "_invalid" ); then
