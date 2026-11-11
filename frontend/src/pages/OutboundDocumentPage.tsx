@@ -181,7 +181,7 @@ export const OutboundDocumentPage: React.FC = () => {
   const fetchYears = useCallback(async () => {
     try {
       const res = await apiClient.get<number[]>('/api/documents/years/?loai=DI');
-      if (Array.isArray(res) && res.length > 0) {
+      if (Array.isArray(res)) {
         setAvailableYears(res);
       }
     } catch {
@@ -861,6 +861,7 @@ export const OutboundDocumentPage: React.FC = () => {
             icon="fa-rotate"
             onClick={() => {
               fetchDocuments();
+              fetchYears();
               fetchStats();
             }}
             isLoading={isLoading}

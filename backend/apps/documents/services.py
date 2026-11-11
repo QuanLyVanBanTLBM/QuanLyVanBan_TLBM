@@ -590,6 +590,7 @@ def log_document_view(document, user, doc_type=None):
 
 EXCEL_COLUMNS = {
     (LoaiVanBan.DEN, PhamVi.NOI_BO): [
+        ("nam", "Năm", 10),
         ("so_hieu", "Số, ký hiệu VB", 24),
         ("pham_vi", "Phạm vi", 16),
         ("ngay_den", "Ngày đến", 18),
@@ -609,6 +610,7 @@ EXCEL_COLUMNS = {
         ("ghi_chu", "Ghi chú", 36),
     ],
     (LoaiVanBan.DEN, PhamVi.HAN_CHE): [
+        ("nam", "Năm", 10),
         ("so_hieu", "Số, ký hiệu VB", 24),
         ("pham_vi", "Phạm vi", 16),
         ("ngay_den", "Ngày đến", 18),
@@ -628,6 +630,7 @@ EXCEL_COLUMNS = {
         ("ghi_chu", "Ghi chú", 36),
     ],
     (LoaiVanBan.DI, PhamVi.NOI_BO): [
+        ("nam", "Năm", 10),
         ("so_hieu", "Số, ký hiệu VB", 24),
         ("pham_vi", "Phạm vi", 16),
         ("ngay_ban_hanh", "Ngày ban hành", 18),
@@ -647,6 +650,7 @@ EXCEL_COLUMNS = {
         ("ghi_chu", "Ghi chú", 36),
     ],
     (LoaiVanBan.DI, PhamVi.HAN_CHE): [
+        ("nam", "Năm", 10),
         ("so_hieu", "Số, ký hiệu VB", 24),
         ("pham_vi", "Phạm vi", 16),
         ("ngay_ban_hanh", "Ngày ban hành", 18),
@@ -675,6 +679,7 @@ EXCEL_COLUMNS[LoaiVanBan.MAT] = EXCEL_COLUMNS[(LoaiVanBan.DEN, PhamVi.HAN_CHE)]
 
 SAMPLE_DATA = {
     (LoaiVanBan.DEN, PhamVi.NOI_BO): {
+        "nam": "2026",
         "so_hieu": "15/CV-BGDDT",
         "pham_vi": "Nội bộ",
         "ngay_den": "15/09/2026 08:30:00",
@@ -694,6 +699,7 @@ SAMPLE_DATA = {
         "ghi_chu": "(Dòng ví dụ mẫu — xóa trước khi import)",
     },
     (LoaiVanBan.DEN, PhamVi.HAN_CHE): {
+        "nam": "2026",
         "so_hieu": "04/TB-SGDDT",
         "pham_vi": "Hạn chế",
         "ngay_den": "18/09/2026 09:15:00",
@@ -713,6 +719,7 @@ SAMPLE_DATA = {
         "ghi_chu": "(Dòng ví dụ mẫu — xóa trước khi import)",
     },
     (LoaiVanBan.DI, PhamVi.NOI_BO): {
+        "nam": "2026",
         "so_hieu": "88/QD-SNN",
         "pham_vi": "Nội bộ",
         "ngay_ban_hanh": "20/09/2026",
@@ -732,6 +739,7 @@ SAMPLE_DATA = {
         "ghi_chu": "(Dòng ví dụ mẫu — xóa trước khi import)",
     },
     (LoaiVanBan.DI, PhamVi.HAN_CHE): {
+        "nam": "2026",
         "so_hieu": "12/BC-SNN-HC",
         "pham_vi": "Hạn chế",
         "ngay_ban_hanh": "22/09/2026",
@@ -759,6 +767,11 @@ SAMPLE_DATA[LoaiVanBan.DI] = SAMPLE_DATA[(LoaiVanBan.DI, PhamVi.NOI_BO)]
 SAMPLE_DATA[LoaiVanBan.MAT] = SAMPLE_DATA[(LoaiVanBan.DEN, PhamVi.HAN_CHE)]
 
 HEADER_COMMENTS = {
+    "nam": (
+        "• TÙY CHỌN: Năm tiếp nhận / phát hành của văn bản (số nguyên dương, VD: 1890, 2024).\n"
+        "• Để trống hệ thống sẽ tự động lấy năm hiện tại.\n"
+        "• Số đến / Số đi tự động được đánh số riêng theo từng năm."
+    ),
     "danh_muc_ho_so": (
         "• BẮT BUỘC: Nhập Số ký hiệu của Hồ sơ (VD: HS-HSHC-QT, 01/HCTH).\n"
         "• Hồ sơ phải có sẵn trong hệ thống (không tự tạo mới khi import).\n"
@@ -770,13 +783,13 @@ HEADER_COMMENTS = {
         "• Thiếu hoặc sai sẽ bị chặn toàn bộ file."
     ),
     "don_vi_nhan": (
-        "• BẮT BUỘC: Tên Đơn vị/Phòng ban nhận hoặc chủ trì xử lý.\n"
-        "• Đơn vị phải có sẵn trong cơ cấu tổ chức của hệ thống.\n"
+        "• BẮT BUỘC (Hạn chế): Tên Đơn vị/Phòng ban nhận hoặc chủ trì xử lý.\n"
+        "• Đơn vị phải có sẵn trong cơ cấu tổ chức; nhiều đơn vị ngăn cách bằng dấu phẩy (,) hoặc chấm phẩy (;).\n"
         "• Thiếu hoặc sai sẽ bị chặn toàn bộ file."
     ),
     "nguoi_nhan": (
-        "• BẮT BUỘC: Cán bộ nhận / xử lý (nhập Username hoặc Họ tên).\n"
-        "• Cán bộ phải thuộc biên chế hoặc kiêm nhiệm của Đơn vị nhận đã chỉ định.\n"
+        "• BẮT BUỘC (Hạn chế): Cán bộ nhận / xử lý (nhập Username hoặc Họ tên).\n"
+        "• Cán bộ phải thuộc biên chế hoặc kiêm nhiệm của ít nhất 1 Đơn vị nhận đã chỉ định; nhiều cán bộ ngăn cách bằng dấu , hoặc ;.\n"
         "• Thiếu hoặc không thuộc đơn vị sẽ bị chặn toàn bộ file."
     ),
     "nguoi_ky": (
@@ -811,11 +824,24 @@ HEADER_COMMENTS = {
     ),
 }
 
+_HEADER_COMMENTS_NOI_BO = {
+    "don_vi_nhan": (
+        "• TÙY CHỌN (Nội bộ): Có thể để trống nếu không chỉ định đơn vị cụ thể.\n"
+        "• Nếu nhập: tên Đơn vị/Phòng ban phải có sẵn trong hệ thống; nhiều đơn vị ngăn cách bằng dấu phẩy (,) hoặc chấm phẩy (;)."
+    ),
+    "nguoi_nhan": (
+        "• TÙY CHỌN (Nội bộ): Có thể để trống nếu không chỉ định cán bộ cụ thể.\n"
+        "• Nếu nhập cán bộ thì BẮT BUỘC phải nhập Đơn vị nhận trước và mỗi cán bộ phải thuộc biên chế hoặc kiêm nhiệm của ít nhất 1 đơn vị đã nhập.\n"
+        "• Nhiều cán bộ ngăn cách bằng dấu phẩy (,) hoặc chấm phẩy (;)."
+    ),
+}
+
 COMMENT_SIZES = {
+    "nam": (360, 95),
     "danh_muc_ho_so": (400, 95),
     "ten_loai_van_ban": (400, 95),
-    "don_vi_nhan": (380, 95),
-    "nguoi_nhan": (400, 95),
+    "don_vi_nhan": (420, 105),
+    "nguoi_nhan": (430, 115),
     "nguoi_ky": (300, 80),
     "chuc_vu": (300, 80),
     "tep_dinh_kem": (380, 110),
@@ -879,8 +905,12 @@ def generate_excel_template(loai: str, pham_vi: str = "NOI_BO") -> io.BytesIO:
         cell.fill = active_fill
         cell.alignment = _header_alignment
         cell.border = _thin_border
-        if field_name in HEADER_COMMENTS:
-            cmt = Comment(HEADER_COMMENTS[field_name], "Hệ thống QLVB")
+        if not is_han_che and field_name in _HEADER_COMMENTS_NOI_BO:
+            cmt_text = _HEADER_COMMENTS_NOI_BO[field_name]
+        else:
+            cmt_text = HEADER_COMMENTS.get(field_name)
+        if cmt_text:
+            cmt = Comment(cmt_text, "Hệ thống QLVB")
             w, h = COMMENT_SIZES.get(field_name, (400, 120))
             cmt.width = w
             cmt.height = h
@@ -909,6 +939,11 @@ def generate_excel_template(loai: str, pham_vi: str = "NOI_BO") -> io.BytesIO:
 # ═══════════════════════════════════════════════════════════════════
 
 HEADER_TO_FIELD = {
+    "Năm": "nam",
+    "Năm phát hành": "nam",
+    "Năm ban hành": "nam",
+    "Năm tiếp nhận": "nam",
+    "Nam": "nam",
     "Số, ký hiệu VB": "so_hieu",
     "Số hiệu": "so_hieu",
     "Số ký hiệu": "so_hieu",
@@ -965,6 +1000,66 @@ HEADER_TO_FIELD = {
     "File": "tep_dinh_kem",
     "Ghi chú": "ghi_chu",
 }
+
+
+def _parse_excel_year(raw_val):
+    """Phân tích cột Năm từ ô Excel. Trả về (year_int_or_None, is_valid)."""
+    if raw_val is None:
+        return None, True
+    if isinstance(raw_val, bool):
+        return None, False
+    if isinstance(raw_val, int):
+        return (raw_val, True) if 1 <= raw_val <= 32767 else (None, False)
+    if isinstance(raw_val, float):
+        if not math.isfinite(raw_val) or not raw_val.is_integer():
+            return None, False
+        year_val = int(raw_val)
+        return (year_val, True) if 1 <= year_val <= 32767 else (None, False)
+    text = str(raw_val).strip()
+    if not text:
+        return None, True
+    if not re.fullmatch(r"\d+", text):
+        return None, False
+    year_val = int(text)
+    return (year_val, True) if 1 <= year_val <= 32767 else (None, False)
+
+
+def _resolve_don_vi_list(raw_donvi, don_vi_model):
+    """Tách nhiều đơn vị phân tách bởi dấu ',', ';' hoặc xuống dòng và tra cứu trong CSDL."""
+    if not raw_donvi or not don_vi_model:
+        return [], []
+    text = str(raw_donvi).strip()
+    if not text:
+        return [], []
+
+    def _find_one(token: str):
+        tok = token.strip()
+        if not tok:
+            return None
+        if tok.isdigit():
+            dv = don_vi_model.objects.filter(pk=int(tok)).first()
+            if dv:
+                return dv
+        return don_vi_model.objects.filter(ten__iexact=tok).first()
+
+    if ";" not in text and "\n" not in text:
+        whole = _find_one(text)
+        if whole:
+            return [whole], []
+
+    tokens = [t.strip() for t in re.split(r"[,;\n]+", text) if t.strip()]
+    found = []
+    missing = []
+    seen_ids = set()
+    for tok in tokens:
+        dv = _find_one(tok)
+        if dv:
+            if dv.id not in seen_ids:
+                seen_ids.add(dv.id)
+                found.append(dv)
+        else:
+            missing.append(tok)
+    return found, missing
 
 
 def _parse_date(value):
@@ -1266,8 +1361,10 @@ def import_from_excel(file_obj, loai: str, user, pham_vi: str = None, attachment
     # 4. Pha 1: Pre-validation quét toàn bộ file (Fail-Fast: Chặn toàn bộ nếu có bất kỳ lỗi nào)
     date_field = "ngay_ban_hanh" if norm_loai == LoaiVanBan.DI else "ngay_den"
     date_label = "Ngày ban hành" if norm_loai == LoaiVanBan.DI else "Ngày đến"
+    is_restricted_target = (target_pv == PhamVi.HAN_CHE or norm_loai == LoaiVanBan.MAT)
 
-    # 14 trường BẮT BUỘC (chỉ 3 trường được để trống: ngay_het_hieu_luc, link_thay_the, ghi_chu)
+    # Văn bản Hạn chế/Mật: bắt buộc 14 trường (gồm cả Đơn vị nhận & Cán bộ xử lý).
+    # Văn bản Nội bộ: cho phép chọn hoặc để trống Đơn vị nhận & Cán bộ xử lý; cột Năm luôn tùy chọn.
     MANDATORY_FIELD_SPECS = [
         ("so_hieu", "Số, ký hiệu văn bản"),
         ("pham_vi", "Phạm vi"),
@@ -1277,8 +1374,14 @@ def import_from_excel(file_obj, loai: str, user, pham_vi: str = None, attachment
         ("danh_muc_ho_so", "Danh mục hồ sơ (Số ký hiệu)"),
         ("ten_loai_van_ban", "Loại văn bản"),
         ("noi_ban_hanh", "Nơi ban hành"),
-        ("don_vi_nhan", "Đơn vị nhận / chủ trì"),
-        ("nguoi_nhan", "Cán bộ nhận / xử lý"),
+        *(
+            [
+                ("don_vi_nhan", "Đơn vị nhận / chủ trì"),
+                ("nguoi_nhan", "Cán bộ nhận / xử lý"),
+            ]
+            if is_restricted_target
+            else []
+        ),
         ("nguoi_ky", "Người ký"),
         ("chuc_vu", "Chức vụ người ký"),
         ("hieu_luc", "Hiệu lực"),
@@ -1328,11 +1431,27 @@ def import_from_excel(file_obj, loai: str, user, pham_vi: str = None, attachment
             continue
 
         row_dict = {}
+        raw_nam_cell = None
+        has_nam_col = False
         for c_idx, f_name in col_map.items():
             val = r[c_idx] if c_idx < len(r) else None
+            if f_name == "nam":
+                has_nam_col = True
+                raw_nam_cell = val
             row_dict[f_name] = str(val).strip() if val is not None else ""
 
-        # 4.1. Kiểm tra 14 trường bắt buộc không được để trống
+        if has_nam_col:
+            _, nam_valid = _parse_excel_year(raw_nam_cell)
+            if not nam_valid:
+                pre_validation_errors.append({
+                    "row": r_idx,
+                    "message": (
+                        f"Dòng {r_idx}: Cột 'Năm' ('{raw_nam_cell}') không hợp lệ. "
+                        "Vui lòng nhập số nguyên dương (1 đến 32767) hoặc để trống để lấy năm hiện tại."
+                    ),
+                })
+
+        # 4.1. Kiểm tra các trường bắt buộc không được để trống
         missing_row_fields = []
         for f_code, f_label in MANDATORY_FIELD_SPECS:
             if f_code == date_field:
@@ -1367,34 +1486,40 @@ def import_from_excel(file_obj, loai: str, user, pham_vi: str = None, attachment
         # 4.3. Cặp 2: Phân cấp Tiếp nhận & Phân phối (Đơn vị nhận -> Cán bộ xử lý)
         r_donvi = row_dict.get("don_vi_nhan", "")
         r_nguoinhan = row_dict.get("nguoi_nhan", "")
-        dv_obj = None
-        if DonVi and r_donvi:
-            if r_donvi.isdigit():
-                dv_obj = DonVi.objects.filter(pk=int(r_donvi)).first()
-            if not dv_obj:
-                dv_obj = DonVi.objects.filter(ten__iexact=r_donvi).first()
-
-        if not dv_obj:
+        if not r_donvi and r_nguoinhan:
             pre_validation_errors.append({
                 "row": r_idx,
-                "message": f"Dòng {r_idx}: Đơn vị nhận '{r_donvi}' không tồn tại trong cơ cấu tổ chức hệ thống. Vui lòng kiểm tra lại hoặc liên hệ Quản trị viên."
+                "message": (
+                    f"Dòng {r_idx}: Đã nhập Cán bộ nhận / xử lý ('{r_nguoinhan}') nhưng để trống Đơn vị nhận. "
+                    "Vui lòng nhập Đơn vị nhận tương ứng hoặc để trống cả hai (đối với văn bản Nội bộ)."
+                ),
             })
-        elif Employee and r_nguoinhan:
-            raw_cbs = [u.strip() for u in re.split(r"[,;\n]+", str(r_nguoinhan)) if u.strip()]
-            for cb in raw_cbs:
-                emp = Employee.objects.filter(username__iexact=cb).first() or Employee.objects.filter(ho_ten__iexact=cb).first()
-                if not emp:
+        elif r_donvi:
+            found_dvs, missing_dvs = _resolve_don_vi_list(r_donvi, DonVi)
+            if not DonVi or missing_dvs:
+                for missing_dv in (missing_dvs or [r_donvi]):
                     pre_validation_errors.append({
                         "row": r_idx,
-                        "message": f"Dòng {r_idx}: Cán bộ xử lý '{cb}' không tồn tại trong hệ thống."
+                        "message": f"Dòng {r_idx}: Đơn vị nhận '{missing_dv}' không tồn tại trong cơ cấu tổ chức hệ thống. Vui lòng kiểm tra lại hoặc liên hệ Quản trị viên."
                     })
-                else:
-                    belongs = (emp.don_vi_id == dv_obj.id) or emp.assignments.filter(don_vi_id=dv_obj.id).exists()
-                    if not belongs:
+            elif Employee and r_nguoinhan:
+                dv_ids = [dv.id for dv in found_dvs]
+                dv_names = ", ".join(dv.ten for dv in found_dvs)
+                raw_cbs = [u.strip() for u in re.split(r"[,;\n]+", str(r_nguoinhan)) if u.strip()]
+                for cb in raw_cbs:
+                    emp = Employee.objects.filter(username__iexact=cb).first() or Employee.objects.filter(ho_ten__iexact=cb).first()
+                    if not emp:
                         pre_validation_errors.append({
                             "row": r_idx,
-                            "message": f"Dòng {r_idx}: Cán bộ '{cb}' không thuộc biên chế hoặc kiêm nhiệm của đơn vị '{dv_obj.ten}'."
+                            "message": f"Dòng {r_idx}: Cán bộ xử lý '{cb}' không tồn tại trong hệ thống."
                         })
+                    else:
+                        belongs = (emp.don_vi_id in dv_ids) or emp.assignments.filter(don_vi_id__in=dv_ids).exists()
+                        if not belongs:
+                            pre_validation_errors.append({
+                                "row": r_idx,
+                                "message": f"Dòng {r_idx}: Cán bộ '{cb}' không thuộc biên chế hoặc kiêm nhiệm của đơn vị '{dv_names}'."
+                            })
 
         # 4.4. Kiểm tra Văn bản thay thế (link_thay_the) nếu có nhập
         r_link = row_dict.get("link_thay_the", "")
@@ -1458,6 +1583,10 @@ def import_from_excel(file_obj, loai: str, user, pham_vi: str = None, attachment
                 doc_data[field_name] = _parse_date(value)
             elif field_name == "hieu_luc":
                 doc_data[field_name] = _parse_hieu_luc(value)
+            elif field_name == "nam":
+                parsed_nam, nam_ok = _parse_excel_year(value)
+                if nam_ok and parsed_nam is not None:
+                    doc_data["nam"] = parsed_nam
             else:
                 doc_data[field_name] = str(value).strip() if value else ""
 
@@ -1469,9 +1598,8 @@ def import_from_excel(file_obj, loai: str, user, pham_vi: str = None, attachment
             errors.append({"row": row_idx, "message": "Thiếu số, ký hiệu văn bản."})
             continue
 
-        nam = doc_data.get("nam", timezone.now().year)
-        if "nam" not in doc_data:
-            doc_data["nam"] = nam
+        nam = doc_data.get("nam") or timezone.localtime(timezone.now()).year
+        doc_data["nam"] = nam
 
         if loai_str in ("MAT", "VANBANMAT"):
             doc_data["pham_vi"] = PhamVi.HAN_CHE
@@ -1549,19 +1677,14 @@ def import_from_excel(file_obj, loai: str, user, pham_vi: str = None, attachment
             if is_restricted and user and user.is_authenticated and hasattr(created_doc, "nguoi_nhan"):
                 created_doc.nguoi_nhan.add(user)
 
-            # 3. Liên kết Đơn vị nhận (don_vi_nhan) nếu có
+            # 3. Liên kết Đơn vị nhận (don_vi_nhan) nếu có (hỗ trợ nhiều đơn vị phân tách ',', ';' hoặc xuống dòng)
             raw_don_vi = doc_data.get("don_vi_nhan")
             if raw_don_vi and DonVi:
                 try:
                     from .models import VanBanDenDonViNhan, VanBanDiDonViNhan
 
-                    dv_val = str(raw_don_vi).strip()
-                    dv = None
-                    if dv_val.isdigit():
-                        dv = DonVi.objects.filter(pk=int(dv_val)).first()
-                    if not dv:
-                        dv = DonVi.objects.filter(ten__iexact=dv_val).first()
-                    if dv:
+                    dvs, _ = _resolve_don_vi_list(raw_don_vi, DonVi)
+                    for dv in dvs:
                         if loai_str in ("DEN", "VANBANDEN", "MAT", "VANBANMAT"):
                             VanBanDenDonViNhan.objects.get_or_create(vanbanden=created_doc, donvi_id=dv.id)
                         elif loai_str in ("DI", "VANBANDI"):
@@ -1711,7 +1834,7 @@ def import_from_excel(file_obj, loai: str, user, pham_vi: str = None, attachment
 # ═══════════════════════════════════════════════════════════════════
 
 def export_to_excel(queryset, loai: str, pham_vi: str = None) -> io.BytesIO:
-    """Xuất danh sách văn bản ra file Excel theo bộ lọc hiện tại (chuẩn 17 cột đồng bộ)."""
+    """Xuất danh sách văn bản ra file Excel theo bộ lọc hiện tại (chuẩn 18 cột đồng bộ)."""
     loai_str = str(loai).strip().upper()
     is_han_che_only = (str(pham_vi).strip().upper() == "HAN_CHE" or loai_str in ("MAT", "VANBANMAT"))
 
@@ -1776,7 +1899,7 @@ def export_to_excel(queryset, loai: str, pham_vi: str = None) -> io.BytesIO:
     align_left_wrap = Alignment(horizontal="left", vertical="center", wrap_text=True)
     align_left = Alignment(horizontal="left", vertical="center", wrap_text=False)
 
-    center_fields = {"so_hieu", "pham_vi", "ngay_den", "ngay_ban_hanh", "ngay_van_ban", "hieu_luc", "ngay_het_hieu_luc", "link_thay_the"}
+    center_fields = {"nam", "so_hieu", "pham_vi", "ngay_den", "ngay_ban_hanh", "ngay_van_ban", "hieu_luc", "ngay_het_hieu_luc", "link_thay_the"}
     wrap_fields = {"trich_yeu", "noi_ban_hanh", "ghi_chu", "tep_dinh_kem", "don_vi_nhan", "nguoi_nhan"}
 
     for row_idx, doc in enumerate(queryset, start=2):

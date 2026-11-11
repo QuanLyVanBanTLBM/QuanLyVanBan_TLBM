@@ -75,4 +75,20 @@ describe('ImportExcelModal - Khóa nghiệp vụ phân hệ và phạm vi', () =
     const submitBtn = screen.getByRole('button', { name: /Bắt đầu Nhập/i });
     expect(submitBtn).not.toBeDisabled();
   });
+
+  it('hiển thị quy tắc dữ liệu phân biệt VB Nội bộ (cho phép để trống đơn vị/cán bộ nhận & Năm) và VB Hạn chế (bắt buộc)', () => {
+    const { rerender } = render(
+      <ImportExcelModal open={true} onClose={vi.fn()} loai="DEN" phamVi="NOI_BO" />
+    );
+
+    const noticeNoibo = screen.getByText(/Quy tắc dữ liệu:/i).parentElement?.textContent || '';
+    expect(noticeNoibo).toMatch(/Năm.*Đơn vị nhận.*Cán bộ xử lý.*được phép để trống/i);
+    expect(noticeNoibo).toMatch(/nếu nhập Cán bộ xử lý thì phải nhập Đơn vị nhận/i);
+    expect(noticeNoibo).toMatch(/, hoặc ;/);
+
+    rerender(<ImportExcelModal open={true} onClose={vi.fn()} loai="DI" phamVi="HAN_CHE" />);
+    const noticeHanChe = screen.getByText(/Quy tắc dữ liệu:/i).parentElement?.textContent || '';
+    expect(noticeHanChe).toMatch(/Đơn vị nhận.*Cán bộ xử lý.*là bắt buộc/i);
+    expect(noticeHanChe).toMatch(/bỏ trống Năm sẽ tự lấy năm hiện tại/i);
+  });
 });

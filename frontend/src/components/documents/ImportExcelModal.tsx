@@ -335,7 +335,31 @@ export default function ImportExcelModal({ open, onClose, onImported, loai = 'DE
           <div className="px-3 py-2 rounded-xl bg-surface-subtle border border-border-subtle text-[11px] text-muted flex items-start gap-2">
             <i className="fa-solid fa-shield-check text-primary mt-0.5 shrink-0" />
             <span className="leading-relaxed">
-              <strong className="text-main font-semibold">Quy tắc dữ liệu:</strong> Cột <span className="font-semibold text-main">Danh mục hồ sơ</span> (Số ký hiệu), <span className="font-semibold text-main">Loại văn bản</span>, <span className="font-semibold text-main">Đơn vị nhận</span>, <span className="font-semibold text-main">Cán bộ xử lý</span> và <span className="font-semibold text-main">Tệp đính kèm</span> là bắt buộc và phải có sẵn trong hệ thống. Chỉ 3 cột (<span className="text-main font-medium">Ngày hết hiệu lực</span>, <span className="text-main font-medium">Link thay thế</span>, <span className="text-main font-medium">Ghi chú</span>) được phép để trống.
+              <strong className="text-main font-semibold">Quy tắc dữ liệu:</strong>{' '}
+              {(phamVi === 'HAN_CHE' || loai === 'MAT') ? (
+                <>
+                  Cột <span className="font-semibold text-main">Danh mục hồ sơ</span> (Số ký hiệu),{' '}
+                  <span className="font-semibold text-main">Loại văn bản</span>,{' '}
+                  <span className="font-semibold text-main">Đơn vị nhận</span>,{' '}
+                  <span className="font-semibold text-main">Cán bộ xử lý</span> và{' '}
+                  <span className="font-semibold text-main">Tệp đính kèm</span> là bắt buộc (nhiều đơn vị/cán bộ ngăn cách bằng dấu <span className="font-medium text-main">,</span> hoặc <span className="font-medium text-main">;</span>). Cột <span className="text-main font-medium">Năm</span>,{' '}
+                  <span className="text-main font-medium">Ngày hết hiệu lực</span>,{' '}
+                  <span className="text-main font-medium">Link thay thế</span>,{' '}
+                  <span className="text-main font-medium">Ghi chú</span> được phép để trống (bỏ trống <span className="text-main font-medium">Năm</span> sẽ tự lấy năm hiện tại).
+                </>
+              ) : (
+                <>
+                  Cột <span className="font-semibold text-main">Danh mục hồ sơ</span> (Số ký hiệu),{' '}
+                  <span className="font-semibold text-main">Loại văn bản</span> và{' '}
+                  <span className="font-semibold text-main">Tệp đính kèm</span> là bắt buộc. Cột{' '}
+                  <span className="text-main font-medium">Năm</span>,{' '}
+                  <span className="text-main font-medium">Đơn vị nhận</span>,{' '}
+                  <span className="text-main font-medium">Cán bộ xử lý</span> (nhiều giá trị ngăn cách bằng <span className="font-medium text-main">,</span> hoặc <span className="font-medium text-main">;</span>; nếu nhập Cán bộ xử lý thì phải nhập Đơn vị nhận),{' '}
+                  <span className="text-main font-medium">Ngày hết hiệu lực</span>,{' '}
+                  <span className="text-main font-medium">Link thay thế</span> và{' '}
+                  <span className="text-main font-medium">Ghi chú</span> được phép để trống.
+                </>
+              )}
             </span>
           </div>
 
