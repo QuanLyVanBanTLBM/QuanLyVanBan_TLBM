@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
     ignore_result=True,
 )
 def sync_sql_document_vectors(source_type: str, document_id: int):
-    """Celery task to index or remove vectors for a given SQL document in ChromaDB."""
+    """Celery task to index or remove vectors for a given SQL document in vector store."""
     from backend.services.rag_service import (
         delete_sql_document_vectors,
         index_sql_document,

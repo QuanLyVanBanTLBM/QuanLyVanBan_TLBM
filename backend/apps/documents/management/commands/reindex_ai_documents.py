@@ -1,13 +1,13 @@
 import logging
 from django.core.management.base import BaseCommand
-from backend.services.rag_service import get_chroma_collection, index_sql_document
+from backend.services.rag_service import get_vector_collection, index_sql_document
 from backend.services.sql_document_source import get_all_document_records_for_index
 
 logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
-    help = "Quét lại và lập chỉ mục vector cho toàn bộ văn bản SQL vào ChromaDB."
+    help = "Quét lại và lập chỉ mục vector cho toàn bộ văn bản SQL vào kho lưu trữ vector."
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -29,7 +29,7 @@ class Command(BaseCommand):
         if clear:
             self.stdout.write("Đang dọn dẹp vector SQL cũ...")
             try:
-                collection = get_chroma_collection()
+                collection = get_vector_collection()
                 where_filter = {"source_class": "official_document"}
                 if source_type:
                     where_filter["sql_doc_type"] = source_type

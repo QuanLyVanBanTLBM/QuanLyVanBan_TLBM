@@ -2007,10 +2007,10 @@ def is_ai_configured() -> bool:
 
 
 def delete_sql_document_vectors(source_type: str, source_id: int):
-    """Remove vector chunks associated with an SQL document key from ChromaDB."""
+    """Remove vector chunks associated with an SQL document key from vector store."""
     key = f"{source_type}:{int(source_id)}"
     try:
-        collection = get_chroma_collection()
+        collection = get_vector_collection()
         collection.delete(where={"sql_doc_key": key})
     except Exception as error:
         logger.warning("Could not delete vectors for sql_doc_key=%s: %s", key, error)

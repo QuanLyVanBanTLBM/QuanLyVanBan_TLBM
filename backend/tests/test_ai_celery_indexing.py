@@ -64,7 +64,7 @@ class CeleryIndexingTaskTests(SimpleTestCase):
         mock_delete.assert_called_once_with("vanbanden", 99)
         self.assertFalse(result)
 
-    @patch("backend.services.rag_service.get_chroma_collection")
+    @patch("backend.services.rag_service.get_vector_collection")
     def test_delete_sql_document_vectors(self, mock_get_collection):
         mock_col = MagicMock()
         mock_get_collection.return_value = mock_col
@@ -73,6 +73,7 @@ class CeleryIndexingTaskTests(SimpleTestCase):
 
 
 class AskDocumentNoSyncIndexingTests(SimpleTestCase):
+    @patch("backend.services.rag_service.sync_documents_if_needed")
     @patch("backend.services.rag_service.Settings")
     @patch("backend.services.rag_service.get_index")
     @patch("backend.services.rag_service.setup_llamaindex")
@@ -89,6 +90,7 @@ class AskDocumentNoSyncIndexingTests(SimpleTestCase):
         _setup,
         mock_get_index,
         mock_settings,
+        _sync_docs=None,
     ):
         mock_accessible.return_value = [
             {"source_type": "vanbanden", "source_id": 1, "attachments": []},
@@ -155,7 +157,7 @@ class ReindexCommandTests(SimpleTestCase):
             {"source_type": "vanbandi", "source_id": 2},
         ],
     )
-    @patch("backend.services.rag_service.get_chroma_collection")
+    @patch("backend.services.rag_service.get_vector_collection")
     def test_reindex_command_execution(self, mock_get_col, mock_get_all, mock_index):
         mock_col = MagicMock()
         mock_get_col.return_value = mock_col
