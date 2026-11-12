@@ -4,9 +4,11 @@ Văn bản đi của Nhóm 2 chưa có code: thay `_doc_van_ban_di` bằng dữ 
 """
 
 import hashlib
+import io
 import shutil
 import tempfile
 from datetime import timedelta
+from types import SimpleNamespace
 from unittest import mock
 
 from django.contrib.auth import get_user_model
@@ -15,14 +17,16 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
+from accounts.models import Position
 from signing import enums
+from signing.errors import SigningError
 from signing.models import SigningAttempt, SigningAuditLog, SigningRequest
 from signing.services import process as process_service
 from signing.services import trinh_ky as trinh_ky_service
 from signing.storage import get_storage
 from signing.tich_hop.van_ban import VanBanDi
 
-from .helpers import cap_quyen
+from .helpers import cap_quyen, dat_anh_chu_ky, tao_chuc_vu
 
 User = get_user_model()
 BASE = "/api/v1/signing/trinh-ky"
@@ -45,10 +49,20 @@ def pdf_mau(so_trang=1):
 
 
 PDF = pdf_mau()
+DOC_TEP_DINH_KEM_PDF = trinh_ky_service.doc_tep_dinh_kem_pdf
+
+
+def tep_dinh_kem_gia_lap(nguoi, van_ban_id, tep_dinh_kem_id):
+    trinh_ky_service.kiem_tra_van_ban_trinh_ky(nguoi, enums.LoaiVanBan.VAN_BAN_DI, van_ban_id)
+    return PDF, 1
 VAN_BAN = {
     10: VanBanDi(id=10, pham_vi="NOI_BO", nguoi_tao_id=None, so_hieu="10/QD", trich_yeu="Mua sắm"),
     11: VanBanDi(id=11, pham_vi="HAN_CHE", nguoi_tao_id=None, so_hieu="11/QD", trich_yeu="Hạn chế"),
+    12: VanBanDi(id=12, pham_vi="NOI_BO", hien_thi=False, nguoi_tao_id=None, so_hieu="12/QD", trich_yeu="Không công khai"),
 }
+# Văn bản thường khác: mỗi văn bản chỉ có một hồ sơ đang mở, test cần nhiều hồ sơ thì mỗi hồ sơ một văn bản
+VAN_BAN.update({i: VanBanDi(id=i, pham_vi="NOI_BO", nguoi_tao_id=None, so_hieu=f"{i}/QD", trich_yeu="Văn bản thử")
+                for i in range(20, 60)})
 
 
 def tep_pdf(noi_dung=PDF, ten="du-thao.pdf"):
@@ -64,10 +78,14 @@ class TrinhKyBase(TestCase):
         cls._cai_dat.enable()
         cls._van_ban = mock.patch("signing.tich_hop.van_ban._doc_van_ban_di", side_effect=VAN_BAN.get)
         cls._van_ban.start()
+        cls._tep_dinh_kem = mock.patch("signing.services.trinh_ky.doc_tep_dinh_kem_pdf",
+                                     side_effect=tep_dinh_kem_gia_lap)
+        cls._tep_dinh_kem.start()
 
     @classmethod
     def tearDownClass(cls):
         cls._van_ban.stop()
+        cls._tep_dinh_kem.stop()
         cls._cai_dat.disable()
         shutil.rmtree(cls.thu_muc, ignore_errors=True)
         super().tearDownClass()
@@ -78,7 +96,16 @@ class TrinhKyBase(TestCase):
         self.ky2 = User.objects.create_user("phap_che")
         self.ky3 = User.objects.create_user("giam_doc")
         self.la = User.objects.create_user("nguoi_ngoai")
+        self.position = Position.objects.create(
+            display_order=Position.get_next_display_order(), name="Trưởng phòng"
+        )
         cap_quyen(self.tao, "add_trinhky", "send_trinhky", "view_vanbandi")
+        cap_quyen(self.ky1, "sign_trinhky")
+        cap_quyen(self.ky2, "sign_trinhky")
+        cap_quyen(self.ky3, "sign_trinhky")
+        for nguoi_ky in (self.ky1, self.ky2, self.ky3):
+            dat_anh_chu_ky(nguoi_ky)
+        self._van_ban_tiep = iter([10, *range(20, 60)])
         self.process = self.tao_quy_trinh()
         self.c = self.client_cua(self.tao)
 
@@ -90,8 +117,8 @@ class TrinhKyBase(TestCase):
     def tao_quy_trinh(self, ma="QT", cap_ky=None):
         cap_ky = cap_ky or [
             {"cap_ky": 1, "ten_cap_ky": "Kiểm tra", "thu_tu": 1, "nguoi_ky": [
-                {"nguoi_ky": self.ky1, "thu_tu": 1, "vai_tro_ky": enums.VaiTroKy.KY_NHAY},
-                {"nguoi_ky": self.ky2, "thu_tu": 2, "vai_tro_ky": enums.VaiTroKy.KY_CHINH},
+                {"nguoi_ky": self.ky1, "thu_tu": 1},
+                {"nguoi_ky": self.ky2, "thu_tu": 2},
             ]},
             {"cap_ky": 2, "ten_cap_ky": "Duyệt", "thu_tu": 2, "so_gio_xu_ly": 24,
              "nguoi_ky": [{"nguoi_ky": self.ky3, "thu_tu": 1}]},
@@ -103,9 +130,19 @@ class TrinhKyBase(TestCase):
         return process_service.kich_hoat(quy_trinh, self.tao)
 
     def tao_nhap(self, client=None, **kw):
-        data = {"document_type": "vanbandi", "van_ban_id": 10, "quy_trinh": self.process.pk, "muc_do": "THUONG",
-                "tep": tep_pdf()}
-        data.update(kw)
+        """Tạo nháp qua API; mặc định chọn PDF đính kèm trên văn bản đi."""
+        if "van_ban_id" in kw:
+            van_ban_id = kw["van_ban_id"]
+        elif "tep" in kw:
+            van_ban_id = None
+        else:
+            van_ban_id = next(self._van_ban_tiep)
+        if van_ban_id in ("", None):
+            data = {"quy_trinh": self.process.pk, "trich_yeu_van_ban": "Tài liệu thử", "tep": tep_pdf()}
+        else:
+            data = {"document_type": "vanbandi", "van_ban_id": van_ban_id,
+                    "quy_trinh": self.process.pk, "tep_dinh_kem_id": 1}
+        data.update({key: value for key, value in kw.items() if value is not None})
         return (client or self.c).post(f"{BASE}/", data, format="multipart")
 
     def gui(self, pk, client=None, khoa="k1", **body):
@@ -132,22 +169,171 @@ class TaoNhapTests(TrinhKyBase):
 
     def test_rejections(self):
         cases = [
-            ({"tep": tep_pdf(b"khong phai pdf")}, 400, "tep_khong_phai_pdf"),
             ({"van_ban_id": 11}, 400, "van_ban_han_che_khong_trinh_ky"),
             ({"van_ban_id": 99}, 404, "khong_tim_thay_van_ban"),
             ({"document_type": "vanbanden"}, 400, "du_lieu_khong_hop_le"),
-            ({"muc_do": "SIEU_GAP"}, 400, "du_lieu_khong_hop_le"),
             ({"han_chot": (timezone.now() - timedelta(hours=1)).isoformat()}, 400, "han_chot_khong_hop_le"),
         ]
         for kw, ma_http, code in cases:
             r = self.tao_nhap(**kw)
             self.assertEqual((r.status_code, r.data["code"]), (ma_http, code), kw)
+        r = self.c.post(f"{BASE}/", {"quy_trinh": self.process.pk, "trich_yeu_van_ban": "Dự thảo",
+                                     "tep": tep_pdf(b"khong phai pdf")}, format="multipart")
+        self.assertEqual((r.status_code, r.data["code"]), (400, "tep_khong_phai_pdf"))
         self.assertFalse(SigningRequest.objects.exists())
+
+    def test_encrypted_pdf_is_rejected(self):
+        from pypdf import PdfReader, PdfWriter
+        reader = PdfReader(io.BytesIO(PDF))
+        writer = PdfWriter()
+        writer.append(reader)
+        writer.encrypt("mat-khau-123")
+        buf = io.BytesIO()
+        writer.write(buf)
+        r = self.c.post(
+            f"{BASE}/",
+            {"quy_trinh": self.process.pk, "trich_yeu_van_ban": "Dự thảo", "tep": tep_pdf(buf.getvalue())},
+            format="multipart",
+        )
+        self.assertEqual((r.status_code, r.data["code"]), (400, "tep_pdf_co_mat_khau"))
+        self.assertIn("Không hỗ trợ tệp PDF có mật khẩu bảo vệ", r.data.get("detail", ""))
+
+    def test_trich_yeu_qua_dai_raises_error(self):
+        with self.assertRaises(SigningError) as ctx:
+            trinh_ky_service.tao_nhap(
+                self.tao,
+                quy_trinh=self.process,
+                tep=tep_pdf(),
+                so_hieu_van_ban="01/TTr",
+                trich_yeu_van_ban="x" * 1001,
+            )
+        self.assertEqual(ctx.exception.detail.code, "trich_yeu_qua_dai")
 
     def test_file_size_limit(self):
         with mock.patch.object(trinh_ky_service, "TEP_TOI_DA", len(PDF) - 1):
-            r = self.tao_nhap()
+            r = self.c.post(f"{BASE}/", {"quy_trinh": self.process.pk,
+                                         "trich_yeu_van_ban": "Dự thảo", "tep": tep_pdf()}, format="multipart")
         self.assertEqual((r.status_code, r.data["code"]), (400, "tep_qua_lon"))
+
+    def test_registered_document_requires_its_own_pdf_attachment(self):
+        r = self.c.post(f"{BASE}/", {"document_type": "vanbandi", "van_ban_id": 10,
+                                     "quy_trinh": self.process.pk}, format="multipart")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("tep_dinh_kem_id", r.data["fields"])
+        r = self.tao_nhap(van_ban_id=10, tep=tep_pdf())
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("tep", r.data["fields"])
+
+    def test_registered_document_attachment_is_copied_as_immutable_signing_source(self):
+        class StoredFile:
+            size = len(PDF)
+
+            def open(self, mode):
+                self.mode = mode
+                return io.BytesIO(PDF)
+
+        attachment = SimpleNamespace(name="signed-source.pdf", file=StoredFile())
+        with mock.patch("documents.models.VanBanDiAttachment.objects.filter") as query, \
+                mock.patch("signing.services.trinh_ky.doc_tep_dinh_kem_pdf", wraps=DOC_TEP_DINH_KEM_PDF):
+            query.return_value.first.return_value = attachment
+            r = self.tao_nhap()
+        self.assertEqual(r.status_code, 201, r.data)
+        query.assert_called_once_with(document_id=10, pk=1, is_deleted=False)
+        ho_so = SigningRequest.objects.get(pk=r.data["id"])
+        self.assertEqual(get_storage().read_bytes(ho_so.vi_tri_luu_tep), PDF)
+        self.assertEqual(ho_so.ma_bam_tai_lieu, hashlib.sha256(PDF).hexdigest())
+
+    def test_registered_attachment_must_be_pdf_and_belong_to_selected_document(self):
+        class StoredFile:
+            size = len(PDF)
+
+            def open(self, mode):
+                return io.BytesIO(PDF)
+
+        cases = [
+            (SimpleNamespace(name="word.docx", file=StoredFile()), "tep_khong_phai_pdf"),
+            (SimpleNamespace(name="missing.pdf", file=None), "khong_tim_thay_tep_dinh_kem"),
+        ]
+        for attachment, code in cases:
+            with mock.patch("documents.models.VanBanDiAttachment.objects.filter") as query, \
+                    mock.patch("signing.services.trinh_ky.doc_tep_dinh_kem_pdf", wraps=DOC_TEP_DINH_KEM_PDF):
+                query.return_value.first.return_value = attachment
+                r = self.tao_nhap()
+            self.assertEqual(r.data["code"], code)
+        with mock.patch("documents.models.VanBanDiAttachment.objects.filter") as query, \
+                mock.patch("signing.services.trinh_ky.doc_tep_dinh_kem_pdf", wraps=DOC_TEP_DINH_KEM_PDF):
+            query.return_value.first.return_value = None  # wrong document ID or soft-deleted attachment
+            r = self.tao_nhap()
+        self.assertEqual((r.status_code, r.data["code"]), (404, "khong_tim_thay_tep_dinh_kem"))
+
+
+class LienKetVanBanDiTests(TrinhKyBase):
+    def tao_da_hoan_tat(self, *, co_tep=True):
+        r = self.tao_nhap(van_ban_id=None, trich_yeu_van_ban="Kế hoạch thử")
+        self.assertEqual(r.status_code, 201, r.data)
+        ho_so = SigningRequest.objects.get(pk=r.data["id"])
+        luot = SigningAttempt.objects.create(
+            trinh_ky=ho_so, so_luot=1, phien_ban_van_ban=ho_so.phien_ban_van_ban,
+            vi_tri_luu_tep=ho_so.vi_tri_luu_tep, ma_bam_tai_lieu=ho_so.ma_bam_tai_lieu,
+            trang_thai=enums.TrangThaiLuotTrinh.HOAN_THANH, thoi_diem_hoan_thanh=timezone.now(),
+            create_by=self.tao,
+        )
+        ho_so.trang_thai = enums.TrangThaiYeuCau.HOAN_THANH
+        ho_so.ngay_hoan_thanh = timezone.now()
+        ho_so.save(update_fields=["trang_thai", "ngay_hoan_thanh", "update_at"])
+        if co_tep:
+            luot.vi_tri_tep_hoan_tat, luot.ma_bam_tep_hoan_tat = trinh_ky_service.luu_du_lieu_pdf(PDF)
+            luot.trang_thai_tep_hoan_tat = enums.TrangThaiTepHoanTat.THANH_CONG
+            luot.save(update_fields=["vi_tri_tep_hoan_tat", "ma_bam_tep_hoan_tat", "trang_thai_tep_hoan_tat", "update_at"])
+        return ho_so.pk
+
+    def lien_ket(self, pk, van_ban_id=10, client=None):
+        return (client or self.c).post(f"{BASE}/{pk}/lien-ket-van-ban-di/", {"van_ban_id": van_ban_id},
+                                       format="json")
+
+    def test_creator_links_completed_draft_and_audit_records_target(self):
+        pk = self.tao_da_hoan_tat()
+        r = self.lien_ket(pk)
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual((r.data["document_type"], r.data["van_ban_id"]), ("vanbandi", 10))
+        self.assertEqual((r.data["so_hieu_van_ban"], r.data["trich_yeu_van_ban"]), ("", ""))
+        log = SigningAuditLog.objects.get(trinh_ky_id=pk, hanh_dong="LIEN_KET_VAN_BAN_DI")
+        self.assertEqual(log.du_lieu_kem_theo["van_ban_id"], 10)
+        self.assertEqual(log.chi_tiet, "#10 · 10/QD")
+        r = self.lien_ket(pk)
+        self.assertEqual((r.status_code, r.data["code"]), (409, "ho_so_da_lien_ket_van_ban"))
+
+    def test_completed_drafts_cannot_link_to_an_outgoing_document_twice(self):
+        self.assertEqual(self.lien_ket(self.tao_da_hoan_tat()).status_code, 200)
+
+        second = self.tao_da_hoan_tat()
+        r = self.lien_ket(second)
+
+        self.assertEqual((r.status_code, r.data["code"]), (409, "van_ban_da_co_ho_so_hoan_tat"))
+        self.assertIsNone(SigningRequest.objects.get(pk=second).van_ban_id)
+
+    def test_link_waits_for_approval_and_successful_final_pdf(self):
+        pk = self.tao_nhap(van_ban_id=None, trich_yeu_van_ban="Kế hoạch thử").data["id"]
+        r = self.lien_ket(pk)
+        self.assertEqual((r.status_code, r.data["code"]), (409, "ho_so_chua_hoan_tat"))
+        pk = self.tao_da_hoan_tat(co_tep=False)
+        r = self.lien_ket(pk)
+        self.assertEqual((r.status_code, r.data["code"]), (409, "tep_hoan_tat_chua_san_sang"))
+
+    def test_link_requires_creator_and_visible_nonrestricted_outgoing_document(self):
+        pk = self.tao_da_hoan_tat()
+        cap_quyen(self.la, "view_signing_audit")
+        r = self.lien_ket(pk, client=self.client_cua(User.objects.get(pk=self.la.pk)))
+        self.assertEqual((r.status_code, r.data["code"]), (403, "khong_co_quyen"))
+        self.tao.user_permissions.clear()
+        self.c = self.client_cua(User.objects.get(pk=self.tao.pk))
+        for van_ban_id, http_status, code in (
+            (11, 400, "van_ban_han_che_khong_trinh_ky"),
+            (12, 404, "khong_tim_thay_van_ban"),
+        ):
+            r = self.lien_ket(pk, van_ban_id=van_ban_id)
+            self.assertEqual((r.status_code, r.data.get("code")), (http_status, code), r.data)
+        self.assertIsNone(SigningRequest.objects.get(pk=pk).van_ban_id)
 
     def test_process_must_be_active(self):
         nhap = process_service.nhan_ban(self.process, self.tao)  # bản 2 còn NHAP
@@ -157,17 +343,22 @@ class TaoNhapTests(TrinhKyBase):
     def test_requires_add_permission_and_document_visibility(self):
         r = self.tao_nhap(client=self.client_cua(self.la))
         self.assertEqual((r.status_code, r.data["code"]), (403, "khong_co_quyen"))
-        cap_quyen(self.la, "add_trinhky")  # có quyền tạo nhưng không xem được văn bản
+        cap_quyen(self.la, "add_trinhky")  # có quyền tạo nhưng không xem được văn bản (nội bộ, không công khai)
         la = User.objects.get(pk=self.la.pk)
-        r = self.tao_nhap(client=self.client_cua(la))
+        r = self.tao_nhap(client=self.client_cua(la), van_ban_id=12)
         self.assertEqual((r.status_code, r.data["code"]), (404, "khong_tim_thay_van_ban"))
+
+    def test_create_without_muc_do_returns_201_and_no_muc_do_in_response(self):
+        r = self.tao_nhap()
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertNotIn("muc_do", r.data)
 
     def test_edit_draft_replaces_file_and_bumps_version(self):
         pk = self.tao_nhap().data["id"]
         moi = PDF + b"% ban sua\n"
-        r = self.c.patch(f"{BASE}/{pk}/", {"muc_do": "KHAN", "tep": tep_pdf(moi)}, format="multipart")
+        r = self.c.patch(f"{BASE}/{pk}/", {"ghi_chu": "Bản sửa", "tep": tep_pdf(moi)}, format="multipart")
         self.assertEqual(r.status_code, 200, r.data)
-        self.assertEqual((r.data["muc_do"], r.data["phien_ban_van_ban"]), ("KHAN", "2"))
+        self.assertEqual((r.data["ghi_chu"], r.data["phien_ban_van_ban"]), ("Bản sửa", "2"))
         self.assertEqual(r.data["ma_bam_tai_lieu"], hashlib.sha256(moi).hexdigest())
         self.gui(pk)
         r = self.c.patch(f"{BASE}/{pk}/", {"ghi_chu": "x"}, format="multipart")
@@ -186,10 +377,10 @@ class GuiTests(TrinhKyBase):
         cap1, cap2 = luot["cap_ky"]
         self.assertEqual((cap1["trang_thai"], cap2["trang_thai"]), ("DANG_KY", "CHUA_MO"))
         mo = {n["ten_nguoi_ky"]: n["thoi_diem_mo"] is not None for n in cap1["nguoi_ky"]}
-        self.assertEqual(mo, {"ke_toan": True, "phap_che": False})  # ký chính chờ ký nháy chặn
+        self.assertEqual(mo, {"ke_toan": True, "phap_che": True})
         self.assertTrue(all(n["thoi_diem_mo"] is None for n in cap2["nguoi_ky"]))
         self.assertIsNotNone(cap1["han_xu_ly"])
-        self.assertEqual([d["ten_nguoi_ky"] for d in r.data["dang_cho"]], ["ke_toan"])
+        self.assertEqual({d["ten_nguoi_ky"] for d in r.data["dang_cho"]}, {"ke_toan", "phap_che"})
 
     def test_level_deadline_uses_hours_or_splits_remaining_time(self):
         cap1 = {"cap_ky": 1, "ten_cap_ky": "C1", "thu_tu": 1, "so_gio_xu_ly": 8,
@@ -239,7 +430,7 @@ class GuiTests(TrinhKyBase):
 
     def test_signer_by_position_zero_one_or_many_candidates(self):
         self.process = self.tao_quy_trinh("QTCV", [{"cap_ky": 1, "ten_cap_ky": "Trưởng phòng", "thu_tu": 1,
-                                                   "nguoi_ky": [{"chuc_vu_id": 7, "thu_tu": 1}]}])
+                                                   "nguoi_ky": [{"chuc_vu_id": self.position.pk, "thu_tu": 1}]}])
         tim = "signing.tich_hop.to_chuc.tim_ung_vien_theo_chuc_vu"
         pk = self.tao_nhap().data["id"]
         with mock.patch(tim, return_value=[]):
@@ -259,7 +450,7 @@ class GuiTests(TrinhKyBase):
 
     def test_same_person_twice_in_level_rejected(self):
         self.process = self.tao_quy_trinh("QTT", [{"cap_ky": 1, "ten_cap_ky": "C", "thu_tu": 1, "nguoi_ky": [
-            {"nguoi_ky": self.ky1, "thu_tu": 1}, {"chuc_vu_id": 3, "thu_tu": 2}]}])
+            {"nguoi_ky": self.ky1, "thu_tu": 1}, {"chuc_vu_id": self.position.pk, "thu_tu": 2}]}])
         pk = self.tao_nhap().data["id"]
         with mock.patch("signing.tich_hop.to_chuc.tim_ung_vien_theo_chuc_vu", return_value=[self.ky1]):
             r = self.gui(pk)
@@ -276,14 +467,14 @@ class XemTests(TrinhKyBase):
     def test_visibility_and_inboxes(self):
         pk = self.ho_so_da_gui()["id"]
         c1, c2, c3, la = (self.client_cua(u) for u in (self.ky1, self.ky2, self.ky3, self.la))
-        self.assertEqual([h["id"] for h in c1.get(f"{BASE}/?hop=can_toi_ky").data], [pk])
-        self.assertEqual(c2.get(f"{BASE}/?hop=can_toi_ky").data, [])  # ký chính chưa mở
-        self.assertEqual(c3.get(f"{BASE}/?hop=can_toi_ky").data, [])  # cấp sau chưa mở
+        self.assertEqual([h["id"] for h in c1.get(f"{BASE}/?hop=can_toi_ky").data["results"]], [pk])
+        self.assertEqual([h["id"] for h in c2.get(f"{BASE}/?hop=can_toi_ky").data["results"]], [pk])
+        self.assertEqual(c3.get(f"{BASE}/?hop=can_toi_ky").data["results"], [])  # cấp sau chưa mở
         self.assertEqual(c3.get(f"{BASE}/{pk}/").status_code, 200)  # người ký của hồ sơ xem được
-        self.assertEqual([h["id"] for h in self.c.get(f"{BASE}/?hop=toi_gui").data], [pk])
+        self.assertEqual([h["id"] for h in self.c.get(f"{BASE}/?hop=toi_gui").data["results"]], [pk])
         r = la.get(f"{BASE}/{pk}/")
         self.assertEqual((r.status_code, r.data["code"]), (404, "khong_tim_thay"))
-        self.assertEqual(la.get(f"{BASE}/").data, [])
+        self.assertEqual(la.get(f"{BASE}/").data["results"], [])
         self.assertEqual(la.get(f"{BASE}/{pk}/tep/").status_code, 404)
         cap_quyen(self.la, "view_signing_audit")
         kiem_toan = self.client_cua(User.objects.get(pk=self.la.pk))
@@ -305,7 +496,7 @@ class HuyTrinhLaiTests(TrinhKyBase):
         r = self.huy(pk, ly_do="Đổi nội dung")
         self.assertEqual((r.status_code, r.data["trang_thai"]), (200, "HUY"))
         self.assertEqual(r.data["luot_trinh"][0]["trang_thai"], "HUY")
-        self.assertEqual(self.client_cua(self.ky1).get(f"{BASE}/?hop=can_toi_ky").data, [])
+        self.assertEqual(self.client_cua(self.ky1).get(f"{BASE}/?hop=can_toi_ky").data["results"], [])
         self.assertEqual(self.huy(pk).status_code, 200)  # lặp cùng khóa
         r = self.huy(pk, khoa="h2")
         self.assertEqual((r.status_code, r.data["code"]), (409, "ho_so_da_ket_thuc"))

@@ -1,0 +1,27 @@
+CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM
+Độc lập - Tự do - Hạnh phúc
+-----------------------
+
+QUY CHẾ BẢO MẬT THÔNG TIN VÀ QUẢN LÝ TÀI LIỆU BẢO MẬT NỘI BỘ
+Số hiệu: 18/2026/QC-TLBM | Ngày ban hành: 10/10/2026
+
+Chương I: QUY ĐỊNH CHUNG VÀ CÁC CẤP ĐỘ BẢO MẬT
+Điều 1. Phạm vi điều chỉnh và đối tượng áp dụng
+Quy chế này quy định việc phân loại, xác định độ mật, lưu trữ, tiếp nhận, chuyển giao, và hủy bỏ các tài liệu mang tính chất bí mật kinh doanh, bí mật kỹ thuật và công văn nội bộ trong toàn bộ tổ chức TLBM. Toàn thể cán bộ, nhân viên, thực tập sinh và cộng tác viên đều có nghĩa vụ tuân thủ nghiêm ngặt quy chế này.
+
+Điều 2. Phân loại 3 cấp độ bảo mật tài liệu
+1. Cấp độ 1 - TUYỆT MẬT (Top Secret): Gồm mã khóa mật mã hệ thống, cấu hình chứng thư số gốc (Root CA), kế hoạch sáp nhập tài chính và chiến lược kinh doanh cấp hội đồng quản trị. Chỉ có Chủ tịch HĐQT, Tổng Giám Đốc và Quản trị trưởng hệ thống mới có quyền truy cập.
+2. Cấp độ 2 - TỐI MẬT (Secret): Gồm hồ sơ dự thầu đang triển khai, báo cáo kiểm toán tài chính trước phát hành, và mã nguồn các module nghiệp vụ lõi (Signing Engine, Security Barrier Views).
+3. Cấp độ 3 - MẬT (Confidential): Gồm danh sách lương và nhân sự chi tiết, biên bản họp giao ban phòng ban, và hợp đồng kinh tế đang trong giai đoạn thương thảo.
+
+Chương II: THỜI HẠN BẢO QUẢN VÀ CHẾ TÀI XỬ PHẠT
+Điều 3. Thời hạn bảo quản tài liệu mật
+- Tài liệu Tuyệt mật: Lưu trữ vĩnh viễn trong kho lưu trữ dữ liệu mã hóa chuẩn AES-256 có phân tán khóa.
+- Tài liệu Tối mật: Thời hạn lưu trữ tối thiểu là 20 năm tính từ ngày văn bản có hiệu lực.
+- Tài liệu Mật: Thời hạn lưu trữ tối thiểu là 10 năm tính từ ngày văn bản có hiệu lực.
+
+Điều 4. Chế tài xử phạt hành vi vi phạm bảo mật
+Cán bộ, nhân viên có hành vi sao chép trái phép, chụp ảnh màn hình văn bản mật, hoặc để lộ lọt thông tin bảo mật ra bên ngoài sẽ bị xử lý kỷ luật theo các mức độ:
+- Khiển trách và đình chỉ công tác 15 ngày đối với vi phạm lần đầu không cố ý.
+- Phạt tiền từ 20.000.000 VNĐ đến 50.000.000 VNĐ để bồi thường thiệt hại.
+- Chấm dứt hợp đồng lao động ngay lập tức và chuyển hồ sơ sang cơ quan công an xử lý hình sự nếu gây hậu quả nghiêm trọng.

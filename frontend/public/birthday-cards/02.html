@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <script src="/birthday-cards/personalize.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Thiệp 02 - Ngọc Lục Bảo Thịnh Vượng 3D | Bảo Long Insurance</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,400&family=Playfair+Display:wght@600;700;800&family=Montserrat:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      background: radial-gradient(circle at 50% 25%, #0f4c35 0%, #052217 65%, #020e09 100%);
+      font-family: 'Playfair Display', Georgia, serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 40px 16px;
+      overflow-x: hidden;
+      perspective: 1200px;
+    }
+    #emeraldWebGL {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 1;
+    }
+    .emerald-card {
+      position: relative;
+      z-index: 10;
+      max-width: 580px;
+      width: 100%;
+      background: rgba(255, 253, 249, 0.96);
+      border-radius: 18px;
+      border: 2px solid #d4af37;
+      box-shadow: 0 30px 70px rgba(0, 0, 0, 0.6), 0 0 40px rgba(16, 185, 129, 0.25);
+      overflow: hidden;
+      transform-style: preserve-3d;
+    }
+    .banner {
+      background: linear-gradient(145deg, #063724 0%, #0d593c 55%, #042417 100%);
+      padding: 36px 32px 48px;
+      text-align: center;
+      color: #ffffff;
+      position: relative;
+      border-bottom: 3px solid #d4af37;
+    }
+    .gem-canvas-holder {
+      width: 110px;
+      height: 110px;
+      margin: 0 auto 10px;
+      cursor: pointer;
+    }
+    .banner-org {
+      font-family: 'Montserrat', sans-serif;
+      font-size: 11px;
+      letter-spacing: 3px;
+      color: #f3dc99;
+      font-weight: 700;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    .banner h1 {
+      font-size: 32px;
+      color: #f8e3b4;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    .banner p {
+      font-family: 'Montserrat', sans-serif;
+      font-size: 12px;
+      color: #a7f3d0;
+    }
+    .plaque-3d {
+      margin: -28px 32px 20px;
+      background: linear-gradient(135deg, #fffdf9 0%, #f7eed7 100%);
+      border: 2px solid #c5a059;
+      border-radius: 12px;
+      padding: 18px 22px;
+      text-align: center;
+      box-shadow: 0 12px 28px rgba(5, 34, 23, 0.16);
+      position: relative;
+      z-index: 3;
+    }
+    .plaque-name {
+      font-size: 24px;
+      font-weight: 800;
+      color: #063724;
+      margin-bottom: 10px;
+    }
+    .plaque-badges {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      font-family: 'Montserrat', sans-serif;
+      font-size: 12px;
+    }
+    .p-badge {
+      background: #063724;
+      color: #f3dc99;
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-weight: 700;
+    }
+    .p-badge.dept {
+      background: #ecfdf5;
+      color: #064e3b;
+      border: 1px solid #059669;
+    }
+    .body-wrap {
+      padding: 10px 36px 36px;
+      color: #1c2b24;
+    }
+    .body-wrap p {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 18px;
+      line-height: 1.74;
+      margin-bottom: 16px;
+      text-align: justify;
+    }
+    .quote-emerald {
+      background: #f0fdf4;
+      border-left: 4px solid #059669;
+      padding: 14px 18px;
+      margin: 18px 0;
+      font-style: italic;
+      color: #064e3b;
+      font-size: 16.5px;
+    }
+    .btn-row {
+      text-align: center;
+      margin: 24px 0 18px;
+    }
+    .emerald-btn {
+      background: linear-gradient(90deg, #063724, #0d593c);
+      color: #f3dc99;
+      border: 1.5px solid #d4af37;
+      padding: 12px 26px;
+      border-radius: 999px;
+      font-family: 'Montserrat', sans-serif;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      cursor: pointer;
+      box-shadow: 0 8px 20px rgba(6, 55, 36, 0.3);
+    }
+    .footer-sig {
+      border-top: 1px dashed #c5a059;
+      padding-top: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 15px;
+      color: #063724;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="emeraldWebGL"></canvas>
+
+  <div class="emerald-card" id="cardRoot">
+    <div class="banner">
+      <div class="gem-canvas-holder" id="gemHolder" title="Bấm vào viên Ngọc Lục Bảo 3D!"></div>
+      <div class="banner-org" data-card-field="organization_name">BẢO LONG INSURANCE</div>
+      <h1>Chúc Mừng Sinh Nhật</h1>
+      <p>Kỷ niệm ngày sinh nhật <strong data-card-field="birthday_date">—</strong> • Tri ân người đồng hành</p>
+    </div>
+
+    <div class="plaque-3d">
+      <div class="plaque-name" data-card-field="employee_name">—</div>
+      <div class="plaque-badges">
+        <span class="p-badge">Chức vụ: <span data-card-field="position">—</span></span>
+        <span class="p-badge dept">Đơn vị: <span data-card-field="department">—</span></span>
+      </div>
+    </div>
+
+    <div class="body-wrap">
+      <p>Kính gửi đồng chí <strong data-card-field="employee_name">—</strong>,</p>
+      <p>
+        Nhân ngày đặc biệt <strong data-card-field="birthday_date">—</strong>, Ban Lãnh đạo cùng toàn thể đồng nghiệp tại <strong data-card-field="organization_name">Bảo Long Insurance</strong> trân trọng gửi tới đồng chí lời chúc mừng sinh nhật nồng hậu, sức khỏe dồi dào và thịnh vượng.
+      </p>
+      <div class="quote-emerald">
+        “Sự tận tâm và bản lĩnh của đồng chí trên cương vị <strong data-card-field="position">—</strong> là viên ngọc quý góp phần tạo nên sức mạnh tập thể của <strong data-card-field="department">—</strong>.”
+      </div>
+      <p>
+        Chúc đồng chí tuổi mới luôn giữ vững ngọn lửa nhiệt huyết, trí lực minh mẫn để tiếp tục dẫn dắt <strong data-card-field="department">—</strong> chinh phục những đỉnh cao mới!
+      </p>
+
+      <div class="btn-row">
+        <button class="emerald-btn" id="celebrateBtn">💎 Tỏa Sáng Ngọc Lục Bảo & Chúc Mừng</button>
+      </div>
+
+      <div class="footer-sig">
+        <div>
+          <small style="color:#64748b; display:block;">Trân trọng và thân mến,</small>
+          <strong>Ban Lãnh đạo <span data-card-field="organization_name">Bảo Long Insurance</span></strong>
+        </div>
+        <div style="font-size:20px; color:#d4af37;">✦ ❖ ✦</div>
+      </div>
+    </div>
+  </div>
+
+
+</body>
+</html>

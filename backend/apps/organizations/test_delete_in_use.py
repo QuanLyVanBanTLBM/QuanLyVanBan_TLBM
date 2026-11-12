@@ -4,6 +4,7 @@ B8 (QA 14/10): không xóa Đơn vị / Chức vụ khi module khác còn dùng 
 from django.apps import apps
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
+from django.db.models import Max
 from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -25,8 +26,10 @@ class ReferenceListTest(TestCase):
 class DeleteInUseTest(TestCase):
     def setUp(self):
         self.region = KhoiKhuVuc.objects.create(ten="Khối QA")
-        self.unit = DonVi.objects.create(khoi=self.region, stt_uu_tien=1, ten="Phòng đang dùng")
-        self.free_unit = DonVi.objects.create(khoi=self.region, stt_uu_tien=2, ten="Phòng trống")
+        # DB test dựng bằng migration đã có 82 đơn vị của release_DDL.sql; STT ưu tiên là UNIQUE.
+        self.priority = (DonVi.objects.aggregate(m=Max("stt_uu_tien"))["m"] or 0) + 1
+        self.unit = DonVi.objects.create(khoi=self.region, stt_uu_tien=self.priority, ten="Phòng đang dùng")
+        self.free_unit = DonVi.objects.create(khoi=self.region, stt_uu_tien=self.priority + 1, ten="Phòng trống")
         self.position = Position.objects.create(display_order=900, name="Chức vụ đang dùng")
         self.free_position = Position.objects.create(display_order=901, name="Chức vụ trống")
         user = get_user_model().objects.create_user(
@@ -62,7 +65,7 @@ class DeleteInUseTest(TestCase):
         self.assertEqual(res.json()["key"], "organizations.messages.unitHasEmployees")
 
     def test_unused_unit_and_position_are_still_deleted(self):
-        spare = DonVi.objects.create(khoi=self.region, stt_uu_tien=3, ten="Phòng xóa được")
+        spare = DonVi.objects.create(khoi=self.region, stt_uu_tien=self.priority + 2, ten="Phòng xóa được")
         self.assertEqual(self.client.delete(f"/api/organizations/units/{spare.pk}/").status_code, 204)
         self.assertEqual(self.client.delete(f"/api/positions/{self.free_position.pk}/").status_code, 204)
         self.assertFalse(DonVi.objects.filter(pk=spare.pk).exists())

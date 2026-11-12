@@ -7,6 +7,7 @@ import io
 import json
 import os
 from datetime import timedelta
+from unittest import mock
 
 import reportlab
 from django.contrib.auth import get_user_model
@@ -16,6 +17,7 @@ from pypdf import PdfReader
 
 from signing import crypto
 from signing.models import SigningAttempt, SigningAuditLog, SigningManifest, SigningSignature
+from signing.services import bang_chung
 from signing.services.bang_chung import ma_hoa_chuan
 from signing.storage import get_storage
 
@@ -72,7 +74,7 @@ class TepHoanTatTests(HoanTatBase):
         self.assertEqual(json.loads(dinh_kem), noi_dung)
         self.assertEqual(pdf.metadata["/Subject"], noi_dung["nhan_dien"])
         self.assertEqual(crypto.sha256_hex(get_storage().read_bytes(luot.vi_tri_luu_tep)), HASH)  # tệp gốc không đổi
-        hanh_dong = list(SigningAuditLog.objects.filter(trinh_ky_id=self.pk).values_list("hanh_dong", flat=True))
+        hanh_dong = list(SigningAuditLog.objects.filter(trinh_ky_id=self.pk).order_by("id").values_list("hanh_dong", flat=True))
         self.assertEqual(hanh_dong[-3:], ["HOAN_THANH_TRINH_KY", "CHOT_BANG_CHUNG", "TAO_TEP_HOAN_TAT"])
 
     def test_evidence_endpoint_verifies_and_detects_tampered_original(self):
@@ -89,6 +91,31 @@ class TepHoanTatTests(HoanTatBase):
             f.write(b"% sua len\n")
         xm = self.c.get(f"{BASE}/{self.pk}/bang-chung/").data["xac_minh"]
         self.assertEqual((xm["tep_goc_khop"], xm["hop_le"]), (False, False))
+
+    def test_new_manifest_has_no_muc_do_and_version_3(self):
+        luot = self.ky_het()
+        manifest = SigningManifest.objects.get(luot_trinh=luot)
+        self.assertEqual((manifest.phien_ban_bang_chung, manifest.noi_dung_chuan_hoa["phien_ban"]), (3, 3))
+        self.assertNotIn("muc_do", manifest.noi_dung_chuan_hoa["ho_so"])
+
+    def test_version_1_manifest_with_muc_do_still_verifies_and_builds_result_file(self):
+        goc = bang_chung.noi_dung_bang_chung
+
+        def noi_dung_phien_ban_1(luot):
+            noi_dung = goc(luot)
+            noi_dung["phien_ban"] = 1
+            noi_dung["ho_so"]["muc_do"] = "KHAN"
+            return noi_dung
+
+        with mock.patch.object(bang_chung, "noi_dung_bang_chung", noi_dung_phien_ban_1),                 mock.patch.object(bang_chung, "PHIEN_BAN_BANG_CHUNG", 1):
+            luot = self.ky_het()
+        manifest = SigningManifest.objects.get(luot_trinh=luot)
+        self.assertEqual((manifest.phien_ban_bang_chung, manifest.noi_dung_chuan_hoa["ho_so"]["muc_do"]), (1, "KHAN"))
+        self.assertEqual((luot.trang_thai, luot.trang_thai_tep_hoan_tat), ("HOAN_THANH", "THANH_CONG"))
+        xm = self.c.get(f"{BASE}/{self.pk}/bang-chung/").data["xac_minh"]
+        self.assertTrue(xm["hop_le"], xm)
+        r = self.c.get(f"{BASE}/{self.pk}/tep-hoan-tat/")
+        self.assertEqual((r.status_code, r["Content-Type"]), (200, "application/pdf"))
 
     def test_not_ready_before_completion(self):
         self.assertEqual(self.c.get(f"{BASE}/{self.pk}/tep-hoan-tat/").data["code"], "tep_hoan_tat_chua_san_sang")
@@ -131,7 +158,7 @@ class LoiVaThuLaiTests(HoanTatBase):
             self.tao_lai(self.tao)  # đã thành công: không sinh bản thứ hai
         self.assertEqual(SigningAttempt.objects.get(pk=luot.pk).ma_bam_tep_hoan_tat, ma_bam)
         self.assertEqual(SigningSignature.objects.count(), 3)
-        hanh_dong = list(SigningAuditLog.objects.filter(trinh_ky_id=self.pk).values_list("hanh_dong", flat=True))
+        hanh_dong = list(SigningAuditLog.objects.filter(trinh_ky_id=self.pk).order_by("id").values_list("hanh_dong", flat=True))
         self.assertEqual(hanh_dong[-3:], ["LOI_TAO_TEP_HOAN_TAT", "TAO_LAI_TEP_HOAN_TAT", "TAO_TEP_HOAN_TAT"])
 
     def test_retry_blocked_while_processing_allowed_when_stale(self):
@@ -155,6 +182,60 @@ class LoiVaThuLaiTests(HoanTatBase):
 
 class TaiLenPdfTests(HoanTatBase):
     def test_unreadable_or_pageless_pdf_rejected_at_upload(self):
-        r = self.c.post(f"{BASE}/", {"document_type": "vanbandi", "van_ban_id": 10, "quy_trinh": self.process.pk,
-                                     "muc_do": "THUONG", "tep": tep_pdf(b"%PDF-1.4 hong")}, format="multipart")
+        r = self.c.post(f"{BASE}/", {"quy_trinh": self.process.pk, "trich_yeu_van_ban": "Tệp lỗi",
+                                     "tep": tep_pdf(b"%PDF-1.4 hong")},
+                        format="multipart")
         self.assertEqual((r.status_code, r.data["code"]), (400, "tep_khong_phai_pdf"))
+
+
+class DinhDangChuKyTests(HoanTatBase):
+    def test_times_new_roman_font_candidate_priority(self):
+        from signing.pdf_hoan_tat import UNG_VIEN_PHONG_CHU
+
+        dau_tien = [c[0].lower() for c in UNG_VIEN_PHONG_CHU[:5]]
+        self.assertTrue(any("times" in p or "liberationserif" in p for p in dau_tien))
+
+    def test_khoi_chu_ky_renders_uppercase_bold_under_signature_and_fits_long_name(self):
+        from unittest.mock import MagicMock
+        from signing.pdf_hoan_tat import _khoi_chu_ky
+
+        c = MagicMock()
+        c.stringWidth.side_effect = lambda text, font, size: len(text) * size * 0.6
+        khung = (100, 200, 80, 50)
+        nguoi_ky = {
+            "ten_nguoi_ky": "nguyễn văn long hoàng nam",
+            "ten_chuc_vu": "Trưởng phòng",
+            "chu_ky": {"ngay_ky": "2026-11-10T04:00:00Z"},
+        }
+        anh_bytes = b"fake-png-data"
+        with mock.patch("reportlab.lib.utils.ImageReader"):
+            _khoi_chu_ky(c, khung, nguoi_ky, anh_bytes, "PhongThuong", "PhongDam")
+
+        c.drawImage.assert_called_once()
+        draw_centred_calls = c.drawCentredString.call_args_list
+        self.assertEqual(len(draw_centred_calls), 1)
+        args, _ = draw_centred_calls[0]
+        self.assertEqual(args[2], "NGUYỄN VĂN LONG HOÀNG NAM")
+        # Đệm 25% nhưng chặn trần: ngang min(20, 20) = 20, dọc min(12,5; 14) = 12,5
+        c.rect.assert_called_once_with(80, 187.5, 120, 75, fill=1, stroke=0)
+
+    def test_nen_trang_che_het_net_dut_placeholder_rong_hon_khung_ky(self):
+        from unittest.mock import MagicMock
+        from signing.pdf_hoan_tat import _khoi_chu_ky
+
+        c = MagicMock()
+        c.stringWidth.return_value = 10
+        khung = (200, 300, 100, 60)  # x, y, rộng, cao (pt)
+        # Placeholder nét đứt của văn bản gốc rộng hơn và lệch khung ký (nhô ra 12pt ngang, 8pt dọc mỗi cạnh)
+        trai, duoi = khung[0] - 12, khung[1] - 8
+        phai, tren = khung[0] + khung[2] + 12, khung[1] + khung[3] + 8
+
+        _khoi_chu_ky(c, khung, {"ten_nguoi_ky": "Nguyễn Văn A"}, None, "PhongThuong", "PhongDam")
+
+        c.rect.assert_called_once()
+        x, y, rong, cao = c.rect.call_args.args
+        self.assertLessEqual(x, trai)
+        self.assertLessEqual(y, duoi)
+        self.assertGreaterEqual(x + rong, phai)
+        self.assertGreaterEqual(y + cao, tren)
+        self.assertEqual(c.rect.call_args.kwargs, {"fill": 1, "stroke": 0})  # nền trắng, không vẽ viền

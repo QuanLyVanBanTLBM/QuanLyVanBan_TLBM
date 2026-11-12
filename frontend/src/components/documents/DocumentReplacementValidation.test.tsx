@@ -30,11 +30,23 @@ describe('Nghiệp Vụ Khóa Thay Thế Văn Bản (Replacement Guard - Theo Ch
     fireEvent.change(screen.getByPlaceholderText('VD: 125/BGDDT-VP'), {
       target: { value: '112/TB-SGDĐT' },
     });
+    fireEvent.change(screen.getByPlaceholderText(/Hồ sơ công văn đến/i), {
+      target: { value: 'Hồ sơ công văn đến' },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/Nhập loại văn bản/i), {
+      target: { value: 'Thông báo' },
+    });
     fireEvent.change(screen.getByPlaceholderText(/Bộ Giáo dục và Đào tạo/i), {
       target: { value: 'Sở Giáo dục và Đào tạo' },
     });
     fireEvent.change(screen.getByPlaceholderText(/mục đích và nội dung cốt lõi/i), {
       target: { value: 'Thông báo phân công lịch trực tiếp nhận' },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/Họ và tên người ký/i), {
+      target: { value: 'Nguyễn Văn A' },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/VD: Thứ trưởng, Giám đốc/i), {
+      target: { value: 'Giám đốc' },
     });
 
     // Tick chọn văn bản thay thế
@@ -65,11 +77,23 @@ describe('Nghiệp Vụ Khóa Thay Thế Văn Bản (Replacement Guard - Theo Ch
     fireEvent.change(screen.getByPlaceholderText('VD: 125/BGDDT-VP'), {
       target: { value: '112/TB-SGDĐT' },
     });
+    fireEvent.change(screen.getByPlaceholderText(/Hồ sơ công văn đến/i), {
+      target: { value: 'Hồ sơ công văn đến' },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/Nhập loại văn bản/i), {
+      target: { value: 'Thông báo' },
+    });
     fireEvent.change(screen.getByPlaceholderText(/Bộ Giáo dục và Đào tạo/i), {
       target: { value: 'Sở Giáo dục và Đào tạo' },
     });
     fireEvent.change(screen.getByPlaceholderText(/mục đích và nội dung cốt lõi/i), {
       target: { value: 'Trích yếu test' },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/Họ và tên người ký/i), {
+      target: { value: 'Nguyễn Văn A' },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/VD: Thứ trưởng, Giám đốc/i), {
+      target: { value: 'Giám đốc' },
     });
 
     // Tick chọn thay thế

@@ -36,7 +36,8 @@ export const getFloorKey = (location?: string | null): string | null => {
   }
 
   // 3. Kiểm tra tầng lửng (Mezzanine): Tầng lửng, Lửng, Mezzanine, Tầng L, Tầng M...
-  if (/(?:\b(?:t[ầaà]ng|l[ầaà]u)\s+(?:l[ửu]ng|[lm]\b)|\bl[ửu]ng\b|\bmezzanine\b)/i.test(trimmed)) {
+  // Chỉ nhận khi có dấu 'lửng' (không nhận 'lung' không dấu) hoặc 'mezzanine' hoặc 'Tầng/Lầu L/M'
+  if (/(?:\b(?:t[ầaà]ng|l[ầaà]u)\s+(?:lửng|[lm]\b)|\blửng\b|\bmezzanine\b)/i.test(trimmed)) {
     return 'M';
   }
 
@@ -53,21 +54,18 @@ export const getFloorKey = (location?: string | null): string | null => {
     return 'B';
   }
 
-  // 5. Kiểm tra B + số đứng độc lập (chỉ nhận khi không đi sau Tòa / Block / Khu / Building)
-  // Ví dụ: 'B1, Tòa A', 'B2' -> B1, B2. Nhưng 'Tòa B2', 'Block B1', 'Khu B3' -> không nhận.
-  const standaloneBMatch = trimmed.match(/\bb([0-9]+)\b/i);
+  // 5. Kiểm tra B + số đứng độc lập (chỉ nhận khi cả chuỗi là B+số, hoặc đứng đầu/sau dấu phẩy/gạch ngang)
+  // Không nhận khi đứng sau từ 'Phòng', 'Room', 'Tòa', 'Block', 'Khu'...
+  const standaloneBMatch = trimmed.match(/(?:^|[,\-;/])\s*b([0-9]+)\b/i);
   if (standaloneBMatch) {
-    const prefixBeforeB = trimmed.slice(0, standaloneBMatch.index);
-    if (!/(?:t[òo]a(?:\s+nh[àa])?|block|khu|building)\s*$/i.test(prefixBeforeB.trim())) {
-      return `B${standaloneBMatch[1]}`;
-    }
+    return `B${standaloneBMatch[1]}`;
   }
 
-  // 6. Kiểm tra các mẫu viết tắt: T2, F3, L1 (chỉ nhận khi không đi liền sau Block/Khu/Tòa)
+  // 6. Kiểm tra các mẫu viết tắt: T2, F3, L1 (chỉ nhận khi không đi liền sau Block/Khu/Tòa/Phòng)
   const shortMatch = trimmed.match(/\b([TFL])([0-9]+)\b/i);
   if (shortMatch) {
     const prefixBeforeShort = trimmed.slice(0, shortMatch.index);
-    if (!/(?:t[òo]a(?:\s+nh[àa])?|block|khu|building|l[ôo])\s*$/i.test(prefixBeforeShort.trim())) {
+    if (!/(?:t[òo]a(?:\s+nh[àa])?|block|khu|building|l[ôo]|ph[òo]ng|room)\s*$/i.test(prefixBeforeShort.trim())) {
       return shortMatch[2];
     }
   }

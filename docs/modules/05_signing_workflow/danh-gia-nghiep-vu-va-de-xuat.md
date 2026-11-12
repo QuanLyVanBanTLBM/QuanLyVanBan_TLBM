@@ -200,7 +200,7 @@ Căn cứ: Điều 13 yêu cầu ủy quyền có thời hạn và phạm vi, n�
 
 - Bỏ `vanbanden` khỏi phạm vi Trình ký; bút phê/chỉ đạo văn bản đến chuyển cho Nhóm 2.
 - `vanbanmat`: đã bỏ khỏi hệ thống.
-- Trình ký MVP chỉ nhận `vanbandi` (dự thảo văn bản đi). Giữ cột `document_type` để mở rộng sau.
+- **Chốt 28/10/2026:** hồ sơ gắn `vanbandi` đã đăng ký phải chọn PDF đính kèm trên đúng bản ghi, không tải PDF thay thế. Nguồn còn lại là PDF dự thảo chưa vào sổ (mã hồ sơ nội bộ tự cấp; số hiệu nhập tay chỉ là tham chiếu). Sau khi hoàn tất duyệt và tạo tệp kết quả thành công, người tạo đăng ký tệp kết quả trong Văn bản đi rồi liên kết hồ sơ; Trình ký không tự tạo bản ghi, cấp số hoặc chuyển tệp giữa hai kho. `document_type`/`document_id` để NULL cho đến khi liên kết.
 
 **Ảnh hưởng.** Đổi enum `LoaiVanBan`; DDL base có `DEFAULT 'vanbanden'` ở `signing_request.document_type` (đã nêu trong plan phase mục 4) — bỏ luôn giá trị mặc định này.
 

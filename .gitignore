@@ -45,6 +45,14 @@ venv.bak/
 backend/db.sqlite3
 backend/media/
 media/
+storage/
+data/chroma_db/
+data/ai_settings.json
+data/pgdata/
+data/docs/*
+!data/docs/.gitkeep
+!data/docs/Folder_*
+Folder/
 backend/static_root/
 static_root/
 seed_data.py
@@ -105,6 +113,8 @@ desktop.ini
 CHANGELOG_REMOVE_MOCK_DATA.md
 frontend/CHANGELOG_REMOVE_MOCK_DATA.md
 CHAY_FULL_STACK.bat
+run_all.bat
+chay_du_an.bat
 AGENTS.md
 
 # AI Assistant & IDE Agents
@@ -123,6 +133,9 @@ frontend/public/_redirects
 frontend/.vite/
 *.timestamp-*
 frontend/*.timestamp-*
+
+# Temporary template samples
+template/
 
 
 

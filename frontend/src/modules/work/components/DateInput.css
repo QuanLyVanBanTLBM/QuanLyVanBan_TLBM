@@ -1,0 +1,15 @@
+/*
+ * Ô ngày tự vẽ: khung viền nằm ở <div> bọc ngoài, input bên trong phải trong suốt.
+ * Giao diện "modern" (global.css) đặt border/box-shadow/bo góc cho MỌI input kèm !important,
+ * nên phải đè lại bằng !important + specificity cao hơn, chỉ cho riêng input ngày này.
+ * Không đụng global.css; chỉ gỡ viền lớp trong, giữ nguyên viền khung ngoài.
+ */
+[data-ui-style='modern'] input.work-date-input-field,
+[data-ui-style='modern'] input.work-date-input-field:focus,
+input.work-date-input-field,
+input.work-date-input-field:focus {
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}

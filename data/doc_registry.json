@@ -1,14 +1,38 @@
 [
   {
-    "filename": "Kiểm Tra.docx",
-    "category": "Tin học",
-    "size": 330362,
-    "upload_time": "2026-09-25T19:22:20.100308+00:00"
+    "filename": "Folder_folder1_item1.docx",
+    "category": "Folder / folder1",
+    "size": 37319,
+    "upload_time": "2026-10-14T01:00:00.000000+00:00"
   },
   {
-    "filename": "NguyenAnhDo-Buoi5.docx",
-    "category": "Tin học",
-    "size": 321232,
-    "upload_time": "2026-09-26T07:56:25.099556+00:00"
+    "filename": "Folder_folder1_item2.docx",
+    "category": "Folder / folder1",
+    "size": 37276,
+    "upload_time": "2026-10-14T01:00:00.000000+00:00"
+  },
+  {
+    "filename": "Folder_folder1_item3.docx",
+    "category": "Folder / folder1",
+    "size": 37358,
+    "upload_time": "2026-10-14T01:00:00.000000+00:00"
+  },
+  {
+    "filename": "Folder_folder2_item1.docx",
+    "category": "Folder / folder2",
+    "size": 37402,
+    "upload_time": "2026-10-14T01:00:00.000000+00:00"
+  },
+  {
+    "filename": "Folder_folder2_item2.docx",
+    "category": "Folder / folder2",
+    "size": 37405,
+    "upload_time": "2026-10-14T01:00:00.000000+00:00"
+  },
+  {
+    "filename": "Folder_folder2_item3.docx",
+    "category": "Folder / folder2",
+    "size": 37330,
+    "upload_time": "2026-10-14T01:00:00.000000+00:00"
   }
 ]

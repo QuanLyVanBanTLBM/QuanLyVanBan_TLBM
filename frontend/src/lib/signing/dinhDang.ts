@@ -1,8 +1,15 @@
 /** Tiện ích hiển thị dùng chung của phân hệ Trình ký. */
+import type { HamDich } from './i18n';
+import type { LoaiTepTaiLieu, NguoiKyCauHinh, NhatKy } from './types';
 
 export const LOP_O_NHAP =
-  'w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm text-main placeholder:text-muted ' +
+  'w-full rounded-xl border border-border-subtle bg-surface px-3.5 py-2 text-sm text-main placeholder:text-muted ' +
   'focus:outline-none focus:border-focus focus:ring-2 focus:ring-primary-subtle';
+
+/** Chữ thường, bỏ dấu tiếng Việt (đ -> d) để tìm không phân biệt hoa thường và dấu (như server). */
+export function boDau(chuoi: string): string {
+  return chuoi.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '').replace(/đ/g, 'd');
+}
 
 export function dinhDangNgay(iso: string | null | undefined, lang: 'vi' | 'en'): string {
   if (!iso) return '—';
@@ -11,9 +18,52 @@ export function dinhDangNgay(iso: string | null | undefined, lang: 'vi' | 'en'):
   });
 }
 
-export function moTaVanBan(vb: { so_hieu?: string; trich_yeu?: string } | undefined, van_ban_id: number): string {
+/** Số hiệu — trích yếu; khi hồ sơ thiếu cả hai thì nêu rõ là văn bản chưa được định danh. */
+export function moTaVanBan(
+  vb: { so_hieu?: string; trich_yeu?: string } | undefined,
+  t: HamDich,
+): string {
   const phan = [vb?.so_hieu, vb?.trich_yeu].filter(Boolean);
-  return phan.length ? phan.join(' — ') : `#${van_ban_id}`;
+  if (phan.length) return phan.join(' — ');
+  return t('danhSach.vanBanChuaDinhDanh');
+}
+
+/** Dịch mã lỗi của tiến trình tạo PDF hoàn tất; mã không nhận diện thì không lộ giá trị nội bộ. */
+export function loiTepHoanTatHienThi(ma: string, t: HamDich): string {
+  const khoa = `chiTiet.loiTaoTepMa.${ma}`;
+  const thongDiep = t(khoa);
+  return thongDiep === khoa || thongDiep === '—' ? t('chiTiet.loiTaoTepKhongRo') : thongDiep;
+}
+
+/** Tên tệp tải về có nhãn hồ sơ và nội dung dễ nhận biết. */
+export function tenTepTaiVe(hoSoId: number, loai: LoaiTepTaiLieu | 'DA_KY', soLuot?: number | null): string {
+  const hoSo = `ho-so-${hoSoId}`;
+  if (loai === 'DU_THAO') return `${hoSo}-ban-du-thao.pdf`;
+  if (loai === 'HOAN_TAT') return `${hoSo}-ban-hoan-tat.pdf`;
+  if (loai === 'DA_KY') return `${hoSo}-da-ky-tien-trinh.pdf`;
+  return soLuot == null ? `${hoSo}-ban-trinh-ky.pdf` : `${hoSo}-luot-${soLuot}.pdf`;
+}
+
+export function tenBangChungTaiVe(hoSoId: number): string {
+  return `ho-so-${hoSoId}-bang-chung.json`;
+}
+
+/** Giới hạn độ dài nhập tay, khớp serializer backend (`serializers.py`). */
+export const GIOI_HAN = { trichYeu: 1000, ghiChu: 2000, lyDo: 2000, tinNhan: 2000, tenQuyTrinh: 255, maQuyTrinh: 50, soGio: 24 * 365 } as const;
+export const TEP_TOI_DA_BYTE = 20 * 1024 * 1024;
+export const MA_QUY_TRINH_HOP_LE = /^[A-Za-z0-9_.-]+$/;
+
+/** Kiểm tệp PDF trước khi gửi: trả khóa i18n của lỗi (không gửi request khi sai), hoặc null khi hợp lệ. */
+export function kiemTraTepPdf(tep: { name: string; size: number; type: string }): string | null {
+  if (tep.size === 0) return 'tao.loiTepRong';
+  if (tep.type !== 'application/pdf' && !tep.name.toLowerCase().endsWith('.pdf')) return 'tao.loiTepDinhDang';
+  if (tep.size > TEP_TOI_DA_BYTE) return 'loi.tep_qua_lon';
+  return null;
+}
+
+/** Giá trị ô datetime-local đã qua (hoặc bằng) thời điểm hiện tại; ô trống thì không lỗi. */
+export function hanChotDaQua(gia_tri: string): boolean {
+  return Boolean(gia_tri) && new Date(gia_tri).getTime() <= Date.now();
 }
 
 export function taiXuong(blob: Blob, ten: string) {
@@ -23,4 +73,66 @@ export function taiXuong(blob: Blob, ten: string) {
   a.download = ten;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/**
+ * Gửi lệnh in PDF qua iframe ẩn: trình duyệt dùng trình xem PDF gốc (đủ số trang, giữ chất lượng), không vẽ lại
+ * bằng canvas như khung xem trước. Lỗi khi trình duyệt chặn in trong iframe (hiếm) bị bỏ qua; người dùng vẫn tải
+ * về được bằng nút Tải về.
+ */
+export function inPdf(blob: Blob) {
+  const url = URL.createObjectURL(blob);
+  const khung = document.createElement('iframe');
+  khung.style.position = 'fixed';
+  khung.style.right = '0';
+  khung.style.bottom = '0';
+  khung.style.width = '0';
+  khung.style.height = '0';
+  khung.style.border = 'none';
+  khung.src = url;
+  khung.onload = () => {
+    try {
+      khung.contentWindow?.focus();
+      khung.contentWindow?.print();
+    } catch {
+      // bỏ qua: trình duyệt chặn in trong iframe
+    }
+  };
+  document.body.appendChild(khung);
+  // Không có sự kiện chuẩn báo hộp thoại in đã đóng: dọn iframe sau một khoảng đủ dài.
+  setTimeout(() => {
+    khung.remove();
+    URL.revokeObjectURL(url);
+  }, 60_000);
+}
+
+/** Người ký chưa ký trên lượt đã kết thúc (từ chối, hủy) không còn phải ký; lượt đang trả sửa thì tạm dừng. */
+export function trangThaiNguoiKy(luot: string, nguoi: string, da_mo: boolean): string {
+  if (nguoi !== 'CHO_KY') return nguoi;
+  if (luot === 'TU_CHOI' || luot === 'HUY') return 'KHONG_CAN_KY';
+  if (luot === 'YEU_CAU_SUA') return 'TAM_DUNG';
+  return da_mo ? 'CHO_KY' : 'CHUA_MO';
+}
+
+/** Tên người ký cấu hình: tài khoản cụ thể, hoặc chức vụ (theo Danh mục chức vụ CBNV) xác định người lúc gửi. */
+export function tenNguoiKyCauHinh(n: Pick<NguoiKyCauHinh, 'ten_nguoi_ky' | 'ten_chuc_vu'>, t: HamDich): string {
+  if (n.ten_nguoi_ky) return n.ten_nguoi_ky;
+  return n.ten_chuc_vu ? t('quyTrinh.theoChucVu', { ten: n.ten_chuc_vu }) : t('tao.theoChucVu');
+}
+
+/** Phần chi tiết hiển thị kèm một mục lịch sử hồ sơ (rỗng khi hành động không có chi tiết cần hiện). */
+export function chiTietNhatKy(e: NhatKy, t: HamDich): string {
+  if (!e.chi_tiet || e.hanh_dong === 'THEM_CAP_KY' || e.hanh_dong === 'MO_CAP_KY') return '';
+  if (e.hanh_dong === 'LOI_TAO_TEP_HOAN_TAT') return loiTepHoanTatHienThi(e.chi_tiet, t);
+  if (e.hanh_dong === 'LIEN_KET_VAN_BAN_DI') {
+    const soHieu = e.chi_tiet.match(/^#\d+\s*·\s*(.+)$/)?.[1];
+    return soHieu ? t('chiTiet.soHieuVanBanLienKet', { soHieu }) : '';
+  }
+  if (e.hanh_dong === 'NGUNG_QUY_TRINH') {
+    const phienBan = e.chi_tiet.match(/^Thay bằng phiên bản (\d+)$/)?.[1];
+    return phienBan ? t('chiTiet.quyTrinhThayThe', { so: Number(phienBan) }) : '';
+  }
+  return ['KY', 'TU_CHOI', 'YEU_CAU_SUA', 'HUY_TRINH_KY', 'THAY_NGUOI_KY'].includes(e.hanh_dong)
+    ? e.chi_tiet
+    : '';
 }

@@ -10,12 +10,23 @@ export interface EmployeeGroup {
   name: string;
 }
 
+export interface EmployeeAssignmentItem {
+  id?: number;
+  don_vi_id: number;
+  don_vi_ten?: string;
+  khoi_ten?: string;
+  chuc_vu_id: number;
+  chuc_vu_ten?: string;
+  chuc_danh?: string;
+}
+
 export interface Employee {
   id: number;
   username: string;
   email: string;
   ho_ten: string;
   ngay_sinh: string | null;
+  ngay_sinh_iso?: string | null;
   is_birthday_masked: boolean;
   don_vi_id: number | null;
   don_vi_ten: string;
@@ -32,6 +43,7 @@ export interface Employee {
   nhom_quyen: EmployeeGroup[];
   has_sensitive_permission: boolean;
   temporary_password?: string | null;
+  assignments?: EmployeeAssignmentItem[];
   created_at: string;
   updated_at: string;
 }
@@ -47,6 +59,8 @@ export interface Position {
 export interface GroupSimple {
   id: number;
   name: string;
+  code?: string;
+  ma_nhom_quyen?: string;
 }
 
 export interface EmployeeCreatePayload {
@@ -63,9 +77,15 @@ export interface EmployeeCreatePayload {
   trang_thai?: EmployeeStatus;
   is_public?: boolean;
   ghi_chu?: string;
+  assignments?: Array<{
+    don_vi_id: number;
+    chuc_vu_id: number;
+    chuc_danh?: string;
+  }>;
 }
 
 export interface EmployeeUpdatePayload {
+  username?: string;
   ho_ten?: string;
   email?: string;
   ngay_sinh?: string | null;
@@ -77,6 +97,11 @@ export interface EmployeeUpdatePayload {
   trang_thai?: EmployeeStatus;
   is_public?: boolean;
   ghi_chu?: string;
+  assignments?: Array<{
+    don_vi_id: number;
+    chuc_vu_id: number;
+    chuc_danh?: string;
+  }>;
 }
 
 export interface ExcelImportError {
@@ -93,4 +118,15 @@ export interface ExcelImportResponse {
   created_count?: number;
   errors?: ExcelImportError[];
   total_errors?: number;
+}
+
+export interface ExcelImportJob {
+  job_id: string;
+  status: 'queued' | 'processing' | 'done' | 'failed';
+  phase: 'queued' | 'validation' | 'saving' | 'complete' | 'failed';
+  processed: number;
+  total: number;
+  created_count: number;
+  message: string;
+  errors: ExcelImportError[];
 }

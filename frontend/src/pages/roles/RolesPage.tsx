@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from '@i18n/translate';
+import { formatGroupName } from '@lib/roleUtils';
 import { apiClient } from '@lib/apiClient';
 import { usePermissions } from '@lib/permissions';
 import { Role, Permission, PaginatedResponse } from '@app-types/authorization';
@@ -9,8 +10,11 @@ import { DeleteConfirmModal } from './components/DeleteConfirmModal';
 import { PermissionMatrix } from './components/PermissionMatrix';
 import { filterPermissions } from './components/permissionFilter';
 
+// Thiếu quyền xem: chỉ báo một lần trong khung danh sách, không thêm toast.
+const PERMISSION_DENIED_KEY = 'roles.messages.permissionDenied';
+
 export default function RolesPage() {
-  const { t } = useTranslation();
+  const { t, currentLang } = useTranslation();
   // Chỉ ẩn/hiện thao tác cho gọn giao diện; backend vẫn kiểm quyền thật (view/add/change/delete_nhomquyen).
   const { can } = usePermissions();
   const canAdd = can('add_nhomquyen');
@@ -44,7 +48,16 @@ export default function RolesPage() {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
+  const roleListRef = useRef<HTMLDivElement>(null);
   const selectedRole = roles.find((r) => r.id === selectedRoleId) || null;
+
+  // Khung danh sách nhóm thấp (nhất là trên điện thoại): đưa nhóm vừa chọn/tạo vào tầm nhìn để tên không bị cắt ở mép.
+  useEffect(() => {
+    if (selectedRoleId === null) return;
+    roleListRef.current
+      ?.querySelector<HTMLElement>(`[data-role-id="${selectedRoleId}"]`)
+      ?.scrollIntoView?.({ block: 'nearest' });
+  }, [selectedRoleId, roles]);
   // Năm nhóm chuẩn của DDL (có mã nhóm quyền) không đổi tên, không xóa được; quyền vẫn chỉnh được.
   const isProtectedRole = !!selectedRole?.ma_nhom_quyen;
 
@@ -118,7 +131,7 @@ export default function RolesPage() {
         const errorKey = roleErrorKey(err);
         setFetchError(errorKey);
         setRoles([]);
-        showToast(errorKey, true);
+        if (errorKey !== PERMISSION_DENIED_KEY) showToast(errorKey, true);
         setIsLoadingRoles(false);
       });
     return () => {
@@ -136,7 +149,7 @@ export default function RolesPage() {
       const errorKey = roleErrorKey(err);
       setFetchError(errorKey);
       setRoles([]);
-      showToast(errorKey, true);
+      if (errorKey !== PERMISSION_DENIED_KEY) showToast(errorKey, true);
     } finally {
       setIsLoadingRoles(false);
     }
@@ -225,11 +238,11 @@ export default function RolesPage() {
   };
 
   return (
-    <div className="overflow-x-hidden">
+    <div className="overflow-x-hidden pb-24 lg:pb-0">
       {/* Toast Notification */}
       {toastMessage && (
         <div
-          className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-lg shadow-lg flex items-center gap-2.5 text-sm font-semibold animate-fade-in ${
+          className={`fixed top-5 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl shadow-2xl flex items-center gap-2.5 text-sm font-semibold animate-fade-in ${
             toastMessage.isError
               ? 'bg-danger text-white border border-danger-border'
               : 'bg-success text-white border border-success-border'
@@ -240,7 +253,8 @@ export default function RolesPage() {
         </div>
       )}
 
-      <div className="grid h-[71vh] min-h-0 grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
+      {/* Điện thoại: trang cuộn tự nhiên, danh sách nhóm và ma trận có chiều cao riêng; từ lg trở lên chia khung 71vh như cũ. */}
+      <div className="grid min-h-0 grid-cols-1 gap-4 lg:h-[71vh] lg:grid-cols-[320px_1fr]">
         <div className="flex min-h-0 flex-col gap-4">
           <section className="shrink-0 bg-surface border border-border rounded-xl px-4 py-3 shadow-md">
             <h1 className="text-lg font-bold text-main flex items-center gap-2">
@@ -301,7 +315,7 @@ export default function RolesPage() {
             )}
           </div>
 
-            <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
+            <div ref={roleListRef} className="max-h-60 min-h-0 flex-1 overflow-x-hidden overflow-y-auto lg:max-h-none">
               {isLoadingRoles ? (
                 <div className="text-center py-10 text-secondary">
                   <i className="fa-solid fa-spinner fa-spin text-xl text-primary mb-2 block" />
@@ -332,6 +346,7 @@ export default function RolesPage() {
                   <button
                     key={role.id}
                     type="button"
+                    data-role-id={role.id}
                     onClick={() => selectRole(role.id)}
                     className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm border-b border-border-subtle transition-colors cursor-pointer ${
                       selectedRoleId === role.id
@@ -340,7 +355,7 @@ export default function RolesPage() {
                     }`}
                   >
                     <i className={`fa-solid fa-users-gear ${selectedRoleId === role.id ? 'text-white' : 'text-primary'}`} />
-                    {role.name}
+                    {formatGroupName(role.name, currentLang)}
                   </button>
                 ))
               )}
@@ -383,8 +398,8 @@ export default function RolesPage() {
             </div>
           )}
 
-          <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-5">
-            {!selectedRole ? (
+          <div className="max-h-[65vh] min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-3 lg:max-h-none lg:p-5">
+            {!selectedRole ? (fetchError === PERMISSION_DENIED_KEY ? null : (
               <div className="p-5 rounded-lg bg-success-subtle border border-success-border text-sm">
                 <p className="font-bold text-main mb-2">{t('roles.matrixPlaceholderTitle')}</p>
                 <ul className="list-disc list-inside space-y-1 text-secondary">
@@ -392,7 +407,7 @@ export default function RolesPage() {
                   <li>{t('roles.matrixPlaceholderStep2')}</li>
                 </ul>
               </div>
-            ) : (
+            )) : (
               <PermissionMatrix
                 permissions={permissions}
                 selectedIds={selectedPermissionIds}
@@ -408,7 +423,7 @@ export default function RolesPage() {
 
       {/* Modal Thêm/Sửa tên Nhóm quyền */}
       <RoleModal
-        key={editingRole?.id ?? (isRoleModalOpen ? 'open-new-role' : 'closed-role')}
+        key={`${editingRole?.id ?? 'new-role'}-${isRoleModalOpen ? 'open' : 'closed'}`}
         isOpen={isRoleModalOpen}
         onClose={() => setIsRoleModalOpen(false)}
         onSubmit={handleSaveRoleName}

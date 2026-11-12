@@ -1,9 +1,8 @@
 """
-Phase 8 (#80): ký, không đồng ý ban hành, thu hồi chữ ký; mở cấp tuần tự, ký song song trong cấp,
-ký nháy chặn ký chính; chống thao tác lặp và thao tác đồng thời.
+Phase 8 (#80): ký, không đồng ý ban hành, thu hồi chữ ký; mở cấp tuần tự, ký song song trong cấp;
+chống thao tác lặp và thao tác đồng thời.
 """
 
-import base64
 import hashlib
 import shutil
 import tempfile
@@ -12,43 +11,30 @@ import unittest
 from datetime import timedelta
 from unittest import mock
 
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from django.contrib.auth import get_user_model
 from django.db import connection
 from django.test import TransactionTestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from signing import enums
 from signing.models import (
-    SigningAttempt, SigningAuditLog, SigningKey, SigningRequest, SigningRequestStep, SigningSignature,
+    SigningAttempt, SigningAuditLog, SigningRequest, SigningRequestStep, SigningSignature,
 )
 from signing.services import hanh_dong_ky as hanh_dong_service
-from signing.services import keys as key_service
+from signing.services import pin as pin_service
+from signing.services import process as process_service
 from signing.services import trinh_ky as trinh_ky_service
 
-from .helpers import cap_quyen
+from .helpers import cap_quyen, dat_anh_chu_ky
 from .test_trinh_ky_phase7 import BASE, PDF, TrinhKyBase, VAN_BAN, tep_pdf
 
 User = get_user_model()
 HASH = hashlib.sha256(PDF).hexdigest()
+PIN_KIEM_THU = "123456"
 
 
-def khoa_hoat_dong(user, ma):
-    private = Ed25519PrivateKey.generate()
-    raw = private.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
-    key = key_service.dang_ky(user, ma_khoa=ma, khoa_cong_khai=base64.b64encode(raw).decode(),
-                              ngay_hieu_luc=timezone.now() - timedelta(minutes=1))
-    challenge = key_service.thach_thuc_so_huu(key).encode()
-    key_service.xac_minh_so_huu(key, user, base64.b64encode(private.sign(challenge)).decode())
-    key_service.kich_hoat(key, user)
-    key.refresh_from_db()
-    return private, key
-
-
-def ky_so(private, hash_hex=HASH):
-    return base64.b64encode(private.sign(bytes.fromhex(hash_hex))).decode()
+def tao_pin(user):
+    return pin_service.dat_pin(user, PIN_KIEM_THU)
 
 
 def ma_loi(exc):
@@ -76,23 +62,24 @@ def chay_song_song(*viec):
     return loi
 
 
+@override_settings(SIGNING_PIN_SECRET="pin-test-secret")
 class KyBase(TrinhKyBase):
     def setUp(self):
         super().setUp()
-        self.khoa = {}
+        self.pin = {}
         for user in (self.ky1, self.ky2, self.ky3):
             cap_quyen(user, "sign_trinhky")
-            self.khoa[user.pk] = khoa_hoat_dong(user, f"K-{user.username}")
+            self.pin[user.pk] = tao_pin(user)
         self.pk = self.ho_so_da_gui()["id"]
 
     def hanh_dong(self, user, action, khoa_thao_tac=None, **body):
         client = self.client_cua(User.objects.get(pk=user.pk))
         khoa = khoa_thao_tac or f"{action}-{user.pk}-{SigningSignature.objects.count()}"
-        return client.post(f"{BASE}/{self.pk}/{action}/", body, format="json", HTTP_IDEMPOTENCY_KEY=khoa)
+        return client.post(f"{BASE}/{self.pk}/{action}/", body, format="json",
+                           HTTP_IDEMPOTENCY_KEY=khoa)
 
     def ky(self, user, khoa_thao_tac=None, **ghi_de):
-        private, key = self.khoa[user.pk]
-        body = {"khoa_ky": key.pk, "hash_tai_lieu": HASH, "chu_ky_so": ky_so(private)}
+        body = {"hash_tai_lieu": HASH, "pin": PIN_KIEM_THU}
         body.update(ghi_de)
         return self.hanh_dong(user, "ky", khoa_thao_tac, **body)
 
@@ -111,7 +98,7 @@ class LuongKyTests(KyBase):
         cap1, kt = self.nguoi_ky(r.data, "ke_toan")
         _, pc = self.nguoi_ky(r.data, "phap_che")
         self.assertEqual((kt["trang_thai"], kt["chu_ky"]["ghi_chu_ky"]), ("DA_KY", "Số liệu khớp"))
-        self.assertIsNotNone(pc["thoi_diem_mo"])  # ký nháy chặn đã ký: mở ký chính
+        self.assertIsNotNone(pc["thoi_diem_mo"])  # người ký cùng cấp đã mở từ khi cấp mở
         self.assertEqual(cap1["trang_thai"], "DANG_KY")
         r = self.ky(self.ky2)
         cap1, _ = self.nguoi_ky(r.data, "phap_che")
@@ -125,8 +112,8 @@ class LuongKyTests(KyBase):
         self.assertEqual(r.data["dang_cho"], [])
         chu_ky = SigningSignature.objects.filter(luot_trinh__trinh_ky_id=self.pk)
         self.assertEqual(chu_ky.count(), 3)
-        self.assertTrue(all(c.trang_thai_xac_minh == "HOP_LE" and c.hash_tai_lieu == HASH for c in chu_ky))
-        hanh_dong = list(SigningAuditLog.objects.filter(trinh_ky_id=self.pk).values_list("hanh_dong", flat=True))
+        self.assertTrue(all(c.hash_tai_lieu == HASH for c in chu_ky))
+        hanh_dong = list(SigningAuditLog.objects.filter(trinh_ky_id=self.pk).order_by("id").values_list("hanh_dong", flat=True))
         self.assertEqual(hanh_dong.count("KY"), 3)
         self.assertEqual(hanh_dong[-2:], ["HOAN_THANH_TRINH_KY", "CHOT_BANG_CHUNG"])  # tệp PDF sinh sau commit
 
@@ -146,28 +133,23 @@ class LuongKyTests(KyBase):
         self.assertEqual(cap2["trang_thai"], "DANG_KY")
 
     def test_cannot_sign_before_turn(self):
-        r = self.ky(self.ky2)  # ký chính chờ ký nháy chặn
-        self.assertEqual((r.status_code, r.data["code"]), (409, "chua_den_luot_ky"))
         r = self.ky(self.ky3)  # cấp 2 chưa mở
         self.assertEqual((r.status_code, r.data["code"]), (403, "khong_phai_nguoi_ky_dang_mo"))
-        r = self.hanh_dong(self.la, "ky", khoa_ky=1, hash_tai_lieu=HASH, chu_ky_so="x")
+        r = self.hanh_dong(self.la, "ky", hash_tai_lieu=HASH, pin=PIN_KIEM_THU)
         self.assertEqual(r.status_code, 404)  # người ngoài không thấy hồ sơ
 
-    def test_signature_checks(self):
-        private, key = self.khoa[self.ky1.pk]
+    def test_confirmation_records_locked_hash_without_crypto_signature(self):
+        r = self.ky(self.ky1)
+        self.assertEqual(r.status_code, 200, r.data)
+        signature = SigningSignature.objects.get(buoc_ky__nguoi_ky=self.ky1)
+        self.assertEqual(signature.hash_tai_lieu, HASH)
+        self.assertFalse(hasattr(signature, "chu_ky_so"))
+
+    def test_signing_checks(self):
         r = self.ky(self.ky1, hash_tai_lieu="0" * 64)
         self.assertEqual((r.status_code, r.data["code"]), (409, "ma_bam_khong_khop"))
-        r = self.ky(self.ky1, chu_ky_so=ky_so(Ed25519PrivateKey.generate()))
-        self.assertEqual((r.status_code, r.data["code"]), (400, "chu_ky_khong_hop_le"))
-        r = self.ky(self.ky1, khoa_ky=self.khoa[self.ky2.pk][1].pk)
-        self.assertEqual((r.status_code, r.data["code"]), (400, "khoa_ky_khong_hop_le"))
-        SigningKey.objects.filter(pk=key.pk).update(ngay_het_han=timezone.now() - timedelta(seconds=1))
-        r = self.ky(self.ky1)
-        self.assertEqual((r.status_code, r.data["code"]), (400, "khoa_ky_khong_hoat_dong"))  # khóa hết hạn
-        SigningKey.objects.filter(pk=key.pk).update(ngay_het_han=None)
-        key_service.thu_hoi(key, self.ky1, "Mất thiết bị")
-        r = self.ky(self.ky1)
-        self.assertEqual((r.status_code, r.data["code"]), (400, "khoa_ky_khong_hoat_dong"))
+        r = self.ky(self.ky1, pin="000000")
+        self.assertEqual((r.status_code, r.data["code"]), (400, "pin_khong_dung"))
         self.assertFalse(SigningSignature.objects.exists())
 
     def test_sign_permission_required(self):
@@ -175,7 +157,7 @@ class LuongKyTests(KyBase):
         r = self.ky(self.ky1)
         self.assertEqual((r.status_code, r.data["fields"]), (403, {"quyen": ["sign_trinhky"]}))
 
-    def test_repeated_sign_with_same_key_is_idempotent(self):
+    def test_repeated_sign_with_same_idempotency_key_is_idempotent(self):
         self.assertEqual(self.ky(self.ky1, khoa_thao_tac="k-ky").status_code, 200)
         self.assertEqual(self.ky(self.ky1, khoa_thao_tac="k-ky").status_code, 200)
         self.assertEqual(SigningSignature.objects.count(), 1)
@@ -200,8 +182,8 @@ class TuChoiTests(KyBase):
     def test_reject_is_terminal_then_resubmit(self):
         r = self.hanh_dong(self.ky1, "tu-choi", ly_do_tu_choi="")
         self.assertEqual(r.status_code, 400)
-        r = self.hanh_dong(self.ky2, "tu-choi", ly_do_tu_choi="Không đồng ý")  # chưa đến lượt
-        self.assertEqual((r.status_code, r.data["code"]), (409, "chua_den_luot_ky"))
+        r = self.hanh_dong(self.ky3, "tu-choi", ly_do_tu_choi="Không đồng ý")  # cấp 2 chưa mở
+        self.assertEqual((r.status_code, r.data["code"]), (403, "khong_phai_nguoi_ky_dang_mo"))
         r = self.hanh_dong(self.ky1, "tu-choi", "k-tc", ly_do_tu_choi="Sai căn cứ pháp lý")
         self.assertEqual((r.status_code, r.data["trang_thai"]), (200, "TU_CHOI"))
         self.assertEqual((r.data["ly_do_tu_choi"], r.data["luot_trinh"][0]["trang_thai"]),
@@ -213,22 +195,6 @@ class TuChoiTests(KyBase):
 
 
 class ThuHoiTests(KyBase):
-    def test_revoke_blocking_initial_relocks_main_signer_and_keeps_old_signature(self):
-        self.ky(self.ky1)
-        cu = SigningSignature.objects.get()
-        r = self.hanh_dong(self.ky1, "thu-hoi", "k-th")
-        self.assertEqual(r.status_code, 200, r.data)
-        _, kt = self.nguoi_ky(r.data, "ke_toan")
-        _, pc = self.nguoi_ky(r.data, "phap_che")
-        self.assertEqual((kt["trang_thai"], kt["chu_ky"]), ("CHO_KY", None))
-        self.assertIsNone(pc["thoi_diem_mo"])  # ký chính bị khóa lại
-        self.assertEqual(self.ky(self.ky2).data["code"], "chua_den_luot_ky")
-        self.ky(self.ky1)
-        self.assertEqual(SigningSignature.objects.count(), 2)  # chữ ký cũ giữ nguyên làm bằng chứng
-        self.assertTrue(SigningSignature.objects.filter(pk=cu.pk).exists())
-        log = SigningAuditLog.objects.get(hanh_dong="THU_HOI_CHU_KY")
-        self.assertEqual(log.du_lieu_kem_theo["chu_ky_thu_hoi"], cu.pk)
-
     def test_revoke_rules(self):
         r = self.hanh_dong(self.ky1, "thu-hoi")
         self.assertEqual((r.status_code, r.data["code"]), (409, "chua_ky_khong_thu_hoi"))
@@ -237,15 +203,16 @@ class ThuHoiTests(KyBase):
         r = self.hanh_dong(self.ky1, "thu-hoi")
         self.assertEqual((r.status_code, r.data["code"]), (409, "cap_da_dong_khong_thu_hoi"))
 
-    def test_blocking_initial_cannot_revoke_after_main_signed(self):
-        self.process = self.tao_quy_trinh("TH", [{"cap_ky": 1, "ten_cap_ky": "C", "thu_tu": 1, "nguoi_ky": [
-            {"nguoi_ky": self.ky1, "thu_tu": 1, "vai_tro_ky": "KY_NHAY"},
-            {"nguoi_ky": self.ky2, "thu_tu": 2}, {"nguoi_ky": self.ky3, "thu_tu": 3}]}])
-        self.pk = self.ho_so_da_gui()["id"]
+    def test_revoke_while_level_open_keeps_old_signature(self):
         self.ky(self.ky1)
-        self.ky(self.ky2)  # một ký chính đã ký, cấp còn mở vì ký chính thứ hai chưa ký
-        r = self.hanh_dong(self.ky1, "thu-hoi")
-        self.assertEqual((r.status_code, r.data["code"]), (409, "ky_chinh_da_ky"))
+        cu = SigningSignature.objects.get()
+        r = self.hanh_dong(self.ky1, "thu-hoi", "k-th")
+        self.assertEqual(r.status_code, 200, r.data)
+        _, dong = self.nguoi_ky(r.data, "ke_toan")
+        self.assertEqual((dong["trang_thai"], dong["chu_ky"]), ("CHO_KY", None))
+        self.assertTrue(SigningSignature.objects.filter(pk=cu.pk).exists())  # chữ ký cũ giữ làm bằng chứng
+        log = SigningAuditLog.objects.get(hanh_dong="THU_HOI_CHU_KY")
+        self.assertEqual(log.du_lieu_kem_theo["chu_ky_thu_hoi"], cu.pk)
 
 
 @unittest.skipUnless(connection.vendor == "postgresql", "Cần PostgreSQL để kiểm tra khóa dòng đồng thời")
@@ -264,19 +231,20 @@ class DongThoiTests(TransactionTestCase):
         self.ky1 = User.objects.create_user("ky1")
         cap_quyen(self.tao, "add_trinhky", "send_trinhky", "view_vanbandi")
         cap_quyen(self.ky1, "sign_trinhky")
+        dat_anh_chu_ky(self.ky1)
         from signing.services import process as process_service
         qt = process_service.tao_quy_trinh(self.tao, ma_quy_trinh="DT", ten_quy_trinh="DT", pham_vi="CONG_TY", cap_ky=[
             {"cap_ky": 1, "ten_cap_ky": "C", "thu_tu": 1, "nguoi_ky": [{"nguoi_ky": self.ky1, "thu_tu": 1}]}])
         qt = process_service.kich_hoat(qt, self.tao)
-        self.ho_so = trinh_ky_service.tao_nhap(self.tao, document_type="vanbandi", van_ban_id=10, quy_trinh=qt,
-                                               muc_do="THUONG", tep=tep_pdf())
+        self.ho_so = trinh_ky_service.tao_nhap(self.tao, quy_trinh=qt, tep=tep_pdf(),
+                                               trich_yeu_van_ban="Tài liệu kiểm tra")
         self.ho_so = trinh_ky_service.gui(self.ho_so, self.tao, khoa_chong_trung="g")
-        self.private, self.key = khoa_hoat_dong(self.ky1, "K-DT")
+        tao_pin(self.ky1)
 
-    def test_double_sign_with_different_keys_creates_one_signature(self):
+    def test_double_sign_with_different_idempotency_keys_creates_one_signature(self):
         def ky(khoa):
-            return lambda: hanh_dong_service.ky(self.ho_so, self.ky1, khoa_ky=self.key.pk, hash_tai_lieu=HASH,
-                                                chu_ky_so=ky_so(self.private), khoa_chong_trung=khoa)
+            return lambda: hanh_dong_service.ky(self.ho_so, self.ky1, hash_tai_lieu=HASH,
+                                                pin=PIN_KIEM_THU, khoa_chong_trung=khoa)
         loi = chay_song_song(ky("a"), ky("b"))
         self.assertEqual(SigningSignature.objects.count(), 1)
         self.assertEqual(len(loi), 1)
@@ -285,8 +253,8 @@ class DongThoiTests(TransactionTestCase):
 
     def test_sign_racing_cancel_has_single_consistent_outcome(self):
         loi = chay_song_song(
-            lambda: hanh_dong_service.ky(self.ho_so, self.ky1, khoa_ky=self.key.pk, hash_tai_lieu=HASH,
-                                         chu_ky_so=ky_so(self.private), khoa_chong_trung="ky"),
+            lambda: hanh_dong_service.ky(self.ho_so, self.ky1, hash_tai_lieu=HASH,
+                                         pin=PIN_KIEM_THU, khoa_chong_trung="ky"),
             lambda: trinh_ky_service.huy(self.ho_so, self.tao, khoa_chong_trung="huy"),
         )
         ho_so = SigningRequest.objects.get(pk=self.ho_so.pk)

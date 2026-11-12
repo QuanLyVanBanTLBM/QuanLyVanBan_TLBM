@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ResourceItem, ResourceAttachment, HieuLucType } from '@app-types/resource';
+import { ResourceItem, HieuLucType } from '@app-types/resource';
 import { Badge } from '@components/common/Badge';
 import { useTranslation } from '@i18n/translate';
+import { computeEffectiveStatus } from '@lib/resourceValidity';
 
 export interface ResourceTableProps {
   items: ResourceItem[];
@@ -16,6 +17,8 @@ export interface ResourceTableProps {
   onViewDetail: (item: ResourceItem) => void;
   onEdit?: (item: ResourceItem) => void;
   onDelete?: (item: ResourceItem) => void;
+  canEdit?: (item: ResourceItem) => boolean;
+  canDelete?: (item: ResourceItem) => boolean;
   onDownloadFile?: (item: ResourceItem, fileName?: string, filePath?: string) => void;
   onPageSizeChange?: (size: number) => void;
   onClearFilters?: () => void;
@@ -35,7 +38,8 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
   onViewDetail,
   onEdit,
   onDelete,
-  onDownloadFile,
+  canEdit,
+  canDelete,
   onPageSizeChange,
   onClearFilters,
   onDrillDown,
@@ -45,8 +49,6 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
   const [activeMenuId, setActiveMenuId] = useState<number | null>(null);
   // Vị trí fixed của dropdown menu — giải quyết lỗi bị clip bởi overflow-x-auto
   const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
-  // Dropdown danh sách tệp cho dòng có nhiều tệp
-  const [activeFileMenuId, setActiveFileMenuId] = useState<number | null>(null);
 
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
@@ -55,7 +57,6 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
     const handleClose = () => {
       setActiveMenuId(null);
       setMenuPos(null);
-      setActiveFileMenuId(null);
     };
 
     const handleClickOutside = (e: MouseEvent) => {
@@ -97,7 +98,7 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
     const top = spaceBelow < 120 ? Math.max(10, rect.top - 116) : rect.bottom + 4;
     setMenuPos({
       top,
-      right: Math.max(10, window.innerWidth - rect.right),
+      right: Math.max(10, Math.min(window.innerWidth - 186, window.innerWidth - rect.right)),
     });
     setActiveMenuId(itemId);
   };
@@ -105,6 +106,11 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
   // Format ngày dd/mm/yyyy
   const formatDate = (dateStr?: string) => {
     if (!dateStr) return '-';
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateStr);
+    if (match) {
+      const [, y, m, d] = match;
+      return `${d}/${m}/${y}`;
+    }
     try {
       const date = new Date(dateStr);
       if (isNaN(date.getTime())) return dateStr;
@@ -120,32 +126,19 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
 
 
   // Trích xuất đuôi tệp
-  const getFileExt = (urlOrName?: string, attachments?: ResourceAttachment[]) => {
-    if (attachments && attachments.length > 0) {
-      const first = attachments[0];
-      if (first.name) {
-        const cleanName = first.name.split('?')[0].split('#')[0];
-        const nameParts = cleanName.split('.');
-        if (nameParts.length > 1) {
-          const ext = nameParts.pop()?.toUpperCase() || '';
-          if (/^[A-Z0-9]{1,6}$/.test(ext)) {
-            return ext;
-          }
-        }
-      }
-      if (first.mime_type) {
-        if (first.mime_type.includes('pdf')) return 'PDF';
-        if (first.mime_type.includes('word') || first.mime_type.includes('officedocument.wordprocessingml')) return 'DOCX';
-        if (first.mime_type.includes('sheet') || first.mime_type.includes('excel')) return 'XLSX';
-        if (first.mime_type.includes('presentation') || first.mime_type.includes('powerpoint')) return 'PPTX';
-        if (first.mime_type.includes('image')) return 'IMG';
-        if (first.mime_type.includes('zip') || first.mime_type.includes('compressed')) return 'ZIP';
-      }
+  const getFileExt = (urlOrName?: string, mimeType?: string) => {
+    if (mimeType) {
+      if (mimeType.includes('pdf')) return 'PDF';
+      if (mimeType.includes('word') || mimeType.includes('officedocument.wordprocessingml')) return 'DOCX';
+      if (mimeType.includes('sheet') || mimeType.includes('excel') || mimeType.includes('csv')) return 'XLSX';
+      if (mimeType.includes('presentation') || mimeType.includes('powerpoint')) return 'PPTX';
+      if (mimeType.includes('image')) return 'IMG';
+      if (mimeType.includes('zip') || mimeType.includes('compressed')) return 'ZIP';
     }
 
     if (!urlOrName) return 'FILE';
 
-    // Xử lý an toàn blob URL (không split dấu chấm của 127.0.0.1 hay port)
+    // Xử lý an toàn blob URL
     if (urlOrName.startsWith('blob:')) {
       return 'PDF';
     }
@@ -159,7 +152,7 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
         return ext;
       }
     }
-    return 'PDF';
+    return 'FILE';
   };
 
   // Lấy icon font-awesome theo đuôi file
@@ -172,7 +165,8 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
         return 'fa-file-word text-blue-500';
       case 'XLS':
       case 'XLSX':
-        return 'fa-file-excel text-emerald-500';
+      case 'CSV':
+        return 'fa-file-excel text-[#107C41] dark:text-emerald-400';
       case 'ZIP':
       case 'RAR':
       case '7Z':
@@ -180,14 +174,147 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
       case 'JPG':
       case 'JPEG':
       case 'PNG':
+      case 'WEBP':
+      case 'IMG':
         return 'fa-file-image text-purple-500';
       default:
         return 'fa-file-lines text-secondary';
     }
   };
 
-  const renderStatusBadge = (hieuLuc: HieuLucType) => {
-    switch (hieuLuc) {
+  // Hiển thị các badge loại file đính kèm (hiển thị loại đầu tiên, còn lại hiển thị "...")
+  const renderFileBadges = (item: ResourceItem) => {
+    const fileList: { name: string; ext: string }[] = [];
+    if (item.attachments && item.attachments.length > 0) {
+      item.attachments
+        .filter((att) => !att.is_deleted)
+        .forEach((att) => {
+          fileList.push({
+            name: att.name || t('resourceManagement.attachment'),
+            ext: getFileExt(att.name || att.path, att.mime_type),
+          });
+        });
+    } else if (item.file_dinh_kem) {
+      fileList.push({
+        name: item.file_dinh_kem.split('/').pop() || t('resourceManagement.attachment'),
+        ext: getFileExt(item.file_dinh_kem),
+      });
+    }
+
+    if (fileList.length === 0) {
+      return <span className="text-muted text-xs italic">-</span>;
+    }
+
+    // Đếm số lượng theo từng loại extension: { PDF: 2, DOCX: 1, ... }
+    const counts: Record<string, number> = {};
+    const names: Record<string, string[]> = {};
+    fileList.forEach((f) => {
+      counts[f.ext] = (counts[f.ext] || 0) + 1;
+      if (!names[f.ext]) names[f.ext] = [];
+      names[f.ext].push(f.name);
+    });
+
+    const entries = Object.entries(counts);
+    const [firstExt, firstCount] = entries[0];
+    const hasMore = entries.length > 1;
+    const remainingFiles = fileList.filter((f) => f.ext !== firstExt);
+
+    const getBadgeStyle = (extension: string) => {
+      switch (extension) {
+        case 'PDF':
+          return 'bg-rose-50 text-rose-600 border-rose-200/80 dark:bg-rose-950/40 dark:text-rose-400 dark:border-rose-800/60';
+        case 'DOC':
+        case 'DOCX':
+          return 'bg-blue-50 text-blue-600 border-blue-200/80 dark:bg-blue-950/40 dark:text-blue-400 dark:border-blue-800/60';
+        case 'XLS':
+        case 'XLSX':
+        case 'CSV':
+          return 'bg-emerald-50 text-[#107C41] border-emerald-600/40 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800/60';
+        case 'ZIP':
+        case 'RAR':
+        case '7Z':
+          return 'bg-purple-50 text-purple-600 border-purple-200/80 dark:bg-purple-950/40 dark:text-purple-400 dark:border-purple-800/60';
+        case 'JPG':
+        case 'JPEG':
+        case 'PNG':
+        case 'WEBP':
+        case 'IMG':
+          return 'bg-amber-50 text-amber-600 border-amber-200/80 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800/60';
+        default:
+          return 'bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700';
+      }
+    };
+
+    const remainingTooltip = hasMore
+      ? `Còn ${remainingFiles.length} tệp khác (${entries.slice(1).map(([ext, cnt]) => `${ext}: ${cnt}`).join(', ')}):\n` +
+        remainingFiles.map((f) => `• ${f.name}`).join('\n')
+      : '';
+
+    return (
+      <div
+        className="inline-flex items-center justify-center gap-1.5 flex-nowrap cursor-pointer"
+        onClick={(e) => {
+          e.stopPropagation();
+          onViewDetail?.(item);
+        }}
+        title={fileList.map((f) => f.name).join('\n')}
+      >
+        <span
+          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold border hover:opacity-80 transition-all whitespace-nowrap ${getBadgeStyle(
+            firstExt
+          )}`}
+        >
+          <i className={`fa-solid ${getFileIcon(firstExt)} text-xs`} />
+          <span>{firstExt}{firstCount > 1 ? ` (${firstCount})` : ''}</span>
+        </span>
+
+        {hasMore && (
+          <span
+            className="inline-flex items-center justify-center px-1.5 py-0.5 rounded-md text-[11px] font-bold border bg-slate-100 text-slate-600 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-600 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all whitespace-nowrap shadow-2xs"
+            title={remainingTooltip}
+          >
+            ...
+          </span>
+        )}
+      </div>
+    );
+  };
+
+  const renderStatusBadge = (itemOrStatus: ResourceItem | HieuLucType) => {
+    let effectiveStatus: HieuLucType;
+    let isScheduled = false;
+    let expDate: string | null = null;
+
+    if (typeof itemOrStatus === 'string') {
+      effectiveStatus = itemOrStatus;
+    } else {
+      const validity = computeEffectiveStatus(
+        itemOrStatus.hieu_luc,
+        itemOrStatus.ngay_het_hieu_luc,
+        itemOrStatus.link_thay_the
+      );
+      effectiveStatus = validity.status;
+      isScheduled = validity.isScheduled;
+      expDate = validity.expirationDate || null;
+    }
+
+    if (isScheduled && expDate) {
+      return (
+        <div className="inline-flex flex-col items-center gap-0.5">
+          <Badge variant="success" size="sm" withDot>
+            {t('resourceManagement.statusActive')}
+          </Badge>
+          <span
+            className="text-[10px] text-muted font-medium"
+            title={t('resourceManagement.scheduledExpiryNotice', { date: formatDate(expDate) })}
+          >
+            {t('resourceManagement.expiresOnDate', { date: formatDate(expDate) })}
+          </span>
+        </div>
+      );
+    }
+
+    switch (effectiveStatus) {
       case 'CON_HIEU_LUC':
         return (
           <Badge variant="success" size="sm" withDot>
@@ -209,13 +336,13 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
       case 'HET_VA_THAY_THE':
         return (
           <Badge variant="warning" size="sm" withDot>
-            {t('resourceManagement.statusExpired')}
+            {t('resourceManagement.statusReplaced')}
           </Badge>
         );
       default:
         return (
           <Badge variant="secondary" size="sm">
-            {hieuLuc}
+            {effectiveStatus}
           </Badge>
         );
     }
@@ -249,9 +376,9 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
     | { type: 'page'; num: number }
     | { type: 'ellipsis'; direction: 'prev' | 'next'; targetPage: number };
 
-  // Danh sách phần tử phân trang thông minh: rút gọn chỉ hiện 3 số (ví dụ 1 2 3 ... 9 hoặc 1 ... 7 8 9)
+  // Danh sách phần tử phân trang: rút gọn chỉ hiện 2 số ở đầu/cuối (ví dụ: 1 2 ... 6 hoặc 1 ... 5 6)
   const getPageElements = (): PageItem[] => {
-    if (totalPages <= 5) {
+    if (totalPages <= 4) {
       return Array.from({ length: totalPages }, (_, i) => ({
         type: 'page',
         num: i + 1,
@@ -261,53 +388,40 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
     const items: PageItem[] = [];
 
     if (currentPage <= 2) {
-      // Đang ở gần đầu: chỉ hiện 3 số đầu 1, 2, 3 ... totalPages
-      for (let i = 1; i <= 3; i++) {
-        items.push({ type: 'page', num: i });
-      }
+      // Đang ở gần đầu: 1 2 ... totalPages (Ví dụ: 1 2 ... 6)
+      items.push({ type: 'page', num: 1 });
+      items.push({ type: 'page', num: 2 });
       items.push({
         type: 'ellipsis',
         direction: 'next',
-        targetPage: Math.min(totalPages, currentPage + 3),
+        targetPage: Math.min(totalPages, currentPage + 2),
       });
       items.push({ type: 'page', num: totalPages });
     } else if (currentPage >= totalPages - 1) {
-      // Đang ở gần cuối: 1 ... (totalPages-2) (totalPages-1) totalPages
+      // Đang ở gần cuối: 1 ... (totalPages-1) totalPages (Ví dụ: 1 ... 5 6)
       items.push({ type: 'page', num: 1 });
       items.push({
         type: 'ellipsis',
         direction: 'prev',
-        targetPage: Math.max(1, currentPage - 3),
+        targetPage: Math.max(1, currentPage - 2),
       });
-      for (let i = totalPages - 2; i <= totalPages; i++) {
-        items.push({ type: 'page', num: i });
-      }
+      items.push({ type: 'page', num: totalPages - 1 });
+      items.push({ type: 'page', num: totalPages });
     } else {
-      // Đang ở giữa: 1 ... (currentPage-1) (currentPage) (currentPage+1) ... totalPages
+      // Đang ở giữa: 1 ... currentPage ... totalPages
       items.push({ type: 'page', num: 1 });
 
-      if (currentPage - 1 > 2) {
-        items.push({
-          type: 'ellipsis',
-          direction: 'prev',
-          targetPage: Math.max(1, currentPage - 3),
-        });
-      }
-
-      // Nếu currentPage === 3 thì currentPage - 1 là 2 (liền kề 1, không cần ellipsis)
-      items.push({ type: 'page', num: currentPage - 1 });
+      items.push({
+        type: 'ellipsis',
+        direction: 'prev',
+        targetPage: Math.max(2, currentPage - 2),
+      });
       items.push({ type: 'page', num: currentPage });
-      items.push({ type: 'page', num: currentPage + 1 });
-
-      // Nếu currentPage === totalPages - 2 thì currentPage + 1 là totalPages - 1 (liền kề totalPages, không cần ellipsis)
-      if (currentPage + 1 < totalPages - 1) {
-        items.push({
-          type: 'ellipsis',
-          direction: 'next',
-          targetPage: Math.min(totalPages, currentPage + 3),
-        });
-      }
-
+      items.push({
+        type: 'ellipsis',
+        direction: 'next',
+        targetPage: Math.min(totalPages - 1, currentPage + 2),
+      });
       items.push({ type: 'page', num: totalPages });
     }
 
@@ -321,16 +435,16 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
     >
       {/* Khung Bảng dữ liệu chính */}
       <div className="w-full overflow-x-auto">
-        <table className="w-full text-left text-sm border-collapse min-w-[850px]">
+        <table className="w-full text-left text-sm border-collapse min-w-full">
           <thead className="bg-surface-elevated text-xs font-bold text-muted uppercase tracking-wider border-b border-border-subtle select-none">
             <tr>
-              <th className="px-4 py-3.5 w-36 min-w-[130px] whitespace-nowrap">{t('resourceManagement.colCode')}</th>
-              <th className="px-4 py-3.5 min-w-[260px]">{t('resourceManagement.colTitle')}</th>
-              <th className="px-4 py-3.5 w-48 min-w-[170px]">{t('resourceManagement.colAuthority')}</th>
-              <th className="px-3.5 py-3.5 w-32 min-w-[110px] text-center whitespace-nowrap">{t('resourceManagement.colDate')}</th>
-              <th className="px-4 py-3.5 w-44 min-w-[150px] text-center whitespace-nowrap">{t('resourceManagement.colStatus')}</th>
-              <th className="px-3.5 py-3.5 w-40 min-w-[140px] text-center whitespace-nowrap">{t('resourceManagement.colFile')}</th>
-              <th className="px-3.5 py-3.5 w-20 min-w-[80px] text-center whitespace-nowrap">{t('resourceManagement.colActions')}</th>
+              <th className="hidden sm:table-cell px-2.5 sm:px-4 py-3 sm:py-3.5 w-24 sm:w-32 min-w-[80px] whitespace-nowrap">{t('resourceManagement.colCode')}</th>
+              <th className="px-2.5 sm:px-4 py-3 sm:py-3.5 min-w-[140px] sm:min-w-[200px]">{t('resourceManagement.colTitle')}</th>
+              <th className="hidden lg:table-cell px-2.5 sm:px-4 py-3 sm:py-3.5 w-36 sm:w-44 min-w-[120px]">{t('resourceManagement.colAuthority')}</th>
+              <th className="hidden lg:table-cell px-2 sm:px-3.5 py-3 sm:py-3.5 w-24 sm:w-28 min-w-[85px] text-center whitespace-nowrap">{t('resourceManagement.colDate')}</th>
+              <th className="hidden sm:table-cell px-2 sm:px-3.5 py-3 sm:py-3.5 w-28 sm:w-36 min-w-[95px] text-center whitespace-nowrap">{t('resourceManagement.colStatus')}</th>
+              <th className="hidden sm:table-cell px-2 sm:px-3.5 py-3 sm:py-3.5 w-24 sm:w-32 min-w-[80px] text-center whitespace-nowrap">{t('resourceManagement.colFile')}</th>
+              <th className="px-2 sm:px-3 py-3 sm:py-3.5 w-12 sm:w-16 min-w-[44px] text-center whitespace-nowrap">{t('resourceManagement.colActions')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border-subtle">
@@ -338,23 +452,23 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
               // Trạng thái Loading (Skeleton)
               Array.from({ length: pageSize > 5 ? 5 : pageSize }).map((_, idx) => (
                 <tr key={idx} className="animate-pulse">
-                  <td className="px-4 py-4">
+                  <td className="hidden sm:table-cell px-4 py-4">
                     <div className="h-4 w-20 bg-surface-elevated rounded" />
                   </td>
                   <td className="px-4 py-4">
                     <div className="h-4 w-3/4 bg-surface-elevated rounded mb-1.5" />
                     <div className="h-3 w-1/3 bg-surface-elevated rounded" />
                   </td>
-                  <td className="px-4 py-4">
+                  <td className="hidden lg:table-cell px-4 py-4">
                     <div className="h-4 w-28 bg-surface-elevated rounded" />
                   </td>
-                  <td className="px-4 py-4 text-center">
+                  <td className="hidden lg:table-cell px-4 py-4 text-center">
                     <div className="h-4 w-16 bg-surface-elevated rounded mx-auto" />
                   </td>
-                  <td className="px-4 py-4 text-center">
+                  <td className="hidden sm:table-cell px-4 py-4 text-center">
                     <div className="h-5 w-24 bg-surface-elevated rounded-full mx-auto" />
                   </td>
-                  <td className="px-4 py-4 text-center">
+                  <td className="hidden sm:table-cell px-4 py-4 text-center">
                     <div className="h-7 w-20 bg-surface-elevated rounded mx-auto" />
                   </td>
                   <td className="px-4 py-4 text-center">
@@ -373,7 +487,7 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
                     <div className="max-w-sm space-y-1">
                       <h4 className="text-base font-semibold text-main">{error}</h4>
                       <p className="text-xs text-secondary">
-                        Đã có lỗi xảy ra khi tải danh sách tài liệu. Vui lòng thử lại.
+                        {t('resourceManagement.errorLoadDocs')}
                       </p>
                     </div>
                     {onRetry && (
@@ -383,7 +497,7 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
                         className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary text-white hover:bg-primary-hover transition-colors cursor-pointer"
                       >
                         <i className="fa-solid fa-rotate-right text-[11px]" />
-                        <span>Thử lại</span>
+                        <span>{t('resourceManagement.retry')}</span>
                       </button>
                     )}
                   </div>
@@ -421,39 +535,40 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
             ) : (
               // Danh sách dòng tài liệu
               items.map((item) => {
-                // RÀNG BUỘC ĐẶC BIỆT: HẾT HIỆU LỰC / HẾT VÀ THAY THẾ LÀM MỜ TOÀN BỘ DÒNG
-                const isExpired =
-                  item.hieu_luc === 'HET_HIEU_LUC' || item.hieu_luc === 'HET_VA_THAY_THE';
+                const itemCanEdit = Boolean(onEdit && (canEdit ? canEdit(item) : true));
+                const itemCanDelete = Boolean(onDelete && (canDelete ? canDelete(item) : true));
+
+                // TÍNH TOÁN HIỆU LỰC THỰC TẾ THEO THỜI GIAN
+                const validity = computeEffectiveStatus(
+                  item.hieu_luc,
+                  item.ngay_het_hieu_luc,
+                  item.link_thay_the
+                );
+                const isExpired = validity.isExpired;
 
                 const rowClass = isExpired
                   ? 'bg-slate-100/70 dark:bg-slate-800/60 text-slate-500 hover:bg-slate-200/50 dark:hover:bg-slate-800/80'
                   : 'hover:bg-slate-50 dark:hover:bg-slate-800/40 text-main';
 
-                const ext = getFileExt(item.file_dinh_kem, item.attachments);
-                const hasMultipleFiles = Boolean(item.attachments && item.attachments.length > 1);
-
                 return (
                   <tr
                     key={item.id}
                     onClick={() => {
-                      // Bấm dòng → Drill-down vào thư mục + loại tài liệu của mục đó
-                      if (onDrillDown) {
-                        const firstType = item.loai_tai_lieu?.[0];
-                        onDrillDown(item.dm_tai_lieu, firstType);
-                      }
+                      // Bấm dòng → Chỉ hiện chi tiết của tài liệu đó
+                      onViewDetail?.(item);
                     }}
                     className={`transition-colors duration-fast cursor-pointer select-none ${rowClass}`}
-                    title="Bấm để đi vào thư mục của tài liệu"
+                    title={t('resourceManagement.clickToViewDetail')}
                   >
-                    {/* Cột 1: Ký hiệu (thống nhất font sans chuẩn hệ thống, ngay hàng thẳng lối) */}
-                    <td className="px-4 py-3.5 align-middle whitespace-nowrap">
+                    {/* Cột 1: Ký hiệu (Ẩn trên mobile, hiện từ sm: tablet/desktop) */}
+                    <td className="hidden sm:table-cell px-2.5 sm:px-4 py-3 sm:py-3.5 align-middle whitespace-nowrap">
                       <span className="text-xs font-semibold text-main tracking-tight">
                         {item.ky_hieu || '-'}
                       </span>
                     </td>
 
                     {/* Cột 2: Tiêu đề + Loại tài liệu + Link thay thế (Cùng hàng cân đối tuyệt đối) */}
-                    <td className="px-4 py-3.5 align-middle">
+                    <td className="px-2.5 sm:px-4 py-3 sm:py-3.5 align-middle">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-semibold text-sm text-main hover:text-primary transition-colors leading-snug">
                           {item.tieu_de}
@@ -475,7 +590,7 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
                       </div>
 
                       {/* Dòng Link thay thế dưới tiêu đề nếu Hết và thay thế */}
-                      {item.hieu_luc === 'HET_VA_THAY_THE' && item.link_thay_the && (
+                      {(item.hieu_luc === 'HET_VA_THAY_THE' || validity.status === 'HET_VA_THAY_THE') && item.link_thay_the && (
                         <div className="mt-1 opacity-100">
                           <a
                             href={item.link_thay_the}
@@ -483,112 +598,44 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
                             rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
                             className="inline-flex items-center gap-1 text-xs text-primary hover:underline font-medium hover:text-primary-hover"
-                            title="Mở văn bản thay thế mới"
+                            title={t('resourceManagement.viewReplacement')}
                           >
-                            <span>&rarr; Xem văn bản thay thế</span>
+                            <span>{t('resourceManagement.viewReplacement')}</span>
                             <i className="fa-solid fa-arrow-up-right-from-square text-[9px]" />
                           </a>
                         </div>
                       )}
                     </td>
 
-                    {/* Cột 3: Nơi ban hành */}
-                    <td className="px-4 py-3.5 align-middle text-xs text-secondary leading-snug">
+                    {/* Cột 3: Nơi ban hành (Ẩn trên mobile & tablet, hiện từ lg: desktop) */}
+                    <td className="hidden lg:table-cell px-2.5 sm:px-4 py-3 sm:py-3.5 align-middle text-xs text-secondary leading-snug">
                       {item.noi_ban_hanh || '-'}
                     </td>
 
-                    {/* Cột 4: Ngày đăng (dd/mm/yyyy thường, thẳng hàng giữa) */}
-                    <td className="px-3.5 py-3.5 text-center align-middle whitespace-nowrap text-xs text-secondary leading-snug">
+                    {/* Cột 4: Ngày đăng (Ẩn trên mobile & tablet, hiện từ lg: desktop) */}
+                    <td className="hidden lg:table-cell px-2 sm:px-3.5 py-3 sm:py-3.5 text-center align-middle whitespace-nowrap text-xs text-secondary leading-snug">
                       {formatDate(item.ngay_dang)}
                     </td>
 
-                    {/* Cột 5: Hiệu lực (Badge giữ độ nét 100%, thẳng hàng giữa) */}
-                    <td className="px-4 py-3.5 text-center align-middle whitespace-nowrap opacity-100">
-                      {renderStatusBadge(item.hieu_luc)}
+                    {/* Cột 5: Hiệu lực (Ẩn trên mobile, hiện từ sm: tablet/desktop) */}
+                    <td className="hidden sm:table-cell px-2 sm:px-3.5 py-3 sm:py-3.5 text-center align-middle whitespace-nowrap opacity-100">
+                      {renderStatusBadge(item)}
                     </td>
 
-                    {/* Cột 6: Tệp đính kèm (Icon & Nút tải về cố định độ rộng để thẳng hàng tuyệt đối) */}
+                    {/* Cột 6: Tệp đính kèm (Ẩn trên mobile, hiện từ sm: tablet/desktop) */}
                     <td
-                      className="px-3.5 py-3.5 text-center align-middle whitespace-nowrap opacity-100"
-                      onClick={(e) => e.stopPropagation()}
-                      data-dropdown-root
+                      className="hidden sm:table-cell px-2 sm:px-3.5 py-3 sm:py-3.5 text-center align-middle whitespace-nowrap opacity-100"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onViewDetail?.(item);
+                      }}
                     >
-                      {hasMultipleFiles ? (
-                        // Trường hợp nhiều tệp: hiện badge số tệp và dropdown tải từng tệp
-                        <div className="relative inline-block text-left">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setActiveFileMenuId(activeFileMenuId === item.id ? null : item.id)
-                            }
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg bg-surface-elevated hover:bg-border-subtle/50 text-main border border-border-subtle transition-colors cursor-pointer"
-                            title="Xem danh sách tệp đính kèm"
-                            aria-label={`Có ${item.attachments?.length} tệp đính kèm`}
-                          >
-                            <i className="fa-solid fa-paperclip text-primary text-[11px]" />
-                            <span>{item.attachments?.length} tệp</span>
-                            <i className="fa-solid fa-chevron-down text-[9px] text-muted" />
-                          </button>
-
-                          {activeFileMenuId === item.id && (
-                            <div className="absolute right-0 mt-1 w-64 rounded-xl bg-surface border border-border-subtle shadow-lg z-20 py-1.5 animate-fade-in text-left">
-                              <div className="px-3 py-1.5 text-[11px] font-bold text-muted border-b border-border-subtle uppercase">
-                                Danh sách tệp đính kèm
-                              </div>
-                              <div className="max-h-48 overflow-y-auto divide-y divide-border-subtle/50">
-                                {item.attachments?.map((att, attIdx) => {
-                                  const attExt = getFileExt(att.name || att.path);
-                                  return (
-                                    <div
-                                      key={attIdx}
-                                      className="px-3 py-2 flex items-center justify-between gap-2 hover:bg-surface-elevated transition-colors text-xs"
-                                    >
-                                      <div className="flex items-center gap-1.5 min-w-0">
-                                        <i className={`fa-solid ${getFileIcon(attExt)} text-sm shrink-0`} />
-                                        <span className="truncate text-main font-medium" title={att.name}>
-                                          {att.name}
-                                        </span>
-                                      </div>
-                                      <button
-                                        type="button"
-                                        onClick={() => onDownloadFile?.(item, att.name, att.path)}
-                                        className="shrink-0 p-1 text-primary hover:text-primary-hover hover:bg-primary-subtle rounded transition-colors"
-                                        title="Tải về"
-                                        aria-label={`Tải về ${att.name}`}
-                                      >
-                                        <i className="fa-solid fa-download text-xs" />
-                                      </button>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      ) : item.file_dinh_kem ? (
-                        // Trường hợp 1 tệp: hiện icon + Ext + nút Tải về với chiều rộng cố định để thẳng hàng
-                        <div className="inline-flex items-center justify-center gap-1.5 text-xs">
-                          <i className={`fa-solid ${getFileIcon(ext)} text-sm shrink-0`} />
-                          <span className="font-semibold text-secondary text-[11px] w-9 inline-block text-left">{ext}</span>
-                          <button
-                            type="button"
-                            onClick={() => onDownloadFile?.(item)}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold text-primary hover:text-primary-hover hover:bg-primary-subtle rounded-md transition-colors cursor-pointer"
-                            title="Tải về tệp đính kèm"
-                            aria-label={`Tải về tệp ${ext}`}
-                          >
-                            <i className="fa-solid fa-download text-[11px]" />
-                            <span>{t('resourceManagement.download')}</span>
-                          </button>
-                        </div>
-                      ) : (
-                        <span className="text-muted text-xs italic">-</span>
-                      )}
+                      {renderFileBadges(item)}
                     </td>
 
                     {/* Cột 7: Thao tác — Menu "⋯": Xem chi tiết, Chỉnh sửa, Xóa */}
                     <td
-                      className="px-3.5 py-3.5 text-center align-middle whitespace-nowrap opacity-100"
+                      className="px-2 sm:px-3 py-3 sm:py-3.5 text-center align-middle whitespace-nowrap opacity-100"
                       onClick={(e) => e.stopPropagation()}
                       data-dropdown-root
                     >
@@ -597,7 +644,7 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
                           type="button"
                           onClick={(e) => openActionMenu(e, item.id)}
                           className="w-8 h-7 rounded-lg inline-flex items-center justify-center text-muted hover:text-main hover:bg-surface-elevated transition-colors cursor-pointer"
-                          title="Thao tác"
+                          title={t('resourceManagement.actionMenu')}
                           aria-label={`Thao tác với tài liệu ${item.ky_hieu || item.tieu_de}`}
                           aria-haspopup="true"
                           aria-expanded={activeMenuId === item.id}
@@ -622,10 +669,10 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
                               onViewDetail(item);
                             }}
                             className="w-full px-3 py-2 text-xs text-left text-main hover:bg-surface-elevated flex items-center gap-2 transition-colors cursor-pointer"
-                            aria-label="Xem chi tiết tài liệu"
+                            aria-label={t('resourceManagement.viewDetailDoc')}
                           >
                             <i className="fa-solid fa-eye text-muted text-xs" />
-                            <span>Xem chi tiết</span>
+                            <span>{t('resourceManagement.viewDetail')}</span>
                           </button>
 
                           {/* Mục 2: Truy cập Thư mục + Loại */}
@@ -639,29 +686,29 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
                                 onDrillDown(item.dm_tai_lieu, firstType);
                               }}
                               className="w-full px-3 py-2 text-xs text-left text-main hover:bg-surface-elevated flex items-center gap-2 transition-colors cursor-pointer"
-                              aria-label="Truy cập thư mục của tài liệu"
+                              aria-label={t('resourceManagement.goToFolder')}
                             >
                               <i className="fa-solid fa-folder-open text-primary text-xs" />
-                              <span className="text-primary font-medium">Vào Thư mục</span>
+                              <span className="text-primary font-medium">{t('resourceManagement.goToFolder')}</span>
                             </button>
                           )}
 
                           {/* Phân cách trước nhóm chỉnh sửa/xóa */}
-                          {(onEdit || onDelete) && (
+                          {(itemCanEdit || itemCanDelete) && (
                             <div className="my-1 border-t border-border-subtle" />
                           )}
 
                           {/* Mục 3: Chỉnh sửa */}
-                          {onEdit && (
+                          {itemCanEdit && (
                             <button
                               type="button"
                               onClick={() => {
                                 setActiveMenuId(null);
                                 setMenuPos(null);
-                                onEdit(item);
+                                onEdit?.(item);
                               }}
                               className="w-full px-3 py-2 text-xs text-left text-main hover:bg-surface-elevated flex items-center gap-2 transition-colors cursor-pointer"
-                              aria-label="Chỉnh sửa tài liệu"
+                              aria-label={t('resourceManagement.edit')}
                             >
                               <i className="fa-solid fa-pen-to-square text-muted text-xs" />
                               <span>{t('resourceManagement.edit')}</span>
@@ -669,16 +716,16 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
                           )}
 
                           {/* Mục 4: Xóa tài liệu */}
-                          {onDelete && (
+                          {itemCanDelete && (
                             <button
                               type="button"
                               onClick={() => {
                                 setActiveMenuId(null);
                                 setMenuPos(null);
-                                onDelete(item);
+                                onDelete?.(item);
                               }}
                               className="w-full px-3 py-2 text-xs text-left text-danger hover:bg-danger-subtle flex items-center gap-2 transition-colors cursor-pointer font-medium"
-                              aria-label="Xóa tài liệu"
+                              aria-label={t('resourceManagement.delete')}
                             >
                               <i className="fa-solid fa-trash-can text-danger text-xs" />
                               <span>{t('resourceManagement.delete')}</span>
@@ -711,21 +758,21 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
       {/* Chân bảng: Chọn số dòng hiển thị + Thanh phân trang thông minh */}
       <div
         ref={paginationRef}
-        className="flex flex-col xl:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-border-subtle text-xs text-secondary bg-surface pr-4 sm:pr-28 lg:pr-32"
+        className="flex flex-col md:flex-row items-center justify-between gap-3 px-3 sm:px-4 py-3 border-t border-border-subtle text-xs text-secondary bg-surface"
       >
         {/* Bên trái chân bảng: Dropdown chọn số dòng & Thông tin tổng số */}
-        <div className="flex items-center gap-2.5 shrink-0 select-none">
-          <span className="font-medium">Hiển thị</span>
+        <div className="flex items-center gap-2 sm:gap-2.5 shrink-0 select-none">
+          <span className="font-medium">{t('resourceManagement.display')}</span>
           <select
             value={pageSize}
             onChange={(e) => onPageSizeChange?.(Number(e.target.value))}
             className="px-2 py-1 bg-surface-elevated border border-border-subtle rounded-md text-main text-xs focus:outline-hidden focus:border-primary cursor-pointer font-medium"
-            aria-label="Chọn số dòng hiển thị trên mỗi trang"
+            aria-label={t('resourceManagement.selectRowsPerPageAria')}
           >
-            <option value={5}>5 dòng</option>
-            <option value={10}>10 dòng</option>
-            <option value={20}>20 dòng</option>
-            <option value={50}>50 dòng</option>
+            <option value={5}>5 {t('resourceManagement.rows')}</option>
+            <option value={10}>10 {t('resourceManagement.rows')}</option>
+            <option value={20}>20 {t('resourceManagement.rows')}</option>
+            <option value={50}>50 {t('resourceManagement.rows')}</option>
           </select>
           <span className="font-medium">/ {t('resourceManagement.rowsPerPage')}</span>
         </div>
@@ -733,31 +780,29 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
         {/* Cụm điều hướng phân trang hoàn chỉnh */}
         {totalPages > 1 && (
           <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap justify-center select-none">
-            <div className="flex items-center gap-1">
-              {/* Nút về trang đầu (hiện khi có từ 6 trang trở lên) */}
-              {totalPages > 5 && (
-                <button
-                  type="button"
-                  disabled={currentPage <= 1 || isLoading}
-                  onClick={() => handlePageChange(1)}
-                  className="min-w-[32px] h-8 px-2 text-xs font-medium rounded-lg border border-border-subtle bg-surface hover:bg-surface-elevated text-secondary hover:text-main disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center justify-center"
-                  title="Về trang đầu (Trang 1)"
-                  aria-label="Về trang đầu"
-                >
-                  <i className="fa-solid fa-angles-left text-[11px]" />
-                </button>
-              )}
+            <div className="flex items-center gap-0.5 sm:gap-1">
+              {/* Nút về trang đầu */}
+              <button
+                type="button"
+                disabled={currentPage <= 1 || isLoading}
+                onClick={() => handlePageChange(1)}
+                className="min-w-[28px] sm:min-w-[32px] h-7 sm:h-8 px-1.5 sm:px-2 text-xs font-medium rounded-lg border border-border-subtle bg-surface hover:bg-surface-elevated text-secondary hover:text-main disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center justify-center"
+                title={t('resourceManagement.firstPageTitle')}
+                aria-label={t('resourceManagement.firstPage')}
+              >
+                <i className="fa-solid fa-angles-left text-[10px] sm:text-[11px]" />
+              </button>
 
               {/* Nút lùi 1 trang */}
               <button
                 type="button"
                 disabled={currentPage <= 1 || isLoading}
                 onClick={() => handlePageChange(currentPage - 1)}
-                className="min-w-[32px] h-8 px-2 text-xs font-medium rounded-lg border border-border-subtle bg-surface hover:bg-surface-elevated text-secondary hover:text-main disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center justify-center"
-                title="Trang trước"
-                aria-label="Trang trước"
+                className="min-w-[28px] sm:min-w-[32px] h-7 sm:h-8 px-1.5 sm:px-2 text-xs font-medium rounded-lg border border-border-subtle bg-surface hover:bg-surface-elevated text-secondary hover:text-main disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center justify-center"
+                title={t('resourceManagement.prevPage')}
+                aria-label={t('resourceManagement.prevPage')}
               >
-                <i className="fa-solid fa-chevron-left text-[11px]" />
+                <i className="fa-solid fa-chevron-left text-[10px] sm:text-[11px]" />
               </button>
 
               {/* Danh sách các nút số trang + Nút ... rút gọn thông minh */}
@@ -769,20 +814,15 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
                       type="button"
                       disabled={isLoading}
                       onClick={() => handlePageChange(item.targetPage)}
-                      className="group min-w-[32px] h-8 px-1 text-xs font-medium rounded-lg border border-transparent hover:border-border-subtle hover:bg-surface-elevated text-muted hover:text-primary transition-all cursor-pointer flex items-center justify-center"
+                      className="min-w-[28px] sm:min-w-[32px] h-7 sm:h-8 px-1 text-xs font-medium rounded-lg border border-transparent hover:border-border-subtle hover:bg-surface-elevated text-muted hover:text-primary transition-all cursor-pointer flex items-center justify-center"
                       title={
                         item.direction === 'prev'
-                          ? `Lùi 3 trang (Về trang ${item.targetPage})`
-                          : `Tiến 3 trang (Đến trang ${item.targetPage})`
+                          ? t('resourceManagement.jumpBackPages', { page: item.targetPage })
+                          : t('resourceManagement.jumpForwardPages', { page: item.targetPage })
                       }
-                      aria-label={item.direction === 'prev' ? 'Lùi 3 trang' : 'Tiến 3 trang'}
+                      aria-label={item.direction === 'prev' ? t('resourceManagement.jumpBackAria') : t('resourceManagement.jumpForwardAria')}
                     >
-                      <span className="group-hover:hidden tracking-widest text-[11px] font-bold">•••</span>
-                      <i
-                        className={`hidden group-hover:inline fa-solid text-[10px] ${
-                          item.direction === 'prev' ? 'fa-angles-left' : 'fa-angles-right'
-                        }`}
-                      />
+                      <span className="tracking-widest text-[10px] sm:text-[11px] font-bold">•••</span>
                     </button>
                   );
                 }
@@ -794,12 +834,12 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
                     type="button"
                     disabled={isLoading}
                     onClick={() => handlePageChange(item.num)}
-                    className={`min-w-[32px] h-8 px-2 text-xs font-semibold rounded-lg transition-all cursor-pointer flex items-center justify-center ${
+                    className={`min-w-[28px] sm:min-w-[32px] h-7 sm:h-8 px-1.5 sm:px-2 text-xs font-semibold rounded-lg transition-all cursor-pointer flex items-center justify-center ${
                       isActive
                         ? 'bg-primary text-white shadow-xs font-bold border border-primary'
                         : 'border border-border-subtle bg-surface hover:bg-surface-elevated text-secondary hover:text-main'
                     }`}
-                    aria-label={`Trang ${item.num}`}
+                    aria-label={`${t('resourceManagement.page')} ${item.num}`}
                     aria-current={isActive ? 'page' : undefined}
                   >
                     {item.num}
@@ -812,52 +852,51 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
                 type="button"
                 disabled={currentPage >= totalPages || isLoading}
                 onClick={() => handlePageChange(currentPage + 1)}
-                className="min-w-[32px] h-8 px-2 text-xs font-medium rounded-lg border border-border-subtle bg-surface hover:bg-surface-elevated text-secondary hover:text-main disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center justify-center"
-                title="Trang sau"
-                aria-label="Trang sau"
+                className="min-w-[28px] sm:min-w-[32px] h-7 sm:h-8 px-1.5 sm:px-2 text-xs font-medium rounded-lg border border-border-subtle bg-surface hover:bg-surface-elevated text-secondary hover:text-main disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center justify-center"
+                title={t('resourceManagement.nextPage')}
+                aria-label={t('resourceManagement.nextPage')}
               >
-                <i className="fa-solid fa-chevron-right text-[11px]" />
+                <i className="fa-solid fa-chevron-right text-[10px] sm:text-[11px]" />
               </button>
 
-              {/* Nút đến trang cuối (hiện khi có từ 6 trang trở lên) */}
-              {totalPages > 5 && (
-                <button
-                  type="button"
-                  disabled={currentPage >= totalPages || isLoading}
-                  onClick={() => handlePageChange(totalPages)}
-                  className="min-w-[32px] h-8 px-2 text-xs font-medium rounded-lg border border-border-subtle bg-surface hover:bg-surface-elevated text-secondary hover:text-main disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center justify-center"
-                  title={`Đến trang cuối (Trang ${totalPages})`}
-                  aria-label="Đến trang cuối"
-                >
-                  <i className="fa-solid fa-angles-right text-[11px]" />
-                </button>
-              )}
+              {/* Nút đến trang cuối */}
+              <button
+                type="button"
+                disabled={currentPage >= totalPages || isLoading}
+                onClick={() => handlePageChange(totalPages)}
+                className="min-w-[28px] sm:min-w-[32px] h-7 sm:h-8 px-1.5 sm:px-2 text-xs font-medium rounded-lg border border-border-subtle bg-surface hover:bg-surface-elevated text-secondary hover:text-main disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center justify-center"
+                title={t('resourceManagement.lastPageTitle', { total: totalPages })}
+                aria-label={t('resourceManagement.lastPage')}
+              >
+                <i className="fa-solid fa-angles-right text-[10px] sm:text-[11px]" />
+              </button>
             </div>
 
-            {/* Ô nhảy nhanh đến trang (Hiện khi có nhiều trang: > 5 trang) */}
-            {totalPages > 5 && (
+            {/* Ô nhảy nhanh đến trang (Hiện khi có từ 5 trang trở lên) */}
+            {totalPages > 4 && (
               <form
                 onSubmit={handleJumpPage}
-                className="flex items-center gap-1.5 pl-2 sm:border-l sm:border-border-subtle text-secondary"
+                className="flex items-center gap-1 sm:gap-1.5 pl-1.5 sm:pl-2 border-l border-border-subtle text-secondary"
               >
-                <span className="text-[11px]">Đến trang</span>
+                <span className="text-[10px] sm:text-[11px] whitespace-nowrap">{t('resourceManagement.jumpTo')}</span>
                 <input
-                  type="number"
-                  min={1}
-                  max={totalPages}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   value={jumpPageInput}
-                  onChange={(e) => setJumpPageInput(e.target.value)}
+                  onChange={(e) => setJumpPageInput(e.target.value.replace(/\D/g, ''))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleJumpPage();
+                      (e.target as HTMLInputElement).blur();
+                    }
+                  }}
                   placeholder={String(currentPage)}
-                  className="w-12 h-8 px-1.5 text-center bg-surface-elevated border border-border-subtle rounded-lg text-main text-xs focus:outline-hidden focus:border-primary font-medium"
-                  aria-label="Nhập số trang muốn chuyển tới"
+                  title={t('resourceManagement.jumpPageTooltip')}
+                  className="w-10 sm:w-12 h-7 sm:h-8 px-1 text-center bg-surface-elevated border border-border-subtle rounded-lg text-main text-xs focus:outline-hidden focus:border-primary font-medium [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  aria-label={t('resourceManagement.jumpPageAria')}
                 />
-                <button
-                  type="submit"
-                  className="h-8 px-2.5 rounded-lg border border-border-subtle bg-surface hover:bg-surface-elevated text-xs font-semibold text-primary cursor-pointer hover:border-primary/40 transition-colors"
-                  title="Chuyển đến trang đã nhập"
-                >
-                  Đi
-                </button>
               </form>
             )}
           </div>

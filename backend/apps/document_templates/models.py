@@ -1,8 +1,16 @@
 import os
 from django.db import models
-from django.core.exceptions import ValidationError
+from django.core.exceptions import SuspiciousFileOperation, ValidationError
+from django.core.validators import MinValueValidator
 from django.conf import settings
 from django.db.models import Max
+
+from document_storage import build_dated_path, get_document_storage
+
+DB_NOW = models.Func(function="now", output_field=models.DateTimeField())
+
+
+VALID_EXTENSIONS = frozenset({'.pdf', '.doc', '.docx', '.xls', '.xlsx', '.csv', '.jpg', '.jpeg', '.png', '.zip', '.rar'})
 
 
 # Hàm kiểm tra định dạng và dung lượng file đính kèm (< 20MB)
@@ -11,12 +19,34 @@ def validate_document_file(file):
     if hasattr(file, 'size') and file.size > max_size_mb * 1024 * 1024:
         raise ValidationError(f"Dung lượng tệp đính kèm không được vượt quá {max_size_mb}MB.")
 
-    valid_extensions = ['.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png', '.zip', '.rar']
     ext = os.path.splitext(file.name)[1].lower()
-    if ext not in valid_extensions:
+    if ext not in VALID_EXTENSIONS:
         raise ValidationError(
-            f"Định dạng tệp {ext} không được hỗ trợ. Chỉ chấp nhận PDF, DOC, DOCX, JPG, PNG, ZIP, RAR."
+            f"Định dạng tệp {ext} không được hỗ trợ. Chỉ chấp nhận PDF, DOC, DOCX, XLS, XLSX, CSV, JPG, PNG, ZIP, RAR."
         )
+
+
+def store_template_file(file):
+    """Lưu tệp biểu mẫu vào kho dùng chung, trả về giá trị cột `path` (URL theo MEDIA_URL)."""
+    storage = get_document_storage()
+    name = storage.save(build_dated_path('mau-van-ban', file.name, allowed=VALID_EXTENSIONS), file)
+    return storage.url(name)
+
+
+def template_disk_path(path):
+    """Đường dẫn trên đĩa của giá trị cột `path`; None nếu ngoài kho lưu trữ."""
+    if not path:
+        return None
+    from urllib.parse import urlparse
+    if path.startswith(('http://', 'https://')):
+        path = urlparse(path).path
+    storage = get_document_storage()
+    prefix = storage.base_url
+    name = path[len(prefix):] if path.startswith(prefix) else path
+    try:
+        return storage.path(name.lstrip('/'))
+    except (SuspiciousFileOperation, ValueError):
+        return None
 
 
 class DanhMucTaiLieu(models.Model):
@@ -29,15 +59,13 @@ class DanhMucTaiLieu(models.Model):
     nguoi_lap = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.RESTRICT,
-        null=True,
-        blank=True,
         db_column="nguoi_lap_id",
         verbose_name="Người lập"
     )
     ngay_lap = models.DateField(null=True, blank=True, verbose_name="Ngày lập")
     ghi_chu = models.TextField(blank=True, null=True, verbose_name="Ghi chú")
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_default=DB_NOW)
+    updated_at = models.DateTimeField(auto_now=True, db_default=DB_NOW)
 
     class Meta:
         db_table = "records_tailieu"
@@ -69,11 +97,11 @@ class LoaiTaiLieu(models.Model):
         verbose_name="Thuộc danh mục cấp 1"
     )
     ten_loai = models.CharField(max_length=255, verbose_name="Tên loại tài liệu")
-    is_public = models.BooleanField(default=True, verbose_name="Công khai")
+    is_public = models.BooleanField(default=True, db_default=True, verbose_name="Công khai")
     ngay_lap = models.DateTimeField(null=True, blank=True, verbose_name="Ngày lập")
     ghi_chu = models.TextField(blank=True, null=True, verbose_name="Ghi chú")
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_default=DB_NOW)
+    updated_at = models.DateTimeField(auto_now=True, db_default=DB_NOW)
 
     class Meta:
         db_table = "records_loaitailieu"
@@ -149,8 +177,8 @@ class TaiLieuChiTiet(models.Model):
         db_column="nguoi_tao_id",
         verbose_name="Người tạo"
     )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_default=DB_NOW)
+    updated_at = models.DateTimeField(auto_now=True, db_default=DB_NOW)
 
     class Meta:
         db_table = "records_chitiettailieu"
@@ -169,6 +197,25 @@ class TaiLieuChiTiet(models.Model):
         att = self.attachments.filter(is_deleted=False).last()
         return att.path if att else ""
 
+    @property
+    def is_expired(self):
+        from django.utils import timezone
+        today = timezone.localdate()
+        if self.ngay_het_hieu_luc:
+            return self.ngay_het_hieu_luc <= today
+        return self.hieu_luc in ['HET_HIEU_LUC', 'HET_VA_THAY_THE']
+
+    @property
+    def effective_hieu_luc(self):
+        from django.utils import timezone
+        today = timezone.localdate()
+        if self.ngay_het_hieu_luc:
+            if self.ngay_het_hieu_luc > today:
+                return 'CON_HIEU_LUC_1_PHAN' if self.hieu_luc == 'CON_HIEU_LUC_1_PHAN' else 'CON_HIEU_LUC'
+            else:
+                return 'HET_VA_THAY_THE' if (self.hieu_luc == 'HET_VA_THAY_THE' or self.link_thay_the) else 'HET_HIEU_LUC'
+        return self.hieu_luc
+
     def __str__(self):
         return f"{self.tieu_de} ({self.get_hieu_luc_display()})"
 
@@ -184,14 +231,11 @@ class TaiLieuChiTiet(models.Model):
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
         if hasattr(self, '_temp_file_dinh_kem') and self._temp_file_dinh_kem:
-            from django.core.files.storage import default_storage
             file = self._temp_file_dinh_kem
-            file_path = default_storage.save(f"documents/templates/{file.name}", file)
-            storage_path = f"/media/{file_path}" if not file_path.startswith('/media/') else file_path
             ChiTietTaiLieuAttachment.objects.create(
                 document=self,
                 name=file.name,
-                path=storage_path,
+                path=store_template_file(file),
                 file_size=getattr(file, 'size', None),
                 mime_type=getattr(file, 'content_type', None),
                 nguoi_tao=self.nguoi_tao
@@ -239,10 +283,17 @@ class ChiTietTaiLieuAttachment(models.Model):
     )
     name = models.CharField(max_length=255, verbose_name="Tên gốc file")
     path = models.CharField(max_length=500, verbose_name="Đường dẫn lưu file")
-    file_size = models.BigIntegerField(null=True, blank=True, verbose_name="Dung lượng (byte)")
+    file_size = models.BigIntegerField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0)],
+        verbose_name="Dung lượng (byte)",
+    )
     mime_type = models.CharField(max_length=255, null=True, blank=True, verbose_name="Kiểu MIME")
-    is_deleted = models.BooleanField(default=False, verbose_name="Xóa mềm")
-    created_at = models.DateTimeField(auto_now_add=True, db_column='created_at', verbose_name="Thời điểm tải lên")
+    is_deleted = models.BooleanField(default=False, db_default=False, verbose_name="Xóa mềm")
+    created_at = models.DateTimeField(
+        auto_now_add=True, db_default=DB_NOW, db_column='created_at', verbose_name="Thời điểm tải lên"
+    )
     nguoi_tao = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -268,6 +319,12 @@ class ChiTietTaiLieuAttachment(models.Model):
         indexes = [
             models.Index(fields=['document'], name='idx_chitiettailieu_att_doc'),
             models.Index(fields=['is_deleted'], name='idx_chitiettailieu_att_del'),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(file_size__gte=0),
+                name="records_chitiettailieu_attachment_file_size_check",
+            ),
         ]
 
     def __str__(self):

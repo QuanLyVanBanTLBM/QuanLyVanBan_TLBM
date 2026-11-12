@@ -1,0 +1,113 @@
+{
+  "navigation": {
+    "positions": "Danh Mục Chức Vụ"
+  },
+  "pages": {
+    "positions": {
+      "title": "Danh Mục Chức Vụ & Chức Vị",
+      "module": "Module 7.4: Quản trị Hệ thống - Danh mục Chức vụ",
+      "assignedTeam": "Nhóm 7 (Phân hệ Tiện ích & Quản trị)",
+      "codeRef": "Mục 7.4 · Độ khó: 0.80",
+      "isGroup1": false,
+      "desc": "Danh sách chức vụ theo thứ tự ưu tiên, thêm mới, import file Excel và tìm kiếm chức vụ."
+    }
+  },
+  "positions": {
+    "title": "Danh Mục Chức Vụ",
+    "desc": "Quản lý danh mục chức vụ dùng chung cho cán bộ nhân viên và thứ tự ưu tiên hiển thị.",
+    "addBtn": "Thêm Chức vụ",
+    "createTitle": "Thêm Mới Chức Vụ",
+    "editTitle": "Cập Nhật Chức Vụ",
+    "sttLabel": "STT Ưu tiên",
+    "sttPlaceholder": "Để trống để tự động lấy số tiếp theo",
+    "sttHelp": "Số nguyên dương, không được trùng. Để trống hệ thống tự gán số lớn nhất + 1.",
+    "nameLabel": "Tên chức vụ",
+    "namePlaceholder": "Ví dụ: Trưởng phòng",
+    "isPublicLabel": "Hiển thị công khai",
+    "isPublicHelp": "Nếu bỏ chọn, chức vụ chỉ hiển thị với người quản trị.",
+    "notesLabel": "Ghi chú",
+    "notesPlaceholder": "Nhập ghi chú bổ sung (nếu có)",
+    "deleteConfirmTitle": "Xác nhận xóa Chức vụ",
+    "deleteConfirmDesc": "Bạn có chắc chắn muốn xóa chức vụ \"{name}\"? Thao tác này không thể hoàn tác.",
+    "table": {
+      "stt": "STT",
+      "name": "Tên chức vụ",
+      "status": "Trạng thái",
+      "notes": "Ghi chú",
+      "actions": "Thao tác",
+      "public": "Công khai",
+      "internal": "Nội bộ",
+      "empty": "Chưa có chức vụ nào.",
+      "emptySearch": "Không tìm thấy chức vụ phù hợp.",
+      "loading": "Đang tải dữ liệu...",
+      "emptyValue": "—",
+      "paginationInfo": "Hiển thị {from} - {to} trên tổng số {total}",
+      "prevPage": "Trang trước",
+      "nextPage": "Trang sau"
+    },
+    "actions": {
+      "searchPlaceholder": "Tìm kiếm theo tên chức vụ...",
+      "save": "Lưu thay đổi",
+      "create": "Tạo mới",
+      "cancel": "Hủy bỏ",
+      "close": "Đóng",
+      "edit": "Chỉnh sửa",
+      "delete": "Xóa",
+      "retry": "Thử lại"
+    },
+    "messages": {
+      "nameRequired": "Tên chức vụ không được để trống hoặc chỉ chứa khoảng trắng.",
+      "nameTooLong": "Tên chức vụ tối đa 255 ký tự.",
+      "nameExists": "Tên chức vụ này đã tồn tại.",
+      "sttInvalid": "STT ưu tiên phải là số nguyên dương.",
+      "sttTooLarge": "STT ưu tiên tối đa 2147483647.",
+      "sttExists": "STT ưu tiên này đã được sử dụng. Vui lòng chọn số khác.",
+      "notFound": "Không tìm thấy chức vụ.",
+      "inUse": "Không thể xóa chức vụ này vì đang được gán cho cán bộ nhân viên.",
+      "inUseByModule": "Không thể xóa chức vụ này vì đang được dùng trong quy trình trình ký.",
+      "permissionDenied": "Bạn không có quyền thực hiện thao tác này.",
+      "createSuccess": "Đã thêm chức vụ thành công.",
+      "updateSuccess": "Đã cập nhật chức vụ thành công.",
+      "deleteSuccess": "Đã xóa chức vụ thành công.",
+      "fetchError": "Không thể tải danh sách chức vụ. Vui lòng thử lại.",
+      "saveError": "Không thể lưu chức vụ. Vui lòng thử lại.",
+      "templateError": "Không thể tải file mẫu. Vui lòng thử lại."
+    },
+    "import": {
+      "openBtn": "Import Excel",
+      "title": "Import Chức Vụ Từ Excel",
+      "desc": "Tải file mẫu, điền danh sách chức vụ rồi tải lên. Dòng lỗi sẽ được báo rõ lý do, các dòng hợp lệ vẫn được lưu.",
+      "downloadTemplate": "Tải file mẫu (.xlsx)",
+      "chooseFile": "Chọn file Excel (.xlsx)",
+      "noFile": "Chưa chọn file nào",
+      "upload": "Tải lên và import",
+      "uploading": "Đang import...",
+      "resultTitle": "Kết quả import",
+      "totalRows": "Tổng số dòng",
+      "importedRows": "Thành công",
+      "failedRows": "Lỗi",
+      "errorsTitle": "Chi tiết dòng lỗi",
+      "rowLabel": "Dòng {row}",
+      "valueLabel": "Giá trị: {value}",
+      "allSuccess": "Tất cả các dòng đã được import thành công.",
+      "fields": {
+        "display_order": "STT ưu tiên",
+        "name": "Tên chức vụ",
+        "is_public": "Hiển thị công khai"
+      },
+      "errors": {
+        "fileRequired": "Vui lòng chọn file Excel để import.",
+        "invalidFile": "File không hợp lệ. Chỉ chấp nhận file Excel (.xlsx) không bị hỏng.",
+        "invalidTemplate": "File không đúng mẫu. Vui lòng tải file mẫu và giữ nguyên các cột ở dòng đầu.",
+        "emptyFile": "File không có dòng dữ liệu nào.",
+        "tooManyRows": "File có quá nhiều dòng (tối đa 1000 dòng mỗi lần import).",
+        "fileTooLarge": "File quá lớn (tối đa 2 MB).",
+        "invalidStt": "STT ưu tiên phải là số nguyên dương.",
+        "invalidPublic": "Cột hiển thị công khai chỉ nhận Có hoặc Không.",
+        "duplicateNameInFile": "Tên chức vụ bị trùng với một dòng phía trên trong file.",
+        "duplicateSttInFile": "STT ưu tiên bị trùng với một dòng phía trên trong file.",
+        "importFailed": "Import thất bại. Vui lòng thử lại."
+      }
+    }
+  }
+}

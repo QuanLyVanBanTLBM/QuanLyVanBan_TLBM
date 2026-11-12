@@ -5,6 +5,16 @@ import { MemoryRouter } from 'react-router-dom';
 import InboundDocumentPage from './InboundDocumentPage';
 import * as apiClientModule from '@lib/apiClient';
 import { DocumentItem } from '@app-types/document';
+import { resetPermissionsCache } from '@lib/permissions';
+
+const ALL_INBOUND_PERMS = [
+  'view_vanbanden',
+  'add_vanbanden',
+  'change_vanbanden',
+  'delete_vanbanden',
+  'import_vanbanden',
+  'export_vanbanden',
+];
 
 vi.mock('@lib/apiClient', async () => {
   const actual = await vi.importActual<typeof apiClientModule>('@lib/apiClient');
@@ -68,8 +78,15 @@ const mockDocuments: DocumentItem[] = [
 describe('InboundDocumentPage Component (Phân hệ Văn bản Đến)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetPermissionsCache();
 
-    mockedApiClient.get.mockImplementation(async (url: string) => {
+    const handleCall = async (url: string) => {
+      if (url.includes('/auth/me/permissions/')) {
+        return {
+          is_superuser: false,
+          permissions: ALL_INBOUND_PERMS,
+        };
+      }
       if (url.includes('/api/documents/years/')) {
         return [2026, 2025];
       }
@@ -100,7 +117,10 @@ describe('InboundDocumentPage Component (Phân hệ Văn bản Đến)', () => {
         };
       }
       return { count: 0, results: [] };
-    });
+    };
+
+    mockedApiClient.mockImplementation(handleCall as unknown as typeof apiClientModule.apiClient);
+    mockedApiClient.get.mockImplementation(handleCall);
   });
 
   const renderComponent = () =>
@@ -115,12 +135,12 @@ describe('InboundDocumentPage Component (Phân hệ Văn bản Đến)', () => {
       renderComponent();
 
       expect(screen.getByText('Quản Lý Văn Bản Đến')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Thêm mới/i })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Nhập Excel/i })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Xuất Excel/i })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /Làm mới/i })).toBeInTheDocument();
 
       await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Thêm mới/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /(Import Excel|Nhập Excel)/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Xuất Excel/i })).toBeInTheDocument();
         expect(screen.getByText('101/QĐ-TLBM')).toBeInTheDocument();
         expect(screen.getByText('Quyết định triển khai công tác chuyển đổi số')).toBeInTheDocument();
         expect(screen.getByText('102/TB-TLBM')).toBeInTheDocument();
@@ -141,7 +161,7 @@ describe('InboundDocumentPage Component (Phân hệ Văn bản Đến)', () => {
     it('mở modal Thêm mới khi bấm nút Thêm mới', async () => {
       renderComponent();
 
-      const addButton = screen.getByRole('button', { name: /Thêm mới/i });
+      const addButton = await screen.findByRole('button', { name: /Thêm mới/i });
       fireEvent.click(addButton);
 
       await waitFor(() => {
@@ -149,29 +169,56 @@ describe('InboundDocumentPage Component (Phân hệ Văn bản Đến)', () => {
       });
     });
 
-    it('mở modal Nhập Excel khi bấm nút Nhập Excel', async () => {
+    it('mở modal Nhập Excel khi bấm nút Nhập Excel và chọn tác vụ', async () => {
       renderComponent();
 
-      const importButton = screen.getByRole('button', { name: /Nhập Excel/i });
+      const importButton = await screen.findByRole('button', { name: /(Import Excel|Nhập Excel)/i });
       fireEvent.click(importButton);
 
+      // Menu dropdown sổ ra lựa chọn: Nhập văn bản thường hoặc Nhập văn bản hạn chế
+      const normalOption = screen.getByText('Nhập văn bản thường');
+      expect(screen.getByText('Nhập văn bản hạn chế')).toBeInTheDocument();
+
+      fireEvent.click(normalOption);
+
       await waitFor(() => {
-        expect(screen.getByText(/Nhập Văn Bản Từ File Excel/i)).toBeInTheDocument();
+        expect(screen.getByText(/Nhập Văn Bản.*Từ File Excel/i)).toBeInTheDocument();
       });
     });
 
-    it('làm mới danh sách khi bấm nút Làm mới', async () => {
+    it('làm mới danh sách khi bấm nút Làm mới và cập nhật bộ lọc năm phát hành', async () => {
+      let yearsList = [2026, 2025];
+      mockedApiClient.get.mockImplementation(async (url: string) => {
+        if (url.includes('/auth/me/permissions/')) {
+          return { is_superuser: false, permissions: ALL_INBOUND_PERMS };
+        }
+        if (url.includes('/api/documents/years/')) {
+          return yearsList;
+        }
+        if (url.includes('page_size=1000')) {
+          return { count: mockDocuments.length, results: mockDocuments };
+        }
+        return { count: mockDocuments.length, results: mockDocuments };
+      });
+
       renderComponent();
 
       await waitFor(() => {
         expect(screen.getByText('101/QĐ-TLBM')).toBeInTheDocument();
       });
 
+      yearsList = [2026, 2025, 1890];
       const refreshButton = screen.getByRole('button', { name: /Làm mới/i });
       fireEvent.click(refreshButton);
 
       await waitFor(() => {
         expect(mockedApiClient.get).toHaveBeenCalledWith(expect.stringContaining('/api/documents/'));
+        expect(mockedApiClient.get).toHaveBeenCalledWith('/api/documents/years/?loai=DEN');
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: /Tất cả các năm/i }));
+      await waitFor(() => {
+        expect(screen.getByText(/Năm 1890/)).toBeInTheDocument();
       });
     });
   });
@@ -273,7 +320,7 @@ describe('InboundDocumentPage Component (Phân hệ Văn bản Đến)', () => {
       fireEvent.click(confirmBtn);
 
       await waitFor(() => {
-        expect(mockedApiClient.delete).toHaveBeenCalledWith('/api/documents/101/');
+        expect(mockedApiClient.delete).toHaveBeenCalledWith('/api/documents/101/?loai=DEN');
         expect(screen.getByText(/Đã xóa văn bản "101\/QĐ-TLBM" thành công/i)).toBeInTheDocument();
       });
     });
@@ -298,6 +345,94 @@ describe('InboundDocumentPage Component (Phân hệ Văn bản Đến)', () => {
         expect(screen.queryByText(/Đang lọc danh sách theo Loại văn bản/i)).not.toBeInTheDocument();
       });
     });
+
+    it('hiển thị badge lọc và gửi param pham_vi khi có trên URL, và cho phép bỏ lọc', async () => {
+      render(
+        <MemoryRouter initialEntries={['/documents/incoming?loai_van_ban=5&pham_vi=HAN_CHE']}>
+          <InboundDocumentPage />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText(/Đang lọc danh sách theo phạm vi/i)).toBeInTheDocument();
+        expect(screen.getByText(/Văn bản hạn chế \(Mật\)/i)).toBeInTheDocument();
+        expect(mockedApiClient.get).toHaveBeenCalledWith(expect.stringContaining('pham_vi=HAN_CHE'));
+      });
+
+      const clearPhamViBtn = screen.getByTitle('Xóa bộ lọc phạm vi');
+      fireEvent.click(clearPhamViBtn);
+
+      await waitFor(() => {
+        expect(screen.queryByText(/Đang lọc danh sách theo phạm vi/i)).not.toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('RBAC Phân quyền thao tác', () => {
+    it('ẩn nút Thêm mới, Import Excel và Xuất Excel khi tài khoản chưa được phân quyền', async () => {
+      resetPermissionsCache();
+      const readOnlyCall = async (url: string) => {
+        if (url.includes('/auth/me/permissions/')) {
+          return {
+            is_superuser: false,
+            permissions: ['view_vanbanden'], // chỉ có quyền xem
+          };
+        }
+        if (url.includes('/api/documents/')) {
+          return { count: mockDocuments.length, results: mockDocuments };
+        }
+        return { count: 0, results: [] };
+      };
+      mockedApiClient.mockImplementation(readOnlyCall as unknown as typeof apiClientModule.apiClient);
+      mockedApiClient.get.mockImplementation(readOnlyCall);
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.queryByRole('button', { name: /Thêm mới/i })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /(Import Excel|Nhập Excel)/i })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Xuất Excel/i })).not.toBeInTheDocument();
+      });
+    });
+
+    const loadWithPermissions = (permissions: string[]) => {
+      resetPermissionsCache();
+      const call = async (url: string) => {
+        if (url.includes('/auth/me/permissions/')) {
+          return { is_superuser: false, permissions };
+        }
+        if (url.includes('/api/documents/')) {
+          return { count: mockDocuments.length, results: mockDocuments };
+        }
+        return { count: 0, results: [] };
+      };
+      mockedApiClient.mockImplementation(call as unknown as typeof apiClientModule.apiClient);
+      mockedApiClient.get.mockImplementation(call);
+    };
+
+    it('khóa mục Nhập văn bản hạn chế khi chỉ có quyền import văn bản', async () => {
+      loadWithPermissions(['view_vanbanden', 'add_vanbanden', 'import_vanbanden']);
+      renderComponent();
+
+      fireEvent.click(await screen.findByRole('button', { name: /(Import Excel|Nhập Excel)/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText('Nhập văn bản hạn chế').closest('button')).toBeDisabled();
+      });
+      expect(screen.getByText('Nhập văn bản thường').closest('button')).not.toBeDisabled();
+    });
+
+    it('mở mục Nhập văn bản hạn chế khi có add_han_che_vanbanden', async () => {
+      loadWithPermissions(['view_vanbanden', 'add_vanbanden', 'import_vanbanden', 'add_han_che_vanbanden']);
+      renderComponent();
+
+      fireEvent.click(await screen.findByRole('button', { name: /(Import Excel|Nhập Excel)/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText('Nhập văn bản hạn chế').closest('button')).not.toBeDisabled();
+      });
+    });
   });
 });
+
 

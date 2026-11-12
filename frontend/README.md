@@ -14,7 +14,7 @@
 - **Build Tool**: Vite 8 (HMR, tối ưu bundle)
 - **Styling**: Tailwind CSS + Design Tokens CSS Variables tập trung (`src/styles/global.css`)
 - **Icons**: FontAwesome 6 Free Pro CDN + Custom SVGs
-- **i18n**: Song ngữ Tiếng Việt (`vi.json`) / Tiếng Anh (`en.json`) qua hook `useTranslation()`
+- **i18n**: Song ngữ Tiếng Việt (`vi.json`) / Tiếng Anh (`en.json`) theo từng module, qua hook `useTranslation()`
 - **Testing**: Vitest + React Testing Library (Yêu cầu toàn bộ test suite phải pass 100%)
 - **Quality Gate**: ESLint + TypeScript Typecheck + Production Build
 
@@ -28,7 +28,7 @@ Dự án áp dụng cấu trúc thư mục phẳng, tập trung, **không sử d
 src/
 ├── app/                        # Tầng khởi chạy & cấu hình ứng dụng
 │   ├── main.tsx                # Entry point
-│   └── router.tsx              # Cấu hình Route tập trung cho 8 nhóm
+│   └── router.tsx              # Ghép route khai báo trong <module>/routes.ts của từng module
 │
 ├── layouts/                    # Khung sườn bố cục ứng dụng (App Shell)
 │   └── MainLayout.tsx          # Master Layout chứa Header, Sidebar, TopSubNav, Footer & <Outlet />
@@ -49,7 +49,7 @@ src/
 │   ├── apiClient.ts            # Client gọi API tự động đính kèm JWT Token & Refresh Token
 │   ├── authService.ts          # Service xác thực, đăng nhập, đăng xuất, lưu session
 │   ├── constants.ts            # Hằng số hệ thống, danh mục Navigation
-│   └── routes.ts               # Định nghĩa hằng số đường dẫn (Route Paths)
+│   └── routes.ts               # pageIdToPath/pathToPageId, ghép từ <module>/paths.ts
 │
 ├── types/                      # Định nghĩa kiểu dữ liệu TypeScript
 │   ├── auth.ts                 # UserSession, LoginCredentials
@@ -57,8 +57,8 @@ src/
 │   └── theme.ts                # ThemeMode (Clean Light / Sleek Dark)
 │
 ├── i18n/                       # Quản lý từ điển đa ngôn ngữ
-│   ├── vi.json                 # Từ điển Tiếng Việt
-│   ├── en.json                 # Từ điển Tiếng Anh
+│   ├── <module>/vi.json        # Từ điển Tiếng Việt của module
+│   ├── <module>/en.json        # Từ điển Tiếng Anh của module
 │   └── translate.ts            # Hook useTranslation()
 │
 ├── styles/                     # Quy chuẩn giao diện & CSS Variables
@@ -92,16 +92,25 @@ export default function IncomingDocumentsPage() {
 }
 ```
 
-### Bước 2: Đăng ký Route bên trong `<MainLayout />` tại `src/app/router.tsx`
-Tất cả màn hình nghiệp vụ **bắt buộc phải nằm bên trong `<MainLayout />`** để kế thừa Header, Sidebar, Footer:
-```tsx
-// src/app/router.tsx
-<Route element={<MainLayout />}>
-  <Route path="/dashboard" element={<DashboardPage />} />
-  {/* Thêm route của nhóm bạn tại đây: */}
-  <Route path="/documents/incoming" element={<IncomingDocumentsPage />} />
-</Route>
+### Bước 2: Khai báo Route trong thư mục module
+Mỗi module khai báo route trong `src/pages/<module>/routes.ts` và trang (page id ↔ đường dẫn) trong `src/pages/<module>/paths.ts` (module Công việc: `src/modules/work/`). `src/app/router.tsx` và `src/lib/routes.ts` tự ghép các file này, không sửa trực tiếp. Route mặc định nằm bên trong `<MainLayout />` để kế thừa Header, Sidebar, Footer:
+```ts
+// src/pages/documents/routes.ts
+import type { ModuleRoute } from '@app/moduleRoutes';
+import InboundDocumentPage from '../InboundDocumentPage';
+
+export default [
+  { path: '/documents/incoming', Component: InboundDocumentPage },
+] satisfies ModuleRoute[];
+
+// src/pages/documents/paths.ts
+import type { ModulePage } from '@app/moduleRoutes';
+
+export default [
+  { id: 'documents_incoming', path: '/documents/incoming', matches: (pathname) => pathname.startsWith('/documents/incoming') },
+] satisfies ModulePage[];
 ```
+Page id mới vẫn cần thêm vào `ActivePageId` (`src/types/navigation.ts`) và mục menu trong `src/lib/constants.ts`.
 
 ### Bước 3: Gọi API Backend qua `apiClient`
 Sử dụng `apiClient` từ `@lib/apiClient` để tự động đính kèm `Authorization: Bearer <token>`:
@@ -116,7 +125,7 @@ const data = await apiClient.get<DocumentResponse>('/api/documents/incoming/');
 Tạo file type riêng hoặc thêm vào `src/types/`, ví dụ `src/types/document.ts`.
 
 ### Bước 5: Bổ sung từ điển đa ngôn ngữ trong `src/i18n/`
-Thêm chuỗi vào cả `src/i18n/vi.json` và `src/i18n/en.json` để hỗ trợ đa ngôn ngữ đồng nhất.
+Thêm chuỗi vào cả `src/i18n/<module>/vi.json` và `src/i18n/<module>/en.json` của module mình (gồm cả `pages.<id>` và `navigation.<id>` của màn hình mới). `translate.ts` tự ghép mọi thư mục module; `pnpm check:i18n` báo lỗi khi lệch key giữa hai file hoặc trùng key với module khác.
 
 ### Bước 6: Viết Unit Test bằng Vitest
 Tạo file test bên cạnh component, ví dụ `IncomingDocumentsPage.test.tsx` và chạy `pnpm test`.

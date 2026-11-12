@@ -1,5 +1,6 @@
 from rest_framework import serializers
-from .models import DanhMucTaiLieu, LoaiTaiLieu, TaiLieuChiTiet, ChiTietTaiLieuAttachment, validate_document_file
+from django.core.exceptions import ValidationError as DjangoValidationError
+from .models import DanhMucTaiLieu, LoaiTaiLieu, TaiLieuChiTiet, ChiTietTaiLieuAttachment, store_template_file, validate_document_file
 
 
 class DanhMucTaiLieuSerializer(serializers.ModelSerializer):
@@ -89,6 +90,7 @@ class TaiLieuChiTietSerializer(serializers.ModelSerializer):
     Serializer cho Chi tiết tài liệu chung (khớp interface ResourceItem của frontend)
     """
     dm_tai_lieu_name = serializers.CharField(source='dm_tai_lieu.ten_tai_lieu', read_only=True)
+    don_vi_name = serializers.SerializerMethodField()
     loai_tai_lieu = serializers.PrimaryKeyRelatedField(
         queryset=LoaiTaiLieu.objects.all(),
         many=True,
@@ -98,6 +100,12 @@ class TaiLieuChiTietSerializer(serializers.ModelSerializer):
     nguoi_tao_name = serializers.SerializerMethodField()
     attachments = ChiTietTaiLieuAttachmentSerializer(many=True, read_only=True)
     file_dinh_kem = serializers.FileField(required=False, allow_null=True)
+    ngay_het_hieu_luc = serializers.DateField(required=False, allow_null=True)
+    link_thay_the = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    is_expired = serializers.BooleanField(read_only=True)
+    effective_hieu_luc = serializers.CharField(read_only=True)
+    can_edit = serializers.SerializerMethodField()
+    can_delete = serializers.SerializerMethodField()
 
     class Meta:
         model = TaiLieuChiTiet
@@ -112,6 +120,8 @@ class TaiLieuChiTietSerializer(serializers.ModelSerializer):
             'ngay_dang',
             'noi_ban_hanh',
             'hieu_luc',
+            'effective_hieu_luc',
+            'is_expired',
             'ngay_het_hieu_luc',
             'link_thay_the',
             'ghi_chu',
@@ -119,12 +129,42 @@ class TaiLieuChiTietSerializer(serializers.ModelSerializer):
             'attachments',
             'hien_thi',
             'don_vi_id',
+            'don_vi_name',
             'nguoi_tao',
             'nguoi_tao_name',
+            'can_edit',
+            'can_delete',
             'created_at',
             'updated_at',
         ]
-        read_only_fields = ['id', 'nguoi_tao', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'nguoi_tao', 'created_at', 'updated_at', 'is_expired', 'effective_hieu_luc', 'can_edit', 'can_delete']
+
+    def to_internal_value(self, data):
+        if hasattr(data, '_mutable'):
+            # Tránh gọi data.copy() trên QueryDict vì QueryDict.copy() thực hiện deepcopy,
+            # gây lỗi TypeError: cannot pickle 'BufferedRandom' instances khi đính kèm TemporaryUploadedFile
+            orig_mutable = data._mutable
+            data._mutable = True
+            try:
+                if data.get('ngay_het_hieu_luc') == '':
+                    data['ngay_het_hieu_luc'] = None
+                if data.get('link_thay_the') is None:
+                    data['link_thay_the'] = ''
+                if data.get('don_vi_id') in ('', 'null'):
+                    data['don_vi_id'] = None
+                return super().to_internal_value(data)
+            finally:
+                data._mutable = orig_mutable
+        else:
+            if isinstance(data, dict):
+                data = data.copy()
+            if data.get('ngay_het_hieu_luc') == '':
+                data['ngay_het_hieu_luc'] = None
+            if data.get('link_thay_the') is None:
+                data['link_thay_the'] = ''
+            if data.get('don_vi_id') in ('', 'null'):
+                data['don_vi_id'] = None
+            return super().to_internal_value(data)
 
     def get_loai_tai_lieu_names(self, obj):
         return [loai.ten_loai for loai in obj.loai_tai_lieu.all()]
@@ -134,65 +174,194 @@ class TaiLieuChiTietSerializer(serializers.ModelSerializer):
             return None
         return obj.nguoi_tao.get_full_name() or obj.nguoi_tao.username
 
+    def get_don_vi_name(self, obj):
+        if not obj.don_vi_id:
+            return None
+        try:
+            from organizations.models import DonVi
+            unit = DonVi.objects.filter(id=obj.don_vi_id).first()
+            return unit.ten if unit else None
+        except Exception:
+            return None
+
+    def get_can_edit(self, obj):
+        request = self.context.get('request')
+        if not request or not request.user:
+            return False
+        from .views import can_user_modify_document
+        return can_user_modify_document(request.user, obj, "change_tailieu")
+
+    def get_can_delete(self, obj):
+        request = self.context.get('request')
+        if not request or not request.user:
+            return False
+        from .views import can_user_modify_document
+        return can_user_modify_document(request.user, obj, "delete_tailieu")
+
     def validate_file_dinh_kem(self, value):
         if value:
             validate_document_file(value)
         return value
 
     def validate(self, attrs):
+        ngay_dang = attrs.get('ngay_dang') or (self.instance.ngay_dang if self.instance else None)
+        ngay_het_hieu_luc = attrs.get('ngay_het_hieu_luc') if 'ngay_het_hieu_luc' in attrs else (self.instance.ngay_het_hieu_luc if self.instance else None)
+        if ngay_het_hieu_luc and ngay_dang and ngay_het_hieu_luc < ngay_dang:
+            raise serializers.ValidationError({
+                'ngay_het_hieu_luc': 'Ngày hết hiệu lực không thể trước ngày đăng / ngày ban hành.'
+            })
+
         hieu_luc = attrs.get('hieu_luc') or (self.instance.hieu_luc if self.instance else 'CON_HIEU_LUC')
-        link_thay_the = attrs.get('link_thay_the') or (self.instance.link_thay_the if self.instance else '')
+        link_thay_the = attrs.get('link_thay_the') if 'link_thay_the' in attrs else (self.instance.link_thay_the if self.instance else '')
         if hieu_luc == 'HET_VA_THAY_THE' and not (link_thay_the and link_thay_the.strip()):
             raise serializers.ValidationError({
                 'link_thay_the': 'Vui lòng cung cấp link văn bản thay thế khi chọn trạng thái Hết hiệu lực và thay thế.'
             })
+        if hieu_luc == 'CON_HIEU_LUC':
+            attrs['link_thay_the'] = ''
+            if 'ngay_het_hieu_luc' not in attrs:
+                attrs['ngay_het_hieu_luc'] = None
+        elif hieu_luc in ('CON_HIEU_LUC_1_PHAN', 'HET_HIEU_LUC'):
+            attrs['link_thay_the'] = ''
+
+        if hieu_luc in ('HET_HIEU_LUC', 'HET_VA_THAY_THE') and not attrs.get('ngay_het_hieu_luc'):
+            if not (self.instance and self.instance.ngay_het_hieu_luc):
+                from django.utils import timezone
+                attrs['ngay_het_hieu_luc'] = timezone.localdate()
+
+        # Kiểm tra tính hợp lệ và dung lượng (<= 20MB) của các tệp đính kèm trong request.FILES
+        request = self.context.get('request')
+        if request and hasattr(request, 'FILES') and hasattr(request.FILES, 'getlist'):
+            for f in request.FILES.getlist('files'):
+                try:
+                    validate_document_file(f)
+                except DjangoValidationError as exc:
+                    msg = exc.messages if hasattr(exc, 'messages') else [str(exc)]
+                    raise serializers.ValidationError({'files': msg})
+
+        # Tự động đồng bộ giữa don_vi_id và noi_ban_hanh
+        don_vi_id = attrs.get('don_vi_id') if 'don_vi_id' in attrs else (self.instance.don_vi_id if self.instance else None)
+        noi_ban_hanh = attrs.get('noi_ban_hanh') if 'noi_ban_hanh' in attrs else (self.instance.noi_ban_hanh if self.instance else '')
+        if not don_vi_id and noi_ban_hanh:
+            try:
+                from organizations.models import DonVi
+                matched_unit = DonVi.objects.filter(ten__iexact=str(noi_ban_hanh).strip()).first()
+                if matched_unit:
+                    attrs['don_vi_id'] = matched_unit.id
+            except Exception:
+                pass
+        elif don_vi_id and not noi_ban_hanh:
+            try:
+                from organizations.models import DonVi
+                matched_unit = DonVi.objects.filter(id=don_vi_id).first()
+                if matched_unit:
+                    attrs['noi_ban_hanh'] = matched_unit.ten
+            except Exception:
+                pass
+
         return attrs
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
-        first_att = instance.attachments.filter(is_deleted=False).last()
+        # Chỉ trả về các tệp đính kèm chưa bị xóa mềm (is_deleted=False)
+        active_attachments = [att for att in instance.attachments.all() if not att.is_deleted]
+        data['attachments'] = ChiTietTaiLieuAttachmentSerializer(active_attachments, many=True, context=self.context).data
+        first_att = active_attachments[-1] if active_attachments else None
         data['file_dinh_kem'] = first_att.path if first_att else ''
         return data
 
     def create(self, validated_data):
         loai_tai_lieu = validated_data.pop('loai_tai_lieu', [])
         file_dinh_kem = validated_data.pop('file_dinh_kem', None)
+        if not validated_data.get('ngay_dang'):
+            from django.utils import timezone
+            validated_data['ngay_dang'] = timezone.localdate()
         instance = TaiLieuChiTiet.objects.create(**validated_data)
         if loai_tai_lieu:
             instance.loai_tai_lieu.set(loai_tai_lieu)
-        if file_dinh_kem:
-            from django.core.files.storage import default_storage
-            file_path = default_storage.save(f"documents/templates/{file_dinh_kem.name}", file_dinh_kem)
-            storage_path = f"/media/{file_path}" if not file_path.startswith('/media/') else file_path
-            ChiTietTaiLieuAttachment.objects.create(
-                document=instance,
-                name=file_dinh_kem.name,
-                path=storage_path,
-                file_size=getattr(file_dinh_kem, 'size', None),
-                mime_type=getattr(file_dinh_kem, 'content_type', None),
-                nguoi_tao=instance.nguoi_tao
-            )
+
+        # Hỗ trợ đính kèm nhiều tệp từ request.FILES ('files' hoặc 'file_dinh_kem')
+        request = self.context.get('request')
+        uploaded_files = []
+        if request and hasattr(request, 'FILES') and hasattr(request.FILES, 'getlist'):
+            uploaded_files = request.FILES.getlist('files') or request.FILES.getlist('file_dinh_kem')
+        if not uploaded_files and file_dinh_kem:
+            uploaded_files = [file_dinh_kem]
+
+        if uploaded_files:
+            for f in uploaded_files:
+                validate_document_file(f)
+                ChiTietTaiLieuAttachment.objects.create(
+                    document=instance,
+                    name=f.name,
+                    path=store_template_file(f),
+                    file_size=getattr(f, 'size', None),
+                    mime_type=getattr(f, 'content_type', None),
+                    nguoi_tao=instance.nguoi_tao
+                )
         return instance
 
     def update(self, instance, validated_data):
         loai_tai_lieu = validated_data.pop('loai_tai_lieu', None)
         file_dinh_kem = validated_data.pop('file_dinh_kem', None)
         validated_data.pop('nguoi_tao', None)
+        validated_data.pop('ngay_dang', None)  # Ngày đăng cố định theo ngày tạo, không cho phép chỉnh sửa
+
+        hieu_luc = validated_data.get('hieu_luc', instance.hieu_luc)
+        if hieu_luc == 'CON_HIEU_LUC':
+            validated_data['ngay_het_hieu_luc'] = None
+            validated_data['link_thay_the'] = ''
+        elif hieu_luc in ('CON_HIEU_LUC_1_PHAN', 'HET_HIEU_LUC'):
+            validated_data['link_thay_the'] = ''
+
+        if hieu_luc in ('HET_HIEU_LUC', 'HET_VA_THAY_THE') and not validated_data.get('ngay_het_hieu_luc') and not instance.ngay_het_hieu_luc:
+            from django.utils import timezone
+            validated_data['ngay_het_hieu_luc'] = timezone.localdate()
+
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
         if loai_tai_lieu is not None:
             instance.loai_tai_lieu.set(loai_tai_lieu)
-        if file_dinh_kem:
-            from django.core.files.storage import default_storage
-            file_path = default_storage.save(f"documents/templates/{file_dinh_kem.name}", file_dinh_kem)
-            storage_path = f"/media/{file_path}" if not file_path.startswith('/media/') else file_path
-            ChiTietTaiLieuAttachment.objects.create(
-                document=instance,
-                name=file_dinh_kem.name,
-                path=storage_path,
-                file_size=getattr(file_dinh_kem, 'size', None),
-                mime_type=getattr(file_dinh_kem, 'content_type', None),
-                nguoi_tao=instance.nguoi_tao
-            )
+
+        request = self.context.get('request')
+        # Hỗ trợ xóa các tệp đính kèm được chọn xóa (an toàn cho cả multipart QueryDict và JSON dict)
+        if request and hasattr(request, 'data'):
+            if hasattr(request.data, 'getlist'):
+                deleted_ids = request.data.getlist('deleted_attachment_ids')
+            else:
+                raw_deleted = request.data.get('deleted_attachment_ids')
+                if isinstance(raw_deleted, (list, tuple)):
+                    deleted_ids = raw_deleted
+                elif raw_deleted:
+                    deleted_ids = [raw_deleted]
+                else:
+                    deleted_ids = []
+
+            if deleted_ids:
+                instance.attachments.filter(id__in=deleted_ids).update(is_deleted=True)
+                if hasattr(instance, '_prefetched_objects_cache') and 'attachments' in instance._prefetched_objects_cache:
+                    del instance._prefetched_objects_cache['attachments']
+
+        # Hỗ trợ thêm nhiều tệp đính kèm khi cập nhật
+        uploaded_files = []
+        if request and hasattr(request, 'FILES') and hasattr(request.FILES, 'getlist'):
+            uploaded_files = request.FILES.getlist('files') or request.FILES.getlist('file_dinh_kem')
+        if not uploaded_files and file_dinh_kem:
+            uploaded_files = [file_dinh_kem]
+
+        if uploaded_files:
+            for f in uploaded_files:
+                validate_document_file(f)
+                ChiTietTaiLieuAttachment.objects.create(
+                    document=instance,
+                    name=f.name,
+                    path=store_template_file(f),
+                    file_size=getattr(f, 'size', None),
+                    mime_type=getattr(f, 'content_type', None),
+                    nguoi_tao=instance.nguoi_tao
+                )
+            if hasattr(instance, '_prefetched_objects_cache') and 'attachments' in instance._prefetched_objects_cache:
+                del instance._prefetched_objects_cache['attachments']
+
         return instance

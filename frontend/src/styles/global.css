@@ -14,6 +14,15 @@
 
 :root {
   /* Font Families */
+  --font-size-input: 1rem;
+  --color-on-primary: #ffffff;
+
+  /* Vùng xem trước ảnh chữ ký: bộ màu giấy cố định, không đổi theo theme để nét mực tối luôn rõ. */
+  --color-signature-paper: #ffffff;
+  --color-signature-checker: #eef1f5;
+  --color-signature-border: #94a3b8;
+  --color-signature-mask: rgba(15, 23, 42, 0.5);
+  --color-signature-grid: rgba(59, 130, 246, 0.35);
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 
   /* Transitions */
@@ -66,6 +75,20 @@
   --color-pink: #ec4899;
   --color-pink-subtle: rgba(236, 72, 153, 0.15);
   --color-pink-border: rgba(236, 72, 153, 0.35);
+
+  /* Work status badges (light palette). */
+  --color-task-badge-gray-bg: #F3F4F6;
+  --color-task-badge-gray-text: #6B7280;
+  --color-task-badge-blue-bg: #DBEAFE;
+  --color-task-badge-blue-text: #1D4ED8;
+  --color-task-badge-purple-bg: #EDE9FE;
+  --color-task-badge-purple-text: #6D28D9;
+  --color-task-badge-green-bg: #D1FAE5;
+  --color-task-badge-green-text: #065F46;
+  --color-task-badge-amber-bg: #FEF3C7;
+  --color-task-badge-amber-text: #D97706;
+  --color-task-badge-red-bg: #FEE2E2;
+  --color-task-badge-red-text: #DC2626;
 }
 
 /* ==========================================================================
@@ -74,6 +97,19 @@
 
 /* 1. Cyber Midnight SaaS Dark Theme (Màu sắc chuẩn theo ảnh mẫu: Nền #090d16, Card #121824, Nút #3b82f6) */
 [data-theme='dark'] {
+  --color-task-badge-gray-bg: #374151;
+  --color-task-badge-gray-text: #D1D5DB;
+  --color-task-badge-blue-bg: #1E3A5F;
+  --color-task-badge-blue-text: #93C5FD;
+  --color-task-badge-purple-bg: #3B1F6E;
+  --color-task-badge-purple-text: #C4B5FD;
+  --color-task-badge-green-bg: #064E3B;
+  --color-task-badge-green-text: #6EE7B7;
+  --color-task-badge-amber-bg: #78350F;
+  --color-task-badge-amber-text: #FCD34D;
+  --color-task-badge-red-bg: #7F1D1D;
+  --color-task-badge-red-text: #FCA5A5;
+
   --bg-canvas: #090d16;            /* Nền canvas tổng thể sâu thẳm chuẩn quốc tế */
   --bg-app: #090d16;               /* Nền chính sâu thẳm siêu tối */
   --bg-surface: #121824;           /* Bề mặt thẻ card & widget chuẩn ảnh mẫu */
@@ -286,6 +322,18 @@
 [data-ui-style='modern'] textarea:focus {
   border-color: var(--color-primary) !important;
   box-shadow: var(--shadow-clay-inset), 0 0 0 3px var(--color-primary-subtle) !important;
+}
+
+/* Chuẩn hóa giao diện Option của Select trên mọi thiết bị di động & theme */
+select option {
+  background-color: var(--bg-surface, #ffffff);
+  color: var(--text-main, #1e293b);
+  padding: 8px 12px;
+}
+
+[data-theme='dark'] select option {
+  background-color: var(--bg-surface, #1e293b);
+  color: var(--text-main, #f8fafc);
 }
 
 /* Bảng dữ liệu Claymorphism */

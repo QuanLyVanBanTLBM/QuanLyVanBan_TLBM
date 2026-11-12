@@ -3,7 +3,7 @@ from django.db import IntegrityError, OperationalError, transaction
 from django.db.models import Max
 from rest_framework import serializers
 
-from .models import KhoiKhuVuc, DonVi
+from .models import PHONE_PATTERN, KhoiKhuVuc, DonVi, normalize_phone
 
 # Cột INTEGER của DDL (thu_tu_hien_thi, stt_uu_tien)
 INT_MAX = 2147483647
@@ -52,6 +52,13 @@ class KhoiKhuVucSerializer(serializers.ModelSerializer):
         if qs.exists():
             raise serializers.ValidationError("organizations.messages.nameExists")
         return ten_stripped
+
+    def create(self, validated_data):
+        # Khối mới không nhập thứ tự hiển thị thì xếp cuối danh sách (MAX + 1), không nhận 0 lên đầu.
+        if validated_data.get("thu_tu_hien_thi") is None:
+            max_order = KhoiKhuVuc.objects.aggregate(max_val=Max("thu_tu_hien_thi"))["max_val"]
+            validated_data["thu_tu_hien_thi"] = (max_order or 0) + 1
+        return super().create(validated_data)
 
 
 class DonViSerializer(serializers.ModelSerializer):
@@ -139,9 +146,7 @@ class DonViSerializer(serializers.ModelSerializer):
     def validate_dien_thoai(self, value):
         if not value:
             return ""
-        dien_thoai_cleaned = re.sub(r"[\s.-]", "", value)
-        phone_pattern = r"^0[235789]\d{8,9}$"
-        if not re.match(phone_pattern, dien_thoai_cleaned):
+        if not re.fullmatch(PHONE_PATTERN, normalize_phone(value)):
             raise serializers.ValidationError("organizations.messages.phoneInvalid")
         return value.strip()
 
@@ -160,6 +165,17 @@ class DonViSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         stt = attrs.get("stt_uu_tien")
         instance = self.instance
+
+        # DDL không có UNIQUE (khoi_id, ten): trùng tên trong cùng khối chặn ở API, khác khối vẫn cho trùng
+        # (dữ liệu thật có "Lãnh đạo khối" ở nhiều khối).
+        khoi = attrs.get("khoi", instance.khoi if instance else None)
+        ten = attrs.get("ten", instance.ten if instance else None)
+        if khoi is not None and ten:
+            same_name = DonVi.objects.filter(khoi=khoi, ten__iexact=ten.strip())
+            if instance:
+                same_name = same_name.exclude(pk=instance.pk)
+            if same_name.exists():
+                raise serializers.ValidationError({"ten": "organizations.messages.unitNameExists"})
 
         if stt is not None:
             qs = DonVi.objects.filter(stt_uu_tien=stt)

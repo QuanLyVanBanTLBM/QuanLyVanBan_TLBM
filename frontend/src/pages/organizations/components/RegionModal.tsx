@@ -20,6 +20,9 @@ export const RegionModal: React.FC<RegionModalProps> = ({
 }) => {
   const { t } = useTranslation();
   const [ten, setTen] = useState(initialData?.ten || '');
+  const [displayOrder, setDisplayOrder] = useState(
+    initialData?.thu_tu_hien_thi !== undefined ? String(initialData.thu_tu_hien_thi) : ''
+  );
   const [errorKey, setErrorKey] = useState<string | null>(null);
 
   if (!isOpen) return null;
@@ -31,9 +34,14 @@ export const RegionModal: React.FC<RegionModalProps> = ({
       setErrorKey('organizations.messages.nameRequired');
       return;
     }
+    const cleanOrder = displayOrder.trim();
+    if (cleanOrder && !/^\d+$/.test(cleanOrder)) {
+      setErrorKey('organizations.messages.displayOrderInvalid');
+      return;
+    }
 
     try {
-      await onSubmit({ ten: cleanTen });
+      await onSubmit(cleanOrder ? { ten: cleanTen, thu_tu_hien_thi: Number(cleanOrder) } : { ten: cleanTen });
       onClose();
     } catch (err: unknown) {
       if (err && typeof err === 'object' && 'data' in err) {
@@ -93,6 +101,23 @@ export const RegionModal: React.FC<RegionModalProps> = ({
               placeholder={t('organizations.region.namePlaceholder')}
               className="w-full px-3.5 py-2 text-sm bg-surface-elevated border border-border-subtle rounded-lg text-main placeholder-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
               autoFocus
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-secondary mb-1.5">
+              {t('organizations.region.displayOrderLabel')}
+            </label>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={displayOrder}
+              onChange={(e) => {
+                setDisplayOrder(e.target.value);
+                if (errorKey) setErrorKey(null);
+              }}
+              placeholder={t('organizations.region.displayOrderPlaceholder')}
+              className="w-full px-3.5 py-2 text-sm bg-surface-elevated border border-border-subtle rounded-lg text-main placeholder-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
             />
           </div>
 

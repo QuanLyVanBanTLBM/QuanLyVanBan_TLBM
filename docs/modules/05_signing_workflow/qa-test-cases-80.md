@@ -1,6 +1,6 @@
 # Bộ test case QA — MVP Trình ký duyệt nội bộ (#80, kèm Phase 6c #79)
 
-> Phạm vi: PR #111 (DDL) và PR #112 (backend `signing`, giao diện `/approvals`), đối chiếu đầy đủ checklist #80 (118 case: 58 P1, 41 P2, 19 P3 qua 11 nhóm).
+> Phạm vi: PR #111 (DDL) và PR #112 (backend `signing`, giao diện `/approvals`), đối chiếu đầy đủ checklist #80 (116 case: 57 P1, 41 P2, 18 P3 qua 11 nhóm).
 > Mục tiêu: kiểm thử thủ công các luồng nghiệp vụ, quyền, lỗi, giao diện và tích hợp staging. Cột **Tự động** ghi test tự động đã có (nếu có) để QA ưu tiên kiểm phần chưa được tự động hóa, đặc biệt giao diện và môi trường thật.
 > Ưu tiên: **P1** chặn phát hành; **P2** quan trọng; **P3** bổ sung.
 
@@ -47,8 +47,8 @@
 | KP-02 | Tạo khóa trên thiết bị | Nhập PIN hợp lệ hai lần → Tạo khóa | Báo "Khóa ký trên thiết bị này đã sẵn sàng"; danh sách có một khóa Đang hoạt động kèm dấu vân tay | P1 | Có (tích hợp UI) |
 | KP-03 | Không gửi PIN/khóa bí mật lên server | DevTools → Network khi tạo khóa và khi ký | Request chỉ chứa khóa công khai, chữ ký chứng minh sở hữu, `xac_minh_pin` (verifier Base64 32 byte), `tham_so_kdf` (có `salt` 16 byte); không có PIN, private key, bản bọc | P1 | — |
 | KP-04 | Response PIN không lưu cache | Kiểm header response `dat-pin`, `mo-khoa-ky`, `doi-pin` | `Cache-Control: no-store` | P2 | Có |
-| KP-05 | Đổi thiết bị (xoay vòng khóa) | Xóa dữ liệu trang (IndexedDB) hoặc dùng trình duyệt khác → mở Khóa ký & PIN | Báo khóa đang hoạt động thuộc thiết bị khác; tạo khóa mới → khóa mới Đang hoạt động, khóa cũ "Đã thay thế" | P1 | Có (tích hợp UI) |
-| KP-06 | Ký khi thiết bị không giữ khóa | Sau bước xóa IndexedDB, mở hồ sơ đang chờ ký → Ký duyệt | Báo thiết bị không giữ khóa, có nút tới trang Khóa ký & PIN; không tạo chữ ký | P1 | Có (tích hợp UI) |
+| KP-05 | Đổi thiết bị (xoay vòng khóa) | Xóa dữ liệu trang (IndexedDB) hoặc dùng trình duyệt khác → mở Cấu hình khóa ký | Báo khóa đang hoạt động thuộc thiết bị khác; tạo khóa mới → khóa mới Đang hoạt động, khóa cũ "Đã thay thế" | P1 | Có (tích hợp UI) |
+| KP-06 | Ký khi thiết bị không giữ khóa | Sau bước xóa IndexedDB, mở hồ sơ đang chờ ký → Ký duyệt | Báo thiết bị không giữ khóa, có nút tới trang Cấu hình khóa ký; không tạo chữ ký | P1 | Có (tích hợp UI) |
 | KP-07 | Đổi PIN | Nhập PIN hiện tại sai | Báo PIN không đúng; khóa không đổi | P2 | Có |
 | KP-08 | Đổi PIN thành công | Nhập PIN hiện tại đúng + PIN mới hợp lệ → ký một hồ sơ bằng PIN mới | Ký thành công bằng PIN mới; PIN cũ báo sai | P1 | Có |
 | KP-09 | Khóa tạm do sai PIN | Ký với PIN sai 5 lần liên tiếp | Lần thứ 5 báo khóa tạm 15 phút (423); trong 15 phút PIN đúng vẫn bị từ chối | P1 | Có |
@@ -94,7 +94,6 @@
 | KY-02 | Ký duyệt kèm ghi chú | Trưởng phòng → Ký duyệt, ghi chú, PIN đúng | Cấp 1 Đã xong, cấp 2 Đang ký, hạn xử lý +24 giờ; lịch sử có "Ký duyệt · <ghi chú>"; khung ký trên PDF chuyển màu đã ký | P1 | Có |
 | KY-03 | Hộp thoại ký hiện tệp và mã băm | Mở hộp thoại Ký duyệt | Hiện tên tệp và SHA-256 của lượt trình | P1 | Có |
 | KY-04 | Chặn ký khi tệp đang xem lệch mã băm | Giả lập tệp tải về khác mã băm (sửa tệp lưu trữ trên môi trường thử) | Hộp thoại báo tệp đã thay đổi, nút Ký duyệt bị khóa; API ký với hash cũ trả 409 `ma_bam_khong_khop` | P1 | Có |
-| KY-05 | Ký nháy chặn ký chính | Quy trình cấp có ký nháy (chặn) + ký chính | Ký chính chưa thấy hồ sơ trong hộp, ký → 409 `chua_den_luot_ky`; sau khi ký nháy ký thì ký chính được ký | P1 | Có |
 | KY-06 | Ký song song trong cấp | Cấp có hai người ký chính | Hai người ký theo thứ tự bất kỳ; cấp chỉ đóng khi cả hai đã ký | P1 | Có |
 | KY-07 | Cấp sau chưa mở | Người ký cấp 2 gọi API ký khi cấp 1 chưa xong | 403 `khong_phai_nguoi_ky_dang_mo` | P2 | Có |
 | KY-08 | Ký trễ hạn | Đặt hạn xử lý đã qua (môi trường thử) → ký | Ký được; tiến trình gắn nhãn "Ký trễ hạn" | P2 | Có |
@@ -102,7 +101,6 @@
 | KY-10 | Trình lại sau từ chối | Người tạo → Trình lại | Tạo hồ sơ Nháp mới, mở bước đặt vị trí; hồ sơ mới có liên kết "Trình lại từ hồ sơ #…" | P1 | Có |
 | KY-11 | Thu hồi chữ ký khi cấp còn mở | Cấp có hai người; một người ký rồi Thu hồi | Người đó về Đang chờ ký; chữ ký cũ vẫn trong lịch sử; ký lại được | P2 | Có |
 | KY-12 | Không thu hồi khi cấp đã đóng | Thu hồi sau khi cấp đã chuyển sang cấp sau | 409 `cap_da_dong_khong_thu_hoi`; nút không hiện trên UI | P2 | Có |
-| KY-13 | Ký nháy không thu hồi khi ký chính đã ký | Thu hồi của ký nháy chặn sau khi ký chính cùng cấp đã ký | 409 `ky_chinh_da_ky` | P3 | Có |
 | KY-14 | Người tạo hủy hồ sơ đang chờ ký | Người tạo → Hủy hồ sơ | Hồ sơ Đã hủy; người ký không còn thấy trong hộp; ký → 409 | P1 | Có |
 | KY-15 | Hủy thay bắt buộc lý do | Tài khoản có `cancel_trinhky` (không phải người tạo) hủy, bỏ trống lý do | Không cho xác nhận; có lý do → hủy, lịch sử ghi hủy thay | P2 | Có |
 | KY-16 | Người ngoài luồng | Chuyên viên mở URL chi tiết hồ sơ | Báo không tìm thấy (404); không lộ thông tin hồ sơ | P1 | Có |
@@ -165,7 +163,7 @@
 
 | ID | Kịch bản | Bước | Kết quả mong đợi | Ưu tiên | Tự động |
 |---|---|---|---|---|---|
-| UI-01 | Tab theo quyền | Đăng nhập lần lượt từng nhóm | Tab Tạo hồ sơ chỉ hiện khi có `add_trinhky`; Khóa ký & PIN chỉ khi có `sign_trinhky`; Quy trình khi có `view_trinhky` hoặc `manage_signing_process` | P2 | Một phần |
+| UI-01 | Tab theo quyền | Đăng nhập lần lượt từng nhóm | Tab Tạo hồ sơ chỉ hiện khi có `add_trinhky`; Cấu hình khóa ký chỉ khi có `sign_trinhky`; Quy trình khi có `view_trinhky` hoặc `manage_signing_process` | P2 | Một phần |
 | UI-02 | Trạng thái rỗng | Tài khoản không có hồ sơ mở các tab | Mỗi tab có thông báo rỗng riêng | P2 | Có |
 | UI-03 | Lỗi tải và thử lại | Tắt backend → mở danh sách → bật lại → Thử lại | Hiện thông báo lỗi và nút Thử lại; thử lại tải được | P2 | Có |
 | UI-04 | Song ngữ | Đổi ngôn ngữ ở header sang EN và ngược lại trên mọi trang Trình ký | Toàn bộ nhãn, nút, trạng thái, lịch sử, thông báo lỗi đổi ngôn ngữ; không còn chuỗi tiếng Việt cứng | P1 | Có (khớp khóa) |
@@ -210,7 +208,7 @@
 
 | ID | Kịch bản | Bước | Kết quả mong đợi | Ưu tiên | Môi trường |
 |---|---|---|---|---|---|
-| STG-01 | Phân quyền menu và tab Trình ký với nhóm quyền thật | Đăng nhập lần lượt tài khoản thuộc các nhóm: `ADMIN`, `BGD`, `TP`, `CV`, `VT` qua JWT staging | Menu `/approvals` hiển thị đúng quyền: `ADMIN` thấy Quản lý quy trình công ty; `TP` thấy Tạo quy trình phòng ban; `VT`/`CV` có quyền `add_trinhky` thấy Tạo hồ sơ; người có `sign_trinhky` thấy Khóa ký & PIN | P1 | Staging |
+| STG-01 | Phân quyền menu và tab Trình ký với nhóm quyền thật | Đăng nhập lần lượt tài khoản thuộc các nhóm: `ADMIN`, `BGD`, `TP`, `CV`, `VT` qua JWT staging | Menu `/approvals` hiển thị đúng quyền: `ADMIN` thấy Quản lý quy trình công ty; `TP` thấy Tạo quy trình phòng ban; `VT`/`CV` có quyền `add_trinhky` thấy Tạo hồ sơ; người có `sign_trinhky` thấy Cấu hình khóa ký | P1 | Staging |
 | STG-02 | Tạo và kích hoạt quy trình với Employee và Đơn vị thật | Tài khoản `ADMIN` tạo quy trình công ty (2 cấp); `TP` đơn vị tạo quy trình phòng ban gắn mã đơn vị thật → Kích hoạt | Cả hai quy trình chuyển Hoạt động; gán đúng người ký/chức vụ từ bảng Employee thật | P1 | Staging |
 | STG-03 | Tạo và gửi hồ sơ từ văn bản đi thật | Tài khoản `VT` chọn dự thảo văn bản đi thật của Nhóm 2 → Đính kèm PDF thật → Đặt khung ký → Gửi trình ký | Tạo hồ sơ thành công; tự động liên kết mã văn bản đi; lọc đúng ứng viên người ký theo đơn vị và chức vụ thật | P1 | Staging |
 | STG-04 | Ký duyệt 2 cấp liên tiếp bằng WebCrypto Ed25519 thật | Cấp 1 (`TP`) tạo khóa ký & PIN thật → Ký duyệt hồ sơ STG-03; sau đó Cấp 2 (`BGD`) tạo khóa & PIN → Ký duyệt | Cấp 1 ký xong mở Cấp 2; Cấp 2 ký xong chuyển trạng thái Hoàn tất duyệt nội bộ; chữ ký Ed25519 hợp lệ | P1 | Staging |
@@ -235,4 +233,4 @@
 
 ---
 
-**Ngoài phạm vi kiểm thử đợt này (backlog #80 mục 8):** ủy quyền theo thời gian và khẩn cấp, nhắc/leo thang/email, báo cáo trễ hạn, phân trang và lọc phòng ban/khoảng thời gian, CA/ký số pháp lý/phát hành.
+**Ngoài phạm vi kiểm thử đợt này (backlog #80 mục 8):** ủy quyền ký, nhắc/leo thang/email, báo cáo trễ hạn, phân trang và lọc phòng ban/khoảng thời gian, CA/ký số pháp lý/phát hành.

@@ -14,10 +14,12 @@
     "lint": "eslint .",
     "check:i18n": "node scripts/check-i18n.mjs",
     "check:tokens": "node scripts/check-css-tokens.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check:records:i18n": "node scripts/records-check-i18n.mjs",
+    "check:records:tokens": "node scripts/records-check-tokens.mjs"
   },
   "dependencies": {
-    "hash-wasm": "^4.12.0",
+    "@noble/hashes": "^2.4.0",
     "pdfjs-dist": "^5.7.284",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

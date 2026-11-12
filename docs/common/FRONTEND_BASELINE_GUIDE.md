@@ -24,11 +24,11 @@ Bản Frontend Baseline là **mốc tham chiếu chuẩn mực** được đưa 
    - `src/components/`: Chứa component chia theo nhóm (`common/`, `layout/`, `auth/`, `dashboard/`).
    - `src/lib/`: Chứa `apiClient.ts`, `authService.ts`, `constants.ts`, `routes.ts`.
    - `src/types/`: Khai báo kiểu dữ liệu TypeScript (auth, navigation, theme...).
-   - `src/i18n/`: Quản lý song ngữ (`vi.json`, `en.json`, `translate.ts`).
+   - `src/i18n/`: Quản lý song ngữ (`<module>/vi.json`, `<module>/en.json`, `translate.ts`).
    - `src/styles/`: Design tokens và biến CSS tập trung (`global.css`, `animations.css`...).
 
 2. **Khung sườn App Shell dùng chung (`MainLayout` & `<Outlet />`):**  
-   Mọi route nghiệp vụ mới **bắt buộc phải nằm bên trong `<MainLayout />`** trong file `src/app/router.tsx`. Khi chuyển trang, Header, Sidebar và Footer sẽ luôn cố định, chỉ có khu vực nội dung bên trong `<Outlet />` thay đổi.
+   Mọi route nghiệp vụ mới khai báo trong `src/pages/<module>/routes.ts` và được `src/app/router.tsx` đặt bên trong `<MainLayout />`. Khi chuyển trang, Header, Sidebar và Footer sẽ luôn cố định, chỉ có khu vực nội dung bên trong `<Outlet />` thay đổi.
 
 3. **Cơ chế gọi API & Xác thực tập trung (`apiClient`):**  
    - Tất cả request gọi Backend phải dùng `apiClient` (`import apiClient from '@lib/apiClient'`).
@@ -40,6 +40,11 @@ Bản Frontend Baseline là **mốc tham chiếu chuẩn mực** được đưa 
    - Hợp đồng phân quyền (Contract) sẽ do **Nhóm 7 (Quản trị hệ thống)** cung cấp. Các nhóm tích hợp theo đúng contract này.
    - Nguồn kiểm tra quyền chính xác nhất (Source of Truth) luôn nằm ở Backend.
 
+5. **Quy chuẩn Phông chữ & Cấm chữ siêu nhỏ (Typography & Accessibility):**  
+   - Toàn bộ giao diện phần mềm công vụ bắt buộc sử dụng phông chữ rõ ràng, dễ đọc, tối thiểu từ 13px–14px trở lên để bảo vệ mắt người dùng theo chuẩn WCAG.
+   - Hệ thống đã chuẩn hóa cấu hình `tailwind.config.js`: class `text-xs` đã được nâng từ 10.5px lên scale **`13px - 14px` (`0.875rem`)**, loại bỏ hoàn toàn cỡ chữ siêu nhỏ.
+   - Các nhóm khi thiết kế nhãn badge, ngày tháng, nội dung bảng... bắt buộc dùng utility classes (`text-xs`, `text-sm`, `text-base`), **tuyệt đối không hardcode inline style cỡ chữ nhỏ bằng px** (như `style={{ fontSize: '10px' }}`).
+
 ---
 
 ## 🚀 3. Quy trình phát triển tính năng cho nhóm tiếp theo
@@ -48,7 +53,7 @@ Bản Frontend Baseline là **mốc tham chiếu chuẩn mực** được đưa 
 graph TD
     A[Nhánh staging mới nhất] -->|1. Tạo nhánh tính năng| B[feat/ten-chuc-nang]
     B -->|2. Thêm Page vào src/pages/| C[Code UI & Logic]
-    C -->|3. Đăng ký Route trong router.tsx| D[Cắm vào MainLayout Outlet]
+    C -->|3. Khai báo Route trong routes.ts của module| D[Cắm vào MainLayout Outlet]
     D -->|4. Gọi API qua apiClient| E[Kết nối Backend]
     E -->|5. Chạy 5 lệnh Quality Gate| F{Pass 100%?}
     F -->|No| C
@@ -59,15 +64,15 @@ graph TD
 
 1. **Tạo nhánh:** `git checkout staging && git pull origin staging && git checkout -b feat/<ten-tinh-nang>`
 2. **Tạo trang:** Đặt file trong `src/pages/<nhom_module>/<TenTrang>Page.tsx`.
-3. **Đăng ký Route:** Mở `src/app/router.tsx`, thêm `<Route path="..." element={<TenTrangPage />} />` bên trong `<Route element={<MainLayout />}>`.
+3. **Khai báo Route:** Thêm `{ path: '...', Component: TenTrangPage }` vào `src/pages/<nhom_module>/routes.ts` và page id tương ứng vào `paths.ts` cùng thư mục; không sửa `src/app/router.tsx`, `src/lib/routes.ts`.
 4. **Kết nối API:** Sử dụng `apiClient.get()`, `apiClient.post()`.
 5. **Kiểm thử Quality Gate:** Chạy đủ 5 lệnh bắt buộc:
    ```bash
    pnpm test
    pnpm lint
    pnpm build
-   python backend/manage.py test
-   python backend/manage.py check
+   pnpm test:backend
+   pnpm manage check
    ```
 6. **Tạo PR:** Mở Pull Request trỏ đích về `staging`, điền form đầy đủ và ghi rõ `Closes #<mã_issue>`.
 
@@ -81,4 +86,5 @@ graph TD
 - [x] Xác thực thật bằng Django Authentication + SimpleJWT (`authService` & `apiClient`).
 - [x] Xóa 100% dữ liệu giả lập (Zero Mock Data), xử lý Empty State tự nhiên.
 - [x] Hỗ trợ song ngữ Tiếng Việt và Tiếng Anh hoàn chỉnh.
+- [x] Tuân thủ Typography: Loại bỏ hoàn toàn phông chữ siêu nhỏ (<13px), kế thừa đúng thang đo chuẩn trong `tailwind.config.js`.
 - [x] Đạt 100% Quality Gate: Toàn bộ Unit Tests trong test suite phải pass 100% (0 failed), 0 lỗi ESLint, build production thành công.

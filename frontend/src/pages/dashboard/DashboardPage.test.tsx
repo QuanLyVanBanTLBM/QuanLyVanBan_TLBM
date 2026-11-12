@@ -54,7 +54,7 @@ describe('DashboardPage Component (Issue #10 Real Data)', () => {
 
     // Setup success for retry
     mockedApiClient.mockResolvedValueOnce({
-      kpis: { incomingCount: 10, outgoingCount: 5, confidentialCount: 0, tasksCount: 3 },
+      kpis: { incomingCount: 10, outgoingCount: 5, tasksCount: 3 },
       recentIncoming: [],
       recentOutgoing: [],
       tasks: [],
@@ -74,7 +74,6 @@ describe('DashboardPage Component (Issue #10 Real Data)', () => {
       kpis: {
         incomingCount: 25,
         outgoingCount: 14,
-        confidentialCount: 2,
         tasksCount: 7,
       },
       recentIncoming: [
@@ -120,12 +119,13 @@ describe('DashboardPage Component (Issue #10 Real Data)', () => {
       kpis: {
         incomingCount: 0,
         outgoingCount: 0,
-        confidentialCount: 0,
         tasksCount: 0,
+        signingCount: 0,
       },
       recentIncoming: [],
       recentOutgoing: [],
       tasks: [],
+      recentSigning: [],
       birthdays: [],
     });
 
@@ -136,15 +136,16 @@ describe('DashboardPage Component (Issue #10 Real Data)', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getAllByText('0')).toHaveLength(3);
+      expect(screen.getAllByText('0')).toHaveLength(4);
     });
 
     expect(screen.getByText('Chưa có phát sinh trong ngày')).toBeInTheDocument();
+    expect(screen.getByText('Không có hồ sơ chờ ký')).toBeInTheDocument();
   });
 
   it('triggers onNavigate callback when meeting room button is clicked', async () => {
     mockedApiClient.mockResolvedValueOnce({
-      kpis: { incomingCount: 0, outgoingCount: 0, confidentialCount: 0, tasksCount: 0 },
+      kpis: { incomingCount: 0, outgoingCount: 0, tasksCount: 0 },
       recentIncoming: [],
       recentOutgoing: [],
       tasks: [],

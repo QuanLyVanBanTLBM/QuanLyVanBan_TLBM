@@ -3,11 +3,12 @@
 from django.db import connection, connections, transaction
 
 from backend.services.ai_access import has_permission_codename
+from documents.selectors import co_quyen_xem_het_hieu_luc, van_ban_xem_duoc
 
 
 DOCUMENT_VIEWS = {
-    "vanbanden": ("ai_vanbanden", "view_vanbanden"),
-    "vanbandi": ("ai_vanbandi", "view_vanbandi"),
+    "vanbanden": "ai_vanbanden",
+    "vanbandi": "ai_vanbandi",
 }
 READONLY_ROLE = "qlvb_readonly"
 SQL_VIEW_COLUMNS = {
@@ -25,11 +26,20 @@ SQL_VIEW_COLUMNS = {
         "id", "ky_hieu", "tieu_de", "ngay_dang", "noi_ban_hanh", "hieu_luc",
         "ngay_het_hieu_luc", "ghi_chu", "updated_at",
     },
+    "ai_vanbanden_attachment": {"id", "document_id", "name", "path"},
+    "ai_vanbandi_attachment": {"id", "document_id", "name", "path"},
 }
 
 
 class SqlDocumentAccessError(Exception):
-    """The SQL document source cannot safely serve this chat request."""
+    """The SQL document source cannot safely serve this chat request.
+
+    ``ai_reason`` is a stable code written to the AI trace log to localize the failing branch.
+    """
+
+    def __init__(self, message, ai_reason="sql_access_error"):
+        super().__init__(message)
+        self.ai_reason = ai_reason
 
 
 def is_postgres_source():
@@ -102,6 +112,7 @@ def _assert_readonly_connection(cursor):
                    JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
                    WHERE namespace.nspname = 'public'
                      AND relation.relkind IN ('r', 'p', 'f')
+                     AND relation.relname <> 'ai_document_embedding'
                      AND has_table_privilege(current_user, relation.oid, 'SELECT')
                )
         FROM pg_roles role
@@ -111,7 +122,8 @@ def _assert_readonly_connection(cursor):
     row = cursor.fetchone()
     if not row or row[0] != READONLY_ROLE or row[1] is not True or row[2] is not False or row[3] is not False:
         raise SqlDocumentAccessError(
-            "Kết nối AI không dùng đúng role chỉ đọc qlvb_readonly hoặc role đang có quyền đọc bảng gốc."
+            "Kết nối AI không dùng đúng role chỉ đọc qlvb_readonly hoặc role đang có quyền đọc bảng gốc.",
+            ai_reason="readonly_role_mismatch",
         )
 
 
@@ -119,9 +131,14 @@ def _employee_id_value(employee_id):
     try:
         value = int(employee_id)
     except (TypeError, ValueError):
-        raise SqlDocumentAccessError("Không xác định được mã nhân viên từ phiên đăng nhập QLVB.")
+        reason = "employee_unresolved" if employee_id is None else "employee_id_invalid"
+        raise SqlDocumentAccessError(
+            "Không xác định được mã nhân viên từ phiên đăng nhập QLVB.", ai_reason=reason
+        )
     if value <= 0:
-        raise SqlDocumentAccessError("Mã nhân viên từ phiên đăng nhập QLVB không hợp lệ.")
+        raise SqlDocumentAccessError(
+            "Mã nhân viên từ phiên đăng nhập QLVB không hợp lệ.", ai_reason="employee_id_invalid"
+        )
     return value
 
 
@@ -130,28 +147,24 @@ def accessible_documents(user, employee_id=None):
     if not is_postgres_source():
         return []
     if not has_permission_codename(user, "use_aiassistant"):
-        raise SqlDocumentAccessError("Tài khoản chưa được cấp quyền sử dụng trợ lý AI.")
+        raise SqlDocumentAccessError(
+            "Tài khoản chưa được cấp quyền sử dụng trợ lý AI.", ai_reason="no_ai_permission"
+        )
 
-    permitted_views = [
-        (source_type, view_name)
-        for source_type, (view_name, permission) in DOCUMENT_VIEWS.items()
-        if has_permission_codename(user, permission)
-    ]
+    document_ids = {
+        "vanbanden": list(
+            van_ban_xem_duoc(user, "DEN").values_list("pk", flat=True)
+        ),
+        "vanbandi": list(
+            van_ban_xem_duoc(user, "DI").values_list("pk", flat=True)
+        ),
+    }
     can_read_tailieu = has_permission_codename(user, "view_tailieu")
-    if can_read_tailieu:
-        try:
-            employee_id = _employee_id_value(employee_id)
-        except SqlDocumentAccessError:
-            # Superusers receive every codename implicitly; without a trusted
-            # employee mapping they simply do not read ai_tailieu. Accounts
-            # explicitly granted view_tailieu still fail closed.
-            if not getattr(user, "is_superuser", False):
-                raise
-            can_read_tailieu = False
-    if not permitted_views and not can_read_tailieu:
-        return []
+    employee_id = _employee_id_value(employee_id)
     if "readonly" not in connections.databases:
-        raise SqlDocumentAccessError("Thiếu cấu hình kết nối CSDL chỉ đọc cho AI.")
+        raise SqlDocumentAccessError(
+            "Thiếu cấu hình kết nối CSDL chỉ đọc cho AI.", ai_reason="readonly_alias_missing"
+        )
 
     queries = {
         "vanbanden": """
@@ -161,6 +174,7 @@ def accessible_documents(user, employee_id=None):
                    ngay_van_ban, nguoi_ky, chuc_vu, hieu_luc::text AS hieu_luc,
                    ngay_het_hieu_luc, ghi_chu, updated_at
             FROM ai_vanbanden
+            WHERE id = ANY(%s)
             ORDER BY updated_at DESC
         """,
         "vanbandi": """
@@ -170,6 +184,7 @@ def accessible_documents(user, employee_id=None):
                    ngay_van_ban, nguoi_ky, chuc_vu, hieu_luc::text AS hieu_luc,
                    ngay_het_hieu_luc, ghi_chu, updated_at
             FROM ai_vanbandi
+            WHERE id = ANY(%s)
             ORDER BY updated_at DESC
         """,
     }
@@ -187,24 +202,51 @@ def accessible_documents(user, employee_id=None):
             ORDER BY updated_at DESC
         """
 
+    attachment_queries = {
+        "vanbanden": "SELECT id, document_id, name, path FROM ai_vanbanden_attachment WHERE document_id = ANY(%s) ORDER BY document_id, id",
+        "vanbandi": "SELECT id, document_id, name, path FROM ai_vanbandi_attachment WHERE document_id = ANY(%s) ORDER BY document_id, id",
+    }
+
     docs = []
     try:
         with transaction.atomic(using="readonly"):
             readonly = connections["readonly"]
             with readonly.cursor() as cursor:
                 _assert_readonly_connection(cursor)
-            if can_read_tailieu:
-                with readonly.cursor() as cursor:
+            with readonly.cursor() as cursor:
+                cursor.execute(
+                    "SELECT set_config('qlvb.employee_id', %s, true)",
+                    [str(employee_id or "")],
+                )
+                for source_type in DOCUMENT_VIEWS:
                     cursor.execute(
-                        "SELECT set_config('qlvb.employee_id', %s, true)",
-                        [str(employee_id)],
+                        "SELECT set_config(%s, %s, true)",
+                        # The document module's selector below supplies the exact row
+                        # allowlist. Keep the SQL view permissive enough for every row
+                        # that selector admits (including admin/staff policy).
+                        [f"qlvb.can_view_{source_type}", "on"],
                     )
-            for source_type, _view_name in permitted_views:
+                    cursor.execute(
+                        "SELECT set_config(%s, %s, true)",
+                        [
+                            f"qlvb.can_view_expired_{source_type}",
+                            "on" if co_quyen_xem_het_hieu_luc(user, source_type) else "off",
+                        ],
+                    )
+            for source_type in DOCUMENT_VIEWS:
+                attachments_by_document = {}
                 with readonly.cursor() as cursor:
-                    cursor.execute(queries[source_type])
+                    cursor.execute(attachment_queries[source_type], [document_ids[source_type]])
+                    for attachment in _dict_rows(cursor):
+                        attachments_by_document.setdefault(attachment["document_id"], []).append(
+                            {"id": attachment["id"], "name": attachment["name"], "path": attachment["path"]}
+                        )
+                with readonly.cursor() as cursor:
+                    cursor.execute(queries[source_type], [document_ids[source_type]])
                     rows = _dict_rows(cursor)
                 for row in rows:
                     row["display_name"] = f"{row['so_hieu']} — {row['trich_yeu']}"[:240]
+                    row["attachments"] = attachments_by_document.get(row["source_id"], [])
                     docs.append(row)
             if can_read_tailieu:
                 with readonly.cursor() as cursor:
@@ -216,7 +258,9 @@ def accessible_documents(user, employee_id=None):
     except SqlDocumentAccessError:
         raise
     except Exception as error:
-        raise SqlDocumentAccessError("Không thể truy cập nguồn CSDL chỉ đọc an toàn cho AI.") from error
+        raise SqlDocumentAccessError(
+            "Không thể truy cập nguồn CSDL chỉ đọc an toàn cho AI.", ai_reason="readonly_query_failed"
+        ) from error
 
     return docs
 

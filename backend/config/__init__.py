@@ -16,15 +16,26 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 # Server đặt AI_DATA_DIR ra thư mục dùng chung để tài liệu/vector store không nằm trong thư mục release.
 DATA_DIR = Path(os.getenv("AI_DATA_DIR") or BASE_DIR / "data")
 DOCS_DIR = DATA_DIR / "docs"
-CHROMA_DIR = DATA_DIR / "chroma_db"
 DOC_REGISTRY_PATH = DATA_DIR / "doc_registry.json"
-COLLECTION_NAME = os.getenv("COLLECTION_NAME", "smart_documents")
 
-MODEL_PROVIDER = os.getenv("MODEL_PROVIDER", "gemini")  # options: gemini, openai
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-EMBED_MODEL = os.getenv("EMBED_MODEL", "models/gemini-embedding-001")
-LLM_MODEL = os.getenv("LLM_MODEL", "gemini-3.8-flash")
-VISION_MODEL = os.getenv("VISION_MODEL", LLM_MODEL)
+MODEL_PROVIDER = "openai"
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+EMBED_MODEL = "text-embedding-3-large"
+LLM_MODEL = "gpt-6-luna"
+VISION_MODEL = LLM_MODEL
+
+# Load persisted AI settings from DATA_DIR if present across workers/restarts
+_settings_file = DATA_DIR / "ai_settings.json"
+if _settings_file.exists():
+    try:
+        import json as _json
+        _stored = _json.loads(_settings_file.read_text(encoding="utf-8"))
+        if isinstance(_stored, dict):
+            if _stored.get("openai_api_key"):
+                OPENAI_API_KEY = _stored["openai_api_key"]
+                os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
+    except Exception:
+        pass
 
 VISION_OCR_ENABLED = os.getenv("VISION_OCR_ENABLED", "true").lower() in {
     "1",
@@ -53,14 +64,14 @@ VISION_OCR_PARALLEL_WORKERS = int(os.getenv("VISION_OCR_PARALLEL_WORKERS", "3"))
 SIMILARITY_TOP_K = 6
 
 ALLOWED_EXTENSIONS = (
-    ".pdf", ".docx", ".txt",
+    ".pdf", ".doc", ".docx", ".txt",
     ".csv",
     ".pptx",
     ".md", ".markdown",
     ".html", ".htm",
     ".json",
     ".xml",
-    # Ảnh — xử lý qua Vision OCR + RapidOCR
+# Image OCR uses OpenAI gpt-6-luna Vision
     ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif", ".gif",
 )
 
@@ -72,3 +83,10 @@ SOURCE_SCORE_THRESHOLD = 0.15
 
 CHAT_HISTORY_MAX_TURNS = int(os.getenv("CHAT_HISTORY_MAX_TURNS", "4"))
 CHAT_HISTORY_MAX_CHARS = int(os.getenv("CHAT_HISTORY_MAX_CHARS", "800"))
+
+try:
+    from .celery import app as celery_app
+    __all__ = ("celery_app",)
+except ImportError:
+    celery_app = None
+    __all__ = ()

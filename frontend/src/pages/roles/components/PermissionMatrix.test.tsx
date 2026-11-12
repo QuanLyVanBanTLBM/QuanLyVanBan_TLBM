@@ -1,8 +1,9 @@
 import React from 'react';
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { PermissionMatrix } from './PermissionMatrix';
 import { Permission } from '@app-types/authorization';
+import { setLanguage } from '@i18n/translate';
 
 const PERMISSIONS: Permission[] = [
   { id: 1, name: 'Xem danh sách chức vụ', codename: 'view_chucvu', module_ten: 'Chức vụ' },
@@ -18,6 +19,59 @@ function renderMatrix(selected: number[] = []) {
 }
 
 describe('PermissionMatrix', () => {
+  afterEach(() => act(() => setLanguage('vi')));
+
+  it('translates module and permission names when language changes', () => {
+    renderMatrix();
+    act(() => setLanguage('en'));
+
+    expect(screen.getByText('1. Positions')).toBeInTheDocument();
+    expect(screen.getByText('View position list')).toBeInTheDocument();
+    expect(screen.getByText('2. Units and departments')).toBeInTheDocument();
+    expect(screen.getByText('Export units and departments to Excel')).toBeInTheDocument();
+  });
+
+  it('finds a permission by its translated English name', () => {
+    act(() => setLanguage('en'));
+    const { search } = renderMatrix();
+    fireEvent.change(search, { target: { value: 'export units' } });
+
+    expect(screen.getAllByRole('checkbox')).toHaveLength(1);
+    expect(screen.getByText('Export units and departments to Excel')).toBeInTheDocument();
+  });
+
+  it('falls back to API labels for a permission without a translation', () => {
+    act(() => setLanguage('en'));
+    render(
+      <PermissionMatrix
+        permissions={[{ id: 9, codename: 'custom_qa', name: 'Quyền mới', module_ten: 'Module mới' }]}
+        selectedIds={new Set()}
+        onToggle={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('1. Module mới')).toBeInTheDocument();
+    expect(screen.getByText('Quyền mới')).toBeInTheDocument();
+  });
+
+  it('translates the export and validity permissions added after the first label set', () => {
+    act(() => setLanguage('en'));
+    render(
+      <PermissionMatrix
+        permissions={[
+          { id: 20, codename: 'export_cbnv', name: 'Xuất danh bạ CBNV', module_ten: 'CBNV' },
+          { id: 21, codename: 'change_hieu_luc_vanbanden', name: 'Đổi hiệu lực văn bản đến', module_ten: 'Văn bản đến' },
+        ]}
+        selectedIds={new Set()}
+        onToggle={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Export employee directory')).toBeInTheDocument();
+    expect(screen.getByText('Change validity of incoming documents')).toBeInTheDocument();
+    expect(screen.getByText('2. Incoming documents')).toBeInTheDocument();
+  });
+
   it('groups permissions by module and shows every permission', () => {
     renderMatrix([1]);
     expect(screen.getByText('1. Chức vụ')).toBeInTheDocument();

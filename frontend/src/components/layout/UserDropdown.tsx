@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { ActivePageId } from '@app-types/navigation';
 import { useTranslation } from '@i18n/translate';
 import authService from '@lib/authService';
+import { formatRoleTitle, formatUserName } from '@lib/roleUtils';
 
 interface UserDropdownProps {
   onNavigate?: (page: ActivePageId) => void;
@@ -16,7 +17,7 @@ interface SessionUser {
 }
 
 export default function UserDropdown({ onNavigate }: UserDropdownProps) {
-  const { t } = useTranslation();
+  const { t, currentLang } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -67,8 +68,10 @@ export default function UserDropdown({ onNavigate }: UserDropdownProps) {
     };
   }, []);
 
-  const displayName = session?.fullName || session?.username;
-  const displayRoleOrEmail = session?.roleTitle || session?.email || '';
+  const rawName = session?.fullName || session?.username;
+  const displayName = rawName ? formatUserName(rawName, currentLang) : '';
+  const rawRole = session?.roleTitle;
+  const displayRoleOrEmail = rawRole ? formatRoleTitle(rawRole, currentLang) : (session?.email || '');
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -76,8 +79,8 @@ export default function UserDropdown({ onNavigate }: UserDropdownProps) {
         type="button"
         className="flex items-center gap-2 p-1 sm:pr-2.5 rounded-full hover:bg-surface-hover border border-transparent hover:border-subtle transition-all duration-fast"
         onClick={() => setIsOpen(!isOpen)}
-        title={session ? 'Hồ sơ người dùng' : 'Tài khoản khách (Chưa đăng nhập)'}
-        aria-label={session ? 'Hồ sơ người dùng' : 'Tài khoản khách'}
+        title={session ? (t('userMenu.inline.userProfile')) : (t('userMenu.inline.guestAccountNotLoggedIn'))}
+        aria-label={session ? (t('userMenu.inline.userProfile')) : (t('userMenu.inline.guestAccount'))}
       >
         {session ? (
           <div className="w-8 h-8 rounded-full bg-primary/20 text-primary font-semibold flex items-center justify-center text-xs">
@@ -153,14 +156,6 @@ export default function UserDropdown({ onNavigate }: UserDropdownProps) {
                     <i className="w-4 text-center fa-solid fa-gear text-xs" />
                     <span>{t('userMenu.settings')}</span>
                   </button>
-                  <button
-                    type="button"
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs rounded-lg text-text-secondary hover:text-text-main hover:bg-surface-hover transition-colors text-left"
-                    onClick={() => handleItemClick('login')}
-                  >
-                    <i className="w-4 text-center fa-solid fa-right-to-bracket text-xs" />
-                    <span>{t('userMenu.loginDemo')}</span>
-                  </button>
                   <hr className="my-1 border-0 border-t border-subtle" />
                   <button
                     type="button"
@@ -186,14 +181,6 @@ export default function UserDropdown({ onNavigate }: UserDropdownProps) {
                   >
                     <i className="w-4 text-center fa-solid fa-right-to-bracket text-xs" />
                     <span>{t('userMenu.login') || 'Đăng nhập'}</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs rounded-lg text-text-secondary hover:text-text-main hover:bg-surface-hover transition-colors text-left"
-                    onClick={() => handleItemClick('login')}
-                  >
-                    <i className="w-4 text-center fa-solid fa-user-shield text-xs" />
-                    <span>{t('userMenu.loginDemo')}</span>
                   </button>
                   <button
                     type="button"

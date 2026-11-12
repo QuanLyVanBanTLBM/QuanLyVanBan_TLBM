@@ -19,6 +19,7 @@ from ..models import (
     SigningAttempt, SigningChangeMessage, SigningChangeThread, SigningRequest, SigningRequestStep,
     SigningRequestStepSigner,
 )
+from . import thong_bao
 from .audit import ghi_nhat_ky
 from .hanh_dong_ky import _dong_cua_toi, _khoa_luot_hien_hanh, _thao_tac_lap
 from .trinh_ky import TRUONG_VI_TRI, doc_tep_pdf, kiem_tra_vi_tri_ky, luot_hien_hanh, luu_du_lieu_pdf, mo_cap
@@ -55,6 +56,7 @@ def yeu_cau_sua(yeu_cau, nguoi, *, tieu_de, ly_do, khoa_chong_trung, dia_chi_ip=
                 luot_trinh=luot, buoc_ky=dong, trang_thai_truoc=enums.TrangThaiLuotTrinh.CHO_KY,
                 trang_thai_sau=luot.trang_thai, chi_tiet=tieu_de, dia_chi_ip=dia_chi_ip,
                 du_lieu_kem_theo={"thread": thread.pk})
+    thong_bao.su_kien(luot.trinh_ky, luot, "YEU_CAU_SUA", nguoi)
     return SigningRequest.objects.get(pk=yeu_cau.pk)
 
 
@@ -74,7 +76,9 @@ def gui_tin_nhan(yeu_cau, nguoi, *, noi_dung):
     if not duoc_trao_doi(thread, nguoi):
         raise SigningError(code="khong_co_quyen", detail="Chỉ người tạo hồ sơ và người yêu cầu sửa được trao đổi.",
                            status_code=status.HTTP_403_FORBIDDEN)
-    return SigningChangeMessage.objects.create(yeu_cau_sua=thread, nguoi_viet=nguoi, noi_dung=noi_dung)
+    tin = SigningChangeMessage.objects.create(yeu_cau_sua=thread, nguoi_viet=nguoi, noi_dung=noi_dung)
+    thong_bao.tin_nhan(tin, yeu_cau.create_by if nguoi.pk == thread.nguoi_yeu_cau_id else thread.nguoi_yeu_cau)
+    return tin
 
 
 def _cap_ky_luot_cu(luot_cu):
@@ -115,7 +119,7 @@ def _sao_chep_luot(luot_cu, cap_cu, yeu_cau, nguoi, khoa_chong_trung, thoi_diem,
         for n in cap.nguoi_ky_set.all():
             SigningRequestStepSigner.objects.create(
                 buoc_ky=cap_moi, nguoi_ky=n.nguoi_ky, chuc_vu_id=n.chuc_vu_id, ten_nguoi_ky=n.ten_nguoi_ky,
-                ten_chuc_vu=n.ten_chuc_vu, vai_tro_ky=n.vai_tro_ky, chan_ky_chinh=n.chan_ky_chinh,
+                ten_chuc_vu=n.ten_chuc_vu, vai_tro_ky=n.vai_tro_ky,
                 **vi_tri.get(str(n.pk), {}),
             )
     return luot, cap_dau

@@ -1,4 +1,4 @@
-﻿import { NavGroup, MainModule } from '@app-types/navigation';
+import { NavGroup, MainModule } from '@app-types/navigation';
 import { ThemeOption, ThemeMode } from '@app-types/theme';
 import { StreamData } from '@app-types/notification';
 
@@ -67,11 +67,6 @@ export const NAV_GROUPS: NavGroup[] = [
         label: 'Văn Bản Đi',
         icon: 'fa-paper-plane',
       },
-      {
-        id: 'documents_confidential',
-        label: 'Văn Bản Mật',
-        icon: 'fa-shield-halved',
-      },
     ],
   },
   {
@@ -84,6 +79,7 @@ export const NAV_GROUPS: NavGroup[] = [
         label: 'Danh Mục Hồ Sơ',
         icon: 'fa-folder-tree',
       },
+      { id: 'record_types', label: 'Loại văn bản', icon: 'fa-tags' },
     ],
   },
   {
@@ -105,7 +101,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       {
         id: 'approvals',
-        label: 'Quy Trình Ký Số',
+        label: 'Trình Ký',
         icon: 'fa-file-signature',
       },
     ],
@@ -214,12 +210,6 @@ export const MAIN_MODULES: MainModule[] = [
         icon: 'fa-paper-plane',
         description: 'Văn bản phát hành nội bộ công ty',
       },
-      {
-        id: 'documents_confidential',
-        label: 'Văn Bản Mật',
-        icon: 'fa-shield-halved',
-        description: 'Văn bản bảo mật gửi đích danh phòng ban',
-      },
     ],
   },
   {
@@ -236,6 +226,7 @@ export const MAIN_MODULES: MainModule[] = [
         icon: 'fa-folder-tree',
         description: 'Quản lý hồ sơ Cấp 1 và phân loại văn bản Cấp 2',
       },
+      { id: 'record_types', label: 'Loại văn bản', icon: 'fa-tags' },
       {
         id: 'resources',
         label: 'Kho Tài Liệu & Biểu Mẫu',
@@ -260,7 +251,7 @@ export const MAIN_MODULES: MainModule[] = [
       },
       {
         id: 'approvals',
-        label: 'Quy Trình Trình Ký',
+        label: 'Trình Ký',
         icon: 'fa-file-signature',
         description: 'Sơ đồ ký số điện tử và phê duyệt văn bản',
       },
@@ -349,16 +340,16 @@ export const SAMPLE_STREAMS: StreamData[] = [
   },
   {
     type: 'confidential',
-    label: 'Văn Bản Mật',
+    label: 'Mật / Hạn Chế',
     icon: 'fa-shield-halved',
     color: 'rose',
     unreadCount: 0,
     items: [],
   },
   {
-    type: 'meetings',
-    label: 'Lịch Họp',
-    icon: 'fa-calendar-days',
+    type: 'approvals',
+    label: 'Chờ Duyệt',
+    icon: 'fa-signature',
     color: 'amber',
     unreadCount: 0,
     items: [],

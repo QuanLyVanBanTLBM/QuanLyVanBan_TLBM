@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ subject }}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: #e2e8f0;
+      font-family: 'Georgia', 'Times New Roman', serif;
+      padding: 32px 16px;
+      color: #1e293b;
+      -webkit-font-smoothing: antialiased;
+    }
+    @keyframes candleFlicker {
+      0% { transform: scale(0.95, 1.05) rotate(-2deg); opacity: 0.9; }
+      50% { transform: scale(1.06, 0.94) rotate(2deg); opacity: 1; }
+      100% { transform: scale(0.94, 1.08) rotate(-1deg); opacity: 0.92; }
+    }
+    .flame {
+      transform-origin: center bottom;
+      animation: candleFlicker 1.2s ease-in-out infinite alternate;
+    }
+    .mail-wrapper {
+      max-width: 600px;
+      margin: 0 auto;
+      background: #ffffff;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid #dfb266;
+      box-shadow: 0 20px 40px rgba(11, 34, 70, 0.18);
+    }
+    .header {
+      background: linear-gradient(155deg, #0b2246 0%, #103166 55%, #07162e 100%);
+      padding: 36px 36px 28px;
+      color: #ffffff;
+      position: relative;
+      border-bottom: 4px solid #dfb266;
+    }
+    .brand-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+    }
+    .brand-name {
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: 2px;
+      color: #ffffff;
+      text-transform: uppercase;
+    }
+    .brand-sub {
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 9px;
+      letter-spacing: 2.5px;
+      color: #dfb266;
+      display: block;
+      margin-top: 3px;
+    }
+    .date-badge {
+      background: rgba(223, 178, 102, 0.16);
+      border: 1px solid #dfb266;
+      color: #f8e3b4;
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+    }
+    .hero-grid {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+    .hero-text h2 {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: #ffffff;
+    }
+    .hero-text h1 {
+      font-size: 34px;
+      font-weight: 700;
+      letter-spacing: 2.5px;
+      text-transform: uppercase;
+      color: #dfb266;
+      margin: 4px 0 12px;
+    }
+    .hero-text p {
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 10px;
+      letter-spacing: 1.8px;
+      text-transform: uppercase;
+      color: #cbd5e1;
+      line-height: 1.6;
+    }
+    .cake-box {
+      width: 130px;
+      flex-shrink: 0;
+      text-align: center;
+    }
+    .profile-ribbon {
+      background: #f8fafc;
+      border-bottom: 1px solid #e2e8f0;
+      padding: 18px 36px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .profile-item {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .profile-label {
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: #64748b;
+      font-weight: 700;
+    }
+    .profile-value {
+      font-size: 15px;
+      font-weight: 700;
+      color: #0b2246;
+    }
+    .profile-divider {
+      width: 1px;
+      height: 32px;
+      background: #cbd5e1;
+    }
+    .content {
+      padding: 34px 36px 38px;
+      background: #ffffff;
+    }
+    .salutation {
+      font-size: 22px;
+      font-weight: 700;
+      color: #0b2246;
+      margin-bottom: 18px;
+    }
+    .paragraph {
+      font-size: 15px;
+      line-height: 1.78;
+      color: #1e2e42;
+      margin-bottom: 16px;
+      text-align: justify;
+    }
+    .highlight {
+      color: #0b2246;
+      font-weight: 700;
+    }
+    .gold-tag {
+      display: inline-block;
+      background: #fef9ee;
+      border: 1px solid #e6c687;
+      color: #85581A;
+      padding: 1px 8px;
+      border-radius: 4px;
+      font-weight: 700;
+    }
+    .cta-box {
+      margin: 28px 0 26px;
+      text-align: center;
+    }
+    .cta-btn {
+      display: inline-block;
+      background: #0b2246;
+      color: #ffffff;
+      border: 1px solid #dfb266;
+      padding: 13px 28px;
+      border-radius: 6px;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      text-decoration: none;
+      text-transform: uppercase;
+    }
+    .signature {
+      border-top: 2px solid #dfb266;
+      padding-top: 18px;
+      margin-top: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+    .sig-text span {
+      display: block;
+      font-size: 14px;
+      color: #64748b;
+      margin-bottom: 4px;
+    }
+    .sig-text strong {
+      font-size: 16px;
+      color: #0b2246;
+    }
+    .footer {
+      background: #f1f5f9;
+      padding: 14px 24px;
+      text-align: center;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 11px;
+      color: #64748b;
+    }
+    @media (max-width: 520px) {
+      .hero-grid { flex-direction: column; text-align: center; }
+      .profile-ribbon { flex-direction: column; align-items: flex-start; }
+      .profile-divider { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="mail-wrapper">
+    <div class="header">
+      <div class="brand-bar">
+        <div>
+          <span class="brand-name">{{ organization_name }}</span>
+          <span class="brand-sub">THƯ CHÚC MỪNG SINH NHẬT CÁN BỘ NHÂN VIÊN</span>
+        </div>
+        <div class="date-badge">🎂 <span>{{ birthday_date }}</span></div>
+      </div>
+
+      <div class="hero-grid">
+        <div class="hero-text">
+          <h2>Chúc Mừng</h2>
+          <h1>Sinh Nhật</h1>
+          <p>Thêm một tuổi mới • Thêm nhiều giá trị tốt đẹp<br>Vững bước thành công cùng đại gia đình</p>
+        </div>
+        <div class="cake-box">
+          <svg viewBox="0 0 120 120" width="115" height="115" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <g class="flame">
+              <path d="M42 22 C44 26, 44 30, 42 32 C40 30, 40 26, 42 22 Z" fill="#ffeaa0"/>
+              <path d="M60 16 C63 21, 63 26, 60 28 C57 26, 57 21, 60 16 Z" fill="#ffffff"/>
+              <path d="M78 22 C80 26, 80 30, 78 32 C76 30, 76 26, 78 22 Z" fill="#ffeaa0"/>
+            </g>
+            <rect x="40" y="33" width="4" height="16" rx="1" fill="#dfb266"/>
+            <rect x="58" y="29" width="4" height="20" rx="1" fill="#dfb266"/>
+            <rect x="76" y="33" width="4" height="16" rx="1" fill="#dfb266"/>
+            <rect x="30" y="49" width="60" height="22" rx="4" fill="#102a56" stroke="#dfb266" stroke-width="2"/>
+            <path d="M30 56 Q37.5 63 45 56 T60 56 T75 56 T90 56" stroke="#f8e3b4" stroke-width="1.5" fill="none"/>
+            <rect x="20" y="71" width="80" height="28" rx="5" fill="#081a36" stroke="#dfb266" stroke-width="2"/>
+            <path d="M20 79 Q30 87 40 79 T60 79 T80 79 T100 79" stroke="#dfb266" stroke-width="1.8" fill="none"/>
+            <ellipse cx="60" cy="101" rx="48" ry="4" fill="#dfb266"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- Thanh thông tin Chức vụ & Phòng ban -->
+    <div class="profile-ribbon">
+      <div class="profile-item">
+        <span class="profile-label">Cán bộ nhân viên</span>
+        <span class="profile-value">{{ employee_name }}</span>
+      </div>
+      <div class="profile-divider"></div>
+      <div class="profile-item">
+        <span class="profile-label">Chức vụ</span>
+        <span class="profile-value">{{ position }}</span>
+      </div>
+      <div class="profile-divider"></div>
+      <div class="profile-item">
+        <span class="profile-label">Phòng ban / Đơn vị</span>
+        <span class="profile-value">{{ department }}</span>
+      </div>
+    </div>
+
+    <div class="content">
+      {% if chuc_danh %}<p>Chức danh: <strong>{{ chuc_danh }}</strong></p>{% endif %}
+      {{ greeting|linebreaks }}
+
+      <div class="cta-box">
+        {% if birthday_card_url %}<a href="{{ birthday_card_url }}" class="cta-btn">Mở Thiệp Chúc Mừng Sinh Nhật</a>{% endif %}
+      </div>
+
+      <div class="signature">
+        <div class="sig-text">
+          <span>Thân mến,</span>
+          <strong>Ban Lãnh đạo và tập thể <span>{{ brand_name }}</span></strong>
+        </div>
+        <div style="color:#dfb266; font-size:20px;">✦ ❧ ✦</div>
+      </div>
+    </div>
+
+    <div class="footer">
+      Thư chúc mừng sinh nhật tự động • <span>{{ organization_name }}</span>
+    </div>
+  </div>
+</body>
+</html>

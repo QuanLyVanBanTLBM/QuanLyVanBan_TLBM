@@ -1,0 +1,90 @@
+/*
+ * Phân hệ Trình ký duyệt nội bộ (Nhóm 5)
+ * Chiếm 100% chiều rộng khung nội dung, đồng bộ layout với toàn hệ thống.
+ */
+.signing-scope {
+  width: 100%;
+}
+
+/* Hộp thoại modal render vào body: giới hạn chiều cao tối đa không vượt viewport */
+.signing-zoom {
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+/* Thanh cuộn điều hướng mượt mà, ẩn scrollbar mặc định tránh vỡ layout trên desktop/Windows */
+.signing-nav-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.signing-nav-scroll::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+
+/* Nền giấy sáng cố định cho ảnh chữ ký (nét mực tối, nền trong suốt), bất kể theme. */
+.signing-chuky-giay {
+  background-color: var(--color-signature-paper);
+  border: 1px solid var(--color-signature-border);
+}
+
+.signing-chuky-caro {
+  background-color: var(--color-signature-paper);
+  background-image:
+    linear-gradient(45deg, var(--color-signature-checker) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--color-signature-checker) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--color-signature-checker) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--color-signature-checker) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+
+/* Khung cắt: viền dày, vùng ngoài khung phủ xám tối mờ. */
+.signing-crop-khung {
+  border: 3px solid var(--color-primary);
+  box-shadow: 0 0 0 9999px var(--color-signature-mask);
+}
+
+/* Lưới chia ba trong khung cắt. */
+.signing-crop-luoi {
+  background-image:
+    linear-gradient(to right, transparent calc(33.333% - 0.5px), var(--color-signature-grid) calc(33.333% - 0.5px), var(--color-signature-grid) calc(33.333% + 0.5px), transparent calc(33.333% + 0.5px), transparent calc(66.666% - 0.5px), var(--color-signature-grid) calc(66.666% - 0.5px), var(--color-signature-grid) calc(66.666% + 0.5px), transparent calc(66.666% + 0.5px)),
+    linear-gradient(to bottom, transparent calc(33.333% - 0.5px), var(--color-signature-grid) calc(33.333% - 0.5px), var(--color-signature-grid) calc(33.333% + 0.5px), transparent calc(33.333% + 0.5px), transparent calc(66.666% - 0.5px), var(--color-signature-grid) calc(66.666% - 0.5px), var(--color-signature-grid) calc(66.666% + 0.5px), transparent calc(66.666% + 0.5px));
+}
+
+/* Góc khung cắt: dấu L dày, đích chạm rộng 44px (vùng kéo là toàn bộ vùng xem trước). */
+.signing-crop-goc {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  border: 0 solid var(--color-on-primary);
+  pointer-events: none;
+}
+.signing-crop-goc::after {
+  content: '';
+  position: absolute;
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 0 solid var(--color-on-primary);
+  filter: drop-shadow(0 0 2px var(--color-signature-mask));
+}
+.signing-crop-goc--tl { top: -0.375rem; left: -0.375rem; }
+.signing-crop-goc--tl::after { top: 0; left: 0; border-top-width: 4px; border-left-width: 4px; }
+.signing-crop-goc--tr { top: -0.375rem; right: -0.375rem; }
+.signing-crop-goc--tr::after { top: 0; right: 0; border-top-width: 4px; border-right-width: 4px; }
+.signing-crop-goc--bl { bottom: -0.375rem; left: -0.375rem; }
+.signing-crop-goc--bl::after { bottom: 0; left: 0; border-bottom-width: 4px; border-left-width: 4px; }
+.signing-crop-goc--br { bottom: -0.375rem; right: -0.375rem; }
+.signing-crop-goc--br::after { bottom: 0; right: 0; border-bottom-width: 4px; border-right-width: 4px; }
+
+/* Đích chạm tối thiểu 44px cho nút điều khiển thu phóng trên màn hình cảm ứng. */
+.signing-cham-44 {
+  min-width: 44px;
+  min-height: 44px;
+}

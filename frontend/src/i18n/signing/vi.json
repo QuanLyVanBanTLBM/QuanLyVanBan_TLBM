@@ -1,0 +1,15 @@
+{
+  "navigation": {
+    "approvals": "Trình ký"
+  },
+  "pages": {
+    "approvals": {
+      "title": "Trình ký nội bộ",
+      "module": "Trình ký nội bộ",
+      "assignedTeam": "Nhóm 5 (Phân hệ Trình ký)",
+      "codeRef": "Mục 5.1 · Độ khó: 1.00",
+      "isGroup1": false,
+      "desc": "Gửi hồ sơ để ký duyệt nội bộ, theo dõi tiến trình và nhận kết quả duyệt."
+    }
+  }
+}

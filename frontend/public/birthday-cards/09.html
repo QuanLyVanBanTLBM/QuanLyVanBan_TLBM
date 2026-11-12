@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <script src="/birthday-cards/personalize.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Thiệp 09 - Thư Tín Điển Chế & Ấn Sáp Vàng | Bảo Long Insurance</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Playfair+Display:wght@700;800&family=Montserrat:wght@600;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      background: radial-gradient(circle at center, #2b261f 0%, #171410 100%);
+      font-family: 'Playfair Display', Georgia, serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 40px 16px;
+      color: #1e2530;
+    }
+    .scroll-outer {
+      max-width: 620px;
+      width: 100%;
+      background: #fdfbf7;
+      padding: 16px;
+      border: 2px solid #bfa15f;
+      box-shadow: 0 30px 70px rgba(0, 0, 0, 0.7);
+      position: relative;
+    }
+    .scroll-inner {
+      border: 3px double #bfa15f;
+      padding: 36px 38px;
+      background: #fdfbf7;
+    }
+    .crest-top {
+      text-align: center;
+      border-bottom: 1px solid #d8c8a0;
+      padding-bottom: 20px;
+      margin-bottom: 24px;
+    }
+    .wax-seal {
+      width: 66px;
+      height: 66px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, #b91c1c, #7f1d1d);
+      border: 3px solid #dfb266;
+      color: #fde68a;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 20px;
+      cursor: pointer;
+      box-shadow: 0 6px 16px rgba(127, 29, 29, 0.45);
+      margin-bottom: 10px;
+      transition: transform 0.25s;
+    }
+    .wax-seal:hover { transform: scale(1.08); }
+    .crest-top .org {
+      font-family: 'Montserrat', sans-serif;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 2.5px;
+      color: #0b2246;
+    }
+    .crest-top h1 {
+      font-size: 28px;
+      color: #8c6218;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-top: 6px;
+    }
+    .cert-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 22px;
+      background: #f7f3e8;
+    }
+    .cert-table td {
+      padding: 10px 16px;
+      border: 1px solid #decb9e;
+      font-size: 14.5px;
+    }
+    .cert-table td.lbl {
+      font-family: 'Montserrat', sans-serif;
+      font-size: 10.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: #5c5346;
+      width: 34%;
+    }
+    .cert-table td.val {
+      font-weight: 700;
+      color: #0b2246;
+    }
+    .scroll-copy p {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 18.5px;
+      line-height: 1.8;
+      margin-bottom: 15px;
+      text-align: justify;
+    }
+    .seal-btn {
+      background: #0b2246;
+      color: #f3dc99;
+      border: 1.5px solid #bfa15f;
+      padding: 12px 26px;
+      font-family: 'Montserrat', sans-serif;
+      font-size: 11.5px;
+      font-weight: 700;
+      letter-spacing: 1.4px;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+    .scroll-foot {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      margin-top: 26px;
+      padding-top: 16px;
+      border-top: 1px solid #d8c8a0;
+    }
+  </style>
+</head>
+<body>
+  <div class="scroll-outer" id="scrollBox">
+    <div class="scroll-inner">
+      <div class="crest-top">
+        <div class="wax-seal" id="waxSeal" title="Bấm vào Ấn Sáp Vinh Danh">BL</div>
+        <div class="org" data-card-field="organization_name">BẢO LONG INSURANCE</div>
+        <h1>Thư Chúc Mừng Sinh Nhật</h1>
+      </div>
+
+      <table class="cert-table">
+        <tr>
+          <td class="lbl">Họ và tên CBNV</td>
+          <td class="val" data-card-field="employee_name">—</td>
+        </tr>
+        <tr>
+          <td class="lbl">Chức vụ công tác</td>
+          <td class="val" data-card-field="position">—</td>
+        </tr>
+        <tr>
+          <td class="lbl">Phòng ban / Đơn vị</td>
+          <td class="val" data-card-field="department">—</td>
+        </tr>
+        <tr>
+          <td class="lbl">Ngày kỷ niệm sinh nhật</td>
+          <td class="val" data-card-field="birthday_date">—</td>
+        </tr>
+      </table>
+
+      <div class="scroll-copy">
+        <p>Kính gửi đồng chí <strong data-card-field="employee_name">—</strong>,</p>
+        <p>
+          Nhân dịp kỷ niệm ngày sinh nhật <strong data-card-field="birthday_date">—</strong>, thay mặt Ban Lãnh đạo và toàn thể cán bộ nhân viên <span data-card-field="organization_name">Bảo Long Insurance</span>, chúng tôi trân trọng gửi tới đồng chí lời chúc mừng tốt đẹp nhất.
+        </p>
+        <p>
+          Trong suốt quá trình công tác tại <strong data-card-field="department">—</strong> với trọng trách <strong data-card-field="position">—</strong>, đồng chí đã luôn thể hiện tinh thần gương mẫu, tận tụy và đóng góp thiết thực vào sự phát triển bền vững của đơn vị.
+        </p>
+      </div>
+
+      <div style="text-align:center; margin: 24px 0 8px;">
+        <button class="seal-btn" id="sealBtn">📜 Đóng Dấu Vinh Danh & Chúc Mừng</button>
+      </div>
+
+      <div class="scroll-foot">
+        <div style="font-size:12px; color:#64748b;">
+          Văn bản chúc mừng nội bộ<br>
+          <span data-card-field="organization_name">Bảo Long Insurance</span>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-style:italic; font-size:14px; color:#475569;">Trân trọng,</div>
+          <strong style="color:#0b2246; font-size:15px;">TM. Ban Lãnh Đạo <span data-card-field="organization_name">Bảo Long Insurance</span></strong>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+</body>
+</html>

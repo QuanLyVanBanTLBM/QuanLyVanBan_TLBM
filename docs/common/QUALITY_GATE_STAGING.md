@@ -23,22 +23,20 @@ Mỗi lần kiểm tra trước khi đưa lên `staging`, toàn bộ 5 lệnh sa
 
 ```bash
 # -------------------------------------------------------------------
-# LỚP 1 & 2: KIỂM SOÁT BACKEND DJANGO
+# LỚP 1 & 2: KIỂM SOÁT BACKEND DJANGO (chạy tại thư mục gốc, DB local đang chạy)
 # -------------------------------------------------------------------
-cd backend
-
 # Lệnh 1: Kiểm thử toàn diện logic xác thực và bảo mật tài khoản
-python manage.py test accounts
+pnpm test:backend accounts
 # Yêu cầu: PASS 100% (Toàn bộ test suite accounts phải pass, 0 failures, 0 errors).
 
 # Lệnh 2: Kiểm tra toàn vẹn cấu hình hệ thống Django
-python manage.py check
+pnpm manage check
 # Yêu cầu: System check identified no issues (0 silenced).
 
 # -------------------------------------------------------------------
 # LỚP 3, 4 & 5: KIỂM SOÁT FRONTEND REACT TYPESCRIPT
 # -------------------------------------------------------------------
-cd ../frontend
+cd frontend
 
 # Lệnh 3: Kiểm thử hồi quy toàn bộ Unit Tests bằng Vitest
 pnpm test
@@ -95,7 +93,7 @@ Khi commit của Nhóm 1 đã được merge chính thức lên `staging`, đạ
   git checkout -b feat/<ten-chuc-nang>
   ```
 - [ ] Đọc tài liệu hướng dẫn chuẩn tại `docs/common/FRONTEND_BASELINE_GUIDE.md`.
-- [ ] Chạy `pnpm install` và `CHAY_FULL_STACK.bat` kiểm tra hệ thống hoạt động ổn định trên Localhost.
+- [ ] Chạy `pnpm bootstrap`, `pnpm runserver`, `pnpm dev` (xem `README.md` gốc) và kiểm tra hệ thống hoạt động ổn định trên Localhost.
 - [ ] Tuân thủ cấu trúc thư mục phẳng (`pages/`, `components/`, `lib/`, `types/`, `styles/`, `i18n/`).
 - [ ] Nghiêm cấm push trực tiếp vào `staging`; mọi cập nhật đều phải mở PR kèm bằng chứng toàn bộ bài test Quality Gate đã pass 100%.
 

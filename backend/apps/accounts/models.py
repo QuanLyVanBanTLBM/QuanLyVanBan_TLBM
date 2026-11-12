@@ -1,16 +1,36 @@
 import datetime
+import uuid
 
+from django.conf import settings
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.contrib.auth.models import PermissionsMixin
-from django.core.validators import MinValueValidator, RegexValidator
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.validators import MinValueValidator, RegexValidator, validate_email
 from django.db import models
 from django.db.models.functions import Now
 
-# Regex kiểm tra số điện thoại Việt Nam chuẩn
+# Số điện thoại di động Việt Nam: đúng 10 chữ số, bắt đầu 03/05/07/08/09 (chốt 04/11/2026).
 vietnam_phone_regex = RegexValidator(
-    regex=r"^(0|\+84)[1-9][0-9]{7,9}$",
+    regex=r"^0[35789][0-9]{8}$",
     message="employees.messages.invalidPhone",
 )
+
+
+def validate_company_email(value):
+    """Giới hạn tên miền email CBNV theo settings.EMPLOYEE_EMAIL_ALLOWED_DOMAINS (mặc định rỗng: không giới hạn).
+
+    Khi có cấu hình thì chỉ so khớp đúng tên miền (không nhận tên miền con hay tên miền chứa chuỗi đó).
+    """
+    allowed = tuple(getattr(settings, "EMPLOYEE_EMAIL_ALLOWED_DOMAINS", ()))
+    if not allowed:
+        return
+    try:
+        validate_email(str(value).strip())
+    except DjangoValidationError:
+        return  # sai cú pháp thì EmailField báo lỗi định dạng, không báo thêm lỗi tên miền
+    domain = str(value).strip().rsplit("@", 1)[-1].lower()
+    if domain not in allowed:
+        raise DjangoValidationError("employees.messages.emailDomainNotAllowed", code="email_domain")
 
 
 class DbNow(Now):
@@ -238,3 +258,179 @@ class Employee(AbstractBaseUser, PermissionsMixin):
         if self.trang_thai == self.Status.NGHI_VIEC:
             self.is_active = False
         super().save(*args, **kwargs)
+
+
+class EmployeeAssignment(models.Model):
+    """
+    Phân công công tác / Kiêm nhiệm đơn vị & chức vụ của Cán bộ nhân viên (Issue #24).
+    Cho phép một nhân viên có thể thuộc nhiều phòng ban và đảm nhiệm nhiều chức vụ khác nhau.
+    """
+
+    employee = models.ForeignKey(
+        Employee,
+        on_delete=models.CASCADE,
+        related_name="assignments",
+        verbose_name="Cán bộ nhân viên",
+    )
+    don_vi = models.ForeignKey(
+        "organizations.DonVi",
+        on_delete=models.PROTECT,
+        related_name="employee_assignments",
+        verbose_name="Đơn vị / Phòng ban",
+    )
+    chuc_vu = models.ForeignKey(
+        Position,
+        on_delete=models.PROTECT,
+        related_name="employee_assignments",
+        verbose_name="Chức vụ",
+    )
+    chuc_danh = models.CharField(
+        max_length=150,
+        null=True,
+        blank=True,
+        default="",
+        verbose_name="Chức danh kiêm nhiệm (tự do)",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        db_default=DbNow(),
+        verbose_name="Ngày phân công",
+    )
+
+    class Meta:
+        db_table = "accounts_employee_assignment"
+        verbose_name = "Phân công kiêm nhiệm"
+        verbose_name_plural = "Danh sách phân công kiêm nhiệm"
+        unique_together = ("employee", "don_vi", "chuc_vu")
+        indexes = [
+            models.Index(fields=["employee"], name="idx_emp_assign_emp"),
+            models.Index(fields=["don_vi"], name="idx_emp_assign_donvi"),
+            models.Index(fields=["chuc_vu"], name="idx_emp_assign_chucvu"),
+        ]
+
+    def __str__(self):
+        return f"{self.employee.ho_ten} - {self.don_vi.ten} ({self.chuc_vu.name})"
+
+
+class EmployeeImportJob(models.Model):
+    """Trạng thái bền vững của một lượt nhập Excel CBNV nền."""
+
+    class Status(models.TextChoices):
+        QUEUED = "queued", "Đang chờ"
+        PROCESSING = "processing", "Đang xử lý"
+        DONE = "done", "Hoàn tất"
+        FAILED = "failed", "Thất bại"
+
+    class Phase(models.TextChoices):
+        QUEUED = "queued", "Đang chờ"
+        VALIDATION = "validation", "Kiểm tra dữ liệu"
+        SAVING = "saving", "Đang lưu"
+        COMPLETE = "complete", "Hoàn tất"
+        FAILED = "failed", "Thất bại"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(
+        Employee,
+        on_delete=models.CASCADE,
+        related_name="employee_import_jobs",
+    )
+    idempotency_key = models.CharField(max_length=128, null=True, blank=True)
+    active_key = models.CharField(max_length=32, null=True, blank=True)
+    file_path = models.CharField(max_length=1024)
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.QUEUED,
+        db_default=Status.QUEUED,
+    )
+    phase = models.CharField(
+        max_length=16,
+        choices=Phase.choices,
+        default=Phase.QUEUED,
+        db_default=Phase.QUEUED,
+    )
+    processed = models.PositiveIntegerField(default=0, db_default=0)
+    total = models.PositiveIntegerField(default=0, db_default=0)
+    created_count = models.PositiveIntegerField(default=0, db_default=0)
+    errors = models.JSONField(default=list, db_default=models.Value([], output_field=models.JSONField()))
+    message = models.CharField(max_length=100, blank=True, default="", db_default="")
+    created_at = models.DateTimeField(auto_now_add=True, db_default=DbNow())
+    updated_at = models.DateTimeField(auto_now=True, db_default=DbNow())
+
+    class Meta:
+        db_table = "accounts_employee_import_job"
+        verbose_name = "Lượt nhập Excel CBNV"
+        verbose_name_plural = "Lượt nhập Excel CBNV"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["owner", "idempotency_key"],
+                name="uq_employee_import_owner_idem",
+            ),
+            models.UniqueConstraint(
+                fields=["active_key"],
+                name="uq_employee_import_active_key",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["status", "created_at"], name="idx_employee_import_status"),
+        ]
+
+
+class EmployeePasswordResetAudit(models.Model):
+    """Nhật ký kiểm toán về lần admin đặt lại mật khẩu CBNV."""
+
+    class Reason(models.TextChoices):
+        FORGOT_PASSWORD = "FORGOT_PASSWORD", "Quên mật khẩu"
+        COMPROMISED = "COMPROMISED", "Bị xâm phạm"
+        LOST_ACCESS = "LOST_ACCESS", "Mất quyền truy cập"
+        OTHER = "OTHER", "Khác"
+
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        db_index=False,
+        related_name="password_reset_actions",
+        verbose_name="Quản trị viên thực hiện",
+    )
+    target = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        db_index=False,
+        related_name="password_reset_events",
+        verbose_name="Tài khoản được đặt lại mật khẩu",
+    )
+    actor_username = models.CharField(max_length=150)
+    target_username = models.CharField(max_length=150)
+    reason_code = models.CharField(max_length=32, choices=Reason.choices)
+    reason_detail = models.CharField(max_length=500, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_default=DbNow())
+
+    class Meta:
+        db_table = "accounts_password_reset_audit"
+        verbose_name = "Nhật ký đặt lại mật khẩu CBNV"
+        verbose_name_plural = "Nhật ký đặt lại mật khẩu CBNV"
+        default_permissions = ()
+        indexes = [
+            models.Index(fields=["target", "created_at"], name="idx_pwd_reset_target_time"),
+            models.Index(fields=["actor", "created_at"], name="idx_pwd_reset_actor_time"),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(
+                    reason_code__in=["FORGOT_PASSWORD", "COMPROMISED", "LOST_ACCESS", "OTHER"]
+                ),
+                name="chk_pwd_reset_reason_code",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(reason_code="OTHER", reason_detail__isnull=False)
+                )
+                | (
+                    ~models.Q(reason_code="OTHER")
+                    & models.Q(reason_detail__isnull=True)
+                ),
+                name="chk_pwd_reset_reason_detail",
+            ),
+        ]

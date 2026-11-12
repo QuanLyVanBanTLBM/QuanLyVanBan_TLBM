@@ -4,6 +4,14 @@ from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
 
+# SĐT đơn vị: số cố định/di động Việt Nam, đầu 0 hoặc +84 (cùng quy ước với SĐT CBNV).
+PHONE_PATTERN = r"(0|\+84)[235789]\d{8,9}"
+
+
+def normalize_phone(value: str) -> str:
+    """Bỏ khoảng trắng, dấu chấm, gạch nối trước khi so mẫu; giá trị lưu giữ nguyên như người nhập."""
+    return re.sub(r"[\s.-]", "", value or "")
+
 
 class KhoiKhuVuc(models.Model):
     """
@@ -123,8 +131,7 @@ class DonVi(models.Model):
             errors["stt_uu_tien"] = "organizations.messages.priorityPositive"
 
         if self.dien_thoai:
-            phone = re.sub(r"[\s.-]", "", self.dien_thoai)
-            if not re.fullmatch(r"0[235789]\d{8,9}", phone):
+            if not re.fullmatch(PHONE_PATTERN, normalize_phone(self.dien_thoai)):
                 errors["dien_thoai"] = "organizations.messages.phoneInvalid"
 
         if errors:

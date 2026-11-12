@@ -6,14 +6,19 @@
   },
   "scripts": {
     "setup:frontend": "pnpm --dir frontend install --frozen-lockfile",
+    "bootstrap": "pnpm setup:frontend && pnpm db:setup",
     "dev": "pnpm --dir frontend dev",
     "runserver": "node scripts/project.mjs runserver",
+    "manage": "node scripts/project.mjs manage",
+    "test:backend": "node scripts/project.mjs test-backend",
     "db:setup": "node scripts/project.mjs db-setup",
     "db:start": "node scripts/project.mjs db-start",
     "db:status": "node scripts/project.mjs db-status",
     "db:migrate": "node scripts/project.mjs db-migrate",
+    "db:adopt": "node scripts/project.mjs db-adopt",
     "db:migrations": "node scripts/project.mjs db-migrations",
     "db:reset": "node scripts/project.mjs db-reset",
-    "db:stop": "node scripts/project.mjs db-stop"
+    "db:stop": "node scripts/project.mjs db-stop",
+    "deploy:staging": "node scripts/project.mjs deploy-staging"
   }
 }

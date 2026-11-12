@@ -7,16 +7,16 @@ Hợp đồng:
   đang hoạt động giữ chức vụ trong phạm vi (plan mục 3.2). Một ứng viên thì tự gán; nhiều ứng viên thì người tạo
   chọn; không có ai thì chặn gửi.
 
-Cài đặt tạm: model người dùng có `ho_ten`, `chuc_vu`, `don_vi` (Employee của Nhóm 7) thì dùng; nếu chưa có
-(`auth.User`) thì dùng họ tên/tên đăng nhập, không có chức vụ, và người ký theo chức vụ không tìm được ứng viên
-(chặn gửi với mã lỗi rõ). Khi Employee/Đơn vị/Chức vụ lên staging, cài đặt tự dùng dữ liệu thật; đổi các cột
-`chuc_vu_id`, `don_vi_id` số nguyên sang FK theo DDL ở bước đó.
+Dữ liệu thật của Nhóm 7 trên staging: Employee (`ho_ten`, `chuc_vu`, `don_vi`), `accounts.Position`,
+`organizations.DonVi`. Các cột `chuc_vu_id`, `don_vi_id`, `don_vi_ap_dung_id` của Trình ký là FK theo DDL
+(migration 0010). Model người dùng thiếu `chuc_vu`/`don_vi` thì người ký theo chức vụ không có ứng viên.
 """
 
 import logging
 
 from django.apps import apps
 from django.contrib.auth import get_user_model
+from organizations.models import DonVi
 
 from .. import enums
 from ..permissions import QUAN_LY_QUY_TRINH, co_quyen
@@ -33,22 +33,39 @@ def ten_chuc_vu(nguoi_dung):
     return (getattr(chuc_vu, "name", "") or getattr(chuc_vu, "ten", "") or "") if chuc_vu else ""
 
 
+def ten_don_vi(nguoi_dung):
+    don_vi = getattr(nguoi_dung, "don_vi", None)
+    return getattr(don_vi, "ten", "") or "" if don_vi else ""
+
+
 def _co_du_lieu_to_chuc():
     fields = {f.name for f in get_user_model()._meta.get_fields()}
     return {"chuc_vu", "don_vi"} <= fields
 
 
-def tim_ung_vien_theo_chuc_vu(chuc_vu_id, pham_vi_chuc_vu, nguoi_tao, don_vi_co_dinh_id=None):
+def can_bo_giu_chuc_vu(chuc_vu_id, don_vi_id=None):
+    """Cán bộ đang làm việc (is_active, trang_thai LAM_VIEC) giữ chức vụ; `don_vi_id` thì chỉ trong đơn vị đó."""
     if not _co_du_lieu_to_chuc():
-        return []
+        return get_user_model().objects.none()
     queryset = get_user_model().objects.filter(is_active=True, chuc_vu_id=chuc_vu_id)
-    if pham_vi_chuc_vu == enums.PhamViChucVu.DON_VI_NGUOI_TAO:
-        queryset = queryset.filter(don_vi_id=getattr(nguoi_tao, "don_vi_id", None))
-    elif pham_vi_chuc_vu == enums.PhamViChucVu.DON_VI_CO_DINH:
-        queryset = queryset.filter(don_vi_id=don_vi_co_dinh_id)
+    if don_vi_id is not None:
+        queryset = queryset.filter(don_vi_id=don_vi_id)
     if hasattr(get_user_model(), "trang_thai"):
         queryset = queryset.filter(trang_thai="LAM_VIEC")
-    return list(queryset.order_by("pk"))
+    return queryset
+
+
+def tim_ung_vien_theo_chuc_vu(chuc_vu_id, pham_vi_chuc_vu, nguoi_tao, don_vi_co_dinh_id=None):
+    don_vi_id = None
+    if pham_vi_chuc_vu == enums.PhamViChucVu.DON_VI_NGUOI_TAO:
+        don_vi_id = getattr(nguoi_tao, "don_vi_id", None)
+        if don_vi_id is None:
+            return []
+    elif pham_vi_chuc_vu == enums.PhamViChucVu.DON_VI_CO_DINH:
+        don_vi_id = don_vi_co_dinh_id
+        if don_vi_id is None:
+            return []
+    return list(can_bo_giu_chuc_vu(chuc_vu_id, don_vi_id).order_by("pk"))
 
 
 # ── Đơn vị và vai trò quản lý quy trình (#80 mục A, plan mục 3.1, 8) ────────
@@ -66,16 +83,23 @@ def don_vi_cua(nguoi_dung):
     return getattr(nguoi_dung, "don_vi_id", None)
 
 
-# ── Ảnh chữ ký cá nhân (plan mục 3.4; #80 mục D) ────────────────────────────
-# Hồ sơ cá nhân thuộc Nhóm 7 (field `anh_chu_ky`, PNG nền trong suốt, tối đa 2 MB). Trình ký chỉ đọc ảnh lúc
-# ký để chụp snapshot. Cài đặt tạm: đọc field `anh_chu_ky` (ImageField/FileField) của model người dùng nếu có;
-# chưa có field hoặc chưa tải ảnh thì trả None (tệp hoàn tất in khối chữ thay ảnh).
+# ── Ảnh chữ ký cá nhân (plan mục 3.4; #80 mục D; #424; #459) ───────────────────
+# Nguồn đọc duy nhất của Trình ký. Thứ tự ưu tiên: trường `anh_chu_ky` của hồ sơ cá nhân Nhóm 7 (ImageField hoặc
+# FileField, PNG nền trong suốt, tối đa 2 MB; chưa có thì bỏ qua), rồi ảnh trong `signing_user_signature` của Nhóm 5.
+# Cờ có ảnh, tệp preview và snapshot lúc ký đều đi qua `anh_chu_ky()` và `co_anh_chu_ky()`.
 
 ANH_CHU_KY_TOI_DA = 2 * 1024 * 1024
 CHU_KY_PNG = b"\x89PNG\r\n\x1a\n"
 
 
-def anh_chu_ky(nguoi_dung):
+def _la_png_hop_le(du_lieu, nguoi_dung):
+    if len(du_lieu) <= ANH_CHU_KY_TOI_DA and du_lieu.startswith(CHU_KY_PNG):
+        return True
+    logger.warning("Ảnh chữ ký của người dùng %s không phải PNG hoặc quá 2 MB", nguoi_dung.pk)
+    return False
+
+
+def _anh_tu_ho_so_nhom_7(nguoi_dung):
     tep = getattr(nguoi_dung, "anh_chu_ky", None)
     if not tep:
         return None
@@ -85,10 +109,57 @@ def anh_chu_ky(nguoi_dung):
     except (OSError, ValueError):
         logger.warning("Không đọc được ảnh chữ ký của người dùng %s", nguoi_dung.pk)
         return None
-    if len(du_lieu) > ANH_CHU_KY_TOI_DA or not du_lieu.startswith(CHU_KY_PNG):
-        logger.warning("Ảnh chữ ký của người dùng %s không phải PNG hoặc quá 2 MB", nguoi_dung.pk)
+    return du_lieu if _la_png_hop_le(du_lieu, nguoi_dung) else None
+
+
+def _anh_tu_trinh_ky(nguoi_dung):
+    from ..models import SigningUserSignature
+    from ..storage import get_storage
+
+    sig = SigningUserSignature.objects.filter(nguoi_dung=nguoi_dung).first()
+    if sig is None:
         return None
-    return du_lieu
+    try:
+        du_lieu = get_storage().read_bytes(sig.vi_tri_tep)
+    except Exception:  # noqa: BLE001 — lỗi lưu trữ không được làm hỏng luồng gọi
+        logger.exception("Không đọc được ảnh chữ ký của người dùng %s từ signing_user_signature", nguoi_dung.pk)
+        return None
+    return du_lieu if _la_png_hop_le(du_lieu, nguoi_dung) else None
+
+
+def anh_chu_ky(nguoi_dung):
+    """Bytes PNG ảnh chữ ký hiện hành của người dùng; None khi chưa có hoặc ảnh không đọc được/không hợp lệ."""
+    return _anh_tu_ho_so_nhom_7(nguoi_dung) or _anh_tu_trinh_ky(nguoi_dung)
+
+
+def _tep_ho_so_ton_tai(nguoi_dung):
+    tep = getattr(nguoi_dung, "anh_chu_ky", None)
+    if not tep:
+        return False
+    try:
+        return bool(tep.storage.exists(tep.name))
+    except Exception:  # noqa: BLE001 — lỗi lưu trữ coi như chưa có ảnh
+        return False
+
+
+def tep_trinh_ky_ton_tai(nguoi_dung):
+    from ..models import SigningUserSignature
+    from ..storage import get_storage
+
+    vi_tri = SigningUserSignature.objects.filter(nguoi_dung=nguoi_dung).values_list("vi_tri_tep", flat=True).first()
+    if not vi_tri:
+        return False
+    try:
+        get_storage().metadata(vi_tri)
+    except Exception:  # noqa: BLE001 — bản ghi còn nhưng tệp mất/không đọc được: coi như chưa có ảnh
+        logger.warning("Bản ghi ảnh chữ ký của người dùng %s trỏ tới tệp không tồn tại", nguoi_dung.pk)
+        return False
+    return True
+
+
+def co_anh_chu_ky(nguoi_dung):
+    """Người dùng đã có ảnh chữ ký: bản ghi có giá trị và tệp tồn tại trong kho lưu trữ (không đọc nội dung ảnh)."""
+    return _tep_ho_so_ton_tai(nguoi_dung) or tep_trinh_ky_ton_tai(nguoi_dung)
 
 
 def ma_nhom_cua(nguoi_dung):
@@ -114,6 +185,17 @@ def la_quan_tri(nguoi_dung):
         return False
     ma_nhom = ma_nhom_cua(nguoi_dung)
     return ma_nhom is None or MA_NHOM_QUAN_TRI in ma_nhom
+
+
+def don_vi_quan_ly_duoc(nguoi_dung):
+    """Đơn vị người dùng được chọn làm đơn vị áp dụng quy trình PHONG_BAN: quản trị mọi đơn vị, lãnh đạo đơn vị
+    chỉ đơn vị mình."""
+    if la_quan_tri(nguoi_dung):
+        return DonVi.objects.order_by("stt_uu_tien", "pk")
+    don_vi_id = don_vi_cua(nguoi_dung)
+    if la_lanh_dao_don_vi(nguoi_dung, don_vi_id):
+        return DonVi.objects.filter(pk=don_vi_id)
+    return DonVi.objects.none()
 
 
 def la_lanh_dao_don_vi(nguoi_dung, don_vi_id):

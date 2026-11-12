@@ -1,5 +1,5 @@
 """
-DDL base bỏ văn bản mật (PR #81, Issue #83): seed còn đúng 77 quyền, không còn *_vanbanmat,
+DDL base bỏ văn bản mật (PR #81, Issue #83): seed còn đúng 73 quyền, không còn *_vanbanmat,
 và migration 0003 gỡ được quyền văn bản mật trên DB đã seed từ trước.
 """
 from importlib import import_module
@@ -24,9 +24,9 @@ class SchemaEditorStub:
 
 
 class VanBanMatRemovedTest(TestCase):
-    def test_seed_has_77_permissions_without_vanbanmat(self):
+    def test_seed_has_73_permissions_without_vanbanmat(self):
         codenames = {codename for _, codename, _ in [*PERMISSIONS, *EXTRA_PERMISSIONS]}
-        self.assertEqual(len(codenames), 77)
+        self.assertEqual(len(codenames), 73)
         self.assertFalse([c for c in codenames if "vanbanmat" in c])
         for group_codenames in GROUP_PERMISSIONS.values():
             self.assertFalse([c for c in group_codenames if "vanbanmat" in c])
@@ -35,7 +35,11 @@ class VanBanMatRemovedTest(TestCase):
         self.assertFalse(Permission.objects.filter(codename__contains="vanbanmat").exists())
         with connection.cursor() as cursor:
             cursor.execute("SELECT COUNT(*) FROM auth_permission WHERE module_ten <> ''")
-            self.assertEqual(cursor.fetchone()[0], 77)
+            # 74 quyền (73 của rbac_seed + export_cbnv) + 2 quyền đổi hiệu lực văn bản (migration 0011)
+            # + view_all_trinhky (migration 0013) - delegate_trinhky (migration 0015)
+            # + 4 quyền xem, xử lý văn bản hết hiệu lực (migration 0016)
+            # + 2 quyền thêm văn bản hạn chế (migration 0017); ba quyền không còn chức năng đã gỡ ở seed (migration 0018).
+            self.assertEqual(cursor.fetchone()[0], 83)
 
     def test_migration_removes_existing_vanbanmat_permissions_and_grants(self):
         with connection.cursor() as cursor:

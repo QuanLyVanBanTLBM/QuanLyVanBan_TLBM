@@ -5,7 +5,7 @@ Chuẩn hóa 100% theo DDL cơ sở dữ liệu release_DDL.sql (SQL_Fix4, Issue
 
 from datetime import datetime
 from django.db import transaction, IntegrityError
-from django.db.models import Q, ProtectedError, RestrictedError
+from django.db.models import Q, ProtectedError, RestrictedError, Case, When, Value, IntegerField
 from django.utils import timezone
 from rest_framework import status, viewsets, permissions
 from rest_framework.decorators import action
@@ -215,7 +215,16 @@ class MeetingBookingViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         from rest_framework.exceptions import ValidationError
 
-        qs = super().get_queryset().order_by("-date", "-start_time")
+        qs = super().get_queryset()
+
+        # Đánh dấu trọng số: Lịch hiệu lực/hoàn thành ưu tiên 0, lịch CANCELLED ưu tiên 1 (đẩy xuống cuối)
+        qs = qs.annotate(
+            is_cancelled=Case(
+                When(trang_thai=MeetingBooking.Status.CANCELLED, then=Value(1)),
+                default=Value(0),
+                output_field=IntegerField(),
+            )
+        )
 
         # Bảo mật phòng nội bộ: Người không có change_phonghop chỉ thấy lịch phòng công khai hoặc lịch của mình
         user = self.request.user
@@ -268,12 +277,12 @@ class MeetingBookingViewSet(viewsets.ModelViewSet):
             else:
                 qs = qs.filter(trang_thai=mapped_status)
 
-        # 3. Lọc theo ngày cụ thể (YYYY-MM-DD) an toàn
+        # 3. Lọc theo ngày cụ thể (YYYY-MM-DD) an toàn: Sắp xếp lịch hiệu lực trước, lịch hủy xuống cuối
         date_str = self.request.query_params.get("date")
         if date_str:
             try:
                 target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-                qs = qs.filter(date=target_date).order_by("start_time")
+                qs = qs.filter(date=target_date).order_by("is_cancelled", "start_time", "end_time", "id")
             except ValueError:
                 raise ValidationError({
                     "date": "meetings.messages.invalidDateFormat"
@@ -299,6 +308,9 @@ class MeetingBookingViewSet(viewsets.ModelViewSet):
                     "end_date": "meetings.messages.invalidDateFormat"
                 })
 
+        if not date_str:
+            qs = qs.order_by("-date", "is_cancelled", "start_time", "end_time", "id")
+
         return qs
 
     def create(self, request, *args, **kwargs):
@@ -317,18 +329,6 @@ class MeetingBookingViewSet(viewsets.ModelViewSet):
             with transaction.atomic():
                 # Khóa bản ghi phòng họp để các request đồng thời phải tuần tự kiểm tra
                 locked_room = MeetingRoom.objects.select_for_update().get(id=room.id)
-
-                # Chặn đặt phòng nội bộ nếu không có quyền
-                if not locked_room.is_public:
-                    user = request.user
-                    has_perm = user and (user.is_superuser or user.has_perm("change_phonghop"))
-                    if not has_perm:
-                        return Response(
-                            {
-                                "detail": "meetings.messages.privateRoomForbidden",
-                            },
-                            status=status.HTTP_403_FORBIDDEN,
-                        )
 
                 if locked_room.trang_thai in [MeetingRoom.Status.MAINTENANCE, MeetingRoom.Status.UNAVAILABLE]:
                     return Response(
@@ -426,18 +426,6 @@ class MeetingBookingViewSet(viewsets.ModelViewSet):
             with transaction.atomic():
                 locked_room = MeetingRoom.objects.select_for_update().get(id=room.id)
 
-                # Chặn đặt/sửa phòng nội bộ nếu không có quyền
-                if not locked_room.is_public:
-                    user = request.user
-                    has_perm = user and (user.is_superuser or user.has_perm("change_phonghop"))
-                    if not has_perm:
-                        return Response(
-                            {
-                                "detail": "meetings.messages.privateRoomForbidden",
-                            },
-                            status=status.HTTP_403_FORBIDDEN,
-                        )
-
                 if new_status != MeetingBooking.Status.CANCELLED:
                     if locked_room.trang_thai in [MeetingRoom.Status.MAINTENANCE, MeetingRoom.Status.UNAVAILABLE]:
                         return Response(
@@ -530,7 +518,7 @@ class MeetingBookingViewSet(viewsets.ModelViewSet):
         booking.trang_thai = MeetingBooking.Status.CANCELLED
         reason = (request.data.get("cancel_reason") or "").strip()
         if reason:
-            booking.purpose = (booking.purpose + f"\n---\n{reason}").strip() if booking.purpose else reason
+            booking.purpose = f"{booking.purpose}\n---\n{reason}" if booking.purpose else f"\n---\n{reason}"
         booking.save()
 
         serializer = self.get_serializer(booking)

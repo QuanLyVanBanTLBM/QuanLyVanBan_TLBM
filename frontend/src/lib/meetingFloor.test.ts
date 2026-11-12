@@ -70,6 +70,18 @@ describe('meetingFloor utility', () => {
       expect(getFloorKey('Building B2')).toBeNull();
       expect(getFloorKey('Tòa nhà Floor Plaza')).toBeNull(); // Không nhận diện nhầm Floor Plaza thành tầng Plaza
     });
+
+    it('không nhận nhầm mã phòng B... hoặc từ không dấu lung thành tầng hầm hoặc lửng', () => {
+      // Các mã phòng bắt đầu bằng B không phải tầng hầm
+      expect(getFloorKey('Phòng B101')).toBeNull();
+      expect(getFloorKey('Phòng họp B12')).toBeNull();
+      expect(getFloorKey('Phòng B1')).toBeNull();
+      // Từ không dấu không nhận là tầng lửng
+      expect(getFloorKey('Lung')).toBeNull();
+      expect(getFloorKey('Phòng Lung')).toBeNull();
+      // Vừa có tầng số vừa có mã phòng B thì ưu tiên nhận đúng tầng số
+      expect(getFloorKey('Tầng 2 Phòng B101')).toBe('2');
+    });
   });
 
   describe('formatFloorName & extractFloor', () => {

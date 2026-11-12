@@ -1,13 +1,16 @@
 services:
   db:
-    image: postgres:16
+    # Keep the ICU collation version used by the previous postgres:16 (Trixie)
+    # image so existing local volumes remain compatible.
+    image: pgvector/pgvector:pg16-trixie@sha256:9cf8b511f0e9a2c209b61430fc139f1ab9c75edbb31fb1751db6617b246a897a
     restart: unless-stopped
     environment:
       POSTGRES_DB: qlvb_dev
       POSTGRES_USER: qlvb_dev
       POSTGRES_PASSWORD: qlvb_local_only
+      POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=vi-VN --locale=C.UTF-8"
     ports:
-      - "127.0.0.1:55432:5432"
+      - "127.0.0.1:${QLVB_DB_PORT:-55432}:5432"
     volumes:
       - qlvb_local_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -27,7 +30,7 @@ services:
       PGADMIN_DEFAULT_PASSWORD: qlvb_pgadmin_local_only
       PGADMIN_CONFIG_ALLOW_SPECIAL_EMAIL_DOMAINS: "['local']"
     ports:
-      - "127.0.0.1:5050:80"
+      - "127.0.0.1:${QLVB_PGADMIN_PORT:-5050}:80"
     volumes:
       - qlvb_local_pgadmin_data:/var/lib/pgadmin
       - ./docker/pgadmin/servers.json:/pgadmin4/servers.json:ro

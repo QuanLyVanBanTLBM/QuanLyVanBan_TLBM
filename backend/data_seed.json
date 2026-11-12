@@ -1,0 +1,1545 @@
+[
+{
+  "model": "documents.vanbanden",
+  "pk": 1,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2026,
+    "so_hieu": "15/CV-BGDDT",
+    "trich_yeu": "V/v hướng dẫn tổ chức công tác tuyển sinh đại học và đổi mới chương trình đào tạo năm học 2026 - 2027.",
+    "ngay_van_ban": "2026-09-17T17:00:00Z",
+    "nguoi_ky": "Nguyễn Văn Phúc",
+    "chuc_vu": "Thứ trưởng",
+    "hieu_luc": "CON_HIEU_LUC",
+    "ngay_het_hieu_luc": "2027-05-11T17:00:00Z",
+    "link_thay_the": "",
+    "danh_muc_ho_so": "Hồ sơ Hành chính - Quản trị",
+    "ten_loai_van_ban": "Công văn",
+    "ghi_chu": "Văn phòng trường photo chuyển các Khoa và Phòng Đào tạo nghiên cứu thực hiện.",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-08T05:31:33.685Z",
+    "updated_at": "2026-10-10T11:07:10.091Z",
+    "so_thu_tu": 1,
+    "ngay_den": "2026-09-21T06:47:00Z",
+    "noi_ban_hanh": "Bộ Giáo Dục và Đào Tạo"
+  }
+},
+{
+  "model": "documents.vanbanden",
+  "pk": 2,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2026,
+    "so_hieu": "02/QD-VP",
+    "trich_yeu": "Quyết định ban hành Quy chế bảo vệ bí mật nhà nước và an toàn thông tin nội bộ.",
+    "ngay_van_ban": "2026-10-07T17:00:00Z",
+    "nguoi_ky": "Lê Văn Bình",
+    "chuc_vu": "",
+    "hieu_luc": "HET_HIEU_LUC",
+    "ngay_het_hieu_luc": "2026-09-17T17:00:00Z",
+    "link_thay_the": "",
+    "danh_muc_ho_so": "Hồ sơ Chuyên môn - Nghiệp vụ",
+    "ten_loai_van_ban": "Quyết định",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-08T05:31:33.688Z",
+    "updated_at": "2026-10-10T16:48:38.497Z",
+    "so_thu_tu": 2,
+    "ngay_den": "2026-09-22T08:17:00Z",
+    "noi_ban_hanh": "Ban công nghệ thông tin"
+  }
+},
+{
+  "model": "documents.vanbanden",
+  "pk": 4,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2026,
+    "so_hieu": "05/CV-BYT",
+    "trich_yeu": "Hướng dẫn triển khai biện pháp phòng chống các bệnh truyền nhiễm mùa xuân hè tại các cơ sở giáo dục trên toàn quốc.",
+    "ngay_van_ban": "2026-09-21T17:00:00Z",
+    "nguoi_ky": "Hoàng Minh Đức",
+    "chuc_vu": "Cục trưởng",
+    "hieu_luc": "HET_HIEU_LUC",
+    "ngay_het_hieu_luc": "2026-09-21T10:02:56.796Z",
+    "link_thay_the": "",
+    "danh_muc_ho_so": "Hồ sơ Hành chính - Quản trị",
+    "ten_loai_van_ban": "Công văn",
+    "ghi_chu": "Thay thế cho công văn số 02/CV-BYT ngày 10/01/2026.",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-08T05:31:33.691Z",
+    "updated_at": "2026-10-10T11:07:10.084Z",
+    "so_thu_tu": 3,
+    "ngay_den": "2026-09-23T05:02:00Z",
+    "noi_ban_hanh": "Bộ Y Tế - Cục Y Tế Dự Phòng"
+  }
+},
+{
+  "model": "documents.vanbanden",
+  "pk": 8,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2026,
+    "so_hieu": "125",
+    "trich_yeu": "đô bị gey",
+    "ngay_van_ban": "2026-09-25T17:00:00Z",
+    "nguoi_ky": "đô",
+    "chuc_vu": "giám đốc giới tính 3",
+    "hieu_luc": "HET_HIEU_LUC",
+    "ngay_het_hieu_luc": "2026-09-25T17:00:00Z",
+    "link_thay_the": "",
+    "danh_muc_ho_so": "Hồ sơ Hành chính - Quản trị",
+    "ten_loai_van_ban": "Công văn",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-08T05:31:33.694Z",
+    "updated_at": "2026-10-10T11:07:10.081Z",
+    "so_thu_tu": 4,
+    "ngay_den": "2026-09-25T17:00:00Z",
+    "noi_ban_hanh": "bộ i gi bi teo"
+  }
+},
+{
+  "model": "documents.vanbanden",
+  "pk": 9,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2026,
+    "so_hieu": "125",
+    "trich_yeu": "ádasdsa",
+    "ngay_van_ban": "2026-09-25T17:00:00Z",
+    "nguoi_ky": "do",
+    "chuc_vu": "giám đốc",
+    "hieu_luc": "HET_VA_THAY_THE",
+    "ngay_het_hieu_luc": "2026-09-26T17:00:00Z",
+    "link_thay_the": "122",
+    "danh_muc_ho_so": "Hồ sơ Hành chính - Quản trị",
+    "ten_loai_van_ban": "Công văn",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-08T05:31:33.697Z",
+    "updated_at": "2026-10-10T11:07:10.078Z",
+    "so_thu_tu": 5,
+    "ngay_den": "2026-09-25T17:00:00Z",
+    "noi_ban_hanh": "giáo dục"
+  }
+},
+{
+  "model": "documents.vanbanden",
+  "pk": 10,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2026,
+    "so_hieu": "122",
+    "trich_yeu": "sadasd",
+    "ngay_van_ban": "2026-09-26T17:00:00Z",
+    "nguoi_ky": "ádsda",
+    "chuc_vu": "sdasdas",
+    "hieu_luc": "CON_HIEU_LUC",
+    "ngay_het_hieu_luc": null,
+    "link_thay_the": "125",
+    "danh_muc_ho_so": "Hồ sơ Hành chính - Quản trị",
+    "ten_loai_van_ban": "Công văn",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-08T05:31:33.700Z",
+    "updated_at": "2026-10-10T11:07:10.075Z",
+    "so_thu_tu": 6,
+    "ngay_den": "2026-09-26T17:00:00Z",
+    "noi_ban_hanh": "asa"
+  }
+},
+{
+  "model": "documents.vanbanden",
+  "pk": 11,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2026,
+    "so_hieu": "88/KH-UBND",
+    "trich_yeu": "Kế hoạch triển khai ứng dụng công nghệ thông tin và chuyển đổi số trong quản lý văn bản điều hành năm học 2026 - 2027.",
+    "ngay_van_ban": "2026-09-24T08:30:00Z",
+    "nguoi_ky": "Nguyễn Văn An",
+    "chuc_vu": "Phó Chủ tịch UBND",
+    "hieu_luc": "CON_HIEU_LUC",
+    "ngay_het_hieu_luc": null,
+    "link_thay_the": "",
+    "danh_muc_ho_so": "Hồ sơ Kế hoạch - Dự án",
+    "ten_loai_van_ban": "Kế hoạch",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-08T05:31:33.703Z",
+    "updated_at": "2026-10-10T11:07:10.072Z",
+    "so_thu_tu": 7,
+    "ngay_den": "2026-09-25T09:00:00Z",
+    "noi_ban_hanh": "Ủy ban Nhân dân Thành phố"
+  }
+},
+{
+  "model": "documents.vanbanden",
+  "pk": 12,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2026,
+    "so_hieu": "205/QĐ-BTTTT",
+    "trich_yeu": "Quy định một số tiêu chuẩn kỹ thuật an toàn dữ liệu điện tử và kết nối liên thông văn bản.",
+    "ngay_van_ban": "2026-09-22T14:00:00Z",
+    "nguoi_ky": "Trần Quốc Toản",
+    "chuc_vu": "Thứ trưởng",
+    "hieu_luc": "HET_VA_THAY_THE",
+    "ngay_het_hieu_luc": "2026-09-26T17:00:00Z",
+    "link_thay_the": "127",
+    "danh_muc_ho_so": "Hồ sơ Chuyên môn - Nghiệp vụ",
+    "ten_loai_van_ban": "Quyết định",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-08T05:31:33.706Z",
+    "updated_at": "2026-10-10T11:07:10.070Z",
+    "so_thu_tu": 8,
+    "ngay_den": "2026-09-23T10:15:00Z",
+    "noi_ban_hanh": "Bộ Thông tin và Truyền thông"
+  }
+},
+{
+  "model": "documents.vanbanden",
+  "pk": 13,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2026,
+    "so_hieu": "102/QĐ-BTTTT",
+    "trich_yeu": "Quy định cũ về kết nối và trao đổi văn bản điện tử giữa các cơ quan hành chính (hết hiệu lực).",
+    "ngay_van_ban": "2026-08-15T09:00:00Z",
+    "nguoi_ky": "Trần Quốc Toản",
+    "chuc_vu": "Thứ trưởng",
+    "hieu_luc": "HET_VA_THAY_THE",
+    "ngay_het_hieu_luc": null,
+    "link_thay_the": "205/QĐ-BTTTT",
+    "danh_muc_ho_so": "Hồ sơ Chuyên môn - Nghiệp vụ",
+    "ten_loai_van_ban": "Quyết định",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-08T05:31:33.710Z",
+    "updated_at": "2026-10-10T11:07:10.067Z",
+    "so_thu_tu": 9,
+    "ngay_den": "2026-08-16T14:30:00Z",
+    "noi_ban_hanh": "Bộ Thông tin và Truyền thông"
+  }
+},
+{
+  "model": "documents.vanbanden",
+  "pk": 14,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2026,
+    "so_hieu": "79/HD-STTTT",
+    "trich_yeu": "Hướng dẫn quy trình số hóa, lưu trữ và bảo mật hồ sơ tài liệu điện tử theo chuẩn ISO 27001 phục vụ liên thông số.",
+    "ngay_van_ban": "2026-09-25T17:00:00Z",
+    "nguoi_ky": "Lê Hoàng Nam",
+    "chuc_vu": "",
+    "hieu_luc": "CON_HIEU_LUC_1_PHAN",
+    "ngay_het_hieu_luc": null,
+    "link_thay_the": "",
+    "danh_muc_ho_so": "Hồ sơ Chuyên môn - Nghiệp vụ",
+    "ten_loai_van_ban": "Hướng dẫn",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-08T05:31:33.714Z",
+    "updated_at": "2026-10-10T11:07:10.064Z",
+    "so_thu_tu": 10,
+    "ngay_den": "2026-09-25T17:00:00Z",
+    "noi_ban_hanh": "Sở Thông tin và Truyền thông"
+  }
+},
+{
+  "model": "documents.vanbanden",
+  "pk": 15,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2026,
+    "so_hieu": "112/TB-SGDĐT",
+    "trich_yeu": "Thông báo phân công lịch trực tiếp nhận, bàn giao hồ sơ hành chính và văn bản đi - đến quý IV năm 2026.",
+    "ngay_van_ban": "2026-09-24T17:00:00Z",
+    "nguoi_ky": "Phạm Minh Hùng",
+    "chuc_vu": "",
+    "hieu_luc": "CON_HIEU_LUC",
+    "ngay_het_hieu_luc": "2026-11-28T17:00:00Z",
+    "link_thay_the": "",
+    "danh_muc_ho_so": "Hồ sơ Hành chính - Quản trị",
+    "ten_loai_van_ban": "Thông báo",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-08T05:31:33.717Z",
+    "updated_at": "2026-10-10T11:07:10.061Z",
+    "so_thu_tu": 11,
+    "ngay_den": "2026-09-25T17:00:00Z",
+    "noi_ban_hanh": "Sở Giáo dục và Đào tạo"
+  }
+},
+{
+  "model": "documents.vanbanden",
+  "pk": 16,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2026,
+    "so_hieu": "127",
+    "trich_yeu": "dfsdf",
+    "ngay_van_ban": "2026-09-26T17:00:00Z",
+    "nguoi_ky": "dfsdf",
+    "chuc_vu": "",
+    "hieu_luc": "CON_HIEU_LUC_1_PHAN",
+    "ngay_het_hieu_luc": null,
+    "link_thay_the": "205/QĐ-BTTTT",
+    "danh_muc_ho_so": "Hồ sơ Hành chính - Quản trị",
+    "ten_loai_van_ban": "Công văn",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-08T05:31:33.720Z",
+    "updated_at": "2026-10-10T11:07:10.056Z",
+    "so_thu_tu": 12,
+    "ngay_den": "2026-09-26T17:00:00Z",
+    "noi_ban_hanh": "sdfsd"
+  }
+},
+{
+  "model": "documents.vanbanden",
+  "pk": 25,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2026,
+    "so_hieu": "112",
+    "trich_yeu": "dsfds",
+    "ngay_van_ban": "2026-10-09T17:00:00Z",
+    "nguoi_ky": "dsf",
+    "chuc_vu": "sdf",
+    "hieu_luc": "HET_VA_THAY_THE",
+    "ngay_het_hieu_luc": "2026-10-09T17:00:00Z",
+    "link_thay_the": "462",
+    "danh_muc_ho_so": "Hồ sơ Hành chính - Quản trị",
+    "ten_loai_van_ban": "Công văn",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-10T06:39:25.903Z",
+    "updated_at": "2026-10-10T11:07:10.053Z",
+    "so_thu_tu": 14,
+    "ngay_den": "2026-10-09T17:00:00Z",
+    "noi_ban_hanh": "cxvcxv"
+  }
+},
+{
+  "model": "documents.vanbanden",
+  "pk": 32,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2025,
+    "so_hieu": "101/QĐ-UBND",
+    "trich_yeu": "Quy chế tiếp nhận và xử lý văn bản năm 2025 (Bị thay thế bởi QĐ 102/QĐ-UBND)",
+    "ngay_van_ban": "2025-03-09T00:00:00Z",
+    "nguoi_ky": "Trần Văn Nam",
+    "chuc_vu": "Chủ tịch UBND",
+    "hieu_luc": "HET_VA_THAY_THE",
+    "ngay_het_hieu_luc": "2026-01-14T00:00:00Z",
+    "link_thay_the": "102/QĐ-UBND",
+    "danh_muc_ho_so": "Hồ sơ Quản lý Hành chính & Nhân sự",
+    "ten_loai_van_ban": "Quyết định",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-10T10:52:17.700Z",
+    "updated_at": "2026-10-10T10:52:17.700Z",
+    "so_thu_tu": 1,
+    "ngay_den": "2025-03-10T08:30:00Z",
+    "noi_ban_hanh": "Ủy ban Nhân dân Thành phố"
+  }
+},
+{
+  "model": "documents.vanbanden",
+  "pk": 33,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2026,
+    "so_hieu": "102/QĐ-UBND",
+    "trich_yeu": "Quyết định ban hành Quy chế văn thư lưu trữ điện tử mới 2026 (Thay thế cho QĐ 101/QĐ-UBND)",
+    "ngay_van_ban": "2026-01-14T00:00:00Z",
+    "nguoi_ky": "Trần Văn Nam",
+    "chuc_vu": "Chủ tịch UBND",
+    "hieu_luc": "CON_HIEU_LUC",
+    "ngay_het_hieu_luc": null,
+    "link_thay_the": "101/QĐ-UBND",
+    "danh_muc_ho_so": "Hồ sơ Quản lý Hành chính & Nhân sự",
+    "ten_loai_van_ban": "Quyết định",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-10T10:52:17.704Z",
+    "updated_at": "2026-10-10T10:52:17.704Z",
+    "so_thu_tu": 15,
+    "ngay_den": "2026-01-15T09:00:00Z",
+    "noi_ban_hanh": "Ủy ban Nhân dân Thành phố"
+  }
+},
+{
+  "model": "documents.vanbanden",
+  "pk": 34,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2026,
+    "so_hieu": "55/HD-STTTT",
+    "trich_yeu": "Hướng dẫn kết nối trục liên thông văn bản quốc gia và chia sẻ dữ liệu số giai đoạn 2026",
+    "ngay_van_ban": "2026-02-19T00:00:00Z",
+    "nguoi_ky": "Nguyễn Hoàng Minh",
+    "chuc_vu": "Phó Giám đốc Sở",
+    "hieu_luc": "HET_VA_THAY_THE",
+    "ngay_het_hieu_luc": "2026-03-10T17:00:00Z",
+    "link_thay_the": "42/BC-STC",
+    "danh_muc_ho_so": "Hồ sơ Chuyển đổi số & CNTT 2026",
+    "ten_loai_van_ban": "Hướng dẫn",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 5,
+    "created_at": "2026-10-10T10:52:17.714Z",
+    "updated_at": "2026-10-10T10:52:17.714Z",
+    "so_thu_tu": 16,
+    "ngay_den": "2026-02-20T14:15:00Z",
+    "noi_ban_hanh": "Sở Thông tin và Truyền thông"
+  }
+},
+{
+  "model": "documents.vanbanden",
+  "pk": 35,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2024,
+    "so_hieu": "12/TB-VP",
+    "trich_yeu": "Thông báo lịch phân công trực Tết Nguyên đán Giáp Thìn năm 2024",
+    "ngay_van_ban": "2024-01-24T00:00:00Z",
+    "nguoi_ky": "Lê Thu Hà",
+    "chuc_vu": "Chánh Văn phòng",
+    "hieu_luc": "HET_HIEU_LUC",
+    "ngay_het_hieu_luc": "2024-02-15T23:59:00Z",
+    "link_thay_the": "",
+    "danh_muc_ho_so": "Hồ sơ Quản lý Hành chính & Nhân sự",
+    "ten_loai_van_ban": "Thông báo",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 5,
+    "created_at": "2026-10-10T10:52:17.719Z",
+    "updated_at": "2026-10-10T10:52:17.719Z",
+    "so_thu_tu": 1,
+    "ngay_den": "2024-01-25T10:00:00Z",
+    "noi_ban_hanh": "Văn phòng UBND Thành phố"
+  }
+},
+{
+  "model": "documents.vanbanden",
+  "pk": 36,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2026,
+    "so_hieu": "88/KH-CNTT",
+    "trich_yeu": "Kế hoạch nâng cấp hạ tầng CNTT, an toàn thông tin mạng và chuyển đổi số năm 2026",
+    "ngay_van_ban": "2026-03-04T00:00:00Z",
+    "nguoi_ky": "Đặng Quốc Bảo",
+    "chuc_vu": "Giám đốc Trung tâm",
+    "hieu_luc": "CON_HIEU_LUC",
+    "ngay_het_hieu_luc": null,
+    "link_thay_the": "",
+    "danh_muc_ho_so": "Hồ sơ Chuyển đổi số & CNTT 2026",
+    "ten_loai_van_ban": "Kế hoạch",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 2,
+    "created_at": "2026-10-10T10:52:17.722Z",
+    "updated_at": "2026-10-10T10:52:17.722Z",
+    "so_thu_tu": 17,
+    "ngay_den": "2026-03-05T08:45:00Z",
+    "noi_ban_hanh": "Trung tâm Công nghệ Thông tin"
+  }
+},
+{
+  "model": "documents.vanbanden",
+  "pk": 37,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2026,
+    "so_hieu": "42/BC-STC",
+    "trich_yeu": "Báo cáo quyết toán dự toán kinh phí mua sắm trang thiết bị CNTT năm 2025",
+    "ngay_van_ban": "2026-03-10T17:00:00Z",
+    "nguoi_ky": "Phạm Hồng Sơn",
+    "chuc_vu": "",
+    "hieu_luc": "CON_HIEU_LUC",
+    "ngay_het_hieu_luc": null,
+    "link_thay_the": "55/HD-STTTT",
+    "danh_muc_ho_so": "Hồ sơ Tài chính & Dự toán ngân sách",
+    "ten_loai_van_ban": "Báo cáo",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-10T10:52:17.741Z",
+    "updated_at": "2026-10-10T11:02:46.291Z",
+    "so_thu_tu": 18,
+    "ngay_den": "2026-03-11T17:00:00Z",
+    "noi_ban_hanh": "Sở Tài chính"
+  }
+},
+{
+  "model": "documents.vanbanden",
+  "pk": 39,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2026,
+    "so_hieu": "1",
+    "trich_yeu": "k",
+    "ngay_van_ban": "2026-10-09T17:00:00Z",
+    "nguoi_ky": "",
+    "chuc_vu": "",
+    "hieu_luc": "HET_VA_THAY_THE",
+    "ngay_het_hieu_luc": "2026-10-09T17:00:00Z",
+    "link_thay_the": "ádsad",
+    "danh_muc_ho_so": "",
+    "ten_loai_van_ban": "",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-10T11:19:00.090Z",
+    "updated_at": "2026-10-10T11:19:00.090Z",
+    "so_thu_tu": 19,
+    "ngay_den": "2026-10-09T17:00:00Z",
+    "noi_ban_hanh": "f"
+  }
+},
+{
+  "model": "documents.vanbanden",
+  "pk": 40,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2026,
+    "so_hieu": "ádsad",
+    "trich_yeu": "ádsad",
+    "ngay_van_ban": "2026-10-09T17:00:00Z",
+    "nguoi_ky": "ádsad",
+    "chuc_vu": "",
+    "hieu_luc": "CON_HIEU_LUC_1_PHAN",
+    "ngay_het_hieu_luc": null,
+    "link_thay_the": "1",
+    "danh_muc_ho_so": "sad",
+    "ten_loai_van_ban": "Công văn",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-10T12:55:43.134Z",
+    "updated_at": "2026-10-10T12:55:57.303Z",
+    "so_thu_tu": 20,
+    "ngay_den": "2026-10-09T17:00:00Z",
+    "noi_ban_hanh": "ád"
+  }
+},
+{
+  "model": "documents.vanbanden",
+  "pk": 41,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2026,
+    "so_hieu": "462",
+    "trich_yeu": "ads",
+    "ngay_van_ban": "2026-10-09T17:00:00Z",
+    "nguoi_ky": "ád",
+    "chuc_vu": "đ",
+    "hieu_luc": "CON_HIEU_LUC_1_PHAN",
+    "ngay_het_hieu_luc": null,
+    "link_thay_the": "112",
+    "danh_muc_ho_so": "xzc",
+    "ten_loai_van_ban": "Công văn",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-10T12:57:05.082Z",
+    "updated_at": "2026-10-10T12:57:05.082Z",
+    "so_thu_tu": 21,
+    "ngay_den": "2026-10-09T17:00:00Z",
+    "noi_ban_hanh": "xzcxzc"
+  }
+},
+{
+  "model": "documents.vanbandennguoinhan",
+  "pk": [
+    25,
+    5
+  ],
+  "fields": {
+    "vanbanden": 25,
+    "employee": 5
+  }
+},
+{
+  "model": "documents.vanbandennguoinhan",
+  "pk": [
+    41,
+    2
+  ],
+  "fields": {
+    "vanbanden": 41,
+    "employee": 2
+  }
+},
+{
+  "model": "documents.vanbandi",
+  "pk": 1,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2026,
+    "so_hieu": "01/TB-VP",
+    "trich_yeu": "Thông báo lịch công tác tuần và triển khai nhiệm vụ quý IV năm 2026.",
+    "ngay_van_ban": "2026-10-08T05:32:17.287Z",
+    "nguoi_ky": "Nguyễn Văn An",
+    "chuc_vu": "Chánh Văn phòng",
+    "hieu_luc": "CON_HIEU_LUC",
+    "ngay_het_hieu_luc": null,
+    "link_thay_the": "",
+    "danh_muc_ho_so": "Hồ sơ Hành chính - Quản trị",
+    "ten_loai_van_ban": "Thông báo",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-08T05:32:17.588Z",
+    "updated_at": "2026-10-10T11:07:10.099Z",
+    "so_thu_tu": 1,
+    "ngay_ban_hanh": "2026-10-08T05:32:17.287Z"
+  }
+},
+{
+  "model": "documents.vanbandi",
+  "pk": 2,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2026,
+    "so_hieu": "02/QD-VP",
+    "trich_yeu": "Quyết định ban hành Quy chế bảo vệ bí mật nhà nước và an toàn thông tin nội bộ.",
+    "ngay_van_ban": "2026-10-08T05:32:17.601Z",
+    "nguoi_ky": "Lê Văn Bình",
+    "chuc_vu": "Phó Giám đốc",
+    "hieu_luc": "CON_HIEU_LUC",
+    "ngay_het_hieu_luc": null,
+    "link_thay_the": "",
+    "danh_muc_ho_so": "Hồ sơ Chuyên môn - Nghiệp vụ",
+    "ten_loai_van_ban": "Quyết định",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-08T05:32:17.601Z",
+    "updated_at": "2026-10-10T11:07:10.094Z",
+    "so_thu_tu": 2,
+    "ngay_ban_hanh": "2026-10-08T05:32:17.601Z"
+  }
+},
+{
+  "model": "documents.vanbandi",
+  "pk": 3,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2026,
+    "so_hieu": "12",
+    "trich_yeu": "sdad",
+    "ngay_van_ban": "2026-10-09T17:00:00Z",
+    "nguoi_ky": "ád",
+    "chuc_vu": "",
+    "hieu_luc": "HET_HIEU_LUC",
+    "ngay_het_hieu_luc": null,
+    "link_thay_the": "",
+    "danh_muc_ho_so": "Hồ sơ Quản lý Hành chính & Nhân sự",
+    "ten_loai_van_ban": "Công văn",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-10T16:52:30.857Z",
+    "updated_at": "2026-10-10T16:52:53.895Z",
+    "so_thu_tu": 3,
+    "ngay_ban_hanh": "2026-10-09T17:00:00Z"
+  }
+},
+{
+  "model": "documents.vanbandi",
+  "pk": 4,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2024,
+    "so_hieu": "01/TB-ITC/2024",
+    "trich_yeu": "Thông báo tuyển sinh và kế hoạch đào tạo các ngành cao đẳng chính quy năm 2024.",
+    "ngay_van_ban": "2024-01-15T01:30:00Z",
+    "nguoi_ky": "ThS. Nguyễn Văn A",
+    "chuc_vu": "Hiệu trưởng",
+    "hieu_luc": "CON_HIEU_LUC",
+    "ngay_het_hieu_luc": null,
+    "link_thay_the": "",
+    "danh_muc_ho_so": "Hồ sơ Đào tạo & Tuyển sinh",
+    "ten_loai_van_ban": "Thông báo",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-10T17:20:50.858Z",
+    "updated_at": "2026-10-10T17:20:50.858Z",
+    "so_thu_tu": 1,
+    "ngay_ban_hanh": "2024-01-15T01:30:00Z"
+  }
+},
+{
+  "model": "documents.vanbandi",
+  "pk": 5,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2024,
+    "so_hieu": "02/QD-ITC/2024",
+    "trich_yeu": "Quyết định khen thưởng giảng viên và sinh viên đạt thành tích xuất sắc năm học 2023 - 2024.",
+    "ngay_van_ban": "2024-05-20T02:00:00Z",
+    "nguoi_ky": "ThS. Nguyễn Văn A",
+    "chuc_vu": "Hiệu trưởng",
+    "hieu_luc": "CON_HIEU_LUC",
+    "ngay_het_hieu_luc": null,
+    "link_thay_the": "",
+    "danh_muc_ho_so": "Hồ sơ Thi đua - Khen thưởng",
+    "ten_loai_van_ban": "Quyết định",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-10T17:20:50.865Z",
+    "updated_at": "2026-10-10T17:20:50.865Z",
+    "so_thu_tu": 2,
+    "ngay_ban_hanh": "2024-05-20T02:00:00Z"
+  }
+},
+{
+  "model": "documents.vanbandi",
+  "pk": 6,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2024,
+    "so_hieu": "03/KH-ITC/2024",
+    "trich_yeu": "Kế hoạch nâng cấp hạ tầng mạng máy tính và phòng thực hành phần mềm CNTT năm 2024.",
+    "ngay_van_ban": "2024-09-12T07:00:00Z",
+    "nguoi_ky": "TS. Trần Văn B",
+    "chuc_vu": "Phó Hiệu trưởng",
+    "hieu_luc": "HET_HIEU_LUC",
+    "ngay_het_hieu_luc": null,
+    "link_thay_the": "",
+    "danh_muc_ho_so": "Hồ sơ Cơ sở vật chất & CNTT",
+    "ten_loai_van_ban": "Kế hoạch",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-10T17:20:50.871Z",
+    "updated_at": "2026-10-10T17:20:50.871Z",
+    "so_thu_tu": 3,
+    "ngay_ban_hanh": "2024-09-12T07:00:00Z"
+  }
+},
+{
+  "model": "documents.vanbandi",
+  "pk": 7,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2025,
+    "so_hieu": "01/TB-ITC/2025",
+    "trich_yeu": "Thông báo kế hoạch nghỉ Tết Nguyên đán và phân công lịch trực ban bảo vệ cơ quan 2025.",
+    "ngay_van_ban": "2025-01-10T01:00:00Z",
+    "nguoi_ky": "ThS. Nguyễn Văn A",
+    "chuc_vu": "Hiệu trưởng",
+    "hieu_luc": "CON_HIEU_LUC",
+    "ngay_het_hieu_luc": null,
+    "link_thay_the": "",
+    "danh_muc_ho_so": "Hồ sơ Hành chính - Quản trị",
+    "ten_loai_van_ban": "Thông báo",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-10T17:20:50.878Z",
+    "updated_at": "2026-10-10T17:20:50.878Z",
+    "so_thu_tu": 1,
+    "ngay_ban_hanh": "2025-01-10T01:00:00Z"
+  }
+},
+{
+  "model": "documents.vanbandi",
+  "pk": 8,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2025,
+    "so_hieu": "02/QD-ITC/2025",
+    "trich_yeu": "Quyết định thành lập Hội đồng khoa học nghiệm thu đề tài nghiên cứu chuyển đổi số cấp trường 2025.",
+    "ngay_van_ban": "2025-03-15T03:00:00Z",
+    "nguoi_ky": "TS. Trần Văn B",
+    "chuc_vu": "Phó Hiệu trưởng",
+    "hieu_luc": "CON_HIEU_LUC",
+    "ngay_het_hieu_luc": null,
+    "link_thay_the": "",
+    "danh_muc_ho_so": "Hồ sơ Nghiên cứu khoa học",
+    "ten_loai_van_ban": "Quyết định",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-10T17:20:50.883Z",
+    "updated_at": "2026-10-10T17:20:50.883Z",
+    "so_thu_tu": 2,
+    "ngay_ban_hanh": "2025-03-15T03:00:00Z"
+  }
+},
+{
+  "model": "documents.vanbandi",
+  "pk": 9,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2025,
+    "so_hieu": "03/CV-ITC/2025",
+    "trich_yeu": "Công văn gửi các đối tác doanh nghiệp phối hợp tổ chức Ngày hội việc làm ITC Job Fair 2025.",
+    "ngay_van_ban": "2025-06-18T07:30:00Z",
+    "nguoi_ky": "ThS. Lê Thị C",
+    "chuc_vu": "Trưởng phòng Công tác Sinh viên",
+    "hieu_luc": "CON_HIEU_LUC",
+    "ngay_het_hieu_luc": null,
+    "link_thay_the": "",
+    "danh_muc_ho_so": "Hồ sơ Hợp tác Doanh nghiệp",
+    "ten_loai_van_ban": "Công văn",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-10T17:20:50.888Z",
+    "updated_at": "2026-10-10T17:20:50.888Z",
+    "so_thu_tu": 3,
+    "ngay_ban_hanh": "2025-06-18T07:30:00Z"
+  }
+},
+{
+  "model": "documents.vanbandi",
+  "pk": 10,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2025,
+    "so_hieu": "04/QD-ITC/2025",
+    "trich_yeu": "Quyết định ban hành Quy định lưu trữ và luân chuyển hồ sơ tài liệu điện tử theo Nghị định 30.",
+    "ngay_van_ban": "2025-11-10T02:00:00Z",
+    "nguoi_ky": "ThS. Nguyễn Văn A",
+    "chuc_vu": "Hiệu trưởng",
+    "hieu_luc": "CON_HIEU_LUC",
+    "ngay_het_hieu_luc": null,
+    "link_thay_the": "",
+    "danh_muc_ho_so": "Hồ sơ Pháp chế & Văn thư",
+    "ten_loai_van_ban": "Quyết định",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-10T17:20:50.894Z",
+    "updated_at": "2026-10-10T17:20:50.894Z",
+    "so_thu_tu": 4,
+    "ngay_ban_hanh": "2025-11-10T02:00:00Z"
+  }
+},
+{
+  "model": "documents.vanbandi",
+  "pk": 11,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2026,
+    "so_hieu": "04/QD-ITC/2026",
+    "trich_yeu": "Quyết định phê duyệt dự toán kinh phí hoạt động khoa học công nghệ quý I/2026.",
+    "ngay_van_ban": "2026-01-05T01:30:00Z",
+    "nguoi_ky": "ThS. Nguyễn Văn A",
+    "chuc_vu": "Hiệu trưởng",
+    "hieu_luc": "CON_HIEU_LUC",
+    "ngay_het_hieu_luc": null,
+    "link_thay_the": "",
+    "danh_muc_ho_so": "Hồ sơ Kế hoạch - Tài chính",
+    "ten_loai_van_ban": "Quyết định",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-10T17:20:50.900Z",
+    "updated_at": "2026-10-10T17:20:50.900Z",
+    "so_thu_tu": 4,
+    "ngay_ban_hanh": "2026-01-05T01:30:00Z"
+  }
+},
+{
+  "model": "documents.vanbandi",
+  "pk": 12,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2026,
+    "so_hieu": "05/TB-ITC/2026",
+    "trich_yeu": "Thông báo lịch thi chuẩn đầu ra Tin học và Ngoại ngữ đợt 1 năm học 2025 - 2026.",
+    "ngay_van_ban": "2026-02-15T02:30:00Z",
+    "nguoi_ky": "TS. Trần Văn B",
+    "chuc_vu": "Phó Hiệu trưởng",
+    "hieu_luc": "CON_HIEU_LUC",
+    "ngay_het_hieu_luc": null,
+    "link_thay_the": "",
+    "danh_muc_ho_so": "Hồ sơ Khảo thí & Đảm bảo chất lượng",
+    "ten_loai_van_ban": "Thông báo",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-10T17:20:50.905Z",
+    "updated_at": "2026-10-10T17:20:50.905Z",
+    "so_thu_tu": 5,
+    "ngay_ban_hanh": "2026-02-15T02:30:00Z"
+  }
+},
+{
+  "model": "documents.vanbandi",
+  "pk": 13,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2026,
+    "so_hieu": "06/KH-ITC/2026",
+    "trich_yeu": "Kế hoạch tổ chức Hội thao và Hội diễn văn nghệ chào mừng Ngày thành lập Đoàn 26/3.",
+    "ngay_van_ban": "2026-03-01T07:00:00Z",
+    "nguoi_ky": "ThS. Lê Thị C",
+    "chuc_vu": "Bí thư Đoàn trường",
+    "hieu_luc": "CON_HIEU_LUC",
+    "ngay_het_hieu_luc": null,
+    "link_thay_the": "",
+    "danh_muc_ho_so": "Hồ sơ Đoàn thể & Hoạt động phong trào",
+    "ten_loai_van_ban": "Kế hoạch",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-10T17:20:50.909Z",
+    "updated_at": "2026-10-10T17:20:50.909Z",
+    "so_thu_tu": 6,
+    "ngay_ban_hanh": "2026-03-01T07:00:00Z"
+  }
+},
+{
+  "model": "documents.vanbandi",
+  "pk": 14,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2026,
+    "so_hieu": "07/CV-ITC/2026",
+    "trich_yeu": "Công văn gửi Sở GD&ĐT TP.HCM về việc phối hợp tổ chức chương trình tư vấn hướng nghiệp năm 2026.",
+    "ngay_van_ban": "2026-03-20T03:15:00Z",
+    "nguoi_ky": "ThS. Nguyễn Văn A",
+    "chuc_vu": "Hiệu trưởng",
+    "hieu_luc": "CON_HIEU_LUC",
+    "ngay_het_hieu_luc": null,
+    "link_thay_the": "",
+    "danh_muc_ho_so": "Hồ sơ Hợp tác & Truyền thông",
+    "ten_loai_van_ban": "Công văn",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-10T17:20:50.914Z",
+    "updated_at": "2026-10-10T17:20:50.914Z",
+    "so_thu_tu": 7,
+    "ngay_ban_hanh": "2026-03-20T03:15:00Z"
+  }
+},
+{
+  "model": "documents.vanbandi",
+  "pk": 15,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2026,
+    "so_hieu": "08/TB-ITC/2026",
+    "trich_yeu": "Thông báo triển khai cấp phát chứng thư số cá nhân và ký số điện tử cho toàn thể cán bộ nhân viên.",
+    "ngay_van_ban": "2026-04-10T01:00:00Z",
+    "nguoi_ky": "TS. Trần Văn B",
+    "chuc_vu": "Phó Hiệu trưởng",
+    "hieu_luc": "CON_HIEU_LUC",
+    "ngay_het_hieu_luc": null,
+    "link_thay_the": "",
+    "danh_muc_ho_so": "Hồ sơ Chuyển đổi số & CNTT 2026",
+    "ten_loai_van_ban": "Thông báo",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-10T17:20:50.920Z",
+    "updated_at": "2026-10-10T17:20:50.920Z",
+    "so_thu_tu": 8,
+    "ngay_ban_hanh": "2026-04-10T01:00:00Z"
+  }
+},
+{
+  "model": "documents.vanbandi",
+  "pk": 16,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2026,
+    "so_hieu": "09/QD-ITC/2026",
+    "trich_yeu": "Quyết định kiện toàn Ban chỉ đạo Đảm bảo An toàn thông tin và Chuyển đổi số trường ITC.",
+    "ngay_van_ban": "2026-05-05T02:00:00Z",
+    "nguoi_ky": "ThS. Nguyễn Văn A",
+    "chuc_vu": "Hiệu trưởng",
+    "hieu_luc": "CON_HIEU_LUC",
+    "ngay_het_hieu_luc": null,
+    "link_thay_the": "",
+    "danh_muc_ho_so": "Hồ sơ Tổ chức - Cán bộ",
+    "ten_loai_van_ban": "Quyết định",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-10T17:20:50.926Z",
+    "updated_at": "2026-10-10T17:20:50.926Z",
+    "so_thu_tu": 9,
+    "ngay_ban_hanh": "2026-05-05T02:00:00Z"
+  }
+},
+{
+  "model": "documents.vanbandi",
+  "pk": 17,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2026,
+    "so_hieu": "10/TB-ITC/2026",
+    "trich_yeu": "Thông báo kế hoạch nghỉ hè và đăng ký bồi dưỡng chuyên môn nghiệp vụ hè 2026.",
+    "ngay_van_ban": "2026-06-15T07:00:00Z",
+    "nguoi_ky": "ThS. Nguyễn Văn A",
+    "chuc_vu": "Hiệu trưởng",
+    "hieu_luc": "CON_HIEU_LUC",
+    "ngay_het_hieu_luc": null,
+    "link_thay_the": "",
+    "danh_muc_ho_so": "Hồ sơ Hành chính - Quản trị",
+    "ten_loai_van_ban": "Thông báo",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-10T17:20:50.931Z",
+    "updated_at": "2026-10-10T17:20:50.931Z",
+    "so_thu_tu": 10,
+    "ngay_ban_hanh": "2026-06-15T07:00:00Z"
+  }
+},
+{
+  "model": "documents.vanbandi",
+  "pk": 18,
+  "fields": {
+    "pham_vi": "NOI_BO",
+    "nam": 2026,
+    "so_hieu": "11/KH-ITC/2026",
+    "trich_yeu": "Kế hoạch tổ chức Lễ Khai giảng năm học 2026 - 2027 và chào đón tân sinh viên khóa mới.",
+    "ngay_van_ban": "2026-08-20T01:30:00Z",
+    "nguoi_ky": "ThS. Nguyễn Văn A",
+    "chuc_vu": "Hiệu trưởng",
+    "hieu_luc": "CON_HIEU_LUC",
+    "ngay_het_hieu_luc": null,
+    "link_thay_the": "",
+    "danh_muc_ho_so": "Hồ sơ Sự kiện & Lễ hội",
+    "ten_loai_van_ban": "Kế hoạch",
+    "ghi_chu": "",
+    "hien_thi": true,
+    "gui_mail_toan_he_thong": false,
+    "nguoi_tao": 1,
+    "created_at": "2026-10-10T17:20:50.936Z",
+    "updated_at": "2026-10-10T17:20:50.936Z",
+    "so_thu_tu": 11,
+    "ngay_ban_hanh": "2026-08-20T01:30:00Z"
+  }
+},
+{
+  "model": "documents.vanbandinoibanhanh",
+  "pk": [
+    4,
+    1
+  ],
+  "fields": {
+    "vanbandi": 4,
+    "donvi_id": 1
+  }
+},
+{
+  "model": "documents.vanbandinoibanhanh",
+  "pk": [
+    5,
+    1
+  ],
+  "fields": {
+    "vanbandi": 5,
+    "donvi_id": 1
+  }
+},
+{
+  "model": "documents.vanbandinoibanhanh",
+  "pk": [
+    6,
+    1
+  ],
+  "fields": {
+    "vanbandi": 6,
+    "donvi_id": 1
+  }
+},
+{
+  "model": "documents.vanbandinoibanhanh",
+  "pk": [
+    7,
+    1
+  ],
+  "fields": {
+    "vanbandi": 7,
+    "donvi_id": 1
+  }
+},
+{
+  "model": "documents.vanbandinoibanhanh",
+  "pk": [
+    8,
+    1
+  ],
+  "fields": {
+    "vanbandi": 8,
+    "donvi_id": 1
+  }
+},
+{
+  "model": "documents.vanbandinoibanhanh",
+  "pk": [
+    9,
+    1
+  ],
+  "fields": {
+    "vanbandi": 9,
+    "donvi_id": 1
+  }
+},
+{
+  "model": "documents.vanbandinoibanhanh",
+  "pk": [
+    10,
+    1
+  ],
+  "fields": {
+    "vanbandi": 10,
+    "donvi_id": 1
+  }
+},
+{
+  "model": "documents.vanbandinoibanhanh",
+  "pk": [
+    11,
+    1
+  ],
+  "fields": {
+    "vanbandi": 11,
+    "donvi_id": 1
+  }
+},
+{
+  "model": "documents.vanbandinoibanhanh",
+  "pk": [
+    12,
+    1
+  ],
+  "fields": {
+    "vanbandi": 12,
+    "donvi_id": 1
+  }
+},
+{
+  "model": "documents.vanbandinoibanhanh",
+  "pk": [
+    13,
+    1
+  ],
+  "fields": {
+    "vanbandi": 13,
+    "donvi_id": 1
+  }
+},
+{
+  "model": "documents.vanbandinoibanhanh",
+  "pk": [
+    14,
+    1
+  ],
+  "fields": {
+    "vanbandi": 14,
+    "donvi_id": 1
+  }
+},
+{
+  "model": "documents.vanbandinoibanhanh",
+  "pk": [
+    15,
+    1
+  ],
+  "fields": {
+    "vanbandi": 15,
+    "donvi_id": 1
+  }
+},
+{
+  "model": "documents.vanbandinoibanhanh",
+  "pk": [
+    16,
+    1
+  ],
+  "fields": {
+    "vanbandi": 16,
+    "donvi_id": 1
+  }
+},
+{
+  "model": "documents.vanbandinoibanhanh",
+  "pk": [
+    17,
+    1
+  ],
+  "fields": {
+    "vanbandi": 17,
+    "donvi_id": 1
+  }
+},
+{
+  "model": "documents.vanbandinoibanhanh",
+  "pk": [
+    18,
+    1
+  ],
+  "fields": {
+    "vanbandi": 18,
+    "donvi_id": 1
+  }
+},
+{
+  "model": "documents.vanbandenattachment",
+  "pk": 1,
+  "fields": {
+    "name": "ITC - Django - QLVB&TL - Tổng quan.pdf",
+    "file": "02_documents/den/thuong/2026/10/10/ITC_-_Django_-_QLVBTL_-_Tổng_quan.pdf",
+    "is_deleted": false,
+    "created_at": "2026-10-10T06:39:25.939Z",
+    "nguoi_tao": 1,
+    "document": 25
+  }
+},
+{
+  "model": "documents.vanbandenattachment",
+  "pk": 3,
+  "fields": {
+    "name": "Ke_hoach_CNTT_2026.pdf",
+    "file": "02_documents/den/thuong/2026/03/05/Ke_hoach_CNTT_2026_RNqz8ed.pdf",
+    "is_deleted": false,
+    "created_at": "2026-10-10T10:52:17.724Z",
+    "nguoi_tao": 2,
+    "document": 36
+  }
+},
+{
+  "model": "documents.documentviewlog",
+  "pk": 1,
+  "fields": {
+    "document_type": "vanbanden",
+    "document_id": 4,
+    "user": 1,
+    "viewed_at": "2026-10-10T10:01:40.435Z"
+  }
+},
+{
+  "model": "documents.documentviewlog",
+  "pk": 2,
+  "fields": {
+    "document_type": "vanbanden",
+    "document_id": 17,
+    "user": 1,
+    "viewed_at": "2026-10-10T06:38:38.950Z"
+  }
+},
+{
+  "model": "documents.documentviewlog",
+  "pk": 3,
+  "fields": {
+    "document_type": "vanbanden",
+    "document_id": 17,
+    "user": 3,
+    "viewed_at": "2026-10-09T07:01:15.052Z"
+  }
+},
+{
+  "model": "documents.documentviewlog",
+  "pk": 4,
+  "fields": {
+    "document_type": "vanbanden",
+    "document_id": 13,
+    "user": 1,
+    "viewed_at": "2026-10-09T08:00:57.231Z"
+  }
+},
+{
+  "model": "documents.documentviewlog",
+  "pk": 5,
+  "fields": {
+    "document_type": "vanbanden",
+    "document_id": 16,
+    "user": 1,
+    "viewed_at": "2026-10-10T09:54:58.116Z"
+  }
+},
+{
+  "model": "documents.documentviewlog",
+  "pk": 6,
+  "fields": {
+    "document_type": "vanbanden",
+    "document_id": 12,
+    "user": 1,
+    "viewed_at": "2026-10-10T09:00:49.823Z"
+  }
+},
+{
+  "model": "documents.documentviewlog",
+  "pk": 7,
+  "fields": {
+    "document_type": "vanbanden",
+    "document_id": 9,
+    "user": 1,
+    "viewed_at": "2026-10-10T06:37:27.691Z"
+  }
+},
+{
+  "model": "documents.documentviewlog",
+  "pk": 8,
+  "fields": {
+    "document_type": "vanbanden",
+    "document_id": 1,
+    "user": 1,
+    "viewed_at": "2026-10-10T06:37:48.531Z"
+  }
+},
+{
+  "model": "documents.documentviewlog",
+  "pk": 9,
+  "fields": {
+    "document_type": "vanbanden",
+    "document_id": 25,
+    "user": 1,
+    "viewed_at": "2026-10-10T10:43:02.051Z"
+  }
+},
+{
+  "model": "documents.documentviewlog",
+  "pk": 10,
+  "fields": {
+    "document_type": "vanbanden",
+    "document_id": 2,
+    "user": 1,
+    "viewed_at": "2026-10-10T16:48:25.878Z"
+  }
+},
+{
+  "model": "documents.documentviewlog",
+  "pk": 11,
+  "fields": {
+    "document_type": "vanbanden",
+    "document_id": 14,
+    "user": 1,
+    "viewed_at": "2026-10-10T09:38:17.825Z"
+  }
+},
+{
+  "model": "documents.documentviewlog",
+  "pk": 12,
+  "fields": {
+    "document_type": "vanbanden",
+    "document_id": 15,
+    "user": 1,
+    "viewed_at": "2026-10-10T09:55:00.896Z"
+  }
+},
+{
+  "model": "documents.documentviewlog",
+  "pk": 13,
+  "fields": {
+    "document_type": "vanbanden",
+    "document_id": 30,
+    "user": 1,
+    "viewed_at": "2026-10-10T10:51:15.393Z"
+  }
+},
+{
+  "model": "documents.documentviewlog",
+  "pk": 14,
+  "fields": {
+    "document_type": "vanbanden",
+    "document_id": 30,
+    "user": 5,
+    "viewed_at": "2026-10-10T10:51:15.395Z"
+  }
+},
+{
+  "model": "documents.documentviewlog",
+  "pk": 15,
+  "fields": {
+    "document_type": "vanbanden",
+    "document_id": 30,
+    "user": 2,
+    "viewed_at": "2026-10-10T10:51:15.398Z"
+  }
+},
+{
+  "model": "documents.documentviewlog",
+  "pk": 16,
+  "fields": {
+    "document_type": "vanbanden",
+    "document_id": 30,
+    "user": 4,
+    "viewed_at": "2026-10-10T10:51:15.400Z"
+  }
+},
+{
+  "model": "documents.documentviewlog",
+  "pk": 17,
+  "fields": {
+    "document_type": "vanbanden",
+    "document_id": 36,
+    "user": 5,
+    "viewed_at": "2026-10-10T10:55:28.146Z"
+  }
+},
+{
+  "model": "documents.documentviewlog",
+  "pk": 18,
+  "fields": {
+    "document_type": "vanbanden",
+    "document_id": 36,
+    "user": 1,
+    "viewed_at": "2026-10-10T12:46:05.250Z"
+  }
+},
+{
+  "model": "documents.documentviewlog",
+  "pk": 19,
+  "fields": {
+    "document_type": "vanbanden",
+    "document_id": 36,
+    "user": 2,
+    "viewed_at": "2026-10-10T10:52:17.737Z"
+  }
+},
+{
+  "model": "documents.documentviewlog",
+  "pk": 20,
+  "fields": {
+    "document_type": "vanbanden",
+    "document_id": 36,
+    "user": 3,
+    "viewed_at": "2026-10-10T10:52:17.738Z"
+  }
+},
+{
+  "model": "documents.documentviewlog",
+  "pk": 21,
+  "fields": {
+    "document_type": "vanbanden",
+    "document_id": 33,
+    "user": 1,
+    "viewed_at": "2026-10-10T10:55:37.130Z"
+  }
+},
+{
+  "model": "documents.documentviewlog",
+  "pk": 22,
+  "fields": {
+    "document_type": "vanbanden",
+    "document_id": 32,
+    "user": 1,
+    "viewed_at": "2026-10-10T10:55:37.146Z"
+  }
+},
+{
+  "model": "documents.documentviewlog",
+  "pk": 23,
+  "fields": {
+    "document_type": "vanbanden",
+    "document_id": 37,
+    "user": 1,
+    "viewed_at": "2026-10-10T12:48:11.371Z"
+  }
+},
+{
+  "model": "documents.documentviewlog",
+  "pk": 24,
+  "fields": {
+    "document_type": "vanbanden",
+    "document_id": 39,
+    "user": 1,
+    "viewed_at": "2026-10-10T12:41:46.164Z"
+  }
+},
+{
+  "model": "documents.documentviewlog",
+  "pk": 25,
+  "fields": {
+    "document_type": "vanbanden",
+    "document_id": 40,
+    "user": 1,
+    "viewed_at": "2026-10-10T12:55:49.585Z"
+  }
+},
+{
+  "model": "documents.documentviewlog",
+  "pk": 26,
+  "fields": {
+    "document_type": "vanbanden",
+    "document_id": 41,
+    "user": 1,
+    "viewed_at": "2026-10-10T14:22:27.567Z"
+  }
+},
+{
+  "model": "documents.documentviewlog",
+  "pk": 27,
+  "fields": {
+    "document_type": "vanbandi",
+    "document_id": 3,
+    "user": 1,
+    "viewed_at": "2026-10-10T16:52:35.637Z"
+  }
+}
+]

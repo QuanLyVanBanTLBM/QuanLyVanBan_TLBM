@@ -5,18 +5,22 @@ import { Button } from '@components/common/Button';
 import { formatDateTime } from '@lib/dateUtils';
 import apiClient from '@lib/apiClient';
 import authService from '@lib/authService';
+import { useTranslation } from '@i18n/translate';
 
 export interface DocumentViewersModalProps {
   isOpen: boolean;
   onClose: () => void;
   documentId: number | null;
+  loai?: 'DEN' | 'DI' | 'MAT';
 }
 
 export const DocumentViewersModal: React.FC<DocumentViewersModalProps> = ({
   isOpen,
   onClose,
   documentId,
+  loai,
 }) => {
+  const { t } = useTranslation();
   const [viewers, setViewers] = useState<DocumentViewer[]>([]);
   const [totalCount, setTotalCount] = useState<number>(0);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -35,7 +39,8 @@ export const DocumentViewersModal: React.FC<DocumentViewersModalProps> = ({
       setIsLoading(true);
       setError(null);
       try {
-        const endpoint = `/api/documents/${documentId}/viewers/`;
+        const queryParam = loai ? `?loai=${loai}` : '';
+        const endpoint = `/api/documents/${documentId}/viewers/${queryParam}`;
         const response = await apiClient.get<PaginatedResponse<DocumentViewer> | DocumentViewer[]>(endpoint);
 
         if (ignore) return;
@@ -79,7 +84,7 @@ export const DocumentViewersModal: React.FC<DocumentViewersModalProps> = ({
     return () => {
       ignore = true;
     };
-  }, [isOpen, documentId, reloadKey]);
+  }, [isOpen, documentId, reloadKey, loai]);
 
   // Đóng bằng phím ESC
   useEffect(() => {
@@ -139,14 +144,14 @@ export const DocumentViewersModal: React.FC<DocumentViewersModalProps> = ({
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h2 className="text-base md:text-lg font-bold text-main m-0 truncate">
-                  Lịch Sử Người Đã Xem Văn Bản
+                  {t('documents_ui.viewersModal.title') || 'Lịch Sử Người Đã Xem Văn Bản'}
                 </h2>
                 <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-success-subtle text-success">
-                  {totalCount} lượt xem
+                  {t('documents_ui.viewersModal.viewsCount', { count: String(totalCount) }) || `${totalCount} lượt xem`}
                 </span>
               </div>
               <p className="text-xs text-secondary m-0 truncate">
-                Ghi nhận chi tiết danh sách cán bộ, chuyên viên đã mở đọc và xử lý văn bản này.
+                {t('documents_ui.viewersModal.subtitle') || 'Ghi nhận chi tiết danh sách cán bộ, chuyên viên đã mở đọc và xử lý văn bản này.'}
               </p>
             </div>
           </div>
@@ -155,7 +160,7 @@ export const DocumentViewersModal: React.FC<DocumentViewersModalProps> = ({
             type="button"
             onClick={onClose}
             className="w-8 h-8 rounded-lg flex items-center justify-center text-secondary hover:text-main hover:bg-surface-elevated transition-colors shrink-0"
-            title="Đóng (ESC)"
+            title={t('documents_ui.viewersModal.closeEsc') || 'Đóng (ESC)'}
           >
             <i className="fa-solid fa-xmark text-lg" />
           </button>
@@ -169,7 +174,7 @@ export const DocumentViewersModal: React.FC<DocumentViewersModalProps> = ({
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Tìm theo họ tên cán bộ, tên đăng nhập, đơn vị..."
+              placeholder={t('documents_ui.viewersModal.searchPlaceholder') || 'Tìm theo họ tên cán bộ, tên đăng nhập, đơn vị...'}
               className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-border-subtle bg-surface-subtle text-xs text-main placeholder:text-muted focus:outline-hidden focus:border-primary"
             />
           </div>
@@ -181,9 +186,9 @@ export const DocumentViewersModal: React.FC<DocumentViewersModalProps> = ({
               icon="fa-rotate"
               onClick={() => setReloadKey(k => k + 1)}
               isLoading={isLoading}
-              title="Tải lại danh sách"
+              title={t('documents_ui.viewersModal.reloadTitle') || 'Tải lại danh sách'}
             >
-              Làm mới
+              {t('documents_ui.viewersModal.reload') || 'Làm mới'}
             </Button>
           )}
         </div>
@@ -193,7 +198,7 @@ export const DocumentViewersModal: React.FC<DocumentViewersModalProps> = ({
           {isLoading && (
             <div className="py-14 text-center text-secondary">
               <i className="fa-solid fa-circle-notch fa-spin text-2xl text-primary mb-2 block" />
-              <span className="text-xs font-medium">Đang tải nhật ký lịch sử xem văn bản...</span>
+              <span className="text-xs font-medium">{t('documents_ui.viewersModal.loading') || 'Đang tải nhật ký lịch sử xem văn bản...'}</span>
             </div>
           )}
 
@@ -209,7 +214,7 @@ export const DocumentViewersModal: React.FC<DocumentViewersModalProps> = ({
                   onClick={() => setReloadKey(k => k + 1)}
                   className="underline font-semibold hover:text-danger-hover"
                 >
-                  Thử lại
+                  {t('documents_ui.viewersModal.retry') || 'Thử lại'}
                 </button>
               )}
             </div>
@@ -222,11 +227,11 @@ export const DocumentViewersModal: React.FC<DocumentViewersModalProps> = ({
               </div>
               <p className="text-xs font-semibold text-secondary m-0">
                 {searchTerm
-                  ? `Không tìm thấy cán bộ nào khớp với "${searchTerm}"`
-                  : 'Chưa có cán bộ nào khác mở đọc văn bản này.'}
+                  ? (t('documents_ui.viewersModal.emptySearch', { query: searchTerm }) || `Không tìm thấy cán bộ nào khớp với "${searchTerm}"`)
+                  : (t('documents_ui.viewersModal.emptyTitle') || 'Chưa có cán bộ nào khác mở đọc văn bản này.')}
               </p>
               <span className="text-xs text-muted block mt-1">
-                Lượt đọc sẽ tự động được ghi nhận mỗi khi văn bản được xem hoặc trích xuất.
+                {t('documents_ui.viewersModal.emptySubtitle') || 'Lượt đọc sẽ tự động được ghi nhận mỗi khi văn bản được xem hoặc trích xuất.'}
               </span>
             </div>
           )}
@@ -255,7 +260,7 @@ export const DocumentViewersModal: React.FC<DocumentViewersModalProps> = ({
                         {viewer.chuc_danh && <span>{viewer.chuc_danh}</span>}
                         {viewer.chuc_danh && viewer.don_vi && <span> • </span>}
                         {viewer.don_vi && <span>{viewer.don_vi}</span>}
-                        {!viewer.chuc_danh && !viewer.don_vi && <span>Cán bộ nhân viên tiếp nhận</span>}
+                        {!viewer.chuc_danh && !viewer.don_vi && <span>{t('documents_ui.viewersModal.defaultRole') || 'Cán bộ nhân viên tiếp nhận'}</span>}
                       </div>
                     </div>
                   </div>
@@ -265,7 +270,7 @@ export const DocumentViewersModal: React.FC<DocumentViewersModalProps> = ({
                       {formatDateTime(viewer.viewed_at)}
                     </span>
                     <span className="text-xs text-success font-semibold flex items-center justify-end gap-1 mt-0.5">
-                      <i className="fa-solid fa-check-double text-xs" /> Đã ghi nhận
+                      <i className="fa-solid fa-check-double text-xs" /> {t('documents_ui.viewersModal.recorded') || 'Đã ghi nhận'}
                     </span>
                   </div>
                 </div>
@@ -277,10 +282,10 @@ export const DocumentViewersModal: React.FC<DocumentViewersModalProps> = ({
         {/* Footer Modal */}
         <div className="px-5 py-3.5 border-t border-border-subtle bg-surface-subtle flex items-center justify-between">
           <span className="text-xs text-muted">
-            Hiển thị {filteredViewers.length} / {totalCount} lượt đọc
+            {t('documents_ui.viewersModal.showingViews', { count: String(filteredViewers.length), total: String(totalCount) }) || `Hiển thị ${filteredViewers.length} / ${totalCount} lượt đọc`}
           </span>
           <Button type="button" variant="secondary" size="sm" onClick={onClose}>
-            Đóng
+            {t('documents_ui.viewersModal.close') || 'Đóng'}
           </Button>
         </div>
       </div>

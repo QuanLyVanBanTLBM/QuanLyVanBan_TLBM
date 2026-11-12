@@ -1,4 +1,4 @@
-﻿export type NotificationStreamType = 'incoming' | 'outgoing' | 'confidential' | 'meetings';
+export type NotificationStreamType = 'incoming' | 'outgoing' | 'confidential' | 'approvals' | 'meetings';
 
 export interface NotificationItem {
   id: string;
@@ -8,6 +8,7 @@ export interface NotificationItem {
   time: string;
   isRead: boolean;
   priority?: 'normal' | 'urgent' | 'confidential';
+  scope?: 'NOI_BO' | 'HAN_CHE';
 }
 
 export interface StreamData {
@@ -18,4 +19,3 @@ export interface StreamData {
   unreadCount: number;
   items: NotificationItem[];
 }
-

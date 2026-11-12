@@ -14,8 +14,8 @@ from signing.models import SigningProcessStepSigner, SigningRequestStepSigner, S
 from signing.services import process as process_service
 from signing.storage import get_storage
 
-from .helpers import cap_quyen
-from .test_hanh_dong_ky_phase8 import KyBase, ky_so
+from .helpers import cap_quyen, tao_don_vi
+from .test_hanh_dong_ky_phase8 import KyBase, tao_pin
 from .test_hoan_tat_phase10 import HoanTatBase
 from .test_trinh_ky_phase7 import BASE, TrinhKyBase, pdf_mau, tep_pdf
 
@@ -44,7 +44,8 @@ class PhamViQuyTrinhTests(TrinhKyBase):
         cap_quyen(self.tao, "view_trinhky")
         cap_quyen(self.cv6, "view_trinhky", "add_trinhky", "view_vanbandi")
         ma_nhom = {self.quan_tri.pk: {"ADMIN"}, self.tp.pk: {"TP"}}
-        don_vi = {self.tp.pk: 5, self.tao.pk: 5, self.cv6.pk: 6}
+        self.dv5, self.dv6 = tao_don_vi().pk, tao_don_vi().pk
+        don_vi = {self.tp.pk: self.dv5, self.tao.pk: self.dv5, self.cv6.pk: self.dv6}
         for ten, bang in (("ma_nhom_cua", ma_nhom), ("don_vi_cua", don_vi)):
             vay = mock.patch(f"signing.tich_hop.to_chuc.{ten}", side_effect=lambda u, b=bang: b.get(u.pk, set()
                              if b is ma_nhom else None))
@@ -63,19 +64,19 @@ class PhamViQuyTrinhTests(TrinhKyBase):
     def test_unit_is_required_for_department_scope_only(self):
         r = self.tao_qt(self.quan_tri, "PB-THIEU", "PHONG_BAN")
         self.assertEqual((r.status_code, r.data["code"]), (400, "quy_trinh_phong_ban_thieu_don_vi"))
-        r = self.tao_qt(self.quan_tri, "CT-THUA", "CONG_TY", don_vi=5)
+        r = self.tao_qt(self.quan_tri, "CT-THUA", "CONG_TY", don_vi=self.dv5)
         self.assertEqual((r.status_code, r.data["code"]), (400, "quy_trinh_cong_ty_co_don_vi"))
 
     def test_management_by_scope_visibility_and_usage(self):
         self.assertEqual(self.tao_qt(self.tp, "CT-TP", "CONG_TY").status_code, 403)  # công ty: chỉ quản trị
-        self.assertEqual(self.tao_qt(self.tp, "PB6-TP", "PHONG_BAN", 6).status_code, 403)  # đơn vị khác
-        pb5 = self.tao_qt(self.tp, "PB5", "PHONG_BAN", 5)
+        self.assertEqual(self.tao_qt(self.tp, "PB6-TP", "PHONG_BAN", self.dv6).status_code, 403)  # đơn vị khác
+        pb5 = self.tao_qt(self.tp, "PB5", "PHONG_BAN", self.dv5)
         self.assertEqual(pb5.status_code, 201, pb5.data)
         self.assertEqual(self.kich_hoat(self.tp, pb5.data["id"]).status_code, 200)
         ct = self.tao_qt(self.quan_tri, "CT", "CONG_TY")
         self.assertEqual(self.kich_hoat(self.quan_tri, ct.data["id"]).status_code, 200)
-        nhap5 = self.tao_qt(self.tp, "PB5-NHAP", "PHONG_BAN", 5).data["id"]
-        self.assertEqual(self.kich_hoat(self.quan_tri, self.tao_qt(self.quan_tri, "PB6", "PHONG_BAN", 6).data["id"])
+        nhap5 = self.tao_qt(self.tp, "PB5-NHAP", "PHONG_BAN", self.dv5).data["id"]
+        self.assertEqual(self.kich_hoat(self.quan_tri, self.tao_qt(self.quan_tri, "PB6", "PHONG_BAN", self.dv6).data["id"])
                          .status_code, 200)  # quản trị quản lý được quy trình phòng ban
 
         def ma_thay(user):
@@ -89,22 +90,22 @@ class PhamViQuyTrinhTests(TrinhKyBase):
         self.assertEqual(self.client_cua(User.objects.get(pk=self.tao.pk)).get(f"{QT}/{nhap5}/").status_code, 404)
 
         r = self.client_cua(User.objects.get(pk=self.cv6.pk)).post(f"{BASE}/", {
-            "document_type": "vanbandi", "van_ban_id": 10, "quy_trinh": pb5.data["id"], "muc_do": "THUONG",
+            "quy_trinh": pb5.data["id"], "trich_yeu_van_ban": "Tài liệu kiểm tra",
             "tep": tep_pdf()}, format="multipart")
         self.assertEqual((r.status_code, r.data["code"]), (403, "quy_trinh_khong_ap_dung"))
-        r = self.tao_nhap(quy_trinh=pb5.data["id"])  # người tạo cùng đơn vị 5
+        r = self.tao_nhap(quy_trinh=pb5.data["id"])  # người tạo cùng đơn vị dv5
         self.assertEqual(r.status_code, 201, r.data)
 
     def test_clone_keeps_unit(self):
-        pb5 = self.tao_qt(self.tp, "PB5-NB", "PHONG_BAN", 5).data
+        pb5 = self.tao_qt(self.tp, "PB5-NB", "PHONG_BAN", self.dv5).data
         moi = process_service.nhan_ban(process_service.SigningProcess.objects.get(pk=pb5["id"]), self.tp)
-        self.assertEqual((moi.pham_vi, moi.don_vi_ap_dung_id), ("PHONG_BAN", 5))
+        self.assertEqual((moi.pham_vi, moi.don_vi_ap_dung_id), ("PHONG_BAN", self.dv5))
 
     def test_user_lookup_for_process_configuration(self):
         c = self.client_cua(User.objects.get(pk=self.quan_tri.pk))
         r = c.get("/api/v1/signing/nguoi-dung/", {"q": "ke_t"})
         self.assertEqual([u["ten_dang_nhap"] for u in r.data], ["ke_toan"])
-        self.assertEqual(set(r.data[0]), {"id", "ten", "ten_dang_nhap", "chuc_vu", "don_vi_id"})
+        self.assertEqual(set(r.data[0]), {"id", "ten", "ten_dang_nhap", "chuc_vu", "don_vi_id", "don_vi"})
         self.assertEqual(self.c.get("/api/v1/signing/nguoi-dung/").status_code, 403)
 
 
@@ -136,8 +137,7 @@ class ViTriKyTests(TrinhKyBase):
         self.assertEqual((nk["trang_ky"], nk["toa_do_y"]), (2, "75.0000"))
 
 
-@mock.patch("signing.tich_hop.to_chuc.anh_chu_ky",
-            side_effect=lambda u: anh_png() if u.username != "phap_che" else None)  # phap_che chưa có ảnh
+@mock.patch("signing.tich_hop.to_chuc.anh_chu_ky", side_effect=lambda u: anh_png())
 class AnhChuKyTests(HoanTatBase):
     """Snapshot ảnh chữ ký lúc ký; tệp hoàn tất dán ảnh (hoặc khối chữ) vào đúng khung (#80 mục D)."""
 
@@ -155,8 +155,7 @@ class AnhChuKyTests(HoanTatBase):
         self.hash = hashlib.sha256(tep).hexdigest()
 
     def ky_tep(self, user):
-        private, key = self.khoa[user.pk]
-        return self.ky(user, hash_tai_lieu=self.hash, chu_ky_so=ky_so(private, self.hash))
+        return self.ky(user, hash_tai_lieu=self.hash)
 
     def test_snapshot_overlay_and_stamped_result(self, _anh):
         self.ky_tep(self.ky1)
@@ -165,7 +164,8 @@ class AnhChuKyTests(HoanTatBase):
             self.assertEqual(self.ky_tep(self.ky3).status_code, 200)
         ck1 = SigningSignature.objects.get(buoc_ky__nguoi_ky=self.ky1)
         self.assertTrue(ck1.vi_tri_anh_chu_ky.startswith("anh_chu_ky/"))
-        self.assertEqual(SigningSignature.objects.get(buoc_ky__nguoi_ky=self.ky2).vi_tri_anh_chu_ky, "")  # chưa có ảnh
+        ck2 = SigningSignature.objects.get(buoc_ky__nguoi_ky=self.ky2)
+        self.assertTrue(ck2.vi_tri_anh_chu_ky.startswith("anh_chu_ky/"))  # người ký nào cũng có snapshot
         r = self.c.get(f"{BASE}/{self.pk}/anh-chu-ky/{ck1.pk}/")
         self.assertEqual((r.status_code, r["Content-Type"], r.content), (200, "image/png", anh_png()))
         self.assertEqual(self.client_cua(self.la).get(f"{BASE}/{self.pk}/anh-chu-ky/{ck1.pk}/").status_code, 404)
@@ -177,15 +177,15 @@ class AnhChuKyTests(HoanTatBase):
         self.assertEqual(nk[0]["vi_tri"], {"trang_ky": 1, "toa_do_x": "55.0000", "toa_do_y": "70.0000",
                                            "chieu_rong_khung": "35.0000", "chieu_cao_khung": "15.0000"})
         self.assertEqual(nk[0]["chu_ky"]["ma_bam_anh_chu_ky"], ck1.ma_bam_anh_chu_ky)
-        self.assertIsNone(nk[1]["chu_ky"]["ma_bam_anh_chu_ky"])
+        self.assertEqual(nk[1]["chu_ky"]["ma_bam_anh_chu_ky"], ck2.ma_bam_anh_chu_ky)
 
         pdf = PdfReader(io.BytesIO(self.c.get(f"{BASE}/{self.pk}/tep-hoan-tat/").content))
         self.assertEqual(len(pdf.pages), 3)  # 2 trang gốc + trang phê duyệt
-        trang1, trang2 = pdf.pages[0].extract_text(), pdf.pages[1].extract_text()
-        self.assertIn("ke_toan", trang1)  # chú thích dưới ảnh chữ ký
-        self.assertIn("phap_che", trang1)  # khối chữ khi chưa có ảnh
-        self.assertIn("giam_doc", trang2)
-        self.assertNotIn("giam_doc", trang1)
+        trang1, trang2 = pdf.pages[0].extract_text().upper(), pdf.pages[1].extract_text().upper()
+        self.assertIn("KE_TOAN", trang1)  # chú thích dưới ảnh chữ ký (in hoa chuẩn Nghị định 30)
+        self.assertIn("PHAP_CHE", trang1)
+        self.assertIn("GIAM_DOC", trang2)
+        self.assertNotIn("GIAM_DOC", trang1)
         self.assertIn("/XObject", str(pdf.pages[0]["/Resources"]))  # ảnh đã dán
         self.assertEqual(json.loads(pdf.attachments[f"bang-chung-{d['luot_trinh'][0]['id']}.json"][0]),
                          bc["noi_dung_chuan_hoa"])
@@ -204,17 +204,36 @@ class AnhChuKyTests(HoanTatBase):
         xm = self.c.get(f"{BASE}/{self.pk}/bang-chung/").data["xac_minh"]
         self.assertEqual((xm["chu_ky"][0]["anh_chu_ky_khop"], xm["hop_le"]), (False, False))
 
+    def test_auto_stamp_last_page_when_no_position_set(self, _anh):
+        tep = pdf_mau(2)
+        self.pk = self.tao_nhap(tep=tep_pdf(tep)).data["id"]
+        self.gui(self.pk, khoa="no-pos")
+        import hashlib
+        h = hashlib.sha256(tep).hexdigest()
+        self.ky(self.ky1, hash_tai_lieu=h)
+        self.ky(self.ky2, hash_tai_lieu=h)
+        with self.captureOnCommitCallbacks(execute=True):
+            self.ky(self.ky3, hash_tai_lieu=h)
+        res_hoan_tat = self.c.get(f"{BASE}/{self.pk}/tep-hoan-tat/")
+        self.assertEqual(res_hoan_tat.status_code, 200)
+        res_tep = self.c.get(f"{BASE}/{self.pk}/tep/")
+        self.assertEqual(res_tep.status_code, 200)
+        self.assertIn("da-ky.pdf", res_tep["Content-Disposition"])
+        pdf = PdfReader(io.BytesIO(res_hoan_tat.content))
+        trang2 = pdf.pages[1].extract_text().upper()
+        self.assertIn("KE_TOAN", trang2)
+        self.assertIn("PHAP_CHE", trang2)
+        self.assertIn("GIAM_DOC", trang2)
+
 
 class GiaiQuyetViTriTests(KyBase):
     """Lượt mới sau trả sửa chép vị trí ký, cho đặt lại; tệp mới ít trang hơn thì báo lỗi rõ (#80 mục A, C)."""
 
     def setUp(self):
         TrinhKyBase.setUp(self)
-        from .test_hanh_dong_ky_phase8 import khoa_hoat_dong
-        self.khoa = {}
         for user in (self.ky1, self.ky2, self.ky3):
             cap_quyen(user, "sign_trinhky")
-            self.khoa[user.pk] = khoa_hoat_dong(user, f"K-{user.username}")
+            tao_pin(user)
         self.pk = self.tao_nhap(tep=tep_pdf(pdf_mau(2))).data["id"]
         ch = {n.nguoi_ky_id: n.pk for n in SigningProcessStepSigner.objects.filter(
             buoc_quy_trinh__quy_trinh=self.process)}

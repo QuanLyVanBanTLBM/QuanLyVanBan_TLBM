@@ -1,13 +1,31 @@
-import { useSyncExternalStore } from 'react';
-import viJson from './vi.json';
-import enJson from './en.json';
+import { useCallback, useSyncExternalStore } from 'react';
 
 export type SupportedLanguage = 'vi' | 'en';
-export type TranslationSchema = typeof viJson;
+export type TranslationSchema = Record<string, unknown>;
+
+// Mỗi module giữ từ điển riêng tại ./<module>/vi.json và ./<module>/en.json; từ điển đầy đủ là phép ghép đệ quy.
+// Key trùng giữa hai module bị `pnpm check:i18n` chặn, nên thứ tự ghép không ảnh hưởng kết quả.
+const VI_MODULES = import.meta.glob<TranslationSchema>('./*/vi.json', { eager: true, import: 'default' });
+const EN_MODULES = import.meta.glob<TranslationSchema>('./*/en.json', { eager: true, import: 'default' });
+
+function mergeInto(target: TranslationSchema, source: TranslationSchema): TranslationSchema {
+  for (const [key, value] of Object.entries(source)) {
+    const current = target[key];
+    if (value && typeof value === 'object' && current && typeof current === 'object') {
+      mergeInto(current as TranslationSchema, value as TranslationSchema);
+    } else {
+      target[key] = value && typeof value === 'object' ? mergeInto({}, value as TranslationSchema) : value;
+    }
+  }
+  return target;
+}
+
+const mergeModules = (modules: Record<string, TranslationSchema>): TranslationSchema =>
+  Object.values(modules).reduce<TranslationSchema>((dict, module) => mergeInto(dict, module), {});
 
 const DICTIONARIES: Record<SupportedLanguage, TranslationSchema> = {
-  vi: viJson,
-  en: enJson as unknown as TranslationSchema,
+  vi: mergeModules(VI_MODULES),
+  en: mergeModules(EN_MODULES),
 };
 
 const STORAGE_KEY = 'tlbm_lang';
@@ -58,6 +76,8 @@ export function setLanguage(lang: SupportedLanguage): void {
   if (typeof window !== 'undefined') {
     localStorage.setItem(STORAGE_KEY, lang);
     document.documentElement.setAttribute('lang', lang);
+    window.dispatchEvent(new CustomEvent('tlbm_lang_changed', { detail: lang }));
+    window.dispatchEvent(new Event('storage'));
   }
   // Kích hoạt re-render cho tất cả subscribers
   listeners.forEach((listener) => listener());
@@ -92,7 +112,7 @@ export function t(
 
   if (replacements && typeof result === 'string') {
     Object.entries(replacements).forEach(([k, v]) => {
-      result = result.replace(new RegExp(`{${k}}`, 'g'), String(v));
+      result = result.replace(new RegExp(`\\{+${k}\\}+`, 'g'), String(v));
     });
   }
 
@@ -109,14 +129,18 @@ function getServerSnapshot(): SupportedLanguage {
 export function useTranslation() {
   const lang: SupportedLanguage = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const translations = DICTIONARIES[lang];
+  const translate = useCallback(
+    (key: string, replacements?: Record<string, string | number>) => t(key, replacements, lang),
+    [lang]
+  );
 
   return {
     currentLang: lang,
     setLanguage,
-    t: (key: string, replacements?: Record<string, string | number>) => t(key, replacements, lang),
+    t: translate,
     translations,
   };
 }
 
-export default viJson;
+export default DICTIONARIES.vi;
 

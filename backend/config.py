@@ -15,15 +15,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 DATA_DIR = BASE_DIR / "data"
 DOCS_DIR = DATA_DIR / "docs"
-CHROMA_DIR = DATA_DIR / "chroma_db"
 DOC_REGISTRY_PATH = DATA_DIR / "doc_registry.json"
-COLLECTION_NAME = os.getenv("COLLECTION_NAME", "smart_documents")
 
-MODEL_PROVIDER = os.getenv("MODEL_PROVIDER", "gemini")  # options: gemini, openai
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-EMBED_MODEL = os.getenv("EMBED_MODEL", "models/gemini-embedding-001")
-LLM_MODEL = os.getenv("LLM_MODEL", "gemini-3.8-flash")
-VISION_MODEL = os.getenv("VISION_MODEL", LLM_MODEL)
+MODEL_PROVIDER = "openai"
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+EMBED_MODEL = "text-embedding-3-large"
+LLM_MODEL = "gpt-6-luna"
+VISION_MODEL = LLM_MODEL
 
 VISION_OCR_ENABLED = os.getenv("VISION_OCR_ENABLED", "true").lower() in {
     "1",
@@ -59,7 +57,7 @@ ALLOWED_EXTENSIONS = (
     ".html", ".htm",
     ".json",
     ".xml",
-    # Ảnh — xử lý qua Vision OCR + RapidOCR
+# Image OCR uses OpenAI gpt-6-luna Vision
     ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif", ".gif",
 )
 

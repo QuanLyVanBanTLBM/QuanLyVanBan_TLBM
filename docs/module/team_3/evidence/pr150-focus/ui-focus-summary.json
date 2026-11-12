@@ -1,0 +1,122 @@
+{
+  "date": "2026-10-15",
+  "environment": "Chromium; Vite development; React StrictMode enabled; loopback API and Docker-local PostgreSQL",
+  "before_fix": {
+    "modal_open": true,
+    "focus_inside_on_open": false,
+    "focus_inside_after_Tab": false,
+    "focused_roles": [
+      "open button",
+      "background search input"
+    ]
+  },
+  "after_fix": [
+    {
+      "case": "add-dossier-native-tab-cycles",
+      "focus_inside_on_open": true,
+      "Tab_presses": 14,
+      "Shift_Tab_presses": 14,
+      "all_keyboard_steps_inside": true
+    },
+    {
+      "case": "edit-dossier",
+      "focus_inside_on_open": true,
+      "Tab_presses": 14,
+      "Shift_Tab_presses": 14,
+      "all_keyboard_steps_inside": true
+    },
+    {
+      "case": "add-document-type-independent",
+      "focus_inside_on_open": true,
+      "Tab_presses": 14,
+      "Shift_Tab_presses": 14,
+      "all_keyboard_steps_inside": true
+    },
+    {
+      "case": "edit-document-type-independent",
+      "focus_inside_on_open": true,
+      "Tab_presses": 14,
+      "Shift_Tab_presses": 14,
+      "all_keyboard_steps_inside": true
+    },
+    {
+      "case": "add-document-type-within-dossier",
+      "focus_inside_on_open": true,
+      "Tab_presses": 14,
+      "Shift_Tab_presses": 14,
+      "all_keyboard_steps_inside": true
+    },
+    {
+      "case": "edit-document-type-within-dossier",
+      "focus_inside_on_open": true,
+      "Tab_presses": 14,
+      "Shift_Tab_presses": 14,
+      "all_keyboard_steps_inside": true
+    }
+  ],
+  "restore_focus": [
+    {
+      "case": "add-dossier-cancel",
+      "opener_restored": true
+    },
+    {
+      "case": "add-dossier-close",
+      "opener_restored": true
+    },
+    {
+      "case": "add-dossier-escape",
+      "opener_restored": true
+    },
+    {
+      "case": "edit-dossier-cancel",
+      "opener_restored": true
+    },
+    {
+      "case": "edit-dossier-close",
+      "opener_restored": true
+    },
+    {
+      "case": "edit-dossier-escape",
+      "opener_restored": true
+    },
+    {
+      "case": "add-document-type-cancel",
+      "opener_restored": true
+    },
+    {
+      "case": "add-document-type-close",
+      "opener_restored": true
+    },
+    {
+      "case": "add-document-type-escape",
+      "opener_restored": true
+    },
+    {
+      "case": "edit-document-type-cancel",
+      "opener_restored": true
+    },
+    {
+      "case": "edit-document-type-close",
+      "opener_restored": true
+    },
+    {
+      "case": "edit-document-type-escape",
+      "opener_restored": true
+    },
+    {
+      "case": "add-document-type-within-dossier-cancel",
+      "opener_restored": true
+    },
+    {
+      "case": "edit-document-type-within-dossier-escape",
+      "opener_restored": true
+    }
+  ],
+  "keyboard_steps_checked": 168,
+  "automated_regression": {
+    "StrictMode_cases_added": 20,
+    "component_tests_passed": 23,
+    "frontend_files_passed": 39,
+    "frontend_tests_passed": 269
+  }
+}

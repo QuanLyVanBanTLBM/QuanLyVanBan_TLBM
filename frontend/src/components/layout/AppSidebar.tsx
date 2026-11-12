@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { MAIN_MODULES } from '@lib/constants';
 import { ActivePageId } from '@app-types/navigation';
 import { useTranslation } from '@i18n/translate';
 import { Logo } from '@components/common/Logo';
+import { MAIN_MODULES } from '@lib/constants';
+import { useVisibleModules } from '@lib/navPermissions';
 
 interface AppSidebarProps {
   isMobileOpen: boolean;
@@ -19,10 +20,12 @@ interface AppSidebarProps {
   onExpandSidebar?: () => void;
   isPinned?: boolean;
   onTogglePin?: () => void;
+  onCollapse?: () => void;
 }
 
 export default function AppSidebar({
   onCloseMobile,
+  onCollapse,
   committedPage,
   previewPage,
   onNavigate,
@@ -34,6 +37,7 @@ export default function AppSidebar({
   onTogglePin,
 }: AppSidebarProps) {
   const { t } = useTranslation();
+  const visibleModules = useVisibleModules();
 
   // Trạng thái mở accordion của các module
   const [expandedModIds, setExpandedModIds] = useState<Record<string, boolean>>(() => {
@@ -76,7 +80,7 @@ export default function AppSidebar({
   };
 
   // Xác định mục đang active
-  const activeModule = MAIN_MODULES.find((mod) => {
+  const activeModule = visibleModules.find((mod) => {
     const isDirect = mod.id === 'dashboard' || mod.subItems.length <= 1;
     return isDirect
       ? committedPage === mod.defaultPage || committedPage === mod.id || previewPage === mod.defaultPage || previewPage === mod.id
@@ -111,7 +115,7 @@ export default function AppSidebar({
 
         {/* 2. Danh sách các icon - LUÔN PHÂN BỔ ĐỀU & NỀN XANH TỐI GIẢN, CHUẨN TÂM 100% */}
         <div className="flex-1 w-full flex flex-col justify-evenly items-center my-2">
-          {MAIN_MODULES.map((mod) => {
+          {visibleModules.map((mod) => {
             const isDirectPage = mod.id === 'dashboard' || mod.subItems.length <= 1;
             const isActive = activeId === mod.id;
             const modLabel = getModuleLabel(mod.id, mod.label);
@@ -186,7 +190,7 @@ export default function AppSidebar({
   // =========================================================================
   return (
     <aside
-      className="w-[290px] h-full flex flex-col bg-sidebar border-r border-subtle rounded-none select-none overflow-hidden"
+      className="w-[248px] h-full flex flex-col bg-sidebar border-r border-subtle rounded-none select-none overflow-hidden"
       aria-label="Thanh điều hướng mở rộng"
       onMouseLeave={onHoverLeave}
     >
@@ -196,7 +200,9 @@ export default function AppSidebar({
           className="flex items-center gap-2 px-1 cursor-pointer transition-transform hover:scale-[1.03]"
           onClick={() => {
             onNavigate('dashboard');
-            onCloseMobile();
+            if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+              onCloseMobile();
+            }
           }}
           title="Bảo Long Insurance - Về Trang Chủ"
         >
@@ -223,7 +229,7 @@ export default function AppSidebar({
           <button
             type="button"
             className="w-7 h-7 rounded-lg bg-surface border border-subtle text-text-muted hover:text-text-main hover:bg-surface-hover flex items-center justify-center text-xs cursor-pointer transition-colors"
-            onClick={onCloseMobile}
+            onClick={onCollapse || onCloseMobile}
             aria-label="Thu gọn menu về dải biểu tượng"
             title="Thu gọn menu về dải biểu tượng (Icon Rail)"
           >
@@ -234,7 +240,7 @@ export default function AppSidebar({
 
       {/* Danh sách 6 phân hệ chính (Tầng 1) - Bố cục ổn định, thoải mái, không bị nhảy vị trí */}
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-1.5">
-        {MAIN_MODULES.map((mod) => {
+        {visibleModules.map((mod) => {
           const isDirectPage = mod.id === 'dashboard' || mod.subItems.length <= 1;
           const isModActive = isDirectPage
             ? committedPage === mod.defaultPage || committedPage === mod.id || previewPage === mod.defaultPage || previewPage === mod.id
@@ -259,7 +265,9 @@ export default function AppSidebar({
                   }`}
                   onClick={() => {
                     onNavigate(mod.defaultPage);
-                    onCloseMobile();
+                    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+                      onCloseMobile();
+                    }
                   }}
                   onMouseEnter={() => onHoverPreview(mod.defaultPage)}
                   title={modLabel}
@@ -334,7 +342,9 @@ export default function AppSidebar({
                         onClick={(e) => {
                           e.stopPropagation();
                           onNavigate(sub.id);
-                          onCloseMobile();
+                          if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+                            onCloseMobile();
+                          }
                         }}
                         onMouseEnter={() => onHoverPreview(sub.id)}
                         role="button"

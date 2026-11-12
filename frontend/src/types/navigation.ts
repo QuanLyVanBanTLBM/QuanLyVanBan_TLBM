@@ -8,6 +8,7 @@
   | 'documents_outgoing'
   | 'documents_confidential'
   | 'records'
+  | 'record_types'
   | 'resources'
   | 'approvals'
   | 'tasks'

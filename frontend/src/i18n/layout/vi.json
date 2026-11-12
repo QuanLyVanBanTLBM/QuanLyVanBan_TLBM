@@ -1,0 +1,84 @@
+{
+  "app": {
+    "name": "Hệ Thống Quản Lý Văn Bản & Tài Liệu",
+    "shortName": "QLVB & TL",
+    "advisor": "ThS. Trần Phương Duy",
+    "course": "Môn học ITC Django (MĐ501911)",
+    "group1Notice": "Nhóm 1 đang trong quá trình phát triển"
+  },
+  "common": {
+    "backToDashboard": "Quay lại Trang Chủ",
+    "assignedUnit": "Đơn vị phụ trách",
+    "currentStatus": "Trạng thái hiện tại",
+    "outline": "Đề cương",
+    "group1Developing": "Nhóm 1 đang trong quá trình phát triển",
+    "group1Layout": "Nhóm 1 phụ trách khung giao diện",
+    "group1DescSelf": "Nhóm 1 đang trong quá trình phát triển hoàn thiện giao diện và kết nối Backend Django.",
+    "group1DescOther": "Nhóm 1 đang phát triển bộ khung Layout & chuẩn bị cổng API tích hợp với {team}.",
+    "networkError": "Không thể kết nối đến máy chủ Backend. Vui lòng kiểm tra lại đường truyền!",
+    "apiError": "Máy chủ trả về lỗi API (mã {status}). Vui lòng thử lại sau.",
+    "defaultDownloadFilename": "download.xlsx"
+  },
+  "header": {
+    "searchPlaceholder": "Tìm kiếm số hiệu VB, trích yếu, công việc...",
+    "clockTitle": "Đồng hồ hành chính thời gian thực",
+    "themeLight": "Chế độ Sáng",
+    "themeDark": "Chế độ Tối",
+    "language": "Ngôn ngữ",
+    "langVi": "Tiếng Việt",
+    "langEn": "English",
+    "menuTooltip": "Rê chuột hoặc bấm vào đây để mở menu điều hướng",
+    "menuAria": "Mở menu điều hướng"
+  },
+  "navigation": {
+    "dashboard": "Trang Chủ",
+    "documents": "Quản Lý Văn Bản",
+    "records_resources": "Hồ Sơ & Tài Liệu",
+    "workflow": "Công Việc & Ký Số",
+    "system": "Tiện Ích & Hệ Thống",
+    "ai": "Trợ Lý AI Tra Cứu"
+  },
+  "userMenu": {
+    "profile": "Thông tin tài khoản",
+    "passwordChange": "Đổi mật khẩu",
+    "settings": "Cài đặt",
+    "loginDemo": "Trang đăng nhập (2 trường hợp)",
+    "login": "Đăng nhập",
+    "guest": "Chưa đăng nhập",
+    "notLoggedIn": "Chưa đăng nhập",
+    "pleaseLogin": "Vui lòng đăng nhập để tiếp tục",
+    "logout": "Đăng xuất",
+    "logoutConfirm": "Bạn có chắc chắn muốn đăng xuất khỏi hệ thống TLBM?",
+    "role": "Cán bộ nghiệp vụ",
+    "inline": {
+      "userProfile": "Hồ sơ người dùng",
+      "guestAccountNotLoggedIn": "Tài khoản khách (Chưa đăng nhập)",
+      "guestAccount": "Tài khoản khách"
+    }
+  },
+  "notifications": {
+    "title": "Thông Báo Hệ Thống",
+    "incoming": "Đến",
+    "outgoing": "Đi",
+    "confidential": "Mật",
+    "approvals": "Chờ Duyệt",
+    "markAllRead": "Đã đọc tất cả",
+    "viewAll": "Xem tất cả",
+    "unreadCount": "{count} chưa đọc",
+    "emptyConfidential": "Không có văn bản mật mới",
+    "signingDefaultTitle": "Phiếu trình ký văn bản",
+    "signingSubmitterPrefix": "Người trình",
+    "signingPendingLabel": "Chờ ký"
+  },
+  "footer": {
+    "group1Notice": "Nhóm 1 đang trong quá trình phát triển",
+    "advisorPrefix": "GVHD",
+    "layoutLead": "Phụ trách Layout & Trang chủ",
+    "copyright": "Phiên bản v2.0 • Bản quyền © {year} Bảo Long Insurance"
+  },
+  "themeSelector": {
+    "darkMode": "Tối ({name})",
+    "lightMode": "Sáng ({name})",
+    "title": "Đang hiển thị: {active} · Nhấp để chuyển sang Giao diện {next}"
+  }
+}

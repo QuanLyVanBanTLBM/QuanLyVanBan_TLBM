@@ -54,7 +54,12 @@ async function handleResponse<T>(res: Response): Promise<T> {
   if (isJson && typeof res.json === 'function') {
     data = await res.json().catch(() => ({}));
   } else if (typeof res.text === 'function') {
-    data = await res.text();
+    const text = await res.text();
+    const isHtml =
+      Boolean(contentType?.includes('text/html')) || /^\s*<!doctype\s+html|^\s*<html\b/i.test(text);
+    data = !res.ok && isHtml
+      ? { error: t('common.apiError', { status: String(res.status) }) }
+      : text;
   } else {
     data = {};
   }
@@ -84,8 +89,19 @@ export async function apiClient<T = unknown>(
     : `${BASE_URL}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
 
   const headers = new Headers(options.headers || {});
-  if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
+  const isCustomOrFormBody =
+    options.body instanceof FormData ||
+    options.body instanceof URLSearchParams ||
+    options.body instanceof Blob ||
+    options.body instanceof ArrayBuffer ||
+    ArrayBuffer.isView(options.body);
+  if (!headers.has('Content-Type') && !isCustomOrFormBody) {
     headers.set('Content-Type', 'application/json');
+  }
+
+  const currentLanguage = (typeof window !== 'undefined' ? localStorage.getItem('tlbm_lang') : null) || 'vi';
+  if (!headers.has('Accept-Language')) {
+    headers.set('Accept-Language', currentLanguage);
   }
 
   const token = localStorage.getItem('tlbm_access_token') || localStorage.getItem('tlbm_token');
@@ -176,10 +192,36 @@ export async function apiClient<T = unknown>(
           });
         });
       }
+    } else {
+      // Không có refresh token -> Dọn sạch session và đăng xuất ngay
+      localStorage.removeItem('tlbm_access_token');
+      localStorage.removeItem('tlbm_token');
+      localStorage.removeItem('tlbm_refresh_token');
+      localStorage.removeItem('tlbm_session');
+      window.dispatchEvent(new Event('tlbm_auth_changed'));
     }
   }
 
   return await handleResponse<T>(response);
+}
+
+function isRawBody(body: unknown): body is BodyInit {
+  return (
+    typeof body === 'string' ||
+    body instanceof FormData ||
+    body instanceof Blob ||
+    body instanceof ArrayBuffer ||
+    ArrayBuffer.isView(body) ||
+    body instanceof URLSearchParams
+  );
+}
+
+function serializeBody(body?: unknown): BodyInit | undefined {
+  if (body === undefined || body === null) return undefined;
+  if (isRawBody(body)) {
+    return body;
+  }
+  return JSON.stringify(body);
 }
 
 apiClient.get = <T>(endpoint: string, options?: RequestInit) =>
@@ -189,21 +231,21 @@ apiClient.post = <T>(endpoint: string, body?: unknown, options?: RequestInit) =>
   apiClient<T>(endpoint, {
     ...options,
     method: 'POST',
-    body: body ? JSON.stringify(body) : undefined,
+    body: serializeBody(body),
   });
 
 apiClient.put = <T>(endpoint: string, body?: unknown, options?: RequestInit) =>
   apiClient<T>(endpoint, {
     ...options,
     method: 'PUT',
-    body: body ? JSON.stringify(body) : undefined,
+    body: serializeBody(body),
   });
 
 apiClient.patch = <T>(endpoint: string, body?: unknown, options?: RequestInit) =>
   apiClient<T>(endpoint, {
     ...options,
     method: 'PATCH',
-    body: body ? JSON.stringify(body) : undefined,
+    body: serializeBody(body),
   });
 
 apiClient.delete = <T>(endpoint: string, options?: RequestInit) =>
@@ -241,13 +283,16 @@ export async function downloadBlob(endpoint: string, defaultFilename?: string): 
   const link = document.createElement('a');
   link.href = blobUrl;
 
-  const disposition = response.headers.get('Content-Disposition');
-  let filename = defaultFilename || t('common.defaultDownloadFilename');
-  if (disposition && disposition.includes('filename=')) {
-    const match = disposition.match(/filename="?([^";]+)"?/);
-    if (match && match[1]) {
-      filename = match[1];
+  let filename = defaultFilename;
+  if (!filename) {
+    const disposition = response.headers.get('Content-Disposition');
+    if (disposition && disposition.includes('filename=')) {
+      const match = disposition.match(/filename="?([^";]+)"?/);
+      if (match && match[1]) {
+        filename = match[1];
+      }
     }
+    filename = filename || t('common.defaultDownloadFilename');
   }
 
   link.setAttribute('download', filename);
@@ -282,6 +327,60 @@ export async function apiClientBlob(endpoint: string, options: RequestInit = {})
   return await response.blob();
 }
 
+export async function apiClientStream(endpoint: string, options: RequestInit = {}): Promise<Response> {
+  const url = endpoint.startsWith('http')
+    ? endpoint
+    : `${BASE_URL}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
+
+  const headers = new Headers(options.headers || {});
+  const isCustomOrFormBody =
+    options.body instanceof FormData ||
+    options.body instanceof URLSearchParams ||
+    options.body instanceof Blob ||
+    options.body instanceof ArrayBuffer ||
+    ArrayBuffer.isView(options.body);
+  if (!headers.has('Content-Type') && !isCustomOrFormBody) {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  const currentLanguage = (typeof window !== 'undefined' ? localStorage.getItem('tlbm_lang') : null) || 'vi';
+  if (!headers.has('Accept-Language')) {
+    headers.set('Accept-Language', currentLanguage);
+  }
+
+  const token = localStorage.getItem('tlbm_access_token') || localStorage.getItem('tlbm_token');
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+
+  const method = (options.method || 'GET').toUpperCase();
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+    const csrfToken = getCsrfToken();
+    if (csrfToken && !headers.has('X-CSRFToken')) {
+      headers.set('X-CSRFToken', csrfToken);
+    }
+  }
+
+  const response = await fetch(url, {
+    credentials: options.credentials || 'include',
+    ...options,
+    headers,
+  });
+
+  if (!response.ok) {
+    let errorData: ApiErrorResponse;
+    try {
+      errorData = (await response.json()) as ApiErrorResponse;
+    } catch {
+      errorData = { error: t('common.apiError', { status: String(response.status) }) };
+    }
+    throw new ApiError(response.status, errorData);
+  }
+
+  return response;
+}
+
 apiClient.blob = downloadBlob;
+apiClient.stream = apiClientStream;
 
 export default apiClient;

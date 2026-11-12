@@ -20,19 +20,25 @@ class PositionHardeningTests(PositionBaseTestCase):
 
     def test_stt_at_limit_is_accepted_and_auto_numbering_keeps_working(self):
         client = self.client_for["pos_manager"]
+        first_available = Position.get_next_display_order()
         res = client.post(LIST_URL, {"name": "Sát trần", "display_order": LIMIT}, format="json")
         self.assertEqual(res.status_code, status.HTTP_201_CREATED)
         res = client.post(LIST_URL, {"name": "Tự cấp"}, format="json")
         self.assertEqual(res.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(res.json()["display_order"], 1)
+        self.assertEqual(res.json()["display_order"], first_available)
 
     def test_next_display_order_takes_smallest_free_number_when_max_is_at_limit(self):
-        for stt in (1, 2, 4, LIMIT):
+        first_available = Position.get_next_display_order()
+        for stt in (first_available, first_available + 2, LIMIT):
             Position.objects.create(display_order=stt, name=f"P{stt}")
-        self.assertEqual(Position.get_next_display_order(), 3)
+        self.assertEqual(Position.get_next_display_order(), first_available + 1)
 
     def test_put_without_is_public_keeps_internal_position_internal(self):
-        position = Position.objects.create(display_order=7, name="Nội bộ", is_public=False)
+        position = Position.objects.create(
+            display_order=Position.get_next_display_order(),
+            name="Nội bộ",
+            is_public=False,
+        )
         res = self.client_for["pos_manager"].put(
             detail_url(position.pk), {"name": "Nội bộ mới"}, format="json"
         )
@@ -57,9 +63,10 @@ class PositionHardeningTests(PositionBaseTestCase):
         self.assertEqual(body["errors"][0]["field"], "display_order")
 
     def test_import_blank_stt_uses_free_number_when_max_is_at_limit(self):
+        first_available = Position.get_next_display_order()
         Position.objects.create(display_order=LIMIT, name="Sát trần")
         upload = make_xlsx([[None, "Dòng tự cấp", "Có", ""]])
         res = self.client_for["pos_manager"].post(IMPORT_URL, {"file": upload}, format="multipart")
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         self.assertEqual(res.json()["imported"], 1)
-        self.assertEqual(Position.objects.get(name="Dòng tự cấp").display_order, 1)
+        self.assertEqual(Position.objects.get(name="Dòng tự cấp").display_order, first_available)

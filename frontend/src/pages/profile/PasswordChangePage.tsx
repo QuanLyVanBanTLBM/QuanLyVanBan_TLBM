@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ActivePageId } from '@app-types/navigation';
 import { useTranslation } from '@i18n/translate';
@@ -373,7 +373,7 @@ export default function PasswordChangePage({ onNavigate }: PasswordChangePagePro
             <div className="mt-2 pt-3 border-t border-border-subtle/80 text-[11px] text-muted flex items-start gap-2 leading-relaxed">
               <i className="fa-solid fa-headset text-primary shrink-0 mt-0.5" />
               <span>
-                Cần trợ giúp hoặc quên mật khẩu? Vui lòng liên hệ quản trị viên qua hotline nội bộ hoặc hỏi nhanh qua Trợ lý AI.
+                {t('passwordChange.helpHotline')}
               </span>
             </div>
           </div>

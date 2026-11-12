@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useTranslation } from '@i18n/translate';
 import { Permission } from '@app-types/authorization';
 import { filterPermissions } from './permissionFilter';
+import { getModuleLabel, getPermissionLabel } from './permissionLabels';
 
 interface PermissionMatrixProps {
   permissions: Permission[];
@@ -20,8 +21,7 @@ interface ModuleGroup {
   items: Permission[];
 }
 
-// Backend (SQL_Fix4) trả sẵn module_ten tiếng Việt cho từng quyền -> gom nhóm theo đó,
-// giữ đúng thứ tự module của đặc tả; module mới của nhóm khác tự xuất hiện, không cần sửa code ở đây.
+// Dùng module_ten làm khóa nhóm ổn định; nhãn hiển thị được dịch riêng theo ngôn ngữ.
 function groupByModule(permissions: Permission[]): ModuleGroup[] {
   const map = new Map<string, ModuleGroup>();
   for (const perm of permissions) {
@@ -80,7 +80,7 @@ export const PermissionMatrix: React.FC<PermissionMatrixProps> = ({
       {groups.map((group, idx) => (
         <div key={group.key}>
           <h4 className="font-bold text-danger mb-2 text-sm">
-            {idx + 1}. {group.label}
+            {idx + 1}. {getModuleLabel(group.label)}
           </h4>
           <div className="space-y-1 pl-2">
             {group.items.map((perm) => (
@@ -92,7 +92,7 @@ export const PermissionMatrix: React.FC<PermissionMatrixProps> = ({
               >
                 <span className="flex items-center gap-2">
                   <i className="fa-solid fa-arrow-right-long text-muted text-xs" />
-                  {perm.name}
+                  {getPermissionLabel(perm)}
                 </span>
                 <input
                   type="checkbox"

@@ -30,7 +30,7 @@ export const MeetingsPage: React.FC = () => {
   const { can } = usePermissions();
 
   // Tab hiện tại: 'schedule' (Lịch đặt) | 'rooms' (Danh mục phòng)
-  const [activeTab, setActiveTab] = useState<'schedule' | 'rooms'>('schedule');
+  const [activeTab, setActiveTab] = useState<'schedule' | 'rooms'>('rooms');
 
   // Dữ liệu
   const [rooms, setRooms] = useState<MeetingRoom[]>([]);
@@ -46,6 +46,7 @@ export const MeetingsPage: React.FC = () => {
 
   // Bộ lọc lịch
   const [selectedDate, setSelectedDate] = useState<string>(() => formatLocalDate());
+  const [roomsDate, setRoomsDate] = useState<string>(() => formatLocalDate());
   const [selectedRoomFilter, setSelectedRoomFilter] = useState<string>('all');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('all');
   const [selectedFloorFilter, setSelectedFloorFilter] = useState<string>('all');
@@ -87,6 +88,30 @@ export const MeetingsPage: React.FC = () => {
   // Modal xác nhận xóa phòng
   const [deletingRoom, setDeletingRoom] = useState<MeetingRoom | null>(null);
   const [isSubmittingDelete, setIsSubmittingDelete] = useState(false);
+
+  // Helper chuẩn hóa hiển thị người đặt: Tên - Chức vụ - Phòng ban
+  const getOrganizerDisplay = (booking: MeetingBooking) => {
+    const name =
+      booking.organizer_detail?.ho_ten ||
+      booking.organizer_detail?.username ||
+      t('meetings.table.staffFallback');
+    const rawPos = booking.organizer_detail?.chuc_vu_ten?.trim();
+    const rawDept = (booking.department_name || booking.organizer_detail?.don_vi_ten || '').trim();
+
+    const position = rawPos && rawPos.toLowerCase() !== name.toLowerCase() ? rawPos : null;
+    const department = rawDept && rawDept.toLowerCase() !== name.toLowerCase() ? rawDept : null;
+
+    const parts = [name];
+    if (position) parts.push(position);
+    if (department) parts.push(department);
+
+    return {
+      name,
+      position,
+      department,
+      fullText: parts.join(' - '),
+    };
+  };
 
   const showToast = (type: 'success' | 'error', text: string) => {
     setToastMessage({ type, text });
@@ -189,12 +214,12 @@ export const MeetingsPage: React.FC = () => {
     };
   }, [selectedDate, selectedRoomFilter, selectedStatusFilter, reloadBookingsTrigger]);
 
-  // 4. Tải lịch của ngày hôm nay cho Tab Danh mục phòng (không lọc room hay trang_thai)
+  // 4. Tải lịch theo ngày được chọn cho Tab Danh mục phòng (không lọc room hay trang_thai)
   useEffect(() => {
     let isMounted = true;
     apiClient
       .get<PaginatedResponse<MeetingBooking> | MeetingBooking[]>(
-        `/api/meeting-bookings/?date=${todayStr}&page_size=100`
+        `/api/meeting-bookings/?date=${roomsDate}&page_size=100`
       )
       .then((res) => {
         if (!isMounted) return;
@@ -208,7 +233,15 @@ export const MeetingsPage: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [todayStr, reloadBookingsTrigger]);
+  }, [roomsDate, reloadBookingsTrigger]);
+
+  // Điều khiển ngày Tab 2 (Danh mục phòng họp)
+  const handleRoomsDateChange = (daysDelta: number) => {
+    const parts = roomsDate.split('-');
+    const current = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    current.setDate(current.getDate() + daysDelta);
+    setRoomsDate(formatLocalDate(current));
+  };
 
   // Điều khiển ngày: Hôm nay, trước, sau
   const handleDateChange = (daysDelta: number) => {
@@ -306,8 +339,8 @@ export const MeetingsPage: React.FC = () => {
         !canChangeRoom || roomVisibilityFilter === 'all'
           ? true
           : roomVisibilityFilter === 'public'
-          ? r.is_public
-          : !r.is_public;
+            ? r.is_public
+            : !r.is_public;
 
       const rFloor = extractFloor(r.location, currentLang);
       const rFloorVi = extractFloor(r.location, 'vi');
@@ -318,30 +351,54 @@ export const MeetingsPage: React.FC = () => {
         !selectedFloorFilter || selectedFloorFilter.toLowerCase() === 'all'
           ? true
           : selectedFloorFilter === rFloor ||
-            selectedFloorFilter === rFloorVi ||
-            selectedFloorFilter === rFloorEn ||
-            selectedFloorFilter === rFloorKey;
+          selectedFloorFilter === rFloorVi ||
+          selectedFloorFilter === rFloorEn ||
+          selectedFloorFilter === rFloorKey;
 
       return matchesSearch && matchesStatus && matchesVisibility && matchesFloor;
     }).sort(compareRoomsByFloor);
   }, [rooms, roomSearchTerm, roomStatusFilter, roomVisibilityFilter, selectedFloorFilter, canChangeRoom, currentLang]);
 
-  // Lọc danh sách cuộc họp theo tầng ở Tab 1
+  // Lọc danh sách cuộc họp theo tầng và sắp xếp theo thời gian, đẩy lịch bị hủy xuống cuối
   const displayBookings = useMemo(() => {
-    if (!selectedFloorFilter || selectedFloorFilter.toLowerCase() === 'all') return bookings;
-    return bookings.filter((b) => {
-      const room = rooms.find((r) => r.id === b.room) || b.room_detail;
-      const rFloor = extractFloor(room?.location, currentLang);
-      const rFloorVi = extractFloor(room?.location, 'vi');
-      const rFloorEn = extractFloor(room?.location, 'en');
-      const rFloorKey = getFloorKey(room?.location);
+    let list = bookings;
+    if (selectedFloorFilter && selectedFloorFilter.toLowerCase() !== 'all') {
+      list = bookings.filter((b) => {
+        const room = rooms.find((r) => r.id === b.room) || b.room_detail;
+        const rFloor = extractFloor(room?.location, currentLang);
+        const rFloorVi = extractFloor(room?.location, 'vi');
+        const rFloorEn = extractFloor(room?.location, 'en');
+        const rFloorKey = getFloorKey(room?.location);
 
-      return (
-        selectedFloorFilter === rFloor ||
-        selectedFloorFilter === rFloorVi ||
-        selectedFloorFilter === rFloorEn ||
-        selectedFloorFilter === rFloorKey
-      );
+        return (
+          selectedFloorFilter === rFloor ||
+          selectedFloorFilter === rFloorVi ||
+          selectedFloorFilter === rFloorEn ||
+          selectedFloorFilter === rFloorKey
+        );
+      });
+    }
+
+    return [...list].sort((a, b) => {
+      const aCancelled = a.trang_thai === 'CANCELLED' ? 1 : 0;
+      const bCancelled = b.trang_thai === 'CANCELLED' ? 1 : 0;
+
+      // 1. Lịch hiệu lực/hoàn thành (0) lên trước, lịch bị hủy (1) đẩy xuống cuối
+      if (aCancelled !== bCancelled) {
+        return aCancelled - bCancelled;
+      }
+
+      // 2. Sắp xếp theo ngày (nếu khác ngày)
+      if (a.date !== b.date) {
+        return a.date.localeCompare(b.date);
+      }
+
+      // 3. Sắp xếp tăng dần theo giờ bắt đầu
+      const startDiff = a.start_time.localeCompare(b.start_time);
+      if (startDiff !== 0) return startDiff;
+
+      // 4. Nếu trùng giờ bắt đầu, sắp xếp theo giờ kết thúc
+      return a.end_time.localeCompare(b.end_time);
     });
   }, [bookings, selectedFloorFilter, rooms, currentLang]);
 
@@ -352,22 +409,20 @@ export const MeetingsPage: React.FC = () => {
   const completedInDay = bookings.filter((b) => b.trang_thai === 'COMPLETED').length;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-8 min-h-[calc(100vh-220px)]">
       {/* Toast Notification */}
       {toastMessage && (
         <div
           role="status"
           aria-live="polite"
-          className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl text-sm font-semibold transition-all transform animate-fadeIn ${
-            toastMessage.type === 'success'
+          className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl text-sm font-semibold transition-all transform animate-fadeIn ${toastMessage.type === 'success'
               ? 'bg-success text-white border border-success-hover'
               : 'bg-danger text-white border border-danger-hover'
-          }`}
+            }`}
         >
           <i
-            className={`fa-solid ${
-              toastMessage.type === 'success' ? 'fa-circle-check text-lg' : 'fa-circle-exclamation text-lg'
-            }`}
+            className={`fa-solid ${toastMessage.type === 'success' ? 'fa-circle-check text-lg' : 'fa-circle-exclamation text-lg'
+              }`}
           />
           <span>{toastMessage.text}</span>
           <button
@@ -430,32 +485,30 @@ export const MeetingsPage: React.FC = () => {
       {/* Tabs Navigation */}
       <div className="flex items-center gap-2 border-b border-border-subtle pb-px">
         <button
-          onClick={() => setActiveTab('schedule')}
-          className={`flex items-center gap-2.5 px-5 py-3 font-bold text-sm rounded-t-xl transition-all border-b-2 ${
-            activeTab === 'schedule'
-              ? 'text-primary border-primary bg-primary-subtle'
-              : 'text-secondary border-transparent hover:text-main hover:bg-surface-hover'
-          }`}
-        >
-          <i className="fa-regular fa-calendar-days text-base" />
-          <span>{t('meetings.tabSchedule')}</span>
-          <span className="px-2 py-0.5 rounded-full text-xs bg-primary-subtle text-primary font-semibold">
-            {activeInDay}
-          </span>
-        </button>
-
-        <button
           onClick={() => setActiveTab('rooms')}
-          className={`flex items-center gap-2.5 px-5 py-3 font-bold text-sm rounded-t-xl transition-all border-b-2 ${
-            activeTab === 'rooms'
+          className={`flex items-center gap-2.5 px-5 py-3 font-bold text-sm rounded-t-xl transition-all border-b-2 ${activeTab === 'rooms'
               ? 'text-primary border-primary bg-primary-subtle'
               : 'text-secondary border-transparent hover:text-main hover:bg-surface-hover'
-          }`}
+            }`}
         >
           <i className="fa-solid fa-door-open text-base" />
           <span>{t('meetings.tabRooms')}</span>
           <span className="px-2 py-0.5 rounded-full text-xs bg-surface-elevated text-secondary font-semibold">
             {rooms.length}
+          </span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('schedule')}
+          className={`flex items-center gap-2.5 px-5 py-3 font-bold text-sm rounded-t-xl transition-all border-b-2 ${activeTab === 'schedule'
+              ? 'text-primary border-primary bg-primary-subtle'
+              : 'text-secondary border-transparent hover:text-main hover:bg-surface-hover'
+            }`}
+        >
+          <i className="fa-regular fa-calendar-days text-base" />
+          <span>{t('meetings.tabSchedule')}</span>
+          <span className="px-2 py-0.5 rounded-full text-xs bg-primary-subtle text-primary font-semibold">
+            {activeInDay}
           </span>
         </button>
       </div>
@@ -638,11 +691,10 @@ export const MeetingsPage: React.FC = () => {
                   <Card
                     key={booking.id}
                     hoverable
-                    className={`p-5 transition-all ${
-                      booking.trang_thai === 'CANCELLED'
+                    className={`p-5 transition-all ${booking.trang_thai === 'CANCELLED'
                         ? 'opacity-70 bg-surface-elevated border-dashed'
                         : 'border-l-4 border-l-primary'
-                    }`}
+                      }`}
                   >
                     <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                       {/* Cột trái: Khung giờ & Tên phòng */}
@@ -682,20 +734,30 @@ export const MeetingsPage: React.FC = () => {
                               {booking.room_detail?.location && ` (${booking.room_detail.location})`}
                             </span>
 
-                            <span className="flex items-center gap-1.5">
-                              <i className="fa-solid fa-user-tie text-muted" />
-                              {t('meetings.table.organizer')}:{' '}
-                              <strong className="text-main font-semibold">
-                                {booking.organizer_detail?.ho_ten || booking.organizer_detail?.username || t('meetings.table.staffFallback')}
-                              </strong>
-                            </span>
+                            {(() => {
+                              const org = getOrganizerDisplay(booking);
+                              return (
+                                <>
+                                  <span className="flex items-center gap-1.5 flex-wrap">
+                                    <i className="fa-solid fa-user-tie text-muted" />
+                                    {t('meetings.table.organizer')}:{' '}
+                                    <strong className="text-main font-semibold">{org.name}</strong>
+                                    {org.position && (
+                                      <span className="text-xs px-2 py-0.5 rounded-md bg-surface-elevated border border-border-subtle text-secondary font-medium">
+                                        {org.position}
+                                      </span>
+                                    )}
+                                  </span>
 
-                            {booking.department_name && (
-                              <span className="flex items-center gap-1.5">
-                                <i className="fa-solid fa-building text-muted" />
-                                {t('meetings.modalBooking.departmentLabel')}: {booking.department_name}
-                              </span>
-                            )}
+                                  {org.department && (
+                                    <span className="flex items-center gap-1.5">
+                                      <i className="fa-solid fa-building text-muted" />
+                                      {t('meetings.modalBooking.departmentLabel')}: {org.department}
+                                    </span>
+                                  )}
+                                </>
+                              );
+                            })()}
 
                             <span className="flex items-center gap-1.5">
                               <i className="fa-solid fa-users text-muted" />
@@ -793,6 +855,45 @@ export const MeetingsPage: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-3 w-full md:w-auto flex-wrap">
+              {/* Bộ điều khiển ngày của Danh mục phòng họp */}
+              <div className="flex items-center gap-1.5 w-full sm:w-auto">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => handleRoomsDateChange(-1)}
+                  title={t('meetings.prevDay')}
+                  className="h-9 px-2.5"
+                >
+                  <i className="fa-solid fa-chevron-left text-xs" />
+                </Button>
+                <Button
+                  variant={roomsDate === todayStr ? 'primary' : 'secondary'}
+                  size="sm"
+                  onClick={() => setRoomsDate(todayStr)}
+                  className="font-bold text-xs h-9 px-3"
+                >
+                  {t('meetings.today')}
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => handleRoomsDateChange(1)}
+                  title={t('meetings.nextDay')}
+                  className="h-9 px-2.5"
+                >
+                  <i className="fa-solid fa-chevron-right text-xs" />
+                </Button>
+                <div className="relative flex items-center">
+                  <input
+                    type="date"
+                    aria-label="Chọn ngày xem danh mục phòng"
+                    value={roomsDate}
+                    onChange={(e) => setRoomsDate(e.target.value)}
+                    className="px-3 py-1.5 rounded-xl bg-surface-elevated border border-border-subtle text-main font-bold text-xs focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer h-9"
+                  />
+                </div>
+              </div>
+
               {/* Bộ lọc theo tầng */}
               <select
                 value={selectedFloorFilter}
@@ -867,13 +968,14 @@ export const MeetingsPage: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {filteredRooms.map((room) => {
                 const isAvailable = (room.trang_thai || 'AVAILABLE') === 'AVAILABLE';
-                const roomBookingsToday = todayBookings.filter(
-                  (b) => b.room === room.id && b.trang_thai !== 'CANCELLED'
-                );
+                const roomBookingsForDate = todayBookings
+                  .filter((b) => b.room === room.id && b.trang_thai !== 'CANCELLED')
+                  .sort((a, b) => a.start_time.localeCompare(b.start_time) || a.end_time.localeCompare(b.end_time));
 
+                const isViewingToday = roomsDate === todayStr;
                 const now = new Date();
                 const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-                const isOccupiedNow = roomBookingsToday.some(
+                const isOccupiedNow = isViewingToday && roomBookingsForDate.some(
                   (b) => b.date === todayStr && b.start_time.slice(0, 5) <= currentTimeStr && currentTimeStr < b.end_time.slice(0, 5)
                 );
 
@@ -884,11 +986,10 @@ export const MeetingsPage: React.FC = () => {
                     role={isAvailable && canAddBooking ? 'button' : undefined}
                     tabIndex={isAvailable && canAddBooking ? 0 : undefined}
                     aria-label={isAvailable && canAddBooking ? `${room.name} - ${t('meetings.table.bookThisRoom')}` : room.name}
-                    className={`p-5 flex flex-col justify-between h-full transition-all ${
-                      isAvailable && canAddBooking
+                    className={`p-5 flex flex-col justify-between h-full transition-all ${isAvailable && canAddBooking
                         ? 'cursor-pointer hover:border-primary/60 hover:shadow-lg border-2 border-transparent focus:outline-none focus:ring-2 focus:ring-primary'
                         : ''
-                    }`}
+                      }`}
                     onClick={(e) => {
                       if ((e.target as HTMLElement).closest('button')) return;
                       if (isAvailable && canAddBooking) {
@@ -934,10 +1035,10 @@ export const MeetingsPage: React.FC = () => {
                               <Badge variant="success" size="sm" withDot>
                                 {t('meetings.status.available')}
                               </Badge>
-                              {roomBookingsToday.length > 0 && (
+                              {roomBookingsForDate.length > 0 && (
                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-warning-subtle text-warning-text border border-warning/30 flex items-center gap-1 shadow-2xs">
                                   <i className="fa-solid fa-clock text-[9px]" />
-                                  {t('meetings.hasScheduleToday')}
+                                  {isViewingToday ? t('meetings.hasScheduleToday') : 'Có lịch trong ngày'}
                                 </span>
                               )}
                             </div>
@@ -978,12 +1079,17 @@ export const MeetingsPage: React.FC = () => {
                         <div className="flex items-center justify-between text-xs">
                           <span className="font-bold text-secondary uppercase tracking-wider text-[11px] flex items-center gap-1.5">
                             <i className="fa-regular fa-calendar-days text-primary text-xs" />
-                            {t('meetings.today')}:
+                            {isViewingToday ? `${t('meetings.today')}:` : (() => {
+                              const parts = roomsDate.split('-');
+                              return parts.length === 3 ? `NGÀY ${parts[2]}/${parts[1]}/${parts[0]}:` : `${roomsDate}:`;
+                            })()}
                           </span>
-                          {roomBookingsToday.length > 0 ? (
+                          {roomBookingsForDate.length > 0 ? (
                             <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-warning-subtle text-warning-text border border-warning/40 flex items-center gap-1.5 shadow-xs">
                               <i className="fa-solid fa-calendar-check text-[10px] text-warning" />
-                              {t('meetings.roomBookedToday', { count: roomBookingsToday.length })}
+                              {isViewingToday
+                                ? t('meetings.roomBookedToday', { count: roomBookingsForDate.length })
+                                : `Đã có ${roomBookingsForDate.length} lịch đặt`}
                             </span>
                           ) : (
                             <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-success-subtle text-success border border-success/30 flex items-center gap-1">
@@ -993,10 +1099,10 @@ export const MeetingsPage: React.FC = () => {
                           )}
                         </div>
 
-                        {roomBookingsToday.length > 0 ? (
+                        {roomBookingsForDate.length > 0 ? (
                           <div className="space-y-2 max-h-40 overflow-y-auto pr-0.5">
-                            {roomBookingsToday.map((b) => {
-                              const isCurrentMeeting = b.date === selectedDate && b.start_time.slice(0, 5) <= currentTimeStr && currentTimeStr < b.end_time.slice(0, 5);
+                            {roomBookingsForDate.map((b) => {
+                              const isCurrentMeeting = isViewingToday && b.date === todayStr && b.start_time.slice(0, 5) <= currentTimeStr && currentTimeStr < b.end_time.slice(0, 5);
                               const timeRange = `${b.start_time.slice(0, 5)} - ${b.end_time.slice(0, 5)}`;
 
                               return (
@@ -1007,29 +1113,26 @@ export const MeetingsPage: React.FC = () => {
                                     e.stopPropagation();
                                     setSelectedBookingDetail(b);
                                   }}
-                                  className={`w-full text-left p-2.5 rounded-xl border flex items-center justify-between gap-2.5 group transition-all cursor-pointer shadow-xs ${
-                                    isCurrentMeeting
+                                  className={`w-full text-left p-2.5 rounded-xl border flex items-center justify-between gap-2.5 group transition-all cursor-pointer shadow-xs ${isCurrentMeeting
                                       ? 'bg-danger-subtle/40 hover:bg-danger-subtle/70 border-l-4 border-l-danger border-danger/40'
                                       : 'bg-warning-subtle/35 hover:bg-warning-subtle/60 border-l-4 border-l-warning border-warning/35'
-                                  }`}
+                                    }`}
                                   title={t('meetings.viewDetailBtn')}
                                 >
                                   <div className="min-w-0 flex-1 space-y-1">
                                     <div className="flex items-center gap-1.5 flex-wrap">
-                                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-black shadow-2xs border ${
-                                        isCurrentMeeting
+                                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-black shadow-2xs border ${isCurrentMeeting
                                           ? 'bg-surface text-danger border-danger/30'
                                           : 'bg-surface text-warning-text border-warning/30'
-                                      }`}>
+                                        }`}>
                                         <i className={`fa-solid fa-clock text-[10px] ${isCurrentMeeting ? 'text-danger' : 'text-warning'}`} />
                                         <span>{timeRange}</span>
                                       </span>
 
-                                      <span className={`text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${
-                                        isCurrentMeeting
+                                      <span className={`text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${isCurrentMeeting
                                           ? 'bg-danger text-white flex items-center gap-1'
                                           : 'bg-warning/20 text-warning-text'
-                                      }`}>
+                                        }`}>
                                         {isCurrentMeeting && <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />}
                                         {isCurrentMeeting ? t('meetings.inProgress') : t('meetings.bookedBadge')}
                                       </span>
@@ -1038,17 +1141,34 @@ export const MeetingsPage: React.FC = () => {
                                     <p className="text-xs font-bold text-main truncate group-hover:text-primary transition-colors">
                                       {b.title}
                                     </p>
-                                    <p className="text-[11px] text-muted flex items-center gap-1">
-                                      <i className="fa-solid fa-user-tie text-[10px]" />
-                                      <span className="truncate">{b.organizer_detail?.ho_ten || b.organizer_detail?.username || t('meetings.table.staffFallback')}</span>
-                                    </p>
+                                    {(() => {
+                                      const org = getOrganizerDisplay(b);
+                                      return (
+                                        <div className="space-y-0.5 text-[11px] text-muted pt-0.5" title={org.fullText}>
+                                          <p className="flex items-center gap-1.5 truncate">
+                                            <i className="fa-solid fa-user-tie text-[10px] shrink-0 text-muted" />
+                                            <span className="font-semibold text-main truncate">{org.name}</span>
+                                            {org.position && (
+                                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-elevated border border-border-subtle text-secondary shrink-0 font-medium">
+                                                {org.position}
+                                              </span>
+                                            )}
+                                          </p>
+                                          {org.department && (
+                                            <p className="flex items-center gap-1.5 text-[10px] text-muted truncate pl-3.5">
+                                              <i className="fa-solid fa-building text-[9px] shrink-0 opacity-70" />
+                                              <span className="truncate">{org.department}</span>
+                                            </p>
+                                          )}
+                                        </div>
+                                      );
+                                    })()}
                                   </div>
 
-                                  <span className={`text-xs font-bold p-1.5 rounded-lg bg-surface border group-hover:scale-110 transition-transform shadow-2xs ${
-                                    isCurrentMeeting
+                                  <span className={`text-xs font-bold p-1.5 rounded-lg bg-surface border group-hover:scale-110 transition-transform shadow-2xs ${isCurrentMeeting
                                       ? 'text-danger border-danger/30'
                                       : 'text-warning-text border-warning/30'
-                                  }`}>
+                                    }`}>
                                     <i className="fa-solid fa-circle-info" />
                                   </span>
                                 </button>
@@ -1138,7 +1258,7 @@ export const MeetingsPage: React.FC = () => {
         }}
         rooms={rooms}
         bookingToEdit={bookingToEdit}
-        initialDate={selectedDate}
+        initialDate={activeTab === 'rooms' ? roomsDate : selectedDate}
         initialRoomId={selectedRoomForBooking}
         currentUser={currentUser}
         existingBookings={bookings}
