@@ -2548,7 +2548,7 @@ def prepare_ask_document(
         cached_result = get_cached_answer(question, language)
         if cached_result is not None:
             set_fields(cache_hit=True)
-            return cached_result
+            return "immediate", cached_result
 
     # Phân loại ý định: Nếu là tin nhắn chào hỏi, xã giao hoặc chia sẻ cảm xúc
     # CHÚ Ý: Nếu người dùng ĐÃ CHỈ ĐỊNH TÀI LIỆU (filename có giá trị)
@@ -2761,6 +2761,7 @@ def prepare_ask_document(
         "sources": sources,
         "clean_filename": clean_filename,
         "no_ans": no_ans,
+        "cacheable_request": cacheable_request,
     }
 
 
@@ -2780,6 +2781,7 @@ def ask_document(question: str, history=None, category: str | None = None, user=
     prompt = payload["prompt"]
     sources = payload["sources"]
     no_ans = payload["no_ans"]
+    cacheable_request = payload.get("cacheable_request", False)
 
     try:
         with ai_stage("llm"):
@@ -2793,8 +2795,10 @@ def ask_document(question: str, history=None, category: str | None = None, user=
         return {"answer": no_ans, "sources": []}
     set_fields(answer_mode="llm")
     result = {"answer": answer, "sources": public_sources(sources)}
-    if cacheable_request and sources_are_shareable(sources):
-        set_cached_answer(question, language, answer, result["sources"], eligible_sources=sources)
+    if cacheable_request:
+        from backend.services.faq_response_cache import set_cached_answer, sources_are_shareable
+        if sources_are_shareable(sources):
+            set_cached_answer(question, language, answer, result["sources"], eligible_sources=sources)
     return result
 
 
@@ -2830,6 +2834,7 @@ def ask_document_stream(
     sources = payload["sources"]
     pub_sources = public_sources(sources)
     no_ans = payload["no_ans"]
+    cacheable_request = payload.get("cacheable_request", False)
 
     yield format_sse("sources", pub_sources)
 
@@ -2864,6 +2869,10 @@ def ask_document_stream(
         set_fields(answer_mode="model_no_answer")
     else:
         set_fields(answer_mode="llm")
+        if cacheable_request:
+            from backend.services.faq_response_cache import set_cached_answer, sources_are_shareable
+            if sources_are_shareable(sources):
+                set_cached_answer(question, language, full_answer, pub_sources, eligible_sources=sources)
 
     yield format_sse("done", {
         "answer": full_answer,
