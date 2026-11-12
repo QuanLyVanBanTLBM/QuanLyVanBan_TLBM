@@ -471,7 +471,7 @@ export default function MainLayout({
 
       {/* 5. Box AI Trợ Lý nổi - Tự động ẩn khi người dùng đang ở trang Trợ lý AI toàn màn hình */}
       {canUseAI && currentActivePage !== 'ai_assistant' && location.pathname !== '/ai-assistant' && (
-        <FloatingAIBox onNavigate={handleNavigate} />
+        <FloatingAIBox onNavigate={handleNavigate} onNavigateUrl={(url) => navigate(url)} />
       )}
 
       {/* 6. Màn hình khóa bảo mật phiên làm việc khi không thao tác */}

@@ -24,6 +24,9 @@ const CROP_X = (VIEWPORT_W - CROP_W) / 2; // 60px
 const CROP_Y = (VIEWPORT_H - CROP_H) / 2; // 35px
 const CROP_CENTER_X = VIEWPORT_W / 2; // 210px
 const CROP_CENTER_Y = VIEWPORT_H / 2; // 110px
+const ZOOM_MIN = 0.2;
+const ZOOM_MAX = 6;
+const BUOC_ZOOM = 0.1;
 
 function nguongScanChuKy(histogram: Uint32Array, total: number) {
   let tongMucSang = 0;
@@ -171,8 +174,11 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
   }, [baseScale, rawImg, zoom]);
 
   const keoAnhDen = useCallback((clientX: number, clientY: number) => {
-    const dx = clientX - dragStartRef.current.mouseX;
-    const dy = clientY - dragStartRef.current.mouseY;
+    // Viewport co giãn theo màn hình hẹp: quy đổi px màn hình về toạ độ canvas.
+    const rong = containerRef.current?.clientWidth || VIEWPORT_W;
+    const heSo = VIEWPORT_W / rong;
+    const dx = (clientX - dragStartRef.current.mouseX) * heSo;
+    const dy = (clientY - dragStartRef.current.mouseY) * heSo;
     setOffset(gioiHanViTriKeo(
       dragStartRef.current.startOffsetX + dx,
       dragStartRef.current.startOffsetY + dy,
@@ -213,6 +219,12 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
       window.removeEventListener('touchend', handleTouchEnd);
     };
   }, [isDragging, keoAnhDen, rawImg]);
+
+  const chinhZoom = (delta: number) => setZoom((z) => Math.min(Math.max(Number((z + delta).toFixed(3)), ZOOM_MIN), ZOOM_MAX));
+  const datLai = () => {
+    setZoom(1);
+    setOffset({ x: 0, y: 0 });
+  };
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.pointerType === 'touch' || (e.button !== 0 && e.button !== 2)) return;
@@ -420,15 +432,8 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
           <div className="flex justify-center">
             <div
               ref={containerRef}
-              className={`relative overflow-hidden rounded-xl border border-border-subtle shadow-inner select-none touch-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
-              style={{
-                width: `${VIEWPORT_W}px`,
-                height: `${VIEWPORT_H}px`,
-                backgroundImage:
-                  'linear-gradient(45deg, #e5e5e5 25%, transparent 25%), linear-gradient(-45deg, #e5e5e5 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e5e5e5 75%), linear-gradient(-45deg, transparent 75%, #e5e5e5 75%)',
-                backgroundSize: '16px 16px',
-                backgroundPosition: '0 0, 0 8px, 8px -8px, -8px 0px',
-              }}
+              className={`signing-chuky-caro relative w-full overflow-hidden rounded-xl select-none touch-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+              style={{ maxWidth: `${VIEWPORT_W}px`, aspectRatio: `${VIEWPORT_W} / ${VIEWPORT_H}`, border: '1px solid var(--color-signature-border)' }}
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={onPointerEnd}
@@ -445,43 +450,51 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
                 className="w-full h-full block"
               />
 
-              {/* Khung cắt 300x150 nằm cố định ở giữa với lớp phủ tối mờ bên ngoài */}
+              {/* Khung cắt 300x150 cố định ở giữa: viền dày, lưới chia ba, 4 góc rõ, vùng ngoài phủ xám tối mờ */}
               <div
-                className="absolute pointer-events-none rounded border-2 border-primary"
+                className="signing-crop-khung absolute pointer-events-none rounded"
                 style={{
-                  left: `${CROP_X}px`,
-                  top: `${CROP_Y}px`,
-                  width: `${CROP_W}px`,
-                  height: `${CROP_H}px`,
-                  boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.45)',
+                  left: `${(CROP_X / VIEWPORT_W) * 100}%`,
+                  top: `${(CROP_Y / VIEWPORT_H) * 100}%`,
+                  width: `${(CROP_W / VIEWPORT_W) * 100}%`,
+                  height: `${(CROP_H / VIEWPORT_H) * 100}%`,
                 }}
+                data-testid="khung-cat"
               >
-                {/* 4 góc chỉ báo viền cắt màu trắng */}
-                <div className="absolute -top-1 -left-1 w-3 h-3 border-t-2 border-l-2 border-white shadow-sm" />
-                <div className="absolute -top-1 -right-1 w-3 h-3 border-t-2 border-r-2 border-white shadow-sm" />
-                <div className="absolute -bottom-1 -left-1 w-3 h-3 border-b-2 border-l-2 border-white shadow-sm" />
-                <div className="absolute -bottom-1 -right-1 w-3 h-3 border-b-2 border-r-2 border-white shadow-sm" />
+                <div className="signing-crop-luoi absolute inset-0" aria-hidden="true" />
+                <div className="signing-crop-goc signing-crop-goc--tl" />
+                <div className="signing-crop-goc signing-crop-goc--tr" />
+                <div className="signing-crop-goc signing-crop-goc--bl" />
+                <div className="signing-crop-goc signing-crop-goc--br" />
               </div>
             </div>
           </div>
           {rawImg && (
-            <label className="block space-y-1.5">
-              <span className="flex items-center justify-between gap-2 text-sm font-medium text-main">
+            <div className="space-y-1.5">
+              <p className="text-xs text-secondary">{t('pin.huongDanCat')}</p>
+              <div className="flex items-center justify-between gap-2 text-sm font-medium text-main">
                 <span>{t('pin.thuPhong')}</span>
                 <span className="text-secondary tabular-nums">{Math.round(zoom * 100)}%</span>
-              </span>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                step={1}
-                value={Math.round(((zoom - 0.2) / (6 - 0.2)) * 100)}
-                onChange={(e) => setZoom(0.2 + (Number(e.target.value) / 100) * (6 - 0.2))}
-                aria-label={t('pin.thuPhong')}
-                aria-valuetext={`${Math.round(zoom * 100)}%`}
-                className="w-full cursor-pointer accent-primary"
-              />
-            </label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline" aria-label={t('pin.thuNho')} title={t('pin.thuNho')}
+                  className="signing-cham-44 text-base" disabled={zoom <= ZOOM_MIN} onClick={() => chinhZoom(-BUOC_ZOOM)}>−</Button>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={Math.round(((zoom - ZOOM_MIN) / (ZOOM_MAX - ZOOM_MIN)) * 100)}
+                  onChange={(e) => setZoom(ZOOM_MIN + (Number(e.target.value) / 100) * (ZOOM_MAX - ZOOM_MIN))}
+                  aria-label={t('pin.thuPhong')}
+                  aria-valuetext={`${Math.round(zoom * 100)}%`}
+                  className="min-w-0 flex-1 cursor-pointer accent-primary"
+                />
+                <Button size="sm" variant="outline" aria-label={t('pin.phongTo')} title={t('pin.phongTo')}
+                  className="signing-cham-44 text-base" disabled={zoom >= ZOOM_MAX} onClick={() => chinhZoom(BUOC_ZOOM)}>+</Button>
+                <Button size="sm" variant="outline" icon="fa-rotate-left" className="signing-cham-44" onClick={datLai}>{t('pin.datLaiViTri')}</Button>
+              </div>
+            </div>
           )}
         </div>
       </HopThoai>
@@ -520,15 +533,8 @@ export default function CropChuKyModal({ mo, onDong, tep, onLuu, dangXuLy = fals
                 {t('pin.ketQuaCat')}
               </span>
               <div
-                className="flex items-center justify-center p-3 rounded-lg border-2 border-primary shadow-sm"
-                style={{
-                  width: `${CROP_W}px`,
-                  height: `${CROP_H}px`,
-                  backgroundImage:
-                    'linear-gradient(45deg, #e5e5e5 25%, transparent 25%), linear-gradient(-45deg, #e5e5e5 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e5e5e5 75%), linear-gradient(-45deg, transparent 75%, #e5e5e5 75%)',
-                  backgroundSize: '16px 16px',
-                  backgroundPosition: '0 0, 0 8px, 8px -8px, -8px 0px',
-                }}
+                className="signing-chuky-caro flex items-center justify-center p-3 rounded-lg shadow-sm"
+                style={{ width: `${CROP_W}px`, maxWidth: '100%', aspectRatio: `${CROP_W} / ${CROP_H}`, border: '2px solid var(--color-primary)' }}
               >
                 <img
                   src={xacNhan.dataUrl}

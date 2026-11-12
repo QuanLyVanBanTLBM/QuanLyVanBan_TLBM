@@ -129,9 +129,7 @@ class PostgreSQLBackupRestoreDrill(unittest.TestCase):
         (cls.roots["signing"] / "documents").mkdir()
         (cls.roots["signing"] / "documents" / "synthetic.pdf").write_bytes(b"synthetic-signed-document")
         (cls.roots["ai"] / "docs").mkdir()
-        (cls.roots["ai"] / "chroma").mkdir()
         (cls.roots["ai"] / "docs" / "synthetic.md").write_text("synthetic knowledge base\n", encoding="utf-8")
-        (cls.roots["ai"] / "chroma" / "chroma.sqlite3").write_bytes(b"synthetic-vector-store")
         (cls.roots["ai"] / "doc_registry.json").write_text('{"synthetic": true}\n', encoding="utf-8")
 
         cls.pin_secret = f"synthetic-signing-key-{cls.suffix}-never-log"
@@ -581,7 +579,6 @@ class PostgreSQLBackupRestoreDrill(unittest.TestCase):
             b"synthetic-business-file",
         )
         self.assertEqual((self.restore_root / "ai/docs/synthetic.md").read_text(encoding="utf-8"), "synthetic knowledge base\n")
-        self.assertEqual((self.restore_root / "ai/chroma/chroma.sqlite3").read_bytes(), b"synthetic-vector-store")
         self.assertEqual((self.restore_root / "ai/doc_registry.json").read_text(encoding="utf-8"), '{"synthetic": true}\n')
         adapter = FilesystemStorageAdapter(root=self.restore_root / "signing")
         self.assertEqual(adapter.read_bytes(file_path), b"synthetic-signed-document")

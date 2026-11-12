@@ -28,6 +28,11 @@ class AIStreamingTests(TestCase):
         grant_codename(self.ai_user, "use_aiassistant")
         self.client = APIClient()
 
+    def tearDown(self):
+        super().tearDown()
+        from backend.services.ai_logging import _current_trace
+        _current_trace.set(None)
+
     def test_stream_requires_authentication(self):
         response = self.client.post("/api/ai/chat/stream", {"question": "Hello"}, format="json")
         self.assertEqual(response.status_code, 401)
@@ -80,6 +85,7 @@ class AIStreamingTests(TestCase):
         self.assertEqual(response.headers.get("Content-Type"), "text/event-stream; charset=utf-8")
         self.assertEqual(response.headers.get("Cache-Control"), "no-cache")
         self.assertEqual(response.headers.get("X-Accel-Buffering"), "no")
+        list(response.streaming_content)
 
     @patch("backend.services.rag_service.Settings")
     @patch("backend.services.rag_service.setup_llamaindex")

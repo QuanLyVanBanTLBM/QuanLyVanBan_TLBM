@@ -11,6 +11,7 @@
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 import * as pdfjsWorker from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs';
 import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
+import { giaoNhau, khungSangHopPdf, timNetDut } from './netDut';
 
 // Gán WorkerMessageHandler lên globalThis để pdf.js tự dùng fake worker nội bộ không cần nạp URL
 if (typeof globalThis !== 'undefined') {
@@ -109,8 +110,32 @@ export async function kiemTraPdfCoMatKhau(du_lieu: ArrayBuffer): Promise<boolean
  * Vẽ trang (1-based) vào canvas theo chiều rộng hiển thị; trả kích thước điểm ảnh CSS. `huy()` dừng lần vẽ đang chạy
  * (pdf.js không cho hai lần render cùng lúc trên một canvas: đổi kích thước hoặc vẽ lại phải hủy lần trước).
  * Lần vẽ bị hủy kết thúc bằng lỗi có `name === 'RenderingCancelledException'` (`laLoiHuyVe`).
+ * `vungChe` (khung ký, % trang, gốc trên-trái): nét đứt placeholder của PDF gốc giao với các vùng này bị vẽ đè nét trắng
+ * trên canvas (chỉ ảnh hiển thị; tệp gốc không đổi). Lỗi khi dò nét đứt không làm hỏng lần vẽ.
  */
-export function veTrang(pdf: TaiLieuPdf, so_trang: number, canvas: HTMLCanvasElement, rong: number) {
+export interface VungChe { x: number; y: number; w: number; h: number }
+
+async function cheNetDut(trang: pdfjs.PDFPageProxy, ctx: CanvasRenderingContext2D, ti_le: number, vungChe: VungChe[]) {
+  const goc = trang.getViewport({ scale: 1 });
+  const O = pdfjs.OPS as Record<string, number>;
+  const ol = await trang.getOperatorList();
+  const hopNet = timNetDut(ol.fnArray, ol.argsArray, {
+    save: O.save, restore: O.restore, transform: O.transform, setDash: O.setDash, constructPath: O.constructPath,
+    lenhToNet: [O.stroke, O.closeStroke, O.fillStroke, O.eoFillStroke, O.closeFillStroke, O.closeEOFillStroke],
+  }, goc.width * goc.height);
+  if (!hopNet.length) return;
+  const vung = vungChe.map((k) => khungSangHopPdf(k, goc.width, goc.height));
+  ctx.save();
+  ctx.strokeStyle = 'white';
+  ctx.lineWidth = 3 * ti_le;
+  hopNet.filter((h) => vung.some((v) => giaoNhau(h, v))).forEach((h) => {
+    // Hộp PDF (gốc dưới-trái) -> điểm ảnh canvas (gốc trên-trái)
+    ctx.strokeRect(h.x0 * ti_le, (goc.height - h.y1) * ti_le, (h.x1 - h.x0) * ti_le, (h.y1 - h.y0) * ti_le);
+  });
+  ctx.restore();
+}
+
+export function veTrang(pdf: TaiLieuPdf, so_trang: number, canvas: HTMLCanvasElement, rong: number, vungChe: VungChe[] = []) {
   let task: { cancel: () => void } | null = null;
   let da_huy = false;
   const xong = (async () => {
@@ -122,9 +147,17 @@ export function veTrang(pdf: TaiLieuPdf, so_trang: number, canvas: HTMLCanvasEle
     if (da_huy) throw Object.assign(new Error('huy'), { name: 'RenderingCancelledException' });
     canvas.width = Math.floor(viewport.width);
     canvas.height = Math.floor(viewport.height);
-    const render = trang.render({ canvas, canvasContext: canvas.getContext('2d'), viewport });
+    const ctx = canvas.getContext('2d');
+    const render = trang.render({ canvas, canvasContext: ctx, viewport });
     task = render;
     await render.promise;
+    if (vungChe.length && ctx) {
+      try {
+        await cheNetDut(trang, ctx, ti_le * dpr, vungChe);
+      } catch (err) {
+        console.warn('Không che được nét đứt placeholder của PDF', err);
+      }
+    }
     return { rong, cao: (goc.height * ti_le) };
   })();
   return {

@@ -161,6 +161,7 @@ class SqlDocumentSourceTests(TestCase):
         sql = cursor.executed[0][0]
         self.assertIn("transaction_read_only", role_cursor.executed[0][0])
         self.assertIn("pg_class", role_cursor.executed[0][0])
+        self.assertIn("ai_document_embedding", role_cursor.executed[0][0])
         self.assertIn("FROM ai_vanbanden", sql)
         self.assertEqual(cursor.executed[0][1], [[8]])
         self.assertEqual(attachment_cursor.executed[0][1], [[8]])

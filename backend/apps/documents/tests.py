@@ -1145,6 +1145,75 @@ class RestrictedDocumentSecurityIssue82Tests(TestCase):
         self.assertIsNotNone(removed_log)
         self.assertEqual(removed_log.user, self.creator)
 
+    def test_noibo_multipart_update_clears_recipients_and_supports_historical_year(self):
+        """VB thường hỗ trợ năm lịch sử (1890), xóa sạch đơn vị & cán bộ nhận khi PUT multipart rỗng; VB hạn chế vẫn chặn rỗng."""
+        from documents.models import VanBanDenDonViNhan
+
+        donvi = DonVi.objects.order_by("id").first()
+        self.assertIsNotNone(donvi)
+
+        client = APIClient()
+        client.force_authenticate(user=self.creator)
+
+        res_create = client.post(
+            "/api/documents/",
+            {
+                "loai": "DEN",
+                "nam": "1890",
+                "so_hieu": "05/NB-1890",
+                "trich_yeu": "Tài liệu lịch sử cần bảo tồn",
+                "pham_vi": "NOI_BO",
+                "don_vi_nhan": donvi.ten,
+                "nguoi_nhan": str(self.recipient1.id),
+            },
+            format="multipart",
+        )
+        self.assertEqual(res_create.status_code, status.HTTP_201_CREATED, res_create.data)
+        doc_id = res_create.data["id"]
+
+        doc = VanBanDen.objects.get(id=doc_id)
+        self.assertEqual(doc.nam, 1890)
+        self.assertEqual(VanBanDenDonViNhan.objects.filter(vanbanden=doc).count(), 1)
+        self.assertEqual(list(doc.nguoi_nhan.values_list("id", flat=True)), [self.recipient1.id])
+
+        res_years = client.get("/api/documents/years/?loai=DEN")
+        self.assertEqual(res_years.status_code, status.HTTP_200_OK)
+        self.assertIn(1890, res_years.data)
+
+        res_clear = client.put(
+            f"/api/documents/{doc_id}/",
+            {
+                "loai": "DEN",
+                "nam": "1890",
+                "so_hieu": "05/NB-1890",
+                "trich_yeu": "Tài liệu lịch sử đã gỡ toàn bộ phân phối",
+                "pham_vi": "NOI_BO",
+                "don_vi_nhan": "",
+                "nguoi_nhan": "",
+            },
+            format="multipart",
+        )
+        self.assertEqual(res_clear.status_code, status.HTTP_200_OK, res_clear.data)
+        doc.refresh_from_db()
+        self.assertEqual(VanBanDenDonViNhan.objects.filter(vanbanden=doc).count(), 0)
+        self.assertEqual(doc.nguoi_nhan.count(), 0)
+
+        res_han_che_fail = client.put(
+            f"/api/documents/{self.doc_han_che.id}/",
+            {
+                "loai": "DEN",
+                "nam": "2026",
+                "so_hieu": "01/HC-2026",
+                "trich_yeu": "Văn bản hạn chế mật nội bộ công ty",
+                "pham_vi": "HAN_CHE",
+                "nguoi_nhan": "",
+            },
+            format="multipart",
+        )
+        self.assertEqual(res_han_che_fail.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("nguoi_nhan", res_han_che_fail.data)
+        self.assertTrue(self.doc_han_che.nguoi_nhan.filter(id=self.recipient1.id).exists())
+
     def test_download_attachment_access_control_and_logging(self):
         """Tải file đính kèm văn bản hạn chế: Người được cấp tải được (ghi TAI_FILE), người lạ nhận 404 (ghi BI_TU_CHOI)."""
         simple_file = SimpleUploadedFile("mat_noi_bo.pdf", b"Secret PDF content", content_type="application/pdf")
@@ -2058,7 +2127,7 @@ class VanBanDiServiceTests(TestCase):
         wb = openpyxl.load_workbook(generate_excel_template("DI", "HAN_CHE"))
         ws = wb.active
         ws.append([
-            "123/TB-HC-OK", "Hạn chế", "22/09/2026", "22/09/2026",
+            2026, "123/TB-HC-OK", "Hạn chế", "22/09/2026", "22/09/2026",
             "Trích yếu hợp lệ cho văn bản hạn chế", "HS-TLM", "Báo cáo", "Ban Giám hiệu",
             dv.ten, self.recipient.username, "Hiệu trưởng", "Hiệu trưởng",
             "CON_HIEU_LUC", "", "Bao_cao_hc.pdf", "", ""

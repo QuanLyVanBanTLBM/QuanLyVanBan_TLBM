@@ -40,7 +40,7 @@ export function tenTepTaiVe(hoSoId: number, loai: LoaiTepTaiLieu | 'DA_KY', soLu
   const hoSo = `ho-so-${hoSoId}`;
   if (loai === 'DU_THAO') return `${hoSo}-ban-du-thao.pdf`;
   if (loai === 'HOAN_TAT') return `${hoSo}-ban-hoan-tat.pdf`;
-  if (loai === 'DA_KY') return `${hoSo}-da-ky.pdf`;
+  if (loai === 'DA_KY') return `${hoSo}-da-ky-tien-trinh.pdf`;
   return soLuot == null ? `${hoSo}-ban-trinh-ky.pdf` : `${hoSo}-luot-${soLuot}.pdf`;
 }
 

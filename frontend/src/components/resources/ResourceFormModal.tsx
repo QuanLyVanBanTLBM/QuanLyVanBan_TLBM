@@ -384,24 +384,34 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
     }
   }, [isOpen, initialData, categories, defaultAuthor, defaultCategoryId, defaultDonViId, defaultNoiBanHanh]);
 
-  // Tự động đồng bộ tên phòng ban và id phòng ban khi danh sách đơn vị được nạp
+  // Tự động đồng bộ id phòng ban khi danh sách đơn vị được nạp
   useEffect(() => {
     if (unitsList.length > 0) {
-      if (formData.don_vi_id && !formData.noi_ban_hanh) {
+      if (formData.noi_ban_hanh) {
+        const u = unitsList.find(
+          (unit) => unit.ten.trim().toLowerCase() === formData.noi_ban_hanh.trim().toLowerCase()
+        );
+        if (u && formData.don_vi_id !== u.id) {
+          setFormData((prev) => ({ ...prev, don_vi_id: u.id }));
+        }
+      } else if (formData.don_vi_id && !formData.noi_ban_hanh) {
         const u = unitsList.find((unit) => unit.id === formData.don_vi_id);
         if (u) {
           setFormData((prev) => ({ ...prev, noi_ban_hanh: u.ten }));
         }
-      } else if (!formData.don_vi_id && formData.noi_ban_hanh) {
-        const u = unitsList.find(
-          (unit) => unit.ten.trim().toLowerCase() === formData.noi_ban_hanh.trim().toLowerCase()
-        );
-        if (u) {
-          setFormData((prev) => ({ ...prev, don_vi_id: u.id }));
-        }
       }
     }
   }, [unitsList, formData.don_vi_id, formData.noi_ban_hanh]);
+
+  const matchedUnitByTen = useMemo(() => {
+    if (!formData.noi_ban_hanh) return null;
+    const lower = formData.noi_ban_hanh.trim().toLowerCase();
+    return unitsList.find((u) => u.ten.trim().toLowerCase() === lower) || null;
+  }, [unitsList, formData.noi_ban_hanh]);
+
+  const isCustomAuthority = Boolean(
+    formData.noi_ban_hanh && !matchedUnitByTen
+  );
 
   const unitSelectOptions = useMemo<SelectOption[]>(() => {
     const opts: SelectOption[] = unitsList.map((u) => ({
@@ -409,18 +419,15 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
       label: u.ten,
       group: u.khoi_ten || undefined,
     }));
-    if (
-      formData.noi_ban_hanh &&
-      !formData.don_vi_id &&
-      !unitsList.some((u) => u.ten.trim().toLowerCase() === formData.noi_ban_hanh.trim().toLowerCase())
-    ) {
+    if (isCustomAuthority && formData.noi_ban_hanh) {
       opts.unshift({
         value: 'custom',
-        label: `${formData.noi_ban_hanh} (Khác)`,
+        label: formData.noi_ban_hanh,
+        group: 'Cơ quan / Đơn vị khác',
       });
     }
     return opts;
-  }, [unitsList, formData.noi_ban_hanh, formData.don_vi_id]);
+  }, [unitsList, isCustomAuthority, formData.noi_ban_hanh]);
 
 
   // Đóng an toàn có xác nhận nếu đã chỉnh sửa dữ liệu
@@ -1126,17 +1133,25 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
                 <Select
                   id="field-noi_ban_hanh"
                   value={
-                    formData.don_vi_id
-                      ? String(formData.don_vi_id)
-                      : (formData.noi_ban_hanh
-                        ? (unitsList.find((u) => u.ten.trim().toLowerCase() === formData.noi_ban_hanh.trim().toLowerCase())?.id
-                          ? String(unitsList.find((u) => u.ten.trim().toLowerCase() === formData.noi_ban_hanh.trim().toLowerCase())?.id)
-                          : 'custom')
+                    formData.noi_ban_hanh
+                      ? (matchedUnitByTen
+                        ? String(matchedUnitByTen.id)
+                        : 'custom')
+                      : (formData.don_vi_id
+                        ? String(formData.don_vi_id)
                         : '')
                   }
                   onChange={(val) => {
                     setIsDirty(true);
                     if (val === 'custom') return;
+                    if (!val) {
+                      setFormData((prev) => ({
+                        ...prev,
+                        don_vi_id: null,
+                        noi_ban_hanh: '',
+                      }));
+                      return;
+                    }
                     const selected = unitsList.find((u) => String(u.id) === val);
                     setFormData((prev) => ({
                       ...prev,
@@ -1145,10 +1160,7 @@ export const ResourceFormModal: React.FC<ResourceFormModalProps> = ({
                     }));
                   }}
                   placeholder={t('resourceManagement.placeholderAuthoritySelect')}
-                  options={[
-                    { value: '', label: `-- ${t('resourceManagement.placeholderAuthoritySelect')} --` },
-                    ...unitSelectOptions,
-                  ]}
+                  options={unitSelectOptions}
                   leftIcon="fa-building"
                   searchable
                   clearable

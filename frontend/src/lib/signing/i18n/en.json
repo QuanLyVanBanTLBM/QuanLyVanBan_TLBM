@@ -237,7 +237,7 @@
     "goiYThayTep": "Leave empty to keep the current file; replacing increases the document version.",
     "danhSachTep": "Files",
     "banDuThao": "Draft document",
-    "banLuot": "Signing document",
+    "banLuot": "Original file (unsigned)",
     "banDaKy": "Signed document (in progress)",
     "bangChungJson": "Download evidence",
     "xemChiTiet": "View details"
@@ -621,6 +621,10 @@
     "chinhSuaLai": "Edit again",
     "dongYApDung": "Apply image",
     "ketQuaCat": "Cropped image",
-    "thuPhong": "Zoom"
+    "thuPhong": "Zoom",
+    "phongTo": "Zoom in",
+    "thuNho": "Zoom out",
+    "datLaiViTri": "Reset",
+    "huongDanCat": "Drag to move, scroll or pinch to zoom."
   }
 }

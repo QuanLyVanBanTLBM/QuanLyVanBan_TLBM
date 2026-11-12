@@ -17,9 +17,9 @@ ai_chat request_id=<id> status=<http> error_stage=<stage> error_reason=<reason> 
 |---|---|---|
 | `permission` | Kiểm tra quyền `use_aiassistant` | 403, `reason=no_ai_permission` |
 | `sql_source` | Đọc tài liệu được phép qua role `qlvb_readonly` | Nhiều nhánh lỗi nhất, xem bảng dưới |
-| `sql_index` | Đồng bộ chỉ mục Chroma cho từng tài liệu SQL | `reason` là tên exception |
+| `sql_index` | Đồng bộ chỉ mục pgvector cho từng tài liệu SQL | `reason` là tên exception |
 | `setup` | Khởi tạo LlamaIndex, embedding, LLM | Thiếu API key hoặc cấu hình model lỗi sẽ rơi vào đây |
-| `retrieval` | Truy xuất Chroma, lọc quyền | Không có `stage_ms` riêng; xem `hits` và `authz_hits` |
+| `retrieval` | Truy xuất pgvector, lọc quyền | Không có `stage_ms` riêng; xem `hits` và `authz_hits` |
 | `llm` | Gọi model sinh câu trả lời | `reason` là tên exception |
 | `ask_document` | Lỗi ngoài các stage trên | Ví dụ `match_business_sources` |
 
@@ -45,10 +45,13 @@ ai_chat request_id=<id> status=<http> error_stage=<stage> error_reason=<reason> 
 | `sql_reindexed` | Số tài liệu phải lập chỉ mục lại trong request này |
 | `sql_extraction_pending` | Số tài liệu còn tệp chưa trích xuất được văn bản |
 | `hits`, `authz_hits` | Số chunk trước và sau khi lọc quyền |
-| `fallback` | Có dùng truy xuất dự phòng từ Chroma hay không |
+| `fallback` | Có dùng truy xuất dự phòng từ pgvector hay không |
 | `target` | Request có tài liệu chỉ định hay không |
 | `sources` | Số nguồn đưa vào ngữ cảnh |
 | `answer_mode` | `llm`, `no_context`, `model_no_answer`, `conversational`, `inappropriate` |
+| `cache_hit` | `True` when an exact shared FAQ answer was served from Redis; `False` otherwise |
+
+The FAQ cache excludes requests with history, a selected file/category, or conversational intent. It stores answers only when every cited source is shared AI knowledge or a static business note; SQL-backed official documents and restricted categories are never cached. Entries expire after 12 hours and the namespace is bounded to 1,000 entries, 10 KiB per entry, and 10 MiB of serialized payload. Updating or removing shared AI knowledge invalidates the namespace without flushing Redis or Celery keys.
 
 Không ghi vào log: câu hỏi, lịch sử hội thoại, tên tệp, tiêu đề tài liệu, nội dung tài liệu.
 

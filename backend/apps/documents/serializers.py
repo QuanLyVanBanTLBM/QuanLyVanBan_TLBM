@@ -668,7 +668,7 @@ class DocumentCreateUpdateSerializer(serializers.Serializer):
 
     id = serializers.IntegerField(read_only=True)
     loai = serializers.ChoiceField(choices=LoaiVanBan.choices, default=LoaiVanBan.DEN)
-    nam = serializers.IntegerField(required=False)
+    nam = serializers.IntegerField(required=False, min_value=1, max_value=32767)
     so_hieu = serializers.CharField(max_length=255)
     so_thu_tu = serializers.IntegerField(read_only=True)
     ngay_den = serializers.DateTimeField(required=False, allow_null=True)
@@ -687,7 +687,7 @@ class DocumentCreateUpdateSerializer(serializers.Serializer):
     pham_vi = serializers.ChoiceField(choices=PhamVi.choices, default=PhamVi.NOI_BO, required=False)
     hien_thi = serializers.BooleanField(default=True)
     gui_mail_toan_he_thong = serializers.BooleanField(default=False)
-    don_vi_nhan = serializers.CharField(max_length=500, required=False, allow_blank=True, default="")
+    don_vi_nhan = serializers.CharField(max_length=2000, required=False, allow_blank=True, default="")
     nguoi_nhan = TolerantPrimaryKeyRelatedField(
         many=True,
         queryset=User.objects.all(),
@@ -910,15 +910,9 @@ class DocumentCreateUpdateSerializer(serializers.Serializer):
         try:
             from organizations.models import DonVi
             from .models import VanBanDenDonViNhan, VanBanDiDonViNhan
+            from .services import _resolve_don_vi_list
 
-            unit_names = [n.strip() for n in str(don_vi_name).split(",") if n.strip()] if don_vi_name else []
-            dvs = []
-            if unit_names:
-                for uname in unit_names:
-                    dv = DonVi.objects.filter(ten__iexact=uname).first()
-                    if dv and dv not in dvs:
-                        dvs.append(dv)
-
+            dvs, _ = _resolve_don_vi_list(don_vi_name, DonVi)
             kind = getattr(instance, "document_kind", "")
             if kind in ("vanbanden", "vanbanmat"):
                 VanBanDenDonViNhan.objects.filter(vanbanden=instance).delete()

@@ -270,6 +270,27 @@ CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 # Reduce broker requests while the queue is idle; task pickup can wait up to 10s.
 CELERY_BROKER_TRANSPORT_OPTIONS = {"polling_interval": 10}
 
+# FAQ answers share the existing Redis endpoint, under their own Django cache prefix.
+# The application enforces a smaller per-namespace budget; never change Redis-wide
+# maxmemory policy because Celery uses the same server.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "qlvb-default-local",
+    },
+    "ai_faq": {
+        "BACKEND": (
+            "django.core.cache.backends.redis.RedisCache"
+            if REDIS_URL
+            else "django.core.cache.backends.locmem.LocMemCache"
+        ),
+        "LOCATION": REDIS_URL or "qlvb-ai-faq-local",
+        "KEY_PREFIX": "qlvb:ai-faq",
+        "TIMEOUT": 12 * 60 * 60,
+        "OPTIONS": {"MAX_ENTRIES": 1000} if not REDIS_URL else {},
+    }
+}
+
 # Email (Django 6.1 MAILERS)
 # Keep console delivery until an SMTP host is explicitly configured.
 email_host = os.getenv("EMAIL_HOST", "").strip()
