@@ -562,7 +562,7 @@ export const MeetingsPage: React.FC = () => {
           {/* Date Selector & Filters Bar */}
           <div className="bg-surface p-4 rounded-2xl border border-border-subtle shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
             {/* Bộ điều khiển ngày */}
-            <div className="flex items-center gap-2 w-full md:w-auto">
+            <div className="flex items-center gap-2 w-full md:w-auto shrink-0">
               <Button
                 variant="secondary"
                 size="sm"
@@ -575,7 +575,7 @@ export const MeetingsPage: React.FC = () => {
                 variant="secondary"
                 size="sm"
                 onClick={handleSetToday}
-                className="font-bold"
+                className="font-bold whitespace-nowrap shrink-0"
               >
                 {t('meetings.today')}
               </Button>
@@ -698,7 +698,7 @@ export const MeetingsPage: React.FC = () => {
                   >
                     <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                       {/* Cột trái: Khung giờ & Tên phòng */}
-                      <div className="flex items-start gap-4">
+                      <div className="flex items-start gap-4 flex-1 min-w-0">
                         <div className="w-24 shrink-0 text-center bg-surface-elevated p-2.5 rounded-xl border border-border-subtle">
                           <p className="text-xs font-bold text-primary">{timeRangeStr}</p>
                           <p className="text-[10px] text-muted mt-0.5">
@@ -706,7 +706,7 @@ export const MeetingsPage: React.FC = () => {
                           </p>
                         </div>
 
-                        <div className="space-y-1">
+                        <div className="space-y-1 flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-black text-base text-main">{booking.title}</span>
                             {booking.trang_thai === 'CONFIRMED' && (
@@ -728,10 +728,12 @@ export const MeetingsPage: React.FC = () => {
 
                           {/* Thông tin phòng & Người đặt */}
                           <div className="flex items-center gap-4 text-xs text-secondary flex-wrap pt-1">
-                            <span className="flex items-center gap-1.5 font-bold text-primary">
-                              <i className="fa-solid fa-door-open" />
-                              {booking.room_detail?.name || t('meetings.table.roomFallback', { id: booking.room })}
-                              {booking.room_detail?.location && ` (${booking.room_detail.location})`}
+                            <span className="flex items-center gap-1.5 font-bold text-primary min-w-0">
+                              <i className="fa-solid fa-door-open shrink-0" />
+                              <span className="break-words">
+                                {booking.room_detail?.name || t('meetings.table.roomFallback', { id: booking.room })}
+                                {booking.room_detail?.location && ` (${booking.room_detail.location})`}
+                              </span>
                             </span>
 
                             {(() => {
@@ -790,11 +792,12 @@ export const MeetingsPage: React.FC = () => {
                       </div>
 
                       {/* Cột phải: Thao tác */}
-                      <div className="flex items-center gap-2 self-end lg:self-center flex-wrap">
+                      <div className="flex items-center justify-end gap-2 self-end lg:self-center shrink-0 flex-wrap sm:flex-nowrap lg:w-80">
                         <Button
                           variant="secondary"
                           size="sm"
                           icon="fa-circle-info"
+                          className="whitespace-nowrap shrink-0"
                           onClick={() => setSelectedBookingDetail(booking)}
                         >
                           {t('meetings.viewDetailBtn')}
@@ -806,6 +809,7 @@ export const MeetingsPage: React.FC = () => {
                               variant="secondary"
                               size="sm"
                               icon="fa-pen-to-square"
+                              className="whitespace-nowrap shrink-0"
                               onClick={() => {
                                 setBookingToEdit(booking);
                                 setIsBookingModalOpen(true);
@@ -817,6 +821,7 @@ export const MeetingsPage: React.FC = () => {
                               variant="danger"
                               size="sm"
                               icon="fa-ban"
+                              className="whitespace-nowrap shrink-0"
                               onClick={() => {
                                 setCancellingBooking(booking);
                                 setCancelReason('');
@@ -856,7 +861,7 @@ export const MeetingsPage: React.FC = () => {
 
             <div className="flex items-center gap-3 w-full md:w-auto flex-wrap">
               {/* Bộ điều khiển ngày của Danh mục phòng họp */}
-              <div className="flex items-center gap-1.5 w-full sm:w-auto">
+              <div className="flex items-center gap-1.5 w-full sm:w-auto shrink-0">
                 <Button
                   variant="secondary"
                   size="sm"
@@ -870,7 +875,7 @@ export const MeetingsPage: React.FC = () => {
                   variant={roomsDate === todayStr ? 'primary' : 'secondary'}
                   size="sm"
                   onClick={() => setRoomsDate(todayStr)}
-                  className="font-bold text-xs h-9 px-3"
+                  className="font-bold text-xs h-9 px-3 whitespace-nowrap shrink-0"
                 >
                   {t('meetings.today')}
                 </Button>
