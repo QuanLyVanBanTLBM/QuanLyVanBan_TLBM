@@ -1,12 +1,23 @@
 """Small PostgreSQL/pgvector store used by the document RAG service."""
 import hashlib
 import json
+import re
+import unicodedata
 import uuid
 
 from django.db import connection, transaction
 
 TABLE = "ai_document_embedding"
 DIMENSIONS = 3072  # text-embedding-3-large (unchanged from the existing configuration)
+
+_VI_ACCENT_SRC = "áàảãạăắằẳẵặâấầẩẫậđéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵ"
+_VI_ACCENT_DST = "aaaaaaaaaaaaaaaaadeeeeeeeeeeeiiiiiooooooooooooooooouuuuuuuuuuuyyyyy"
+
+
+def _fold_vietnamese(text):
+    normalized = unicodedata.normalize("NFKD", str(text or "")).casefold()
+    without_marks = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    return re.sub(r"\s+", " ", without_marks.replace("đ", "d")).strip()
 
 
 def _vector_literal(values):
@@ -223,4 +234,68 @@ def similarity_search(query, embed_model, limit=6, filters=None):
     return [
         NodeWithScore(node=TextNode(text=text, metadata=_decode_metadata(metadata)), score=float(score))
         for text, metadata, score in rows
+    ]
+
+
+def keyword_search(keywords, limit=12, filters=None):
+    """Search chunks by normalized ASCII/Vietnamese keywords across content and file names."""
+    clean_terms = []
+    seen = set()
+    for term in (keywords or []):
+        folded = _fold_vietnamese(term)
+        if not folded or folded in seen:
+            continue
+        seen.add(folded)
+        clean_terms.append(folded)
+        if len(clean_terms) >= 12:
+            break
+    if not clean_terms:
+        return []
+
+    filter_sql, filter_params = _compile_filters(filters) if filters else ("TRUE", [])
+    searchable_expr = (
+        "translate(lower(coalesce(content_text, '') || ' ' "
+        "|| coalesce(metadata ->> 'parent_context', '') || ' ' "
+        "|| coalesce(metadata ->> 'file_name', '') || ' ' "
+        "|| coalesce(metadata ->> 'attachment_name', '')), %s, %s)"
+    )
+    filename_expr = (
+        "translate(lower(coalesce(metadata ->> 'file_name', '') || ' ' "
+        "|| coalesce(metadata ->> 'attachment_name', '')), %s, %s)"
+    )
+
+    score_cases = []
+    match_predicates = []
+    score_params = []
+    where_term_params = []
+    for term in clean_terms:
+        score_cases.append(f"CASE WHEN strpos({searchable_expr}, %s) > 0 THEN 1.0 ELSE 0.0 END")
+        score_params.extend((_VI_ACCENT_SRC, _VI_ACCENT_DST, term))
+        score_cases.append(f"CASE WHEN strpos({filename_expr}, %s) > 0 THEN 1.5 ELSE 0.0 END")
+        score_params.extend((_VI_ACCENT_SRC, _VI_ACCENT_DST, term))
+        match_predicates.append(f"strpos({searchable_expr}, %s) > 0")
+        where_term_params.extend((_VI_ACCENT_SRC, _VI_ACCENT_DST, term))
+
+    score_expr = " + ".join(score_cases)
+    any_match_sql = " OR ".join(match_predicates)
+    where_clause = f"({filter_sql}) AND ({any_match_sql})" if filters else any_match_sql
+    sql = (
+        f"SELECT content_text, metadata, ({score_expr}) AS kw_score "
+        f"FROM {TABLE} WHERE {where_clause} "
+        f"ORDER BY kw_score DESC, updated_at DESC LIMIT %s"
+    )
+    params = [*score_params, *filter_params, *where_term_params, max(1, int(limit))]
+    with connection.cursor() as cursor:
+        cursor.execute(sql, params)
+        rows = cursor.fetchall()
+    from llama_index.core.schema import NodeWithScore, TextNode
+
+    max_possible = max(len(clean_terms) * 2.5, 1.0)
+    return [
+        NodeWithScore(
+            node=TextNode(text=text, metadata=_decode_metadata(metadata)),
+            score=min(0.85, 0.18 + 0.67 * (float(kw_score) / max_possible)),
+        )
+        for text, metadata, kw_score in rows
+        if float(kw_score or 0) > 0
     ]
