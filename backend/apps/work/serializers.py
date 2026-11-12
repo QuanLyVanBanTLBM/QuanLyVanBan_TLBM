@@ -223,6 +223,7 @@ class TaskListSerializer(serializers.ModelSerializer):
             "canEdit": obj.can_edit(user),
             "canDelete": obj.can_delete(user),
             "canExtend": obj.can_extend(user),
+            "canReview": obj._can_approve(user),
             "canApprove": obj.can_approve(user),
             "canUnapprove": obj.can_unapprove(user),
         }
