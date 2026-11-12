@@ -8,6 +8,7 @@ from unittest.mock import patch
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.core import mail
+from django.core import signing
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.core.management.base import CommandError
@@ -22,7 +23,9 @@ from rest_framework.test import APIClient
 from accounts.models import Position
 from birthdays.models import BirthdayEmailLog, BirthdayEmailStatus, BirthdayWish
 from birthdays.services import (
+    can_retry_manually,
     generate_birthday_card_token,
+    generate_birthday_card_url,
     generate_birthday_email_html,
     generate_birthday_email_text,
     is_birthday_on_date,
@@ -33,6 +36,7 @@ from organizations.models import DonVi, KhoiKhuVuc
 Employee = get_user_model()
 
 
+@override_settings(SIGNING_FRONTEND_URL="https://staging-quanlyvanban.bhbl.vn")
 class BirthdaySystemTests(TestCase):
     def setUp(self):
         self.client = APIClient()
@@ -352,8 +356,86 @@ class BirthdaySystemTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.json()["error"], "birthdays.messages.invalidDate")
 
+    def test_birthday_email_logs_api_lists_unprocessed_and_late_recovery_rows(self):
+        self.client.force_authenticate(user=self.emp_admin)
+        target_date = date(2026, 5, 20)
+        unprocessed = Employee.objects.create_user(
+            username="birthday-unprocessed",
+            password="password123",
+            email="unprocessed@example.test",
+            ho_ten="Chưa xử lý",
+            ngay_sinh=date(1990, 5, 20),
+            don_vi=self.don_vi,
+            chuc_vu=self.chuc_vu,
+            is_active=True,
+        )
+        recovered = Employee.objects.create_user(
+            username="birthday-recovered",
+            password="password123",
+            email="recovered@example.test",
+            ho_ten="Đã gửi bù",
+            ngay_sinh=date(1990, 5, 20),
+            don_vi=self.don_vi,
+            chuc_vu=self.chuc_vu,
+            is_active=True,
+        )
+        recovered_log = BirthdayEmailLog.objects.create(
+            employee=recovered,
+            sent_date=target_date,
+            sent_at=datetime(2026, 5, 21, 1, 0, tzinfo=dt_timezone.utc),
+            recipient_email=recovered.email,
+            subject="Thư gửi bù",
+            trang_thai=BirthdayEmailStatus.SUCCESS,
+        )
+
+        response = self.client.get(reverse("birthdays:logs"), {"date": target_date.isoformat()})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        rows = response.json()["logs"]
+        unprocessed_row = next(row for row in rows if row["employee_id"] == unprocessed.pk)
+        recovered_row = next(row for row in rows if row["id"] == recovered_log.pk)
+        self.assertIsNone(unprocessed_row["id"])
+        self.assertEqual(unprocessed_row["trang_thai"], "NOT_PROCESSED")
+        self.assertFalse(unprocessed_row["can_retry"])
+        self.assertEqual(recovered_row["trang_thai"], BirthdayEmailStatus.SUCCESS)
+        self.assertEqual(recovered_row["sent_date"], "20/05/2026")
+
+        filtered = self.client.get(
+            reverse("birthdays:logs"),
+            {"date": target_date.isoformat(), "trang_thai": "NOT_PROCESSED"},
+        )
+        self.assertEqual(filtered.status_code, status.HTTP_200_OK)
+        self.assertTrue(all(row["trang_thai"] == "NOT_PROCESSED" for row in filtered.json()["logs"]))
+        self.assertIn(unprocessed.pk, {row["employee_id"] for row in filtered.json()["logs"]})
+
+    def test_birthday_email_logs_api_explains_invalid_retry_recipient(self):
+        self.client.force_authenticate(user=self.emp_admin)
+        self.emp_staff.email = "not-an-email"
+        self.emp_staff.save(update_fields=["email"])
+        selected_date = timezone.localdate()
+        log = BirthdayEmailLog.objects.create(
+            employee=self.emp_staff,
+            sent_date=selected_date,
+            sent_at=timezone.now(),
+            recipient_email="not-an-email",
+            subject="Thư sinh nhật",
+            trang_thai=BirthdayEmailStatus.FAILED,
+        )
+
+        response = self.client.get(reverse("birthdays:logs"), {"date": selected_date.isoformat()})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        row = next(item for item in response.json()["logs"] if item["id"] == log.pk)
+        self.assertFalse(row["can_retry"])
+        self.assertIsNone(row["current_recipient"])
+        self.assertEqual(row["retry_block_reason"], "invalidEmail")
+
     def test_public_birthday_card_api_returns_only_signed_card_fields(self):
         token = generate_birthday_card_token(self.emp_staff)
+        self.assertEqual(
+            signing.loads(token, salt="birthdays.animated-card"),
+            {"employee_id": self.emp_staff.pk},
+        )
 
         response = self.client.post(
             reverse("birthdays:birthday_card"),
@@ -370,6 +452,46 @@ class BirthdaySystemTests(TestCase):
         self.assertNotIn("email", card)
         self.assertEqual(response["Cache-Control"], "private, no-store")
 
+    @override_settings(BIRTHDAY_CARD_BASE_URL="https://example.test/birthday-card.html")
+    def test_public_card_token_expires_after_configured_lifetime(self):
+        token = generate_birthday_card_token(self.emp_staff)
+        with patch("birthdays.services.BIRTHDAY_CARD_TOKEN_MAX_AGE_SECONDS", -1):
+            response = self.client.post(
+                reverse("birthdays:birthday_card"), {"token": token}, format="json",
+            )
+        self.assertEqual(response.status_code, status.HTTP_410_GONE)
+
+    @override_settings(
+        BIRTHDAY_CARD_BASE_URL="https://example.test/birthday-card.html",
+        SIGNING_FRONTEND_URL="https://example.test",
+    )
+    def test_layout_ids_map_to_matching_public_card_pages(self):
+        for layout in (f"{value:02d}" for value in range(1, 11)):
+            with self.subTest(layout=layout):
+                self.assertTrue(
+                    generate_birthday_card_url(self.emp_staff, layout)
+                    .startswith(f"https://example.test/birthday-cards/{layout}.html#token=")
+                )
+
+    @override_settings(DEBUG=False, BIRTHDAY_CARD_BASE_URL="", SIGNING_FRONTEND_URL="http://localhost:5173")
+    def test_production_card_url_rejects_localhost(self):
+        from django.core.exceptions import ImproperlyConfigured
+
+        with self.assertRaises(ImproperlyConfigured):
+            generate_birthday_card_url(self.emp_staff, "01")
+
+    @override_settings(
+        DEBUG=False,
+        BIRTHDAY_CARD_BASE_URL="",
+        SIGNING_FRONTEND_URL="https://staging-quanlyvanban.bhbl.vn",
+    )
+    def test_staging_card_url_uses_public_https_frontend(self):
+        self.assertTrue(
+            generate_birthday_card_url(self.emp_staff, "10").startswith(
+                "https://staging-quanlyvanban.bhbl.vn/birthday-cards/10.html#token="
+            )
+        )
+
     def test_public_birthday_card_api_rejects_invalid_token(self):
         response = self.client.post(
             reverse("birthdays:birthday_card"),
@@ -379,20 +501,36 @@ class BirthdaySystemTests(TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    @override_settings(BIRTHDAY_CARD_BASE_URL="https://example.test/birthday-card.html")
+    def test_public_birthday_card_api_rejects_a_tampered_signed_token(self):
+        token = generate_birthday_card_token(self.emp_staff)
+        response = self.client.post(
+            reverse("birthdays:birthday_card"),
+            {"token": f"{token}tampered"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @override_settings(
+        BIRTHDAY_CARD_BASE_URL="https://example.test/birthday-card.html",
+        SIGNING_FRONTEND_URL="https://example.test",
+    )
     def test_birthday_email_includes_card_button_and_plain_text_link(self):
         html = generate_birthday_email_html(self.emp_staff)
         text = generate_birthday_email_text(self.emp_staff)
 
-        self.assertIn('href="https://example.test/birthday-card.html#token=', html)
-        self.assertIn("Mở thiệp chúc mừng sinh nhật", html)
-        self.assertIn("Mở thiệp chúc mừng sinh nhật: https://example.test/birthday-card.html#token=", text)
+        card_url = 'https://example.test/birthday-cards/01.html#token='
+        self.assertIn(f'href="{card_url}', html)
+        self.assertIn("🎁 Mở thiệp sinh nhật 3D", html)
+        self.assertIn(f"🎁 Mở thiệp sinh nhật 3D: {card_url}", text)
+        self.assertNotRegex(html, r"(?is)<script\b|<iframe\b|<canvas\b|@keyframes|\banimation\s*:|\btransform\s*:")
+        self.assertIn("Chúc mừng sinh nhật", html)
 
     @override_settings(BIRTHDAY_CARD_BASE_URL="", SIGNING_FRONTEND_URL="https://example.test")
     def test_birthday_card_url_uses_shared_frontend_url_by_default(self):
         html = generate_birthday_email_html(self.emp_staff)
 
-        self.assertIn('href="https://example.test/birthday-card.html#token=', html)
+        self.assertIn('href="https://example.test/birthday-cards/01.html#token=', html)
 
     def test_birthday_wishes_route_is_not_exposed(self):
         """Issue #23 không cung cấp API lời chúc thủ công; model vẫn được giữ theo DDL."""
@@ -504,16 +642,101 @@ class BirthdaySystemTests(TestCase):
         log = BirthdayEmailLog.objects.get(employee=self.emp_staff, sent_date=target_date)
         self.assertEqual(log.trang_thai, BirthdayEmailStatus.FAILED)
         self.assertTrue(log.error_message.startswith("Bỏ qua:"))
-        self.assertEqual(results["skipped_count"], 1)
+        self.assertEqual(results["failed_count"], 1)
+        self.assertEqual(results["skipped_count"], 0)
+        self.assertFalse(can_retry_manually(log))
         self.assertNotIn("not-an-email", [message.to[0] for message in mail.outbox])
 
-    @override_settings(BRAND_NAME="Tên thương hiệu kiểm thử", ORGANIZATION_NAME="Đơn vị kiểm thử")
+    @override_settings(
+        MAILERS={"default": {"BACKEND": "django.core.mail.backends.locmem.EmailBackend"}},
+        DEFAULT_FROM_EMAIL="noreply@example.test",
+    )
+    def test_empty_email_is_a_failed_delivery_and_not_manually_retryable(self):
+        self.emp_staff.email = ""
+        self.emp_staff.save(update_fields=["email"])
+
+        results = send_automated_birthday_emails(
+            target_date=date(2026, 5, 20),
+            allow_test_email_backend=True,
+            username=self.emp_staff.username,
+        )
+
+        log = BirthdayEmailLog.objects.get(employee=self.emp_staff, sent_date=date(2026, 5, 20))
+        self.assertEqual(log.trang_thai, BirthdayEmailStatus.FAILED)
+        self.assertEqual(results["failed_count"], 1)
+        self.assertFalse(can_retry_manually(log))
+        self.assertEqual(mail.outbox, [])
+
+    @override_settings(
+        MAILERS={"default": {"BACKEND": "django.core.mail.backends.locmem.EmailBackend"}},
+        DEFAULT_FROM_EMAIL="noreply@example.test",
+    )
+    def test_unknown_smtp_exception_is_uncertain_and_is_not_retried(self):
+        target_date = date(2026, 5, 20)
+        with patch("birthdays.services.send_mail", side_effect=ConnectionError("connection lost")) as send:
+            results = send_automated_birthday_emails(
+                target_date=target_date,
+                max_retries=3,
+                allow_test_email_backend=True,
+                username=self.emp_staff.username,
+            )
+            log = BirthdayEmailLog.objects.get(employee=self.emp_staff, sent_date=target_date)
+            self.assertEqual(log.trang_thai, BirthdayEmailStatus.FAILED)
+            self.assertTrue(log.delivery_uncertain)
+            self.assertEqual(results["failed_count"], 1)
+
+            rerun = send_automated_birthday_emails(
+                target_date=target_date,
+                allow_test_email_backend=True,
+                username=self.emp_staff.username,
+            )
+            self.assertEqual(rerun["sent_count"], 0)
+            self.assertEqual(rerun["skipped_count"], 1)
+            self.assertEqual(send.call_count, 1)
+
+    @override_settings(
+        BRAND_NAME="Tên thương hiệu kiểm thử",
+        ORGANIZATION_NAME="Đơn vị kiểm thử",
+        SIGNING_FRONTEND_URL="https://staging-quanlyvanban.bhbl.vn",
+    )
     def test_email_uses_configured_branding(self):
         html = generate_birthday_email_html(self.emp_staff)
         self.assertIn("Tên thương hiệu kiểm thử", html)
         self.assertIn("Đơn vị kiểm thử", html)
         self.assertNotIn("Ban Giám hiệu", html)
         self.assertNotIn("Tài liệu Mật", html)
+
+    @override_settings(
+        MAILERS={"default": {"BACKEND": "django.core.mail.backends.locmem.EmailBackend"}},
+        BIRTHDAY_CARD_BASE_URL="https://example.test/birthday-card.html",
+        SIGNING_FRONTEND_URL="https://example.test",
+        DEFAULT_FROM_EMAIL="noreply@example.test",
+    )
+    def test_automatic_email_uses_email_safe_renderer_and_matching_web_card(self):
+        staff = Employee.objects.create_user(
+            username="automatic-card-recipient",
+            email="recipient@example.test",
+            ho_ten="Nhân viên sinh nhật",
+            ngay_sinh=date(1990, 5, 20),
+            don_vi=self.don_vi,
+            chuc_vu=self.chuc_vu,
+            is_active=True,
+        )
+        mail.outbox.clear()
+
+        results = send_automated_birthday_emails(
+            target_date=date(2026, 5, 20),
+            allow_test_email_backend=True,
+            username=staff.username,
+        )
+
+        self.assertEqual(results["sent_count"], 1)
+        log = BirthdayEmailLog.objects.get(employee=staff)
+        html = mail.outbox[-1].alternatives[0].content
+        card_url = f'https://example.test/birthday-cards/{log.delivery_snapshot["layout"]}.html#token='
+        self.assertIn(f'href="{card_url}', html)
+        self.assertNotRegex(html, r"(?is)<script\b|<iframe\b|<canvas\b|@keyframes|\banimation\s*:|\btransform\s*:")
+        self.assertEqual(log.delivery_snapshot["html"], html)
 
     @override_settings(
         MAILERS={"default": {"BACKEND": "django.core.mail.backends.locmem.EmailBackend"}},
@@ -604,8 +827,54 @@ class BirthdaySystemTests(TestCase):
         self.assertEqual(log.employee_id, self.emp_staff.pk)
         self.assertEqual(log.trang_thai, BirthdayEmailStatus.SUCCESS)
 
+    @override_settings(
+        TIME_ZONE="Asia/Ho_Chi_Minh",
+        MAILERS={"default": {"BACKEND": "django.core.mail.backends.locmem.EmailBackend"}},
+        DEFAULT_FROM_EMAIL="noreply@example.test",
+    )
+    def test_command_without_date_uses_vietnam_local_calendar_day(self):
+        from datetime import datetime, timezone as dt_timezone
+
+        with patch(
+            "birthdays.management.commands.send_birthday_emails.timezone.now",
+            return_value=datetime(2026, 5, 19, 17, 1, tzinfo=dt_timezone.utc),
+        ):
+            call_command("send_birthday_emails", "--allow-locmem")
+
+        log = BirthdayEmailLog.objects.get(employee=self.emp_staff, sent_date=date(2026, 5, 20))
+        self.assertEqual(log.delivery_snapshot["trigger_source"], "SCHEDULED")
+
+    @override_settings(
+        MAILERS={"default": {"BACKEND": "django.core.mail.backends.locmem.EmailBackend"}},
+        DEFAULT_FROM_EMAIL="noreply@example.test",
+    )
+    def test_date_only_command_recovery_processes_full_day_and_skips_success(self):
+        mail.outbox.clear()
+        target_date = date(2026, 5, 20)
+        already_sent = BirthdayEmailLog.objects.create(
+            employee=self.emp_staff,
+            sent_date=target_date,
+            recipient_email=self.emp_staff.email,
+            subject="Đã gửi trước đó",
+            trang_thai=BirthdayEmailStatus.SUCCESS,
+        )
+
+        call_command("send_birthday_emails", "--date=2026-05-20", "--allow-locmem")
+
+        already_sent.refresh_from_db()
+        self.assertEqual(already_sent.trang_thai, BirthdayEmailStatus.SUCCESS)
+        self.assertNotIn(self.emp_staff.email, [recipient for message in mail.outbox for recipient in message.to])
+        self.assertTrue(
+            all(
+                log.delivery_snapshot.get("trigger_source") == "RECOVERY"
+                for log in BirthdayEmailLog.objects.filter(sent_date=target_date, trang_thai=BirthdayEmailStatus.SUCCESS)
+                .exclude(pk=already_sent.pk)
+            )
+        )
+
 
 @skipUnlessDBFeature("supports_transactions", "has_select_for_update")
+@override_settings(SIGNING_FRONTEND_URL="https://staging-quanlyvanban.bhbl.vn")
 class BirthdayEmailConcurrencyTests(TransactionTestCase):
     """The delivery claim must remain single-writer on databases with row locks."""
 
