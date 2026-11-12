@@ -16,6 +16,7 @@ from .models import BirthdayEmailLog, BirthdayEmailStatus
 from .services import (
     can_retry_manually,
     get_eligible_automated_birthday_employees,
+    is_birthday_on_date,
     load_birthday_card_token,
     retry_block_reason,
     serialize_staff_birthday,

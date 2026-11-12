@@ -36,6 +36,7 @@ from organizations.models import DonVi, KhoiKhuVuc
 Employee = get_user_model()
 
 
+@override_settings(SIGNING_FRONTEND_URL="https://staging-quanlyvanban.bhbl.vn")
 class BirthdaySystemTests(TestCase):
     def setUp(self):
         self.client = APIClient()
@@ -500,6 +501,16 @@ class BirthdaySystemTests(TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_public_birthday_card_api_rejects_a_tampered_signed_token(self):
+        token = generate_birthday_card_token(self.emp_staff)
+        response = self.client.post(
+            reverse("birthdays:birthday_card"),
+            {"token": f"{token}tampered"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     @override_settings(
         BIRTHDAY_CARD_BASE_URL="https://example.test/birthday-card.html",
         SIGNING_FRONTEND_URL="https://example.test",
@@ -647,6 +658,7 @@ class BirthdaySystemTests(TestCase):
         results = send_automated_birthday_emails(
             target_date=date(2026, 5, 20),
             allow_test_email_backend=True,
+            username=self.emp_staff.username,
         )
 
         log = BirthdayEmailLog.objects.get(employee=self.emp_staff, sent_date=date(2026, 5, 20))
@@ -862,6 +874,7 @@ class BirthdaySystemTests(TestCase):
 
 
 @skipUnlessDBFeature("supports_transactions", "has_select_for_update")
+@override_settings(SIGNING_FRONTEND_URL="https://staging-quanlyvanban.bhbl.vn")
 class BirthdayEmailConcurrencyTests(TransactionTestCase):
     """The delivery claim must remain single-writer on databases with row locks."""
 

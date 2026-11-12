@@ -118,7 +118,9 @@ class ManualBirthdayEmailTests(TestCase):
         self.assertEqual(log.sent_date, date(self.year, 5, 20))
         self.assertEqual(log.last_operator, self.admin.username)
         self.assertEqual(log.delivery_source, "MANUAL")
+        self.assertEqual(log.delivery_snapshot["html"], preview["html"])
         self.assertEqual(log.delivery_snapshot["html"], mail.outbox[0].alternatives[0].content)
+        self.assertIn('href="https://example.test/birthday-cards/01.html#token=', preview["html"])
         self.assertEqual(len(mail.outbox), 1)
         Employee.objects.filter(pk=self.leader.pk).update(ngay_sinh=date(1980, 5, 21))
         self.assertEqual(self.send(self.preview()).status_code, 409)
@@ -129,6 +131,7 @@ class ManualBirthdayEmailTests(TestCase):
         with patch("birthdays.services.send_mail", side_effect=SMTPDataError(550, b"Rejected")):
             response = self.send(preview)
         log = BirthdayEmailLog.objects.get(employee=self.leader)
+        snapshot_html = log.delivery_snapshot["html"]
         self.assertTrue(response.data["log"]["can_retry"])
         Employee.objects.filter(pk=self.leader.pk).update(email="corrected@example.test", ho_ten="Tên đã đổi")
         url = reverse("birthdays:retry_email", args=[log.pk])
@@ -136,6 +139,8 @@ class ManualBirthdayEmailTests(TestCase):
         self.assertEqual(self.client.post(url, {"recipient": "corrected@example.test"}, format="json").status_code, 200)
         self.assertEqual(mail.outbox[0].to, ["corrected@example.test"])
         self.assertEqual(mail.outbox[0].body, log.delivery_snapshot["text"])
+        self.assertEqual(mail.outbox[0].alternatives[0].content, snapshot_html)
+        self.assertIn('href="https://example.test/birthday-cards/01.html#token=', snapshot_html)
 
     @patch("birthdays.manual_views.require_delivery_backend")
     def test_inactive_employee_retry_is_hidden_and_rejected(self, _backend):
