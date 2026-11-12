@@ -68,12 +68,19 @@ LLM_FALLBACK_ANSWER = (
     "Không gọi được model để tạo câu trả lời hoàn chỉnh. "
     "Dưới đây là các đoạn tài liệu liên quan nhất."
 )
-MAX_VISIBLE_SOURCES = 4
+MAX_VISIBLE_SOURCES = 6
+MAX_CONTEXT_CHARS = 12000
 SOURCE_PREVIEW_LENGTH = 180
 SOURCE_STOPWORDS = {
     "cua", "cac", "cho", "voi", "trong", "ngoai", "nhung", "duoc", "the",
     "nay", "kia", "la", "va", "hoac", "thi", "mot", "ve", "tu", "den",
     "what", "when", "where", "which", "that", "this", "are", "the",
+}
+HYBRID_STOPWORDS = SOURCE_STOPWORDS | {
+    "ban", "toi", "minh", "anh", "chi", "em", "ho", "no", "ay", "do", "day",
+    "gi", "nao", "sao", "vay", "nhu", "the", "co", "khong", "da", "dang", "se",
+    "nhieu", "it", "them", "giup", "hoi", "tim", "xem", "neu", "boi", "vi",
+    "thu", "is", "was", "were", "does", "did", "can", "about", "from", "with",
 }
 INAPPROPRIATE_WORDS = {
     "fuck", "fucking", "shit", "bitch", "asshole", "dick", "pussy",
@@ -1119,7 +1126,7 @@ def read_document_pages(file_path: Path):
 
     raise ValueError(
         f"Định dạng '{suffix}' không được hỗ trợ. "
-        "Hỗ trợ: PDF, DOCX, TXT, CSV, PPTX, MD, HTML, JSON, XML, "
+        "Hỗ trợ: PDF, DOC, DOCX, TXT, CSV, PPTX, MD, HTML, JSON, XML, "
         "PNG, JPG, JPEG, WEBP, BMP, TIFF, GIF"
     )
 
@@ -1371,6 +1378,7 @@ def build_context_from_sources(sources):
 
     context_blocks = []
     global_idx = 1
+    total_chars = 0
 
     for file_name, file_sources in file_blocks.items():
         # Ghép tất cả context của cùng file, bỏ đoạn trùng lặp
@@ -1380,8 +1388,11 @@ def build_context_from_sources(sources):
         for s in file_sources:
             ctx = s["context"].strip()
             if ctx and ctx not in seen_texts:
+                if total_chars + len(ctx) > MAX_CONTEXT_CHARS and context_blocks:
+                    continue
                 seen_texts.add(ctx)
                 merged_parts.append(ctx)
+                total_chars += len(ctx)
 
         if not merged_parts:
             continue
@@ -1651,6 +1662,21 @@ def extract_target_from_question(
                 base_part = fn.split("_")[-1].lower()
                 if len(base_part) > 4 and re.search(rf"(?<!\w){re.escape(base_part)}(?!\w)", q):
                     return fn
+        # 3. Khớp không mơ hồ theo tên gốc không có phần mở rộng (độ dài >= 6)
+        norm_q = normalize_for_match(question)
+        stem_matches = []
+        for fn in indexed_files:
+            stem = Path(fn).stem.lower()
+            clean_stem = re.sub(r"\s*\(\d+\)$", "", stem).strip()
+            for candidate in dict.fromkeys(
+                [stem, clean_stem, *(part for part in re.split(r"[^a-z0-9]+", normalize_for_match(clean_stem)) if len(part) >= 6)]
+            ):
+                if len(candidate) >= 6 and re.search(rf"(?<!\w){re.escape(candidate)}(?!\w)", norm_q):
+                    stem_matches.append(fn)
+                    break
+        unique_matches = list(dict.fromkeys(stem_matches))
+        if len(unique_matches) == 1:
+            return unique_matches[0]
     except Exception:
         pass
 
@@ -1864,7 +1890,8 @@ def _read_authorized_attachment_pages(record, fingerprints):
                         "page": page.get("page"),
                         "reader": page.get("reader"),
                         "metadata": {
-                            "file_name": attachment.get("name") or record.get("display_name") or "Tài liệu",
+                            "file_name": record.get("display_name") or record.get("trich_yeu") or attachment.get("name") or "Tài liệu",
+                            "attachment_name": attachment.get("name"),
                             "document_title": record.get("display_name") or "Tài liệu",
                         },
                     })
@@ -2338,21 +2365,145 @@ def _fallback_query_filter(filename, allowed_keys):
     return {"$and": [target, source_filter]}
 
 
-def _authorized_fallback_nodes(vector_result, allowed_keys):
+def _extract_hybrid_keywords(question: str) -> list[str]:
+    norm = normalize_for_match(question)
+    tokens = re.findall(r"[a-z0-9]+", norm)
+    keywords = []
+    seen = set()
+    for token in tokens:
+        if token in HYBRID_STOPWORDS:
+            continue
+        if not token.isdigit() and len(token) < 2:
+            continue
+        if token not in seen:
+            seen.add(token)
+            keywords.append(token)
+    return keywords
+
+
+def _keyword_match_score(meta: dict, text: str, keywords: list[str]) -> float:
+    if not keywords:
+        return 0.0
+    norm_body = normalize_for_match((meta or {}).get("parent_context") or text or "")
+    norm_file = normalize_for_match(
+        f"{(meta or {}).get('file_name') or ''} {(meta or {}).get('attachment_name') or ''}"
+    )
+    bonus = 0.0
+    for kw in keywords:
+        if kw.isdigit():
+            if re.search(rf"(?<!\d){re.escape(kw)}\s*[.):-]", norm_body):
+                bonus += 0.30
+            elif re.search(rf"(?<!\d){re.escape(kw)}(?!\d)", norm_body):
+                bonus += 0.14
+            if re.search(rf"(?<!\d){re.escape(kw)}(?!\d)", norm_file):
+                bonus += 0.12
+            continue
+        if kw in norm_file:
+            bonus += 0.18
+        if re.search(rf"\b{re.escape(kw)}\b", norm_body) or (len(kw) >= 4 and kw in norm_body):
+            bonus += 0.08
+    return bonus
+
+
+def _rerank_hybrid_nodes(dense_nodes, keyword_nodes, question: str):
+    from llama_index.core.schema import NodeWithScore, TextNode
+
+    keywords = _extract_hybrid_keywords(question)
+    merged: dict[tuple, dict] = {}
+
+    def _register(node, is_keyword_source: bool):
+        inner = getattr(node, "node", node)
+        meta = dict(getattr(inner, "metadata", None) or getattr(node, "metadata", None) or {})
+        text = getattr(inner, "text", None) or getattr(node, "text", None) or ""
+        raw_score = getattr(node, "score", None)
+        key = (
+            meta.get("file_name") or "",
+            meta.get("page"),
+            meta.get("chunk_id"),
+            text[:100],
+        )
+        entry = merged.get(key)
+        if entry is None:
+            base = float(raw_score) if raw_score is not None and not is_keyword_source else (
+                max(SOURCE_SCORE_THRESHOLD, float(raw_score) * 0.45) if raw_score is not None else SOURCE_SCORE_THRESHOLD
+            )
+            entry = {
+                "node": TextNode(text=text, metadata=meta),
+                "base_score": base,
+            }
+            merged[key] = entry
+        elif not is_keyword_source and raw_score is not None:
+            entry["base_score"] = max(entry["base_score"], float(raw_score))
+
+    for node in (dense_nodes or []):
+        _register(node, is_keyword_source=False)
+    for node in (keyword_nodes or []):
+        _register(node, is_keyword_source=True)
+
+    ranked = []
+    for entry in merged.values():
+        node_obj = entry["node"]
+        bonus = _keyword_match_score(node_obj.metadata, node_obj.text, keywords)
+        final_score = min(1.0, entry["base_score"] + bonus)
+        ranked.append(NodeWithScore(node=node_obj, score=final_score))
+
+    ranked.sort(key=lambda item: float(item.score or 0.0), reverse=True)
+    return ranked
+
+
+def _chunk_sort_key(item: tuple[int, str, dict]):
+    idx, _doc_text, meta = item
+    section = meta.get("section")
+    section_num = int(section) if isinstance(section, int) or str(section).isdigit() else 0
+    chunk_id = str(meta.get("chunk_id") or "")
+    parts = [int(p) for p in re.findall(r"\d+", chunk_id)]
+    return (section_num, parts[0] if len(parts) > 0 else 0, parts[1] if len(parts) > 1 else idx, idx)
+
+
+def _authorized_fallback_nodes(vector_result, allowed_keys, question: str = ""):
     from llama_index.core.schema import TextNode
 
-    nodes = []
-    for doc_text, meta in zip(vector_result.get("documents", []), vector_result.get("metadatas", [])):
+    authorized = []
+    for idx, (doc_text, meta) in enumerate(
+        zip(vector_result.get("documents", []), vector_result.get("metadatas", []))
+    ):
         meta = meta or {}
         if allowed_keys is not None and not (
             meta.get("sql_doc_key") in allowed_keys
             or meta.get("source_class") == "ai_knowledge_base"
         ):
             continue
-        nodes.append(TextNode(text=doc_text, metadata=meta))
-        if len(nodes) == 10:
-            break
-    return nodes
+        authorized.append((idx, doc_text, meta))
+
+    if not authorized:
+        return []
+
+    authorized.sort(key=_chunk_sort_key)
+    if len(authorized) <= 10:
+        return [TextNode(text=doc_text, metadata=meta) for _idx, doc_text, meta in authorized]
+
+    keywords = _extract_hybrid_keywords(question) if question else []
+    if keywords:
+        scored = sorted(
+            authorized,
+            key=lambda item: _keyword_match_score(item[2], item[1], keywords),
+            reverse=True,
+        )
+        selected = []
+        seen_indices = set()
+        for item in scored[:6]:
+            selected.append(item)
+            seen_indices.add(item[0])
+        for item in authorized:
+            if len(selected) >= 10:
+                break
+            if item[0] not in seen_indices:
+                selected.append(item)
+                seen_indices.add(item[0])
+        selected.sort(key=_chunk_sort_key)
+        return [TextNode(text=doc_text, metadata=meta) for _idx, doc_text, meta in selected]
+
+    return [TextNode(text=doc_text, metadata=meta) for _idx, doc_text, meta in authorized[:10]]
 
 
 def ask_document(question: str, history=None, category: str | None = None, user=None, employee_id=None, filename: str | None = None, language: str = "vi"):
@@ -2510,17 +2661,41 @@ def ask_document(question: str, history=None, category: str | None = None, user=
             retriever_kwargs["filters"] = MetadataFilters(filters=target_filters)
 
         nodes = index.as_retriever(**retriever_kwargs).retrieve(retrieval_query)
+        keyword_nodes = []
+        if isinstance(index, PgVectorIndex):
+            try:
+                from backend.services.pgvector_store import keyword_search
+
+                kw_terms = _extract_hybrid_keywords(question)
+                if len(kw_terms) < 2 and retrieval_query != question:
+                    for extra in _extract_hybrid_keywords(retrieval_query):
+                        if extra not in kw_terms:
+                            kw_terms.append(extra)
+                keyword_nodes = keyword_search(
+                    kw_terms,
+                    limit=max(SIMILARITY_TOP_K * 3, 18),
+                    filters=retriever_kwargs.get("filters"),
+                )
+            except Exception:
+                logger.debug("Keyword retrieval fallback skipped", exc_info=True)
+        if keyword_nodes:
+            nodes = _rerank_hybrid_nodes(nodes, keyword_nodes, question)
         set_fields(hits=len(nodes or []), target=bool(clean_filename))
         if clean_filename:
             # Đảm bảo chắc chắn 100% chỉ giữ lại các chunk thuộc đúng file được chỉ định
             nodes = [
                 node for node in (nodes or [])
                 if (getattr(node, "metadata", {}) or {}).get("file_name") == clean_filename
+                or (getattr(node, "metadata", {}) or {}).get("attachment_name") == clean_filename
             ]
-            # Nếu retriever không trả về chunk nào (ví dụ câu hỏi quá ngắn hoặc embedding lệch),
-            # thực hiện fallback: lấy trực tiếp tất cả chunk của file đó từ PostgreSQL!
-            if not nodes:
-                print(f"⚠️ Retriever không trả về node cho {clean_filename}, thực hiện fallback từ PostgreSQL")
+            usable_nodes = [
+                node for node in nodes
+                if score_is_usable(getattr(node, "score", None))
+            ]
+            # Nếu retriever không trả về chunk nào đạt ngưỡng (ví dụ câu hỏi quá ngắn hoặc embedding lệch),
+            # thực hiện fallback: lấy trực tiếp chunk của file đó từ PostgreSQL theo thứ tự tài liệu!
+            if not usable_nodes:
+                print(f"⚠️ Retriever không trả về node đạt ngưỡng cho {clean_filename}, thực hiện fallback từ PostgreSQL")
                 set_fields(fallback=True)
                 fallback_collection = get_vector_collection()
                 fallback_where = _fallback_query_filter(clean_filename, allowed_keys if sql_mode else None)
@@ -2528,7 +2703,7 @@ def ask_document(question: str, history=None, category: str | None = None, user=
                     where=fallback_where,
                     include=["documents", "metadatas"],
                 )
-                nodes = _authorized_fallback_nodes(vector_result, allowed_keys if sql_mode else None)
+                nodes = _authorized_fallback_nodes(vector_result, allowed_keys if sql_mode else None, question=question)
         if sql_mode and nodes:
             nodes = [
                 node for node in nodes
