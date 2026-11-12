@@ -7,6 +7,10 @@
     "department": "Work Unit",
     "email": "Contact Email",
     "sampleDept": "Operating Department / Division",
+    "twofaLabel": "Two-Factor Security (2FA)",
+    "twofaEnabled": "Enabled (Authenticator)",
+    "twofaDisabled": "Not enabled (Recommended)",
+    "twofaManageBtn": "Manage 2FA Security",
     "roles": {
       "admin": "Administrator",
       "administrator": "Administrator",

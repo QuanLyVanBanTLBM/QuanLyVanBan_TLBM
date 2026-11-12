@@ -80,4 +80,69 @@ describe('SettingsPage Component', () => {
     expect(localStorage.getItem('tlbm_sec_lock_timeout')).toBe('15');
     expect(screen.getByText(/đã lưu thành công/i)).toBeInTheDocument();
   });
+
+  it('renders 2FA TOTP security card and runs setup wizard when authenticated', async () => {
+    localStorage.setItem('tlbm_access_token', 'valid-token');
+    localStorage.setItem('tlbm_session', JSON.stringify({ username: 'staff_test', is_2fa_enabled: false }));
+
+    globalThis.fetch = vi.fn().mockImplementation((url: string, opts?: RequestInit) => {
+      if (url.includes('/api/auth/2fa/status/')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'content-type': 'application/json' }),
+          json: async () => ({
+            enabled: false,
+            backup_codes_remaining: 0,
+            has_usable_credential: true,
+          }),
+        });
+      }
+      if (url.includes('/api/auth/2fa/setup/') && opts?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'content-type': 'application/json' }),
+          json: async () => ({
+            secret_key: 'JBSWY3DPEHPK3PXP',
+            otpauth_uri: 'otpauth://totp/Bao%20Long?secret=JBSWY3DPEHPK3PXP',
+            qr_code: 'data:image/png;base64,iVBORw0KGgo=',
+            setup_token: 'setup-token-123',
+            expires_in: 600,
+          }),
+        });
+      }
+      if (url.includes('/api/auth/2fa/confirm/') && opts?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'content-type': 'application/json' }),
+          json: async () => ({
+            success: true,
+            enabled: true,
+            backup_codes: ['AAAA-BBBB', 'CCCC-DDDD'],
+            backup_codes_remaining: 2,
+          }),
+        });
+      }
+      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+    });
+
+    renderComponent();
+
+    expect(screen.getByText(/xác thực hai yếu tố \(2fa totp\)/i)).toBeInTheDocument();
+    const enableBtn = await screen.findByRole('button', { name: /thiết lập & bật 2fa/i });
+    fireEvent.click(enableBtn);
+
+    expect(await screen.findByAltText('2FA QR Code')).toBeInTheDocument();
+    expect(screen.getByText('JBSWY3DPEHPK3PXP')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText('Nhập 6 chữ số OTP...'), {
+      target: { value: '123456' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /xác nhận kích hoạt 2fa/i }));
+
+    expect(await screen.findByText('AAAA-BBBB')).toBeInTheDocument();
+    expect(screen.getByText('CCCC-DDDD')).toBeInTheDocument();
+  });
 });

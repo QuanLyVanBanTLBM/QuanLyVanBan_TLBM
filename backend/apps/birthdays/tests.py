@@ -583,6 +583,28 @@ class BirthdaySystemTests(TestCase):
         self.assertIn(self.emp_admin.email, sent_recipients)
 
 
+    @override_settings(
+        MAILERS={"default": {"BACKEND": "django.core.mail.backends.locmem.EmailBackend"}},
+        DEFAULT_FROM_EMAIL="noreply@example.test",
+    )
+    def test_targeted_birthday_command_only_sends_to_selected_account(self):
+        mail.outbox.clear()
+        args = (
+            "send_birthday_emails",
+            "--date=2026-05-20",
+            f"--username={self.emp_staff.username}",
+            "--allow-locmem",
+        )
+
+        call_command(*args)
+        call_command(*args)
+
+        self.assertEqual([message.to for message in mail.outbox], [[self.emp_staff.email]])
+        log = BirthdayEmailLog.objects.get(sent_date=date(2026, 5, 20))
+        self.assertEqual(log.employee_id, self.emp_staff.pk)
+        self.assertEqual(log.trang_thai, BirthdayEmailStatus.SUCCESS)
+
+
 @skipUnlessDBFeature("supports_transactions", "has_select_for_update")
 class BirthdayEmailConcurrencyTests(TransactionTestCase):
     """The delivery claim must remain single-writer on databases with row locks."""
