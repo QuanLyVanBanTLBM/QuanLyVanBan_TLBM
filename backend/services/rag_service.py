@@ -1990,6 +1990,32 @@ def index_sql_document(record):
     return key
 
 
+def is_ai_configured() -> bool:
+    """Check if OpenAI API key is configured without raising an exception."""
+    try:
+        from backend.services.ai_settings_service import get_active_ai_settings
+        active = get_active_ai_settings()
+    except Exception:
+        active = {}
+    openai_key = (
+        active.get("openai_api_key")
+        or getattr(config, "OPENAI_API_KEY", None)
+        or os.getenv("OPENAI_API_KEY")
+        or ""
+    ).strip()
+    return bool(openai_key)
+
+
+def delete_sql_document_vectors(source_type: str, source_id: int):
+    """Remove vector chunks associated with an SQL document key from vector store."""
+    key = f"{source_type}:{int(source_id)}"
+    try:
+        collection = get_vector_collection()
+        collection.delete(where={"sql_doc_key": key})
+    except Exception as error:
+        logger.warning("Could not delete vectors for sql_doc_key=%s: %s", key, error)
+
+
 def build_answer_prompt(question: str, context: str, history, target_filename: str | None = None, language: str = "vi") -> str:
     is_en = str(language).lower().startswith("en")
     # Nếu đang chỉ định một tài liệu cụ thể, không đưa lịch sử cũ của các tài liệu khác vào để tránh rò rỉ ngữ cảnh
@@ -2575,12 +2601,11 @@ def prepare_ask_document(
             sql_docs=len(records),
             sql_attachments=sum(len(record.get("attachments", [])) for record in records),
         )
-        allowed_keys = set()
         with ai_stage("sql_index"):
-            for record in records:
-                key = index_sql_document(record)
-                if key:
-                    allowed_keys.add(key)
+            allowed_keys = {
+                f"{record['source_type']}:{record['source_id']}"
+                for record in records
+            }
         set_fields(sql_allowed=len(allowed_keys))
 
     # Đối chiếu tên file theo phạm vi tài liệu mà người dùng được phép truy cập

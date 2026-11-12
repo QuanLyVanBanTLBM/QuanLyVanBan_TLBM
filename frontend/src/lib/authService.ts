@@ -1,8 +1,20 @@
-import { UserSession } from '@app-types/auth';
+import {
+  TwoFactorChallenge,
+  TwoFactorConfirmResult,
+  TwoFactorRegenerateResult,
+  TwoFactorSetupPayload,
+  TwoFactorStatus,
+  UserSession,
+} from '@app-types/auth';
 import apiClient, { ApiError } from './apiClient';
 
 export interface LoginResponse {
   success: boolean;
+  require_2fa?: boolean;
+  temp_token?: string;
+  method?: 'totp';
+  auth_provider?: string;
+  verified_via?: string;
   token?: string;
   access?: string;
   refresh?: string;
@@ -17,6 +29,8 @@ export interface LoginResponse {
     department?: string;
     unit?: string;
     email?: string;
+    is_2fa_enabled?: boolean;
+    has_usable_credential?: boolean;
     [key: string]: unknown;
   };
   error?: string;
@@ -24,69 +38,165 @@ export interface LoginResponse {
   message?: string;
 }
 
+export class TwoFactorRequiredError extends Error {
+  challenge: TwoFactorChallenge;
+
+  constructor(challenge: TwoFactorChallenge) {
+    super('2FA verification required');
+    this.name = 'TwoFactorRequiredError';
+    this.challenge = challenge;
+  }
+}
+
+function clearStoredSession(): void {
+  localStorage.removeItem('tlbm_access_token');
+  localStorage.removeItem('tlbm_token');
+  localStorage.removeItem('tlbm_refresh_token');
+  localStorage.removeItem('tlbm_session');
+}
+
+function persistSessionFromAuthResponse(data: LoginResponse, fallbackUsername: string): UserSession {
+  if (!data || (!data.access && !data.token)) {
+    throw new ApiError(401, {
+      error: data?.error || data?.detail || 'Đăng nhập không thành công. Vui lòng thử lại!',
+    });
+  }
+
+  const accessToken = data.access || data.token || '';
+  const refreshToken = data.refresh || '';
+  const rawUser = data.user || {};
+  const isRoleAdmin = rawUser.role === 'admin';
+
+  const session: UserSession = {
+    id: rawUser.id,
+    username: rawUser.username || fallbackUsername,
+    fullName:
+      rawUser.fullName ||
+      rawUser.full_name ||
+      (isRoleAdmin ? 'Quản Trị Viên (Admin)' : 'Cán Bộ Chuyên Viên'),
+    role: isRoleAdmin ? 'admin' : 'staff',
+    roleTitle:
+      rawUser.roleTitle ||
+      rawUser.position ||
+      (isRoleAdmin ? 'Quản trị viên tối cao' : 'Cán bộ xử lý văn bản'),
+    token: accessToken,
+    don_vi_id: (rawUser.don_vi_id ?? rawUser.donViId) as number | undefined,
+    donViId: (rawUser.donViId ?? rawUser.don_vi_id) as number | undefined,
+    department: (rawUser.department ?? rawUser.unit) as string | undefined,
+    unit: (rawUser.unit ?? rawUser.department) as string | undefined,
+    is_2fa_enabled: Boolean(rawUser.is_2fa_enabled),
+    has_usable_credential:
+      rawUser.has_usable_credential === undefined ? true : Boolean(rawUser.has_usable_credential),
+  };
+
+  localStorage.setItem('tlbm_access_token', accessToken);
+  localStorage.setItem('tlbm_token', accessToken);
+  if (refreshToken) {
+    localStorage.setItem('tlbm_refresh_token', refreshToken);
+  }
+  localStorage.setItem('tlbm_session', JSON.stringify(session));
+  window.dispatchEvent(new Event('tlbm_auth_changed'));
+
+  return session;
+}
+
+function updateStoredTwoFactorFlag(enabled: boolean): void {
+  try {
+    const raw = localStorage.getItem('tlbm_session');
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as UserSession;
+    parsed.is_2fa_enabled = enabled;
+    localStorage.setItem('tlbm_session', JSON.stringify(parsed));
+    window.dispatchEvent(new Event('tlbm_auth_changed'));
+  } catch {
+    // Bỏ qua nếu localStorage session không hợp lệ
+  }
+}
+
 export const authService = {
   /**
    * Đăng nhập người dùng bằng tài khoản thật từ Backend Django.
-   * Cấp Access Token + Refresh Token và lưu Session.
+   * Nếu tài khoản đã bật 2FA, ném TwoFactorRequiredError để UI chuyển sang bước nhập OTP.
    */
   async login(credentials: { username: string; password: string }): Promise<UserSession> {
+    const cleanUsername = credentials.username.trim();
     const payload = {
-      username: credentials.username.trim(),
+      username: cleanUsername,
       password: credentials.password,
     };
 
     // Xóa token cũ trước khi login — tránh apiClient tự động gửi token hết hạn
     // khiến SimpleJWT ném "Given token not valid for any token type" dù endpoint là AllowAny
-    localStorage.removeItem('tlbm_access_token');
-    localStorage.removeItem('tlbm_token');
-    localStorage.removeItem('tlbm_refresh_token');
-    localStorage.removeItem('tlbm_session');
+    clearStoredSession();
 
     const data = await apiClient.post<LoginResponse>('/api/auth/login/', payload);
 
-    if (!data || (!data.access && !data.token)) {
-      throw new ApiError(401, {
-        error: data?.error || data?.detail || 'Đăng nhập không thành công. Vui lòng thử lại!',
+    if (data?.require_2fa && data.temp_token) {
+      throw new TwoFactorRequiredError({
+        tempToken: data.temp_token,
+        method: data.method || 'totp',
+        authProvider: data.auth_provider || 'local',
+        username: cleanUsername,
       });
     }
 
-    const accessToken = data.access || data.token || '';
-    const refreshToken = data.refresh || '';
-    const rawUser = data.user || {};
+    return persistSessionFromAuthResponse(data, cleanUsername);
+  },
 
-    const isRoleAdmin = rawUser.role === 'admin';
+  /**
+   * Hoàn tất đăng nhập bước 2 bằng mã TOTP 6 chữ số hoặc Backup Code.
+   */
+  async verifyTwoFactor(params: {
+    tempToken: string;
+    code: string;
+    username?: string;
+  }): Promise<UserSession> {
+    const data = await apiClient.post<LoginResponse>('/api/auth/verify-2fa/', {
+      temp_token: params.tempToken,
+      code: params.code.trim(),
+    });
+    return persistSessionFromAuthResponse(data, params.username || '');
+  },
 
-    const session: UserSession = {
-      id: rawUser.id,
-      username: rawUser.username || credentials.username.trim(),
-      fullName:
-        rawUser.fullName ||
-        rawUser.full_name ||
-        (isRoleAdmin ? 'Quản Trị Viên (Admin)' : 'Cán Bộ Chuyên Viên'),
-      role: isRoleAdmin ? 'admin' : 'staff',
-      roleTitle:
-        rawUser.roleTitle ||
-        rawUser.position ||
-        (isRoleAdmin ? 'Quản trị viên tối cao' : 'Cán bộ xử lý văn bản'),
-      token: accessToken,
-      don_vi_id: (rawUser.don_vi_id ?? rawUser.donViId) as number | undefined,
-      donViId: (rawUser.donViId ?? rawUser.don_vi_id) as number | undefined,
-      department: (rawUser.department ?? rawUser.unit) as string | undefined,
-      unit: (rawUser.unit ?? rawUser.department) as string | undefined,
-    };
+  async getTwoFactorStatus(): Promise<TwoFactorStatus> {
+    return apiClient.get<TwoFactorStatus>('/api/auth/2fa/status/');
+  },
 
-    // Lưu trữ token và session
-    localStorage.setItem('tlbm_access_token', accessToken);
-    localStorage.setItem('tlbm_token', accessToken);
-    if (refreshToken) {
-      localStorage.setItem('tlbm_refresh_token', refreshToken);
+  async setupTwoFactor(): Promise<TwoFactorSetupPayload> {
+    return apiClient.post<TwoFactorSetupPayload>('/api/auth/2fa/setup/', {});
+  },
+
+  async confirmTwoFactor(setupToken: string, code: string): Promise<TwoFactorConfirmResult> {
+    const result = await apiClient.post<TwoFactorConfirmResult>('/api/auth/2fa/confirm/', {
+      setup_token: setupToken,
+      code: code.trim(),
+    });
+    if (result.enabled) {
+      updateStoredTwoFactorFlag(true);
     }
-    localStorage.setItem('tlbm_session', JSON.stringify(session));
+    return result;
+  },
 
-    // Thông báo cho toàn ứng dụng cập nhật trạng thái auth
-    window.dispatchEvent(new Event('tlbm_auth_changed'));
+  async disableTwoFactor(payload: {
+    password?: string;
+    code?: string;
+  }): Promise<{ success: boolean; enabled: boolean; backup_codes_remaining: number }> {
+    const result = await apiClient.post<{
+      success: boolean;
+      enabled: boolean;
+      backup_codes_remaining: number;
+    }>('/api/auth/2fa/disable/', payload);
+    if (!result.enabled) {
+      updateStoredTwoFactorFlag(false);
+    }
+    return result;
+  },
 
-    return session;
+  async regenerateBackupCodes(payload: {
+    password?: string;
+    code?: string;
+  }): Promise<TwoFactorRegenerateResult> {
+    return apiClient.post<TwoFactorRegenerateResult>('/api/auth/2fa/backup-codes/regenerate/', payload);
   },
 
   /**
@@ -104,10 +214,7 @@ export const authService = {
     } catch {
       // Dù API có lỗi (ví dụ token đã hết hạn hoặc server offline), vẫn luôn dọn dẹp client
     } finally {
-      localStorage.removeItem('tlbm_access_token');
-      localStorage.removeItem('tlbm_token');
-      localStorage.removeItem('tlbm_refresh_token');
-      localStorage.removeItem('tlbm_session');
+      clearStoredSession();
       window.dispatchEvent(new Event('tlbm_auth_changed'));
     }
   },

@@ -55,7 +55,7 @@ describe('Birthday email log actions', () => {
     render(<BirthdayEmailLogs />);
     fireEvent.click(await screen.findByRole('button', { name: 'Thêm thủ công' }));
     await screen.findByRole('option', { name: /CBNV/ });
-    fireEvent.change(screen.getByLabelText('Lãnh đạo nhận thư'), { target: { value: '12' } });
+    fireEvent.change(screen.getByLabelText('Người nhận email'), { target: { value: '12' } });
     expect(screen.queryByRole('button', { name: 'Xác nhận gửi email' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Trợ lý AI soạn mẫu' }));
@@ -78,7 +78,7 @@ describe('Birthday email log actions', () => {
     await waitFor(() => expect(post).toHaveBeenCalledWith('/api/birthdays/manual/send/', expect.objectContaining({
       employee_id: 12, template_id: 'saved:1', preview_token: 'confirmed-preview',
     })));
-    expect(await screen.findByText('Đã gửi email sinh nhật.')).toBeInTheDocument();
+    expect(await screen.findByText('Máy chủ email đã chấp nhận thư để gửi.')).toBeInTheDocument();
   });
 
   it('offers a retry only for the log that can be resent and confirms its current address', async () => {
@@ -96,6 +96,6 @@ describe('Birthday email log actions', () => {
     fireEvent.click(retries[1]);
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining('corrected@example.test'));
     expect(post).toHaveBeenCalledWith('/api/birthdays/logs/2/retry/', { recipient: 'corrected@example.test' });
-    expect(await screen.findByText('Đã gửi email sinh nhật.')).toBeInTheDocument();
+    expect(await screen.findByText('Máy chủ email đã chấp nhận thư để gửi.')).toBeInTheDocument();
   });
 });

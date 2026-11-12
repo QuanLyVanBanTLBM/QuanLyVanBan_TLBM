@@ -68,6 +68,36 @@ export default function ProfilePage({ onNavigate }: ProfilePageProps) {
               {displayEmail}
             </div>
           </div>
+
+          <div className="p-3.5 px-4.5 bg-surface-elevated border border-border-subtle rounded-lg sm:col-span-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <span className="text-xs text-muted font-medium">{t('profile.twofaLabel')}:</span>
+              <div className="font-bold text-sm mt-1 flex items-center gap-2">
+                {session?.is_2fa_enabled ? (
+                  <span className="text-success flex items-center gap-1.5">
+                    <i className="fa-solid fa-shield-check" />
+                    <span>{t('profile.twofaEnabled')}</span>
+                  </span>
+                ) : (
+                  <span className="text-secondary flex items-center gap-1.5">
+                    <i className="fa-solid fa-shield" />
+                    <span>{t('profile.twofaDisabled')}</span>
+                  </span>
+                )}
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              icon="fa-shield-halved"
+              onClick={() => {
+                if (onNavigate) onNavigate('settings');
+                navigate('/settings');
+              }}
+            >
+              {t('profile.twofaManageBtn')}
+            </Button>
+          </div>
         </div>
 
         <div className="mt-6 flex gap-3 flex-wrap">
