@@ -126,9 +126,34 @@ class ManualBirthdayEmailTests(TestCase):
         Employee.objects.filter(pk=self.leader.pk).update(email="corrected@example.test", ho_ten="Tên đã đổi")
         url = reverse("birthdays:retry_email", args=[log.pk])
         self.assertEqual(self.client.post(url, {"recipient": log.recipient_email}, format="json").status_code, 409)
-        self.assertEqual(self.client.post(url, {"recipient": "corrected@example.test"}, format="json").status_code, 200)
+        retry_response = self.client.post(url, {"recipient": "corrected@example.test"}, format="json")
+        self.assertEqual(retry_response.status_code, 200)
+        self.assertEqual(retry_response.data["log"]["delivery_context"], "RETRY")
         self.assertEqual(mail.outbox[0].to, ["corrected@example.test"])
         self.assertEqual(mail.outbox[0].body, log.delivery_snapshot["text"])
+
+    @patch("birthdays.manual_views.require_delivery_backend")
+    def test_inactive_employee_retry_is_hidden_and_rejected(self, _backend):
+        preview = self.preview()
+        with patch("birthdays.services.send_mail", side_effect=SMTPDataError(550, b"Rejected")):
+            response = self.send(preview)
+            log_id = response.data["log"]["id"]
+            Employee.objects.filter(pk=self.leader.pk).update(is_active=False)
+
+            logs_response = self.client.get(
+                reverse("birthdays:logs"),
+                {"date": timezone.localdate().isoformat()},
+            )
+            logged = next(row for row in logs_response.data["logs"] if row["id"] == log_id)
+            self.assertFalse(logged["can_retry"])
+            self.assertEqual(logged["retry_block_reason"], "inactive")
+
+            retry_response = self.client.post(
+                reverse("birthdays:retry_email", args=[log_id]),
+                {"recipient": self.leader.email},
+                format="json",
+            )
+            self.assertEqual(retry_response.status_code, 404)
 
     @patch("birthdays.manual_views.require_delivery_backend")
     def test_unconfirmed_smtp_result_blocks_both_send_and_retry(self, _backend):

@@ -5,11 +5,12 @@ import { Button } from '@components/common/Button';
 import BirthdayEmailComposer from './BirthdayEmailComposer';
 import { birthdayEmailError, type DeliveryResult } from './emailDelivery';
 
-type EmailStatus = 'PENDING' | 'SENDING' | 'SUCCESS' | 'FAILED' | 'RETRY';
+type EmailStatus = 'PENDING' | 'SENDING' | 'SUCCESS' | 'FAILED' | 'RETRY' | 'NOT_PROCESSED';
 type StatusFilter = EmailStatus | 'ALL';
 
 interface BirthdayEmailLog {
-  id: number;
+  id: number | null;
+  employee_id: number;
   employee_name: string;
   recipient_email: string;
   position: string;
@@ -21,11 +22,13 @@ interface BirthdayEmailLog {
   error_message: string;
   smtp_response_code: string;
   delivery_source: 'AUTO' | 'MANUAL';
+  delivery_context: 'SCHEDULED' | 'RECOVERY' | 'RETRY' | null;
   delivery_uncertain: boolean;
   template_version: string | null;
   last_operator: string | null;
   can_retry: boolean;
   current_recipient: string | null;
+  retry_block_reason: string | null;
 }
 
 interface BirthdayEmailLogsResponse {
@@ -50,6 +53,7 @@ const STATUS_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
   { value: 'SUCCESS', label: 'statusSuccess' },
   { value: 'FAILED', label: 'statusFailed' },
   { value: 'RETRY', label: 'statusRetry' },
+  { value: 'NOT_PROCESSED', label: 'statusNotProcessed' },
 ];
 
 const STATUS_STYLES: Record<EmailStatus, string> = {
@@ -58,6 +62,7 @@ const STATUS_STYLES: Record<EmailStatus, string> = {
   SUCCESS: 'bg-success-subtle text-success',
   FAILED: 'bg-danger-subtle text-danger',
   RETRY: 'bg-warning-subtle text-warning-text',
+  NOT_PROCESSED: 'bg-surface-hover text-secondary',
 };
 
 function statusLabelKey(status: EmailStatus): string {
@@ -321,13 +326,13 @@ export default function BirthdayEmailLogs() {
                 </thead>
                 <tbody className="divide-y divide-border">
                   {logs.map((log) => (
-                    <tr key={log.id} className="align-top text-main hover:bg-surface-hover/60">
+                    <tr key={log.id ?? `not-processed-${log.employee_id}`} className="align-top text-main hover:bg-surface-hover/60">
                       <td className="px-3 py-3 font-semibold">{log.employee_name}</td>
                       <td className="px-3 py-3 text-secondary">
                         {log.recipient_email || '—'}
-                        {(log.trang_thai === 'FAILED' || log.trang_thai === 'RETRY') && (
+                        {(log.trang_thai === 'FAILED' || log.trang_thai === 'RETRY') && log.can_retry && (
                           <button
-                            type="button" onClick={() => void retryEmail(log)} disabled={retrying || !log.can_retry || !log.current_recipient}
+                            type="button" onClick={() => void retryEmail(log)} disabled={retrying || !log.current_recipient}
                             className="mt-1 block whitespace-nowrap font-semibold text-primary hover:underline disabled:opacity-50"
                           >
                             {t('birthdayPage.manualEmail.retry')}
@@ -345,12 +350,26 @@ export default function BirthdayEmailLogs() {
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums">{log.retry_count}</td>
                       <td className="px-3 py-3 text-secondary">
-                        {t(log.delivery_source === 'MANUAL' ? 'birthdayPage.manualEmail.manual' : 'birthdayPage.manualEmail.automatic')}
+                        {t(log.delivery_source === 'MANUAL'
+                          ? log.delivery_context === 'RETRY'
+                            ? 'birthdayPage.manualEmail.retrySource'
+                            : 'birthdayPage.manualEmail.manual'
+                          : log.delivery_context === 'RECOVERY'
+                            ? 'birthdayPage.manualEmail.recovery'
+                            : log.delivery_context === 'RETRY'
+                              ? 'birthdayPage.manualEmail.retrySource'
+                              : 'birthdayPage.manualEmail.automatic')}
                         {log.last_operator && <p className="text-xs">{log.last_operator}</p>}
                         {log.template_version && <p className="text-xs">{log.template_version}</p>}
                       </td>
                       <td className="max-w-sm px-3 py-3 text-secondary">
-                        {log.delivery_uncertain ? t('birthdayPage.manualEmail.needsReview') : log.error_message || log.smtp_response_code || '—'}
+                        {log.trang_thai === 'NOT_PROCESSED'
+                          ? t('birthdayPage.emailLogs.notProcessedDetail')
+                          : log.delivery_uncertain
+                            ? t('birthdayPage.manualEmail.needsReview')
+                            : (log.trang_thai === 'FAILED' || log.trang_thai === 'RETRY') && log.retry_block_reason
+                              ? t(`birthdayPage.manualEmail.retryBlocked.${log.retry_block_reason}`)
+                              : log.error_message || log.smtp_response_code || '—'}
                       </td>
                     </tr>
                   ))}

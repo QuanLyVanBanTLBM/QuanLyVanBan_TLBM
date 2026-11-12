@@ -192,6 +192,34 @@ def other_birthday_logs(employee_id: int, sent_date: date):
     ).exclude(sent_date=sent_date)
 
 
+def get_eligible_automated_birthday_employees(
+    target_date: date,
+    *,
+    username: str | None = None,
+    leap_year_strategy: str | None = None,
+) -> list[Employee]:
+    """Return the same active, non-leadership birthday recipients used by the sender."""
+    if leap_year_strategy is None:
+        leap_year_strategy = getattr(settings, "BIRTHDAY_LEAP_DAY_STRATEGY", "FEB_28")
+    if leap_year_strategy not in ("SKIP", "FEB_28", "MAR_01"):
+        raise ValueError("Invalid leap-year birthday strategy")
+
+    employees = (
+        Employee.objects.filter(is_active=True)
+        .exclude(ngay_sinh__isnull=True)
+        .exclude(chuc_vu__name__in=LEADERSHIP_POSITIONS)
+        .select_related("don_vi", "chuc_vu")
+        .order_by("ho_ten", "pk")
+    )
+    if username is not None:
+        employees = employees.filter(username=username)
+    return [
+        employee
+        for employee in employees
+        if is_birthday_on_date(employee.ngay_sinh, target_date, leap_year_strategy=leap_year_strategy)
+    ]
+
+
 def _email_log(employee: Employee, sent_date: date, recipient: str, subject: str) -> BirthdayEmailLog | None:
     # Serialize creation across effective birthday dates if the employee record changed.
     with transaction.atomic():
@@ -220,21 +248,40 @@ def _safe_error(error: Exception) -> str:
 
 
 def can_retry_manually(log: BirthdayEmailLog) -> bool:
-    return (
-        log.trang_thai == BirthdayEmailStatus.FAILED
-        or (
-            log.trang_thai == BirthdayEmailStatus.RETRY
-            and log.employee.chuc_vu is not None
-            and log.employee.chuc_vu.name in LEADERSHIP_POSITIONS
-        )
-    ) and not (
-        log.delivery_uncertain or (log.error_message or "").startswith(STALE_SENDING_NOTE)
+    return retry_block_reason(log) is None
+
+
+def retry_block_reason(log: BirthdayEmailLog) -> str | None:
+    """Return a stable UI reason when a log must not be manually resent."""
+    if log.delivery_uncertain or (log.error_message or "").startswith(STALE_SENDING_NOTE):
+        return "needsReview"
+    if not log.employee.is_active:
+        return "inactive"
+    if log.trang_thai == BirthdayEmailStatus.SUCCESS:
+        return "alreadySent"
+
+    is_manual_retry_status = log.trang_thai == BirthdayEmailStatus.FAILED or (
+        log.trang_thai == BirthdayEmailStatus.RETRY
+        and log.employee.chuc_vu is not None
+        and log.employee.chuc_vu.name in LEADERSHIP_POSITIONS
     )
+    if not is_manual_retry_status:
+        return "automaticRetryPending" if log.trang_thai == BirthdayEmailStatus.RETRY else "notRetryable"
+
+    current_recipient = (log.employee.email or "").strip()
+    if not current_recipient:
+        return "missingEmail"
+    try:
+        validate_email(current_recipient)
+    except ValidationError:
+        return "invalidEmail"
+    return None
 
 
 def _claim_delivery(
     log: BirthdayEmailLog, recipient: str, subject: str, max_retries: int = 0,
     *, operator: str | None = None, manual_snapshot: dict | None = None,
+    trigger_source: str | None = None,
 ) -> bool:
     """Use the same locked log row for automatic, manual, and retry claims."""
     with transaction.atomic():
@@ -293,6 +340,13 @@ def _claim_delivery(
             if "subject" in snapshot and snapshot["subject"]:
                 locked_log.subject = snapshot["subject"]
                 subject = snapshot["subject"]
+        if manual_snapshot is None:
+            effective_trigger_source = "RETRY" if operator is not None else trigger_source
+            if effective_trigger_source:
+                locked_log.delivery_snapshot = {
+                    **(locked_log.delivery_snapshot or {}),
+                    "trigger_source": effective_trigger_source,
+                }
         if operator is not None:
             locked_log.last_operator = operator
 
@@ -500,12 +554,15 @@ def send_automated_birthday_emails(
     allow_test_email_backend: bool = False,
     *,
     username: str | None = None,
+    trigger_source: str = "SCHEDULED",
 ) -> dict:
     """Send due non-leadership birthdays and eligible automatic retries."""
     if target_date is None:
         target_date = timezone.localdate()
     if not 0 <= max_retries <= 10:
         raise ValueError("max_retries must be between 0 and 10")
+    if trigger_source not in ("SCHEDULED", "RECOVERY"):
+        raise ValueError("Invalid birthday email trigger source")
 
     require_delivery_backend(allow_test_email_backend)
 
@@ -530,19 +587,11 @@ def send_automated_birthday_emails(
         updated_at=now,
     )
 
-    active_employees = (
-        Employee.objects.filter(is_active=True)
-        .exclude(ngay_sinh__isnull=True)
-        .exclude(chuc_vu__name__in=LEADERSHIP_POSITIONS)
-        .select_related("don_vi", "chuc_vu")
+    eligible_employees = get_eligible_automated_birthday_employees(
+        target_date,
+        username=username,
+        leap_year_strategy=leap_year_strategy,
     )
-    if username is not None:
-        active_employees = active_employees.filter(username=username)
-    eligible_employees = [
-        emp
-        for emp in active_employees
-        if is_birthday_on_date(emp.ngay_sinh, target_date, leap_year_strategy=leap_year_strategy)
-    ]
     retry_start_date = target_date - timedelta(days=3)
     retry_logs = [] if username is not None else list(
         BirthdayEmailLog.objects.filter(
@@ -575,11 +624,9 @@ def send_automated_birthday_emails(
     brand_name = getattr(settings, "BRAND_NAME", "Bảo Long Insurance")
 
     def process_delivery(employee: Employee, sent_date: date, existing_log=None) -> None:
-        recipient = (
-            existing_log.recipient_email
-            if existing_log is not None
-            else (employee.email or "")
-        ).strip()
+        # Automatic retries must follow the employee's current address. Manual retries
+        # use the separately confirmed current_recipient in retry_api.
+        recipient = (employee.email or "").strip()
         subject = (
             existing_log.subject
             if existing_log is not None
@@ -594,18 +641,35 @@ def send_automated_birthday_emails(
             try:
                 validate_email(recipient)
             except ValidationError:
-                _mark_invalid_email(log, "Địa chỉ email không hợp lệ hoặc bị để trống.")
-                results["skipped_count"] += 1
-                results["details"].append({
-                    "employee_id": employee.id,
-                    "full_name": employee.ho_ten,
-                    "skipped": True,
-                    "trang_thai": BirthdayEmailStatus.FAILED,
-                    "reason": "Địa chỉ email không hợp lệ hoặc bị để trống.",
-                })
+                reason = "Địa chỉ email không hợp lệ hoặc bị để trống."
+                marked_failed = _mark_invalid_email(log, reason)
+                log.refresh_from_db()
+                if marked_failed:
+                    results["failed_count"] += 1
+                    results["details"].append({
+                        "employee_id": employee.id,
+                        "full_name": employee.ho_ten,
+                        "trang_thai": log.trang_thai,
+                        "error": reason,
+                    })
+                else:
+                    results["skipped_count"] += 1
+                    results["details"].append({
+                        "employee_id": employee.id,
+                        "full_name": employee.ho_ten,
+                        "skipped": True,
+                        "trang_thai": log.trang_thai,
+                        "reason": log.error_message or reason,
+                    })
                 return
 
-            claimed = _claim_delivery(log, recipient, subject, max_retries)
+            claimed = _claim_delivery(
+                log,
+                recipient,
+                subject,
+                max_retries,
+                trigger_source=trigger_source,
+            )
             if not claimed:
                 reason = {
                     BirthdayEmailStatus.SUCCESS: "Đã gửi thành công trước đó.",

@@ -17,6 +17,11 @@ class Command(BaseCommand):
         )
         parser.add_argument("--username", help="Chỉ gửi cho tài khoản chỉ định trong ngày cần gửi")
         parser.add_argument(
+            "--trigger-source",
+            choices=("SCHEDULED", "RECOVERY"),
+            help="Nguồn khởi chạy để hiển thị đúng trong nhật ký (mặc định suy ra từ tham số)",
+        )
+        parser.add_argument(
             "--retries",
             type=int,
             default=3,
@@ -58,8 +63,14 @@ class Command(BaseCommand):
                 target_date = date.fromisoformat(options["date"])
             except ValueError as exc:
                 raise CommandError("--date phải theo định dạng YYYY-MM-DD.") from exc
+            if target_date.isoformat() != options["date"]:
+                raise CommandError("--date phải theo định dạng YYYY-MM-DD.")
         else:
             target_date = timezone.localdate()
+
+        trigger_source = options["trigger_source"] or (
+            "RECOVERY" if options["date"] or options["username"] else "SCHEDULED"
+        )
 
         def _safe_write(writer, text):
             try:
@@ -74,6 +85,7 @@ class Command(BaseCommand):
             max_retries=options["retries"],
             allow_test_email_backend=options["allow_locmem"],
             username=options["username"],
+            trigger_source=trigger_source,
         )
 
         for detail in results["details"]:
@@ -94,6 +106,14 @@ class Command(BaseCommand):
             f"Thất bại: {results['failed_count']}"
         )
         _safe_write(self.stdout.write, summary)
+        _safe_write(
+            self.stdout.write,
+            "BIRTHDAY_EMAIL_SUMMARY "
+            f"date={target_date.isoformat()} trigger={trigger_source} "
+            f"eligible={results['total_eligible']} sent={results['sent_count']} "
+            f"skipped={results['skipped_count']} retry={results.get('retry_count', 0)} "
+            f"stale={results.get('stale_failed_count', 0)} failed={results['failed_count']}",
+        )
         if results["failed_count"]:
             raise CommandError("Có email chưa được xác nhận gửi thành công; xem nhật ký BirthdayEmailLog.")
         if options["username"] is not None and not results["sent_count"] and not any(

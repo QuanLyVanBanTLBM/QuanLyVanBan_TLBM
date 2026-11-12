@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
     inputs:
       username:
-        description: "Tài khoản staging cần gửi bù"
-        required: true
+        description: "Tài khoản cần gửi bù (để trống để recovery toàn ngày)"
+        required: false
         type: string
       date:
         description: "Ngày sinh nhật cần gửi (YYYY-MM-DD)"
@@ -17,16 +17,12 @@ on:
 
 permissions: {}
 
-concurrency:
-  group: birthday-email-scheduler
-  cancel-in-progress: false
-
 jobs:
   send-birthday-emails:
     if: github.ref == 'refs/heads/staging'
     name: Send scheduled birthday emails
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 120
     steps:
       - name: Run mail task on the current release
         env:
@@ -50,9 +46,11 @@ jobs:
 
           remote_command='bash -s'
           if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
-            target_username=$(jq -er '.inputs.username | strings' "$GITHUB_EVENT_PATH")
+            target_username=$(jq -r '.inputs.username // "" | strings' "$GITHUB_EVENT_PATH")
             target_date=$(jq -er '.inputs.date | strings' "$GITHUB_EVENT_PATH")
-            [[ "$target_username" =~ ^[A-Za-z0-9_.@+-]{1,150}$ ]]
+            if [[ -n "$target_username" ]]; then
+              [[ "$target_username" =~ ^[A-Za-z0-9_.@+-]{1,150}$ ]]
+            fi
             [[ "$target_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]
             remote_command="bash -s -- '$target_username' '$target_date'"
           fi
@@ -66,23 +64,37 @@ jobs:
           umask 077
           touch "$LOG"
           chmod 600 "$LOG"
+          # Serialize against deploys and other mail runs without dropping queued Actions runs.
           args=()
           if (( $# > 0 )); then
-            args=("--username=$1" "--date=$2")
+            target_username=$1
+            target_date=$2
+            args=("--date=$target_date" "--trigger-source=RECOVERY")
+            if [[ -n "$target_username" ]]; then
+              args+=("--username=$target_username")
+            fi
           fi
 
-          if /usr/bin/flock --wait 1800 "$BASE/.deploy.lock" /bin/bash -c '
+          set +e
+          /usr/bin/flock --wait 3600 "$BASE/.deploy.lock" /bin/bash -c '
             set -euo pipefail
             set -a
             . /etc/qlvb/backend.env
             set +a
             cd /srv/qlvb/current/backend
             exec /srv/qlvb/current/venv/bin/python manage.py send_birthday_emails "$@"
-          ' birthday-email "${args[@]}" >>"$LOG" 2>&1; then
+          ' birthday-email "${args[@]}" 2>&1 | tee -a "$LOG" | awk '/^BIRTHDAY_EMAIL_SUMMARY /'
+          pipeline_status=("${PIPESTATUS[@]}")
+          status=${pipeline_status[0]}
+          if (( status == 0 && (pipeline_status[1] != 0 || pipeline_status[2] != 0) )); then
+            status=1
+          fi
+          set -e
+
+          if (( status == 0 )); then
             echo "Birthday email task completed; details are in the protected server log and application email log."
           else
-            status=$?
-            echo "::error::Birthday email task failed (exit $status); inspect the protected server log."
+            echo "::error::Birthday email task failed (exit $status). Check the protected server log; sanitized recipient counts are shown above when available."
             exit "$status"
           fi
           REMOTE_SCRIPT
