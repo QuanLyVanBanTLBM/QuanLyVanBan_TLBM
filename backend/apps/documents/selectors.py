@@ -73,7 +73,7 @@ def van_ban_xem_duoc(user, loai="DEN"):
     Quy tắc xem văn bản chuẩn:
     - user không tồn tại hoặc is_active = False: trả về none()
     - Quản trị viên (Admin): Có quyền xem toàn bộ văn bản để quản lý, thanh tra chống gian dối.
-    - Cán bộ thường đối với NOI_BO: xem được nếu có quyền view_* hoặc hien_thi = True.
+    - Cán bộ thường đối với NOI_BO: xem được toàn bộ nếu có quyền view_*; không có quyền xem thì chỉ thấy văn bản do mình tạo.
     - Đối với HAN_CHE: CHỈ cán bộ được chỉ định (nguoi_nhan) hoặc người tạo (nguoi_tao) mới được quyền xem (và chỉ được quyền xem).
     """
     model = get_document_model(loai)
@@ -124,11 +124,8 @@ def van_ban_xem_duoc(user, loai="DEN"):
     if has_view_perm:
         cond_noi_bo = Q(pham_vi=PhamVi.NOI_BO)
     else:
-        # Khi user có phân quyền nhưng bị tước quyền view_*: chỉ xem được văn bản do mình tạo
-        if user.user_permissions.exists() or user.groups.filter(permissions__isnull=False).exists():
-            cond_noi_bo = Q(pham_vi=PhamVi.NOI_BO, nguoi_tao=user)
-        else:
-            cond_noi_bo = Q(pham_vi=PhamVi.NOI_BO, hien_thi=True)
+        # Không có quyền xem view_* (gồm cả tài khoản chưa được gán quyền nào): chỉ xem được văn bản do mình tạo.
+        cond_noi_bo = Q(pham_vi=PhamVi.NOI_BO, nguoi_tao=user)
 
     cond_active = Q(hieu_luc__in=[HieuLuc.CON_HIEU_LUC, HieuLuc.CON_HIEU_LUC_1_PHAN])
     if co_quyen_xem_het_hieu_luc(user, model_name):
@@ -186,17 +183,12 @@ def la_nguoi_xem_duoc(user, van_ban):
     if not getattr(van_ban, "hien_thi", True):
         return _co_quyen(user, f"view_{model_name}")
 
-    # Văn bản hiển thị bình thường: nếu user có nhóm quyền/phân quyền nhưng bị tước view_* thì không được xem chi tiết
-    try:
-        if user.user_permissions.exists() or user.groups.filter(permissions__isnull=False).exists():
-            return (
-                _co_quyen(user, f"view_{model_name}")
-                or _co_quyen(user, f"change_{model_name}")
-                or _co_quyen(user, f"view_read_log_{model_name}")
-            )
-    except Exception:
-        pass
-    return True
+    # Văn bản hiển thị bình thường: không có quyền xem (kể cả tài khoản chưa gán quyền nào) thì không xem được chi tiết.
+    return (
+        _co_quyen(user, f"view_{model_name}")
+        or _co_quyen(user, f"change_{model_name}")
+        or _co_quyen(user, f"view_read_log_{model_name}")
+    )
 
 def log_access(document_type, document_id, user, hanh_dong, doi_tuong_user=None, tep_id=None, dia_chi_ip=None):
     """
