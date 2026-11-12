@@ -594,6 +594,7 @@
     "kenhNhan": "Send OTP by",
     "sms": "SMS",
     "email": "Email",
+    "doiHoacKhoiPhuc": "Change or recover PIN",
     "guiOtp": "Send OTP",
     "otpDaGui": "A code was sent by {kenh}. It expires in 10 minutes.",
     "maOtp": "OTP code",
