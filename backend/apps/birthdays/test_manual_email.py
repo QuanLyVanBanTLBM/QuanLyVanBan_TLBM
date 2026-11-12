@@ -67,6 +67,39 @@ class ManualBirthdayEmailTests(TestCase):
         self.assertFalse(BirthdayEmailLog.objects.filter(employee=self.leader).exists())
 
     @patch("birthdays.manual_views.require_delivery_backend")
+    def test_non_leadership_employee_can_preview_and_send_manually(self, _backend):
+        position, _ = Position.objects.get_or_create(
+            name="Chuyên viên", defaults={"display_order": Position.get_next_display_order()},
+        )
+        employee = Employee.objects.create_user(
+            username="birthday-staff", email="staff@example.test",
+            ho_ten="Nhân viên thử", chuc_vu=position, ngay_sinh=date(1985, 5, 20),
+        )
+        draft = {**self.draft, "employee_id": employee.pk}
+
+        recipient_response = self.client.get(
+            reverse("birthdays:manual_recipients"), {"q": "Nhân viên thử"},
+        )
+        self.assertEqual(recipient_response.status_code, 200)
+        self.assertEqual([item["id"] for item in recipient_response.data["recipients"]], [employee.pk])
+
+        preview_response = self.client.post(
+            reverse("birthdays:manual_preview"), draft, format="json",
+        )
+        self.assertEqual(preview_response.status_code, 200, preview_response.data)
+
+        send_response = self.client.post(
+            reverse("birthdays:manual_send"),
+            {**draft, "preview_token": preview_response.data["preview_token"]},
+            format="json",
+        )
+        self.assertEqual(send_response.status_code, 200, send_response.data)
+        self.assertEqual(send_response.data["log"]["trang_thai"], BirthdayEmailStatus.SUCCESS)
+        self.assertEqual(send_response.data["log"]["delivery_source"], "MANUAL")
+        self.assertEqual(send_response.data["log"]["smtp_response_code"], "250 OK")
+        self.assertEqual(mail.outbox[-1].to, [employee.email])
+
+    @patch("birthdays.manual_views.require_delivery_backend")
     def test_preview_is_bound_to_content_and_send_is_unique(self, _backend):
         preview = self.preview()
         self.assertEqual(self.send(preview, message="Nội dung bị đổi.").status_code, 409)

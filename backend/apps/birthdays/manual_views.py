@@ -98,10 +98,14 @@ class DeliveryProblem(Exception):
         return Response({"error": self.code}, status=self.status)
 
 
-def _leadership():
+def _active_birthday_recipients():
     return Employee.objects.filter(
-        is_active=True, ngay_sinh__isnull=False, chuc_vu__name__in=LEADERSHIP_POSITIONS,
+        is_active=True, ngay_sinh__isnull=False,
     ).select_related("chuc_vu", "don_vi")
+
+
+def _leadership():
+    return _active_birthday_recipients().filter(chuc_vu__name__in=LEADERSHIP_POSITIONS)
 
 
 def _recipient(employee: Employee) -> str:
@@ -160,7 +164,7 @@ def recipients_api(request):
     query = request.query_params.get("q", "").strip()[:100]
     scope = request.query_params.get("scope", "").strip().lower()
     if query or scope == "all":
-        employees = Employee.objects.filter(is_active=True, ngay_sinh__isnull=False).select_related("chuc_vu", "don_vi")
+        employees = _active_birthday_recipients()
         if query:
             employees = employees.filter(Q(ho_ten__icontains=query) | Q(chuc_vu__name__icontains=query))
     else:
@@ -205,7 +209,7 @@ def preview_api(request):
     if not serializer.is_valid():
         return Response({"error": "invalidDraft"}, status=400)
     draft = serializer.validated_data
-    employee = get_object_or_404(_leadership(), pk=draft["employee_id"])
+    employee = get_object_or_404(_active_birthday_recipients(), pk=draft["employee_id"])
     try:
         prepared = _draft_for(employee, draft, request.user.pk)
     except DeliveryProblem as error:
@@ -239,7 +243,10 @@ def send_api(request):
     try:
         _ready_to_send()
         with transaction.atomic():
-            employee = get_object_or_404(_leadership().select_for_update(of=("self",)), pk=draft["employee_id"])
+            employee = get_object_or_404(
+                _active_birthday_recipients().select_for_update(of=("self",)),
+                pk=draft["employee_id"],
+            )
             prepared = _draft_for(employee, draft, request.user.pk)
             if fingerprint != prepared["fingerprint"]:
                 raise DeliveryProblem("previewExpired", 409)
