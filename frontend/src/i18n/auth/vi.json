@@ -37,6 +37,30 @@
       "black": "Click để tớ nhún nhảy!",
       "orange": "Click để tớ cười to hơn!",
       "yellow": "Click để tớ lắc lư!"
+    },
+    "twofa": {
+      "title": "Xác thực hai yếu tố (2FA)",
+      "subtitleOtp": "Nhập mã 6 chữ số từ ứng dụng Authenticator trên điện thoại cho tài khoản {username}.",
+      "subtitleBackup": "Nhập một trong các mã dự phòng 8 ký tự đã lưu khi thiết lập 2FA.",
+      "otpLabel": "Mã xác thực OTP (6 chữ số)",
+      "otpPlaceholder": "Nhập 6 chữ số...",
+      "backupLabel": "Mã dự phòng (Backup Code)",
+      "backupPlaceholder": "Ví dụ: ABCD-EFGH",
+      "verifyBtn": "Xác nhận & Đăng nhập",
+      "verifying": "Đang kiểm tra mã...",
+      "verifiedSuccess": "Xác thực thành công!",
+      "useBackupCode": "Dùng mã dự phòng (khi mất điện thoại)",
+      "useAuthenticatorCode": "Quay lại nhập mã Authenticator 6 số",
+      "backToLogin": "Quay lại đăng nhập",
+      "errors": {
+        "otpRequired": "Vui lòng nhập mã xác thực.",
+        "otpInvalid": "Mã xác thực không chính xác. Còn {attempts} lần thử.",
+        "otpInvalidNoCount": "Mã xác thực không chính xác. Vui lòng thử lại.",
+        "otpReused": "Mã OTP này vừa được sử dụng. Vui lòng đợi mã mới (tối đa 30 giây).",
+        "locked": "Nhập sai quá nhiều lần. Vui lòng thử lại sau {seconds} giây.",
+        "sessionExpired": "Phiên xác thực 2FA đã hết hạn. Vui lòng đăng nhập lại.",
+        "sessionInvalid": "Phiên xác thực 2FA không hợp lệ. Vui lòng đăng nhập lại."
+      }
     }
   }
 }

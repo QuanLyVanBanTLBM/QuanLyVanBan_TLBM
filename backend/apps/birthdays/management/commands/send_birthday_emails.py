@@ -15,6 +15,7 @@ class Command(BaseCommand):
             "--date",
             help="Ngày cần gửi YYYY-MM-DD (mặc định: ngày hiện tại theo TIME_ZONE của dự án)",
         )
+        parser.add_argument("--username", help="Chỉ gửi cho tài khoản chỉ định trong ngày cần gửi")
         parser.add_argument(
             "--retries",
             type=int,
@@ -72,6 +73,7 @@ class Command(BaseCommand):
             target_date=target_date,
             max_retries=options["retries"],
             allow_test_email_backend=options["allow_locmem"],
+            username=options["username"],
         )
 
         for detail in results["details"]:
@@ -94,3 +96,7 @@ class Command(BaseCommand):
         _safe_write(self.stdout.write, summary)
         if results["failed_count"]:
             raise CommandError("Có email chưa được xác nhận gửi thành công; xem nhật ký BirthdayEmailLog.")
+        if options["username"] is not None and not results["sent_count"] and not any(
+            detail.get("trang_thai") == "SUCCESS" for detail in results["details"]
+        ):
+            raise CommandError("Tài khoản chưa có lần gửi thành công cho ngày được chọn.")

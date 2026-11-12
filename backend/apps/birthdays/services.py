@@ -498,6 +498,8 @@ def send_automated_birthday_emails(
     max_retries: int = 3,
     leap_year_strategy: str = None,
     allow_test_email_backend: bool = False,
+    *,
+    username: str | None = None,
 ) -> dict:
     """Send due non-leadership birthdays and eligible automatic retries."""
     if target_date is None:
@@ -514,10 +516,13 @@ def send_automated_birthday_emails(
 
     now = timezone.now()
     stale_cutoff = now - timedelta(minutes=30)
-    stale_failed_count = BirthdayEmailLog.objects.filter(
+    stale_logs = BirthdayEmailLog.objects.filter(
         trang_thai=BirthdayEmailStatus.SENDING,
         updated_at__lt=stale_cutoff,
-    ).update(
+    )
+    if username is not None:
+        stale_logs = stale_logs.filter(employee__username=username, sent_date=target_date)
+    stale_failed_count = stale_logs.update(
         trang_thai=BirthdayEmailStatus.FAILED,
         error_message=STALE_SENDING_NOTE,
         delivery_uncertain=True,
@@ -531,13 +536,15 @@ def send_automated_birthday_emails(
         .exclude(chuc_vu__name__in=LEADERSHIP_POSITIONS)
         .select_related("don_vi", "chuc_vu")
     )
+    if username is not None:
+        active_employees = active_employees.filter(username=username)
     eligible_employees = [
         emp
         for emp in active_employees
         if is_birthday_on_date(emp.ngay_sinh, target_date, leap_year_strategy=leap_year_strategy)
     ]
     retry_start_date = target_date - timedelta(days=3)
-    retry_logs = list(
+    retry_logs = [] if username is not None else list(
         BirthdayEmailLog.objects.filter(
             trang_thai=BirthdayEmailStatus.RETRY,
             delivery_source=BirthdayEmailSource.AUTO,
