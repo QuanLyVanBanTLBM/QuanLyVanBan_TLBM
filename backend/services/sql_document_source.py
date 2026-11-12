@@ -112,6 +112,7 @@ def _assert_readonly_connection(cursor):
                    JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
                    WHERE namespace.nspname = 'public'
                      AND relation.relkind IN ('r', 'p', 'f')
+                     AND relation.relname <> 'ai_document_embedding'
                      AND has_table_privilege(current_user, relation.oid, 'SELECT')
                )
         FROM pg_roles role

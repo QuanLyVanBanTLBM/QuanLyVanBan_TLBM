@@ -181,6 +181,8 @@ cat > "$MOCK_BIN/psql" <<'MOCK'
 #!/usr/bin/env bash
 set -euo pipefail
 case "$*" in
+  *default_version*) if [ -n "${MOCK_PGVECTOR_VERSION-0.8.7}" ]; then echo "$MOCK_PGVECTOR_VERSION"; fi ;;
+  *extversion*) echo "${MOCK_PGVECTOR_DB_VERSION-0.8.7}" ;;
   *datlocprovider*) echo 'i|vi-VN' ;;
   *shobj_description*)
     hash=$(sha256sum "$RELEASE_DIR/docs/common/database/release_DDL.sql" | awk '{print $1}')
@@ -306,8 +308,8 @@ make_case() {
   mkdir -p "$CASE_ROOT/shared/media" "$CASE_ROOT/shared/signing" "$CASE_ROOT/shared/ai" "$CASE_ROOT/shared/storage"
   : > "$HOME/deploy/qlvb-$NAME.tar.gz"
   QLVB_NGINX_SITE="$CASE_ROOT/nginx-site"
-  echo 'server { listen 8088; }' > "$QLVB_NGINX_SITE"
-  echo 'server { listen 8088; server_name new; }' > "$HOME/deploy/qlvb-frontend.nginx"
+  echo 'server { listen 443; }' > "$QLVB_NGINX_SITE"
+  echo 'server { listen 443; server_name new; }' > "$HOME/deploy/qlvb-frontend.nginx"
   echo "$QLVB_BASE/releases/previous" > "$CURRENT_FILE"
   echo "$state" > "$SERVICE_STATE"
   : > "$EVENTS"
@@ -317,8 +319,8 @@ DB_USER=deploy_test
 DB_PASSWORD=test-only
 DJANGO_SECRET_KEY=test-only
 SIGNING_PIN_SECRET=synthetic-test-only
-SIGNING_FRONTEND_URL=https://staging-quanlyvanban.bhbl.vn:8088
-DJANGO_CSRF_TRUSTED_ORIGINS=https://staging-quanlyvanban.bhbl.vn:8088,http://127.0.0.1:8088
+SIGNING_FRONTEND_URL=https://staging-quanlyvanban.bhbl.vn
+DJANGO_CSRF_TRUSTED_ORIGINS=https://staging-quanlyvanban.bhbl.vn,http://127.0.0.1:8089
 DJANGO_SECURE_PROXY_SSL_HEADER=true
 DJANGO_SECURE_SSL_REDIRECT=true
 DJANGO_SECURE_COOKIES=true
@@ -333,6 +335,8 @@ ENV
   export MOCK_PENDING=0 MOCK_PREFLIGHT_FAIL=0 MOCK_MIGRATION_FAIL=0 MOCK_NON_ATOMIC=0
   export MOCK_ADOPT_FAIL=0 MOCK_SEED_FAIL=0 MOCK_STOP_FAIL=0 MOCK_STOP_LEAVES_ACTIVE=0 MOCK_RESTART_FAIL=0 MOCK_RESTART_FAIL_ONCE=0 MOCK_SYSTEMCTL_QUERY_ERROR=0
   export MOCK_BACKUP_FAIL=0 MOCK_BACKUP_BAD_JSON=0 MOCK_EXTRACT_FAIL=0 MOCK_OMIT_BACKUP_TOOL=0
+  export MOCK_PGVECTOR_VERSION=0.8.7
+  export MOCK_PGVECTOR_DB_VERSION=0.8.7
   export MOCK_MARK_VERSION=3
   export MOCK_HEALTH_CODE=200 MOCK_HEALTH_BODY="{\"status\":\"ready\",\"release\":\"$NAME\"}"
 }
@@ -428,6 +432,42 @@ assert_event_absent stop
 assert_event_absent restart
 assert_event_absent backup
 pass "unexpected service-state query failure aborts without changing service state"
+
+make_case missing-pgvector-extension
+export MOCK_PGVECTOR_VERSION=
+expect_failure
+expect_state "$QLVB_BASE/releases/previous" active
+assert_event_absent stop
+assert_event_absent backup
+grep -q 'postgresql-16-pgvector' "$CASE_ROOT/output.log" || fail "missing pgvector prerequisite was not reported"
+pass "missing pgvector server package aborts before service stop or backup"
+
+make_case old-pgvector-extension
+export MOCK_PGVECTOR_VERSION=0.6.0
+expect_failure
+expect_state "$QLVB_BASE/releases/previous" active
+assert_event_absent stop
+assert_event_absent backup
+grep -q '>= 0.7.0' "$CASE_ROOT/output.log" || fail "old pgvector version requirement was not reported"
+pass "pgvector without halfvec support aborts before service stop or backup"
+
+make_case missing-pgvector-database-extension
+export MOCK_PGVECTOR_DB_VERSION=
+expect_failure
+expect_state "$QLVB_BASE/releases/previous" active
+assert_event_absent stop
+assert_event_absent backup
+grep -q 'CREATE EXTENSION vector' "$CASE_ROOT/output.log" || fail "missing database extension prerequisite was not reported"
+pass "pgvector absent from target database aborts read-only before service stop or backup"
+
+make_case old-pgvector-database-extension
+export MOCK_PGVECTOR_DB_VERSION=0.6.0
+expect_failure
+expect_state "$QLVB_BASE/releases/previous" active
+assert_event_absent stop
+assert_event_absent backup
+grep -q 'ALTER EXTENSION vector UPDATE' "$CASE_ROOT/output.log" || fail "old target database extension version was not reported"
+pass "old pgvector database extension aborts before service stop or backup"
 
 make_case invalid-release-name
 if ( export PATH="$MOCK_BIN:$PATH"; cd "$CASE_ROOT"; bash "$DEPLOY" "_invalid" ); then
@@ -689,8 +729,8 @@ make_case nginx-invalid-restored
 echo 'server { MOCK_INVALID; }' > "$HOME/deploy/qlvb-frontend.nginx"
 expect_failure
 expect_state "$QLVB_BASE/releases/previous" active
-assert_eq "$(cat "$QLVB_NGINX_SITE")" 'server { listen 8088; }' "restored nginx site"
-assert_eq "$(cat "$HOME/deploy/qlvb-frontend.nginx")" 'server { listen 8088; }' "nginx install source after restore"
+assert_eq "$(cat "$QLVB_NGINX_SITE")" 'server { listen 443; }' "restored nginx site"
+assert_eq "$(cat "$HOME/deploy/qlvb-frontend.nginx")" 'server { listen 443; }' "nginx install source after restore"
 assert_event_count nginx-install 2
 assert_event_count nginx-test 2
 assert_event_absent reload
@@ -704,7 +744,7 @@ make_case nginx-reload-failure
 export MOCK_NGINX_RELOAD_FAIL=1
 expect_failure
 expect_state "$QLVB_BASE/releases/previous" active
-assert_eq "$(cat "$QLVB_NGINX_SITE")" 'server { listen 8088; }' "restored nginx site after reload failure"
+assert_eq "$(cat "$QLVB_NGINX_SITE")" 'server { listen 443; }' "restored nginx site after reload failure"
 assert_event_count reload 1
 assert_event_count nginx-install 2
 assert_event_absent stop
