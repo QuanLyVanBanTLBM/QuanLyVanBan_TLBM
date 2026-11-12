@@ -266,3 +266,17 @@ class DongThoiTests(TransactionTestCase):
         self.assertEqual(len(loi), 1)
         # Bên thua nhận lỗi nghiệp vụ có mã (không phải deadlock do khóa ngược thứ tự)
         self.assertIn(ma_loi(loi[0]), ("luot_trinh_khong_cho_ky", "ho_so_da_ket_thuc"))
+
+    def test_concurrent_draft_creation_generates_distinct_codes(self):
+        ma = []
+
+        def tao():
+            ho_so = trinh_ky_service.tao_nhap(self.tao, quy_trinh=self.ho_so.quy_trinh, tep=tep_pdf(),
+                                              trich_yeu_van_ban="Tạo đồng thời")
+            ma.append(ho_so.so_hieu_van_ban)
+
+        loi = chay_song_song(*[tao] * 6)
+        self.assertEqual(loi, [])
+        self.assertEqual(len(ma), 6)
+        self.assertEqual(len(set(ma)), 6)
+        self.assertTrue(all(m.startswith("HS-") for m in ma))

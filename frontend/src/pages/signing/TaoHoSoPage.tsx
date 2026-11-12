@@ -37,7 +37,6 @@ function Buoc1({ onXong }: { onXong: (ho_so: HoSoChiTiet, tep: ArrayBuffer | nul
     () => chon ? signingApi.chiTietVanBanDi(chon.id) : Promise.resolve(null), [chon?.id],
   );
   const quyTrinh = useTai(() => signingApi.quyTrinh('HOAT_DONG'));
-  const [soHieu, setSoHieu] = useState('');
   const [trichYeu, setTrichYeu] = useState('');
   const [canhBaoTrichYeu, setCanhBaoTrichYeu] = useState('');
   const [qtId, setQtId] = useState('');
@@ -171,7 +170,6 @@ function Buoc1({ onXong }: { onXong: (ho_so: HoSoChiTiet, tep: ArrayBuffer | nul
         form.append('van_ban_id', String(chon.id));
         form.append('tep_dinh_kem_id', tepDinhKemId);
       } else {
-        form.append('so_hieu_van_ban', soHieu.trim());
         form.append('trich_yeu_van_ban', trichYeu.trim());
         if (tep) form.append('tep', tep);
       }
@@ -274,15 +272,6 @@ function Buoc1({ onXong }: { onXong: (ho_so: HoSoChiTiet, tep: ArrayBuffer | nul
           ) : (
             <div className="grid gap-4 md:grid-cols-[minmax(0,14rem)_minmax(0,1fr)] items-start">
               <p className="text-xs text-muted md:col-span-2">{t('tao.goiYNhapKhac')}</p>
-              <TruongNhap nhan={t('tao.soHieu')} ghiChu={t('tao.soHieuGhiChu')}>
-                <input
-                  aria-label={t('tao.soHieu')}
-                  className={LOP_O_NHAP}
-                  maxLength={100}
-                  value={soHieu}
-                  onChange={(e) => setSoHieu(e.target.value)}
-                />
-              </TruongNhap>
               <TruongNhap nhan={t('tao.trichYeu')} batBuoc ghiChu={`${trichYeu.length}/${GIOI_HAN.trichYeu} ${t('chung.kyTu')}`} loi={loiTrichYeu}>
                 <input
                   aria-label={t('tao.trichYeu')}

@@ -149,7 +149,6 @@ class TrinhKyTaoSerializer(serializers.Serializer):
 
     document_type = serializers.ChoiceField(choices=enums.LoaiVanBan.choices, required=False, allow_null=True)
     van_ban_id = serializers.IntegerField(min_value=1, required=False, allow_null=True)
-    so_hieu_van_ban = serializers.CharField(max_length=100, required=False, allow_blank=True, default="")
     trich_yeu_van_ban = serializers.CharField(max_length=MAX_TRICH_YEU, required=False, allow_blank=True, default="")
     quy_trinh = serializers.PrimaryKeyRelatedField(queryset=SigningProcess.objects.all())
     han_chot = serializers.DateTimeField(required=False, allow_null=True)
@@ -187,7 +186,6 @@ class LienKetVanBanDiSerializer(serializers.Serializer):
 class TrinhKySuaSerializer(serializers.Serializer):
     han_chot = serializers.DateTimeField(required=False, allow_null=True)
     ghi_chu = serializers.CharField(max_length=MAX_GHI_CHU, required=False, allow_blank=True)
-    so_hieu_van_ban = serializers.CharField(max_length=100, required=False, allow_blank=True)
     trich_yeu_van_ban = serializers.CharField(max_length=MAX_TRICH_YEU, required=False, allow_blank=True)
     quy_trinh = serializers.PrimaryKeyRelatedField(queryset=SigningProcess.objects.all(), required=False)
     tep = serializers.FileField(required=False)

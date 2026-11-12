@@ -252,7 +252,7 @@ def _thao_tac_da_xu_ly(hanh_dong, khoa_chong_trung, yeu_cau):
 
 
 # ── Văn bản trình ký (#275 mục 3) ───────────────────────────────────────────
-# Hồ sơ dùng tệp PDF đính kèm của văn bản đi, hoặc một PDF dự thảo chưa vào sổ (số hiệu tham chiếu tùy chọn,
+# Hồ sơ dùng tệp PDF đính kèm của văn bản đi, hoặc một PDF dự thảo chưa vào sổ (mã hồ sơ do máy chủ tự sinh,
 # trích yếu bắt buộc). Văn bản đi chỉ có tối đa một hồ sơ đang mở và một hồ sơ hoàn tất.
 
 
@@ -273,12 +273,21 @@ def _kiem_tra_trich_yeu(trich_yeu):
                    trich_yeu_van_ban=["Tối đa 1000 ký tự."])
 
 
+def _gan_ma_ho_so(yeu_cau):
+    """Ghi mã hồ sơ `HS-<năm>-<khóa chính 6 chữ số>` vào `so_hieu_van_ban` của hồ sơ PDF dự thảo.
+
+    Số thứ tự lấy từ khóa chính nên duy nhất kể cả khi tạo đồng thời; gọi trong transaction tạo hồ sơ."""
+    nam = timezone.localtime(yeu_cau.created_at).year
+    yeu_cau.so_hieu_van_ban = f"HS-{nam}-{yeu_cau.pk:06d}"
+    yeu_cau.save(update_fields=["so_hieu_van_ban"])
+
+
 # ── Tạo, sửa nháp ───────────────────────────────────────────────────────────
 
 
 @transaction.atomic
 def tao_nhap(nguoi_tao, *, quy_trinh, tep=None, tep_dinh_kem_id=None, document_type=None, van_ban_id=None,
-             so_hieu_van_ban="", trich_yeu_van_ban="", han_chot=None, ghi_chu="", dia_chi_ip=None):
+             trich_yeu_van_ban="", han_chot=None, ghi_chu="", dia_chi_ip=None):
     if van_ban_id is not None:
         if tep is not None:
             raise _loi("du_lieu_tep_khong_hop_le", "Văn bản đi có sẵn phải dùng tệp đính kèm trên bản ghi.",
@@ -289,7 +298,7 @@ def tao_nhap(nguoi_tao, *, quy_trinh, tep=None, tep_dinh_kem_id=None, document_t
         if document_type not in (None, enums.LoaiVanBan.VAN_BAN_DI):
             kiem_tra_van_ban_trinh_ky(nguoi_tao, document_type, van_ban_id)
         document_type = enums.LoaiVanBan.VAN_BAN_DI
-        so_hieu_van_ban = trich_yeu_van_ban = ""  # văn bản đi là nguồn mô tả
+        trich_yeu_van_ban = ""  # văn bản đi là nguồn mô tả
         data, _ = doc_tep_dinh_kem_pdf(nguoi_tao, van_ban_id, tep_dinh_kem_id)
     else:
         if tep_dinh_kem_id is not None:
@@ -305,11 +314,13 @@ def tao_nhap(nguoi_tao, *, quy_trinh, tep=None, tep_dinh_kem_id=None, document_t
     _kiem_tra_han_chot(han_chot)
     vi_tri, ma_bam = luu_du_lieu_pdf(data)
     yeu_cau = SigningRequest.objects.create(
-        document_type=document_type, van_ban_id=van_ban_id, so_hieu_van_ban=so_hieu_van_ban.strip(),
+        document_type=document_type, van_ban_id=van_ban_id,
         trich_yeu_van_ban=trich_yeu_van_ban.strip(), quy_trinh=quy_trinh,
         phien_ban_quy_trinh=quy_trinh.phien_ban, han_chot=han_chot, ghi_chu=ghi_chu,
         phien_ban_van_ban="1", vi_tri_luu_tep=vi_tri, ma_bam_tai_lieu=ma_bam, create_by=nguoi_tao,
     )
+    if van_ban_id is None:
+        _gan_ma_ho_so(yeu_cau)
     ghi_nhat_ky(nguoi_tao, LOAI, yeu_cau.pk, "TAO_TRINH_KY", trinh_ky=yeu_cau,
                 trang_thai_sau=yeu_cau.trang_thai, dia_chi_ip=dia_chi_ip,
                 du_lieu_kem_theo={"ma_bam_tai_lieu": ma_bam, "quy_trinh": quy_trinh.pk})
@@ -350,7 +361,7 @@ def lien_ket_van_ban_di(yeu_cau, nguoi, *, van_ban_id, dia_chi_ip=None):
 
 @transaction.atomic
 def cap_nhat_nhap(yeu_cau, nguoi, *, tep=None, dia_chi_ip=None, **thay_doi):
-    """Sửa hồ sơ NHAP (hạn chót, ghi chú, tệp; số hiệu tham chiếu, trích yếu khi dùng PDF dự thảo chưa vào sổ). Thay tệp tăng
+    """Sửa hồ sơ NHAP (hạn chót, ghi chú, tệp; trích yếu khi dùng PDF dự thảo chưa vào sổ). Thay tệp tăng
     `phien_ban_van_ban`."""
     yeu_cau = _khoa_yeu_cau(yeu_cau.pk)
     _yeu_cau_nguoi_tao(yeu_cau, nguoi)
@@ -358,7 +369,7 @@ def cap_nhat_nhap(yeu_cau, nguoi, *, tep=None, dia_chi_ip=None, **thay_doi):
         raise ConflictError(code="ho_so_khong_o_trang_thai_nhap", detail="Chỉ sửa được hồ sơ nháp.")
     if "han_chot" in thay_doi:
         _kiem_tra_han_chot(thay_doi["han_chot"])
-    nhap_tay = {k for k in ("so_hieu_van_ban", "trich_yeu_van_ban") if k in thay_doi}
+    nhap_tay = {k for k in ("trich_yeu_van_ban",) if k in thay_doi}
     if nhap_tay and yeu_cau.van_ban_id is not None:
         raise _loi("van_ban_da_gan", "Hồ sơ gắn văn bản đi; số hiệu, trích yếu lấy theo văn bản đi.",
                    **{k: ["Không sửa được khi đã gắn văn bản đi."] for k in nhap_tay})
@@ -664,11 +675,13 @@ def trinh_lai(yeu_cau, nguoi, *, khoa_chong_trung, han_chot=None, dia_chi_ip=Non
     luot = luot_hien_hanh(yeu_cau)
     moi = SigningRequest.objects.create(
         document_type=yeu_cau.document_type, van_ban_id=yeu_cau.van_ban_id,
-        so_hieu_van_ban=yeu_cau.so_hieu_van_ban, trich_yeu_van_ban=yeu_cau.trich_yeu_van_ban, quy_trinh=quy_trinh,
+        trich_yeu_van_ban=yeu_cau.trich_yeu_van_ban, quy_trinh=quy_trinh,
         phien_ban_quy_trinh=quy_trinh.phien_ban, han_chot=han_chot,
         ghi_chu=yeu_cau.ghi_chu, phien_ban_van_ban=luot.phien_ban_van_ban, vi_tri_luu_tep=luot.vi_tri_luu_tep,
         ma_bam_tai_lieu=luot.ma_bam_tai_lieu, ho_so_goc=yeu_cau, create_by=nguoi,
     )
+    if moi.van_ban_id is None:
+        _gan_ma_ho_so(moi)  # hồ sơ trình lại là hồ sơ mới, có mã riêng
     ghi_nhat_ky(nguoi, LOAI, yeu_cau.pk, "TRINH_LAI", trinh_ky=yeu_cau, dia_chi_ip=dia_chi_ip,
                 du_lieu_kem_theo={"khoa_chong_trung": khoa_chong_trung, "ho_so_moi": moi.pk})
     ghi_nhat_ky(nguoi, LOAI, moi.pk, "TAO_TRINH_KY", trinh_ky=moi, trang_thai_sau=moi.trang_thai,
