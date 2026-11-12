@@ -61,6 +61,10 @@ if [[ "${1:-}" == "manage.py" ]]; then
     check|collectstatic) exit 0 ;;
     migrate)
       if [[ "${3:-}" == "--plan" ]]; then
+        if [[ "${MOCK_MIGRATE_PLAN_FAIL:-0}" == "1" ]]; then
+          echo "mock migrate plan failed" >&2
+          exit 42
+        fi
         echo "Planned operations:"
         if [[ "${MOCK_PENDING:-0}" == "1" ]]; then
           echo "accounts.0007_test_migration"
@@ -332,7 +336,7 @@ ADMIN_PASSWORD=test-only
 ENV
   export CASE_ROOT NAME HOME EVENTS SERVICE_STATE CURRENT_FILE RELEASE_DIR QLVB_BASE QLVB_ENVF QLVB_NGINX_SITE
   export MOCK_BIN MOCK_PYTHON MOCK_PIP MOCK_NGINX_RELOAD_FAIL=0
-  export MOCK_PENDING=0 MOCK_PREFLIGHT_FAIL=0 MOCK_MIGRATION_FAIL=0 MOCK_NON_ATOMIC=0
+  export MOCK_PENDING=0 MOCK_PREFLIGHT_FAIL=0 MOCK_MIGRATION_FAIL=0 MOCK_NON_ATOMIC=0 MOCK_MIGRATE_PLAN_FAIL=0
   export MOCK_ADOPT_FAIL=0 MOCK_SEED_FAIL=0 MOCK_STOP_FAIL=0 MOCK_STOP_LEAVES_ACTIVE=0 MOCK_RESTART_FAIL=0 MOCK_RESTART_FAIL_ONCE=0 MOCK_SYSTEMCTL_QUERY_ERROR=0
   export MOCK_BACKUP_FAIL=0 MOCK_BACKUP_BAD_JSON=0 MOCK_EXTRACT_FAIL=0 MOCK_OMIT_BACKUP_TOOL=0
   export MOCK_PGVECTOR_VERSION=0.8.7
@@ -380,6 +384,15 @@ assert_event_absent stop
 assert_event_absent restart
 assert_event_absent backup
 pass "missing tarball leaves the initially active service untouched"
+
+make_case migration-plan-fails
+export MOCK_MIGRATE_PLAN_FAIL=1
+expect_failure
+expect_state "$QLVB_BASE/releases/previous" active
+assert_event_absent stop
+assert_event_absent backup
+assert_event_absent restart
+pass "migration plan failure leaves the active service untouched"
 
 make_case existing-release
 mkdir -p "$RELEASE_DIR"

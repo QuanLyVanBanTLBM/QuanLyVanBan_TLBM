@@ -229,9 +229,21 @@ $PY manage.py check
 $PY manage.py collectstatic --noinput | tail -1
 
 # Kiem tra som ke hoach migration ngay khi server cu van dang phuc vu binh thuong
-MIG_PLAN=$("$PY" manage.py migrate --plan 2>/dev/null || true)
+if ! MIG_PLAN=$("$PY" manage.py migrate --plan 2>&1); then
+  echo "Khong doc duoc ke hoach migration; dung deploy truoc khi dung service."
+  printf '%s\n' "$MIG_PLAN"
+  exit 1
+fi
+printf '%s\n' "$MIG_PLAN"
 if [[ "$MIG_PLAN" == *"No planned migration operations."* ]]; then
   echo "Ke hoach migration: Khong co migration cho tren release moi."
+fi
+
+if [ -z "${CASE_ROOT:-}" ]; then
+  sudo -n /usr/bin/install -m 0644 "$HOME/deploy/qlvb-backend.socket" /etc/systemd/system/qlvb-backend.socket
+  sudo -n /usr/bin/install -D -m 0644 "$HOME/deploy/qlvb-backend.service.d/socket.conf" /etc/systemd/system/qlvb-backend.service.d/socket.conf
+  sudo -n /usr/bin/systemctl daemon-reload
+  sudo -n /usr/bin/systemctl enable qlvb-backend.socket
 fi
 
 step "4/9 Cau hinh nginx"

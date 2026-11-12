@@ -440,7 +440,7 @@ jobs:
           chmod 600 ~/.ssh/known_hosts
           SSH='ssh -i ~/.ssh/id_ed25519 -p 2150'
           REMOTE="$DEPLOY_USER@$DEPLOY_HOST"
-          $SSH "$REMOTE" 'mkdir -p ~/deploy'
+          $SSH "$REMOTE" 'mkdir -p ~/deploy/qlvb-backend.service.d'
 
           # Kiem tra ban release va trang thai service dang chay thuc te tren host
           CURRENT_RELEASE=$($SSH "$REMOTE" 'readlink -f /srv/qlvb/current 2>/dev/null || true')
@@ -485,6 +485,8 @@ jobs:
             fi
           '
           rsync -az -e "$SSH" "qlvb-$SHA7.tar.gz" deploy/deploy.sh "$REMOTE:deploy/"
+          rsync -az -e "$SSH" deploy/qlvb-backend.socket "$REMOTE:deploy/qlvb-backend.socket"
+          rsync -az -e "$SSH" deploy/qlvb-backend.service.d/socket.conf "$REMOTE:deploy/qlvb-backend.service.d/socket.conf"
           rsync -az -e "$SSH" deploy/nginx/qlvb-frontend.conf "$REMOTE:deploy/qlvb-frontend.nginx"
           DB_MODE=sync
           if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$RESET_DATABASE" == "true" ]]; then
