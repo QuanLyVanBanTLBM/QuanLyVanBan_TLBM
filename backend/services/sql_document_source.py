@@ -112,6 +112,7 @@ def _assert_readonly_connection(cursor):
                    JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
                    WHERE namespace.nspname = 'public'
                      AND relation.relkind IN ('r', 'p', 'f')
+                     AND relation.relname <> 'ai_document_embedding'
                      AND has_table_privilege(current_user, relation.oid, 'SELECT')
                )
         FROM pg_roles role
@@ -272,3 +273,169 @@ def get_accessible_document(user, source_type, source_id, employee_id=None):
         ),
         None,
     )
+
+
+def get_document_record_for_index(source_type: str, source_id: int):
+    """Retrieve full metadata and attachments for a single SQL document to index in ChromaDB.
+
+    Returns None if the document does not exist, is not internal (NOI_BO), or is hidden.
+    """
+    if not is_postgres_source():
+        return None
+
+    try:
+        source_id = int(source_id)
+    except (TypeError, ValueError):
+        return None
+
+    db_alias = "default"
+    connection = connections[db_alias]
+
+    queries = {
+        "vanbanden": """
+            SELECT 'vanbanden'::text AS source_type, id AS source_id,
+                   so_hieu, so_thu_tu AS sort_number, nam,
+                   ngay_den AS document_date, trich_yeu, noi_ban_hanh,
+                   ngay_van_ban, nguoi_ky, chuc_vu, hieu_luc::text AS hieu_luc,
+                   ngay_het_hieu_luc, ghi_chu, updated_at
+            FROM documents_vanbanden
+            WHERE id = %s AND pham_vi = 'NOI_BO' AND hien_thi IS TRUE
+        """,
+        "vanbandi": """
+            SELECT 'vanbandi'::text AS source_type, id AS source_id,
+                   so_hieu, so_thu_tu AS sort_number, nam,
+                   ngay_ban_hanh AS document_date, trich_yeu,
+                   (
+                       SELECT string_agg(dv.ten, ', ' ORDER BY dv.ten)
+                       FROM documents_vanbandi_noibanhanh nb
+                       JOIN organizations_donvi dv ON dv.id = nb.donvi_id
+                       WHERE nb.vanbandi_id = documents_vanbandi.id
+                   ) AS noi_ban_hanh,
+                   ngay_van_ban, nguoi_ky, chuc_vu, hieu_luc::text AS hieu_luc,
+                   ngay_het_hieu_luc, ghi_chu, updated_at
+            FROM documents_vanbandi
+            WHERE id = %s AND pham_vi = 'NOI_BO' AND hien_thi IS TRUE
+        """,
+        "tailieu": """
+            SELECT 'tailieu'::text AS source_type, id AS source_id,
+                   ky_hieu AS so_hieu, NULL::integer AS sort_number,
+                   NULL::smallint AS nam, ngay_dang::timestamptz AS document_date,
+                   tieu_de AS trich_yeu, noi_ban_hanh,
+                   NULL::timestamptz AS ngay_van_ban, NULL::text AS nguoi_ky,
+                   NULL::text AS chuc_vu, hieu_luc::text AS hieu_luc,
+                   ngay_het_hieu_luc::timestamptz AS ngay_het_hieu_luc,
+                   ghi_chu, updated_at
+            FROM records_chitiettailieu
+            WHERE id = %s AND hien_thi IN ('TAT_CA', 'NOI_BO_PHONG_BAN')
+        """,
+    }
+
+    attachment_queries = {
+        "vanbanden": "SELECT id, document_id, name, path FROM documents_vanbanden_attachment WHERE document_id = %s AND is_deleted IS FALSE ORDER BY id",
+        "vanbandi": "SELECT id, document_id, name, path FROM documents_vanbandi_attachment WHERE document_id = %s AND is_deleted IS FALSE ORDER BY id",
+        "tailieu": "SELECT id, document_id, name, path FROM records_chitiettailieu_attachment WHERE document_id = %s AND is_deleted IS FALSE ORDER BY id",
+    }
+
+    if source_type not in queries:
+        return None
+
+    with connection.cursor() as cursor:
+        cursor.execute(queries[source_type], [source_id])
+        rows = _dict_rows(cursor)
+        if not rows:
+            return None
+        row = rows[0]
+
+        attachments = []
+        if source_type in attachment_queries:
+            cursor.execute(attachment_queries[source_type], [source_id])
+            attachments = _dict_rows(cursor)
+
+        if source_type == "tailieu":
+            row["display_name"] = f"{row['so_hieu'] or 'Tài liệu'} — {row['trich_yeu']}"[:240]
+        else:
+            row["display_name"] = f"{row['so_hieu']} — {row['trich_yeu']}"[:240]
+        row["attachments"] = attachments
+        return row
+
+
+def get_all_document_records_for_index(source_type: str | None = None):
+    """Retrieve all internal documents across specified or all document types for indexing."""
+    if not is_postgres_source():
+        return []
+
+    types_to_fetch = [source_type] if source_type else ["vanbanden", "vanbandi", "tailieu"]
+    connection = connections["default"]
+
+    queries = {
+        "vanbanden": """
+            SELECT 'vanbanden'::text AS source_type, id AS source_id,
+                   so_hieu, so_thu_tu AS sort_number, nam,
+                   ngay_den AS document_date, trich_yeu, noi_ban_hanh,
+                   ngay_van_ban, nguoi_ky, chuc_vu, hieu_luc::text AS hieu_luc,
+                   ngay_het_hieu_luc, ghi_chu, updated_at
+            FROM documents_vanbanden
+            WHERE pham_vi = 'NOI_BO' AND hien_thi IS TRUE
+            ORDER BY updated_at DESC
+        """,
+        "vanbandi": """
+            SELECT 'vanbandi'::text AS source_type, id AS source_id,
+                   so_hieu, so_thu_tu AS sort_number, nam,
+                   ngay_ban_hanh AS document_date, trich_yeu,
+                   (
+                       SELECT string_agg(dv.ten, ', ' ORDER BY dv.ten)
+                       FROM documents_vanbandi_noibanhanh nb
+                       JOIN organizations_donvi dv ON dv.id = nb.donvi_id
+                       WHERE nb.vanbandi_id = documents_vanbandi.id
+                   ) AS noi_ban_hanh,
+                   ngay_van_ban, nguoi_ky, chuc_vu, hieu_luc::text AS hieu_luc,
+                   ngay_het_hieu_luc, ghi_chu, updated_at
+            FROM documents_vanbandi
+            WHERE pham_vi = 'NOI_BO' AND hien_thi IS TRUE
+            ORDER BY updated_at DESC
+        """,
+        "tailieu": """
+            SELECT 'tailieu'::text AS source_type, id AS source_id,
+                   ky_hieu AS so_hieu, NULL::integer AS sort_number,
+                   NULL::smallint AS nam, ngay_dang::timestamptz AS document_date,
+                   tieu_de AS trich_yeu, noi_ban_hanh,
+                   NULL::timestamptz AS ngay_van_ban, NULL::text AS nguoi_ky,
+                   NULL::text AS chuc_vu, hieu_luc::text AS hieu_luc,
+                   ngay_het_hieu_luc::timestamptz AS ngay_het_hieu_luc,
+                   ghi_chu, updated_at
+            FROM records_chitiettailieu
+            WHERE hien_thi IN ('TAT_CA', 'NOI_BO_PHONG_BAN')
+            ORDER BY updated_at DESC
+        """,
+    }
+
+    attachment_queries = {
+        "vanbanden": "SELECT id, document_id, name, path FROM documents_vanbanden_attachment WHERE is_deleted IS FALSE ORDER BY document_id, id",
+        "vanbandi": "SELECT id, document_id, name, path FROM documents_vanbandi_attachment WHERE is_deleted IS FALSE ORDER BY document_id, id",
+        "tailieu": "SELECT id, document_id, name, path FROM records_chitiettailieu_attachment WHERE is_deleted IS FALSE ORDER BY document_id, id",
+    }
+
+    docs = []
+    with connection.cursor() as cursor:
+        for st in types_to_fetch:
+            if st not in queries:
+                continue
+
+            attachments_by_doc = {}
+            if st in attachment_queries:
+                cursor.execute(attachment_queries[st])
+                for att in _dict_rows(cursor):
+                    attachments_by_doc.setdefault(att["document_id"], []).append(att)
+
+            cursor.execute(queries[st])
+            rows = _dict_rows(cursor)
+            for row in rows:
+                if st == "tailieu":
+                    row["display_name"] = f"{row['so_hieu'] or 'Tài liệu'} — {row['trich_yeu']}"[:240]
+                else:
+                    row["display_name"] = f"{row['so_hieu']} — {row['trich_yeu']}"[:240]
+                row["attachments"] = attachments_by_doc.get(row["source_id"], [])
+                docs.append(row)
+
+    return docs
+

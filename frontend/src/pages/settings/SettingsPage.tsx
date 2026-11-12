@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from '@i18n/translate';
 import { Button } from '@components/common';
+import TwoFactorSecurityCard from '@components/settings/TwoFactorSecurityCard';
 import soundAlert from '@lib/soundAlert';
 
 // Component Toggle Switch phong cách Hiện đại (Modern UI)
@@ -266,6 +267,9 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+
+      {/* 2.5. Xác thực hai yếu tố (2FA TOTP) */}
+      <TwoFactorSecurityCard />
 
       {/* 3. Cấu hình mô hình AI phân tích văn bản */}
       <div className="bg-surface border border-border-subtle rounded-2xl p-6 shadow-xs space-y-4">

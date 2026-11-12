@@ -1,4 +1,5 @@
 import re
+import shutil
 import tempfile
 import unicodedata
 import base64
@@ -14,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import lru_cache
 from pathlib import Path
 
+import time
 import pdfplumber
 from docx import Document as DocxDocument
 from llama_index.core import Settings
@@ -67,12 +69,19 @@ LLM_FALLBACK_ANSWER = (
     "Không gọi được model để tạo câu trả lời hoàn chỉnh. "
     "Dưới đây là các đoạn tài liệu liên quan nhất."
 )
-MAX_VISIBLE_SOURCES = 4
+MAX_VISIBLE_SOURCES = 6
+MAX_CONTEXT_CHARS = 12000
 SOURCE_PREVIEW_LENGTH = 180
 SOURCE_STOPWORDS = {
     "cua", "cac", "cho", "voi", "trong", "ngoai", "nhung", "duoc", "the",
     "nay", "kia", "la", "va", "hoac", "thi", "mot", "ve", "tu", "den",
     "what", "when", "where", "which", "that", "this", "are", "the",
+}
+HYBRID_STOPWORDS = SOURCE_STOPWORDS | {
+    "ban", "toi", "minh", "anh", "chi", "em", "ho", "no", "ay", "do", "day",
+    "gi", "nao", "sao", "vay", "nhu", "the", "co", "khong", "da", "dang", "se",
+    "nhieu", "it", "them", "giup", "hoi", "tim", "xem", "neu", "boi", "vi",
+    "thu", "is", "was", "were", "does", "did", "can", "about", "from", "with",
 }
 INAPPROPRIATE_WORDS = {
     "fuck", "fucking", "shit", "bitch", "asshole", "dick", "pussy",
@@ -124,8 +133,11 @@ def setup_llamaindex():
         active = {}
 
     provider = "openai"
-    llm_model = "gpt-6-luna"
-    embed_model = "text-embedding-3-large"
+    provider_default_llm = getattr(config, "LLM_MODEL", None) or "gpt-6-luna"
+    provider_default_embed = getattr(config, "EMBED_MODEL", None) or "text-embedding-3-large"
+    llm_model = str(active.get("llm_model") or provider_default_llm).strip() or "gpt-6-luna"
+    embed_model = str(active.get("embed_model") or provider_default_embed).strip() or "text-embedding-3-large"
+    vision_model = str(active.get("vision_model") or llm_model).strip() or llm_model
     openai_key = (
         active.get("openai_api_key")
         or getattr(config, "OPENAI_API_KEY", None)
@@ -136,7 +148,7 @@ def setup_llamaindex():
     MODEL_PROVIDER = provider
     LLM_MODEL = llm_model
     EMBED_MODEL = embed_model
-    VISION_MODEL = llm_model
+    VISION_MODEL = vision_model
     if not openai_key:
         raise RuntimeError("OPENAI_API_KEY is not configured")
     import llama_index.llms.openai.utils as openai_utils
@@ -154,7 +166,8 @@ def setup_llamaindex():
 
     embed_model_name = embed_model if "text-embedding" in embed_model else "text-embedding-3-large"
     Settings.embed_model = OpenAIEmbedding(model_name=embed_model_name, api_key=openai_key)
-    Settings.llm = OpenAI(model=llm_model, temperature=1.0, request_timeout=180.0, api_key=openai_key)
+    temp = 1.0 if ("luna" in llm_model or llm_model.startswith(("o1", "o3", "o4"))) else 0.1
+    Settings.llm = OpenAI(model=llm_model, temperature=temp, request_timeout=180.0, api_key=openai_key)
     print(f"✅ OpenAI LLM: {llm_model}")
     print(f"✅ OpenAI Embed: {embed_model_name}")
 
@@ -260,6 +273,32 @@ def is_inappropriate_message(text: str) -> bool:
 
 def is_no_answer(answer: str) -> bool:
     normalized = normalize_for_match(answer)
+    if not normalized:
+        return True
+    exact_templates = (
+        "xin loi, thong tin ban hoi khong co",
+        "xin loi thong tin ban hoi khong co",
+        "sorry, the information you asked for is not",
+    )
+    if any(normalized.startswith(tpl) for tpl in exact_templates):
+        return True
+
+    refusal_starts = (
+        "xin loi",
+        "toi khong tim thay",
+        "khong tim thay",
+        "khong co thong tin",
+        "khong du thong tin",
+        "khong the tra loi",
+        "tai lieu duoc cung cap khong",
+        "tai lieu khong",
+        "sorry",
+        "i am sorry",
+        "i'm sorry",
+        "not found in the provided",
+        "unable to answer",
+        "cannot answer",
+    )
     patterns = (
         "khong tim thay",
         "toi khong tim thay",
@@ -291,7 +330,13 @@ def is_no_answer(answer: str) -> bool:
         "does not contain information",
         "outside the scope",
     )
-    return any(pattern in normalized for pattern in patterns)
+    if not any(pattern in normalized for pattern in patterns):
+        return False
+    # Do not wipe out detailed grounded partial answers that include citations or bullet points.
+    has_grounded_structure = bool(re.search(r"\[\d+\]", answer or "")) or "\n-" in (answer or "") or "\n1." in (answer or "")
+    if any(normalized.startswith(prefix) for prefix in refusal_starts):
+        return not has_grounded_structure or len(normalized) < 220
+    return len(normalized) < 180 and not has_grounded_structure
 
 
 def is_good_text(text: str) -> bool:
@@ -363,8 +408,9 @@ def call_vision_ocr(image, prompt: str = VISION_OCR_PROMPT) -> str:
         if not openai_key:
             raise RuntimeError("OPENAI_API_KEY is not configured")
 
+        vision_model_name = active.get("vision_model") or VISION_MODEL or LLM_MODEL
         response = OpenAI(api_key=openai_key, timeout=VISION_OCR_TIMEOUT).chat.completions.create(
-            model=LLM_MODEL,
+            model=vision_model_name,
             messages=[{
                 "role": "user",
                 "content": [
@@ -584,40 +630,77 @@ def read_txt(file_path: Path) -> str:
     return file_path.read_text(encoding="utf-8", errors="ignore").strip()
 
 
+def _extract_docx_paragraph_text(para, omath_tag: str, mt_tag: str) -> str:
+    text = para.text.strip()
+    omml_equations = []
+    try:
+        for math_elem in para._element.iter(omath_tag):
+            eq_text_parts = [
+                t.text.strip()
+                for t in math_elem.iter(mt_tag)
+                if t.text and t.text.strip()
+            ]
+            if eq_text_parts:
+                omml_equations.append(f"[EQUATION: {' '.join(eq_text_parts)}]")
+    except Exception:
+        pass
+    if text or omml_equations:
+        return (text + " " + " ".join(omml_equations)).strip()
+    return ""
+
+
+def _extract_docx_table_lines(table, omath_tag: str, mt_tag: str) -> list[str]:
+    rows_out = []
+    for row_idx, row in enumerate(table.rows):
+        cells = []
+        seen_tcs = set()
+        for cell in row.cells:
+            tc_id = id(cell._tc)
+            if tc_id in seen_tcs:
+                continue
+            seen_tcs.add(tc_id)
+            cell_parts = [
+                part
+                for p in cell.paragraphs
+                if (part := _extract_docx_paragraph_text(p, omath_tag, mt_tag))
+            ]
+            cell_text = " ".join(cell_parts).replace("\n", " ").replace("|", "/").strip()
+            cells.append(cell_text)
+        if any(cells):
+            rows_out.append("| " + " | ".join(cells) + " |")
+            if row_idx == 0 and len(table.rows) > 1:
+                rows_out.append("|" + "|".join(["---"] * len(cells)) + "|")
+    return rows_out
+
+
 def read_docx(file_path: Path) -> str:
-    """Đọc text từ DOCX, bao gồm cả equations/formulas (OMML)."""
+    """Đọc text từ DOCX theo thứ tự văn bản, bao gồm cả bảng biểu và equations/formulas (OMML)."""
+    from docx.table import Table
+    from docx.text.paragraph import Paragraph
+
     doc = DocxDocument(str(file_path))
-    paragraphs = []
+    blocks = []
 
-    # Namespace OMML đã được python-docx đăng ký sẵn — dùng Clark notation thay vì prefix
-    MATH_NS   = 'http://schemas.openxmlformats.org/officeDocument/2006/math'
-    OMATH_TAG = f'{{{MATH_NS}}}oMath'
-    MT_TAG    = f'{{{MATH_NS}}}t'
+    MATH_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math"
+    OMATH_TAG = f"{{{MATH_NS}}}oMath"
+    MT_TAG = f"{{{MATH_NS}}}t"
+    W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    P_TAG = f"{{{W_NS}}}p"
+    TBL_TAG = f"{{{W_NS}}}tbl"
 
-    for para in doc.paragraphs:
-        text = para.text.strip()
+    for child in doc.element.body.iterchildren():
+        if child.tag == P_TAG:
+            para = Paragraph(child, doc)
+            line = _extract_docx_paragraph_text(para, OMATH_TAG, MT_TAG)
+            if line:
+                blocks.append(line)
+        elif child.tag == TBL_TAG:
+            table = Table(child, doc)
+            table_lines = _extract_docx_table_lines(table, OMATH_TAG, MT_TAG)
+            if table_lines:
+                blocks.append("\n".join(table_lines))
 
-        # Trích xuất equations từ OMML bằng cách duyệt XML trực tiếp
-        omml_equations = []
-        try:
-            for math_elem in para._element.iter(OMATH_TAG):
-                eq_text_parts = [
-                    t.text.strip()
-                    for t in math_elem.iter(MT_TAG)
-                    if t.text and t.text.strip()
-                ]
-                if eq_text_parts:
-                    omml_equations.append(f"[EQUATION: {' '.join(eq_text_parts)}]")
-        except Exception:
-            pass  # Bỏ qua nếu parse XML lỗi, vẫn giữ text thường
-
-        if text or omml_equations:
-            combined = text
-            if omml_equations:
-                combined = (combined + ' ' + ' '.join(omml_equations)).strip()
-            paragraphs.append(combined)
-
-    return "\n".join(paragraphs)
+    return "\n".join(blocks)
 
 
 def read_docx_images(file_path: Path):
@@ -640,6 +723,9 @@ def read_docx_images(file_path: Path):
                         image.load()
                 except Exception as error:
                     print(f"Could not read DOCX image {name}: {error}")
+                    continue
+
+                if image.width < 48 and image.height < 48:
                     continue
 
                 vision_text = extract_image_vision_text(image, f"{file_path.name} image {index}")
@@ -1041,7 +1127,7 @@ def read_document_pages(file_path: Path):
 
     raise ValueError(
         f"Định dạng '{suffix}' không được hỗ trợ. "
-        "Hỗ trợ: PDF, DOCX, TXT, CSV, PPTX, MD, HTML, JSON, XML, "
+        "Hỗ trợ: PDF, DOC, DOCX, TXT, CSV, PPTX, MD, HTML, JSON, XML, "
         "PNG, JPG, JPEG, WEBP, BMP, TIFF, GIF"
     )
 
@@ -1061,12 +1147,28 @@ def chunk_text(text: str, chunk_size: int, overlap: int):
 
     chunks = []
     start = 0
-    step = max(chunk_size - overlap, 1)
 
     while start < len(clean_text):
-        end = min(start + chunk_size, len(clean_text))
+        while start < len(clean_text) and clean_text[start].isspace():
+            start += 1
+        if start >= len(clean_text):
+            break
+
+        raw_end = min(start + chunk_size, len(clean_text))
+        end = raw_end
+        if raw_end < len(clean_text) and not clean_text[raw_end].isspace():
+            floor_idx = start + int(chunk_size * 0.7)
+            ws_pos = clean_text.rfind(" ", floor_idx, raw_end)
+            if ws_pos > start:
+                end = ws_pos
+
+        chunk_str = clean_text[start:end].strip()
+        if not chunk_str:
+            end = raw_end
+            chunk_str = clean_text[start:end].strip()
+
         chunks.append({
-            "text": clean_text[start:end].strip(),
+            "text": chunk_str,
             "start": start,
             "end": end,
         })
@@ -1074,12 +1176,27 @@ def chunk_text(text: str, chunk_size: int, overlap: int):
         if end >= len(clean_text):
             break
 
-        start += step
+        next_start = max(start + 1, end - overlap)
+        if next_start < len(clean_text) and next_start > 0:
+            if not clean_text[next_start].isspace() and not clean_text[next_start - 1].isspace():
+                ws_back = clean_text.rfind(" ", max(start + 1, next_start - 30), next_start)
+                if ws_back != -1 and ws_back + 1 > start:
+                    next_start = ws_back + 1
+        start = next_start
 
     return chunks
 
 
 def parent_for_child(child, parent_chunks):
+    for parent in parent_chunks:
+        if parent["start"] <= child["start"] and child["end"] <= parent["end"]:
+            return parent
+
+    child_text = child.get("text", "")
+    for parent in parent_chunks:
+        if child_text and child_text in parent.get("text", ""):
+            return parent
+
     child_center = (child["start"] + child["end"]) // 2
 
     for parent in parent_chunks:
@@ -1238,6 +1355,7 @@ def build_sources(nodes, question: str):
             "section": metadata.get("section"),
             "chunk_id": chunk_id,
             "category": metadata.get("category"),
+            "source_class": metadata.get("source_class"),
             "score": score,
             "preview": preview,
             "context": normalize_source_text(context),
@@ -1261,6 +1379,7 @@ def build_context_from_sources(sources):
 
     context_blocks = []
     global_idx = 1
+    total_chars = 0
 
     for file_name, file_sources in file_blocks.items():
         # Ghép tất cả context của cùng file, bỏ đoạn trùng lặp
@@ -1270,8 +1389,11 @@ def build_context_from_sources(sources):
         for s in file_sources:
             ctx = s["context"].strip()
             if ctx and ctx not in seen_texts:
+                if total_chars + len(ctx) > MAX_CONTEXT_CHARS and context_blocks:
+                    continue
                 seen_texts.add(ctx)
                 merged_parts.append(ctx)
+                total_chars += len(ctx)
 
         if not merged_parts:
             continue
@@ -1289,18 +1411,18 @@ def build_context_from_sources(sources):
 def public_sources(sources):
     return [
         {
-            "index": source["index"],
-            "file_name": source["file_name"],
-            "page": source["page"],
-            "section": source["section"],
-            "chunk_id": source["chunk_id"],
+            "index": source.get("index", idx),
+            "file_name": source.get("file_name") or source.get("filename") or "Tài liệu",
+            "page": source.get("page"),
+            "section": source.get("section"),
+            "chunk_id": source.get("chunk_id"),
             "category": source.get("category"),
-            "score": source["score"],
-            "preview": source["preview"],
+            "score": source.get("score"),
+            "preview": source.get("preview") or source.get("text", "")[:180],
             "source_type": source.get("source_type"),
             "source_id": source.get("source_id"),
         }
-        for source in sources
+        for idx, source in enumerate(sources, start=1)
     ]
 
 
@@ -1439,8 +1561,32 @@ def sync_documents_if_needed():
         logger.exception("Could not rebuild the PostgreSQL vector index")
 
 
-def resolve_target_filename(filename: str | None) -> str | None:
-    """Đối chiếu và chuẩn hóa tên file chỉ định với danh mục vector."""
+def _get_scoped_indexed_filenames(allowed_keys=None, sql_mode: bool = False) -> list[str]:
+    collection = get_vector_collection()
+    if hasattr(collection, "list_filenames"):
+        return collection.list_filenames(allowed_keys=allowed_keys if sql_mode else None)
+    all_docs = collection.get(include=["metadatas"])
+    indexed_files = set()
+    for m in (all_docs.get("metadatas") or []):
+        meta = m or {}
+        if sql_mode and allowed_keys is not None and not (
+            meta.get("source_class") == "ai_knowledge_base"
+            or meta.get("sql_doc_key") in allowed_keys
+        ):
+            continue
+        fn = meta.get("file_name")
+        if fn:
+            indexed_files.add(fn)
+    return sorted(indexed_files)
+
+
+def resolve_target_filename(
+    filename: str | None,
+    allowed_keys=None,
+    sql_mode: bool = False,
+    require_indexed: bool = False,
+) -> str | None:
+    """Đối chiếu và chuẩn hóa tên file chỉ định với danh mục vector theo quyền hiện tại."""
     if not filename or not isinstance(filename, str):
         return None
     raw_name = filename.strip()
@@ -1448,14 +1594,7 @@ def resolve_target_filename(filename: str | None) -> str | None:
         return None
 
     try:
-        collection = get_vector_collection()
-        all_docs = collection.get(include=["metadatas"])
-        indexed_files = set()
-        for m in (all_docs.get("metadatas") or []):
-            fn = (m or {}).get("file_name")
-            if fn:
-                indexed_files.add(fn)
-
+        indexed_files = _get_scoped_indexed_filenames(allowed_keys=allowed_keys, sql_mode=sql_mode)
         if raw_name in indexed_files:
             return raw_name
 
@@ -1465,52 +1604,80 @@ def resolve_target_filename(filename: str | None) -> str | None:
             if fn.lower() == raw_lower:
                 return fn
 
-        # 2. Khớp theo đuôi tên file (ví dụ item3.docx khớp Folder_folder2_item3.docx, json.docx khớp huongdantaophoto_api_json.docx)
+        # 2. Khớp theo đuôi tên file (ví dụ item3.docx khớp Folder_folder2_item3.docx)
         for fn in indexed_files:
             fn_lower = fn.lower()
-            if fn_lower.endswith(raw_lower) or fn_lower.endswith(f"_{raw_lower}") or raw_lower in fn_lower:
+            if fn_lower.endswith(raw_lower) or fn_lower.endswith(f"_{raw_lower}"):
                 return fn
+        if len(raw_lower) >= 5:
+            for fn in indexed_files:
+                if raw_lower in fn.lower():
+                    return fn
     except Exception as exc:
         print(f"Error resolving target filename: {exc}")
 
-    return raw_name
+    return None if require_indexed else raw_name
 
 
-def extract_target_from_question(question: str) -> str | None:
-    """Tự động phát hiện tên thư mục và tên tệp trong câu hỏi của người dùng."""
+def extract_target_from_question(
+    question: str,
+    allowed_keys=None,
+    sql_mode: bool = False,
+) -> str | None:
+    """Tự động phát hiện tên thư mục và tên tệp đã được lập chỉ mục trong câu hỏi."""
     if not question:
         return None
     q = question.lower()
 
-    # 1. Phát hiện khớp mẫu: folder [1/2] và item [1/2/3]
-    f_match = re.search(r"folder\s*([12])", q)
-    i_match = re.search(r"item\s*([123])", q)
+    # 1. Phát hiện khớp mẫu: folder [1/2] và item [1/2/3] (chỉ trả về nếu tệp thực sự có trong kho)
+    f_match = re.search(r"\bfolder\s*([12])\b", q)
+    i_match = re.search(r"\bitem\s*([123])\b", q)
     if f_match and i_match:
         f_num = f_match.group(1)
         i_num = i_match.group(1)
         candidate = f"Folder_folder{f_num}_item{i_num}.docx"
-        return resolve_target_filename(candidate)
+        matched = resolve_target_filename(
+            candidate, allowed_keys=allowed_keys, sql_mode=sql_mode, require_indexed=True,
+        )
+        if matched:
+            return matched
 
-    # 2. Phát hiện item [123] mà không nói folder -> mặc định kiểm tra folder1
     if i_match and not f_match:
         i_num = i_match.group(1)
         candidate = f"Folder_folder1_item{i_num}.docx"
-        res = resolve_target_filename(candidate)
-        if res:
-            return res
+        matched = resolve_target_filename(
+            candidate, allowed_keys=allowed_keys, sql_mode=sql_mode, require_indexed=True,
+        )
+        if matched:
+            return matched
 
-    # 3. Phát hiện tên tệp trực tiếp trong câu hỏi
+    # 2. Phát hiện tên tệp trực tiếp trong câu hỏi theo danh sách tệp người dùng có quyền xem
     try:
-        collection = get_vector_collection()
-        all_docs = collection.get(include=["metadatas"])
-        for m in (all_docs.get("metadatas") or []):
-            fn = (m or {}).get("file_name")
-            if fn and fn.lower() in q:
+        indexed_files = _get_scoped_indexed_filenames(allowed_keys=allowed_keys, sql_mode=sql_mode)
+        # Ưu tiên khớp tên đầy đủ dài nhất trước
+        for fn in sorted(indexed_files, key=len, reverse=True):
+            fn_lower = fn.lower()
+            if fn_lower in q:
                 return fn
-            if fn and "_" in fn:
+            if "_" in fn:
                 base_part = fn.split("_")[-1].lower()
-                if len(base_part) > 4 and base_part in q:
+                if len(base_part) > 4 and re.search(rf"(?<!\w){re.escape(base_part)}(?!\w)", q):
                     return fn
+        # 3. Khớp không mơ hồ theo tên gốc không có phần mở rộng (độ dài >= 6)
+        norm_q = normalize_for_match(question)
+        stem_matches = []
+        for fn in indexed_files:
+            stem = Path(fn).stem.lower()
+            clean_stem = re.sub(r"\s*\(\d+\)$", "", stem).strip()
+            for candidate in dict.fromkeys(
+                [stem, clean_stem, *(part for part in re.split(r"[^a-z0-9]+", normalize_for_match(clean_stem)) if len(part) >= 6)]
+            ):
+                if len(candidate) >= 6 and re.search(rf"(?<!\w){re.escape(candidate)}(?!\w)", norm_q):
+                    stem_matches.append(fn)
+                    break
+        unique_matches = list(dict.fromkeys(stem_matches))
+        if len(unique_matches) == 1:
+            return unique_matches[0]
     except Exception:
         pass
 
@@ -1563,9 +1730,15 @@ def index_document(file_path: Path, category=None, source_metadata=None, extra_t
 
     collection = get_vector_collection()
     if source_metadata.get("sql_doc_key"):
-        existing = collection.get(where={"sql_doc_key": source_metadata["sql_doc_key"]})
+        existing = collection.get(
+            where={"sql_doc_key": source_metadata["sql_doc_key"]},
+            include=["metadatas"],
+        )
     else:
-        existing = collection.get(where={"file_name": logical_filename})
+        existing = collection.get(
+            where={"$and": [{"file_name": logical_filename}, {"sql_doc_key": {"$exists": False}}]},
+            include=["metadatas"],
+        )
     existing_ids = existing.get("ids") or []
 
     documents = build_parent_child_documents(file_path, page_items, category=category, source_metadata=source_metadata)
@@ -1605,6 +1778,10 @@ def index_document(file_path: Path, category=None, source_metadata=None, extra_t
         collection.update(ids=inserted_ids, metadatas=promoted_metadata)
     except Exception:
         logger.exception("Indexed document replacement cleanup failed for %s", logical_filename)
+
+    if source_metadata.get("source_class") == "ai_knowledge_base":
+        from backend.services.faq_response_cache import clear_faq_cache
+        clear_faq_cache()
 
     return {
         "document_count": len(documents),
@@ -1714,7 +1891,8 @@ def _read_authorized_attachment_pages(record, fingerprints):
                         "page": page.get("page"),
                         "reader": page.get("reader"),
                         "metadata": {
-                            "file_name": attachment.get("name") or record.get("display_name") or "Tài liệu",
+                            "file_name": record.get("display_name") or record.get("trich_yeu") or attachment.get("name") or "Tài liệu",
+                            "attachment_name": attachment.get("name"),
                             "document_title": record.get("display_name") or "Tài liệu",
                         },
                     })
@@ -1729,7 +1907,6 @@ def _read_authorized_attachment_pages(record, fingerprints):
 
 def index_sql_document(record):
     """Index metadata and current attachment text for one currently authorized record."""
-    setup_llamaindex()
     source_type = record["source_type"]
     source_id = int(record["source_id"])
     key = f"{source_type}:{source_id}"
@@ -1772,6 +1949,8 @@ def index_sql_document(record):
     ):
         return key
 
+    setup_llamaindex()
+
     # Avoid OCR and file parsing when the metadata and all currently authorized files
     # are unchanged. If parsing fails later, old vectors are removed before rebuilding.
     attachment_pages, extraction_pending = _read_authorized_attachment_pages(record, attachment_fingerprints)
@@ -1809,6 +1988,32 @@ def index_sql_document(record):
         return None
     _insert_documents(documents)
     return key
+
+
+def is_ai_configured() -> bool:
+    """Check if OpenAI API key is configured without raising an exception."""
+    try:
+        from backend.services.ai_settings_service import get_active_ai_settings
+        active = get_active_ai_settings()
+    except Exception:
+        active = {}
+    openai_key = (
+        active.get("openai_api_key")
+        or getattr(config, "OPENAI_API_KEY", None)
+        or os.getenv("OPENAI_API_KEY")
+        or ""
+    ).strip()
+    return bool(openai_key)
+
+
+def delete_sql_document_vectors(source_type: str, source_id: int):
+    """Remove vector chunks associated with an SQL document key from vector store."""
+    key = f"{source_type}:{int(source_id)}"
+    try:
+        collection = get_vector_collection()
+        collection.delete(where={"sql_doc_key": key})
+    except Exception as error:
+        logger.warning("Could not delete vectors for sql_doc_key=%s: %s", key, error)
 
 
 def build_answer_prompt(question: str, context: str, history, target_filename: str | None = None, language: str = "vi") -> str:
@@ -2060,7 +2265,8 @@ EMOTIONAL_PATTERNS = (
     # Cảm xúc mệt mỏi, buồn bã, áp lực
     "met moi", "met qua", "met that", "met ghe", "duoi qua", "oai qua",
     "kiet suc", "ap luc", "stress", "chan qua", "chan that", "that vong",
-    "bat luc", "chan nan", "nan long", "nan qua", "sau qua", "tam trang te",
+    "bat luc", "chan nan", "nan long", "nan qua", "sau qua", "buon qua",
+    "buon ngu", "troi dep", "tam trang te",
     "te qua", "khong vui", "be tac", "co don", "chan doi", "sao buon the",
     # Cảm xúc vui vẻ, hào hứng
     "vui qua", "vui that", "vui ghe", "vui mung", "hanh phuc", "thich qua", "tuyet qua",
@@ -2081,21 +2287,32 @@ GREETING_PATTERNS = (
     "xin chao", "chao ban", "hello", "chao bot", "chao tro ly", "hi ban",
     "chao em", "chao anh", "chao chi", "chao buoi sang", "chao ngay moi",
     "good morning", "good afternoon", "good evening", "alo", "hey",
-    "ban la ai", "ban ten gi", "ban khoe khong", "co khoe khong",
-    "khoe khong ban", "dao nay the nao", "hom nay the nao", "ban lam duoc gi",
-    "ban giup duoc gi", "chuc nang cua ban", "gioi thieu ban than",
-    "gioi thieu ve ban", "ai tao ra ban",
     "tam biet", "bye", "bye bye", "hen gap lai", "chuc ngu ngon", "ngu ngon",
     "chuc mot ngay tot lanh",
 )
 
+BOT_SELF_PATTERNS = (
+    "ban la ai", "ban ten gi", "ban khoe khong", "co khoe khong",
+    "khoe khong ban", "dao nay the nao", "hom nay the nao", "ban lam duoc gi",
+    "ban giup duoc gi", "chuc nang cua ban", "gioi thieu ban than",
+    "gioi thieu ve ban", "ai tao ra ban",
+)
+
+
+def _contains_term(normalized: str, term: str) -> bool:
+    if not normalized or not term:
+        return False
+    return bool(re.search(rf"(?<!\w){re.escape(term)}(?!\w)", normalized))
+
 
 def has_doc_terms(normalized: str) -> bool:
-    return any(term in normalized for term in DOC_INQUIRY_TERMS)
+    if re.search(r"\b\w+\.(pdf|docx?|txt|csv|pptx|md|markdown|html?|json|xml|png|jpe?g|webp|tiff?|gif)\b", normalized):
+        return True
+    return any(_contains_term(normalized, term) for term in DOC_INQUIRY_TERMS)
 
 
 def has_inquiry_request(normalized: str) -> bool:
-    return any(req in normalized for req in INQUIRY_REQUEST_WORDS)
+    return any(_contains_term(normalized, req) for req in INQUIRY_REQUEST_WORDS)
 
 
 def is_conversational_or_emotional(question: str) -> bool:
@@ -2103,16 +2320,17 @@ def is_conversational_or_emotional(question: str) -> bool:
     if not norm:
         return True
 
-    # 1. Nếu có từ hỏi, từ khóa nghiệp vụ hoặc dấu ?, ưu tiên tra cứu tài liệu (RAG)
+    # 1. Thuần túy hỏi thăm về bản thân bot (không kèm từ khóa nghiệp vụ/tài liệu)
+    if any(_contains_term(norm, p) for p in BOT_SELF_PATTERNS) and not has_doc_terms(norm):
+        return True
+
+    # 2. Nếu có dấu ?, từ hỏi hoặc từ khóa nghiệp vụ -> ưu tiên tra cứu tài liệu (RAG)
     if "?" in question or has_inquiry_request(norm) or has_doc_terms(norm):
-        # Trừ trường hợp người dùng thuần túy hỏi thăm bot ("bạn khỏe không?", "bạn tên gì?")
-        if any(p in norm for p in GREETING_PATTERNS):
-            return True
         return False
 
-    # 2. Nhận diện biểu lộ cảm xúc hoặc lời chào hỏi xã giao
-    has_emotion = any(p in norm for p in EMOTIONAL_PATTERNS)
-    has_greeting = any(p in norm for p in GREETING_PATTERNS) or norm in (
+    # 3. Nhận diện biểu lộ cảm xúc hoặc lời chào hỏi xã giao thuần túy
+    has_emotion = any(_contains_term(norm, p) for p in EMOTIONAL_PATTERNS)
+    has_greeting = any(_contains_term(norm, p) for p in GREETING_PATTERNS) or norm in (
         "chao", "hi", "alo", "chao nhe", "bye", "cam on", "cam on ban", "thanks", "thank you"
     )
 
@@ -2123,7 +2341,6 @@ def is_conversational_or_emotional(question: str) -> bool:
 
 
 def generate_conversational_response(question: str, history=None, language: str = "vi") -> str:
-    setup_llamaindex()
     is_en = str(language).lower().startswith("en")
     turns = normalize_chat_history(history)
     history_lines = []
@@ -2145,12 +2362,12 @@ def generate_conversational_response(question: str, history=None, language: str 
 
     prompt = "\n".join(prompt_parts)
     try:
+        setup_llamaindex()
         answer = str(Settings.llm.complete(prompt)).strip()
         if answer:
             return answer
-    except Exception:
-        logger.exception("Conversational LLM generation failed")
-        raise
+    except Exception as exc:
+        logger.warning("Conversational LLM generation unavailable, using fallback: %s", exc)
 
     # Fallback tự nhiên nếu có lỗi kết nối
     norm = normalize_for_match(question)
@@ -2175,25 +2392,164 @@ def _fallback_query_filter(filename, allowed_keys):
     return {"$and": [target, source_filter]}
 
 
-def _authorized_fallback_nodes(vector_result, allowed_keys):
+def _extract_hybrid_keywords(question: str) -> list[str]:
+    norm = normalize_for_match(question)
+    tokens = re.findall(r"[a-z0-9]+", norm)
+    keywords = []
+    seen = set()
+    for token in tokens:
+        if token in HYBRID_STOPWORDS:
+            continue
+        if not token.isdigit() and len(token) < 2:
+            continue
+        if token not in seen:
+            seen.add(token)
+            keywords.append(token)
+    return keywords
+
+
+def _keyword_match_score(meta: dict, text: str, keywords: list[str]) -> float:
+    if not keywords:
+        return 0.0
+    norm_body = normalize_for_match((meta or {}).get("parent_context") or text or "")
+    norm_file = normalize_for_match(
+        f"{(meta or {}).get('file_name') or ''} {(meta or {}).get('attachment_name') or ''}"
+    )
+    bonus = 0.0
+    for kw in keywords:
+        if kw.isdigit():
+            if re.search(rf"(?<!\d){re.escape(kw)}\s*[.):-]", norm_body):
+                bonus += 0.30
+            elif re.search(rf"(?<!\d){re.escape(kw)}(?!\d)", norm_body):
+                bonus += 0.14
+            if re.search(rf"(?<!\d){re.escape(kw)}(?!\d)", norm_file):
+                bonus += 0.12
+            continue
+        if kw in norm_file:
+            bonus += 0.18
+        if re.search(rf"\b{re.escape(kw)}\b", norm_body) or (len(kw) >= 4 and kw in norm_body):
+            bonus += 0.08
+    return bonus
+
+
+def _rerank_hybrid_nodes(dense_nodes, keyword_nodes, question: str):
+    from llama_index.core.schema import NodeWithScore, TextNode
+
+    keywords = _extract_hybrid_keywords(question)
+    merged: dict[tuple, dict] = {}
+
+    def _register(node, is_keyword_source: bool):
+        inner = getattr(node, "node", node)
+        meta = dict(getattr(inner, "metadata", None) or getattr(node, "metadata", None) or {})
+        text = getattr(inner, "text", None) or getattr(node, "text", None) or ""
+        raw_score = getattr(node, "score", None)
+        key = (
+            meta.get("file_name") or "",
+            meta.get("page"),
+            meta.get("chunk_id"),
+            text[:100],
+        )
+        entry = merged.get(key)
+        if entry is None:
+            base = float(raw_score) if raw_score is not None and not is_keyword_source else (
+                max(SOURCE_SCORE_THRESHOLD, float(raw_score) * 0.45) if raw_score is not None else SOURCE_SCORE_THRESHOLD
+            )
+            entry = {
+                "node": TextNode(text=text, metadata=meta),
+                "base_score": base,
+            }
+            merged[key] = entry
+        elif not is_keyword_source and raw_score is not None:
+            entry["base_score"] = max(entry["base_score"], float(raw_score))
+
+    for node in (dense_nodes or []):
+        _register(node, is_keyword_source=False)
+    for node in (keyword_nodes or []):
+        _register(node, is_keyword_source=True)
+
+    ranked = []
+    for entry in merged.values():
+        node_obj = entry["node"]
+        bonus = _keyword_match_score(node_obj.metadata, node_obj.text, keywords)
+        final_score = min(1.0, entry["base_score"] + bonus)
+        ranked.append(NodeWithScore(node=node_obj, score=final_score))
+
+    ranked.sort(key=lambda item: float(item.score or 0.0), reverse=True)
+    return ranked
+
+
+def _chunk_sort_key(item: tuple[int, str, dict]):
+    idx, _doc_text, meta = item
+    section = meta.get("section")
+    section_num = int(section) if isinstance(section, int) or str(section).isdigit() else 0
+    chunk_id = str(meta.get("chunk_id") or "")
+    parts = [int(p) for p in re.findall(r"\d+", chunk_id)]
+    return (section_num, parts[0] if len(parts) > 0 else 0, parts[1] if len(parts) > 1 else idx, idx)
+
+
+def _authorized_fallback_nodes(vector_result, allowed_keys, question: str = ""):
     from llama_index.core.schema import TextNode
 
-    nodes = []
-    for doc_text, meta in zip(vector_result.get("documents", []), vector_result.get("metadatas", [])):
+    authorized = []
+    for idx, (doc_text, meta) in enumerate(
+        zip(vector_result.get("documents", []), vector_result.get("metadatas", []))
+    ):
         meta = meta or {}
         if allowed_keys is not None and not (
             meta.get("sql_doc_key") in allowed_keys
             or meta.get("source_class") == "ai_knowledge_base"
         ):
             continue
-        nodes.append(TextNode(text=doc_text, metadata=meta))
-        if len(nodes) == 10:
-            break
-    return nodes
+        authorized.append((idx, doc_text, meta))
+
+    if not authorized:
+        return []
+
+    authorized.sort(key=_chunk_sort_key)
+    if len(authorized) <= 10:
+        return [TextNode(text=doc_text, metadata=meta) for _idx, doc_text, meta in authorized]
+
+    keywords = _extract_hybrid_keywords(question) if question else []
+    if keywords:
+        scored = sorted(
+            authorized,
+            key=lambda item: _keyword_match_score(item[2], item[1], keywords),
+            reverse=True,
+        )
+        selected = []
+        seen_indices = set()
+        for item in scored[:6]:
+            selected.append(item)
+            seen_indices.add(item[0])
+        for item in authorized:
+            if len(selected) >= 10:
+                break
+            if item[0] not in seen_indices:
+                selected.append(item)
+                seen_indices.add(item[0])
+        selected.sort(key=_chunk_sort_key)
+        return [TextNode(text=doc_text, metadata=meta) for _idx, doc_text, meta in selected]
+
+    return [TextNode(text=doc_text, metadata=meta) for _idx, doc_text, meta in authorized[:10]]
 
 
-def ask_document(question: str, history=None, category: str | None = None, user=None, employee_id=None, filename: str | None = None, language: str = "vi"):
+def format_sse(event: str, data: dict | list | str) -> str:
+    """Format a Server-Sent Event frame with JSON payload."""
+    payload = json.dumps(data, ensure_ascii=False)
+    return f"event: {event}\ndata: {payload}\n\n"
+
+
+def prepare_ask_document(
+    question: str,
+    history=None,
+    category: str | None = None,
+    user=None,
+    employee_id=None,
+    filename: str | None = None,
+    language: str = "vi",
+):
     question = (question or "").strip()
+    set_fields(cache_hit=False)
     if is_inappropriate_message(question):
         inapp_ans = (
             "I am ready to assist with documents and related topics. Please express yourself more politely."
@@ -2201,26 +2557,32 @@ def ask_document(question: str, history=None, category: str | None = None, user=
             else "Mình sẵn sàng hỗ trợ về tài liệu và các chủ đề liên quan. Bạn vui lòng diễn đạt lịch sự hơn nhé."
         )
         set_fields(answer_mode="inappropriate")
-        return {
+        return "immediate", {
             "answer": inapp_ans,
             "sources": [],
         }
 
-    # Chuẩn hóa và đối chiếu tên file nếu người dùng có chỉ định tài liệu
-    clean_filename = resolve_target_filename(filename) if filename else None
-    if not clean_filename:
-        clean_filename = extract_target_from_question(question)
-        if clean_filename:
-            print(f"🎯 Tự động phát hiện tài liệu từ câu hỏi: {clean_filename}")
+    from backend.services.faq_response_cache import (
+        get_cached_answer, request_is_cacheable, set_cached_answer, sources_are_shareable,
+    )
+    conversational = False if filename else is_conversational_or_emotional(question)
+    early_cacheable_request = request_is_cacheable(
+        question, history=history, filename=filename, category=category,
+        conversational=conversational,
+    )
+    if early_cacheable_request:
+        cached_result = get_cached_answer(question, language)
+        if cached_result is not None:
+            set_fields(cache_hit=True)
+            return "immediate", cached_result
 
     # Phân loại ý định: Nếu là tin nhắn chào hỏi, xã giao hoặc chia sẻ cảm xúc
-    # CHÚ Ý: Nếu người dùng ĐÃ CHỈ ĐỊNH TÀI LIỆU (clean_filename có giá trị)
-    # -> TUYỆT ĐỐI KHÔNG xếp vào trò chuyện xã giao! Mọi câu hỏi (kể cả câu ngắn 1-2 từ)
-    #    đều được ưu tiên tra cứu trực tiếp vào tài liệu đó.
-    if not clean_filename and is_conversational_or_emotional(question):
+    # CHÚ Ý: Nếu người dùng ĐÃ CHỈ ĐỊNH TÀI LIỆU (filename có giá trị)
+    # -> TUYỆT ĐỐI KHÔNG xếp vào trò chuyện xã giao!
+    if conversational:
         answer = generate_conversational_response(question, history, language=language)
         set_fields(answer_mode="conversational")
-        return {
+        return "immediate", {
             "answer": answer,
             "sources": [],
         }
@@ -2239,13 +2601,31 @@ def ask_document(question: str, history=None, category: str | None = None, user=
             sql_docs=len(records),
             sql_attachments=sum(len(record.get("attachments", [])) for record in records),
         )
-        allowed_keys = set()
         with ai_stage("sql_index"):
-            for record in records:
-                key = index_sql_document(record)
-                if key:
-                    allowed_keys.add(key)
+            allowed_keys = {
+                f"{record['source_type']}:{record['source_id']}"
+                for record in records
+            }
         set_fields(sql_allowed=len(allowed_keys))
+
+    # Đối chiếu tên file theo phạm vi tài liệu mà người dùng được phép truy cập
+    resolved_filename = (
+        resolve_target_filename(filename, allowed_keys=allowed_keys, sql_mode=sql_mode)
+        if filename
+        else None
+    )
+    if not resolved_filename and not filename:
+        resolved_filename = extract_target_from_question(
+            question, allowed_keys=allowed_keys, sql_mode=sql_mode
+        )
+        if resolved_filename:
+            print(f"🎯 Tự động phát hiện tài liệu từ câu hỏi: {resolved_filename}")
+
+    clean_filename = resolved_filename or (Path(filename).name if filename else None)
+    cacheable_request = request_is_cacheable(
+        question, history=history, filename=filename or clean_filename, category=category,
+        conversational=conversational,
+    )
 
     from backend.services.business_knowledge import match_business_sources
     business_sources = match_business_sources(question)
@@ -2259,7 +2639,7 @@ def ask_document(question: str, history=None, category: str | None = None, user=
         # Nếu có tài liệu chỉ định, không trộn history của các tài liệu cũ vào query retrieval
         retrieval_query = build_retrieval_query(question, history if not clean_filename else None)
         retriever_kwargs = {"similarity_top_k": SIMILARITY_TOP_K}
-        
+
         target_filters = []
         if clean_filename:
             target_filters.append(
@@ -2306,19 +2686,13 @@ def ask_document(question: str, history=None, category: str | None = None, user=
                 filters=source_filters,
                 condition=FilterCondition.OR,
             )
-            if clean_filename:
-                target_filter = MetadataFilters(
-                    filters=[
-                        MetadataFilter(
-                            key="file_name",
-                            value=clean_filename,
-                            operator=FilterOperator.EQ,
-                        )
-                    ],
+            if target_filters:
+                combined_target_filter = MetadataFilters(
+                    filters=target_filters,
                     condition=FilterCondition.AND,
                 )
                 source_filter = MetadataFilters(
-                    filters=[source_filter, target_filter],
+                    filters=[source_filter, combined_target_filter],
                     condition=FilterCondition.AND,
                 )
             retriever_kwargs["filters"] = source_filter
@@ -2327,17 +2701,41 @@ def ask_document(question: str, history=None, category: str | None = None, user=
             retriever_kwargs["filters"] = MetadataFilters(filters=target_filters)
 
         nodes = index.as_retriever(**retriever_kwargs).retrieve(retrieval_query)
+        keyword_nodes = []
+        if isinstance(index, PgVectorIndex):
+            try:
+                from backend.services.pgvector_store import keyword_search
+
+                kw_terms = _extract_hybrid_keywords(question)
+                if len(kw_terms) < 2 and retrieval_query != question:
+                    for extra in _extract_hybrid_keywords(retrieval_query):
+                        if extra not in kw_terms:
+                            kw_terms.append(extra)
+                keyword_nodes = keyword_search(
+                    kw_terms,
+                    limit=max(SIMILARITY_TOP_K * 3, 18),
+                    filters=retriever_kwargs.get("filters"),
+                )
+            except Exception:
+                logger.debug("Keyword retrieval fallback skipped", exc_info=True)
+        if keyword_nodes:
+            nodes = _rerank_hybrid_nodes(nodes, keyword_nodes, question)
         set_fields(hits=len(nodes or []), target=bool(clean_filename))
         if clean_filename:
             # Đảm bảo chắc chắn 100% chỉ giữ lại các chunk thuộc đúng file được chỉ định
             nodes = [
                 node for node in (nodes or [])
                 if (getattr(node, "metadata", {}) or {}).get("file_name") == clean_filename
+                or (getattr(node, "metadata", {}) or {}).get("attachment_name") == clean_filename
             ]
-            # Nếu retriever không trả về chunk nào (ví dụ câu hỏi quá ngắn hoặc embedding lệch),
-            # thực hiện fallback: lấy trực tiếp tất cả chunk của file đó từ PostgreSQL!
-            if not nodes:
-                print(f"⚠️ Retriever không trả về node cho {clean_filename}, thực hiện fallback từ PostgreSQL")
+            usable_nodes = [
+                node for node in nodes
+                if score_is_usable(getattr(node, "score", None))
+            ]
+            # Nếu retriever không trả về chunk nào đạt ngưỡng (ví dụ câu hỏi quá ngắn hoặc embedding lệch),
+            # thực hiện fallback: lấy trực tiếp chunk của file đó từ PostgreSQL theo thứ tự tài liệu!
+            if not usable_nodes:
+                print(f"⚠️ Retriever không trả về node đạt ngưỡng cho {clean_filename}, thực hiện fallback từ PostgreSQL")
                 set_fields(fallback=True)
                 fallback_collection = get_vector_collection()
                 fallback_where = _fallback_query_filter(clean_filename, allowed_keys if sql_mode else None)
@@ -2345,7 +2743,7 @@ def ask_document(question: str, history=None, category: str | None = None, user=
                     where=fallback_where,
                     include=["documents", "metadatas"],
                 )
-                nodes = _authorized_fallback_nodes(vector_result, allowed_keys if sql_mode else None)
+                nodes = _authorized_fallback_nodes(vector_result, allowed_keys if sql_mode else None, question=question)
         if sql_mode and nodes:
             nodes = [
                 node for node in nodes
@@ -2354,12 +2752,15 @@ def ask_document(question: str, history=None, category: str | None = None, user=
             ]
         set_fields(authz_hits=len(nodes or []))
         document_sources = build_sources(nodes, question) if nodes else []
-        document_limit = max(0, MAX_VISIBLE_SOURCES - min(len(business_sources), MAX_VISIBLE_SOURCES))
-        # Nếu có tài liệu chỉ định, CHỈ hiển thị sources từ tài liệu đó, KHÔNG chèn business_sources vào
-        if clean_filename:
+        # Ưu tiên tài liệu thực tế trước, chỉ bổ sung business_sources vào slot còn trống
+        # (và không chèn business_sources khi đang lọc theo file hoặc chủ đề cụ thể)
+        if clean_filename or (category and category.strip()):
             sources = document_sources[:MAX_VISIBLE_SOURCES]
         else:
-            sources = (document_sources[:document_limit] + business_sources)[:MAX_VISIBLE_SOURCES]
+            remaining_slots = max(0, MAX_VISIBLE_SOURCES - len(document_sources))
+            sources = (
+                document_sources[:MAX_VISIBLE_SOURCES] + business_sources[:remaining_slots]
+            )[:MAX_VISIBLE_SOURCES]
         if sources:
             context = build_context_from_sources(sources)
     except Exception as error:
@@ -2367,7 +2768,7 @@ def ask_document(question: str, history=None, category: str | None = None, user=
         if sql_mode:
             logger.exception("SQL document retrieval failed")
             raise SqlDocumentAccessError("Khong the truy cap kho tai lieu SQL an toan.", ai_reason=type(error).__name__) from error
-        if business_sources and not clean_filename:
+        if business_sources and not clean_filename and not (category and category.strip()):
             sources = business_sources[:MAX_VISIBLE_SOURCES]
             context = build_context_from_sources(sources)
         # An unavailable/empty vector store should not prevent general chat or spec answers.
@@ -2377,9 +2778,36 @@ def ask_document(question: str, history=None, category: str | None = None, user=
     set_fields(sources=len(sources))
     if not sources or not context.strip():
         set_fields(answer_mode="no_context")
-        return {"answer": no_ans, "sources": []}
+        return "immediate", {"answer": no_ans, "sources": []}
 
     prompt = build_answer_prompt(question, context, history, clean_filename, language=language)
+    return "prompt", {
+        "prompt": prompt,
+        "sources": sources,
+        "clean_filename": clean_filename,
+        "no_ans": no_ans,
+        "cacheable_request": cacheable_request,
+    }
+
+
+def ask_document(question: str, history=None, category: str | None = None, user=None, employee_id=None, filename: str | None = None, language: str = "vi"):
+    prep_type, payload = prepare_ask_document(
+        question=question,
+        history=history,
+        category=category,
+        user=user,
+        employee_id=employee_id,
+        filename=filename,
+        language=language,
+    )
+    if prep_type == "immediate":
+        return payload
+
+    prompt = payload["prompt"]
+    sources = payload["sources"]
+    no_ans = payload["no_ans"]
+    cacheable_request = payload.get("cacheable_request", False)
+
     try:
         with ai_stage("llm"):
             answer = str(Settings.llm.complete(prompt)).strip()
@@ -2389,20 +2817,109 @@ def ask_document(question: str, history=None, category: str | None = None, user=
 
     if is_no_answer(answer):
         set_fields(answer_mode="model_no_answer")
-        return {"answer": no_ans, "sources": public_sources(sources)}
+        return {"answer": no_ans, "sources": []}
     set_fields(answer_mode="llm")
-    return {"answer": answer, "sources": public_sources(sources)}
+    result = {"answer": answer, "sources": public_sources(sources)}
+    if cacheable_request:
+        from backend.services.faq_response_cache import set_cached_answer, sources_are_shareable
+        if sources_are_shareable(sources):
+            set_cached_answer(question, language, answer, result["sources"], eligible_sources=sources)
+    return result
+
+
+def ask_document_stream(
+    question: str,
+    history=None,
+    category: str | None = None,
+    user=None,
+    employee_id=None,
+    filename: str | None = None,
+    language: str = "vi",
+):
+    """Generator yielding Server-Sent Events (SSE) for streaming AI chat responses."""
+    prep_type, payload = prepare_ask_document(
+        question=question,
+        history=history,
+        category=category,
+        user=user,
+        employee_id=employee_id,
+        filename=filename,
+        language=language,
+    )
+
+    if prep_type == "immediate":
+        answer = payload["answer"]
+        sources = payload.get("sources", [])
+        yield format_sse("sources", sources)
+        yield format_sse("delta", {"text": answer})
+        yield format_sse("done", {"answer": answer, "sources": sources})
+        return
+
+    prompt = payload["prompt"]
+    sources = payload["sources"]
+    pub_sources = public_sources(sources)
+    no_ans = payload["no_ans"]
+    cacheable_request = payload.get("cacheable_request", False)
+
+    yield format_sse("sources", pub_sources)
+
+    full_chunks = []
+    first_token_time = None
+    stream_start = time.perf_counter()
+
+    try:
+        with ai_stage("llm"):
+            response_gen = Settings.llm.stream_complete(prompt)
+            for chunk in response_gen:
+                if first_token_time is None:
+                    first_token_time = time.perf_counter()
+                    set_fields(ttft_ms=int((first_token_time - stream_start) * 1000))
+
+                delta = getattr(chunk, "delta", None)
+                if delta is None:
+                    delta = str(chunk)
+                if delta:
+                    full_chunks.append(delta)
+                    yield format_sse("delta", {"text": delta})
+    except Exception:
+        logger.exception("LLM generation stream failed")
+        raise
+
+    full_answer = "".join(full_chunks).strip()
+    if not full_answer:
+        full_answer = no_ans
+        yield format_sse("delta", {"text": full_answer})
+
+    if is_no_answer(full_answer):
+        set_fields(answer_mode="model_no_answer")
+    else:
+        set_fields(answer_mode="llm")
+        if cacheable_request:
+            from backend.services.faq_response_cache import set_cached_answer, sources_are_shareable
+            if sources_are_shareable(sources):
+                set_cached_answer(question, language, full_answer, pub_sources, eligible_sources=sources)
+
+    yield format_sse("done", {
+        "answer": full_answer,
+        "sources": pub_sources,
+    })
 
 
 def clear_vector_database():
     from django.db import connection
     with connection.cursor() as cursor:
         cursor.execute("TRUNCATE TABLE ai_document_embedding")
+    from backend.services.faq_response_cache import clear_faq_cache
+    clear_faq_cache()
 
 
 def delete_document_vectors(filename: str):
     safe_name = Path(filename).name
-    get_vector_collection().delete(where={"file_name": safe_name})
+    get_vector_collection().delete(
+        where={"$and": [{"file_name": safe_name}, {"sql_doc_key": {"$exists": False}}]}
+    )
+    from backend.services.faq_response_cache import clear_faq_cache
+    clear_faq_cache()
 
 
 def update_document_category_vectors(filename: str, category: str) -> int:
@@ -2411,7 +2928,10 @@ def update_document_category_vectors(filename: str, category: str) -> int:
     if not clean_category:
         return 0
     collection = get_vector_collection()
-    result = collection.get(where={"file_name": safe_name}, include=["metadatas"])
+    result = collection.get(
+        where={"$and": [{"file_name": safe_name}, {"sql_doc_key": {"$exists": False}}]},
+        include=["metadatas"],
+    )
     ids = result.get("ids") or []
     if not ids:
         return 0
@@ -2421,5 +2941,7 @@ def update_document_category_vectors(filename: str, category: str) -> int:
         updated["category"] = clean_category
         metadatas.append(updated)
     collection.update(ids=ids, metadatas=metadatas)
+    from backend.services.faq_response_cache import clear_faq_cache
+    clear_faq_cache()
     logger.info("Updated PostgreSQL vector categories for %s (%s chunks)", safe_name, len(ids))
     return len(ids)

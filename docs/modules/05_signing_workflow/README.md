@@ -117,9 +117,9 @@ Thao tác đổi trạng thái bắt buộc header `Idempotency-Key`. Lỗi tr�
   PDF dự thảo chưa vào sổ không áp quy tắc này.
 - Văn bản trình ký khi tạo hồ sơ (`POST trinh-ky/`, multipart) dùng đúng một nguồn: (1) văn bản đi đã đăng ký với
   `van_ban_id` (`document_type=vanbandi`) và `tep_dinh_kem_id` là tệp PDF còn hiệu lực trên chính bản ghi đó; không
-  nhận thêm `tep`; hoặc (2) `tep` tải lên từ máy, `trich_yeu_van_ban` bắt buộc và `so_hieu_van_ban` tùy chọn làm số
-  tham chiếu. Nguồn (2) là PDF dự thảo chưa vào sổ, mã hồ sơ trình ký do hệ thống tự cấp; số tham chiếu không phải số
-  văn bản chính thức. Server kiểm nội dung PDF, dung lượng tối đa 20 MB, rồi sao chép vào kho Trình ký riêng và tính
+  nhận thêm `tep`; hoặc (2) `tep` tải lên từ máy, `trich_yeu_van_ban` bắt buộc. Nguồn (2) là PDF dự thảo chưa vào sổ; máy chủ tự cấp mã hồ sơ dạng
+  `HS-<năm>-<khóa chính 6 chữ số>` ghi vào `so_hieu_van_ban` (client không nhập, giá trị gửi lên bị bỏ qua); mã này không
+  phải số văn bản chính thức. Server kiểm nội dung PDF, dung lượng tối đa 20 MB, rồi sao chép vào kho Trình ký riêng và tính
   SHA-256. Hồ sơ trả `van_ban` (`so_hieu`, `trich_yeu`) theo đúng nguồn; sửa nháp nhập tay được đổi số hiệu/trích yếu
   (hồ sơ gắn văn bản đi: 400 `van_ban_da_gan`).
 - Sau khi hồ sơ nguồn dự thảo hoàn tất duyệt nội bộ và tệp hoàn tất tạo thành công, người tạo đăng ký tệp hoàn tất qua
@@ -365,7 +365,7 @@ Báo cáo chi tiết các luồng nghiệp vụ (Happy path, Trả sửa lượt
   `view_chucvu`; nhóm ADMIN, TP có sẵn). Phạm vi chức vụ chọn trên form: trong đơn vị người trình hoặc toàn cơ quan.
   Người cụ thể giữ chức vụ được xác định lúc gửi (như trước).
 - Văn bản trình ký: chọn văn bản đi đã đăng ký và một PDF đính kèm của chính bản ghi; hoặc tải PDF dự thảo chưa vào sổ
-  với mã hồ sơ tự cấp (số hiệu tham chiếu, trích yếu). Sau khi hoàn tất duyệt, người tạo đăng ký tệp hoàn tất trong Văn
+  với mã hồ sơ tự cấp `HS-<năm>-<số thứ tự>` và trích yếu nhập tay. Sau khi hoàn tất duyệt, người tạo đăng ký tệp hoàn tất trong Văn
   bản đi rồi liên kết hồ sơ; Trình ký không cấp số hoặc tự tạo bản ghi. Schema đổi ở PR
   riêng (#274): `signing_request.document_type`, `document_id` cho phép NULL; thêm `so_hieu_van_ban`,
   `trich_yeu_van_ban`; CHECK `chk_signing_request_van_ban`; migration `signing/0015_van_ban_trinh_ky_khac`.

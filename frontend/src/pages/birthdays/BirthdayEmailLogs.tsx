@@ -5,11 +5,12 @@ import { Button } from '@components/common/Button';
 import BirthdayEmailComposer from './BirthdayEmailComposer';
 import { birthdayEmailError, type DeliveryResult } from './emailDelivery';
 
-type EmailStatus = 'PENDING' | 'SENDING' | 'SUCCESS' | 'FAILED' | 'RETRY';
+type EmailStatus = 'PENDING' | 'SENDING' | 'SUCCESS' | 'FAILED' | 'RETRY' | 'NOT_PROCESSED';
 type StatusFilter = EmailStatus | 'ALL';
 
 interface BirthdayEmailLog {
-  id: number;
+  id: number | null;
+  employee_id: number;
   employee_name: string;
   recipient_email: string;
   position: string;
@@ -21,11 +22,13 @@ interface BirthdayEmailLog {
   error_message: string;
   smtp_response_code: string;
   delivery_source: 'AUTO' | 'MANUAL';
+  delivery_context: 'SCHEDULED' | 'RECOVERY' | 'RETRY' | null;
   delivery_uncertain: boolean;
   template_version: string | null;
   last_operator: string | null;
   can_retry: boolean;
   current_recipient: string | null;
+  retry_block_reason: string | null;
 }
 
 interface BirthdayEmailLogsResponse {
@@ -43,6 +46,19 @@ interface LoadState {
   error: string | null;
 }
 
+interface ActionNotice {
+  kind: 'success' | 'warning' | 'error';
+  titleKey: string;
+  messageKey: string;
+  values?: Record<string, string>;
+}
+
+const ACTION_NOTICE_STYLES: Record<ActionNotice['kind'], string> = {
+  success: 'border-success/30 bg-success-subtle text-success',
+  warning: 'border-warning/30 bg-warning-subtle text-warning-text',
+  error: 'border-danger/30 bg-danger-subtle text-danger',
+};
+
 const STATUS_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
   { value: 'ALL', label: 'allStatuses' },
   { value: 'PENDING', label: 'statusPending' },
@@ -50,6 +66,7 @@ const STATUS_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
   { value: 'SUCCESS', label: 'statusSuccess' },
   { value: 'FAILED', label: 'statusFailed' },
   { value: 'RETRY', label: 'statusRetry' },
+  { value: 'NOT_PROCESSED', label: 'statusNotProcessed' },
 ];
 
 const STATUS_STYLES: Record<EmailStatus, string> = {
@@ -58,6 +75,7 @@ const STATUS_STYLES: Record<EmailStatus, string> = {
   SUCCESS: 'bg-success-subtle text-success',
   FAILED: 'bg-danger-subtle text-danger',
   RETRY: 'bg-warning-subtle text-warning-text',
+  NOT_PROCESSED: 'bg-surface-hover text-secondary',
 };
 
 function statusLabelKey(status: EmailStatus): string {
@@ -95,7 +113,7 @@ export default function BirthdayEmailLogs() {
   const [retry, setRetry] = useState(0);
   const [showComposer, setShowComposer] = useState(false);
   const [retrying, setRetrying] = useState(false);
-  const [actionNotice, setActionNotice] = useState<{ key: string; error: boolean } | null>(null);
+  const [actionNotice, setActionNotice] = useState<ActionNotice | null>(null);
   const [loadState, setLoadState] = useState<LoadState>({ key: '', data: null, error: null });
   const selectedDateRef = useRef(initialToday);
   const followTodayRef = useRef(true);
@@ -178,10 +196,39 @@ export default function BirthdayEmailLogs() {
 
   const deliveryFinished = (log: DeliveryResult) => {
     setShowComposer(false);
-    setActionNotice({
-      key: log.delivery_uncertain ? 'needsReview' : log.trang_thai === 'SUCCESS' ? 'sent' : 'sendFailed',
-      error: log.trang_thai !== 'SUCCESS',
-    });
+    if (log.delivery_uncertain) {
+      setActionNotice({
+        kind: 'warning',
+        titleKey: 'birthdayPage.manualEmail.needsReviewTitle',
+        messageKey: 'birthdayPage.manualEmail.needsReview',
+      });
+    } else if (log.trang_thai === 'SUCCESS') {
+      const employee = log.employee_name?.trim();
+      const sentAt = log.sent_at?.trim() || '';
+      const messageKey = employee && sentAt
+        ? 'birthdayPage.manualEmail.successMessage'
+        : employee
+          ? 'birthdayPage.manualEmail.successMessageWithoutTime'
+          : sentAt
+            ? 'birthdayPage.manualEmail.successMessageWithoutEmployee'
+            : 'birthdayPage.manualEmail.successMessageEmailOnly';
+      setActionNotice({
+        kind: 'success',
+        titleKey: 'birthdayPage.manualEmail.successTitle',
+        messageKey,
+        values: {
+          employee: employee || '',
+          email: log.recipient_email || '',
+          sentAt,
+        },
+      });
+    } else {
+      setActionNotice({
+        kind: 'error',
+        titleKey: 'birthdayPage.manualEmail.sendFailedTitle',
+        messageKey: 'birthdayPage.manualEmail.sendFailed',
+      });
+    }
     returnToToday();
     setStatus('ALL');
     setRetry((value) => value + 1);
@@ -198,7 +245,11 @@ export default function BirthdayEmailLogs() {
       );
       deliveryFinished(response.log);
     } catch (reason) {
-      setActionNotice({ key: birthdayEmailError(reason), error: true });
+      setActionNotice({
+        kind: 'error',
+        titleKey: 'birthdayPage.manualEmail.sendFailedTitle',
+        messageKey: birthdayEmailError(reason),
+      });
       setRetry((value) => value + 1);
     } finally {
       setRetrying(false);
@@ -276,10 +327,13 @@ export default function BirthdayEmailLogs() {
 
       <div className="mt-4">
         {actionNotice && (
-          <p className={actionNotice.error ? 'mb-3 text-sm text-danger' : 'mb-3 text-sm text-success'}
-            role={actionNotice.error ? 'alert' : 'status'}>
-            {t(actionNotice.key.includes('.') ? actionNotice.key : `birthdayPage.manualEmail.${actionNotice.key}`)}
-          </p>
+          <div
+            className={`mb-3 rounded-xs border px-4 py-3 text-sm ${ACTION_NOTICE_STYLES[actionNotice.kind]}`}
+            role={actionNotice.kind === 'success' ? 'status' : 'alert'}
+          >
+            <p className="font-semibold">{t(actionNotice.titleKey)}</p>
+            <p className="mt-1">{t(actionNotice.messageKey, actionNotice.values)}</p>
+          </div>
         )}
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-secondary">
           <p>{t('birthdayPage.emailLogs.viewingDate', { date: displayDate(selectedDate) })}</p>
@@ -321,13 +375,13 @@ export default function BirthdayEmailLogs() {
                 </thead>
                 <tbody className="divide-y divide-border">
                   {logs.map((log) => (
-                    <tr key={log.id} className="align-top text-main hover:bg-surface-hover/60">
+                    <tr key={log.id ?? `not-processed-${log.employee_id}`} className="align-top text-main hover:bg-surface-hover/60">
                       <td className="px-3 py-3 font-semibold">{log.employee_name}</td>
                       <td className="px-3 py-3 text-secondary">
                         {log.recipient_email || '—'}
-                        {(log.trang_thai === 'FAILED' || log.trang_thai === 'RETRY') && (
+                        {(log.trang_thai === 'FAILED' || log.trang_thai === 'RETRY') && log.can_retry && (
                           <button
-                            type="button" onClick={() => void retryEmail(log)} disabled={retrying || !log.can_retry || !log.current_recipient}
+                            type="button" onClick={() => void retryEmail(log)} disabled={retrying || !log.current_recipient}
                             className="mt-1 block whitespace-nowrap font-semibold text-primary hover:underline disabled:opacity-50"
                           >
                             {t('birthdayPage.manualEmail.retry')}
@@ -345,12 +399,26 @@ export default function BirthdayEmailLogs() {
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums">{log.retry_count}</td>
                       <td className="px-3 py-3 text-secondary">
-                        {t(log.delivery_source === 'MANUAL' ? 'birthdayPage.manualEmail.manual' : 'birthdayPage.manualEmail.automatic')}
+                        {log.trang_thai === 'NOT_PROCESSED'
+                          ? '—'
+                          : t(log.delivery_source === 'MANUAL'
+                            ? 'birthdayPage.manualEmail.manual'
+                            : log.delivery_context === 'RECOVERY'
+                              ? 'birthdayPage.manualEmail.recovery'
+                              : log.delivery_context === 'RETRY'
+                                ? 'birthdayPage.manualEmail.retrySource'
+                                : 'birthdayPage.manualEmail.automatic')}
                         {log.last_operator && <p className="text-xs">{log.last_operator}</p>}
                         {log.template_version && <p className="text-xs">{log.template_version}</p>}
                       </td>
                       <td className="max-w-sm px-3 py-3 text-secondary">
-                        {log.delivery_uncertain ? t('birthdayPage.manualEmail.needsReview') : log.error_message || log.smtp_response_code || '—'}
+                        {log.trang_thai === 'NOT_PROCESSED'
+                          ? t('birthdayPage.emailLogs.notProcessedDetail')
+                          : log.delivery_uncertain
+                            ? t('birthdayPage.manualEmail.needsReview')
+                            : (log.trang_thai === 'FAILED' || log.trang_thai === 'RETRY') && log.retry_block_reason
+                              ? t(`birthdayPage.manualEmail.retryBlocked.${log.retry_block_reason}`)
+                              : log.error_message || log.smtp_response_code || '—'}
                       </td>
                     </tr>
                   ))}

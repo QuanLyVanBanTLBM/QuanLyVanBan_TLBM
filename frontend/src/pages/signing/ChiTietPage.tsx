@@ -59,6 +59,7 @@ function ChiTietHoSo({ id }: { id: number }) {
     && hoSo.trang_thai === 'HOAN_THANH' && luot?.trang_thai_tep_hoan_tat === 'THANH_CONG');
   const [tepTai, setTepTai] = useState<{ khoa: string; buf: ArrayBuffer | null; maBam: string | null; loi: unknown } | null>(null);
   const [anh, setAnh] = useState<Record<number, string>>({});
+  const [loiTaiTep, setLoiTaiTep] = useState('');
   const [dangSua, setDangSua] = useState(false);
   const [dangThayNguoiKy, setDangThayNguoiKy] = useState(false);
   const [qVanBan, setQVanBan] = useState('');
@@ -167,41 +168,26 @@ function ChiTietHoSo({ id }: { id: number }) {
 
   const coChuKy = (luot?.cap_ky || []).some((c) => c.nguoi_ky.some((n) => n.trang_thai === 'DA_KY' && n.chu_ky));
 
-  const taiTepHienTai = async () => {
+  /** Lấy tệp theo trạng thái hồ sơ: hoàn tất → tệp hoàn tất; đã có chữ ký → bản đã ký tiến trình (sinh theo thời điểm
+   *  gọi, lũy kế mọi chữ ký hiện có); chưa có chữ ký → tệp gốc. Đã có chữ ký mà lỗi thì báo lỗi, không rơi về tệp gốc. */
+  const layTepChinh = async (): Promise<{ blob: Blob; ten: string } | null> => {
+    if (hoSo.trang_thai === 'HOAN_THANH') {
+      return { blob: await signingApi.tepHoanTat(hoSo.id), ten: tenTepTaiVe(hoSo.id, 'HOAN_TAT') };
+    }
+    if (coChuKy) return { blob: await signingApi.tepDaKy(hoSo.id), ten: tenTepTaiVe(hoSo.id, 'DA_KY') };
+    return tep ? { blob: new Blob([tep], { type: 'application/pdf' }), ten: tenTepTaiVe(hoSo.id, 'DU_THAO') } : null;
+  };
+  const xuLyTepChinh = async (dung: (blob: Blob, ten: string) => void) => {
+    setLoiTaiTep('');
     try {
-      if (hoSo.trang_thai === 'HOAN_THANH') {
-        const b = await signingApi.tepHoanTat(hoSo.id);
-        luuTep(b, tenTepTaiVe(hoSo.id, 'HOAN_TAT'));
-      } else if (coChuKy) {
-        const b = await signingApi.tepDaKy(hoSo.id);
-        luuTep(b, tenTepTaiVe(hoSo.id, 'DA_KY'));
-      } else if (tep) {
-        luuTep(new Blob([tep], { type: 'application/pdf' }), tenTepTaiVe(hoSo.id, 'DU_THAO'));
-      }
-    } catch {
-      if (tep) {
-        luuTep(new Blob([tep], { type: 'application/pdf' }), tenTepTaiVe(hoSo.id, 'DU_THAO'));
-      }
+      const kq = await layTepChinh();
+      if (kq) dung(kq.blob, kq.ten);
+    } catch (err) {
+      setLoiTaiTep(loi(err));
     }
   };
-
-  const inTepHienTai = async () => {
-    try {
-      if (hoSo.trang_thai === 'HOAN_THANH') {
-        const b = await signingApi.tepHoanTat(hoSo.id);
-        inPdf(b);
-      } else if (coChuKy) {
-        const b = await signingApi.tepDaKy(hoSo.id);
-        inPdf(b);
-      } else if (tep) {
-        inPdf(new Blob([tep], { type: 'application/pdf' }));
-      }
-    } catch {
-      if (tep) {
-        inPdf(new Blob([tep], { type: 'application/pdf' }));
-      }
-    }
-  };
+  const taiTepHienTai = () => xuLyTepChinh(luuTep);
+  const inTepHienTai = () => xuLyTepChinh((blob) => inPdf(blob));
 
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_24rem]">
@@ -243,6 +229,7 @@ function ChiTietHoSo({ id }: { id: number }) {
               </div>
             )}
           </div>
+          {loiTaiTep && <ThongBao>{loiTaiTep}</ThongBao>}
           {/* PDF cuộn trong khung riêng để trang không dài theo số trang tài liệu */}
           <div className="max-h-[calc(100vh-12rem)] overflow-y-auto rounded-lg bg-surface-subtle p-3">
             {loiTep ? <LoiTai thongBao={loi(loiTep)} /> : tep ? <XemPdf duLieu={tep} khung={khung} /> : <DangTai />}
