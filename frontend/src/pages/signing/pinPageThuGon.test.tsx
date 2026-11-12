@@ -103,4 +103,22 @@ describe('PinPage: thu gọn form khi đã có PIN', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: NUT_MO })).toBeInTheDocument());
     expect(screen.queryByText('PIN mới (6 chữ số)')).not.toBeInTheDocument();
   });
+
+  it('lần đầu tạo PIN xong thì tự chuyển sang trạng thái đã có PIN, không cần tải lại trang', async () => {
+    api.pinTrangThai.mockResolvedValueOnce({ da_dat_pin: false } as never);
+    api.pinTrangThai.mockResolvedValue({ da_dat_pin: true } as never);
+    api.pinOtpYeuCau.mockResolvedValue({ challenge_id: 'c1', kenh: 'SMS', gian_cach_giay: 0 } as never);
+    api.pinOtpXacNhan.mockResolvedValue({} as never);
+    moTrang();
+    await screen.findByText('PIN mới (6 chữ số)');
+    const o = document.querySelectorAll('input[type="password"]');
+    fireEvent.change(o[0], { target: { value: '123456' } });
+    fireEvent.change(o[1], { target: { value: '123456' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Gửi OTP' }));
+    fireEvent.change(await screen.findByLabelText(/Mã OTP/), { target: { value: '654321' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Xác nhận và lưu PIN' }));
+    expect(await screen.findByRole('button', { name: NUT_MO })).toBeInTheDocument();
+    expect(screen.queryByText('PIN mới (6 chữ số)')).not.toBeInTheDocument();
+    expect(api.pinTrangThai).toHaveBeenCalledTimes(2);
+  });
 });
