@@ -3,6 +3,90 @@
 from django.db import migrations, models
 
 
+def _twofa_field_defs():
+    return [
+        (
+            'is_2fa_enabled',
+            models.BooleanField(
+                db_default=False,
+                default=False,
+                verbose_name='Đã bật xác thực hai yếu tố (2FA)',
+            ),
+        ),
+        (
+            'totp_last_used_step',
+            models.BigIntegerField(
+                blank=True,
+                null=True,
+                verbose_name='Bước thời gian OTP đã sử dụng gần nhất',
+            ),
+        ),
+        (
+            'totp_secret',
+            models.CharField(
+                blank=True,
+                max_length=255,
+                null=True,
+                verbose_name='Khóa bí mật TOTP (đã mã hóa)',
+            ),
+        ),
+        (
+            'twofa_backup_codes',
+            models.JSONField(
+                db_default=models.Value([], output_field=models.JSONField()),
+                default=list,
+                verbose_name='Mã dự phòng 2FA (đã băm)',
+            ),
+        ),
+        (
+            'twofa_failed_attempts',
+            models.IntegerField(
+                db_default=0,
+                default=0,
+                verbose_name='Số lần nhập sai 2FA liên tiếp',
+            ),
+        ),
+        (
+            'twofa_locked_until',
+            models.DateTimeField(
+                blank=True,
+                null=True,
+                verbose_name='Thời điểm hết khóa 2FA',
+            ),
+        ),
+    ]
+
+
+def _get_existing_columns(schema_editor, table_name):
+    with schema_editor.connection.cursor() as cursor:
+        return {
+            col.name
+            for col in schema_editor.connection.introspection.get_table_description(
+                cursor, table_name
+            )
+        }
+
+
+def add_twofa_columns_if_missing(apps, schema_editor):
+    Employee = apps.get_model('accounts', 'Employee')
+    existing_cols = _get_existing_columns(schema_editor, Employee._meta.db_table)
+    for field_name, field in _twofa_field_defs():
+        field.set_attributes_from_name(field_name)
+        field.model = Employee
+        if field.column not in existing_cols:
+            schema_editor.add_field(Employee, field)
+
+
+def drop_twofa_columns_if_present(apps, schema_editor):
+    Employee = apps.get_model('accounts', 'Employee')
+    existing_cols = _get_existing_columns(schema_editor, Employee._meta.db_table)
+    for field_name, field in reversed(_twofa_field_defs()):
+        field.set_attributes_from_name(field_name)
+        field.model = Employee
+        if field.column in existing_cols:
+            schema_editor.remove_field(Employee, field)
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -10,34 +94,44 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AddField(
-            model_name='employee',
-            name='is_2fa_enabled',
-            field=models.BooleanField(db_default=False, default=False, verbose_name='Đã bật xác thực hai yếu tố (2FA)'),
-        ),
-        migrations.AddField(
-            model_name='employee',
-            name='totp_last_used_step',
-            field=models.BigIntegerField(blank=True, null=True, verbose_name='Bước thời gian OTP đã sử dụng gần nhất'),
-        ),
-        migrations.AddField(
-            model_name='employee',
-            name='totp_secret',
-            field=models.CharField(blank=True, max_length=255, null=True, verbose_name='Khóa bí mật TOTP (đã mã hóa)'),
-        ),
-        migrations.AddField(
-            model_name='employee',
-            name='twofa_backup_codes',
-            field=models.JSONField(db_default=models.Value([], output_field=models.JSONField()), default=list, verbose_name='Mã dự phòng 2FA (đã băm)'),
-        ),
-        migrations.AddField(
-            model_name='employee',
-            name='twofa_failed_attempts',
-            field=models.IntegerField(db_default=0, default=0, verbose_name='Số lần nhập sai 2FA liên tiếp'),
-        ),
-        migrations.AddField(
-            model_name='employee',
-            name='twofa_locked_until',
-            field=models.DateTimeField(blank=True, null=True, verbose_name='Thời điểm hết khóa 2FA'),
+        migrations.SeparateDatabaseAndState(
+            database_operations=[
+                migrations.RunPython(
+                    add_twofa_columns_if_missing,
+                    drop_twofa_columns_if_present,
+                ),
+            ],
+            state_operations=[
+                migrations.AddField(
+                    model_name='employee',
+                    name='is_2fa_enabled',
+                    field=models.BooleanField(db_default=False, default=False, verbose_name='Đã bật xác thực hai yếu tố (2FA)'),
+                ),
+                migrations.AddField(
+                    model_name='employee',
+                    name='totp_last_used_step',
+                    field=models.BigIntegerField(blank=True, null=True, verbose_name='Bước thời gian OTP đã sử dụng gần nhất'),
+                ),
+                migrations.AddField(
+                    model_name='employee',
+                    name='totp_secret',
+                    field=models.CharField(blank=True, max_length=255, null=True, verbose_name='Khóa bí mật TOTP (đã mã hóa)'),
+                ),
+                migrations.AddField(
+                    model_name='employee',
+                    name='twofa_backup_codes',
+                    field=models.JSONField(db_default=models.Value([], output_field=models.JSONField()), default=list, verbose_name='Mã dự phòng 2FA (đã băm)'),
+                ),
+                migrations.AddField(
+                    model_name='employee',
+                    name='twofa_failed_attempts',
+                    field=models.IntegerField(db_default=0, default=0, verbose_name='Số lần nhập sai 2FA liên tiếp'),
+                ),
+                migrations.AddField(
+                    model_name='employee',
+                    name='twofa_locked_until',
+                    field=models.DateTimeField(blank=True, null=True, verbose_name='Thời điểm hết khóa 2FA'),
+                ),
+            ],
         ),
     ]
