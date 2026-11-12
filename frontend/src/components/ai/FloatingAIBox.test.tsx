@@ -1,11 +1,13 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { askQuestion, getAISettings } from '../../api';
+import { askQuestion, askQuestionStream, getAISettings, getDocuments } from '../../api';
 import FloatingAIBox from './FloatingAIBox';
 
 vi.mock('../../api', () => ({
   askQuestion: vi.fn(),
+  askQuestionStream: vi.fn(),
   getAISettings: vi.fn(),
+  getDocuments: vi.fn(),
 }));
 
 vi.mock('@i18n/translate', () => ({
@@ -17,7 +19,9 @@ vi.mock('@i18n/translate', () => ({
 }));
 
 const mockedAskQuestion = vi.mocked(askQuestion);
+const mockedAskQuestionStream = vi.mocked(askQuestionStream);
 const mockedGetAISettings = vi.mocked(getAISettings);
+const mockedGetDocuments = vi.mocked(getDocuments);
 
 describe('FloatingAIBox', () => {
   beforeEach(() => {
@@ -27,12 +31,19 @@ describe('FloatingAIBox', () => {
       provider: 'openai',
       llm_model: 'gpt-6-luna',
     });
+    mockedGetDocuments.mockResolvedValue({
+      documents: [
+        { filename: 'policy.pdf', category: 'Policy' },
+        { filename: 'guide.docx', category: 'Guide' },
+      ],
+    });
   });
 
-  it('uses the configured model and sends chat requests to the backend', async () => {
-    mockedAskQuestion.mockResolvedValue({
-      answer: '**A backend answer**',
-      sources: [],
+  it('uses the configured model and streams chat responses to the UI', async () => {
+    mockedAskQuestionStream.mockImplementation(async (_text, options?: { onDelta?: (d: string, a: string) => void; onDone?: (data: { answer: string; sources: unknown[] }) => void }) => {
+      options?.onDelta?.('**A backend answer**', '**A backend answer**');
+      options?.onDone?.({ answer: '**A backend answer**', sources: [] });
+      return { answer: '**A backend answer**', sources: [] };
     });
 
     render(<FloatingAIBox />);
@@ -46,8 +57,29 @@ describe('FloatingAIBox', () => {
     });
     fireEvent.submit(screen.getByRole('textbox', { name: 'floatingAI.placeholder' }).closest('form')!);
 
-    await waitFor(() => expect(mockedAskQuestion).toHaveBeenCalledWith('Test question', []));
+    await waitFor(() => expect(mockedAskQuestionStream).toHaveBeenCalled());
     expect(await screen.findByText('A backend answer', { selector: 'strong' })).toBeInTheDocument();
+  });
+
+  it('falls back to askQuestion when streaming fails before first chunk', async () => {
+    mockedAskQuestionStream.mockRejectedValue(new Error('Stream network error'));
+    mockedAskQuestion.mockResolvedValue({
+      answer: '**Fallback answer**',
+      sources: [],
+    });
+
+    render(<FloatingAIBox />);
+    await waitFor(() => expect(mockedGetAISettings).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: 'floatingAI.openTitle' }));
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'floatingAI.placeholder' }), {
+      target: { value: 'Fallback question' },
+    });
+    fireEvent.submit(screen.getByRole('textbox', { name: 'floatingAI.placeholder' }).closest('form')!);
+
+    await waitFor(() => expect(mockedAskQuestion).toHaveBeenCalledWith('Fallback question', []));
+    expect(await screen.findByText('Fallback answer', { selector: 'strong' })).toBeInTheDocument();
   });
 
   it('does not show a hard-coded model when settings cannot be loaded', async () => {
@@ -128,5 +160,46 @@ describe('FloatingAIBox', () => {
     const specBtn = await screen.findByRole('button', { name: /Nghiệp vụ Ký số/ });
     fireEvent.click(specBtn);
     expect(onNavigate).toHaveBeenCalledWith('approvals');
+  });
+
+  it('allows targeting a specific document and clearing the selection', async () => {
+    mockedAskQuestionStream.mockImplementation(async (_text, options?: { onDelta?: (d: string, a: string) => void; onDone?: (data: { answer: string; sources: unknown[] }) => void }) => {
+      options?.onDelta?.('Trả lời theo tệp chỉ định', 'Trả lời theo tệp chỉ định');
+      options?.onDone?.({ answer: 'Trả lời theo tệp chỉ định', sources: [] });
+      return { answer: 'Trả lời theo tệp chỉ định', sources: [] };
+    });
+
+    render(<FloatingAIBox />);
+    fireEvent.click(screen.getByRole('button', { name: 'floatingAI.openTitle' }));
+    await waitFor(() => expect(mockedGetDocuments).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: 'floatingAI.selectDocument' }));
+    const searchInput = await screen.findByRole('textbox', { name: 'floatingAI.searchDocuments' });
+    fireEvent.change(searchInput, { target: { value: 'policy' } });
+    fireEvent.click(screen.getByRole('button', { name: 'policy.pdf' }));
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'floatingAI.placeholder' }), {
+      target: { value: 'Tóm tắt chính' },
+    });
+    fireEvent.submit(screen.getByRole('textbox', { name: 'floatingAI.placeholder' }).closest('form')!);
+
+    await waitFor(() => expect(mockedAskQuestionStream).toHaveBeenCalledWith('Tóm tắt chính', expect.objectContaining({ filename: 'policy.pdf' })));
+    expect(await screen.findByText('Trả lời theo tệp chỉ định')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'floatingAI.clearTarget' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'floatingAI.placeholder' }), {
+      target: { value: 'Câu hỏi chung' },
+    });
+    fireEvent.submit(screen.getByRole('textbox', { name: 'floatingAI.placeholder' }).closest('form')!);
+
+    await waitFor(() =>
+      expect(mockedAskQuestionStream).toHaveBeenLastCalledWith('Câu hỏi chung', expect.objectContaining({
+        filename: null,
+        history: [
+          { role: 'user', content: 'Tóm tắt chính' },
+          { role: 'assistant', content: 'Trả lời theo tệp chỉ định' },
+        ],
+      })),
+    );
   });
 });
