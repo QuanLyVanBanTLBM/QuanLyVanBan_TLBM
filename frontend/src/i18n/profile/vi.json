@@ -7,6 +7,10 @@
     "department": "Đơn vị công tác",
     "email": "Email liên hệ",
     "sampleDept": "Đơn vị / Phòng ban công tác",
+    "twofaLabel": "Bảo mật 2 lớp (2FA)",
+    "twofaEnabled": "Đã kích hoạt (Authenticator)",
+    "twofaDisabled": "Chưa bật (Khuyến nghị kích hoạt)",
+    "twofaManageBtn": "Thiết lập bảo mật 2FA",
     "roles": {
       "admin": "Quản trị viên",
       "administrator": "Quản trị viên",
