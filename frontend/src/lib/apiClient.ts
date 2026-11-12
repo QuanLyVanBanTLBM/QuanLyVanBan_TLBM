@@ -327,6 +327,60 @@ export async function apiClientBlob(endpoint: string, options: RequestInit = {})
   return await response.blob();
 }
 
+export async function apiClientStream(endpoint: string, options: RequestInit = {}): Promise<Response> {
+  const url = endpoint.startsWith('http')
+    ? endpoint
+    : `${BASE_URL}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
+
+  const headers = new Headers(options.headers || {});
+  const isCustomOrFormBody =
+    options.body instanceof FormData ||
+    options.body instanceof URLSearchParams ||
+    options.body instanceof Blob ||
+    options.body instanceof ArrayBuffer ||
+    ArrayBuffer.isView(options.body);
+  if (!headers.has('Content-Type') && !isCustomOrFormBody) {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  const currentLanguage = (typeof window !== 'undefined' ? localStorage.getItem('tlbm_lang') : null) || 'vi';
+  if (!headers.has('Accept-Language')) {
+    headers.set('Accept-Language', currentLanguage);
+  }
+
+  const token = localStorage.getItem('tlbm_access_token') || localStorage.getItem('tlbm_token');
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+
+  const method = (options.method || 'GET').toUpperCase();
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+    const csrfToken = getCsrfToken();
+    if (csrfToken && !headers.has('X-CSRFToken')) {
+      headers.set('X-CSRFToken', csrfToken);
+    }
+  }
+
+  const response = await fetch(url, {
+    credentials: options.credentials || 'include',
+    ...options,
+    headers,
+  });
+
+  if (!response.ok) {
+    let errorData: ApiErrorResponse;
+    try {
+      errorData = (await response.json()) as ApiErrorResponse;
+    } catch {
+      errorData = { error: t('common.apiError', { status: String(response.status) }) };
+    }
+    throw new ApiError(response.status, errorData);
+  }
+
+  return response;
+}
+
 apiClient.blob = downloadBlob;
+apiClient.stream = apiClientStream;
 
 export default apiClient;
