@@ -21,6 +21,7 @@ export default function PinPage() {
   const [challenge, setChallenge] = useState<PinOtpYeuCau | null>(null);
   const [giayGuiLai, setGiayGuiLai] = useState(0);
   const [dangLam, setDangLam] = useState(false);
+  const [moFormPin, setMoFormPin] = useState(false);
   const [thongBao, setThongBao] = useState<{ loai: 'loi' | 'thanh_cong'; noi_dung: string } | null>(null);
   const [anhChuKyTuyChinh, setAnhChuKyTuyChinh] = useState<string | null | undefined>(undefined);
   const [tepChon, setTepChon] = useState<File | null>(null);
@@ -47,6 +48,7 @@ export default function PinPage() {
       setMa('');
       setGiayGuiLai(0);
       setThongBao(null);
+      setMoFormPin(false);
     } catch (err) {
       setThongBao({ loai: 'loi', noi_dung: loi(err) });
     } finally {
@@ -79,6 +81,7 @@ export default function PinPage() {
       setPin('');
       setPinXacNhan('');
       setMa('');
+      setMoFormPin(false);
       setThongBao({ loai: 'thanh_cong', noi_dung: t('pin.daLuu') });
       pinState.tai();
       taiLaiToi?.();
@@ -148,6 +151,7 @@ export default function PinPage() {
   if (!coQuyen(toi, 'sign_trinhky')) return <ThongBao loai="thong_tin">{t('pin.khongCoQuyen')}</ThongBao>;
 
   const daDatPin = Boolean(pinState.duLieu?.da_dat_pin);
+  const hienFormPin = !daDatPin || moFormPin || challenge !== null;
   const pinHopLe = /^\d{6}$/.test(pin) && pin === pinXacNhan;
 
   return (
@@ -158,7 +162,13 @@ export default function PinPage() {
           <h3 className="text-base font-bold text-main">{t('pin.tieuDe')}</h3>
           <p className="text-sm text-secondary">{daDatPin ? t('pin.moTaDaDat') : t('pin.moTaChuaDat')}</p>
           {thongBao && <ThongBao loai={thongBao.loai}>{thongBao.noi_dung}</ThongBao>}
-          {!challenge ? (
+          {!hienFormPin ? (
+            <div>
+              <Button variant="outline" icon="fa-key" onClick={() => { setThongBao(null); setMoFormPin(true); }}>
+                {t('pin.doiHoacKhoiPhuc')}
+              </Button>
+            </div>
+          ) : !challenge ? (
             <div className="space-y-3">
               <TruongNhap nhan={t('pin.pinMoi')} batBuoc>
                 <input className={LOP_O_NHAP} type="password" inputMode="numeric" autoComplete="new-password" maxLength={6}
@@ -175,8 +185,13 @@ export default function PinPage() {
                   <option value="EMAIL">{t('pin.email')}</option>
                 </select>
               </TruongNhap>
-              <Button icon="fa-paper-plane" isLoading={dangLam} disabled={!pinHopLe}
-                onClick={yeuCauOtp}>{t('pin.guiOtp')}</Button>
+              <div className="flex flex-wrap gap-2">
+                <Button icon="fa-paper-plane" isLoading={dangLam} disabled={!pinHopLe}
+                  onClick={yeuCauOtp}>{t('pin.guiOtp')}</Button>
+                {daDatPin && (
+                  <Button variant="outline" disabled={dangLam} onClick={huyTaoPin}>{t('chung.huyBo')}</Button>
+                )}
+              </div>
             </div>
           ) : (
             <div className="space-y-3">
