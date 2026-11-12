@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { setLanguage } from '@i18n/translate';
 import { ApiError, apiClient } from '@lib/apiClient';
 import BirthdayEmailLogs from './BirthdayEmailLogs';
@@ -35,6 +35,7 @@ const previewResponse = {
   html: '<p>Chúc mừng sinh nhật</p>',
   recipient: 'leader@example.test',
   birthday_date: '2026-05-20',
+  card_url: 'https://staging.example.test/birthday-cards/05.html#token=signed-token',
   preview_token: 'confirmed-preview',
 };
 
@@ -61,7 +62,7 @@ async function previewManualEmail() {
   fireEvent.click(await screen.findByRole('button', { name: 'Thêm thủ công' }));
   await screen.findByRole('option', { name: /Nguyễn Văn A/ });
   fireEvent.change(screen.getByLabelText('Người nhận email'), { target: { value: '12' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Xem trước email' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Xem trước nội dung email' }));
   return screen.findByRole('button', { name: 'Xác nhận gửi email' });
 }
 
@@ -82,6 +83,23 @@ describe('Birthday email log actions', () => {
     render(<BirthdayEmailLogs />);
     await screen.findByRole('alert');
     expect(screen.queryByRole('button', { name: 'Thêm thủ công' })).not.toBeInTheDocument();
+  });
+
+  it('labels the email-safe preview and opens the matching web card separately', async () => {
+    mockManualEmailApi(acceptedLog);
+    render(<BirthdayEmailLogs />);
+    const send = await previewManualEmail();
+
+    const iframe = screen.getByTitle('Xem trước nội dung email');
+    expect(iframe).toHaveAttribute('srcdoc', previewResponse.html);
+    expect(screen.getByText(
+      'Một số hiệu ứng động không được Gmail/Outlook hỗ trợ. Email thực tế sẽ dùng phiên bản tương thích, không có hiệu ứng web 3D.',
+    )).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '🎁 Mở thiệp sinh nhật 3D' })).toHaveAttribute(
+      'href', previewResponse.card_url,
+    );
+    expect(screen.getByText('Đây là trải nghiệm đầy đủ mà người nhận mở từ nút trong email.')).toBeInTheDocument();
+    expect(send).toBeInTheDocument();
   });
 
   it('applies the AI draft on request and sends only after confirmation', async () => {
@@ -125,7 +143,7 @@ describe('Birthday email log actions', () => {
     await screen.findByText('Đã lưu mẫu vào thư viện.');
     expect(screen.getByLabelText('Mẫu trong thư viện')).toHaveValue('saved:1');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Xem trước email' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Xem trước nội dung email' }));
     const send = await screen.findByRole('button', { name: 'Xác nhận gửi email' });
     expect(post).toHaveBeenCalledTimes(3);
     fireEvent.click(send);
@@ -184,8 +202,10 @@ describe('Birthday email log actions', () => {
     });
     render(<BirthdayEmailLogs />);
     const send = await previewManualEmail();
-    fireEvent.click(send);
-    fireEvent.click(send);
+    act(() => {
+      send.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      send.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
 
     expect(send).toBeDisabled();
     expect(await screen.findByText('Đang xử lý…')).toBeInTheDocument();
@@ -198,8 +218,14 @@ describe('Birthday email log actions', () => {
 
   it('offers a retry only for the log that can be resent and confirms its current address', async () => {
     vi.spyOn(apiClient, 'get').mockResolvedValue({ total: 2, logs: [
-      { id: 1, employee_name: 'CBNV A', trang_thai: 'FAILED', can_retry: false, delivery_uncertain: true },
-      { id: 2, employee_name: 'CBNV B', trang_thai: 'FAILED', can_retry: true, current_recipient: 'corrected@example.test' },
+      {
+        id: 1, employee_id: 1, employee_name: 'CBNV A', trang_thai: 'FAILED', can_retry: false,
+        current_recipient: null, retry_block_reason: 'needsReview', delivery_uncertain: true,
+      },
+      {
+        id: 2, employee_id: 2, employee_name: 'CBNV B', trang_thai: 'FAILED', can_retry: true,
+        current_recipient: 'corrected@example.test', retry_block_reason: null, delivery_uncertain: false,
+      },
     ] });
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const post = vi.spyOn(apiClient, 'post').mockResolvedValue({
@@ -208,11 +234,72 @@ describe('Birthday email log actions', () => {
     render(<BirthdayEmailLogs />);
     expect(await screen.findByText('Chưa thể xác định kết quả gửi email. Cần kiểm tra/đối soát trước khi gửi lại.')).toBeInTheDocument();
     const retries = screen.getAllByRole('button', { name: 'Gửi lại' });
-    expect(retries[0]).toBeDisabled();
-    expect(retries[1]).toBeEnabled();
-    fireEvent.click(retries[1]);
+    expect(retries).toHaveLength(1);
+    expect(retries[0]).toBeEnabled();
+    fireEvent.click(retries[0]);
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining('corrected@example.test'));
     expect(post).toHaveBeenCalledWith('/api/birthdays/logs/2/retry/', { recipient: 'corrected@example.test' });
     expect(await screen.findByText(/Gửi email thành công/)).toBeInTheDocument();
+    expect(apiClient.get).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows unprocessed birthdays and keeps scheduled, recovery, and manual sources distinct', async () => {
+    vi.spyOn(apiClient, 'get').mockResolvedValue({ total: 4, logs: [
+      {
+        id: null, employee_id: 1, employee_name: 'CBNV chưa xử lý', recipient_email: '', position: 'Chuyên viên',
+        department: 'Đơn vị A', sent_date: '12/11/2026', sent_at: null, trang_thai: 'NOT_PROCESSED', retry_count: 0,
+        error_message: '', smtp_response_code: '', delivery_source: 'AUTO', delivery_context: null,
+        delivery_uncertain: false, template_version: null, last_operator: null, can_retry: false,
+        current_recipient: null, retry_block_reason: null,
+      },
+      {
+        id: 2, employee_id: 2, employee_name: 'CBNV đã gửi', recipient_email: 'sent@example.test', position: 'Chuyên viên',
+        department: 'Đơn vị A', sent_date: '12/11/2026', sent_at: '12/11/2026 07:07:00', trang_thai: 'SUCCESS',
+        retry_count: 0, error_message: '', smtp_response_code: '250 OK', delivery_source: 'AUTO',
+        delivery_context: 'SCHEDULED', delivery_uncertain: false, template_version: null, last_operator: null,
+        can_retry: false, current_recipient: null, retry_block_reason: 'alreadySent',
+      },
+      {
+        id: 3, employee_id: 3, employee_name: 'CBNV gửi bù', recipient_email: 'recovery@example.test', position: 'Chuyên viên',
+        department: 'Đơn vị A', sent_date: '12/11/2026', sent_at: '12/11/2026 12:30:00', trang_thai: 'SUCCESS',
+        retry_count: 0, error_message: '', smtp_response_code: '250 OK', delivery_source: 'AUTO',
+        delivery_context: 'RECOVERY', delivery_uncertain: false, template_version: null, last_operator: null,
+        can_retry: false, current_recipient: null, retry_block_reason: 'alreadySent',
+      },
+      {
+        id: 4, employee_id: 4, employee_name: 'CBNV gửi thủ công', recipient_email: 'manual@example.test', position: 'Giám đốc',
+        department: 'Đơn vị A', sent_date: '12/11/2026', sent_at: '12/11/2026 12:45:00', trang_thai: 'SUCCESS',
+        retry_count: 0, error_message: '', smtp_response_code: '250 OK', delivery_source: 'MANUAL',
+        delivery_context: null, delivery_uncertain: false, template_version: null, last_operator: 'admin',
+        can_retry: false, current_recipient: null, retry_block_reason: 'alreadySent',
+      },
+    ] });
+    render(<BirthdayEmailLogs />);
+
+    expect(await screen.findByText('Chưa được xử lý')).toBeInTheDocument();
+    expect(screen.getByText('Chưa có bản ghi gửi cho ngày sinh này; kiểm tra lượt scheduler hoặc chạy gửi bù.')).toBeInTheDocument();
+    const notProcessedRow = screen.getByRole('row', { name: /CBNV chưa xử lý/ });
+    const scheduledRow = screen.getByRole('row', { name: /CBNV đã gửi/ });
+    const recoveryRow = screen.getByRole('row', { name: /CBNV gửi bù/ });
+    const manualRow = screen.getByRole('row', { name: /CBNV gửi thủ công/ });
+    expect(within(notProcessedRow).queryByText('Tự động theo lịch')).not.toBeInTheDocument();
+    expect(within(scheduledRow).getByText('Tự động theo lịch')).toBeInTheDocument();
+    expect(within(recoveryRow).getByText('Chạy bù')).toBeInTheDocument();
+    expect(within(manualRow).getByText('Thủ công')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Gửi lại' })).not.toBeInTheDocument();
+  });
+
+  it('explains when a failed record cannot be resent because its email is invalid', async () => {
+    vi.spyOn(apiClient, 'get').mockResolvedValue({ total: 1, logs: [{
+      id: 7, employee_id: 7, employee_name: 'CBNV', recipient_email: 'wrong-address', position: '', department: '',
+      sent_date: '12/11/2026', sent_at: '12/11/2026 07:07:00', trang_thai: 'FAILED', retry_count: 0,
+      error_message: 'Invalid email', smtp_response_code: '', delivery_source: 'AUTO', delivery_context: 'SCHEDULED',
+      delivery_uncertain: false, template_version: null, last_operator: null, can_retry: false,
+      current_recipient: null, retry_block_reason: 'invalidEmail',
+    }] });
+    render(<BirthdayEmailLogs />);
+
+    expect(await screen.findByText('Cần cập nhật địa chỉ email hợp lệ trong hồ sơ CBNV.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Gửi lại' })).not.toBeInTheDocument();
   });
 });
