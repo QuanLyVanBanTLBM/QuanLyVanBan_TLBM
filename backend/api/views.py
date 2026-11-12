@@ -12,7 +12,7 @@ from urllib.parse import unquote
 from django.conf import settings
 from django.core.cache import cache
 from django.db import DatabaseError, connection
-from django.http import FileResponse, JsonResponse
+from django.http import FileResponse, JsonResponse, StreamingHttpResponse
 from django.views.decorators.http import require_GET
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -153,10 +153,14 @@ def ai_health(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def chat(request):
+    payload = _json_body(request)
+    if isinstance(payload, dict) and payload.get("stream") is True:
+        return _stream_response(request, payload=payload)
+
     trace, token = start_trace(user_id=request.user.pk)
     status = 500
     try:
-        response = _answer_chat(request)
+        response = _answer_chat(request, payload=payload)
         status = response.status_code
         return response
     finally:
@@ -164,14 +168,113 @@ def chat(request):
         end_trace(token)
 
 
-def _answer_chat(request):
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def chat_stream(request):
+    return _stream_response(request)
+
+
+def _stream_response(request, payload=None):
+    if request.method != "POST":
+        return _error("Phương thức không được hỗ trợ.", 405)
+    denied = _require_ai_access(request)
+    if denied:
+        trace, token = start_trace(user_id=request.user.pk)
+        mark_error("permission", "no_ai_permission")
+        log_summary(trace, 403)
+        end_trace(token)
+        return denied
+
+    if payload is None:
+        payload = _json_body(request)
+    if not isinstance(payload, dict):
+        return _error("Dữ liệu gửi lên không hợp lệ.")
+    question = payload.get("question")
+    history = payload.get("history", [])
+    category = payload.get("category")
+    filename = payload.get("filename")
+    if filename and not isinstance(filename, str):
+        filename = None
+    elif filename:
+        filename = filename.strip()
+    if not isinstance(question, str) or not question.strip():
+        return _error("Câu hỏi không được để trống.")
+    if len(question) > MAX_CHAT_QUESTION_LENGTH:
+        return _error("Câu hỏi không được vượt quá 4000 ký tự.")
+    if not isinstance(history, list):
+        return _error("Lịch sử hội thoại không hợp lệ.")
+    safe_history = [
+        item for item in history[-8:]
+        if isinstance(item, dict) and item.get("role") in {"user", "assistant"} and isinstance(item.get("content"), str)
+    ]
+
+    employee_id = resolve_employee_id(request)
+    language = payload.get("language")
+    if not language or not isinstance(language, str):
+        accept_lang = request.headers.get("Accept-Language", "")
+        language = "en" if "en" in accept_lang.lower() else "vi"
+    else:
+        language = "en" if language.lower().startswith("en") else "vi"
+
+    def event_stream_generator():
+        trace, token = start_trace(user_id=request.user.pk)
+        set_fields(
+            employee_resolved=employee_id is not None,
+            question_chars=len(question),
+            history_items=len(safe_history),
+            has_filename=bool(filename),
+            has_category=bool(category),
+            stream=True,
+        )
+        status = 200
+        try:
+            from backend.services.rag_service import ask_document_stream
+            for event_chunk in ask_document_stream(
+                question.strip(),
+                history=safe_history,
+                category=category if isinstance(category, str) else None,
+                user=request.user,
+                employee_id=employee_id,
+                filename=filename,
+                language=language,
+            ):
+                yield event_chunk
+        except GeneratorExit:
+            status = 499
+            set_fields(client_aborted=True)
+            raise
+        except SqlDocumentAccessError as error:
+            status = 503
+            mark_error("ask_document_stream", error.ai_reason)
+            log_exception()
+            yield f"event: error\ndata: {json.dumps({'error': 'Không thể truy cập nguồn dữ liệu AI lúc này.'}, ensure_ascii=False)}\n\n"
+        except Exception as error:
+            status = 502
+            mark_error("ask_document_stream", type(error).__name__)
+            log_exception()
+            yield f"event: error\ndata: {json.dumps({'error': 'Không thể xử lý yêu cầu lúc này. Vui lòng thử lại sau.'}, ensure_ascii=False)}\n\n"
+        finally:
+            log_summary(trace, status)
+            end_trace(token)
+
+    response = StreamingHttpResponse(
+        event_stream_generator(),
+        content_type="text/event-stream; charset=utf-8",
+    )
+    response["Cache-Control"] = "no-cache"
+    response["X-Accel-Buffering"] = "no"
+    return response
+
+
+def _answer_chat(request, payload=None):
     if request.method != "POST":
         return _error("Phương thức không được hỗ trợ.", 405)
     denied = _require_ai_access(request)
     if denied:
         mark_error("permission", "no_ai_permission")
         return denied
-    payload = _json_body(request)
+    if payload is None:
+        payload = _json_body(request)
     if not isinstance(payload, dict):
         return _error("Dữ liệu gửi lên không hợp lệ.")
     question = payload.get("question")
