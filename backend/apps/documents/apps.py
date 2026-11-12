@@ -8,3 +8,5 @@ class DocumentsConfig(AppConfig):
 
     def ready(self):
         from . import checks  # noqa: F401  đăng ký system check kho lưu tệp (issue #192)
+        from . import signals  # noqa: F401
+        signals.register_tailieu_signals()
