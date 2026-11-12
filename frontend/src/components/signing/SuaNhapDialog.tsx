@@ -21,9 +21,8 @@ export default function SuaNhapDialog({ hoSo, onDong, onXong }: {
   const { t, loi } = useSigningT();
   const [hanChot, setHanChot] = useState(sangGioDiaPhuong(hoSo.han_chot));
   const [ghiChu, setGhiChu] = useState(hoSo.ghi_chu ?? '');
-  // PDF dự thảo chưa vào sổ (không gắn bản ghi văn bản đi) thì sửa được số hiệu tham chiếu, trích yếu.
+  // PDF dự thảo chưa vào sổ (không gắn bản ghi văn bản đi) thì sửa được trích yếu; mã hồ sơ do máy chủ cấp.
   const nhapTay = hoSo.van_ban_id == null;
-  const [soHieu, setSoHieu] = useState(hoSo.so_hieu_van_ban ?? '');
   const [trichYeu, setTrichYeu] = useState(hoSo.trich_yeu_van_ban ?? '');
   const [canhBaoTrichYeu, setCanhBaoTrichYeu] = useState('');
   const [tep, setTep] = useState<File | null>(null);
@@ -84,7 +83,6 @@ export default function SuaNhapDialog({ hoSo, onDong, onXong }: {
     form.append('han_chot', hanChot ? new Date(hanChot).toISOString() : '');
     form.append('ghi_chu', ghiChu);
     if (nhapTay) {
-      form.append('so_hieu_van_ban', soHieu.trim());
       form.append('trich_yeu_van_ban', trichYeu.trim());
     }
     if (tep) form.append('tep', tep);
@@ -108,9 +106,6 @@ export default function SuaNhapDialog({ hoSo, onDong, onXong }: {
       </>}>
       {nhapTay && (
         <>
-          <TruongNhap nhan={t('tao.soHieu')} ghiChu={t('tao.soHieuGhiChu')}>
-            <input className={LOP_O_NHAP} maxLength={100} value={soHieu} onChange={(e) => setSoHieu(e.target.value)} />
-          </TruongNhap>
           <TruongNhap nhan={t('tao.trichYeu')} batBuoc ghiChu={`${trichYeu.length}/${GIOI_HAN.trichYeu} ${t('chung.kyTu')}`}>
             <input className={LOP_O_NHAP} maxLength={GIOI_HAN.trichYeu} value={trichYeu} onChange={onDoiTrichYeu} />
             {canhBaoTrichYeu && (

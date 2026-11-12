@@ -4,6 +4,7 @@ trong thông báo/email, tên chức vụ của người ký cấu hình theo Da
 """
 from django.contrib.auth import get_user_model
 from django.core import mail
+from django.utils import timezone
 
 from signing import enums, selectors
 from signing.models import SigningNotification, SigningRequest
@@ -18,15 +19,18 @@ User = get_user_model()
 
 class VanBanNhapTayTests(TrinhKyBase):
     def tao_nhap_tay(self, **kw):
-        data = {"quy_trinh": self.process.pk, "tep": tep_pdf(), "so_hieu_van_ban": " 05/TTr ",
+        data = {"quy_trinh": self.process.pk, "tep": tep_pdf(),
                 "trich_yeu_van_ban": " Tờ trình mua sắm thiết bị ", **kw}
         return self.c.post(f"{BASE}/", data, format="multipart")
 
-    def test_create_without_outgoing_document_uses_manual_number_and_summary(self):
+    def test_create_without_outgoing_document_uses_generated_code_and_summary(self):
         r = self.tao_nhap_tay()
         self.assertEqual(r.status_code, 201, r.data)
         self.assertEqual((r.data["document_type"], r.data["van_ban_id"]), (None, None))
-        self.assertEqual(r.data["van_ban"], {"so_hieu": "05/TTr", "trich_yeu": "Tờ trình mua sắm thiết bị"})
+        nam = timezone.localtime(SigningRequest.objects.get(pk=r.data["id"]).created_at).year
+        ma = f"HS-{nam}-{r.data['id']:06d}"
+        self.assertEqual(r.data["so_hieu_van_ban"], ma)
+        self.assertEqual(r.data["van_ban"], {"so_hieu": ma, "trich_yeu": "Tờ trình mua sắm thiết bị"})
         r = self.gui(r.data["id"], khoa="gui-nhap-tay")
         self.assertEqual((r.status_code, r.data["trang_thai"]), (200, "CHO_KY"))
 
@@ -50,24 +54,34 @@ class VanBanNhapTayTests(TrinhKyBase):
         b = self.tao_nhap_tay(trich_yeu_van_ban="Báo cáo quý").data["id"]  # không áp quy tắc một văn bản một hồ sơ
         r = self.c.get(f"{BASE}/", {"hop": "toi_gui", "q": "bao cao"})
         self.assertEqual([h["id"] for h in r.data["results"]], [b])
-        r = self.c.get(f"{BASE}/", {"hop": "toi_gui", "q": "05/ttr"})
+        r = self.c.get(f"{BASE}/", {"hop": "toi_gui", "q": f"HS-{timezone.now().year}"})
         self.assertEqual({h["id"] for h in r.data["results"]}, {a, b})
         tep = self.c.get("/api/v1/signing/tai-lieu/").data["results"]
         self.assertEqual({x["trinh_ky"]: x["van_ban"]["trich_yeu"] for x in tep}[a], "Tờ trình mua sắm thiết bị")
 
-    def test_edit_manual_draft(self):
-        pk = self.tao_nhap_tay().data["id"]
+    def test_edit_manual_draft_keeps_generated_code(self):
+        tao = self.tao_nhap_tay()
+        pk, ma = tao.data["id"], tao.data["so_hieu_van_ban"]
         r = self.c.patch(f"{BASE}/{pk}/", {"so_hieu_van_ban": "06/TTr", "trich_yeu_van_ban": "Đã sửa"},
                          format="multipart")
         self.assertEqual(r.status_code, 200, r.data)
-        self.assertEqual(r.data["van_ban"], {"so_hieu": "06/TTr", "trich_yeu": "Đã sửa"})
+        self.assertEqual(r.data["van_ban"], {"so_hieu": ma, "trich_yeu": "Đã sửa"})
         r = self.c.patch(f"{BASE}/{pk}/", {"trich_yeu_van_ban": ""}, format="multipart")
         self.assertEqual((r.status_code, r.data["code"]), (400, "thieu_van_ban_trinh_ky"))
 
-    def test_dashboard_title_uses_manual_summary(self):
-        pk = self.tao_nhap_tay().data["id"]
+    def test_dashboard_title_uses_generated_code_and_summary(self):
+        tao = self.tao_nhap_tay()
+        pk, ma = tao.data["id"], tao.data["so_hieu_van_ban"]
         phieu = selectors.tong_quan_dashboard(self.tao)["gan_day"]
-        self.assertEqual(next(p for p in phieu if p["id"] == pk)["tieu_de"], "05/TTr — Tờ trình mua sắm thiết bị")
+        self.assertEqual(next(p for p in phieu if p["id"] == pk)["tieu_de"], f"{ma} — Tờ trình mua sắm thiết bị")
+
+    def test_generated_code_is_unique_and_ignores_client_value(self):
+        a = self.tao_nhap_tay(so_hieu_van_ban="05/TTr")
+        b = self.tao_nhap_tay(so_hieu_van_ban="05/TTr")
+        self.assertEqual((a.status_code, b.status_code), (201, 201))
+        self.assertNotEqual(a.data["so_hieu_van_ban"], b.data["so_hieu_van_ban"])
+        for r in (a, b):
+            self.assertRegex(r.data["so_hieu_van_ban"], rf"^HS-\d{{4}}-{r.data['id']:06d}$")
 
 
 class VanBanNhapTayLuongKyTests(KyBase):

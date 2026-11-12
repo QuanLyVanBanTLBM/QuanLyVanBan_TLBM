@@ -204,7 +204,6 @@ class TaoNhapTests(TrinhKyBase):
                 self.tao,
                 quy_trinh=self.process,
                 tep=tep_pdf(),
-                so_hieu_van_ban="01/TTr",
                 trich_yeu_van_ban="x" * 1001,
             )
         self.assertEqual(ctx.exception.detail.code, "trich_yeu_qua_dai")
