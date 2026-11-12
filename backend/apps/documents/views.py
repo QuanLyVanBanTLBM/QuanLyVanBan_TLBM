@@ -332,27 +332,14 @@ def can_send_mail_all(user, loai="DEN"):
     Kiểm tra quyền gửi email thông báo toàn hệ thống.
     Quyền: documents.send_mail_all_vanbanden / documents.send_mail_all_vanbandi.
     - Quản trị viên (Admin) luôn có quyền.
-    - Nhóm Văn thư (VT) mặc định có quyền theo DDL seed.
-    - Cán bộ sở hữu quyền send_mail_all_* do Nhóm 7 cấp có quyền.
+    - Nhóm khác chỉ khi được cấp send_mail_all_* trong Phân quyền (seed mặc định chỉ cấp cho Quản trị hệ thống).
     """
     if not user or not user.is_authenticated:
         return False
     if is_admin_user(user):
         return True
 
-    profile = getattr(user, "profile", None)
-    if profile and getattr(profile, "role", None) in ("admin", "vt", "vanthu", "van_thu"):
-        return True
-    if getattr(user, "role", None) in ("admin", "vt", "vanthu", "van_thu"):
-        return True
-
-    try:
-        user_groups = {g.name.upper() for g in user.groups.all()}
-        if "ADMIN" in user_groups:
-            return True
-    except Exception:
-        pass
-
+    # Không ghi cứng theo tên nhóm hay role: ngoài quản trị hệ thống, chỉ quyền send_mail_all_* trong Phân quyền.
     model_name = "vanbandi" if str(loai).upper() in ("DI", "VANBANDI") else "vanbanden"
     perm_code = f"send_mail_all_{model_name}"
 
