@@ -2,8 +2,8 @@ name: Birthday email scheduler
 
 on:
   schedule:
-    # 08:00 Asia/Ho_Chi_Minh (UTC+7).
-    - cron: "0 1 * * *"
+    # 09:00 Asia/Ho_Chi_Minh (UTC+7).
+    - cron: "0 2 * * *"
 
 permissions: {}
 
