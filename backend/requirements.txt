@@ -12,6 +12,8 @@ djangorestframework>=3.18,<4
 
 # JWT Authentication
 djangorestframework-simplejwt>=5.5,<6
+pyotp>=2.9,<3
+qrcode>=8,<9
 
 # Filtering & Excel Export
 django-filter>=24.0

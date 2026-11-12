@@ -37,6 +37,30 @@
       "black": "Click to make me bounce!",
       "orange": "Click to make me smile wider!",
       "yellow": "Click to make me sway!"
+    },
+    "twofa": {
+      "title": "Two-Factor Authentication (2FA)",
+      "subtitleOtp": "Enter the 6-digit code from your mobile Authenticator app for {username}.",
+      "subtitleBackup": "Enter one of your saved 8-character backup codes.",
+      "otpLabel": "6-Digit Authenticator Code",
+      "otpPlaceholder": "Enter 6 digits...",
+      "backupLabel": "Backup Recovery Code",
+      "backupPlaceholder": "Example: ABCD-EFGH",
+      "verifyBtn": "Verify & Sign In",
+      "verifying": "Verifying code...",
+      "verifiedSuccess": "Verified!",
+      "useBackupCode": "Use a backup code instead",
+      "useAuthenticatorCode": "Use 6-digit Authenticator code",
+      "backToLogin": "Back to sign in",
+      "errors": {
+        "otpRequired": "Please enter the verification code.",
+        "otpInvalid": "Invalid verification code. {attempts} attempts remaining.",
+        "otpInvalidNoCount": "Invalid verification code. Please try again.",
+        "otpReused": "This OTP code was just used. Please wait for the next code (up to 30s).",
+        "locked": "Too many failed attempts. Try again in {seconds} seconds.",
+        "sessionExpired": "2FA challenge expired. Please sign in again.",
+        "sessionInvalid": "Invalid 2FA session. Please sign in again."
+      }
     }
   }
 }

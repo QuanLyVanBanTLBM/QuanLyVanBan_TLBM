@@ -279,6 +279,8 @@ pydantic-core==2.50.1
     # via pydantic
 pyjwt==2.15.1
     # via djangorestframework-simplejwt
+pyotp==2.10.0
+    # via -r backend/requirements.txt
 pypdf==6.21.1
     # via -r backend/requirements.txt
 pypdfium2==5.14.0
@@ -306,6 +308,8 @@ pyyaml==6.0.3
     #   llama-index-core
     #   rapidocr-onnxruntime
     #   uvicorn
+qrcode==8.2
+    # via -r backend/requirements.txt
 rapidocr-onnxruntime==1.4.4
     # via -r backend/requirements.txt
 redis==8.1.0

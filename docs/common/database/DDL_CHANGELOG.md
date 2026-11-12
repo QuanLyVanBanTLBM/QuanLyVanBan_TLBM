@@ -4,6 +4,7 @@ Mỗi PR sửa `release_DDL.sql` thêm một mục ở đầu danh sách (mới 
 
 | Ngày | PR | Đối tượng thay đổi | Lý do |
 |---|---|---|---|
+| 2026-11-12 | issue #674 | Thêm `is_2fa_enabled`, `totp_secret`, `twofa_backup_codes`, `totp_last_used_step`, `twofa_failed_attempts`, `twofa_locked_until` vào bảng `accounts_employee`; migration `accounts/0016_employee_twofa_totp` | Triển khai xác thực hai yếu tố (2FA TOTP) kèm mã dự phòng và cơ chế chống dùng lại / khóa tạm thời khi nhập sai nhiều lần |
 | 2026-11-11 | issue #719 | Thﾃｪm `ai_document_embedding` v盻嬖 vector(3072), metadata JSONB, GIN vﾃ HNSW halfvec cosine index; migration `documents.0015_ai_document_embedding_pgvector` | Chuy盻ハ vector RAG sang PostgreSQL pgvector vﾃ gi盻ｯ model embedding 3072 chi盻「u |
 | 2026-11-10 | #703 | Thay view `ai_vanbanden`/`ai_vanbandi` để lọc theo tài khoản, quyền xem, người nhận, đơn vị nhận và hiệu lực; thêm `ai_vanbanden_attachment`, `ai_vanbandi_attachment` chỉ trả tệp chưa xóa gắn với văn bản được phép; migration `documents/0014_ai_user_scoped_attachments` | Cho trợ lý AI truy vấn chéo văn bản và tệp đính kèm trong phạm vi quyền của người đăng nhập qua role chỉ đọc |
 | 2026-11-10 | issue #673 | Thêm bảng `birthdays_birthdayemailtemplate`, thêm cột nguồn gửi, bản chụp nội dung, người thao tác và cờ cần đối soát vào `birthdays_birthdayemaillog`. Migration `birthdays/0005_manual_email_delivery` | Lưu mẫu có thể tái sử dụng và bảo toàn nội dung khi thử gửi lại. Đánh dấu các kết quả cũ chưa xác minh để tránh gửi trùng |

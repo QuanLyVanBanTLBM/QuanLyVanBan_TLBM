@@ -214,6 +214,37 @@ class Employee(AbstractBaseUser, PermissionsMixin):
         verbose_name="Trạng thái làm việc",
     )
     ghi_chu = models.TextField(null=True, blank=True, default="", verbose_name="Ghi chú")
+    is_2fa_enabled = models.BooleanField(
+        default=False,
+        db_default=False,
+        verbose_name="Đã bật xác thực hai yếu tố (2FA)",
+    )
+    totp_secret = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        verbose_name="Khóa bí mật TOTP (đã mã hóa)",
+    )
+    twofa_backup_codes = models.JSONField(
+        default=list,
+        db_default=models.Value([], output_field=models.JSONField()),
+        verbose_name="Mã dự phòng 2FA (đã băm)",
+    )
+    totp_last_used_step = models.BigIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Bước thời gian OTP đã sử dụng gần nhất",
+    )
+    twofa_failed_attempts = models.IntegerField(
+        default=0,
+        db_default=0,
+        verbose_name="Số lần nhập sai 2FA liên tiếp",
+    )
+    twofa_locked_until = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Thời điểm hết khóa 2FA",
+    )
     created_at = models.DateTimeField(auto_now_add=True, db_default=DbNow(), verbose_name="Ngày tạo")
     updated_at = models.DateTimeField(auto_now=True, db_default=DbNow(), verbose_name="Cập nhật lần cuối")
 
