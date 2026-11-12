@@ -109,6 +109,7 @@ class SmartHybridTemplateTests(unittest.TestCase):
     def test_default_snapshot_renders_hybrid_layout_and_card(self):
         employee = MagicMock()
         employee.id = 101
+        employee.pk = 101
         employee.ho_ten = "Nguyễn Văn Test"
         employee.ngay_sinh = date(1995, 8, 15)
         employee.chuc_danh = "Chuyên viên Cao cấp"

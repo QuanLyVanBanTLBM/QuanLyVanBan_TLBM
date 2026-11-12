@@ -350,13 +350,25 @@ export default function BirthdayEmailComposer({ initialYear, onClose, onDelivere
             email: preview.recipient,
             date: preview.birthday_date.split('-').reverse().join('/'),
           })}</p>
+          <div className="rounded-xs border border-warning/30 bg-warning-subtle px-3 py-2 text-xs text-warning-text">
+            {t('birthdayPage.manualEmail.emailClientNote')}
+          </div>
           {preview.card_url && (
-            <a href={preview.card_url} target="_blank" rel="noreferrer" className="text-primary underline">
+            <div className="grid gap-1">
+              <a
+                href={preview.card_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex w-fit items-center rounded-xs bg-primary px-4 py-2 font-semibold text-on-primary no-underline"
+              >
               {t('birthdayPage.manualEmail.openCard')}
-            </a>
+              </a>
+              <p className="text-xs text-secondary">{t('birthdayPage.manualEmail.cardExperienceNote')}</p>
+            </div>
           )}
+          <h3 className="mt-2 font-semibold">{t('birthdayPage.manualEmail.emailPreviewTitle')}</h3>
           <iframe
-            title={t('birthdayPage.manualEmail.preview')} srcDoc={preview.html} sandbox=""
+            title={t('birthdayPage.manualEmail.emailPreviewTitle')} srcDoc={preview.html} sandbox=""
             className="min-h-96 w-full rounded-xs border border-border bg-surface"
           />
           <div className="flex justify-end">
