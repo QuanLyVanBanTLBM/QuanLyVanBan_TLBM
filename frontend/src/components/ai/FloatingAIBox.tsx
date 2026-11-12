@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivePageId } from '@app-types/navigation';
-import { askQuestion, getAISettings } from '../../api';
+import { askQuestion, getAISettings, getDocuments } from '../../api';
 import { t as translate, useTranslation, type SupportedLanguage } from '@i18n/translate';
 
 interface FloatingAIBoxProps {
@@ -24,6 +24,12 @@ interface Message {
   createdAt: number;
   quickReplies?: string[];
   sources?: Source[];
+  targetedFile?: string;
+}
+
+interface DocumentOption {
+  filename: string;
+  category?: string;
 }
 
 interface AIConfig {
@@ -257,6 +263,10 @@ export default function FloatingAIBox({ onNavigate, onNavigateUrl }: FloatingAIB
   const [isTyping, setIsTyping] = useState(false);
   const [error, setError] = useState('');
   const [aiConfig, setAiConfig] = useState<AIConfig | null>(null);
+  const [documents, setDocuments] = useState<DocumentOption[]>([]);
+  const [selectedDocument, setSelectedDocument] = useState('');
+  const [isDocPickerOpen, setIsDocPickerOpen] = useState(false);
+  const [docSearchQuery, setDocSearchQuery] = useState('');
   const [messages, setMessages] = useState<Message[]>(() => createInitialMessages(currentLang));
   const visibleMessages = useMemo(() => {
     const localizedWelcome = createInitialMessages(currentLang)[0];
@@ -535,6 +545,27 @@ export default function FloatingAIBox({ onNavigate, onNavigateUrl }: FloatingAIB
   }, []);
 
   useEffect(() => {
+    if (!isOpen || typeof getDocuments !== 'function') return;
+    let cancelled = false;
+    getDocuments()
+      .then((data: { documents?: Array<{ filename?: string; category?: string }> }) => {
+        if (!cancelled && Array.isArray(data?.documents)) {
+          setDocuments(
+            data.documents.filter(
+              (doc): doc is DocumentOption => typeof doc?.filename === 'string' && doc.filename.length > 0,
+            ),
+          );
+        }
+      })
+      .catch(() => {
+        // Widget continues working for general questions even if document listing fails.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
     if (isOpen && !isMinimized) chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [visibleMessages, isOpen, isMinimized, isTyping]);
 
@@ -548,17 +579,24 @@ export default function FloatingAIBox({ onNavigate, onNavigateUrl }: FloatingAIB
 
     sendingRef.current = true;
     setError('');
+    setIsDocPickerOpen(false);
+    const activeTarget = selectedDocument.trim();
     const previousMessages = messages.filter((message) => message.id !== 'msg-init');
     const history = previousMessages.slice(-8).map((message) => ({
       role: message.sender === 'ai' ? 'assistant' : 'user',
       content: message.text,
     }));
-    setMessages((previous) => [...previous, createBoxMessage('user', text)]);
+    setMessages((previous) => [
+      ...previous,
+      createBoxMessage('user', text, activeTarget ? { targetedFile: activeTarget } : {}),
+    ]);
     setInputMessage('');
     setIsTyping(true);
 
     try {
-      const response = await askQuestion(text, history);
+      const response = activeTarget
+        ? await askQuestion(text, history, null, activeTarget)
+        : await askQuestion(text, history);
       const answer = typeof response?.answer === 'string' && response.answer.trim()
         ? response.answer
         : t('floatingAI.emptyResponse');
@@ -576,6 +614,9 @@ export default function FloatingAIBox({ onNavigate, onNavigateUrl }: FloatingAIB
     if (isTyping) return;
     if (window.confirm(t('floatingAI.clearConfirm'))) {
       setMessages(createInitialMessages(currentLang));
+      setSelectedDocument('');
+      setIsDocPickerOpen(false);
+      setDocSearchQuery('');
       setError('');
     }
   };
@@ -629,6 +670,11 @@ export default function FloatingAIBox({ onNavigate, onNavigateUrl }: FloatingAIB
   };
 
   const modelLabel = aiConfig?.llm_model;
+  const filteredDocuments = useMemo(() => {
+    const query = docSearchQuery.trim().toLowerCase();
+    if (!query) return documents;
+    return documents.filter((doc) => doc.filename.toLowerCase().includes(query));
+  }, [documents, docSearchQuery]);
   const sourceTypeLabels: Record<string, string> = {
     vanbanden: t('floatingAI.sourceTypes.incoming'),
     vanbandi: t('floatingAI.sourceTypes.outgoing'),
@@ -739,6 +785,12 @@ export default function FloatingAIBox({ onNavigate, onNavigateUrl }: FloatingAIB
                     {message.sender === 'ai' && <div className="w-7 h-7 rounded-lg bg-primary-subtle text-primary flex items-center justify-center text-xs shrink-0 mt-0.5"><i className="fa-solid fa-brain" /></div>}
                     <div className="flex flex-col gap-1 max-w-[85%] min-w-0">
                       <div className={`p-3 text-xs leading-relaxed ${message.sender === 'user' ? 'bg-primary text-white rounded-2xl rounded-tr-sm shadow-xs' : 'bg-surface border border-subtle text-text-main rounded-2xl rounded-tl-sm shadow-xs'}`}>
+                        {message.sender === 'user' && message.targetedFile && (
+                          <div className="mb-1.5 inline-flex items-center gap-1 rounded-md bg-white/15 border border-white/25 px-1.5 py-0.5 text-[10px] font-medium max-w-full">
+                            <i className="fa-solid fa-file-lines text-[9px] shrink-0" />
+                            <span className="truncate">{message.targetedFile}</span>
+                          </div>
+                        )}
                         <FormattedMessage text={message.text} onInternalLink={handleInternalLink} />
                       </div>
                       {message.sources && message.sources.length > 0 && (() => {
@@ -790,8 +842,105 @@ export default function FloatingAIBox({ onNavigate, onNavigateUrl }: FloatingAIB
                 <div ref={chatEndRef} />
               </div>
 
+              {selectedDocument && (
+                <div className="px-3 py-1.5 bg-primary-subtle/60 border-t border-subtle flex items-center justify-between gap-2 text-[11px] text-primary">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <i className="fa-solid fa-file-lines text-[10px] shrink-0" />
+                    <span className="font-medium shrink-0">{t('floatingAI.targetedDoc')}:</span>
+                    <span className="font-semibold truncate" title={selectedDocument}>{selectedDocument}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="w-5 h-5 rounded-md hover:bg-primary/15 flex items-center justify-center shrink-0 cursor-pointer"
+                    onClick={() => setSelectedDocument('')}
+                    title={t('floatingAI.clearTarget')}
+                    aria-label={t('floatingAI.clearTarget')}
+                  >
+                    <i className="fa-solid fa-xmark text-[10px]" />
+                  </button>
+                </div>
+              )}
+
+              {isDocPickerOpen && (
+                <div className="border-t border-subtle bg-surface p-2 flex flex-col gap-1.5">
+                  <input
+                    type="text"
+                    value={docSearchQuery}
+                    onChange={(event) => setDocSearchQuery(event.target.value)}
+                    placeholder={t('floatingAI.searchDocuments')}
+                    aria-label={t('floatingAI.searchDocuments')}
+                    className="w-full bg-surface-elevated border border-subtle rounded-lg px-2.5 py-1.5 text-xs text-text-main placeholder:text-text-muted focus:border-primary"
+                  />
+                  <div className="max-h-36 overflow-y-auto flex flex-col gap-1">
+                    <button
+                      type="button"
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between gap-2 cursor-pointer transition-colors ${
+                        !selectedDocument ? 'bg-primary-subtle text-primary font-semibold' : 'text-text-secondary hover:bg-surface-hover'
+                      }`}
+                      onClick={() => {
+                        setSelectedDocument('');
+                        setIsDocPickerOpen(false);
+                      }}
+                    >
+                      <span className="truncate">{t('floatingAI.allDocuments')}</span>
+                      {!selectedDocument && <i className="fa-solid fa-check text-[10px]" />}
+                    </button>
+                    {filteredDocuments.length === 0 ? (
+                      <div className="px-2.5 py-2 text-[11px] text-text-muted text-center">
+                        {t('floatingAI.noMatchingDocuments')}
+                      </div>
+                    ) : (
+                      filteredDocuments.map((doc) => {
+                        const isSelected = selectedDocument === doc.filename;
+                        return (
+                          <button
+                            key={doc.filename}
+                            type="button"
+                            className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between gap-2 cursor-pointer transition-colors ${
+                              isSelected ? 'bg-primary-subtle text-primary font-semibold' : 'text-text-main hover:bg-surface-hover'
+                            }`}
+                            onClick={() => {
+                              setSelectedDocument(doc.filename);
+                              setIsDocPickerOpen(false);
+                            }}
+                            title={doc.filename}
+                          >
+                            <span className="truncate">{doc.filename}</span>
+                            {isSelected && <i className="fa-solid fa-check text-[10px] shrink-0" />}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+
               <form className="p-2.5 bg-surface border-t border-subtle flex items-center gap-2" onSubmit={(event) => { event.preventDefault(); void handleSendMessage(); }}>
-                <input type="text" maxLength={MAX_WIDGET_QUESTION_LENGTH} className="flex-1 min-w-0 bg-surface-elevated border border-subtle rounded-xl px-3 py-2 text-xs text-text-main placeholder:text-text-muted focus:border-primary transition-colors disabled:opacity-50" placeholder={t('floatingAI.placeholder')} value={inputMessage} onChange={(event) => setInputMessage(event.target.value)} disabled={isTyping} aria-label={t('floatingAI.placeholder')} />
+                <button
+                  type="button"
+                  className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs transition-colors cursor-pointer shrink-0 ${
+                    selectedDocument || isDocPickerOpen
+                      ? 'bg-primary-subtle text-primary'
+                      : 'text-text-muted hover:text-primary hover:bg-primary-subtle'
+                  }`}
+                  title={t('floatingAI.selectDocument')}
+                  aria-label={t('floatingAI.selectDocument')}
+                  aria-expanded={isDocPickerOpen}
+                  onClick={() => setIsDocPickerOpen((prev) => !prev)}
+                  disabled={isTyping}
+                >
+                  <i className="fa-solid fa-paperclip text-sm" />
+                </button>
+                <input
+                  type="text"
+                  maxLength={MAX_WIDGET_QUESTION_LENGTH}
+                  className="flex-1 min-w-0 bg-surface-elevated border border-subtle rounded-xl px-3 py-2 text-xs text-text-main placeholder:text-text-muted focus:border-primary transition-colors disabled:opacity-50"
+                  placeholder={selectedDocument ? t('floatingAI.placeholderWithTarget', { filename: selectedDocument }) : t('floatingAI.placeholder')}
+                  value={inputMessage}
+                  onChange={(event) => setInputMessage(event.target.value)}
+                  disabled={isTyping}
+                  aria-label={t('floatingAI.placeholder')}
+                />
                 <button type="button" className="w-8 h-8 rounded-lg text-text-muted hover:text-primary hover:bg-primary-subtle flex items-center justify-center text-xs transition-colors cursor-pointer group" title={t('floatingAI.fullAssistant')} aria-label={t('floatingAI.fullAssistant')} onClick={openFullAssistant}>
                   <i className="fa-solid fa-expand text-sm" />
                 </button>
