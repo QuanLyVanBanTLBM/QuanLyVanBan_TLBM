@@ -1,11 +1,12 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { askQuestion, getAISettings } from '../../api';
+import { askQuestion, getAISettings, getDocuments } from '../../api';
 import FloatingAIBox from './FloatingAIBox';
 
 vi.mock('../../api', () => ({
   askQuestion: vi.fn(),
   getAISettings: vi.fn(),
+  getDocuments: vi.fn(),
 }));
 
 vi.mock('@i18n/translate', () => ({
@@ -18,6 +19,7 @@ vi.mock('@i18n/translate', () => ({
 
 const mockedAskQuestion = vi.mocked(askQuestion);
 const mockedGetAISettings = vi.mocked(getAISettings);
+const mockedGetDocuments = vi.mocked(getDocuments);
 
 describe('FloatingAIBox', () => {
   beforeEach(() => {
@@ -26,6 +28,12 @@ describe('FloatingAIBox', () => {
     mockedGetAISettings.mockResolvedValue({
       provider: 'openai',
       llm_model: 'gpt-6-luna',
+    });
+    mockedGetDocuments.mockResolvedValue({
+      documents: [
+        { filename: 'policy.pdf', category: 'Policy' },
+        { filename: 'guide.docx', category: 'Guide' },
+      ],
     });
   });
 
@@ -128,5 +136,42 @@ describe('FloatingAIBox', () => {
     const specBtn = await screen.findByRole('button', { name: /Nghiệp vụ Ký số/ });
     fireEvent.click(specBtn);
     expect(onNavigate).toHaveBeenCalledWith('approvals');
+  });
+
+  it('allows targeting a specific document and clearing the selection', async () => {
+    mockedAskQuestion.mockResolvedValue({
+      answer: 'Trả lời theo tệp chỉ định',
+      sources: [],
+    });
+
+    render(<FloatingAIBox />);
+    fireEvent.click(screen.getByRole('button', { name: 'floatingAI.openTitle' }));
+    await waitFor(() => expect(mockedGetDocuments).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: 'floatingAI.selectDocument' }));
+    const searchInput = await screen.findByRole('textbox', { name: 'floatingAI.searchDocuments' });
+    fireEvent.change(searchInput, { target: { value: 'policy' } });
+    fireEvent.click(screen.getByRole('button', { name: 'policy.pdf' }));
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'floatingAI.placeholder' }), {
+      target: { value: 'Tóm tắt chính' },
+    });
+    fireEvent.submit(screen.getByRole('textbox', { name: 'floatingAI.placeholder' }).closest('form')!);
+
+    await waitFor(() => expect(mockedAskQuestion).toHaveBeenCalledWith('Tóm tắt chính', [], null, 'policy.pdf'));
+    expect(await screen.findByText('Trả lời theo tệp chỉ định')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'floatingAI.clearTarget' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'floatingAI.placeholder' }), {
+      target: { value: 'Câu hỏi chung' },
+    });
+    fireEvent.submit(screen.getByRole('textbox', { name: 'floatingAI.placeholder' }).closest('form')!);
+
+    await waitFor(() =>
+      expect(mockedAskQuestion).toHaveBeenLastCalledWith('Câu hỏi chung', [
+        { role: 'user', content: 'Tóm tắt chính' },
+        { role: 'assistant', content: 'Trả lời theo tệp chỉ định' },
+      ]),
+    );
   });
 });
