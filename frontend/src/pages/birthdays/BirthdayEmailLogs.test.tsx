@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { setLanguage } from '@i18n/translate';
 import { ApiError, apiClient } from '@lib/apiClient';
 import BirthdayEmailLogs from './BirthdayEmailLogs';
@@ -8,7 +8,62 @@ const templates = [
   { id: 'layout:01', layout: '01', name: null, subject: 'Lời chúc', message: 'Chúc mừng sinh nhật' },
   { id: 'layout:02', layout: '02', name: null, subject: 'Thư chúc', message: 'Chúc mừng sinh nhật' },
 ];
-const recipients = [{ id: 12, name: 'CBNV', position: 'Giám đốc Ban', email: 'leader@example.test' }];
+const recipients = [{ id: 12, name: 'Nguyễn Văn A', position: 'Giám đốc Ban', email: 'leader@example.test' }];
+
+const acceptedLog = {
+  id: 21,
+  employee_name: 'Nguyễn Văn A',
+  recipient_email: 'leader@example.test',
+  position: 'Giám đốc Ban',
+  department: 'Ban lãnh đạo',
+  sent_date: '12/11/2026',
+  sent_at: '12/11/2026 14:32:00',
+  trang_thai: 'SUCCESS' as const,
+  retry_count: 0,
+  error_message: '',
+  smtp_response_code: '250',
+  delivery_source: 'MANUAL' as const,
+  delivery_uncertain: false,
+  template_version: null,
+  last_operator: 'admin',
+  can_retry: false,
+  current_recipient: null,
+};
+
+const previewResponse = {
+  subject: 'Lời chúc',
+  html: '<p>Chúc mừng sinh nhật</p>',
+  recipient: 'leader@example.test',
+  birthday_date: '2026-05-20',
+  preview_token: 'confirmed-preview',
+};
+
+function mockManualEmailApi(sendLog: Record<string, unknown>) {
+  let logLoads = 0;
+  const get = vi.spyOn(apiClient, 'get').mockImplementation(async (path) => {
+    if (path.includes('/templates/')) return { templates } as never;
+    if (path.includes('/recipients/')) return { recipients } as never;
+    logLoads += 1;
+    return {
+      total: logLoads > 1 ? 1 : 0,
+      total_pages: 1,
+      logs: logLoads > 1 ? [sendLog] : [],
+    } as never;
+  });
+  const post = vi.spyOn(apiClient, 'post').mockImplementation(async (path) => {
+    if (path.endsWith('/preview/')) return previewResponse as never;
+    return { log: sendLog } as never;
+  });
+  return { get, post };
+}
+
+async function previewManualEmail() {
+  fireEvent.click(await screen.findByRole('button', { name: 'Thêm thủ công' }));
+  await screen.findByRole('option', { name: /Nguyễn Văn A/ });
+  fireEvent.change(screen.getByLabelText('Người nhận email'), { target: { value: '12' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Xem trước email' }));
+  return screen.findByRole('button', { name: 'Xác nhận gửi email' });
+}
 
 describe('Birthday email log actions', () => {
   beforeEach(() => {
@@ -30,10 +85,12 @@ describe('Birthday email log actions', () => {
   });
 
   it('applies the AI draft on request and sends only after confirmation', async () => {
-    vi.spyOn(apiClient, 'get').mockImplementation(async (path) => {
+    let logLoads = 0;
+    const get = vi.spyOn(apiClient, 'get').mockImplementation(async (path) => {
       if (path.includes('/templates/')) return { templates } as never;
       if (path.includes('/recipients/')) return { recipients } as never;
-      return { total: 0, logs: [] } as never;
+      logLoads += 1;
+      return { total: logLoads > 1 ? 1 : 0, logs: logLoads > 1 ? [acceptedLog] : [] } as never;
     });
     const post = vi.spyOn(apiClient, 'post').mockImplementation(async (path) => {
       if (path.endsWith('/draft/')) {
@@ -45,16 +102,13 @@ describe('Birthday email log actions', () => {
         } } as never;
       }
       if (path.endsWith('/preview/')) {
-        return {
-          subject: 'Tiêu đề từ AI', html: '<p>Lời chúc từ AI</p>', recipient: 'leader@example.test',
-          birthday_date: '2026-05-20', preview_token: 'confirmed-preview',
-        } as never;
+        return { ...previewResponse, subject: 'Tiêu đề từ AI', html: '<p>Lời chúc từ AI</p>' } as never;
       }
-      return { log: { trang_thai: 'SUCCESS', delivery_uncertain: false } } as never;
+      return { log: acceptedLog } as never;
     });
     render(<BirthdayEmailLogs />);
     fireEvent.click(await screen.findByRole('button', { name: 'Thêm thủ công' }));
-    await screen.findByRole('option', { name: /CBNV/ });
+    await screen.findByRole('option', { name: /Nguyễn Văn A/ });
     fireEvent.change(screen.getByLabelText('Người nhận email'), { target: { value: '12' } });
     expect(screen.queryByRole('button', { name: 'Xác nhận gửi email' })).not.toBeInTheDocument();
 
@@ -78,7 +132,68 @@ describe('Birthday email log actions', () => {
     await waitFor(() => expect(post).toHaveBeenCalledWith('/api/birthdays/manual/send/', expect.objectContaining({
       employee_id: 12, template_id: 'saved:1', preview_token: 'confirmed-preview',
     })));
-    expect(await screen.findByText('Máy chủ email đã chấp nhận thư để gửi.')).toBeInTheDocument();
+    expect(await screen.findByText('Gửi email thành công')).toBeInTheDocument();
+    expect(screen.getByText(
+      'Email sinh nhật cho Nguyễn Văn A (leader@example.test) đã được máy chủ thư chấp nhận để tiếp tục gửi lúc 12/11/2026 14:32:00.',
+    )).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(get.mock.calls.filter(([url]) => String(url).includes('/api/birthdays/logs/')).length).toBeGreaterThanOrEqual(2);
+    const deliveredLog = await screen.findByRole('row', { name: /Nguyễn Văn A/ });
+    expect(within(deliveredLog).getByText('SMTP đã chấp nhận')).toBeInTheDocument();
+    expect(within(deliveredLog).getByText('Thủ công')).toBeInTheDocument();
+    expect(within(deliveredLog).getByText('leader@example.test')).toBeInTheDocument();
+  });
+
+  it('shows a failure message without a success notice when manual delivery fails', async () => {
+    const failedLog = { ...acceptedLog, trang_thai: 'FAILED', delivery_uncertain: false };
+    mockManualEmailApi(failedLog);
+    render(<BirthdayEmailLogs />);
+    fireEvent.click(await previewManualEmail());
+
+    expect(await screen.findByText('Gửi email thất bại')).toBeInTheDocument();
+    expect(screen.getByText('Gửi email thất bại. Kiểm tra chi tiết trong Nhật ký email.')).toBeInTheDocument();
+    expect(screen.queryByText('Gửi email thành công')).not.toBeInTheDocument();
+    expect(screen.queryByText(/đã được máy chủ thư chấp nhận/)).not.toBeInTheDocument();
+  });
+
+  it('shows reconciliation guidance instead of success when delivery is uncertain', async () => {
+    const uncertainLog = { ...acceptedLog, delivery_uncertain: true };
+    mockManualEmailApi(uncertainLog);
+    render(<BirthdayEmailLogs />);
+    fireEvent.click(await previewManualEmail());
+
+    expect(await screen.findByText('Cần đối soát kết quả gửi')).toBeInTheDocument();
+    expect(within(screen.getByRole('alert')).getByText(
+      'Chưa thể xác định kết quả gửi email. Cần kiểm tra/đối soát trước khi gửi lại.',
+    )).toBeInTheDocument();
+    expect(screen.queryByText(/Gửi email thành công/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/đã được máy chủ thư chấp nhận/)).not.toBeInTheDocument();
+  });
+
+  it('disables sending and ignores a second submit while the request is pending', async () => {
+    let resolveSend: ((value: { log: typeof acceptedLog }) => void) | undefined;
+    const pendingSend = new Promise<{ log: typeof acceptedLog }>((resolve) => { resolveSend = resolve; });
+    const get = vi.spyOn(apiClient, 'get').mockImplementation(async (path) => {
+      if (path.includes('/templates/')) return { templates } as never;
+      if (path.includes('/recipients/')) return { recipients } as never;
+      return { total: 0, logs: [] } as never;
+    });
+    const post = vi.spyOn(apiClient, 'post').mockImplementation(async (path) => {
+      if (path.endsWith('/preview/')) return previewResponse as never;
+      return pendingSend as never;
+    });
+    render(<BirthdayEmailLogs />);
+    const send = await previewManualEmail();
+    fireEvent.click(send);
+    fireEvent.click(send);
+
+    expect(send).toBeDisabled();
+    expect(await screen.findByText('Đang xử lý…')).toBeInTheDocument();
+    expect(post.mock.calls.filter(([path]) => String(path).endsWith('/manual/send/'))).toHaveLength(1);
+
+    resolveSend?.({ log: acceptedLog });
+    expect(await screen.findByText(/Gửi email thành công/)).toBeInTheDocument();
+    expect(get.mock.calls.filter(([url]) => String(url).includes('/api/birthdays/logs/')).length).toBeGreaterThanOrEqual(2);
   });
 
   it('offers a retry only for the log that can be resent and confirms its current address', async () => {
@@ -87,15 +202,17 @@ describe('Birthday email log actions', () => {
       { id: 2, employee_name: 'CBNV B', trang_thai: 'FAILED', can_retry: true, current_recipient: 'corrected@example.test' },
     ] });
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    const post = vi.spyOn(apiClient, 'post').mockResolvedValue({ log: { trang_thai: 'SUCCESS' } });
+    const post = vi.spyOn(apiClient, 'post').mockResolvedValue({
+      log: { ...acceptedLog, recipient_email: 'corrected@example.test' },
+    });
     render(<BirthdayEmailLogs />);
-    expect(await screen.findByText('Kết quả gửi chưa xác định. Cần đối soát.')).toBeInTheDocument();
+    expect(await screen.findByText('Chưa thể xác định kết quả gửi email. Cần kiểm tra/đối soát trước khi gửi lại.')).toBeInTheDocument();
     const retries = screen.getAllByRole('button', { name: 'Gửi lại' });
     expect(retries[0]).toBeDisabled();
     expect(retries[1]).toBeEnabled();
     fireEvent.click(retries[1]);
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining('corrected@example.test'));
     expect(post).toHaveBeenCalledWith('/api/birthdays/logs/2/retry/', { recipient: 'corrected@example.test' });
-    expect(await screen.findByText('Máy chủ email đã chấp nhận thư để gửi.')).toBeInTheDocument();
+    expect(await screen.findByText(/Gửi email thành công/)).toBeInTheDocument();
   });
 });

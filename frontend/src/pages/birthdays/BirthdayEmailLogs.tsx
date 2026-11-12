@@ -43,6 +43,19 @@ interface LoadState {
   error: string | null;
 }
 
+interface ActionNotice {
+  kind: 'success' | 'warning' | 'error';
+  titleKey: string;
+  messageKey: string;
+  values?: Record<string, string>;
+}
+
+const ACTION_NOTICE_STYLES: Record<ActionNotice['kind'], string> = {
+  success: 'border-success/30 bg-success-subtle text-success',
+  warning: 'border-warning/30 bg-warning-subtle text-warning-text',
+  error: 'border-danger/30 bg-danger-subtle text-danger',
+};
+
 const STATUS_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
   { value: 'ALL', label: 'allStatuses' },
   { value: 'PENDING', label: 'statusPending' },
@@ -95,7 +108,7 @@ export default function BirthdayEmailLogs() {
   const [retry, setRetry] = useState(0);
   const [showComposer, setShowComposer] = useState(false);
   const [retrying, setRetrying] = useState(false);
-  const [actionNotice, setActionNotice] = useState<{ key: string; error: boolean } | null>(null);
+  const [actionNotice, setActionNotice] = useState<ActionNotice | null>(null);
   const [loadState, setLoadState] = useState<LoadState>({ key: '', data: null, error: null });
   const selectedDateRef = useRef(initialToday);
   const followTodayRef = useRef(true);
@@ -178,10 +191,39 @@ export default function BirthdayEmailLogs() {
 
   const deliveryFinished = (log: DeliveryResult) => {
     setShowComposer(false);
-    setActionNotice({
-      key: log.delivery_uncertain ? 'needsReview' : log.trang_thai === 'SUCCESS' ? 'sent' : 'sendFailed',
-      error: log.trang_thai !== 'SUCCESS',
-    });
+    if (log.delivery_uncertain) {
+      setActionNotice({
+        kind: 'warning',
+        titleKey: 'birthdayPage.manualEmail.needsReviewTitle',
+        messageKey: 'birthdayPage.manualEmail.needsReview',
+      });
+    } else if (log.trang_thai === 'SUCCESS') {
+      const employee = log.employee_name?.trim();
+      const sentAt = log.sent_at?.trim() || '';
+      const messageKey = employee && sentAt
+        ? 'birthdayPage.manualEmail.successMessage'
+        : employee
+          ? 'birthdayPage.manualEmail.successMessageWithoutTime'
+          : sentAt
+            ? 'birthdayPage.manualEmail.successMessageWithoutEmployee'
+            : 'birthdayPage.manualEmail.successMessageEmailOnly';
+      setActionNotice({
+        kind: 'success',
+        titleKey: 'birthdayPage.manualEmail.successTitle',
+        messageKey,
+        values: {
+          employee: employee || '',
+          email: log.recipient_email || '',
+          sentAt,
+        },
+      });
+    } else {
+      setActionNotice({
+        kind: 'error',
+        titleKey: 'birthdayPage.manualEmail.sendFailedTitle',
+        messageKey: 'birthdayPage.manualEmail.sendFailed',
+      });
+    }
     returnToToday();
     setStatus('ALL');
     setRetry((value) => value + 1);
@@ -198,7 +240,11 @@ export default function BirthdayEmailLogs() {
       );
       deliveryFinished(response.log);
     } catch (reason) {
-      setActionNotice({ key: birthdayEmailError(reason), error: true });
+      setActionNotice({
+        kind: 'error',
+        titleKey: 'birthdayPage.manualEmail.sendFailedTitle',
+        messageKey: birthdayEmailError(reason),
+      });
       setRetry((value) => value + 1);
     } finally {
       setRetrying(false);
@@ -276,10 +322,13 @@ export default function BirthdayEmailLogs() {
 
       <div className="mt-4">
         {actionNotice && (
-          <p className={actionNotice.error ? 'mb-3 text-sm text-danger' : 'mb-3 text-sm text-success'}
-            role={actionNotice.error ? 'alert' : 'status'}>
-            {t(actionNotice.key.includes('.') ? actionNotice.key : `birthdayPage.manualEmail.${actionNotice.key}`)}
-          </p>
+          <div
+            className={`mb-3 rounded-xs border px-4 py-3 text-sm ${ACTION_NOTICE_STYLES[actionNotice.kind]}`}
+            role={actionNotice.kind === 'success' ? 'status' : 'alert'}
+          >
+            <p className="font-semibold">{t(actionNotice.titleKey)}</p>
+            <p className="mt-1">{t(actionNotice.messageKey, actionNotice.values)}</p>
+          </div>
         )}
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-secondary">
           <p>{t('birthdayPage.emailLogs.viewingDate', { date: displayDate(selectedDate) })}</p>

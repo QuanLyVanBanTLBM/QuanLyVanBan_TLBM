@@ -45,6 +45,7 @@ interface Props {
 export default function BirthdayEmailComposer({ initialYear, onClose, onDelivered }: Props) {
   const { t } = useTranslation();
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const busyRef = useRef(false);
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
   const [templateId, setTemplateId] = useState('');
   const [draft, setDraft] = useState<Draft>({ layout: '', subject: '', message: '' });
@@ -123,6 +124,8 @@ export default function BirthdayEmailComposer({ initialYear, onClose, onDelivere
   const ready = Boolean(employeeId && year && draft.subject.trim() && draft.message.trim());
 
   const request = async (action: () => Promise<void>) => {
+    if (busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     setError('');
     setNotice('');
@@ -131,6 +134,7 @@ export default function BirthdayEmailComposer({ initialYear, onClose, onDelivere
     } catch (reason) {
       setError(birthdayEmailError(reason));
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };
