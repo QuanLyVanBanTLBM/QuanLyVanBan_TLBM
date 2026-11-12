@@ -1,0 +1,474 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+      - staging
+      - '[1-8]_*'
+  push:
+    branches:
+      - staging
+  workflow_dispatch:
+    inputs:
+      reset_database:
+        description: Delete and rebuild the staging database
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Đường chính: migration, schema, test Django. Giữ tên job `backend` (required check).
+  backend:
+    name: backend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      DJANGO_SECRET_KEY: "ci-only-not-for-production"
+      DB_ENGINE: postgresql
+      DB_HOST: localhost
+      DB_PORT: '5432'
+      DB_NAME: tlbm_ci
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_READONLY_USER: qlvb_readonly
+      DB_READONLY_PASSWORD: ci-readonly-only
+      ADMIN_PASSWORD: "ci-only-not-for-production"
+      # Biến của .github/scripts/compare_schema_ddl.py và psql.
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: '5432'
+      POSTGRES_DB: tlbm_ci
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: tlbm_ci
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=vi-VN --locale=C.UTF-8"
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+          --tmpfs /var/lib/postgresql/data
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Schema conventions vs PR base
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags --depth=1 origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
+          python .github/scripts/check_schema_conventions.py changelog "origin/$BASE_REF"
+          python .github/scripts/check_schema_conventions.py baseline "origin/$BASE_REF"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements-linux-py312.lock
+
+      - name: Install dependencies
+        working-directory: backend
+        run: pip install -r requirements-linux-py312.lock tblib
+
+      - name: Provision restricted role in disposable PostgreSQL service
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -p 5432 -U postgres -d tlbm_ci -v ON_ERROR_STOP=1 \
+            -c "ALTER SYSTEM SET fsync = 'off'" \
+            -c "ALTER SYSTEM SET synchronous_commit = 'off'" \
+            -c "ALTER SYSTEM SET full_page_writes = 'off'" \
+            -c "SELECT pg_reload_conf()"
+          psql -h localhost -p 5432 -U postgres -d tlbm_ci -v ON_ERROR_STOP=1 -c "CREATE ROLE qlvb_readonly LOGIN PASSWORD 'ci-readonly-only' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT"
+
+      - name: One migration leaf per app (max_migration.txt)
+        run: python .github/scripts/check_max_migration.py
+
+      - name: Django system check
+        working-directory: backend
+        run: python manage.py check
+
+      - name: Missing migrations check
+        working-directory: backend
+        run: python manage.py makemigrations --check --dry-run
+
+      - name: Migrate trên PostgreSQL trống
+        working-directory: backend
+        run: python manage.py migrate --noinput
+
+      - name: Kiểm tra không còn migration chưa áp dụng
+        working-directory: backend
+        run: python manage.py migrate --noinput --check
+
+      - name: Readiness endpoint regressions
+        working-directory: backend
+        run: python manage.py test api.test_readiness
+
+      - name: Schema comparator and DDL policy regression tests
+        run: python -m unittest discover -s .github/scripts -p "test_*.py"
+
+      - name: Dựng DB từ release_DDL.sql (kiểm chứng script)
+        run: python scripts/build_db.py --dbname tlbm_ddl_built --seed
+
+      - name: Verify migration upgrade path against release DDL and baseline
+        run: |
+          PGPASSWORD="$POSTGRES_PASSWORD" createdb -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" tlbm_ddl_expected
+          PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d tlbm_ddl_expected -v ON_ERROR_STOP=1 -q -f docs/common/database/release_DDL.sql
+          python .github/scripts/compare_schema_ddl.py "$POSTGRES_DB" tlbm_ddl_expected docs/common/database/schema_drift_baseline.txt
+
+      - name: Smoke ENUM/trigger/function/view của DB dựng bằng script so với DB nạp DDL thô
+        run: |
+          counts() {
+            PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" \
+              -d "$1" -At -F ' ' -c "
+              SELECT
+                (SELECT count(*) FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+                  WHERE n.nspname = 'public' AND t.typtype = 'e'),
+                (SELECT count(*) FROM pg_trigger WHERE NOT tgisinternal),
+                (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                  WHERE n.nspname = 'public'),
+                (SELECT count(*) FROM pg_views WHERE schemaname = 'public')"
+          }
+          built="$(counts tlbm_ddl_built)"
+          raw="$(counts tlbm_ddl_expected)"
+          echo "enum trigger function view"
+          echo "built: $built"
+          echo "raw:   $raw"
+          test "$built" = "$raw"
+
+      - name: Django tests
+        working-directory: backend
+        run: |
+          python - <<'PY'
+          import os
+          import django
+          from django.conf import settings
+          from django.test.utils import get_runner
+
+          os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
+          django.setup()
+
+          class RequiredTestRunner(get_runner(settings)):
+              def suite_result(self, suite, result, **kwargs):
+                  print(f"==> Test suite finished. Total tests run: {result.testsRun}, Failures: {len(result.failures)}, Errors: {len(result.errors)}, Skipped: {len(result.skipped)}")
+                  if not result.testsRun or result.skipped:
+                      raise SystemExit("Django test gate requires discovered tests with zero skips")
+                  return super().suite_result(suite, result, **kwargs)
+
+          settings.PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"] + list(settings.PASSWORD_HASHERS)
+          raise SystemExit(bool(RequiredTestRunner(interactive=False, parallel=4).run_tests([])))
+          PY
+
+  # Hạ tầng vận hành (deploy, nginx, build_db, backup/restore): chạy song song với `backend`.
+  backend-ops:
+    name: backend-ops
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      DJANGO_SECRET_KEY: "ci-only-not-for-production"
+      DB_ENGINE: postgresql
+      DB_HOST: localhost
+      DB_PORT: '5432'
+      DB_NAME: tlbm_ci
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_READONLY_USER: qlvb_readonly
+      DB_READONLY_PASSWORD: ci-readonly-only
+      ADMIN_PASSWORD: "ci-only-not-for-production"
+      # Biến của .github/scripts/compare_schema_ddl.py và psql.
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: '5432'
+      POSTGRES_DB: tlbm_ci
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: tlbm_ci
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=vi-VN --locale=C.UTF-8"
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+          --tmpfs /var/lib/postgresql/data
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements-linux-py312.lock
+
+      - name: Install dependencies
+        working-directory: backend
+        run: pip install -r requirements-linux-py312.lock
+
+      - name: Provision restricted role in disposable PostgreSQL service
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -p 5432 -U postgres -d tlbm_ci -v ON_ERROR_STOP=1 \
+            -c "ALTER SYSTEM SET fsync = 'off'" \
+            -c "ALTER SYSTEM SET synchronous_commit = 'off'" \
+            -c "ALTER SYSTEM SET full_page_writes = 'off'" \
+            -c "SELECT pg_reload_conf()"
+          psql -h localhost -p 5432 -U postgres -d tlbm_ci -v ON_ERROR_STOP=1 -c "CREATE ROLE qlvb_readonly LOGIN PASSWORD 'ci-readonly-only' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT"
+
+      # Runner ubuntu-24.04 thường đã có PostgreSQL 16 client; chỉ cài khi thiếu hoặc sai phiên bản.
+      - name: Ensure PostgreSQL 16 client tools
+        run: |
+          set -euo pipefail
+          CLIENT_BIN=/usr/lib/postgresql/16/bin
+          ok() {
+            for tool in psql pg_dump pg_restore; do
+              test -x "$CLIENT_BIN/$tool" || return 1
+              "$CLIENT_BIN/$tool" --version | grep -q "(PostgreSQL) 16\." || return 1
+            done
+          }
+          if ! ok; then
+            sudo install -d /etc/apt/keyrings
+            curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/keyrings/postgresql.gpg
+            echo "deb [signed-by=/etc/apt/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+            sudo apt-get update
+            sudo apt-get install --yes postgresql-client-16
+          fi
+          ok || { echo "PostgreSQL client tools must be version 16" >&2; exit 1; }
+          for tool in psql pg_dump pg_restore; do "$CLIENT_BIN/$tool" --version; done
+          echo "$CLIENT_BIN" >> "$GITHUB_PATH"
+
+      - name: Deployment recovery regressions
+        run: |
+          bash -n deploy/deploy.sh scripts/test_deploy.sh
+          bash scripts/test_deploy.sh
+          python -m unittest scripts.test_staging_https -v
+
+      - name: Nginx config syntax (nginx 1.24, same as Ubuntu 24.04)
+        run: |
+          TLS_DIR="$RUNNER_TEMP/qlvb-tls"
+          mkdir -p "$TLS_DIR"
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+            -subj '/CN=staging-quanlyvanban.bhbl.vn' \
+            -keyout "$TLS_DIR/privkey.pem" \
+            -out "$TLS_DIR/fullchain.pem"
+          docker run --rm -v "$PWD/deploy/nginx/qlvb-frontend.conf:/etc/nginx/conf.d/default.conf:ro" \
+            -v "$TLS_DIR:/etc/qlvb/tls:ro" \
+            nginx:1.24 nginx -t
+
+      - name: Signing schema CHECK normalization regressions
+        run: |
+          python - <<'PY'
+          import unittest
+
+          suite = unittest.defaultTestLoader.discover("scripts", pattern="test_compare_schema_ddl.py")
+          if suite.countTestCases() == 0:
+              raise SystemExit("signing schema CHECK regression tests were not discovered")
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          if result.skipped:
+              raise SystemExit(f"signing schema CHECK regression tests skipped {len(result.skipped)} cases")
+          raise SystemExit(0 if result.wasSuccessful() else 1)
+          PY
+
+      - name: Database lifecycle and upgrade regressions
+        run: python -m unittest discover -s scripts -p "test_build_db.py"
+
+      - name: PostgreSQL 16 backup/restore drill (no skips)
+        env:
+          QLVB_BACKUP_TEST_ENABLED: '1'
+        run: |
+          python - <<'PY'
+          import unittest
+
+          suite = unittest.defaultTestLoader.discover("scripts", pattern="test_backup_restore.py")
+          if suite.countTestCases() == 0:
+              raise SystemExit("backup/restore drill discovered no tests")
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          if result.skipped:
+              raise SystemExit(f"backup/restore drill skipped {len(result.skipped)} tests")
+          raise SystemExit(0 if result.wasSuccessful() else 1)
+          PY
+
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: i18n key parity
+        run: pnpm check:i18n
+
+      - name: CSS design tokens
+        run: pnpm check:tokens
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Type check and build
+        run: pnpm build
+
+      - name: Upload frontend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist/
+          if-no-files-found: error
+
+  deploy-frontend:
+    name: Deploy frontend to Ubuntu
+    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
+    # Chi day frontend sau khi deploy.sh xac nhan release cua commit nay dang chay;
+    # re-run commit cu bi deploy.sh tu choi thi frontend cu khong de len ban moi.
+    needs: deploy-backend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: dist
+
+      - name: Deploy frontend over SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_SSH_PRIVATE_KEY"
+          test -n "$DEPLOY_KNOWN_HOSTS"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          rsync -az -e 'ssh -i ~/.ssh/id_ed25519 -p 2150' dist/ "$DEPLOY_USER@$DEPLOY_HOST:/var/www/qlvb/"
+
+  deploy-backend:
+    name: Deploy backend to Ubuntu
+    if: github.ref == 'refs/heads/staging' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs: [backend, backend-ops, frontend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Package release
+        run: |
+          set -euo pipefail
+          SHA7="$(git rev-parse --short=7 HEAD)"
+          echo "SHA7=$SHA7" >> "$GITHUB_ENV"
+          git archive --format=tar.gz -o "qlvb-$SHA7.tar.gz" HEAD backend scripts docs/common/database .github/scripts/compare_schema_ddl.py
+
+      - name: Verify deployed script bytes and Bash syntax
+        run: |
+          git check-attr eol -- deploy/deploy.sh | grep -Fx 'deploy/deploy.sh: eol: lf'
+          git check-attr eol -- scripts/test_deploy.sh | grep -Fx 'scripts/test_deploy.sh: eol: lf'
+          python3 - <<'PY'
+          from pathlib import Path
+          for name in ("deploy/deploy.sh", "scripts/test_deploy.sh"):
+              if b"\r" in Path(name).read_bytes():
+                  raise SystemExit(f"{name} must use LF line endings")
+          PY
+          bash -n deploy/deploy.sh scripts/test_deploy.sh
+
+      - name: Verify backend archive contains runtime schema comparator
+        run: |
+          tar -tzf "qlvb-$SHA7.tar.gz" | grep -Fx ".github/scripts/compare_schema_ddl.py"
+          tar -tzf "qlvb-$SHA7.tar.gz" | grep -Fx "backend/requirements-linux-py312.lock"
+
+      - name: Deploy backend over SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          RESET_DATABASE: ${{ inputs.reset_database }}
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_SSH_PRIVATE_KEY"
+          test -n "$DEPLOY_KNOWN_HOSTS"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          SSH='ssh -i ~/.ssh/id_ed25519 -p 2150'
+          REMOTE="$DEPLOY_USER@$DEPLOY_HOST"
+          $SSH "$REMOTE" 'mkdir -p ~/deploy'
+          $SSH "$REMOTE" '
+            ENVF=/etc/qlvb/backend.env
+            if [ -f "$ENVF" ] && [ -w "$ENVF" ]; then
+              for var in DJANGO_SECURE_PROXY_SSL_HEADER DJANGO_SECURE_SSL_REDIRECT DJANGO_SECURE_COOKIES; do
+                if grep -q "^[[:space:]]*${var}=" "$ENVF"; then
+                  sed -i "s/^[[:space:]]*${var}=.*/${var}=true/" "$ENVF"
+                else
+                  echo "${var}=true" >> "$ENVF"
+                fi
+              done
+              if grep -q "^[[:space:]]*SIGNING_FRONTEND_URL=" "$ENVF"; then
+                if ! grep -q "^[[:space:]]*SIGNING_FRONTEND_URL=https://staging-quanlyvanban\.bhbl\.vn[[:space:]]*$" "$ENVF"; then
+                  sed -i "s#^[[:space:]]*SIGNING_FRONTEND_URL=.*#SIGNING_FRONTEND_URL=https://staging-quanlyvanban.bhbl.vn#" "$ENVF"
+                fi
+              else
+                echo "SIGNING_FRONTEND_URL=https://staging-quanlyvanban.bhbl.vn" >> "$ENVF"
+              fi
+              if grep -q "^[[:space:]]*DJANGO_CSRF_TRUSTED_ORIGINS=" "$ENVF"; then
+                if ! grep -q "^[[:space:]]*DJANGO_CSRF_TRUSTED_ORIGINS=.*https://staging-quanlyvanban\.bhbl\.vn\($\|,\)" "$ENVF" || grep -q "https://staging-quanlyvanban\.bhbl\.vn:8088" "$ENVF"; then
+                  sed -i "s#^[[:space:]]*DJANGO_CSRF_TRUSTED_ORIGINS=.*#DJANGO_CSRF_TRUSTED_ORIGINS=https://staging-quanlyvanban.bhbl.vn,http://127.0.0.1:8089#" "$ENVF"
+                fi
+              else
+                echo "DJANGO_CSRF_TRUSTED_ORIGINS=https://staging-quanlyvanban.bhbl.vn,http://127.0.0.1:8089" >> "$ENVF"
+              fi
+            fi
+          '
+          rsync -az -e "$SSH" "qlvb-$SHA7.tar.gz" deploy/deploy.sh "$REMOTE:deploy/"
+          rsync -az -e "$SSH" deploy/nginx/qlvb-frontend.conf "$REMOTE:deploy/qlvb-frontend.nginx"
+          DB_MODE=sync
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$RESET_DATABASE" == "true" ]]; then
+            DB_MODE=rebuild
+          fi
+          $SSH "$REMOTE" "DB_MODE=$DB_MODE bash ~/deploy/deploy.sh $SHA7"

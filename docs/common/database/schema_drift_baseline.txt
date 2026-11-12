@@ -1,0 +1,2 @@
+# Lệch schema đã biết giữa Django migration và release_DDL.sql, chờ nhóm phụ trách sửa.
+# Sinh bởi .github/scripts/compare_schema_ddl.py --write-baseline. Sửa xong lệch nào thì xóa dòng đó.

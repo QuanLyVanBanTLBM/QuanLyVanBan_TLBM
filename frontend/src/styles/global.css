@@ -1,0 +1,545 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==========================================================================
+   TLBM DESIGN SYSTEM - GLOBAL TOKENS & CSS VARIABLES
+   [DEVOPS AUDIT NOTE]:
+   - File này là NGUỒN GỐC TẬP TRUNG (Single Source of Truth) của Design Tokens.
+   - Các mã màu gốc tại đây được ánh xạ tự động vào tailwind.config.js thông qua
+     các biến CSS var(--...). Bắt buộc khai báo tại đây.
+   - Mọi components trong ứng dụng bắt buộc sử dụng Tailwind classes (text-primary,
+     bg-surface,...) và TUYỆT ĐỐI KHÔNG hardcode màu riêng lẻ trong JSX/TSX.
+   ========================================================================== */
+
+:root {
+  /* Font Families */
+  --font-size-input: 1rem;
+  --color-on-primary: #ffffff;
+
+  /* Vùng xem trước ảnh chữ ký: bộ màu giấy cố định, không đổi theo theme để nét mực tối luôn rõ. */
+  --color-signature-paper: #ffffff;
+  --color-signature-checker: #eef1f5;
+  --color-signature-border: #94a3b8;
+  --color-signature-mask: rgba(15, 23, 42, 0.5);
+  --color-signature-grid: rgba(59, 130, 246, 0.35);
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+
+  /* Transitions */
+  --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Radius Scale */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+
+  /* Base Canvas Background */
+  --bg-canvas: #f1f4f9;
+
+  /* Brand Accents & Semantic Color Tokens */
+  --color-primary: #3b82f6;
+  --color-primary-hover: #2563eb;
+  --color-primary-glow: rgba(59, 130, 246, 0.35);
+  --color-primary-subtle: rgba(59, 130, 246, 0.15);
+  --color-primary-border: rgba(59, 130, 246, 0.35);
+
+  --color-success: #10b981;
+  --color-success-hover: #059669;
+  --color-success-subtle: rgba(16, 185, 129, 0.15);
+  --color-success-border: rgba(16, 185, 129, 0.35);
+
+  --color-warning: #f59e0b;
+  --color-warning-hover: #d97706;
+  --color-warning-subtle: rgba(245, 158, 11, 0.15);
+  --color-warning-border: rgba(245, 158, 11, 0.35);
+  --color-warning-text: #d97706;
+
+  --color-danger: #ef4444;
+  --color-danger-hover: #dc2626;
+  --color-danger-subtle: rgba(239, 68, 68, 0.15);
+  --color-danger-border: rgba(239, 68, 68, 0.35);
+
+  --color-info: #06b6d4;
+  --color-info-subtle: rgba(6, 182, 212, 0.15);
+  --color-info-border: rgba(6, 182, 212, 0.35);
+
+  --color-purple: #8b5cf6;
+  --color-purple-subtle: rgba(139, 92, 246, 0.15);
+  --color-purple-border: rgba(139, 92, 246, 0.35);
+
+  --color-pink: #ec4899;
+  --color-pink-subtle: rgba(236, 72, 153, 0.15);
+  --color-pink-border: rgba(236, 72, 153, 0.35);
+
+  /* Work status badges (light palette). */
+  --color-task-badge-gray-bg: #F3F4F6;
+  --color-task-badge-gray-text: #6B7280;
+  --color-task-badge-blue-bg: #DBEAFE;
+  --color-task-badge-blue-text: #1D4ED8;
+  --color-task-badge-purple-bg: #EDE9FE;
+  --color-task-badge-purple-text: #6D28D9;
+  --color-task-badge-green-bg: #D1FAE5;
+  --color-task-badge-green-text: #065F46;
+  --color-task-badge-amber-bg: #FEF3C7;
+  --color-task-badge-amber-text: #D97706;
+  --color-task-badge-red-bg: #FEE2E2;
+  --color-task-badge-red-text: #DC2626;
+}
+
+/* ==========================================================================
+   THEME PALETTES (Eye-Care Balanced Contrast)
+   ========================================================================== */
+
+/* 1. Cyber Midnight SaaS Dark Theme (Màu sắc chuẩn theo ảnh mẫu: Nền #090d16, Card #121824, Nút #3b82f6) */
+[data-theme='dark'] {
+  --color-task-badge-gray-bg: #374151;
+  --color-task-badge-gray-text: #D1D5DB;
+  --color-task-badge-blue-bg: #1E3A5F;
+  --color-task-badge-blue-text: #93C5FD;
+  --color-task-badge-purple-bg: #3B1F6E;
+  --color-task-badge-purple-text: #C4B5FD;
+  --color-task-badge-green-bg: #064E3B;
+  --color-task-badge-green-text: #6EE7B7;
+  --color-task-badge-amber-bg: #78350F;
+  --color-task-badge-amber-text: #FCD34D;
+  --color-task-badge-red-bg: #7F1D1D;
+  --color-task-badge-red-text: #FCA5A5;
+
+  --bg-canvas: #090d16;            /* Nền canvas tổng thể sâu thẳm chuẩn quốc tế */
+  --bg-app: #090d16;               /* Nền chính sâu thẳm siêu tối */
+  --bg-surface: #121824;           /* Bề mặt thẻ card & widget chuẩn ảnh mẫu */
+  --bg-surface-elevated: #171f2e;  /* Khối nổi modal, drawer, menu popover */
+  --bg-surface-hover: #1e283b;     /* Hover thẻ / mục con mượt mà */
+  --bg-sidebar: #0d111a;           /* Thanh điều hướng tối sâu sang trọng */
+  --bg-header: rgba(10, 13, 20, 0.92); /* Kính mờ đồng bộ nền chính */
+
+  --color-primary: #3b82f6;        /* Xanh dương Bảo Long tươi sáng, chuẩn tương phản cao trên nền tối */
+  --color-primary-hover: #60a5fa;
+  --color-primary-glow: rgba(59, 130, 246, 0.4);
+  --color-primary-subtle: rgba(59, 130, 246, 0.18);
+  --color-primary-border: rgba(59, 130, 246, 0.38);
+
+  --text-main: #f8fafc;            /* Chữ trắng tinh sáng nét */
+  --text-secondary: #94a3b8;       /* Xám bạc tương phản chuẩn */
+  --text-muted: #64748b;           /* Xám trung tính */
+
+  --border-subtle: rgba(255, 255, 255, 0.08); /* Viền hairline siêu mỏng */
+  --border-focus: #3b82f6;
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 12px 36px rgba(0, 0, 0, 0.75);
+  --shadow-glass: 0 8px 32px rgba(0, 0, 0, 0.6);
+
+  --backdrop-blur: blur(16px);
+  --header-border-bottom: rgba(255, 255, 255, 0.07);
+  --sidebar-border-right: rgba(255, 255, 255, 0.07);
+  --color-warning-text: #f59e0b;
+  --bg-backdrop: rgba(0, 0, 0, 0.7);
+}
+
+/* 2. Modern Clean Light Theme (Màu sắc và nền chuẩn i chang hình: Nền #f1f4f9, Card #ffffff, Viền #e2e8f0) */
+[data-theme='light'] {
+  --bg-canvas: #f1f4f9;            /* Nền canvas sáng nhã nhặn */
+  --bg-app: #f1f4f9;               /* Nền xanh xám nhạt hiện đại chuẩn 100% theo ảnh mẫu */
+  --bg-surface: #ffffff;           /* Bề mặt thẻ trắng tinh khiết chuẩn ảnh mẫu */
+  --bg-surface-elevated: #ffffff;  /* Lớp nổi khối nhẹ nhàng */
+  --bg-surface-hover: #f1f5f9;     /* Hover mượt mà */
+  --bg-sidebar: #ffffff;           /* Sidebar trắng sáng */
+  --bg-header: rgba(241, 244, 249, 0.92);
+
+  --color-primary: #3b82f6;
+  --color-primary-hover: #2563eb;
+  --color-primary-glow: rgba(59, 130, 246, 0.35);
+  --color-primary-subtle: rgba(59, 130, 246, 0.15);
+  --color-primary-border: rgba(59, 130, 246, 0.35);
+
+  --text-main: #0f172a;            /* Slate-900: Chữ đen đậm rõ nét */
+  --text-secondary: #475569;       /* Slate-600: Xám trung tính */
+  --text-muted: #64748b;           /* Slate-500: Xám nhạt */
+
+  --border-subtle: #e2e8f0;        /* Viền mỏng chuẩn ảnh mẫu */
+  --border-focus: #3b82f6;
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.1);
+  --shadow-glass: 0 8px 30px rgba(0, 0, 0, 0.06);
+
+  --backdrop-blur: blur(16px);
+  --header-border-bottom: #e2e8f0;
+  --sidebar-border-right: #e2e8f0;
+  --bg-backdrop: rgba(15, 23, 42, 0.4);
+}
+
+/* ==========================================================================
+   MODERN CLAYMORPHISM 3D DESIGN SYSTEM
+   (Phong cách Giao diện Hiện đại: Đất sét 3D bo phồng, bóng kép nổi tự nhiên)
+   Tham chiếu hình mẫu chuẩn dự án: PhongCachGiaoDien/Claymorphism.png
+   - Khối thẻ 3D phồng mềm (Inflated Rounded Clay Geometry, border-radius: 20px - 24px)
+   - Đổ bóng kép đa tầng (Dual Outer & Inner Highlight Shadows)
+   - Bề mặt chất liệu mờ mịn (Matte Finish) trên nền trắng sáng thuần khiết
+   ========================================================================== */
+
+[data-ui-style='modern'][data-theme='light'] {
+  --bg-canvas: #ffffff;
+  --bg-app: #ffffff;
+  --bg-surface: #ffffff;
+  --bg-surface-elevated: #ffffff;
+  --bg-surface-hover: #f8fafc;
+  --bg-sidebar: #ffffff;
+  --bg-header: #ffffff;
+  --border-subtle: rgba(226, 232, 240, 0.90);
+  --border-glass: rgba(203, 213, 225, 0.95);
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+  --text-main: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
+
+  /* Claymorphism 3D Shadows (Theme Sáng): Bóng ngoài đa tầng + Bóng trong kép nổi */
+  --shadow-clay: 0 12px 24px -4px rgba(15, 23, 42, 0.06),
+                 0 4px 10px -2px rgba(15, 23, 42, 0.03),
+                 inset 2px 2px 4px rgba(255, 255, 255, 1),
+                 inset -2px -2px 4px rgba(0, 0, 0, 0.04);
+  --shadow-clay-hover: 0 18px 32px -4px rgba(15, 23, 42, 0.09),
+                       0 8px 14px -2px rgba(15, 23, 42, 0.05),
+                       inset 2.5px 2.5px 5px rgba(255, 255, 255, 1),
+                       inset -2.5px -2.5px 5px rgba(0, 0, 0, 0.05);
+  --shadow-clay-inset: inset 2px 2px 4px rgba(0, 0, 0, 0.04),
+                       inset -2px -2px 4px rgba(255, 255, 255, 0.90);
+  --shadow-clay-btn: 0 8px 16px -2px rgba(37, 99, 235, 0.32),
+                     0 4px 6px -1px rgba(37, 99, 235, 0.20),
+                     inset 2px 2px 3px rgba(255, 255, 255, 0.45),
+                     inset -2px -2px 3px rgba(0, 0, 0, 0.16);
+  --shadow-clay-btn-hover: 0 12px 22px -2px rgba(37, 99, 235, 0.40),
+                           0 6px 10px -1px rgba(37, 99, 235, 0.25),
+                           inset 2px 2px 4px rgba(255, 255, 255, 0.55),
+                           inset -2px -2px 3px rgba(0, 0, 0, 0.18);
+}
+
+[data-ui-style='modern'][data-theme='dark'] {
+  --bg-canvas: #090d16;
+  --bg-app: #090d16;
+  --bg-surface: #121827;
+  --bg-surface-elevated: #172033;
+  --bg-surface-hover: #1e293b;
+  --bg-sidebar: #0f1523;
+  --bg-header: #0f1523;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-glass: rgba(255, 255, 255, 0.16);
+  --color-primary: #3b82f6;
+  --color-primary-hover: #60a5fa;
+  --color-primary-glow: rgba(59, 130, 246, 0.35);
+  --color-primary-subtle: rgba(59, 130, 246, 0.16);
+  --color-primary-border: rgba(59, 130, 246, 0.35);
+  --border-focus: #3b82f6;
+  --text-main: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+
+  /* Claymorphism 3D Shadows (Theme Tối): Bóng sâu huyền ảo + Highlight viền sáng */
+  --shadow-clay: 0 14px 28px -4px rgba(0, 0, 0, 0.60),
+                 0 6px 12px -2px rgba(0, 0, 0, 0.45),
+                 inset 2px 2px 3px rgba(255, 255, 255, 0.09),
+                 inset -2px -2px 4px rgba(0, 0, 0, 0.50);
+  --shadow-clay-hover: 0 20px 36px -4px rgba(0, 0, 0, 0.70),
+                       0 8px 16px -2px rgba(0, 0, 0, 0.55),
+                       inset 2px 2px 4px rgba(255, 255, 255, 0.14),
+                       inset -2px -2px 5px rgba(0, 0, 0, 0.55);
+  --shadow-clay-inset: inset 2px 2px 5px rgba(0, 0, 0, 0.55),
+                       inset -2px -2px 5px rgba(255, 255, 255, 0.05);
+  --shadow-clay-btn: 0 8px 18px -2px rgba(0, 0, 0, 0.55),
+                     0 4px 8px -1px rgba(37, 99, 235, 0.35),
+                     inset 2px 2px 3px rgba(255, 255, 255, 0.35),
+                     inset -2px -2px 3px rgba(0, 0, 0, 0.35);
+  --shadow-clay-btn-hover: 0 12px 24px -2px rgba(0, 0, 0, 0.65),
+                           0 6px 12px -1px rgba(37, 99, 235, 0.45),
+                           inset 2px 2px 4px rgba(255, 255, 255, 0.45),
+                           inset -2px -2px 3px rgba(0, 0, 0, 0.40);
+}
+
+/* ==========================================================================
+   CLAYMORPHISM 3D SURFACES (Chất liệu đất sét 3D bo tròn, phồng mềm)
+   ========================================================================== */
+[data-ui-style='modern'] .bg-surface,
+[data-ui-style='modern'] .bg-surface-elevated {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-clay);
+  border-radius: 20px;
+  transition: box-shadow 0.22s ease-out,
+              border-color 0.2s ease;
+}
+
+[data-ui-style='modern'] .bg-surface:hover,
+[data-ui-style='modern'] .bg-surface-elevated:hover {
+  box-shadow: var(--shadow-clay-hover);
+  border-color: var(--border-glass);
+}
+
+/* Nút bấm Claymorphism 3D phồng nổi (Clay Pill Buttons) */
+[data-ui-style='modern'] button.bg-primary {
+  background: var(--color-primary) !important;
+  border: 1px solid rgba(255, 255, 255, 0.25) !important;
+  box-shadow: var(--shadow-clay-btn) !important;
+  border-radius: 14px !important;
+  transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1),
+              box-shadow 0.18s ease-out !important;
+}
+
+[data-ui-style='modern'] button.bg-primary:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: var(--shadow-clay-btn-hover) !important;
+  background: var(--color-primary-hover) !important;
+}
+
+[data-ui-style='modern'] button.bg-primary:active {
+  transform: translateY(1px) scale(0.98);
+  box-shadow: var(--shadow-clay-btn) !important;
+}
+
+/* Ô nhập liệu dạng rãnh đất sét chìm mềm mại (Clay Inset Fields) */
+[data-ui-style='modern'] input,
+[data-ui-style='modern'] select,
+[data-ui-style='modern'] textarea {
+  background: var(--bg-surface) !important;
+  border: 1.5px solid var(--border-subtle) !important;
+  box-shadow: var(--shadow-clay-inset) !important;
+  border-radius: 14px !important;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+}
+
+[data-ui-style='modern'] input:focus,
+[data-ui-style='modern'] select:focus,
+[data-ui-style='modern'] textarea:focus {
+  border-color: var(--color-primary) !important;
+  box-shadow: var(--shadow-clay-inset), 0 0 0 3px var(--color-primary-subtle) !important;
+}
+
+/* Chuẩn hóa giao diện Option của Select trên mọi thiết bị di động & theme */
+select option {
+  background-color: var(--bg-surface, #ffffff);
+  color: var(--text-main, #1e293b);
+  padding: 8px 12px;
+}
+
+[data-theme='dark'] select option {
+  background-color: var(--bg-surface, #1e293b);
+  color: var(--text-main, #f8fafc);
+}
+
+/* Bảng dữ liệu Claymorphism */
+[data-ui-style='modern'] th {
+  background: var(--bg-surface-hover) !important;
+  font-weight: 700;
+  border-bottom: 1.5px solid var(--border-subtle) !important;
+}
+
+/* Viewport nội dung */
+[data-ui-style='modern'][data-theme='light'] .page-viewport,
+[data-ui-style='modern'][data-theme='light'] .main-container {
+  background: #ffffff !important;
+}
+
+[data-ui-style='modern'][data-theme='dark'] .page-viewport,
+[data-ui-style='modern'][data-theme='dark'] .main-container {
+  background: #090d16 !important;
+}
+
+/* Header & Sidebar Claymorphism */
+[data-ui-style='modern'] header {
+  background: var(--bg-header) !important;
+  border-bottom: 1px solid var(--border-subtle) !important;
+  box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.04);
+}
+
+[data-ui-style='modern'] aside,
+[data-ui-style='modern'] .sidebar-slide-wrapper,
+[data-ui-style='modern'] .sidebar-header,
+[data-ui-style='modern'] .sidebar-footer {
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+[data-ui-style='modern'] aside,
+[data-ui-style='modern'] .sidebar-slide-wrapper {
+  background: var(--bg-sidebar) !important;
+  border-top: none !important;
+  border-bottom: none !important;
+  border-left: none !important;
+  border-right: 1px solid var(--border-subtle) !important;
+}
+
+[data-ui-style='modern'] .sidebar-slide-wrapper {
+  box-shadow: 6px 0 20px -3px rgba(0, 0, 0, 0.05);
+}
+
+[data-ui-style='modern'] .sidebar-header {
+  border-bottom: 1px solid var(--border-subtle) !important;
+  border-top: none !important;
+  border-left: none !important;
+  border-right: none !important;
+}
+
+[data-ui-style='modern'] .sidebar-footer {
+  border-top: 1px solid var(--border-subtle) !important;
+  border-bottom: none !important;
+  border-left: none !important;
+  border-right: none !important;
+}
+
+/* ==========================================================================
+   SMOOTH THEME CROSSFADE TRANSITIONS
+   (Chuyển đổi Sáng/Tối mượt mà, hòa sắc êm ái, chống sốc thị giác đột ngột)
+   ========================================================================== */
+
+html,
+body,
+.app-shell,
+header,
+aside,
+main,
+footer,
+nav,
+div,
+section,
+article,
+table,
+tr,
+th,
+td,
+input,
+select,
+textarea,
+button,
+span,
+p,
+h1, h2, h3, h4, h5, h6,
+i {
+  transition-property: background-color, border-color, color, fill, stroke, box-shadow;
+  transition-duration: 0.35s;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ==========================================================================
+   ANIMATION UTILITIES (animate-in, fade-in, slide-in)
+   ========================================================================== */
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideInFromBottom {
+  from { transform: translateY(1rem); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes dropdownReveal {
+  0% {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.dropdown-animate {
+  transform-origin: top right;
+  animation: dropdownReveal 220ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform, opacity;
+}
+
+.animate-in {
+  animation-duration: 150ms;
+  animation-timing-function: cubic-bezier(0, 0, 0.2, 1);
+  animation-fill-mode: both;
+}
+
+.fade-in {
+  animation-name: fadeIn;
+}
+
+.slide-in-from-bottom-4 {
+  animation-name: slideInFromBottom;
+}
+
+/* ==========================================================================
+   RESET & CORE BASE STYLES
+   ========================================================================== */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  font-family: var(--font-sans);
+  background-color: var(--bg-canvas, #f1f4f9);
+  color: var(--text-main);
+  font-size: 14px;
+  line-height: 1.5;
+  overflow: hidden;
+  transition: background-color var(--transition-normal), color var(--transition-normal);
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  outline: none;
+}
+
+input, select, textarea {
+  font-family: inherit;
+  font-size: inherit;
+  outline: none;
+}
+
+/* Custom Sleek Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(160, 160, 160, 0.22);
+  border-radius: var(--radius-full);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(160, 160, 160, 0.4);
+}
+
+/* Continuous Seamless Marquee for Announcements & Birthdays */
+@keyframes marquee-scroll {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-marquee {
+  display: flex;
+  width: max-content;
+  animation: marquee-scroll 48s linear infinite;
+  will-change: transform;
+}
+

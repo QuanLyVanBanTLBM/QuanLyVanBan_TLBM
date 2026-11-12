@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ subject }}</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: #dcd7cc;
+      font-family: 'Georgia', 'Times New Roman', serif;
+      padding: 32px 16px;
+      color: #1e2530;
+    }
+
+    .diplomatic-outer {
+      max-width: 620px;
+      margin: 0 auto;
+      background: #fdfbf7;
+      padding: 16px;
+      border: 1px solid #bfa15f;
+      box-shadow: 0 16px 36px rgba(30, 37, 48, 0.15);
+    }
+
+    .diplomatic-inner {
+      border: 3px double #bfa15f;
+      padding: 36px 38px;
+      background: #fdfbf7;
+    }
+
+    .crest-header {
+      text-align: center;
+      border-bottom: 1px solid #d8c8a0;
+      padding-bottom: 22px;
+      margin-bottom: 24px;
+    }
+
+    .seal {
+      display: inline-flex;
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: #0b2246;
+      border: 2px solid #bfa15f;
+      color: #dfb266;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .crest-header .org {
+      font-family: Arial, sans-serif;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 2.5px;
+      color: #0b2246;
+      text-transform: uppercase;
+    }
+
+    .crest-header h1 {
+      font-size: 28px;
+      color: #8c6218;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-top: 8px;
+    }
+
+    .official-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 24px;
+      background: #f7f3e8;
+      border: 1px solid #decb9e;
+    }
+
+    .official-table td {
+      padding: 10px 16px;
+      border: 1px solid #decb9e;
+      font-size: 14px;
+    }
+
+    .official-table td.lbl {
+      font-family: Arial, sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: #5c5346;
+      width: 32%;
+    }
+
+    .official-table td.val {
+      font-weight: 700;
+      color: #0b2246;
+    }
+
+    .letter-content p {
+      font-size: 15.5px;
+      line-height: 1.82;
+      color: #1e2530;
+      margin-bottom: 16px;
+      text-align: justify;
+    }
+
+    .cert-btn {
+      text-align: center;
+      margin: 26px 0;
+    }
+
+    .cert-btn a {
+      display: inline-block;
+      background: #0b2246;
+      color: #f3dc99;
+      border: 1px solid #bfa15f;
+      padding: 12px 28px;
+      text-decoration: none;
+      font-family: Arial, sans-serif;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 1.4px;
+      text-transform: uppercase;
+    }
+
+    .stamp-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      margin-top: 28px;
+      padding-top: 18px;
+      border-top: 1px solid #d8c8a0;
+    }
+
+    @media (max-width: 500px) {
+      .diplomatic-inner {
+        padding: 24px 18px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="diplomatic-outer">
+    <div class="diplomatic-inner">
+      <div class="crest-header">
+        <div class="seal">BL</div>
+        <div class="org">{{ organization_name }}</div>
+        <h1>Thư Chúc Mừng Sinh Nhật</h1>
+      </div>
+
+      <table class="official-table">
+        <tr>
+          <td class="lbl">Họ và tên CBNV</td>
+          <td class="val">{{ employee_name }}</td>
+        </tr>
+        <tr>
+          <td class="lbl">Chức vụ công tác</td>
+          <td class="val">{{ position }}</td>
+        </tr>
+        <tr>
+          <td class="lbl">Phòng ban / Đơn vị</td>
+          <td class="val">{{ department }}</td>
+        </tr>
+        <tr>
+          <td class="lbl">Ngày kỷ niệm sinh nhật</td>
+          <td class="val">{{ birthday_date }}</td>
+        </tr>
+      </table>
+
+      <div class="letter-content">
+      {% if chuc_danh %}<p>Chức danh: <strong>{{ chuc_danh }}</strong></p>{% endif %}
+      {{ greeting|linebreaks }}
+      </div>
+
+      <div class="cert-btn">
+        {% if birthday_card_url %}<a href="{{ birthday_card_url }}">Mở
+          Thiệp Chúc Mừng Chính Thức</a>{% endif %}
+      </div>
+
+      <div class="stamp-footer">
+        <div style="font-size:12px; color:#64748b;">
+          Văn bản chúc mừng nội bộ<br>
+          <span>{{ organization_name }}</span>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-style:italic; font-size:14px; color:#475569;">Trân trọng,</div>
+          <strong style="color:#0b2246; font-size:15px;">TM. Ban Lãnh Đạo <span>{{ brand_name }}</span></strong>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+
+</html>

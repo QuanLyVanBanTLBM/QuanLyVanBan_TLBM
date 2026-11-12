@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <script src="/birthday-cards/personalize.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Thiệp 04 - Đỏ Ruby Lễ Hội & Pháo Hoa 3D | Bảo Long Insurance</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Playfair+Display:wght@700;800&family=Montserrat:wght@600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      background: radial-gradient(circle at center, #7f1d1d 0%, #450a0a 65%, #1f0404 100%);
+      font-family: 'Playfair Display', Georgia, serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 40px 16px;
+      overflow-x: hidden;
+    }
+    #rubyWebGL {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 1;
+    }
+    .ruby-card {
+      position: relative;
+      z-index: 10;
+      max-width: 590px;
+      width: 100%;
+      background: #ffffff;
+      border-radius: 18px;
+      border: 2.5px solid #facc15;
+      box-shadow: 0 28px 65px rgba(0, 0, 0, 0.65), 0 0 40px rgba(245, 158, 11, 0.3);
+      overflow: hidden;
+    }
+    .ruby-hero {
+      background: linear-gradient(135deg, #7f1d1d 0%, #991b1b 50%, #450a0a 100%);
+      padding: 38px 34px 30px;
+      text-align: center;
+      color: #ffffff;
+      border-bottom: 4px solid #facc15;
+    }
+    .org-pill {
+      display: inline-block;
+      background: rgba(250, 204, 21, 0.18);
+      border: 1px solid #facc15;
+      color: #fef08a;
+      padding: 5px 16px;
+      border-radius: 999px;
+      font-family: 'Montserrat', sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      margin-bottom: 12px;
+    }
+    .ruby-hero h1 {
+      font-size: 34px;
+      color: #fde047;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-bottom: 6px;
+    }
+    .ruby-hero p {
+      font-size: 14px;
+      color: #fecdd3;
+      font-style: italic;
+    }
+    .vip-box {
+      margin: 24px 34px 12px;
+      background: #fffbeb;
+      border: 1.5px solid #f59e0b;
+      border-radius: 12px;
+      padding: 18px 22px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .vip-info h2 {
+      font-size: 22px;
+      color: #7f1d1d;
+      margin-bottom: 4px;
+    }
+    .vip-info p {
+      font-family: 'Montserrat', sans-serif;
+      font-size: 12.5px;
+      color: #57534e;
+    }
+    .date-tag {
+      background: #7f1d1d;
+      color: #fde047;
+      padding: 9px 16px;
+      border-radius: 10px;
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 800;
+      font-size: 14px;
+    }
+    .ruby-content {
+      padding: 14px 34px 34px;
+      color: #2d1618;
+    }
+    .ruby-content p {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 18px;
+      line-height: 1.75;
+      margin-bottom: 15px;
+      text-align: justify;
+    }
+    .firework-btn {
+      background: linear-gradient(90deg, #991b1b, #dc2626);
+      color: #fef08a;
+      border: 1.5px solid #facc15;
+      padding: 13px 28px;
+      border-radius: 999px;
+      font-family: 'Montserrat', sans-serif;
+      font-size: 12.5px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 8px 20px rgba(153, 27, 27, 0.35);
+    }
+    .ruby-foot {
+      background: #fef2f2;
+      padding: 18px 34px;
+      border-top: 1px solid #fecaca;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: #7f1d1d;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="rubyWebGL"></canvas>
+
+  <div class="ruby-card" id="rubyCard">
+    <div class="ruby-hero">
+      <div class="org-pill" data-card-field="organization_name">BẢO LONG INSURANCE</div>
+      <h1>Mừng Sinh Nhật Rực Rỡ</h1>
+      <p>Chúc tuổi mới hồng phát, vạn sự hanh thông & ngập tràn niềm vui</p>
+    </div>
+
+    <div class="vip-box">
+      <div class="vip-info">
+        <h2 data-card-field="employee_name">—</h2>
+        <p>
+          Chức vụ: <strong style="color:#991b1b" data-card-field="position">—</strong>
+          &nbsp;|&nbsp;
+          Phòng ban: <strong style="color:#991b1b" data-card-field="department">—</strong>
+        </p>
+      </div>
+      <div class="date-tag">🎉 <span data-card-field="birthday_date">—</span></div>
+    </div>
+
+    <div class="ruby-content">
+      <p>Kính gửi <strong data-card-field="employee_name">—</strong>,</p>
+      <p>
+        Hòa chung niềm vui trong ngày sinh nhật <strong data-card-field="birthday_date">—</strong> của đồng chí, Ban Lãnh đạo và toàn thể cán bộ nhân viên <span data-card-field="organization_name">Bảo Long Insurance</span> thân ái gửi đến đồng chí những lời chúc tốt đẹp và nồng hậu nhất!
+      </p>
+      <p>
+        Cảm ơn đồng chí đã luôn đồng hành, cống hiến hết mình vì sự phát triển của <strong data-card-field="department">—</strong>. Với vai trò <strong data-card-field="position">—</strong>, sự nhiệt huyết của đồng chí luôn là nguồn động lực to lớn đối với tập thể.
+      </p>
+
+      <div style="text-align:center; margin: 24px 0 8px;">
+        <button class="firework-btn" id="fireworkBtn">🎆 Bắn Pháo Hoa Chúc Mừng Sinh Nhật</button>
+      </div>
+    </div>
+
+    <div class="ruby-foot">
+      <div>
+        <small style="color:#78716c; display:block;">Thân ái,</small>
+        <strong>Ban Lãnh đạo & Tập thể <span data-card-field="organization_name">Bảo Long Insurance</span></strong>
+      </div>
+      <div style="font-size:24px;">🥂✨</div>
+    </div>
+  </div>
+
+
+</body>
+</html>

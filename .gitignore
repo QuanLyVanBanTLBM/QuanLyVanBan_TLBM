@@ -1,0 +1,142 @@
+# ==========================================
+# 1. NODE & FRONTEND (React / Vite)
+# ==========================================
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+dist-ssr/
+*.tsbuildinfo
+frontend/*.tsbuildinfo
+.eslintcache
+frontend/.eslintcache
+.npm/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+coverage/
+frontend/coverage/
+.coverage
+skills/
+frontend/skills/
+
+# ==========================================
+# 2. PYTHON & DJANGO BACKEND
+# ==========================================
+# Bytecode & Cache
+__pycache__/
+backend/**/__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+
+# Python Virtual Environment
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Local Database, Seed Migrations & Uploaded Media Files
+*.sqlite3
+backend/db.sqlite3
+backend/media/
+media/
+storage/
+data/chroma_db/
+data/ai_settings.json
+data/pgdata/
+data/docs/*
+!data/docs/.gitkeep
+!data/docs/Folder_*
+Folder/
+backend/static_root/
+static_root/
+seed_data.py
+backend/seed_data.py
+backend/apps/*/migrations/*seed*.py
+backend/apps/accounts/management/commands/seed_accounts.py
+
+# Unit Test & Linter Cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.log
+logs/
+
+# ==========================================
+# 3. ENVIRONMENT & SECRETS (BẢO MẬT)
+# ==========================================
+.env
+.env.local
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+
+# ==========================================
+# 4. EDITORS & OPERATING SYSTEM
+# ==========================================
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+desktop.ini
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDEs
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Temporary & Backup files
+*.bak
+*.tmp
+*~
+*.orig
+
+# Local Notes & Changelogs
+CHANGELOG_REMOVE_MOCK_DATA.md
+frontend/CHANGELOG_REMOVE_MOCK_DATA.md
+CHAY_FULL_STACK.bat
+run_all.bat
+chay_du_an.bat
+AGENTS.md
+
+# AI Assistant & IDE Agents
+.agents/
+
+# Netlify (Personal Testing & Deployment)
+netlify.toml
+frontend/netlify.toml
+.netlify/
+frontend/.netlify/
+_redirects
+frontend/public/_redirects
+
+# Vite Temporary & Cache Files
+.vite/
+frontend/.vite/
+*.timestamp-*
+frontend/*.timestamp-*
+
+# Temporary template samples
+template/
+
+
+
+

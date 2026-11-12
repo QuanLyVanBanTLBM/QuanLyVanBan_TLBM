@@ -1,0 +1,88 @@
+name: Birthday email scheduler
+
+on:
+  schedule:
+    # 07:00 Asia/Ho_Chi_Minh (UTC+7).
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+    inputs:
+      username:
+        description: "Tài khoản staging cần gửi bù"
+        required: true
+        type: string
+      date:
+        description: "Ngày sinh nhật cần gửi (YYYY-MM-DD)"
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: birthday-email-scheduler
+  cancel-in-progress: false
+
+jobs:
+  send-birthday-emails:
+    if: github.ref == 'refs/heads/staging'
+    name: Send scheduled birthday emails
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Run mail task on the current release
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_SSH_PRIVATE_KEY"
+          test -n "$DEPLOY_KNOWN_HOSTS"
+
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+          chmod 600 "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+          remote_command='bash -s'
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            target_username=$(jq -er '.inputs.username | strings' "$GITHUB_EVENT_PATH")
+            target_date=$(jq -er '.inputs.date | strings' "$GITHUB_EVENT_PATH")
+            [[ "$target_username" =~ ^[A-Za-z0-9_.@+-]{1,150}$ ]]
+            [[ "$target_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]
+            remote_command="bash -s -- '$target_username' '$target_date'"
+          fi
+          ssh -i "$HOME/.ssh/id_ed25519" -p 2150 \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" "$remote_command" <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          BASE=/srv/qlvb
+          LOG="$BASE/birthday-email.log"
+          umask 077
+          touch "$LOG"
+          chmod 600 "$LOG"
+          args=()
+          if (( $# > 0 )); then
+            args=("--username=$1" "--date=$2")
+          fi
+
+          if /usr/bin/flock --wait 1800 "$BASE/.deploy.lock" /bin/bash -c '
+            set -euo pipefail
+            set -a
+            . /etc/qlvb/backend.env
+            set +a
+            cd /srv/qlvb/current/backend
+            exec /srv/qlvb/current/venv/bin/python manage.py send_birthday_emails "$@"
+          ' birthday-email "${args[@]}" >>"$LOG" 2>&1; then
+            echo "Birthday email task completed; details are in the protected server log and application email log."
+          else
+            status=$?
+            echo "::error::Birthday email task failed (exit $status); inspect the protected server log."
+            exit "$status"
+          fi
+          REMOTE_SCRIPT

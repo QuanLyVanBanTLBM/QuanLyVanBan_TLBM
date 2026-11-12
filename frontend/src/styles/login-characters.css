@@ -1,0 +1,421 @@
+/* ==========================================================================
+   TLBM - LOGIN PAGE CHARACTER ANIMATIONS
+   Chứa các keyframes chuyển động mắt và tương tác nhịp thở của 4 nhân vật hoạt họa.
+   ========================================================================== */
+
+/* Animation nhịp thở bập bênh (Idle Bobber) */
+.char-bobber {
+  position: absolute;
+  bottom: 0;
+  pointer-events: auto;
+}
+
+.bobber-purple {
+  left: 70px;
+  animation: idleBobPurple 3.8s ease-in-out infinite;
+}
+.bobber-black {
+  left: 148px;
+  animation: idleBobBlack 4.2s ease-in-out infinite 0.4s;
+}
+.bobber-orange {
+  left: 0;
+  z-index: 3;
+  animation: idleBobOrange 3.4s ease-in-out infinite 0.1s;
+}
+.bobber-yellow {
+  left: 176px;
+  z-index: 4;
+  animation: idleBobYellow 3.9s ease-in-out infinite 0.6s;
+}
+
+@keyframes idleBobPurple {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+@keyframes idleBobBlack {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+@keyframes idleBobOrange {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+@keyframes idleBobYellow {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+/* Chớp mắt tự nhiên */
+@keyframes naturalBlink {
+  0%, 93%, 100% { transform: scaleY(1); }
+  96% { transform: scaleY(0.08); }
+}
+
+@keyframes errorShake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-10px); }
+  40% { transform: translateX(10px); }
+  60% { transform: translateX(-6px); }
+  80% { transform: translateX(6px); }
+}
+
+@keyframes celebrateJump {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-26px) scale(1.08); }
+}
+
+.character-cluster {
+  position: absolute;
+  bottom: 0;
+  left: 20px;
+  width: 330px;
+  height: 230px;
+}
+
+.character-cluster.is-error {
+  animation: errorShake 0.45s ease-in-out;
+}
+
+.character-cluster.is-success {
+  animation: celebrateJump 0.6s ease-in-out infinite;
+}
+
+/* 1. NHÂN VẬT TÍM (Hình chữ nhật) */
+.char-purple {
+  width: 86px;
+  height: 145px;
+  background: var(--color-purple, rgb(109, 40, 217));
+  border-radius: 8px 8px 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 24px;
+  box-sizing: border-box;
+  cursor: pointer;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.2s;
+}
+.char-purple:hover {
+  transform: translateY(-8px) scale(1.03);
+  background: var(--color-purple, rgb(124, 58, 237));
+}
+.char-purple.eyes-closed {
+  transform: translateY(16px) scale(0.95);
+}
+.char-purple.shocked {
+  transform: translateY(-10px) scale(1.05);
+}
+.char-purple.clicked {
+  transform: translateY(-18px) rotate(-6deg);
+}
+.char-purple.typing {
+  transform: translateY(-4px);
+}
+
+.purple-eyes {
+  display: flex;
+  gap: 14px;
+}
+
+.eye-socket-purple {
+  width: 9px;
+  height: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: naturalBlink 4.8s infinite;
+  transition: height 0.2s ease, transform 0.2s ease;
+}
+.eye-socket-purple.closed {
+  height: 2.5px !important;
+  animation: none;
+}
+
+.pupil-purple {
+  width: 8px;
+  height: 8px;
+  background: rgb(17, 24, 39);
+  border-radius: 50%;
+  transition: transform 0.05s ease-out;
+}
+
+.purple-mouth {
+  width: 6px;
+  height: 6px;
+  background: rgb(17, 24, 39);
+  border-radius: 50%;
+  margin-top: 10px;
+  transition: all 0.2s ease;
+}
+.purple-mouth.shocked {
+  width: 7px;
+  height: 11px;
+  border-radius: 4px;
+}
+
+/* 2. NHÂN VẬT ĐEN (Trụ tròn to) */
+.char-black {
+  width: 70px;
+  height: 160px;
+  background: rgb(24, 24, 27);
+  border-radius: 26px 26px 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 26px;
+  box-sizing: border-box;
+  cursor: pointer;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.char-black:hover {
+  transform: translateY(-8px) scale(1.04);
+}
+.char-black.eyes-closed {
+  transform: translateY(22px) scale(0.92);
+}
+.char-black.shocked {
+  transform: translateY(-10px) scale(1.04);
+}
+.char-black.clicked {
+  transform: translateY(-18px) scale(1.06);
+}
+.char-black.typing {
+  transform: translateY(-5px);
+}
+
+.black-eyes {
+  display: flex;
+  gap: 7px;
+}
+
+.black-eye-sclera {
+  width: 18px;
+  height: 18px;
+  background: rgb(255, 255, 255);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.25);
+  animation: naturalBlink 5.2s infinite 0.5s;
+  transition: transform 0.2s ease;
+}
+.black-eye-sclera.closed {
+  transform: scaleY(0.1) !important;
+  animation: none;
+}
+.black-eye-sclera.shocked {
+  transform: scale(1.22) !important;
+}
+
+.black-pupil {
+  width: 9px;
+  height: 9px;
+  background: rgb(0, 0, 0);
+  border-radius: 50%;
+  transition: transform 0.05s ease-out;
+}
+
+/* 3. NHÂN VẬT CAM (Bán nguyệt có má hồng) */
+.char-orange {
+  width: 180px;
+  height: 95px;
+  background: rgb(255, 107, 53);
+  border-radius: 100px 100px 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-top: 16px;
+  box-sizing: border-box;
+  cursor: pointer;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.2s;
+}
+.char-orange:hover {
+  transform: translateY(-6px) scale(1.04);
+  background: rgb(255, 120, 68);
+}
+.char-orange.eyes-closed {
+  transform: translateY(8px);
+}
+.char-orange.shocked {
+  transform: translateY(-8px) scale(1.04);
+}
+.char-orange.clicked {
+  transform: translateY(-14px) scale(1.06);
+}
+.char-orange.typing {
+  transform: translateY(-4px);
+}
+
+.orange-eyes-row {
+  display: flex;
+  align-items: center;
+  gap: 36px;
+  position: relative;
+}
+
+.orange-blush-left {
+  position: absolute;
+  left: -18px;
+  top: 8px;
+  width: 14px;
+  height: 7px;
+  background: var(--color-danger, rgb(220, 38, 38));
+  border-radius: 50%;
+  transition: opacity 0.3s ease;
+}
+
+.orange-blush-right {
+  position: absolute;
+  right: -18px;
+  top: 8px;
+  width: 14px;
+  height: 7px;
+  background: var(--color-danger, rgb(220, 38, 38));
+  border-radius: 50%;
+  transition: opacity 0.3s ease;
+}
+
+.eye-socket-orange {
+  width: 12px;
+  height: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: naturalBlink 4.2s infinite 1s;
+  transition: height 0.2s ease, transform 0.2s ease;
+}
+.eye-socket-orange.closed {
+  height: 3px !important;
+  transform: scaleX(1.4) !important;
+  border-radius: 9999px;
+  animation: none;
+}
+
+.pupil-orange {
+  width: 11px;
+  height: 11px;
+  background: rgb(17, 24, 39);
+  border-radius: 50%;
+  transition: transform 0.05s ease-out;
+}
+
+.orange-mouth {
+  width: 24px;
+  height: 12px;
+  border-bottom: 3.5px solid rgb(17, 24, 39);
+  border-radius: 0 0 16px 16px;
+  margin-top: 8px;
+  transition: all 0.2s ease;
+}
+.orange-mouth.shocked {
+  width: 12px;
+  height: 12px;
+  border-bottom: none;
+  background: rgb(17, 24, 39);
+  border-radius: 50%;
+}
+
+/* 4. NHÂN VẬT VÀNG (Mái vòm) */
+.char-yellow {
+  width: 80px;
+  height: 110px;
+  background: var(--color-warning, rgb(250, 204, 21));
+  border-radius: 42px 42px 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 24px;
+  box-sizing: border-box;
+  cursor: pointer;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.2s;
+}
+.char-yellow:hover {
+  transform: translateY(-6px) scale(1.04) rotate(1deg);
+  background: var(--color-warning-hover, rgb(252, 211, 77));
+}
+.char-yellow.eyes-closed {
+  transform: translateY(12px) rotate(-4deg);
+}
+.char-yellow.shocked {
+  transform: translateY(-8px) scale(1.04);
+}
+.char-yellow.clicked {
+  transform: translateY(-16px) rotate(7deg);
+}
+.char-yellow.typing {
+  transform: translateY(-4px);
+}
+
+.yellow-eyes {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+  padding-right: 20px;
+  box-sizing: border-box;
+}
+
+.eye-socket-yellow {
+  width: 9px;
+  height: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: naturalBlink 4.5s infinite 1.8s;
+  transition: height 0.2s ease, transform 0.2s ease;
+}
+.eye-socket-yellow.closed {
+  height: 2.5px !important;
+  border-radius: 2px;
+  animation: none;
+}
+
+.pupil-yellow {
+  width: 8.5px;
+  height: 8.5px;
+  background: rgb(17, 24, 39);
+  border-radius: 50%;
+  transition: transform 0.05s ease-out;
+}
+
+.yellow-mouth-line {
+  position: absolute;
+  bottom: 32px;
+  right: -8px;
+  width: 28px;
+  height: 3.5px;
+  background: rgb(17, 24, 39);
+  border-radius: 2px;
+  transition: transform 0.2s ease;
+}
+.yellow-mouth-line.shocked {
+  transform: rotate(-12deg) scaleX(1.2);
+}
+
+/* Đảm bảo thẻ đăng nhập là một khối thống nhất liền mạch, không bị bo góc hay tách thẻ ở giữa */
+.login-card-container > div {
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  border-top: none !important;
+  border-bottom: none !important;
+  border-left: none !important;
+}
+
+@media (min-width: 768px) {
+  .login-card-container > div:first-child {
+    border-right: 1px solid var(--border-subtle) !important;
+  }
+  .login-card-container > div:last-child {
+    border-right: none !important;
+  }
+}
+
+@media (max-width: 767px) {
+  .login-card-container > div:first-child {
+    border-bottom: 1px solid var(--border-subtle) !important;
+    border-right: none !important;
+  }
+}

@@ -1,0 +1,104 @@
+name: Yêu cầu tính năng mới (Feature Request)
+description: Đề xuất tính năng mới hoặc nâng cấp phân hệ hệ thống theo chuẩn bắt buộc
+title: "[FEAT]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Vui lòng điền đầy đủ và súc tích các thông tin đề xuất tính năng mới bên dưới. Tuân thủ nguyên tắc KISS/YAGNI: chỉ tập trung vào nghiệp vụ thực sự cần thiết, không vẽ thêm abstraction giả định.
+
+  - type: input
+    id: summary
+    attributes:
+      label: 1. Tóm tắt tính năng (Summary - 1 dòng trên đầu)
+      description: Tóm tắt ngắn gọn mục tiêu cốt lõi của tính năng trong đúng 1 câu duy nhất.
+      placeholder: "Ví dụ: Bổ sung chức năng xuất danh sách văn bản đến ra file Excel theo mẫu báo cáo hành chính."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: module
+    attributes:
+      label: 2. Phân hệ / Module liên quan
+      description: Chọn phân hệ trực tiếp chịu tác động của tính năng.
+      options:
+        - "Core Layout & Foundation (Header, Sidebar, Theme, i18n, Global Styles)"
+        - "Quản lý Văn bản (Văn bản đến, Văn bản đi, Tài liệu mật)"
+        - "Sinh nhật CBNV (Phân hệ 7.2)"
+        - "Bàn làm việc / Dashboard (Tổng quan nhóm 1)"
+        - "Tiện ích mở rộng & Trợ lý ảo AI"
+        - "Khác / Hạ tầng chung"
+    validations:
+      required: true
+
+  - type: input
+    id: group
+    attributes:
+      label: 3. Nhóm phụ trách (Team)
+      description: Ghi rõ nhóm thành viên hoặc nhóm nghiệp vụ đảm nhiệm tính năng này.
+      placeholder: "Ví dụ: Nhóm 1 (Layout & Core), Nhóm 2 (Văn bản đến), v.v."
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: 4. Bối cảnh hiện tại (Context / Background)
+      description: Mô tả thực trạng hệ thống hoặc luồng thao tác hiện tại trước khi có tính năng mới.
+      placeholder: Hiện tại người dùng chỉ có thể xem danh sách văn bản trên giao diện web, chưa có cơ chế trích xuất dữ liệu để lưu trữ ngoại tuyến...
+    validations:
+      required: true
+
+  - type: textarea
+    id: why_needed
+    attributes:
+      label: 5. Tại sao cần tính năng này (Why it is needed / Business Value)
+      description: Nêu rõ lý do và nhu cầu thực tế; giải quyết bài toán hoặc điểm nghẽn nào trong hệ thống.
+      placeholder: Phục vụ công tác thống kê định kỳ của văn thư, đáp ứng đúng yêu cầu của phân hệ nghiệp vụ quản lý văn bản...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected_outcomes
+    attributes:
+      label: 6. Sau khi có tính năng này sẽ đạt được gì (Expected Outcomes & Value)
+      description: Mô tả cụ thể kết quả đầu ra đo đếm được hoặc sự thay đổi tích cực sau khi tính năng hoàn thành.
+      placeholder: |
+        - Đối với Người dùng: Tải được file Excel trong 1 click, tiết kiệm 100% thời gian nhập tay bảng biểu...
+        - Đối với Hệ thống: Tự động hóa quá trình tổng hợp số liệu, dữ liệu xuất ra đồng nhất với định dạng của bộ phận văn thư...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed_solution
+    attributes:
+      label: 7. Đề xuất giải pháp kỹ thuật & Luồng hoạt động (Proposed Solution & Data Flow)
+      description: Mô tả cụ thể cách tính năng mới vận hành từ Frontend xuống Backend.
+      placeholder: |
+        - Giao diện (Frontend): Thêm nút thao tác trên thanh công cụ, gọi qua service...
+        - Máy chủ (Backend): Endpoint Django xử lý dữ liệu và trả response...
+        - Dữ liệu (ORM/DB): Các trường dữ liệu hoặc model liên quan...
+    validations:
+      required: true
+
+  - type: textarea
+    id: out_of_scope
+    attributes:
+      label: 8. Phạm vi không làm (Out of Scope / Non-Goals)
+      description: Liệt kê rõ những việc TUYỆT ĐỐI KHÔNG làm trong task này để chặn overengineering (KISS/YAGNI).
+      placeholder: "Ví dụ: Chưa tích hợp chữ ký số; Chưa hỗ trợ định dạng PDF trong lần cập nhật này..."
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: acceptance_criteria
+    attributes:
+      label: 9. Tiêu chuẩn nghiệm thu kỹ thuật (Definition of Done)
+      description: Các tiêu chí bắt buộc phải pass trước khi mở PR hoặc nộp bài.
+      options:
+        - label: "Frontend Build: Chạy `pnpm --dir frontend run build` (hoặc `npm run build`) đạt 100% không lỗi cú pháp/warning."
+        - label: "Backend Check: Chạy `python backend/manage.py check` pass toàn bộ."
+        - label: "Tuân thủ i18n (Trụ cột 1): Toàn bộ text giao diện dùng `t(...)`, đã cập nhật song ngữ cả `vi` và `en` trong `translations.js`."
+        - label: "Tuân thủ Design Tokens (Trụ cột 3): Sử dụng biến CSS `var(--color-...)` và `var(--font-...)` từ `global.css`, không hardcode mã màu/pixel."
+        - label: "Tối ưu truy vấn: Chống N+1 queries trong Django ORM bằng `select_related` / `prefetch_related`."

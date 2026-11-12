@@ -1,0 +1,84 @@
+{
+  "app": {
+    "name": "Document & Records Management System",
+    "shortName": "EDMS & Records",
+    "advisor": "MSc. Tran Phuong Duy",
+    "course": "ITC Course - Django Full-Stack (MD501911)",
+    "group1Notice": "Group 1 currently in active development"
+  },
+  "common": {
+    "backToDashboard": "Back to Home",
+    "assignedUnit": "Responsible Unit",
+    "currentStatus": "Current Status",
+    "outline": "Course Outline",
+    "group1Developing": "Group 1 Currently In Development",
+    "group1Layout": "Group 1 Layout & Shell Architecture",
+    "group1DescSelf": "Group 1 is actively developing and finalizing UI components with Django Backend integration.",
+    "group1DescOther": "Group 1 is developing the shell layout & preparing API integration endpoints with {team}.",
+    "networkError": "Cannot connect to the Backend server. Please check your network connection!",
+    "apiError": "The server returned an API error (code {status}). Please try again later.",
+    "defaultDownloadFilename": "download.xlsx"
+  },
+  "header": {
+    "searchPlaceholder": "Search document number, subject, tasks...",
+    "clockTitle": "Real-time administrative clock",
+    "themeLight": "Light Mode",
+    "themeDark": "Dark Mode",
+    "language": "Language",
+    "langVi": "Tiếng Việt",
+    "langEn": "English",
+    "menuTooltip": "Hover or click here to open navigation menu",
+    "menuAria": "Open navigation menu"
+  },
+  "navigation": {
+    "dashboard": "Home",
+    "documents": "Documents",
+    "records_resources": "Dossiers & Documents",
+    "workflow": "Tasks & Signing",
+    "system": "System Utilities",
+    "ai": "AI Assistant"
+  },
+  "userMenu": {
+    "profile": "Account Profile",
+    "passwordChange": "Change Password",
+    "settings": "Settings",
+    "loginDemo": "Login Portal (2 Cases)",
+    "login": "Sign In",
+    "guest": "Not signed in",
+    "notLoggedIn": "Not signed in",
+    "pleaseLogin": "Please sign in to continue",
+    "logout": "Sign Out",
+    "logoutConfirm": "Are you sure you want to sign out from the TLBM system?",
+    "role": "System Officer",
+    "inline": {
+      "userProfile": "User Profile",
+      "guestAccountNotLoggedIn": "Guest Account (Not logged in)",
+      "guestAccount": "Guest Account"
+    }
+  },
+  "notifications": {
+    "title": "System Notifications",
+    "incoming": "Incoming",
+    "outgoing": "Outgoing",
+    "confidential": "Confidential",
+    "approvals": "Pending Approval",
+    "markAllRead": "Mark all read",
+    "viewAll": "View all",
+    "unreadCount": "{count} unread",
+    "emptyConfidential": "No new confidential documents",
+    "signingDefaultTitle": "Signing Document Request",
+    "signingSubmitterPrefix": "Submitter",
+    "signingPendingLabel": "Pending Signature"
+  },
+  "footer": {
+    "group1Notice": "Group 1 currently in active development",
+    "advisorPrefix": "Advisor",
+    "layoutLead": "Layout & Workplace Lead",
+    "copyright": "Version v2.0 • Copyright © {year} Bao Long Insurance"
+  },
+  "themeSelector": {
+    "darkMode": "Dark ({name})",
+    "lightMode": "Light ({name})",
+    "title": "Active: {active} · Click to switch to {next}"
+  }
+}

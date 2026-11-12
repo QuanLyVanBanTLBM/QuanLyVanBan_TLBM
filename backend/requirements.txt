@@ -1,0 +1,51 @@
+# Yêu cầu Python 3.12+ (Django 6.1 không hỗ trợ Python thấp hơn).
+# Cận dưới = phiên bản đã kiểm thử bằng CI; cận trên chặn nâng cấp major/minor ngoài ý muốn.
+
+# Django Core Framework
+Django>=6.1.1,<6.2
+
+# CORS Headers for Frontend Integration (React Vite / Next.js)
+django-cors-headers>=4.9,<5
+
+# Django REST Framework for API Endpoints
+djangorestframework>=3.18,<4
+
+# JWT Authentication
+djangorestframework-simplejwt>=5.5,<6
+pyotp>=2.9,<3
+qrcode>=8,<9
+
+# Filtering & Excel Export
+django-filter>=24.0
+openpyxl>=3.1.5
+
+# Utilities
+python-dotenv>=1.2,<2
+pytz>=2024.1
+
+# AI Chatbox: RAG, vector storage, document readers, and OCR
+llama-index-embeddings-openai>=0.3,<1
+llama-index-llms-openai>=0.3,<1
+numpy>=1.26,<3
+pandas>=2.2,<4
+python-pptx>=1.0,<2
+beautifulsoup4>=4.12,<5
+
+# Signing: background PDF generation and notification delivery via Redis
+celery[redis]>=5.6,<5.7
+
+# Signing: tệp PDF hoàn tất (ghép trang, in trang phê duyệt tiếng Việt)
+pypdf>=5.0,<7
+reportlab>=4.2,<5
+# PostgreSQL Database Driver
+psycopg[binary]>=3.2.0
+gunicorn>=23,<24
+
+# RAG document readers and OCR.
+pdfplumber>=0.11.10,<0.12
+python-docx>=1.2,<2
+legacy-doc==0.2.1
+llama-index-core>=0.14.25,<0.15
+pdf2image>=1.17,<2
+Pillow>=13,<14
+rapidocr-onnxruntime>=1.4.4,<2

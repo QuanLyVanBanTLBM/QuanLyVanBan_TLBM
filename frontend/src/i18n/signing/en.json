@@ -1,0 +1,15 @@
+{
+  "navigation": {
+    "approvals": "Signing"
+  },
+  "pages": {
+    "approvals": {
+      "title": "Internal signing",
+      "module": "Internal signing",
+      "assignedTeam": "Group 5 (Signing subsystem)",
+      "codeRef": "Item 5.1 · Difficulty: 1.00",
+      "isGroup1": false,
+      "desc": "Submit requests for internal signing, follow progress and receive the approval result."
+    }
+  }
+}

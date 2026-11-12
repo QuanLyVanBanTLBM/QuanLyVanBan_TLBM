@@ -1,0 +1,16 @@
+/*
+ * Badge trạng thái — chỉ của nhóm 6 (modules/work). KHÔNG đụng global.css.
+ *
+ * "Chờ xử lý" dùng màu amber. Light mode đặt hex ngay trong TaskStatusBadge.tsx
+ * (nền #FEF3C7 + chữ #78350F, tương phản ~8:1). Dark mode cần đảo tông cho đồng bộ
+ * với các pill xám/xanh/đỏ (nền đậm + chữ sáng), nhưng inline style không viết được
+ * theo theme — nên override tại đây bằng [data-theme='dark'] + !important (đè inline).
+ *
+ * Dùng lại biến amber dark có sẵn trong global.css (chỉ ĐỌC token, không sửa):
+ * dark → nền #78350F (amber-900) + chữ #FCD34D (amber-300), tương phản ~6.3:1 (≥ WCAG AA).
+ * Dùng var() nên không có hex trong file .css → không kích hoạt cảnh báo token-gate.
+ */
+[data-theme='dark'] .work-task-badge--CHO_XU_LY {
+  background: var(--color-task-badge-amber-bg) !important;
+  color: var(--color-task-badge-amber-text) !important;
+}

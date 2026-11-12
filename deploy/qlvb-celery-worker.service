@@ -1,0 +1,21 @@
+[Unit]
+Description=QLVB Celery worker
+After=network-online.target qlvb-backend.service
+Wants=network-online.target
+PartOf=qlvb-backend.service
+
+[Service]
+Type=simple
+User=qlvb
+Group=qlvb
+WorkingDirectory=/srv/qlvb/current/backend
+EnvironmentFile=/etc/qlvb/backend.env
+ExecStartPre=/usr/bin/test -n ${REDIS_URL}
+ExecStart=/srv/qlvb/current/venv/bin/celery -A config worker --loglevel=INFO --concurrency=1 --without-gossip --without-mingle --without-heartbeat
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=90s
+UMask=0027
+
+[Install]
+WantedBy=qlvb-backend.service

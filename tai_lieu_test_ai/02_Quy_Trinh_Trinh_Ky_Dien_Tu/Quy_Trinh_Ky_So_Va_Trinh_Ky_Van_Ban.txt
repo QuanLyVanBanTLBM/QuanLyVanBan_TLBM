@@ -1,0 +1,23 @@
+CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM
+Độc lập - Tự do - Hạnh phúc
+-----------------------
+
+QUY TRÌNH TRÌNH KÝ ĐIỆN TỬ VÀ KÝ SỐ VĂN BẢN TRÊN HỆ THỐNG TLBM
+Số hiệu: 35/2026/QĐ-TLBM | Ngày ban hành: 10/10/2026
+
+Chương I: LUỒNG DUYỆT VĂN BẢN ĐIỆN TỬ 4 BƯỚC
+Điều 1. Các bước thực hiện trình ký điện tử
+Quy trình xử lý hồ sơ văn bản điện tử bao gồm đúng 4 bước tiêu chuẩn:
+• Bước 1 - Soạn thảo và đính kèm: Chuyên viên nghiệp vụ soạn thảo văn bản, đính kèm tệp văn bản chuẩn (.docx hoặc .pdf) và tạo phiếu trình ký trên phần mềm TLBM, chọn danh sách người phối hợp và người duyệt.
+• Bước 2 - Thẩm định và ký nháy: Trưởng phòng chuyên môn kiểm tra tính pháp lý, thể thức và nội dung. Nếu hợp lệ, Trưởng phòng thực hiện ký nháy điện tử trong vòng 24 giờ làm việc kể từ lúc nhận phiếu.
+• Bước 3 - Phê duyệt và ký số chính thức: Lãnh đạo đơn vị (Ban Giám Đốc) xem xét toàn bộ hồ sơ và thực hiện ký số bằng USB Token hoặc Chữ ký số từ xa (Remote Signing). Hệ thống yêu cầu xác thực mã PIN bảo mật cá nhân.
+• Bước 4 - Phát hành và lưu trữ: Văn thư cơ quan kiểm tra tính nguyên vẹn của chữ ký số, lấy số hiệu chính thức, đóng dấu số điện tử của cơ quan và vào sổ công văn phát hành.
+
+Chương II: THỜI HẠN XỬ LÝ VÀ TIÊU CHUẨN KỸ THUẬT KÝ SỐ
+Điều 2. Thời hạn xử lý phiếu trình ký
+- Văn bản thông thường: Toàn bộ quá trình từ lúc lập phiếu đến khi hoàn tất ký số không quá 48 giờ làm việc.
+- Văn bản Khẩn: Thời hạn xử lý tối đa là 12 giờ làm việc.
+- Văn bản Hỏa tốc / Thượng khẩn: Xử lý ngay lập tức, tối đa không quá 04 giờ làm việc.
+
+Điều 3. Tiêu chuẩn kỹ thuật chữ ký số
+Chữ ký số hợp lệ trên hệ thống TLBM phải đáp ứng chuẩn mật mã RSA 2048-bit hoặc ECDSA P-256, hàm băm an toàn SHA-256, và có chứng thư số số hóa được cấp bởi các tổ chức chứng thực CA quốc gia hợp pháp.

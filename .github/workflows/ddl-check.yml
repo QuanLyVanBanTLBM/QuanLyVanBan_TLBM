@@ -1,0 +1,79 @@
+name: DDL Check
+
+# Kiểm tra DDL chung (Issue #53) cho mọi PR vào nhánh ddl_base_v0.
+# - PR chỉ được sửa file trong docs/common/database/.
+# - DDL phải nạp sạch trên PostgreSQL trống (ON_ERROR_STOP).
+
+on:
+  pull_request:
+    branches:
+      - ddl_base_v0
+  push:
+    branches:
+      - ddl_base_v0
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ddl-check-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DDL_FILE: docs/common/database/release_DDL.sql
+  PGHOST: localhost
+  PGPORT: '5432'
+  PGUSER: postgres
+  PGPASSWORD: postgres
+
+jobs:
+  ddl-load:
+    name: ddl-load
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=vi-VN --locale=C.UTF-8"
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: PR chỉ sửa docs/common/database/
+        if: github.event_name == 'pull_request'
+        run: |
+          outside=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -v '^docs/common/database/' || true)
+          if [ -n "$outside" ]; then
+            echo "::error::PR vào ddl_base_v0 chỉ được sửa docs/common/database/. File ngoài phạm vi:"
+            echo "$outside"
+            exit 1
+          fi
+
+      - name: Nạp DDL khi chưa có role qlvb_readonly
+        run: |
+          psql -d postgres -c "CREATE DATABASE ddl_no_role"
+          psql -d ddl_no_role -v ON_ERROR_STOP=1 -q -f "$DDL_FILE"
+
+      - name: Nạp DDL khi đã có role qlvb_readonly
+        run: |
+          psql -d postgres -c "CREATE ROLE qlvb_readonly NOLOGIN" -c "CREATE DATABASE ddl_with_role"
+          psql -d ddl_with_role -v ON_ERROR_STOP=1 -q -f "$DDL_FILE"
+
+      - name: Số liệu schema
+        run: |
+          psql -d ddl_with_role -At -v ON_ERROR_STOP=1 \
+            -c "SELECT 'bang', count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'" \
+            -c "SELECT 'enum', count(*) FROM pg_type WHERE typtype = 'e'" \
+            -c "SELECT 'quyen', count(*) FROM auth_permission" \
+            -c "SELECT 'nhom_quyen', count(*) FROM auth_group" \
+            -c "SELECT 'phan_quyen', count(*) FROM auth_group_permissions"

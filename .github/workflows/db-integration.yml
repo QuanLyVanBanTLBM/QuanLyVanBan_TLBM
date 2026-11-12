@@ -1,0 +1,139 @@
+name: DB Integration
+
+# Kiểm tra định kỳ: gộp thử mọi nhánh nhóm (1_* … 8_*) vào staging để phát hiện
+# xung đột giữa các nhóm (migration, tên bảng, phụ thuộc chéo app).
+# Gate migration/schema/test của PR và push staging nằm ở job `backend` trong ci.yml
+# (trước đây job migrate-postgres ở đây lặp lại gần như toàn bộ job đó).
+
+on:
+  schedule:
+    - cron: '0 20 * * *'  # 03:00 giờ Việt Nam
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-integration-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DJANGO_SECRET_KEY: "ci-only-not-for-production"
+  ADMIN_PASSWORD: "ci-only-not-for-production"
+  DB_ENGINE: postgresql
+  DB_HOST: localhost
+  DB_PORT: '5432'
+  DB_NAME: tlbm_ci
+  DB_USER: postgres
+  DB_PASSWORD: postgres
+  DB_READONLY_USER: qlvb_readonly
+  DB_READONLY_PASSWORD: ci-readonly-only
+  # Biến của .github/scripts/compare_schema_ddl.py và psql.
+  POSTGRES_HOST: localhost
+  POSTGRES_PORT: '5432'
+  POSTGRES_DB: tlbm_ci
+  POSTGRES_USER: postgres
+  POSTGRES_PASSWORD: postgres
+
+jobs:
+  all-branches:
+    name: all-branches
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: tlbm_ci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          # Cluster mặc định ICU vi-VN: tlbm_ci, createdb và test DB của Django kế thừa từ template1.
+          POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=vi-VN --locale=C.UTF-8"
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: staging
+          fetch-depth: 0
+
+      - name: Gộp thử mọi nhánh nhóm vào staging
+        run: |
+          git config user.name "ci"
+          git config user.email "ci@users.noreply.github.com"
+          failed=""
+          for b in $(git branch -r | sed 's/^ *//' | grep -E '^origin/[1-8]_'); do
+            if git merge --no-edit --no-ff "$b"; then
+              echo "merged $b"
+            else
+              echo "::error::Xung đột khi gộp $b vào staging"
+              git merge --abort
+              failed="$failed $b"
+            fi
+          done
+          echo "MERGE_FAILED=$failed" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements-linux-py312.lock
+
+      - name: Install dependencies
+        working-directory: backend
+        run: pip install -r requirements-linux-py312.lock
+
+      - name: Provision restricted role in disposable PostgreSQL service
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -p 5432 -U postgres -d tlbm_ci -v ON_ERROR_STOP=1 -c "CREATE ROLE qlvb_readonly LOGIN PASSWORD 'ci-readonly-only' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT"
+
+      - name: Django system check
+        working-directory: backend
+        run: python manage.py check
+
+      - name: Missing migrations check
+        working-directory: backend
+        run: python manage.py makemigrations --check --dry-run
+
+      - name: Migrate trên PostgreSQL trống
+        working-directory: backend
+        run: python manage.py migrate --noinput
+
+      - name: Dựng DB từ release_DDL.sql (kiểm chứng script)
+        run: python scripts/build_db.py --dbname tlbm_ddl_built --seed
+
+      - name: Django tests trên PostgreSQL
+        working-directory: backend
+        run: |
+          python - <<'PY'
+          import os
+          import django
+          from django.conf import settings
+          from django.test.utils import get_runner
+
+          os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
+          django.setup()
+
+          class RequiredTestRunner(get_runner(settings)):
+              def suite_result(self, suite, result, **kwargs):
+                  if not result.testsRun or result.skipped:
+                      raise SystemExit("Django test gate requires discovered tests with zero skips")
+                  return super().suite_result(suite, result, **kwargs)
+
+          raise SystemExit(bool(RequiredTestRunner(interactive=False).run_tests([])))
+          PY
+
+      - name: Báo lỗi nếu có nhánh không gộp được
+        if: always()
+        run: |
+          if [ -n "$MERGE_FAILED" ]; then
+            echo "Các nhánh xung đột với staging:$MERGE_FAILED"
+            exit 1
+          fi

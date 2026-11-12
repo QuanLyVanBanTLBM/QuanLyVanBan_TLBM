@@ -1,0 +1,93 @@
+name: Báo cáo sự cố (Bug Report)
+description: Báo cáo lỗi kỹ thuật hoặc sự cố giao diện hệ thống theo chuẩn bắt buộc
+title: "[BUG]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Vui lòng điền đầy đủ và chính xác các thông tin kỹ thuật bên dưới. Tuyệt đối không sử dụng tên tài khoản cá nhân hoặc dữ liệu thử nghiệm cục bộ; quy chuẩn hóa về danh từ chung.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: 1. Tóm tắt Issue (Summary)
+      description: Mô tả ngắn gọn, súc tích bản chất của sự cố trong 1 - 2 câu.
+      placeholder: "Ví dụ: Khi người dùng gửi form tạo văn bản mới, hệ thống phản hồi lỗi 500 do thiếu validation trường ngày ban hành."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 2. Các bước tái hiện (Steps to Reproduce)
+      description: Liệt kê các bước cụ thể để tái hiện lại sự cố.
+      value: |
+        1. Bước 1: 
+        2. Bước 2: 
+        3. Bước 3: 
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: reproduction_status
+    attributes:
+      label: 3. Trạng thái tái hiện
+      description: Xác nhận mức độ tái hiện của sự cố.
+      options:
+        - label: Đã tái hiện thành công (BẮT BUỘC đính kèm bằng chứng bên dưới)
+        - label: Chưa tái hiện được / Lỗi không liên tục (Flaky)
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 3.1. Bằng chứng xác thực (Evidence)
+      description: BẮT BUỘC cung cấp nếu đã tick chọn "Đã tái hiện thành công". Bao gồm log console, error stack trace, mã trạng thái HTTP, response payload hoặc kéo thả ảnh chụp màn hình/video.
+      placeholder: Dán log console, trace lỗi hoặc kéo thả hình ảnh minh chứng vào đây...
+    validations:
+      required: false
+
+  - type: textarea
+    id: technical_impact
+    attributes:
+      label: 4. Hậu quả về Kỹ thuật (Technical Impact)
+      description: Tác động đến cơ sở dữ liệu, rò rỉ bộ nhớ, race condition, crash server, tính toàn vẹn dữ liệu...
+      placeholder: "Ví dụ: Gây khóa bảng database kéo dài, phát sinh N+1 query làm quá tải bộ nhớ đệm..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: user_impact
+    attributes:
+      label: 5. Hậu quả đến Người dùng (User Impact)
+      description: Người dùng bị chặn thao tác nào, dữ liệu hiển thị sai lệch ra sao, trải nghiệm bị gián đoạn thế nào...
+      placeholder: "Ví dụ: Người dùng không thể nộp biểu mẫu, màn hình bị trắng, mất toàn bộ dữ liệu vừa nhập..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: ui_symptoms
+    attributes:
+      label: 6.1. Biểu hiện trên UI
+      description: Giao diện bị đơ, vỡ khung layout, nút bấm không phản hồi click, thông báo toast không hiển thị...
+      placeholder: Mô tả cụ thể biểu hiện bất thường trên màn hình...
+    validations:
+      required: true
+
+  - type: textarea
+    id: code_cause
+    attributes:
+      label: 6.2. Nguyên nhân trong Code
+      description: Phân tích nguyên nhân logic bị sai, hàm nào, file:dòng nào, unhandled exception nào...
+      placeholder: "Ví dụ: Tại frontend/src/services/api.js dòng 42, chưa xử lý ngoại lệ khi response trả về mã lỗi 401..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed_fix
+    attributes:
+      label: 7. Hướng khắc phục đề xuất (Proposed Fix)
+      description: Giải pháp xử lý kỹ thuật tối giản theo KISS/YAGNI, không gây side-effect sang các phân hệ khác.
+      placeholder: Đề xuất phương án sửa đổi mã nguồn ngắn gọn và an toàn nhất...
+    validations:
+      required: true

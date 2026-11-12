@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ subject }}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: #e8efe9;
+      font-family: 'Georgia', serif;
+      padding: 32px 16px;
+      color: #2c3e35;
+    }
+    .botanical-card {
+      max-width: 590px;
+      margin: 0 auto;
+      background: #fcfbf7;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1.5px solid #b7cbbd;
+      box-shadow: 0 16px 36px rgba(44, 62, 53, 0.1);
+    }
+    .botanical-top {
+      background: linear-gradient(180deg, #dce8df 0%, #fcfbf7 100%);
+      padding: 36px 36px 20px;
+      text-align: center;
+    }
+    .leaf-svg {
+      margin-bottom: 10px;
+    }
+    .org-subtitle {
+      font-family: Arial, sans-serif;
+      font-size: 11px;
+      letter-spacing: 2.2px;
+      text-transform: uppercase;
+      color: #527361;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .botanical-top h1 {
+      font-size: 32px;
+      color: #264635;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .botanical-top .date-line {
+      font-size: 15px;
+      color: #8c6d3f;
+      font-style: italic;
+    }
+    .staff-frame {
+      margin: 18px 36px 22px;
+      background: #ffffff;
+      border: 1px solid #d5e2d8;
+      border-radius: 12px;
+      padding: 16px 22px;
+      display: flex;
+      justify-content: space-around;
+      text-align: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .sf-item span {
+      display: block;
+      font-family: Arial, sans-serif;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #6b8577;
+      margin-bottom: 4px;
+    }
+    .sf-item strong {
+      font-size: 15px;
+      color: #264635;
+    }
+    .botanical-body {
+      padding: 4px 38px 36px;
+    }
+    .botanical-body p {
+      font-size: 15.5px;
+      line-height: 1.8;
+      color: #354a3f;
+      margin-bottom: 16px;
+      text-align: justify;
+    }
+    .btn-sage {
+      display: inline-block;
+      background: #3d634f;
+      color: #ffffff;
+      text-decoration: none;
+      padding: 12px 28px;
+      border-radius: 30px;
+      font-family: Arial, sans-serif;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.6px;
+    }
+    .botanical-footer {
+      border-top: 1px solid #e2ebe4;
+      padding: 20px 38px;
+      background: #f4f8f5;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 14px;
+      color: #264635;
+    }
+  </style>
+</head>
+<body>
+  <div class="botanical-card">
+    <div class="botanical-top">
+      <div class="leaf-svg">
+        <svg width="70" height="36" viewBox="0 0 70 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M5 30 Q35 10 65 30" stroke="#8c6d3f" stroke-width="1.5" fill="none"/>
+          <ellipse cx="22" cy="18" rx="8" ry="4" transform="rotate(-25 22 18)" fill="#6b967d"/>
+          <ellipse cx="35" cy="14" rx="8" ry="4" fill="#527361"/>
+          <ellipse cx="48" cy="18" rx="8" ry="4" transform="rotate(25 48 18)" fill="#6b967d"/>
+        </svg>
+      </div>
+      <div class="org-subtitle">{{ organization_name }}</div>
+      <h1>Chúc Mừng Sinh Nhật</h1>
+      <div class="date-line">Ngày sinh nhật an lành • <strong>{{ birthday_date }}</strong></div>
+    </div>
+
+    <div class="staff-frame">
+      <div class="sf-item">
+        <span>Người nhận</span>
+        <strong>{{ employee_name }}</strong>
+      </div>
+      <div class="sf-item">
+        <span>Chức vụ</span>
+        <strong>{{ position }}</strong>
+      </div>
+      <div class="sf-item">
+        <span>Phòng ban</span>
+        <strong>{{ department }}</strong>
+      </div>
+    </div>
+
+    <div class="botanical-body">
+      {% if chuc_danh %}<p>Chức danh: <strong>{{ chuc_danh }}</strong></p>{% endif %}
+      {{ greeting|linebreaks }}
+
+      <div style="text-align:center; margin: 24px 0 8px;">
+        {% if birthday_card_url %}<a href="{{ birthday_card_url }}" class="btn-sage">🌿 Mở Thiệp Chúc Mừng Sinh Nhật</a>{% endif %}
+      </div>
+    </div>
+
+    <div class="botanical-footer">
+      <div>
+        <span style="color:#6b8577; font-size:13px;">Thân mến,</span><br>
+        <strong>Ban Lãnh đạo & Tập thể <span>{{ brand_name }}</span></strong>
+      </div>
+      <div style="color:#8c6d3f; font-size:18px;">✿ ❀ ✿</div>
+    </div>
+  </div>
+</body>
+</html>
