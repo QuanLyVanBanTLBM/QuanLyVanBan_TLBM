@@ -62,6 +62,7 @@ urlpatterns = [
     path("health/ai", ai_views.ai_health),
     path("api/health/ready/", ai_views.readiness),
     path("api/ai/chat", ai_views.chat),
+    path("api/ai/chat/stream", ai_views.chat_stream),
     path("api/ai/upload", ai_views.upload_sync),
     path("api/ai/upload/async", ai_views.upload_async),
     path("api/ai/upload/progress/<str:job_id>", ai_views.upload_progress),
