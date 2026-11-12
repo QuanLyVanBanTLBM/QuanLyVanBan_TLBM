@@ -97,15 +97,20 @@ class VanBanNhapTayLuongKyTests(KyBase):
         mail.outbox.clear()
         with self.captureOnCommitCallbacks(execute=True):
             self.assertEqual(self.gui(self.pk, khoa="gui-tay").status_code, 200)
-        self.assertIn("Văn bản trình ký: Kế hoạch đào tạo.", mail.outbox[0].body)
+        ma = SigningRequest.objects.get(pk=self.pk).so_hieu_van_ban
+        self.assertRegex(ma, r"^HS-\d{4}-\d{6}$")
+        self.assertIn(f"Văn bản trình ký: {ma} — Kế hoạch đào tạo.", mail.outbox[0].body)
         tb = SigningNotification.objects.get(trinh_ky_id=self.pk, nguoi_nhan=self.ky1, kenh=enums.KenhThongBao.IN_APP)
-        self.assertEqual(thong_bao_service.noi_dung(tb)[2], "Kế hoạch đào tạo")
+        self.assertEqual(thong_bao_service.noi_dung(tb)[2], f"{ma} — Kế hoạch đào tạo")
 
         r = self.hanh_dong(self.ky1, "tu-choi", ly_do_tu_choi="Chưa đủ")
         self.assertEqual(r.status_code, 200, r.data)
         r = self.c.post(f"{BASE}/{self.pk}/trinh-lai/", {}, format="json", HTTP_IDEMPOTENCY_KEY="trinh-lai-tay")
         self.assertEqual(r.status_code, 201, r.data)
         self.assertEqual((r.data["van_ban_id"], r.data["van_ban"]["trich_yeu"]), (None, "Kế hoạch đào tạo"))
+        nam = timezone.localtime(SigningRequest.objects.get(pk=r.data["id"]).created_at).year
+        self.assertEqual(r.data["so_hieu_van_ban"], f"HS-{nam}-{r.data['id']:06d}")
+        self.assertNotEqual(r.data["so_hieu_van_ban"], ma)  # hồ sơ trình lại là hồ sơ mới, có mã riêng
 
 
 class ChucVuCauHinhTests(TrinhKyBase):
