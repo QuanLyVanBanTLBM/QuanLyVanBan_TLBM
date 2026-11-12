@@ -1,3 +1,5 @@
+from unittest import mock
+
 from django.contrib.auth import get_user_model
 from django.test import SimpleTestCase, TestCase
 from rest_framework import serializers
@@ -20,7 +22,9 @@ def _call(exc):
     view = _RaiseView.as_view(exc=exc)
     request = APIRequestFactory().get("/x/")
     force_authenticate(request, user=User(username="u"))
-    return view(request)
+    # Bài này chỉ kiểm định dạng lỗi, không kiểm quyền truy cập phân hệ (có test riêng, cần DB).
+    with mock.patch("signing.permissions.yeu_cau_truy_cap_trinh_ky"):
+        return view(request)
 
 
 class ErrorFormatTests(SimpleTestCase):

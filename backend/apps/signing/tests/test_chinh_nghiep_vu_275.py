@@ -144,7 +144,8 @@ class CanBoTheoChucVuTests(TrinhKyBase):
         self.assertEqual((r.data["count"], r.data["results"]), (0, []))  # không có ai: giao diện cảnh báo
 
     def test_requires_process_permission_and_valid_params(self):
-        self.assertEqual(self.client_cua(self.la).get(self.URL, {"chuc_vu": self.cv.pk}).status_code, 403)
+        nguoi_la = User.objects.create_user("nguoi_la_275")  # không có quyền nào của phân hệ
+        self.assertEqual(self.client_cua(nguoi_la).get(self.URL, {"chuc_vu": self.cv.pk}).status_code, 403)
         c = self.client_cua(User.objects.get(pk=self.xem.pk))
         for sai in ({}, {"chuc_vu": "x"}, {"chuc_vu": self.cv.pk, "don_vi": "y"}):
             r = c.get(self.URL, sai)
