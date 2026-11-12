@@ -136,8 +136,14 @@ class TepHoanTatTests(HoanTatBase):
         cap_quyen(self.la, "view_signing_audit")
         self.assertEqual(self.client_cua(User.objects.get(pk=self.la.pk)).get(
             f"{BASE}/{self.pk}/tep-hoan-tat/").status_code, 200)
-        self.assertEqual(self.client_cua(User.objects.create_user("x")).get(
+        self.assertEqual(self.client_cua(self.nguoi_ngoai_co_quyen_xem()).get(
             f"{BASE}/{self.pk}/tep-hoan-tat/").status_code, 404)
+
+
+    def nguoi_ngoai_co_quyen_xem(self):
+        user = User.objects.create_user("x")
+        cap_quyen(user, "view_trinhky")
+        return User.objects.get(pk=user.pk)
 
 
 class LoiVaThuLaiTests(HoanTatBase):

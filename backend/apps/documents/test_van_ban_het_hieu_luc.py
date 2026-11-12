@@ -59,8 +59,10 @@ class VanBanHetHieuLucTest(TestCase):
 
     def assert_sees_expired(self, user, expected):
         for loai, (expired, active) in self.docs.items():
-            self.assertTrue(self.visible(user, loai, active), (user.username, loai))
-            self.assertTrue(la_nguoi_xem_duoc(user, active), (user.username, loai))
+            # Tài khoản không nhóm, không quyền nào: không có view_* nên không thấy cả văn bản nội bộ còn hiệu lực.
+            active_visible = user is not self.no_group
+            self.assertEqual(self.visible(user, loai, active), active_visible, (user.username, loai))
+            self.assertEqual(la_nguoi_xem_duoc(user, active), active_visible, (user.username, loai))
             self.assertEqual(self.visible(user, loai, expired), expected, (user.username, loai))
             self.assertEqual(la_nguoi_xem_duoc(user, expired), expected, (user.username, loai))
 

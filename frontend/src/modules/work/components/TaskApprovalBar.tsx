@@ -1,15 +1,13 @@
 import React from 'react';
 import { t, useTranslation } from '@i18n/translate';
-import { FROZEN_STATUSES, ParticipantRole, TaskDetail } from '../types/task';
+import { FROZEN_STATUSES, TaskDetail } from '../types/task';
 import { isoDateTimeToDisplay } from './DateInput';
 
 /**
- * Thanh duyệt cuối trang chi tiết, chỉ dành cho người tạo, chủ trì và chỉ đạo.
+ * Thanh duyệt cuối trang chi tiết, chỉ hiện cho người có quyền duyệt (approve_congviec), quản trị hệ thống hoặc người gia hạn được.
  * Chờ duyệt → nút "Duyệt hoàn thành"; Hoàn thành → nút "Hủy duyệt".
  * Trạng thái khác thì chỉ hiện một dòng giải thích khi nào duyệt được.
  */
-
-const APPROVER_ROLES: ParticipantRole[] = ['NGUOI_TAO', 'CHU_TRI', 'CHI_DAO'];
 
 interface TaskApprovalBarProps {
   task: TaskDetail;
@@ -28,11 +26,10 @@ function waitingReason(task: TaskDetail): string {
 
 export default function TaskApprovalBar({ task, busy, onApprove, onUnapprove, onExtend }: TaskApprovalBarProps) {
   const { t } = useTranslation();
-  const { canApprove, canUnapprove } = task.permissions;
+  const { canApprove, canUnapprove, canReview } = task.permissions;
   const canExtend = Boolean(task.permissions.canExtend && onExtend);
-  const isApprover = task.myRoles.some((role) => APPROVER_ROLES.includes(role));
 
-  if (!canApprove && !canUnapprove && !isApprover && !canExtend) return null;
+  if (!canApprove && !canUnapprove && !canReview && !canExtend) return null;
 
   const buttonStyle = (color: string, subtle: string, border: string): React.CSSProperties => ({
     display: 'inline-flex',

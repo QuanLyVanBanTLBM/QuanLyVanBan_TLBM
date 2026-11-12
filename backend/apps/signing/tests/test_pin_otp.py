@@ -13,6 +13,8 @@ from signing.errors import SigningError
 from signing.models import SigningAuditLog, SigningPinCredential, SigningPinOtpChallenge
 from signing.services import pin, pin_otp
 
+from .helpers import cap_quyen
+
 User = get_user_model()
 PIN_CU = "482739"
 PIN_MOI = "593817"
@@ -136,6 +138,8 @@ class PinOtpTests(TestCase):
 
     @override_settings(DEBUG=False)
     def test_http_pin_setup_and_otp_confirmation_are_allowed_when_debug_is_disabled(self):
+        cap_quyen(self.user, "sign_trinhky")  # người ký: có quyền thuộc phân hệ Trình ký nên dùng được API PIN
+        self.user = User.objects.get(pk=self.user.pk)
         client = APIClient()
         client.force_authenticate(self.user)
         send = self.gui_otp_gia_lap()

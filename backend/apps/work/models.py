@@ -138,6 +138,10 @@ class ParticipantRole(models.TextChoices):
 # Người được duyệt / hủy duyệt: người tạo, chủ trì, chỉ đạo.
 APPROVER_ROLES = {ROLE_CREATOR, ParticipantRole.CHU_TRI, ParticipantRole.CHI_DAO}
 
+# Người nhận việc (chủ trì, tham gia): không được sửa, xóa công việc được giao, kể cả khi có change/delete_congviec.
+# Chỉ xem, nộp bằng chứng và ghi ý kiến.
+RECIPIENT_ROLES = {ParticipantRole.CHU_TRI, ParticipantRole.THAM_GIA}
+
 
 class AttachmentKind(models.TextChoices):
     GIAO_VIEC = "GIAO_VIEC", "Đính kèm lúc giao việc"
@@ -433,15 +437,30 @@ class Task(models.Model):
     # View và serializer CHỈ dùng các hàm này, không tự viết lại điều kiện.
     # ----------------------------------------------------------------------
 
+    def _can_manage(self, user, permission_code):
+        """
+        Sửa, xóa: chỉ theo mã quyền (change_congviec, delete_congviec) hoặc quản trị hệ thống; không còn ngoại lệ
+        theo vai trò người giao hay chủ trì. Người nhận việc (chủ trì, tham gia) không sửa, xóa việc được giao cho mình
+        dù có mã quyền.
+        """
+        if user is None or not user.is_authenticated:
+            return False
+        if is_system_admin(user):
+            return True
+        return user_has_task_permission(user, permission_code) and not self.roles_of(user) & RECIPIENT_ROLES
+
+    def _can_approve(self, user):
+        """Duyệt, hủy duyệt: chỉ theo approve_congviec hoặc quản trị hệ thống."""
+        if user is None or not user.is_authenticated:
+            return False
+        return is_system_admin(user) or user_has_task_permission(user, PERM_APPROVE_TASK)
+
     def check_edit(self, user):
-        roles = self.roles_of(user)
-        if not (
-            roles & {ROLE_CREATOR, ParticipantRole.CHU_TRI}
-            or user_has_task_permission(user, PERM_CHANGE_TASK)
-        ):
+        if not self._can_manage(user, PERM_CHANGE_TASK):
             raise TaskRuleError(
-                "Chỉ người tạo, người chủ trì hoặc người có quyền 'Sửa công việc' mới được sửa công việc này. "
-                "Nếu cần thay đổi, hãy liên hệ người tạo hoặc người chủ trì."
+                "Chỉ quản trị hệ thống hoặc người có quyền 'Sửa công việc' (không phải người nhận việc) "
+                "mới được sửa công việc này. Người nhận việc chỉ được xem, nộp kết quả và ghi ý kiến. "
+                "Nếu cần thay đổi, hãy liên hệ người có quyền sửa hoặc người giao việc."
             )
         status = self.get_status()
         if status == TaskStatus.CHO_DUYET:
@@ -485,13 +504,10 @@ class Task(models.Model):
             )
 
     def check_delete(self, user):
-        if not (
-            self.roles_of(user) & {ROLE_CREATOR, ParticipantRole.CHU_TRI}
-            or user_has_task_permission(user, PERM_DELETE_TASK)
-        ):
+        if not self._can_manage(user, PERM_DELETE_TASK):
             raise TaskRuleError(
-                "Chỉ người tạo, người chủ trì hoặc người có quyền 'Xóa công việc' mới được xóa công việc này. "
-                "Nếu cần xóa, hãy liên hệ người tạo hoặc người chủ trì."
+                "Chỉ quản trị hệ thống hoặc người có quyền 'Xóa công việc' (không phải người nhận việc) "
+                "mới được xóa công việc này. Nếu cần xóa, hãy liên hệ quản trị hệ thống."
             )
 
     def can_mark_opened(self, user):
@@ -552,13 +568,10 @@ class Task(models.Model):
             )
 
     def check_approve(self, user):
-        if not (
-            self.roles_of(user) & APPROVER_ROLES
-            or user_has_task_permission(user, PERM_APPROVE_TASK)
-        ):
+        if not self._can_approve(user):
             raise TaskRuleError(
-                "Chỉ người tạo, người chủ trì, người chỉ đạo hoặc người có quyền 'Duyệt công việc' "
-                "mới được duyệt công việc. Hãy báo một trong những người này vào duyệt."
+                "Chỉ quản trị hệ thống hoặc người có quyền 'Duyệt công việc' mới được duyệt công việc. "
+                "Hãy báo người có quyền duyệt vào duyệt."
             )
         status = self.get_status()
         if status == TaskStatus.HOAN_THANH:
@@ -576,13 +589,10 @@ class Task(models.Model):
             )
 
     def check_unapprove(self, user):
-        if not (
-            self.roles_of(user) & APPROVER_ROLES
-            or user_has_task_permission(user, PERM_APPROVE_TASK)
-        ):
+        if not self._can_approve(user):
             raise TaskRuleError(
-                "Chỉ người tạo, người chủ trì, người chỉ đạo hoặc người có quyền 'Duyệt công việc' "
-                "mới được hủy duyệt công việc. Hãy báo một trong những người này nếu cần thu hồi kết quả duyệt."
+                "Chỉ quản trị hệ thống hoặc người có quyền 'Duyệt công việc' mới được hủy duyệt công việc. "
+                "Hãy báo người có quyền duyệt nếu cần thu hồi kết quả duyệt."
             )
         if self.get_status() != TaskStatus.HOAN_THANH:
             raise TaskRuleError(

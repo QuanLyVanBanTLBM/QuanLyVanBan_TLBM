@@ -9,7 +9,7 @@ describe('filterModulesByPermission', () => {
   it('ẩn mục cần quyền xem khi tài khoản không có quyền, giữ mục backend cho mọi người đăng nhập', () => {
     const pages = pagesOf([]);
     expect(pages).toEqual(expect.arrayContaining(['dashboard', 'tasks', 'documents_incoming', 'documents_outgoing']));
-    for (const hidden of ['records', 'record_types', 'resources', 'birthdays', 'meetings', 'organizations', 'positions', 'employees', 'roles', 'ai_assistant']) {
+    for (const hidden of ['records', 'record_types', 'resources', 'birthdays', 'meetings', 'organizations', 'positions', 'employees', 'roles', 'ai_assistant', 'approvals']) {
       expect(pages).not.toContain(hidden);
     }
   });
@@ -17,6 +17,12 @@ describe('filterModulesByPermission', () => {
   it('chỉ hiện Phân Quyền & Vai Trò khi có view_nhomquyen', () => {
     expect(pagesOf(['view_nhomquyen'])).toContain('roles');
     expect(pagesOf(['view_hoso'])).not.toContain('roles');
+  });
+
+  it('chỉ hiện Trình Ký khi có view_trinhky', () => {
+    expect(pagesOf(['view_trinhky'])).toContain('approvals');
+    expect(pagesOf(['view_hoso'])).not.toContain('approvals');
+    expect(pagesOf([])).not.toContain('approvals');
   });
 
   it('hiện mục tương ứng khi có đúng mã quyền xem', () => {
