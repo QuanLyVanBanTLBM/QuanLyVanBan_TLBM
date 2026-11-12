@@ -222,3 +222,5 @@ Trên môi trường deploy `/srv/qlvb`, workflow `.github/workflows/birthday-em
 
 Workflow lịch chạy trên nhánh mặc định của repository. Nếu tác vụ thất bại, kiểm tra log riêng trên máy chủ và nhật ký email trong ứng dụng; xác nhận máy chủ có SMTP qua `EMAIL_HOST` và `DEFAULT_FROM_EMAIL`.
 
+Để gửi bù trên staging cho một tài khoản đủ điều kiện, chọn **Run workflow** trong **Birthday email scheduler**, nhập tên đăng nhập và ngày sinh nhật theo `YYYY-MM-DD`. Tác vụ dùng luồng gửi tự động, giữ cơ chế chống gửi trùng và trả lỗi nếu tài khoản chưa có bản ghi gửi thành công cho ngày đó.
+
