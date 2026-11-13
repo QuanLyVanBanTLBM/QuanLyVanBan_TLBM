@@ -8,6 +8,7 @@ urlpatterns = [
     path("day/", views.day_birthdays_api, name="day_birthdays"),
     path("card/", views.birthday_card_api, name="birthday_card"),
     path("logs/", views.birthday_email_logs_api, name="logs"),
+    path("logs/resend/", manual_views.resend_api, name="resend_email"),
     path("logs/<int:log_id>/retry/", manual_views.retry_api, name="retry_email"),
     path("recipients/", manual_views.recipients_api, name="manual_recipients"),
     path("templates/", manual_views.templates_api, name="email_templates"),

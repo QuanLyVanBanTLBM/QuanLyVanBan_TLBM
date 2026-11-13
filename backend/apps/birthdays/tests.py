@@ -352,6 +352,56 @@ class BirthdaySystemTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.json()["error"], "birthdays.messages.invalidDate")
 
+    def test_birthday_email_logs_lists_unprocessed_and_unknown_rows(self):
+        self.client.force_authenticate(user=self.emp_admin)
+        target_date = date(2026, 5, 20)
+        leadership_position = Position.objects.create(
+            display_order=Position.get_next_display_order(), name="Giám đốc Ban",
+        )
+        unprocessed_leader = Employee.objects.create_user(
+            username="birthday-unprocessed-leader",
+            password="password123",
+            email="unprocessed-leader@example.test",
+            ho_ten="Lãnh đạo chưa xử lý",
+            ngay_sinh=date(1980, 5, 20),
+            don_vi=self.don_vi,
+            chuc_vu=leadership_position,
+            is_active=True,
+        )
+        unknown_log = BirthdayEmailLog.objects.create(
+            employee=self.emp_staff,
+            sent_date=target_date,
+            sent_at=timezone.now(),
+            recipient_email=self.emp_staff.email,
+            subject="Thư sinh nhật",
+            trang_thai=BirthdayEmailStatus.FAILED,
+            delivery_uncertain=True,
+        )
+
+        response = self.client.get(reverse("birthdays:logs"), {"date": target_date.isoformat()})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        rows = response.json()["logs"]
+        unprocessed_row = next(row for row in rows if row["employee_id"] == unprocessed_leader.pk)
+        unknown_row = next(row for row in rows if row["id"] == unknown_log.pk)
+        self.assertIsNone(unprocessed_row["id"])
+        self.assertEqual(unprocessed_row["trang_thai"], "NOT_PROCESSED")
+        self.assertEqual(unprocessed_row["sent_date_iso"], target_date.isoformat())
+        self.assertEqual(unknown_row["trang_thai"], "UNKNOWN")
+
+        filtered = self.client.get(
+            reverse("birthdays:logs"),
+            {"date": target_date.isoformat(), "trang_thai": "NOT_PROCESSED"},
+        )
+        self.assertEqual(filtered.status_code, status.HTTP_200_OK)
+        self.assertIn(unprocessed_leader.pk, {row["employee_id"] for row in filtered.json()["logs"]})
+
+        unknowns = self.client.get(
+            reverse("birthdays:logs"),
+            {"date": target_date.isoformat(), "trang_thai": "UNKNOWN"},
+        )
+        self.assertEqual(unknowns.status_code, status.HTTP_200_OK)
+        self.assertEqual([row["id"] for row in unknowns.json()["logs"]], [unknown_log.pk])
+
     def test_public_birthday_card_api_returns_only_signed_card_fields(self):
         token = generate_birthday_card_token(self.emp_staff)
 

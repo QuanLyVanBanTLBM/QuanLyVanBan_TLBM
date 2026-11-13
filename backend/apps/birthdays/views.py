@@ -13,13 +13,21 @@ from rest_framework.response import Response
 from authorization.permissions import is_system_admin, require_permission
 from accounts.models import Employee
 from .models import BirthdayEmailLog, BirthdayEmailStatus
-from .services import can_retry_manually, is_birthday_on_date, load_birthday_card_token, serialize_staff_birthday
+from .services import (
+    can_retry_manually,
+    is_birthday_on_date,
+    load_birthday_card_token,
+    retry_block_reason,
+    serialize_staff_birthday,
+)
 
 VIETNAM_TIME_ZONE = ZoneInfo("Asia/Ho_Chi_Minh")
 
 
 def serialize_email_log(log: BirthdayEmailLog) -> dict:
     can_retry = log.employee.is_active and can_retry_manually(log)
+    delivery_snapshot = log.delivery_snapshot or {}
+    visible_status = "UNKNOWN" if log.delivery_uncertain else log.trang_thai
     return {
         "id": log.id,
         "employee_id": log.employee_id,
@@ -27,21 +35,55 @@ def serialize_email_log(log: BirthdayEmailLog) -> dict:
         "position": log.employee.chuc_vu.name if log.employee.chuc_vu else "",
         "department": log.employee.don_vi.ten if log.employee.don_vi else "",
         "sent_date": log.sent_date.strftime("%d/%m/%Y"),
+        "sent_date_iso": log.sent_date.isoformat(),
         "sent_at": timezone.localtime(log.sent_at, VIETNAM_TIME_ZONE).strftime("%d/%m/%Y %H:%M:%S") if log.sent_at else None,
         "recipient_email": log.recipient_email,
         "subject": log.subject,
         "card_template": log.card_template,
-        "trang_thai": log.trang_thai,
-        "trang_thai_display": log.get_trang_thai_display(),
+        "trang_thai": visible_status,
+        "trang_thai_display": "Kết quả chưa xác định" if visible_status == "UNKNOWN" else log.get_trang_thai_display(),
         "retry_count": log.retry_count,
         "error_message": log.error_message or "",
         "smtp_response_code": log.smtp_response_code or "",
         "delivery_source": log.delivery_source,
         "delivery_uncertain": log.delivery_uncertain,
-        "template_version": (log.delivery_snapshot or {}).get("template_version"),
+        "delivery_context": delivery_snapshot.get("trigger_source") or (
+            "RETRY" if log.last_operator and log.delivery_source != "MANUAL" else None
+        ),
+        "template_version": delivery_snapshot.get("template_version"),
         "last_operator": log.last_operator,
         "can_retry": can_retry,
-        "current_recipient": (log.employee.email or "").strip() if can_retry else None,
+        "current_recipient": (log.employee.email or "").strip(),
+        "retry_block_reason": retry_block_reason(log),
+    }
+
+
+def serialize_not_processed_employee(employee: Employee, target_date: date) -> dict:
+    return {
+        "id": None,
+        "employee_id": employee.pk,
+        "employee_name": employee.ho_ten,
+        "position": employee.chuc_vu.name if employee.chuc_vu else "",
+        "department": employee.don_vi.ten if employee.don_vi else "",
+        "sent_date": target_date.strftime("%d/%m/%Y"),
+        "sent_date_iso": target_date.isoformat(),
+        "sent_at": None,
+        "recipient_email": (employee.email or "").strip(),
+        "subject": "",
+        "card_template": "",
+        "trang_thai": "NOT_PROCESSED",
+        "trang_thai_display": "NOT_PROCESSED",
+        "retry_count": 0,
+        "error_message": "",
+        "smtp_response_code": "",
+        "delivery_source": "AUTO",
+        "delivery_context": None,
+        "delivery_uncertain": False,
+        "template_version": None,
+        "last_operator": None,
+        "can_retry": False,
+        "current_recipient": (employee.email or "").strip(),
+        "retry_block_reason": None,
     }
 
 
@@ -255,7 +297,7 @@ def birthday_email_logs_api(request):
             )
 
         start, end = _local_day_bounds(selected_date)
-        logs = logs.filter(sent_at__gte=start, sent_at__lt=end)
+        logs = logs.filter(Q(sent_at__gte=start, sent_at__lt=end) | Q(sent_date=selected_date))
     elif month_raw or year_raw:
         # Keep the existing month/year API contract, but filter by send time rather than birthday date.
         if month_raw:
@@ -281,27 +323,68 @@ def birthday_email_logs_api(request):
     else:
         selected_date = timezone.localdate(timezone=VIETNAM_TIME_ZONE)
         start, end = _local_day_bounds(selected_date)
-        logs = logs.filter(sent_at__gte=start, sent_at__lt=end)
+        logs = logs.filter(Q(sent_at__gte=start, sent_at__lt=end) | Q(sent_date=selected_date))
 
+    normalized_trang_thai = None
     if trang_thai_raw:
         normalized_trang_thai = trang_thai_raw.upper()
-        if normalized_trang_thai not in BirthdayEmailStatus.values:
+        if normalized_trang_thai not in (*BirthdayEmailStatus.values, "NOT_PROCESSED", "UNKNOWN"):
             return Response(
                 {"success": False, "error": "birthdays.messages.invalidStatus"},
                 status=400,
             )
-        logs = logs.filter(trang_thai=normalized_trang_thai)
+        if normalized_trang_thai == "NOT_PROCESSED":
+            logs = logs.none()
+        elif normalized_trang_thai == "UNKNOWN":
+            logs = logs.filter(delivery_uncertain=True)
+        else:
+            logs = logs.filter(trang_thai=normalized_trang_thai)
 
-    paginator = Paginator(logs, 15)
-    page_obj = paginator.get_page(request.GET.get("page", 1))
+    if selected_date is None:
+        paginator = Paginator(logs, 15)
+        page_obj = paginator.get_page(request.GET.get("page", 1))
+        page_logs = [serialize_email_log(log) for log in page_obj]
+        total = paginator.count
+        page_number = page_obj.number
+        total_pages = paginator.num_pages
+    else:
+        rows = [
+            (log.sent_at or datetime.min.replace(tzinfo=VIETNAM_TIME_ZONE), log.pk, serialize_email_log(log))
+            for log in logs
+        ]
+        if normalized_trang_thai in (None, "NOT_PROCESSED"):
+            logged_employee_ids = set(
+                BirthdayEmailLog.objects.filter(sent_date=selected_date)
+                .values_list("employee_id", flat=True)
+            )
+            employees = Employee.objects.exclude(ngay_sinh__isnull=True).select_related("don_vi", "chuc_vu")
+            leap_year_strategy = getattr(settings, "BIRTHDAY_LEAP_DAY_STRATEGY", "FEB_28")
+            for employee in employees:
+                if employee.pk not in logged_employee_ids and is_birthday_on_date(
+                    employee.ngay_sinh,
+                    selected_date,
+                    leap_year_strategy=leap_year_strategy,
+                ):
+                    rows.append((
+                        datetime.min.replace(tzinfo=VIETNAM_TIME_ZONE),
+                        -employee.pk,
+                        serialize_not_processed_employee(employee, selected_date),
+                    ))
+        rows.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        paginator = Paginator(rows, 15)
+        page_obj = paginator.get_page(request.GET.get("page", 1))
+        page_logs = [item[2] for item in page_obj.object_list]
+        total = paginator.count
+        page_number = page_obj.number
+        total_pages = paginator.num_pages
 
     return Response({
         "success": True,
         "date": selected_date.isoformat() if selected_date else None,
-        "total": paginator.count,
-        "page": page_obj.number,
-        "total_pages": paginator.num_pages,
-        "logs": [serialize_email_log(log) for log in page_obj],
+        "total": total,
+        "page": page_number,
+        "total_pages": total_pages,
+        "logs": page_logs,
     })
 
 

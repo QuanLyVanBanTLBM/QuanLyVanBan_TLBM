@@ -9,7 +9,7 @@ from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.core.mail import send_mail
 from django.core.validators import validate_email
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 from django.template.loader import render_to_string
 from django.utils import timezone
 
@@ -198,9 +198,15 @@ def _email_log(employee: Employee, sent_date: date, recipient: str, subject: str
         locked_employee = Employee.objects.select_for_update().filter(pk=employee.pk, is_active=True).first()
         if not locked_employee or other_birthday_logs(employee.pk, sent_date).exists():
             return None
+        if BirthdayEmailLog.objects.filter(
+            employee=locked_employee,
+            sent_date=sent_date,
+        ).exclude(delivery_source=BirthdayEmailSource.AUTO).exists():
+            return None
         log, _ = BirthdayEmailLog.objects.get_or_create(
             employee=locked_employee,
             sent_date=sent_date,
+            delivery_source=BirthdayEmailSource.AUTO,
             defaults={
                 "sent_at": timezone.now(),
                 "recipient_email": recipient or "unknown",
@@ -230,6 +236,32 @@ def can_retry_manually(log: BirthdayEmailLog) -> bool:
     ) and not (
         log.delivery_uncertain or (log.error_message or "").startswith(STALE_SENDING_NOTE)
     )
+
+
+def retry_block_reason(log: BirthdayEmailLog) -> str | None:
+    if log.delivery_uncertain or (log.error_message or "").startswith(STALE_SENDING_NOTE):
+        return "needsReview"
+    if not log.employee.is_active:
+        return "inactive"
+    if log.trang_thai == BirthdayEmailStatus.SUCCESS:
+        return "alreadySent"
+
+    retryable_status = log.trang_thai == BirthdayEmailStatus.FAILED or (
+        log.trang_thai == BirthdayEmailStatus.RETRY
+        and log.employee.chuc_vu is not None
+        and log.employee.chuc_vu.name in LEADERSHIP_POSITIONS
+    )
+    if not retryable_status:
+        return "automaticRetryPending" if log.trang_thai == BirthdayEmailStatus.RETRY else "notRetryable"
+
+    recipient = (log.employee.email or "").strip()
+    if not recipient:
+        return "missingEmail"
+    try:
+        validate_email(recipient)
+    except ValidationError:
+        return "invalidEmail"
+    return None
 
 
 def _claim_delivery(
@@ -269,6 +301,11 @@ def _claim_delivery(
                 is_eligible = False
             if locked_log.next_retry_at and locked_log.next_retry_at > timezone.now():
                 is_eligible = False
+        if operator is None and manual_snapshot is None and BirthdayEmailLog.objects.filter(
+            employee=employee,
+            sent_date=locked_log.sent_date,
+        ).exclude(pk=locked_log.pk).exclude(delivery_source=BirthdayEmailSource.AUTO).exists():
+            is_eligible = False
         is_eligible = is_eligible and not (
             locked_log.delivery_uncertain or (locked_log.error_message or "").startswith(STALE_SENDING_NOTE)
         )
@@ -358,13 +395,16 @@ def _record_delivery_result(
             locked_log.next_retry_at = None
             update_fields.extend(["sent_at", "error_message", "smtp_response_code", "next_retry_at"])
         elif new_status in (BirthdayEmailStatus.RETRY, BirthdayEmailStatus.FAILED):
-            locked_log.retry_count = locked_log.retry_count + 1
+            if locked_log.delivery_source != BirthdayEmailSource.MANUAL_RESEND:
+                locked_log.retry_count = locked_log.retry_count + 1
             locked_log.error_message = error_message
             locked_log.next_retry_at = None
             if smtp_response_code:
                 locked_log.smtp_response_code = smtp_response_code
                 update_fields.append("smtp_response_code")
-            update_fields.extend(["retry_count", "error_message", "next_retry_at"])
+            update_fields.extend(["error_message", "next_retry_at"])
+            if locked_log.delivery_source != BirthdayEmailSource.MANUAL_RESEND:
+                update_fields.append("retry_count")
         else:
             locked_log.error_message = error_message
             update_fields.append("error_message")
@@ -434,6 +474,8 @@ def _default_snapshot(employee: Employee, *, layout: str | None = None, seed: in
             **_birthday_card_data(employee),
             "chuc_danh": (employee.chuc_danh or "").strip(),
         }
+
+
         draft = {
             "layout": layout,
             "template_id": f"layout:{layout}",
@@ -456,6 +498,79 @@ def _default_snapshot(employee: Employee, *, layout: str | None = None, seed: in
         }
 
 
+def create_manual_resend_log(
+    employee_id: int,
+    sent_date: date,
+    recipient: str | None,
+    operator: str,
+) -> tuple[BirthdayEmailLog | None, str | None]:
+    """Create an auditable resend row and serialize concurrent sends per employee/date."""
+    now = timezone.now()
+    stale_cutoff = now - timedelta(minutes=30)
+    with transaction.atomic():
+        employee = (
+            Employee.objects.select_related("chuc_vu", "don_vi")
+            .select_for_update(of=("self",))
+            .filter(pk=employee_id)
+            .first()
+        )
+        if not employee:
+            return None, "employeeNotFound"
+
+        current_recipient = (employee.email or "").strip()
+        if recipient is not None and recipient.strip() != current_recipient:
+            return None, "recipientChanged"
+        recipient = current_recipient
+        try:
+            validate_email(recipient)
+        except ValidationError:
+            return None, "invalidRecipient"
+
+        occurrence_logs = BirthdayEmailLog.objects.filter(employee=employee, sent_date=sent_date)
+        if not occurrence_logs.exists() and not is_birthday_on_date(
+            employee.ngay_sinh,
+            sent_date,
+            leap_year_strategy=getattr(settings, "BIRTHDAY_LEAP_DAY_STRATEGY", "FEB_28"),
+        ):
+            return None, "invalidOccurrence"
+
+        occurrence_logs.filter(
+            trang_thai=BirthdayEmailStatus.SENDING,
+            updated_at__lt=stale_cutoff,
+        ).update(
+            trang_thai=BirthdayEmailStatus.FAILED,
+            error_message=STALE_SENDING_NOTE,
+            delivery_uncertain=True,
+            next_retry_at=None,
+            updated_at=now,
+        )
+        if occurrence_logs.filter(trang_thai=BirthdayEmailStatus.SENDING).exists():
+            return None, "resendInProgress"
+
+        latest_log = occurrence_logs.order_by("-sent_at", "-pk").first()
+        snapshot = latest_log.delivery_snapshot if latest_log and isinstance(latest_log.delivery_snapshot, dict) else None
+        if not snapshot or not snapshot.get("html") or not snapshot.get("text"):
+            snapshot = _default_snapshot(employee)
+        snapshot = {**snapshot, "trigger_source": "MANUAL_RESEND"}
+        subject = ((latest_log.subject or "").strip() if latest_log else "") or (snapshot.get("subject") or "").strip()
+        if not subject:
+            subject = f"{getattr(settings, 'BRAND_NAME', 'Bảo Long Insurance')} - Chúc mừng sinh nhật"
+
+        log = BirthdayEmailLog.objects.create(
+            employee=employee,
+            sent_date=sent_date,
+            sent_at=now,
+            recipient_email=recipient,
+            subject=subject,
+            card_template=snapshot.get("layout") or "01",
+            trang_thai=BirthdayEmailStatus.SENDING,
+            retry_count=1,
+            delivery_source=BirthdayEmailSource.MANUAL_RESEND,
+            delivery_snapshot=snapshot,
+            last_operator=operator,
+            delivery_uncertain=False,
+        )
+    return log, None
 def deliver_claimed_email(log: BirthdayEmailLog, max_retries: int = 0) -> None:
     uncertain = False
     error_message = ""
@@ -544,6 +659,10 @@ def send_automated_birthday_emails(
         if is_birthday_on_date(emp.ngay_sinh, target_date, leap_year_strategy=leap_year_strategy)
     ]
     retry_start_date = target_date - timedelta(days=3)
+    manual_resend_exists = BirthdayEmailLog.objects.filter(
+        employee_id=OuterRef("employee_id"),
+        sent_date=OuterRef("sent_date"),
+    ).exclude(delivery_source=BirthdayEmailSource.AUTO)
     retry_logs = [] if username is not None else list(
         BirthdayEmailLog.objects.filter(
             trang_thai=BirthdayEmailStatus.RETRY,
@@ -553,6 +672,7 @@ def send_automated_birthday_emails(
             sent_date__gte=retry_start_date,
             sent_date__lte=target_date,
         )
+        .filter(~Exists(manual_resend_exists))
         .exclude(employee__chuc_vu__name__in=LEADERSHIP_POSITIONS)
         .filter(Q(next_retry_at__isnull=True) | Q(next_retry_at__lte=now))
         .select_related("employee", "employee__don_vi", "employee__chuc_vu")

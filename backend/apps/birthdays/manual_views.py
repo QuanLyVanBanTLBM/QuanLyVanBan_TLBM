@@ -18,11 +18,12 @@ from rest_framework.response import Response
 from accounts.models import Employee
 from authorization.permissions import is_system_admin
 
-from .models import BirthdayEmailLog, BirthdayEmailStatus, BirthdayEmailTemplate
+from .models import BirthdayEmailLog, BirthdayEmailSource, BirthdayEmailTemplate
 from .services import (
     LEADERSHIP_POSITIONS,
     _birthday_card_data,
     _claim_delivery,
+    create_manual_resend_log,
     deliver_claimed_email,
     generate_birthday_card_url,
     is_birthday_on_date,
@@ -86,6 +87,12 @@ class ManualDraftSerializer(DraftSerializer):
         if not exists:
             raise serializers.ValidationError("invalidDraft")
         return attrs
+
+
+class BirthdayEmailResendSerializer(serializers.Serializer):
+    employee_id = serializers.IntegerField(min_value=1, max_value=2**63 - 1)
+    sent_date = serializers.DateField()
+    recipient = serializers.EmailField(max_length=254, required=False)
 
 
 class DeliveryProblem(Exception):
@@ -252,9 +259,17 @@ def send_api(request):
                 raise DeliveryProblem("previewExpired", 409)
             if other_birthday_logs(employee.pk, prepared["occurrence"]).exists():
                 raise DeliveryProblem("deliveryConflict", 409)
-            log, _ = BirthdayEmailLog.objects.get_or_create(
-                employee=employee, sent_date=prepared["occurrence"],
-                defaults={"recipient_email": prepared["recipient"], "subject": prepared["subject"]},
+            if BirthdayEmailLog.objects.filter(
+                employee=employee,
+                sent_date=prepared["occurrence"],
+            ).exists():
+                raise DeliveryProblem("deliveryConflict", 409)
+            log = BirthdayEmailLog.objects.create(
+                employee=employee,
+                sent_date=prepared["occurrence"],
+                recipient_email=prepared["recipient"],
+                subject=prepared["subject"],
+                delivery_source=BirthdayEmailSource.MANUAL,
             )
             if not _claim_delivery(
                 log, prepared["recipient"], prepared["subject"],
@@ -270,23 +285,49 @@ def send_api(request):
 
 @api_view(["POST"])
 @permission_classes([SystemAdminOnly])
-def retry_api(request, log_id):
-    serializer = serializers.Serializer(data=request.data)
-    serializer.fields["recipient"] = serializers.EmailField(max_length=254)
+def resend_api(request):
+    serializer = BirthdayEmailResendSerializer(data=request.data)
     if not serializer.is_valid():
         return Response({"error": "invalidRecipient"}, status=400)
+    return _send_manual_resend(request, serializer.validated_data)
+
+
+def _send_manual_resend(request, data):
     try:
         _ready_to_send()
-        with transaction.atomic():
-            log = get_object_or_404(BirthdayEmailLog.objects.select_related("employee"), pk=log_id)
-            employee = get_object_or_404(Employee.objects.select_for_update(), pk=log.employee_id, is_active=True)
-            recipient = _recipient(employee)
-            if serializer.validated_data["recipient"] != recipient:
-                raise DeliveryProblem("recipientChanged", 409)
-            if not _claim_delivery(log, recipient, log.subject, operator=request.user.get_username()):
-                raise DeliveryProblem("deliveryConflict", 409)
+        log, error_code = create_manual_resend_log(
+            employee_id=data["employee_id"],
+            sent_date=data["sent_date"],
+            recipient=data.get("recipient"),
+            operator=request.user.get_username(),
+        )
     except DeliveryProblem as error:
         return error.response()
+    if error_code:
+        status_code = {
+            "employeeNotFound": 404,
+            "resendInProgress": 409,
+            "recipientChanged": 409,
+            "invalidOccurrence": 400,
+            "invalidRecipient": 400,
+        }.get(error_code, 400)
+        return Response({"error": error_code}, status=status_code)
 
     deliver_claimed_email(log)
     return Response({"log": serialize_email_log(log)})
+
+
+@api_view(["POST"])
+@permission_classes([SystemAdminOnly])
+def retry_api(request, log_id):
+    log = get_object_or_404(BirthdayEmailLog.objects.only("employee_id", "sent_date"), pk=log_id)
+    payload = {
+        "employee_id": log.employee_id,
+        "sent_date": log.sent_date.isoformat(),
+    }
+    if "recipient" in request.data:
+        payload["recipient"] = request.data["recipient"]
+    serializer = BirthdayEmailResendSerializer(data=payload)
+    if not serializer.is_valid():
+        return Response({"error": "invalidRecipient"}, status=400)
+    return _send_manual_resend(request, serializer.validated_data)
