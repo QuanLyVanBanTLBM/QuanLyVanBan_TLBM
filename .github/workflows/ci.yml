@@ -500,8 +500,7 @@ jobs:
             fi
             for d in /srv/qlvb/shared/data /srv/qlvb/shared/media /srv/qlvb/shared/signing /srv/qlvb/shared/storage; do
               if [ -d "$d" ]; then
-                chmod -R u+rwX,go+rX "$d" 2>/dev/null || true
-                find "$d" -type f ! -readable -delete 2>/dev/null || true
+                chmod -R u+rwX,g+rX,o-rwx "$d" 2>/dev/null || true
               fi
             done
           '
