@@ -10,8 +10,13 @@ from docx.oxml import parse_xml, OxmlElement
 from docx.oxml.ns import nsdecls, qn
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC_TEMPLATE = os.path.join(os.path.dirname(BASE_DIR), "Mau-Bao-Cao-Do-An-Mon-Hoc-CNTT-Tham-Khao.docx")
-ITC_TEMPLATE = os.path.join(os.path.dirname(BASE_DIR), "BaiCKMau_Tham khao_ITC copy.docx")
+SRC_TEMPLATE = os.path.join(os.path.dirname(BASE_DIR), "TaiLieuDoAn", "Mau_Bao_Cao", "Mau-Bao-Cao-Do-An-Mon-Hoc-CNTT-Tham-Khao.docx")
+if not os.path.exists(SRC_TEMPLATE):
+    SRC_TEMPLATE = os.path.join(os.path.dirname(BASE_DIR), "Mau-Bao-Cao-Do-An-Mon-Hoc-CNTT-Tham-Khao.docx")
+
+ITC_TEMPLATE = os.path.join(os.path.dirname(BASE_DIR), "TaiLieuDoAn", "Mau_Bao_Cao", "BaiCKMau_Tham khao_ITC copy.docx")
+if not os.path.exists(ITC_TEMPLATE):
+    ITC_TEMPLATE = os.path.join(os.path.dirname(BASE_DIR), "BaiCKMau_Tham khao_ITC copy.docx")
 OUTPUT_DOCX = os.path.join(
     BASE_DIR, "docs", "modules", "01_layout_dashboard", "Bao_Cao_Cuoi_Ky_Nhom_1_Layout_Dashboard_Va_Database.docx"
 )
