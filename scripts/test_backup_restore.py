@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import errno
 import hashlib
 import io
 import json
@@ -11,6 +12,7 @@ import sys
 import tarfile
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,6 +31,8 @@ from backup_restore import (  # noqa: E402
     _parse_private_config,
     _restore,
     _verified_archive,
+    _walk_tree,
+    _write_tree_archive,
     main,
 )
 
@@ -87,6 +91,89 @@ class PrivateInputTests(unittest.TestCase):
                     archive_path,
                     expected={"entries": 1, "files": 1, "bytes": 1},
                 )
+
+
+class FileTreeReadDiagnosticTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == "posix", "POSIX permission-mode contract")
+    def test_unreadable_file_mode_reports_eacces(self):
+        if hasattr(os, "geteuid") and os.geteuid() == 0:
+            self.skipTest("root can bypass ordinary file-mode read restrictions")
+        with tempfile.TemporaryDirectory(prefix="qlvb-mode-denied-root-") as temp_name:
+            root = Path(temp_name)
+            source = root / "private.dat"
+            source.write_bytes(b"synthetic-only")
+            os.chmod(source, 0)
+            try:
+                with self.assertRaisesRegex(
+                    BackupError,
+                    r"root=media; path=private\.dat; errno=EACCES\(13\)",
+                ):
+                    _walk_tree(root, "media")
+            finally:
+                os.chmod(source, 0o600)
+
+    def test_file_read_permission_error_reports_root_relative_path_and_errno(self):
+        with tempfile.TemporaryDirectory(prefix="qlvb-unreadable-root-") as temp_name:
+            root = Path(temp_name)
+            source = root / "restricted.dat"
+            source.write_bytes(b"synthetic-only")
+            error = PermissionError(errno.EACCES, "synthetic permission failure", str(source))
+
+            with mock.patch.object(Path, "open", autospec=True, side_effect=error):
+                with self.assertRaisesRegex(
+                    BackupError,
+                    r"root=storage; path=restricted\.dat; errno=EACCES\(13\)",
+                ):
+                    _walk_tree(root, "storage")
+
+    def test_file_disappearing_after_enumeration_reports_enoent(self):
+        with tempfile.TemporaryDirectory(prefix="qlvb-disappeared-root-") as temp_name:
+            root = Path(temp_name)
+            source = root / "removed.dat"
+            source.write_bytes(b"synthetic-only")
+            error = FileNotFoundError(errno.ENOENT, "synthetic missing file", str(source))
+
+            with mock.patch.object(Path, "open", autospec=True, side_effect=error):
+                with self.assertRaisesRegex(
+                    BackupError,
+                    r"root=media; path=removed\.dat; errno=ENOENT\(2\)",
+                ):
+                    _walk_tree(root, "media")
+
+    def test_file_read_error_during_archive_streaming_keeps_source_context(self):
+        with tempfile.TemporaryDirectory(prefix="qlvb-stream-error-root-") as temp_name:
+            root = Path(temp_name) / "ai-data"
+            root.mkdir()
+            source = root / "index.bin"
+            source.write_bytes(b"synthetic-only")
+            archive_path = root.parent / "ai.tar"
+            real_open = Path.open
+            source_open_count = 0
+
+            class FailingReader:
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *_args):
+                    return False
+
+                def read(self, _size=-1):
+                    raise OSError(errno.EIO, "synthetic read failure", str(source))
+
+            def open_source(path, *args, **kwargs):
+                nonlocal source_open_count
+                if path == source:
+                    source_open_count += 1
+                    if source_open_count == 2:
+                        return FailingReader()
+                return real_open(path, *args, **kwargs)
+
+            with mock.patch.object(Path, "open", autospec=True, side_effect=open_source):
+                with self.assertRaisesRegex(
+                    BackupError,
+                    r"root=ai; path=index\.bin; errno=EIO\(5\)",
+                ):
+                    _write_tree_archive(root, archive_path, "ai")
 
 
 class PostgreSQLBackupRestoreDrill(unittest.TestCase):
