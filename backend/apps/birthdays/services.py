@@ -663,11 +663,9 @@ def send_automated_birthday_emails(
     brand_name = getattr(settings, "BRAND_NAME", "Bảo Long Insurance")
 
     def process_delivery(employee: Employee, sent_date: date, existing_log=None) -> None:
-        recipient = (
-            existing_log.recipient_email
-            if existing_log is not None
-            else (employee.email or "")
-        ).strip()
+        # Automatic retries must follow the employee's current address. Manual retries
+        # use the separately confirmed current_recipient in retry_api.
+        recipient = (employee.email or "").strip()
         subject = (
             existing_log.subject
             if existing_log is not None

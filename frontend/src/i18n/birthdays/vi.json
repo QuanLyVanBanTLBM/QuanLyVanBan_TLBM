@@ -114,6 +114,9 @@
         "alreadySent": "Máy chủ email đã chấp nhận thư; không thể gửi lại bằng thao tác này.",
         "notRetryable": "Trạng thái hiện tại không cho phép gửi lại."
       },
+      "sent": "Máy chủ email đã chấp nhận thư để gửi.",
+      "sendFailed": "Gửi email thất bại. Xem chi tiết trong nhật ký.",
+      "needsReview": "Kết quả gửi chưa xác định. Cần đối soát.",
       "successTitle": "Gửi email thành công",
       "successMessage": "Email sinh nhật cho {employee} ({email}) đã được máy chủ thư chấp nhận để tiếp tục gửi lúc {sentAt}.",
       "successMessageWithoutTime": "Email sinh nhật cho {employee} ({email}) đã được máy chủ thư chấp nhận để tiếp tục gửi.",

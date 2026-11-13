@@ -402,12 +402,14 @@ export default function BirthdayEmailLogs() {
                         {log.trang_thai === 'NOT_PROCESSED'
                           ? '—'
                           : t(log.delivery_source === 'MANUAL'
-                            ? 'birthdayPage.manualEmail.manual'
-                            : log.delivery_context === 'RECOVERY'
-                              ? 'birthdayPage.manualEmail.recovery'
-                              : log.delivery_context === 'RETRY'
-                                ? 'birthdayPage.manualEmail.retrySource'
-                                : 'birthdayPage.manualEmail.automatic')}
+                          ? log.delivery_context === 'RETRY'
+                            ? 'birthdayPage.manualEmail.retrySource'
+                            : 'birthdayPage.manualEmail.manual'
+                          : log.delivery_context === 'RECOVERY'
+                            ? 'birthdayPage.manualEmail.recovery'
+                            : log.delivery_context === 'RETRY'
+                              ? 'birthdayPage.manualEmail.retrySource'
+                              : 'birthdayPage.manualEmail.automatic')}
                         {log.last_operator && <p className="text-xs">{log.last_operator}</p>}
                         {log.template_version && <p className="text-xs">{log.template_version}</p>}
                       </td>
