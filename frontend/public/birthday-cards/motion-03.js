@@ -5,6 +5,7 @@
   if (!canvas || !card || !button) return;
 
   const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false;
+  const desktopPointer = window.matchMedia?.('(hover: hover) and (pointer: fine)')?.matches ?? false;
   const pointer = { x: 0, y: 0 };
   const vertexSource = `
     attribute vec2 aPosition;
@@ -58,6 +59,13 @@
   let cssWidth = 0;
   let cssHeight = 0;
   let pixelRatio = 1;
+  let lastFrameAt = 0;
+  const cleanup = [];
+
+  function addListener(target, type, handler, options) {
+    target.addEventListener(type, handler, options);
+    cleanup.push(() => target.removeEventListener(type, handler, options));
+  }
 
   function compileShader(type, source) {
     const shader = gl.createShader(type);
@@ -105,15 +113,16 @@
       pointerLocation = gl.getUniformLocation(program, 'uPointer');
       timeLocation = gl.getUniformLocation(program, 'uTime');
       return true;
-    } catch {
+    } catch (error) {
+      console.error('[birthday-card:03] WebGL initialization failed; using Canvas 2D fallback.', error);
       return false;
     }
   }
 
   function resize() {
-    cssWidth = window.innerWidth;
-    cssHeight = window.innerHeight;
-    pixelRatio = Math.min(window.devicePixelRatio || 1, 1.6);
+    cssWidth = window.visualViewport?.width || window.innerWidth;
+    cssHeight = window.visualViewport?.height || window.innerHeight;
+    pixelRatio = Math.min(window.devicePixelRatio || 1, cssWidth < 600 ? 1.25 : 1.4);
     canvas.width = Math.max(1, Math.round(cssWidth * pixelRatio));
     canvas.height = Math.max(1, Math.round(cssHeight * pixelRatio));
     if (gl) {
@@ -162,44 +171,65 @@
 
   function animate(timestamp) {
     if (document.hidden) return;
-    draw(timestamp);
+    if (!lastFrameAt || timestamp - lastFrameAt >= 1000 / 30) {
+      draw(timestamp);
+      lastFrameAt = timestamp;
+    }
     frameId = window.requestAnimationFrame(animate);
   }
 
   if (!setupWebGL()) {
+    if (!gl) console.warn('[birthday-card:03] WebGL is unavailable; using Canvas 2D silk motion.');
     gl = null;
     context2d = canvas.getContext('2d');
     if (!context2d) {
       document.body.classList.add('silk-css-fallback');
     }
   }
+  card.dataset.motionProfile = 'editorial';
+  card.dataset.motionState = context2d || gl ? 'active' : 'css-fallback';
+  canvas.dataset.motionMode = gl ? 'webgl' : context2d ? 'canvas-2d' : 'css';
 
-  window.addEventListener('resize', resize, { passive: true });
-  window.addEventListener('pointermove', (event) => {
+  const onPointerMove = (event) => {
     pointer.x = (event.clientX / Math.max(window.innerWidth, 1)) * 2 - 1;
     pointer.y = 1 - (event.clientY / Math.max(window.innerHeight, 1)) * 2;
-  }, { passive: true });
-  document.addEventListener('visibilitychange', () => {
+  };
+  const onVisibilityChange = () => {
     if (frameId) window.cancelAnimationFrame(frameId);
     frameId = 0;
+    lastFrameAt = 0;
     if (!document.hidden && !reduceMotion) frameId = window.requestAnimationFrame(animate);
-  });
+  };
+  addListener(window, 'resize', resize, { passive: true });
+  addListener(window, 'orientationchange', resize, { passive: true });
+  if (window.visualViewport) addListener(window.visualViewport, 'resize', resize, { passive: true });
+  if (desktopPointer && !reduceMotion) addListener(window, 'pointermove', onPointerMove, { passive: true });
+  addListener(document, 'visibilitychange', onVisibilityChange);
+  addListener(window, 'pagehide', () => {
+    if (frameId) window.cancelAnimationFrame(frameId);
+    cleanup.forEach((remove) => remove());
+    if (gl && program) gl.deleteProgram(program);
+    if (gl) gl.getExtension('WEBGL_lose_context')?.loseContext();
+    window.clearTimeout(toastTimer);
+    window.clearTimeout(buttonTimer);
+  }, { once: true });
 
   resize();
   if (!reduceMotion && (context2d || gl)) {
     frameId = window.requestAnimationFrame(animate);
   }
 
-  if (!reduceMotion) {
-    card.addEventListener('pointermove', (event) => {
+  if (desktopPointer && !reduceMotion) {
+    addListener(card, 'pointermove', (event) => {
+      if (event.pointerType === 'touch') return;
       const bounds = card.getBoundingClientRect();
-      const x = (event.clientX - bounds.left) / bounds.width;
-      const y = (event.clientY - bounds.top) / bounds.height;
+      const x = (event.clientX - bounds.left) / Math.max(bounds.width, 1);
+      const y = (event.clientY - bounds.top) / Math.max(bounds.height, 1);
       const rotateX = (0.5 - y) * 3;
       const rotateY = (x - 0.5) * 4;
       card.style.transform = `perspective(72rem) rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
     }, { passive: true });
-    card.addEventListener('pointerleave', () => {
+    addListener(card, 'pointerleave', () => {
       card.style.transform = '';
     }, { passive: true });
   }
@@ -216,7 +246,7 @@
     document.body.append(liveRegion);
   }
 
-  button.addEventListener('click', () => {
+  addListener(button, 'click', () => {
     window.clearTimeout(toastTimer);
     window.clearTimeout(buttonTimer);
     const toast = document.createElement('div');

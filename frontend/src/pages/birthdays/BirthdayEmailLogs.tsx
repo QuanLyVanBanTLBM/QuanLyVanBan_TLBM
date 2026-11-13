@@ -7,6 +7,7 @@ import BirthdayEmailComposer from './BirthdayEmailComposer';
 import { birthdayEmailError, type DeliveryResult } from './emailDelivery';
 
 type EmailStatus = 'PENDING' | 'SENDING' | 'SUCCESS' | 'FAILED' | 'RETRY' | 'NOT_PROCESSED' | 'UNKNOWN';
+type DisplayEmailStatus = EmailStatus | 'DELIVERY_UNCERTAIN';
 type StatusFilter = EmailStatus | 'ALL';
 
 interface BirthdayEmailLog {
@@ -72,7 +73,7 @@ const STATUS_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
   { value: 'UNKNOWN', label: 'statusUnknown' },
 ];
 
-const STATUS_STYLES: Record<EmailStatus, string> = {
+const STATUS_STYLES: Record<DisplayEmailStatus, string> = {
   PENDING: 'bg-surface-hover text-secondary',
   SENDING: 'bg-info-subtle text-info',
   SUCCESS: 'bg-success-subtle text-success',
@@ -80,9 +81,13 @@ const STATUS_STYLES: Record<EmailStatus, string> = {
   RETRY: 'bg-warning-subtle text-warning-text',
   NOT_PROCESSED: 'bg-surface-hover text-secondary',
   UNKNOWN: 'bg-warning-subtle text-warning-text',
+  DELIVERY_UNCERTAIN: 'bg-warning-subtle text-warning-text',
 };
 
-function statusLabelKey(status: EmailStatus): string {
+function statusLabelKey(status: DisplayEmailStatus): string {
+  if (status === 'DELIVERY_UNCERTAIN') return 'birthdayPage.emailLogs.statusDeliveryUncertain';
+  if (status === 'NOT_PROCESSED') return 'birthdayPage.emailLogs.statusNotProcessed';
+  if (status === 'UNKNOWN') return 'birthdayPage.emailLogs.statusUnknown';
   return `birthdayPage.emailLogs.status${status.charAt(0)}${status.slice(1).toLowerCase()}`;
 }
 
@@ -421,8 +426,8 @@ export default function BirthdayEmailLogs() {
                       <td className="whitespace-nowrap px-3 py-3">{log.sent_date}</td>
                       <td className="whitespace-nowrap px-3 py-3 text-secondary">{log.sent_at || '—'}</td>
                       <td className="px-3 py-3">
-                        <span className={`inline-flex whitespace-nowrap rounded-xs px-2 py-1 text-xs font-semibold ${STATUS_STYLES[log.trang_thai]}`}>
-                          {t(statusLabelKey(log.trang_thai))}
+                        <span className={`inline-flex whitespace-nowrap rounded-xs px-2 py-1 text-xs font-semibold ${STATUS_STYLES[log.delivery_uncertain ? 'DELIVERY_UNCERTAIN' : log.trang_thai]}`}>
+                          {t(statusLabelKey(log.delivery_uncertain ? 'DELIVERY_UNCERTAIN' : log.trang_thai))}
                         </span>
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums">{log.retry_count}</td>

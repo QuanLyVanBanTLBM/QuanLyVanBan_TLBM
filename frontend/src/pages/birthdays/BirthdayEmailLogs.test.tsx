@@ -270,7 +270,7 @@ describe('Birthday email log actions', () => {
       expect(resend).toHaveClass('bg-primary');
     }
     const unknownRow = screen.getByRole('row', { name: /CBNV UNKNOWN/ });
-    expect(within(unknownRow).getByText('Chưa xác định')).toBeInTheDocument();
+    expect(within(unknownRow).getByText('Chưa rõ kết quả SMTP')).toBeInTheDocument();
 
     const unprocessedRow = screen.getByRole('row', { name: /CBNV NOT_PROCESSED/ });
     fireEvent.click(within(unprocessedRow).getByRole('button', { name: 'Gửi lại' }));
@@ -386,6 +386,7 @@ describe('Birthday email log actions', () => {
     const recoveryRow = screen.getByRole('row', { name: /CBNV gửi bù/ });
     const manualRow = screen.getByRole('row', { name: /CBNV gửi thủ công/ });
     const manualRetryRow = screen.getByRole('row', { name: /CBNV gửi lại thư thủ công/ });
+    expect(within(notProcessedRow).getByText('Chưa được xử lý')).toBeInTheDocument();
     expect(within(notProcessedRow).queryByText('Tự động theo lịch')).not.toBeInTheDocument();
     expect(within(scheduledRow).getByText('Tự động theo lịch')).toBeInTheDocument();
     expect(within(recoveryRow).getByText('Chạy bù')).toBeInTheDocument();
