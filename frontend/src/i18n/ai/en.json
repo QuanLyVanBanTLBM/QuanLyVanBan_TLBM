@@ -138,7 +138,9 @@
       "askAboutMultipleValue": "Ask about {count} pinned documents...",
       "clearAllTargetedDocuments": "Unpin all",
       "maxPinnedDocuments": "You can pin up to {max} documents at the same time.",
-      "targetedCount": "Pinned {count}/{max} documents"
+      "targetedCount": "Pinned {count}/{max} documents",
+      "uploadedDocsSection": "Uploaded documents",
+      "systemDocsSection": "System documents (View & target only)"
     },
     "settingsModal": {
       "title": "AI Model & API Key Settings",

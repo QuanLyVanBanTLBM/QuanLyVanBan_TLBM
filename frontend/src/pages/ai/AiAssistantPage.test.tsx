@@ -302,4 +302,40 @@ describe('AiAssistantPage', () => {
       )
     );
   });
+
+  it('separates uploaded documents from managed PostgreSQL documents (view & pin only)', async () => {
+    mockedUsePermissions.mockReturnValue({
+      loaded: true,
+      can: (perm: string) => perm === 'use_aiassistant',
+      isSuperuser: true,
+      isSystemAdmin: true,
+      refresh: vi.fn(),
+    } as unknown as ReturnType<typeof usePermissions>);
+    mockedGetDocuments.mockResolvedValue({
+      documents: [
+        { filename: 'uploaded_guide.pdf', category: 'Hướng dẫn', size: 120 },
+        {
+          filename: '12/CV-UBND — Công văn mẫu',
+          category: 'Văn bản đến',
+          is_managed: true,
+          source_type: 'vanbanden',
+          source_id: 12,
+        },
+      ],
+    });
+
+    renderAiPage();
+    await waitFor(() => expect(mockedGetDocuments).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: /aiAssistant\.tabDocs/ }));
+    expect(await screen.findByText('aiAssistant.inline.uploadedDocsSection')).toBeInTheDocument();
+    expect(screen.getByText('aiAssistant.inline.systemDocsSection')).toBeInTheDocument();
+    expect(screen.getByText('uploaded_guide.pdf')).toBeInTheDocument();
+    expect(screen.getByText('12/CV-UBND — Công văn mẫu')).toBeInTheDocument();
+
+    // Chỉ tài liệu tải lên mới có nút xóa/phân loại/xem trước; tài liệu hệ thống chỉ có nút ghim
+    expect(screen.getAllByTitle('aiAssistant.deleteDoc')).toHaveLength(1);
+    expect(screen.getAllByTitle('aiAssistant.preview')).toHaveLength(1);
+    expect(screen.getAllByTitle('aiAssistant.inline.targetThisDocumentForQ')).toHaveLength(2);
+  });
 });

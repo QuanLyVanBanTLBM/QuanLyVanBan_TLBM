@@ -1690,10 +1690,13 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     );
   });
 
-  const hierarchicalDocs: Record<string, RootFolderGroup> = useMemo(() => {
+  const buildHierarchicalDocs = (
+    docsList: DocItem[],
+    uncategorizedLabel: string
+  ): Record<string, RootFolderGroup> => {
     const groups: Record<string, RootFolderGroup> = {};
 
-    for (const doc of filteredDocs) {
+    for (const doc of docsList) {
       const rawCategory = doc.category?.trim();
       const normalizedCategory = rawCategory
         ?.normalize('NFD')
@@ -1702,7 +1705,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
         .toLowerCase();
       const effectiveCategory = rawCategory && normalizedCategory !== 'chua phan loai'
         ? rawCategory
-        : t('aiAssistant.uncategorized');
+        : uncategorizedLabel;
 
       const slashIdx = effectiveCategory.indexOf(' / ');
       const rootName = slashIdx > 0 ? effectiveCategory.slice(0, slashIdx).trim() : effectiveCategory;
@@ -1729,7 +1732,289 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     }
 
     return groups;
-  }, [filteredDocs, t]);
+  };
+
+  const uploadedDocs = useMemo(
+    () => filteredDocs.filter((d) => !d.is_managed),
+    [filteredDocs]
+  );
+
+  const managedDocs = useMemo(
+    () => filteredDocs.filter((d) => Boolean(d.is_managed)),
+    [filteredDocs]
+  );
+
+  const uploadedTree: Record<string, RootFolderGroup> = useMemo(
+    () => buildHierarchicalDocs(uploadedDocs, t('aiAssistant.uncategorized')),
+    [uploadedDocs, t]
+  );
+
+  const managedTree: Record<string, RootFolderGroup> = useMemo(
+    () => buildHierarchicalDocs(managedDocs, t('aiAssistant.uncategorized')),
+    [managedDocs, t]
+  );
+
+  const renderFolderTree = (tree: Record<string, RootFolderGroup>, sectionPrefix: string) =>
+    Object.values(tree).map((root: RootFolderGroup) => {
+      const rootKey = `${sectionPrefix}:${root.name}`;
+      const isRootCollapsed = !!collapsedRoots[rootKey];
+      return (
+        <div key={rootKey} className={`sidebar-doc-category ${isRootCollapsed ? 'is-collapsed' : ''}`}>
+          {/* Thư mục gốc duy nhất (Level 1) */}
+          <button
+            type="button"
+            className="sidebar-category-header"
+            onClick={() => toggleRoot(rootKey)}
+            aria-expanded={!isRootCollapsed}
+            title={
+              isRootCollapsed
+                ? t('aiAssistant.inline.expandFolderName', { name: root.name })
+                : t('aiAssistant.inline.collapseFolderName', { name: root.name })
+            }
+          >
+            <span className="sidebar-category-title">
+              <i
+                className={`sidebar-chevron-icon fa-solid ${
+                  isRootCollapsed ? 'fa-chevron-right' : 'fa-chevron-down'
+                }`}
+              />
+              <i className="fa-solid fa-folder text-warning" />
+              <span className="sidebar-category-name" title={root.name}>
+                {root.name}
+              </span>
+            </span>
+            <span className="sidebar-category-count font-bold">
+              {root.totalCount}
+            </span>
+          </button>
+
+          {/* Danh sách Item bên trong Folder nhỏ */}
+          {!isRootCollapsed && (
+            <div className="sidebar-root-content">
+              {Object.values(root.subFolders).map((sub: SubFolderGroup) => {
+                const subKey = `${rootKey}_${sub.name}`;
+                const isSubCollapsed = !!collapsedSubs[subKey];
+                return (
+                  <div
+                    key={sub.name}
+                    className={`sidebar-subfolder-card ${isSubCollapsed ? 'is-collapsed' : ''}`}
+                  >
+                    {/* Top Header */}
+                    <button
+                      type="button"
+                      className="sidebar-subfolder-header"
+                      onClick={() => toggleSub(subKey)}
+                      aria-expanded={!isSubCollapsed}
+                      title={
+                        isSubCollapsed
+                          ? t('aiAssistant.inline.expandName', { name: sub.name })
+                          : t('aiAssistant.inline.collapseName', { name: sub.name })
+                      }
+                    >
+                      <span className="sidebar-subfolder-title">
+                        <i
+                          className={`text-[10px] text-muted transition-transform fa-solid ${
+                            isSubCollapsed ? 'fa-chevron-right' : 'fa-chevron-down'
+                          }`}
+                        />
+                        <i
+                          className={`fa-solid ${
+                            isSubCollapsed ? 'fa-folder text-warning' : 'fa-folder-open text-warning'
+                          } text-xs`}
+                        />
+                        <span className="sidebar-subfolder-name" title={sub.name}>
+                          {sub.name}
+                        </span>
+                      </span>
+                      <span className="sidebar-subfolder-count">
+                        {sub.docs.length}
+                      </span>
+                    </button>
+
+                    {/* Danh sách Item bên trong Folder nhỏ */}
+                    {!isSubCollapsed && (
+                      <div className="sidebar-doc-list">
+                        {sub.docs.map((d) => {
+                          const itemLabel = d.filename;
+                          const isPinned = isDocumentPinned(d.filename);
+
+                          return (
+                            <div
+                              key={d.filename}
+                              className={`sidebar-doc-row ${isPinned ? 'is-targeted' : ''}`}
+                              draggable={true}
+                              onDragStart={(e) => {
+                                e.dataTransfer.setData(
+                                  'application/x-tlbm-doc',
+                                  JSON.stringify({ filename: d.filename, label: itemLabel, category: d.category })
+                                );
+                                e.dataTransfer.effectAllowed = 'copy';
+                              }}
+                              title={
+                                t('aiAssistant.inline.dragItemlabelToChatOr', { itemLabel })
+                              }
+                            >
+                              <div className="sidebar-doc-info" title={d.filename}>
+                                <i
+                                  className={`sidebar-doc-icon fa-solid ${
+                                    d.filename.toLowerCase().endsWith('.pdf')
+                                      ? 'fa-file-pdf text-danger'
+                                      : 'fa-file-lines text-primary'
+                                  }`}
+                                />
+                                <span className="sidebar-doc-name">
+                                  {itemLabel}
+                                </span>
+                              </div>
+                              <div className="sidebar-doc-actions">
+                                {/* Nút chỉ định nhanh */}
+                                <button
+                                  type="button"
+                                  className={`sidebar-doc-btn pin-btn ${isPinned ? 'is-active text-primary' : ''}`}
+                                  onClick={() => toggleTargetDocument({ filename: d.filename, label: itemLabel, category: d.category })}
+                                  title={
+                                    isPinned
+                                      ? (t('aiAssistant.inline.unpinTargetDocument'))
+                                      : (t('aiAssistant.inline.targetThisDocumentForQ'))
+                                  }
+                                >
+                                  <i className="fa-solid fa-crosshairs" />
+                                </button>
+                                {!d.is_managed && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      className="sidebar-doc-btn"
+                                      onClick={() => setPreviewFilename(d.filename)}
+                                      title={t('aiAssistant.preview')}
+                                    >
+                                      <i className="fa-solid fa-eye" />
+                                    </button>
+                                    {currentUser.isAdmin && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          className="sidebar-doc-btn"
+                                          onClick={() => handleReclassifyDoc(d.filename)}
+                                          disabled={reclassifyingDoc === d.filename}
+                                          title={reclassifyingDoc === d.filename ? t('aiAssistant.inline.reclassifying') : t('aiAssistant.inline.reclassifyDoc')}
+                                          aria-label={`${t('aiAssistant.inline.reclassifyDoc')}: ${d.filename}`}
+                                        >
+                                          <i className={`fa-solid ${reclassifyingDoc === d.filename ? 'fa-spinner fa-spin' : 'fa-tags'}`} />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="sidebar-doc-btn delete-btn"
+                                          onClick={() => handleDeleteDoc(d.filename)}
+                                          title={t('aiAssistant.deleteDoc')}
+                                          aria-label={`${t('aiAssistant.deleteDoc')}: ${d.filename}`}
+                                        >
+                                          <i className="fa-solid fa-trash" />
+                                        </button>
+                                      </>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* Tài liệu cấp trực tiếp (nếu có) */}
+              {root.directDocs.length > 0 && (
+                <div className="sidebar-doc-list">
+                  {root.directDocs.map((d) => {
+                    const isPinned = isDocumentPinned(d.filename);
+                    return (
+                    <div
+                      key={d.filename}
+                      className={`sidebar-doc-row ${isPinned ? 'is-targeted' : ''}`}
+                      draggable={true}
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData(
+                          'application/x-tlbm-doc',
+                          JSON.stringify({ filename: d.filename, label: d.filename, category: d.category })
+                        );
+                        e.dataTransfer.effectAllowed = 'copy';
+                      }}
+                      title={
+                        t('aiAssistant.inline.dragFilenameToChatOr', { filename: d.filename })
+                      }
+                    >
+                      <div className="sidebar-doc-info" title={d.filename}>
+                        <i
+                          className={`sidebar-doc-icon fa-solid ${
+                            d.filename.toLowerCase().endsWith('.pdf')
+                              ? 'fa-file-pdf text-danger'
+                              : 'fa-file-lines text-primary'
+                          }`}
+                        />
+                        <span className="sidebar-doc-name">{d.filename}</span>
+                      </div>
+                      <div className="sidebar-doc-actions">
+                        <button
+                          type="button"
+                          className={`sidebar-doc-btn pin-btn ${isPinned ? 'is-active text-primary' : ''}`}
+                          onClick={() => toggleTargetDocument({ filename: d.filename, label: d.filename, category: d.category })}
+                          title={
+                            isPinned
+                              ? (t('aiAssistant.inline.unpinTargetDocument'))
+                              : (t('aiAssistant.inline.targetThisDocumentForQ'))
+                          }
+                        >
+                          <i className="fa-solid fa-crosshairs" />
+                        </button>
+                        {!d.is_managed && (
+                          <>
+                            <button
+                              type="button"
+                              className="sidebar-doc-btn"
+                              onClick={() => setPreviewFilename(d.filename)}
+                              title={t('aiAssistant.preview')}
+                            >
+                              <i className="fa-solid fa-eye" />
+                            </button>
+                            {currentUser.isAdmin && (
+                              <>
+                                <button
+                                  type="button"
+                                  className="sidebar-doc-btn"
+                                  onClick={() => handleReclassifyDoc(d.filename)}
+                                  disabled={reclassifyingDoc === d.filename}
+                                  title={reclassifyingDoc === d.filename ? t('aiAssistant.inline.reclassifying') : t('aiAssistant.inline.reclassifyDoc')}
+                                  aria-label={`${t('aiAssistant.inline.reclassifyDoc')}: ${d.filename}`}
+                                >
+                                  <i className={`fa-solid ${reclassifyingDoc === d.filename ? 'fa-spinner fa-spin' : 'fa-tags'}`} />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="sidebar-doc-btn delete-btn"
+                                  onClick={() => handleDeleteDoc(d.filename)}
+                                  title={t('aiAssistant.deleteDoc')}
+                                  aria-label={`${t('aiAssistant.deleteDoc')}: ${d.filename}`}
+                                >
+                                  <i className="fa-solid fa-trash" />
+                                </button>
+                              </>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    });
 
   if (!aiPermissionLoaded) {
     return <div className="flex h-full items-center justify-center text-text-secondary">{t('aiAssistant.accessChecking')}</div>;
@@ -1961,275 +2246,43 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                 </div>
               )}
 
-              {/* Danh mục tài liệu theo cấu trúc Thư mục nhiều cấp */}
-              {Object.keys(hierarchicalDocs).length === 0 ? (
+              {/* Danh mục tài liệu chia 2 nhóm: Tài liệu tải lên & Tài liệu hệ thống */}
+              {uploadedDocs.length === 0 && managedDocs.length === 0 ? (
                 <div className="sidebar-empty-state">
                   <i className="fa-regular fa-folder-open sidebar-empty-icon" />
                   <div>{documents.length === 0 ? t('aiAssistant.emptyDocs') : t('aiAssistant.emptyDocsSearch')}</div>
                 </div>
               ) : (
-                Object.values(hierarchicalDocs).map((root: RootFolderGroup) => {
-                  const isRootCollapsed = !!collapsedRoots[root.name];
-                  return (
-                    <div key={root.name} className={`sidebar-doc-category ${isRootCollapsed ? 'is-collapsed' : ''}`}>
-                      {/* Thư mục gốc duy nhất (Level 1) */}
-                      <button
-                        type="button"
-                        className="sidebar-category-header"
-                        onClick={() => toggleRoot(root.name)}
-                        aria-expanded={!isRootCollapsed}
-                        title={
-                          isRootCollapsed
-                            ? t('aiAssistant.inline.expandFolderName', { name: root.name })
-                            : t('aiAssistant.inline.collapseFolderName', { name: root.name })
-                        }
-                      >
-                        <span className="sidebar-category-title">
-                          <i
-                            className={`sidebar-chevron-icon fa-solid ${
-                              isRootCollapsed ? 'fa-chevron-right' : 'fa-chevron-down'
-                            }`}
-                          />
-                          <i className="fa-solid fa-folder text-warning" />
-                          <span className="sidebar-category-name" title={root.name}>
-                            {root.name}
-                          </span>
+                <>
+                  {uploadedDocs.length > 0 && (
+                    <div className="sidebar-doc-section">
+                      <div className="sidebar-doc-section-header">
+                        <span className="sidebar-doc-section-title">
+                          <i className="fa-solid fa-cloud-arrow-up text-primary" />
+                          <span>{t('aiAssistant.inline.uploadedDocsSection')}</span>
                         </span>
-                        <span className="sidebar-category-count font-bold">
-                          {root.totalCount}
-                        </span>
-                      </button>
-
-                      {/* Danh sách Item bên trong Folder nhỏ */}
-                      {!isRootCollapsed && (
-                        <div className="sidebar-root-content">
-                          {Object.values(root.subFolders).map((sub: SubFolderGroup) => {
-                            const subKey = `${root.name}_${sub.name}`;
-                            const isSubCollapsed = !!collapsedSubs[subKey];
-                            return (
-                              <div
-                                key={sub.name}
-                                className={`sidebar-subfolder-card ${isSubCollapsed ? 'is-collapsed' : ''}`}
-                              >
-                                {/* Top Header */}
-                                <button
-                                  type="button"
-                                  className="sidebar-subfolder-header"
-                                  onClick={() => toggleSub(subKey)}
-                                  aria-expanded={!isSubCollapsed}
-                                  title={
-                                    isSubCollapsed
-                                      ? t('aiAssistant.inline.expandName', { name: sub.name })
-                                      : t('aiAssistant.inline.collapseName', { name: sub.name })
-                                  }
-                                >
-                                  <span className="sidebar-subfolder-title">
-                                    <i
-                                      className={`text-[10px] text-muted transition-transform fa-solid ${
-                                        isSubCollapsed ? 'fa-chevron-right' : 'fa-chevron-down'
-                                      }`}
-                                    />
-                                    <i
-                                      className={`fa-solid ${
-                                        isSubCollapsed ? 'fa-folder text-warning' : 'fa-folder-open text-warning'
-                                      } text-xs`}
-                                    />
-                                    <span className="sidebar-subfolder-name" title={sub.name}>
-                                      {sub.name}
-                                    </span>
-                                  </span>
-                                  <span className="sidebar-subfolder-count">
-                                    {sub.docs.length}
-                                  </span>
-                                </button>
-
-                                {/* Danh sách Item bên trong Folder nhỏ */}
-                                {!isSubCollapsed && (
-                                  <div className="sidebar-doc-list">
-                                    {sub.docs.map((d) => {
-                                      const itemLabel = d.filename;
-                                      const isPinned = isDocumentPinned(d.filename);
-
-                                      return (
-                                        <div
-                                          key={d.filename}
-                                          className={`sidebar-doc-row ${isPinned ? 'is-targeted' : ''}`}
-                                          draggable={true}
-                                          onDragStart={(e) => {
-                                            e.dataTransfer.setData(
-                                              'application/x-tlbm-doc',
-                                              JSON.stringify({ filename: d.filename, label: itemLabel, category: d.category })
-                                            );
-                                            e.dataTransfer.effectAllowed = 'copy';
-                                          }}
-                                          title={
-                                            t('aiAssistant.inline.dragItemlabelToChatOr', { itemLabel })
-                                          }
-                                        >
-                                          <div className="sidebar-doc-info" title={d.filename}>
-                                            <i
-                                              className={`sidebar-doc-icon fa-solid ${
-                                                d.filename.toLowerCase().endsWith('.pdf')
-                                                  ? 'fa-file-pdf text-danger'
-                                                  : 'fa-file-lines text-primary'
-                                              }`}
-                                            />
-                                            <span className="sidebar-doc-name">
-                                              {itemLabel}
-                                            </span>
-                                          </div>
-                                          <div className="sidebar-doc-actions">
-                                            {/* Nút chỉ định nhanh */}
-                                            <button
-                                              type="button"
-                                              className={`sidebar-doc-btn pin-btn ${isPinned ? 'is-active text-primary' : ''}`}
-                                              onClick={() => toggleTargetDocument({ filename: d.filename, label: itemLabel, category: d.category })}
-                                              title={
-                                                isPinned
-                                                  ? (t('aiAssistant.inline.unpinTargetDocument'))
-                                                  : (t('aiAssistant.inline.targetThisDocumentForQ'))
-                                              }
-                                            >
-                                              <i className="fa-solid fa-crosshairs" />
-                                            </button>
-                                            {!d.is_managed && (
-                                              <>
-                                                <button
-                                                  type="button"
-                                                  className="sidebar-doc-btn"
-                                                  onClick={() => setPreviewFilename(d.filename)}
-                                                  title={t('aiAssistant.preview')}
-                                                >
-                                                  <i className="fa-solid fa-eye" />
-                                                </button>
-                                                {currentUser.isAdmin && (
-                                                  <>
-                                                    <button
-                                                      type="button"
-                                                      className="sidebar-doc-btn"
-                                                      onClick={() => handleReclassifyDoc(d.filename)}
-                                                      disabled={reclassifyingDoc === d.filename}
-                                                      title={reclassifyingDoc === d.filename ? t('aiAssistant.inline.reclassifying') : t('aiAssistant.inline.reclassifyDoc')}
-                                                      aria-label={`${t('aiAssistant.inline.reclassifyDoc')}: ${d.filename}`}
-                                                    >
-                                                      <i className={`fa-solid ${reclassifyingDoc === d.filename ? 'fa-spinner fa-spin' : 'fa-tags'}`} />
-                                                    </button>
-                                                    <button
-                                                      type="button"
-                                                      className="sidebar-doc-btn delete-btn"
-                                                      onClick={() => handleDeleteDoc(d.filename)}
-                                                      title={t('aiAssistant.deleteDoc')}
-                                                      aria-label={`${t('aiAssistant.deleteDoc')}: ${d.filename}`}
-                                                    >
-                                                      <i className="fa-solid fa-trash" />
-                                                    </button>
-                                                  </>
-                                                )}
-                                              </>
-                                            )}
-                                          </div>
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-
-                          {/* Tài liệu cấp trực tiếp (nếu có) */}
-                          {root.directDocs.length > 0 && (
-                            <div className="sidebar-doc-list">
-                              {root.directDocs.map((d) => {
-                                const isPinned = isDocumentPinned(d.filename);
-                                return (
-                                <div
-                                  key={d.filename}
-                                  className={`sidebar-doc-row ${isPinned ? 'is-targeted' : ''}`}
-                                  draggable={true}
-                                  onDragStart={(e) => {
-                                    e.dataTransfer.setData(
-                                      'application/x-tlbm-doc',
-                                      JSON.stringify({ filename: d.filename, label: d.filename, category: d.category })
-                                    );
-                                    e.dataTransfer.effectAllowed = 'copy';
-                                  }}
-                                  title={
-                                    t('aiAssistant.inline.dragFilenameToChatOr', { filename: d.filename })
-                                  }
-                                >
-                                  <div className="sidebar-doc-info" title={d.filename}>
-                                    <i
-                                      className={`sidebar-doc-icon fa-solid ${
-                                        d.filename.toLowerCase().endsWith('.pdf')
-                                          ? 'fa-file-pdf text-danger'
-                                          : 'fa-file-lines text-primary'
-                                      }`}
-                                    />
-                                    <span className="sidebar-doc-name">{d.filename}</span>
-                                  </div>
-                                  <div className="sidebar-doc-actions">
-                                    <button
-                                      type="button"
-                                      className={`sidebar-doc-btn pin-btn ${isPinned ? 'is-active text-primary' : ''}`}
-                                      onClick={() => toggleTargetDocument({ filename: d.filename, label: d.filename, category: d.category })}
-                                      title={
-                                        isPinned
-                                          ? (t('aiAssistant.inline.unpinTargetDocument'))
-                                          : (t('aiAssistant.inline.targetThisDocumentForQ'))
-                                      }
-                                    >
-                                      <i className="fa-solid fa-crosshairs" />
-                                    </button>
-                                    {!d.is_managed && (
-                                      <>
-                                        <button
-                                          type="button"
-                                          className="sidebar-doc-btn"
-                                          onClick={() => setPreviewFilename(d.filename)}
-                                          title={t('aiAssistant.preview')}
-                                        >
-                                          <i className="fa-solid fa-eye" />
-                                        </button>
-                                        {currentUser.isAdmin && (
-                                          <>
-                                            <button
-                                              type="button"
-                                              className="sidebar-doc-btn"
-                                              onClick={() => handleReclassifyDoc(d.filename)}
-                                              disabled={reclassifyingDoc === d.filename}
-                                              title={reclassifyingDoc === d.filename ? t('aiAssistant.inline.reclassifying') : t('aiAssistant.inline.reclassifyDoc')}
-                                              aria-label={`${t('aiAssistant.inline.reclassifyDoc')}: ${d.filename}`}
-                                            >
-                                              <i className={`fa-solid ${reclassifyingDoc === d.filename ? 'fa-spinner fa-spin' : 'fa-tags'}`} />
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="sidebar-doc-btn delete-btn"
-                                              onClick={() => handleDeleteDoc(d.filename)}
-                                              title={t('aiAssistant.deleteDoc')}
-                                              aria-label={`${t('aiAssistant.deleteDoc')}: ${d.filename}`}
-                                            >
-                                              <i className="fa-solid fa-trash" />
-                                            </button>
-                                          </>
-                                        )}
-                                      </>
-                                    )}
-                                  </div>
-                                </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      )}
+                        <span className="sidebar-doc-section-count">{uploadedDocs.length}</span>
+                      </div>
+                      {renderFolderTree(uploadedTree, 'uploaded')}
                     </div>
-                  );
-                })
+                  )}
+
+                  {managedDocs.length > 0 && (
+                    <div className="sidebar-doc-section">
+                      <div className="sidebar-doc-section-header">
+                        <span className="sidebar-doc-section-title">
+                          <i className="fa-solid fa-database text-primary" />
+                          <span>{t('aiAssistant.inline.systemDocsSection')}</span>
+                        </span>
+                        <span className="sidebar-doc-section-count">{managedDocs.length}</span>
+                      </div>
+                      {renderFolderTree(managedTree, 'managed')}
+                    </div>
+                  )}
+                </>
               )}
 
-              {currentUser.isAdmin && documents.length > 0 && (
+              {currentUser.isAdmin && documents.some((d) => !d.is_managed) && (
                 <button
                   type="button"
                   className="sidebar-clear-all-btn"

@@ -428,6 +428,52 @@
   background: var(--text-muted, rgba(0, 0, 0, 0.3));
 }
 
+.sidebar-doc-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sidebar-doc-section + .sidebar-doc-section {
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border-subtle);
+}
+
+.sidebar-doc-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}
+
+.sidebar-doc-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-doc-section-count {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: var(--radius-full);
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
 /* Dropzone tải lên file */
 .sidebar-dropzone {
   flex-shrink: 0;
