@@ -6,13 +6,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Thiệp 10 - Bữa Tiệc Sắc Màu 3D (Festive Party) | Bảo Long Insurance</title>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800;900&display=swap" rel="stylesheet">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js" defer></script>
+  <script src="/birthday-cards/motion.js" defer></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       min-height: 100vh;
+      min-height: 100dvh;
       background: linear-gradient(135deg, #4c1d95 0%, #7c3aed 50%, #db2777 100%);
       font-family: 'Plus Jakarta Sans', sans-serif;
       display: flex;
@@ -133,7 +135,7 @@
 <body>
   <canvas id="partyWebGL"></canvas>
 
-  <div class="party-card" id="pCard">
+  <div class="party-card" id="pCard" data-birthday-card="10">
     <div class="party-top">
       <div style="font-size:22px; letter-spacing:8px;">🎊 🎈 🎂 🎈 🎊</div>
       <h1>Happy Birthday!</h1>
@@ -143,7 +145,7 @@
     <div class="spotlight">
       <h2 data-card-field="employee_name">—</h2>
       <div class="badges">
-        <span class="b-chip">💼 Chức vụ: <span data-card-field="position">—</span></span>
+        <span class="b-chip">💼 Chức vụ: <span data-card-field="position">—</span><br><span data-card-optional="job_title" hidden>Chức danh: <span data-card-field="job_title"></span></span></span>
         <span class="b-chip pink">🏢 Đơn vị: <span data-card-field="department">—</span></span>
       </div>
     </div>
