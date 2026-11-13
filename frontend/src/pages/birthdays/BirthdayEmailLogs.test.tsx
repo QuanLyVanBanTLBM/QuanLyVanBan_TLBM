@@ -236,6 +236,7 @@ describe('Birthday email log actions', () => {
     });
     render(<BirthdayEmailLogs />);
     expect(await screen.findByText('Chưa thể xác định kết quả gửi email. Cần kiểm tra/đối soát trước khi gửi lại.')).toBeInTheDocument();
+    expect(within(screen.getByRole('row', { name: /CBNV A/ })).getByText('Chưa rõ kết quả SMTP')).toBeInTheDocument();
     const retries = screen.getAllByRole('button', { name: 'Gửi lại' });
     expect(retries).toHaveLength(1);
     expect(retries[0]).toBeEnabled();
@@ -293,6 +294,7 @@ describe('Birthday email log actions', () => {
     const recoveryRow = screen.getByRole('row', { name: /CBNV gửi bù/ });
     const manualRow = screen.getByRole('row', { name: /CBNV gửi thủ công/ });
     const manualRetryRow = screen.getByRole('row', { name: /CBNV gửi lại thư thủ công/ });
+    expect(within(notProcessedRow).getByText('Chưa được xử lý')).toBeInTheDocument();
     expect(within(notProcessedRow).queryByText('Tự động theo lịch')).not.toBeInTheDocument();
     expect(within(scheduledRow).getByText('Tự động theo lịch')).toBeInTheDocument();
     expect(within(recoveryRow).getByText('Chạy bù')).toBeInTheDocument();
