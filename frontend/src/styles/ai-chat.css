@@ -1272,27 +1272,69 @@
 
 /* Trích dẫn Citation Deep Link */
 .ai-citations-box {
-  margin-top: 14px;
-  padding: 12px 14px;
+  margin-top: var(--space-3);
+  padding: var(--space-3);
   border-radius: var(--radius-md);
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
+}
+
+.ai-citations-box.is-collapsed {
+  padding: var(--space-2) var(--space-3);
+}
+
+.citations-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  color: var(--text-secondary);
+  transition: color var(--transition-fast);
+}
+
+.citations-toggle-btn:hover .citations-title,
+.citations-toggle-btn:hover .citations-chevron {
+  color: var(--color-primary);
 }
 
 .citations-title {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 0.78rem;
+  gap: var(--space-2);
+  font-size: var(--font-xs);
   font-weight: 700;
   color: var(--text-secondary);
 }
 
 .citations-title i {
   color: var(--color-primary);
+}
+
+.citations-count-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: var(--font-2xs);
+  font-weight: 600;
+}
+
+.citations-chevron {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  flex-shrink: 0;
 }
 
 .citations-list {

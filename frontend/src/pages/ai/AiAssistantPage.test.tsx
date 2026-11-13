@@ -217,6 +217,13 @@ describe('AiAssistantPage', () => {
     const sqlButtons = await screen.findAllByTitle('aiAssistant.viewDocument: VB-99');
     expect(sqlButtons).toHaveLength(1);
 
+    // Kiểm tra nút thu nhỏ / mở rộng nguồn trích dẫn
+    const collapseBtn = screen.getByRole('button', { name: 'aiAssistant.toggleCitationsCollapse' });
+    fireEvent.click(collapseBtn);
+    expect(screen.queryByTitle('aiAssistant.viewDocument: VB-99')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'aiAssistant.toggleCitationsExpand' }));
+    expect(screen.getByTitle('aiAssistant.viewDocument: VB-99')).toBeInTheDocument();
+
     fireEvent.click(screen.getByTitle('aiAssistant.viewDocument: Nghiệp vụ Văn bản'));
     expect(mockedPreviewDocument).not.toHaveBeenCalled();
     expect(await screen.findByTestId('location-probe')).toHaveTextContent('/documents/incoming');
