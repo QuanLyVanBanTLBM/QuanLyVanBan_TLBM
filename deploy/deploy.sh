@@ -353,6 +353,12 @@ validate_external_root DJANGO_MEDIA_ROOT "${DJANGO_MEDIA_ROOT:-}"
 validate_external_root SIGNING_DOCUMENT_ROOT "${SIGNING_DOCUMENT_ROOT:-}"
 validate_external_root AI_DATA_DIR "${AI_DATA_DIR:-}"
 validate_external_root DOCUMENT_STORAGE_ROOT "${DOCUMENT_STORAGE_ROOT:-}"
+for data_root_path in "$DJANGO_MEDIA_ROOT" "$SIGNING_DOCUMENT_ROOT" "$AI_DATA_DIR" "$DOCUMENT_STORAGE_ROOT"; do
+  if [ -n "$data_root_path" ] && [ -d "$data_root_path" ]; then
+    chmod -R u+rwX,go+rX "$data_root_path" 2>/dev/null || true
+    find "$data_root_path" -type f ! -readable -delete 2>/dev/null || true
+  fi
+done
 BACKUP_PARENT="$BASE/backups"
 mkdir -p "$BACKUP_PARENT"
 BACKUP_PARENT=$(readlink -f "$BACKUP_PARENT") || { echo "Khong xac dinh duoc thu muc backup rieng."; exit 1; }
