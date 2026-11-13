@@ -194,17 +194,17 @@ export default function SettingsPage() {
           </div>
 
           {/* Tiện ích nghe thử âm thanh chuông */}
-          <div className="pt-3 mt-1 flex items-center justify-between gap-3 border-t border-border-subtle/70">
-            <div className="flex items-center gap-1.5 text-xs text-muted">
-              <i className="fa-solid fa-circle-check text-primary text-[11px]" />
-              <span>Web Audio Chuông Hỏa Tốc</span>
+          <div className="pt-3 mt-1 flex flex-wrap items-center justify-between gap-3 border-t border-border-subtle/70">
+            <div className="flex items-center gap-1.5 text-xs text-muted min-w-0">
+              <i className="fa-solid fa-circle-check text-primary text-[11px] shrink-0" />
+              <span className="truncate">Web Audio Chuông Hỏa Tốc</span>
             </div>
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={() => soundAlert.playUrgentChime(true)}
-              className="gap-2 shadow-2xs hover:border-primary/40 font-semibold"
+              className="shrink-0 whitespace-nowrap gap-2 shadow-2xs hover:border-primary/40 font-semibold"
             >
               <i className="fa-solid fa-volume-high text-primary text-xs" />
               <span>{t('settings.testSound')}</span>
@@ -239,8 +239,8 @@ export default function SettingsPage() {
           </div>
 
           {/* Tùy chỉnh thời gian & Nút khóa màn hình ngay để demo */}
-          <div className="pt-3 mt-1 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-border-subtle/70">
-            <div className="flex items-center gap-2">
+          <div className="pt-3 mt-1 flex flex-wrap items-center justify-between gap-2.5 border-t border-border-subtle/70">
+            <div className="flex items-center gap-2 min-w-0">
               <span className="text-xs text-secondary font-medium whitespace-nowrap">
                 {t('settings.lockTimeout')}:
               </span>
@@ -248,7 +248,7 @@ export default function SettingsPage() {
                 value={secLockTimeout}
                 onChange={(e) => setSecLockTimeout(Number(e.target.value))}
                 disabled={!secAutoLock}
-                className="text-xs bg-surface border border-border-subtle rounded-lg px-2.5 py-1 text-main font-medium focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                className="text-xs bg-surface border border-border-subtle rounded-lg px-2.5 py-1 text-main font-medium focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 <option value={0.5}>30 giây (Thử nghiệm demo)</option>
                 <option value={1}>1 phút (Kiểm thử nhanh)</option>
@@ -262,7 +262,7 @@ export default function SettingsPage() {
               variant="outline"
               size="sm"
               onClick={() => window.dispatchEvent(new Event('tlbm_lock_screen_now'))}
-              className="gap-2 shadow-2xs hover:border-amber-500/40 text-amber-600 dark:text-amber-400 font-semibold"
+              className="shrink-0 whitespace-nowrap gap-1.5 shadow-2xs hover:border-amber-500/40 text-amber-600 dark:text-amber-400 font-semibold"
             >
               <i className="fa-solid fa-lock text-xs" />
               <span>{t('settings.lockNow')}</span>
