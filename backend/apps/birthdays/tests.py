@@ -515,6 +515,8 @@ class BirthdaySystemTests(TestCase):
         self.assertEqual(row["retry_block_reason"], "invalidEmail")
 
     def test_public_birthday_card_api_returns_only_signed_card_fields(self):
+        self.emp_staff.chuc_danh = "Chuyên viên dữ liệu"
+        self.emp_staff.save(update_fields=["chuc_danh"])
         token = generate_birthday_card_token(self.emp_staff)
         self.assertEqual(
             signing.loads(token, salt="birthdays.animated-card"),
@@ -531,9 +533,12 @@ class BirthdaySystemTests(TestCase):
         card = response.json()["card"]
         self.assertEqual(card["employee_name"], self.emp_staff.ho_ten)
         self.assertEqual(card["birthday_date"], "20/05")
+        self.assertEqual(card["job_title"], "Chuyên viên dữ liệu")
         self.assertEqual(card["department"], self.don_vi.ten)
         self.assertEqual(card["position"], self.chuc_vu.name)
         self.assertNotIn("email", card)
+        self.assertNotIn("age", card)
+        self.assertNotIn("birth_year", card)
         self.assertEqual(response["Cache-Control"], "private, no-store")
 
     @override_settings(BIRTHDAY_CARD_BASE_URL="https://example.test/birthday-card.html")
@@ -594,6 +599,32 @@ class BirthdaySystemTests(TestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_public_birthday_card_api_rejects_signed_token_for_missing_employee(self):
+        missing_id = Employee.objects.order_by("-pk").values_list("pk", flat=True).first() + 1
+        token = signing.dumps({"employee_id": missing_id}, salt="birthdays.animated-card")
+        response = self.client.post(
+            reverse("birthdays:birthday_card"), {"token": token}, format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_public_birthday_card_api_accepts_unexpired_legacy_snapshot_token(self):
+        legacy_card = {
+            "employee_name": self.emp_staff.ho_ten,
+            "birthday_date": "20/05",
+            "department": self.don_vi.ten,
+            "position": self.chuc_vu.name,
+            "brand_name": "Bảo Long Insurance",
+            "organization_name": "Bảo Long Insurance",
+        }
+        token = signing.dumps(legacy_card, salt="birthdays.animated-card")
+        response = self.client.post(
+            reverse("birthdays:birthday_card"), {"token": token}, format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json()["card"], legacy_card)
 
     @override_settings(
         BIRTHDAY_CARD_BASE_URL="https://example.test/birthday-card.html",

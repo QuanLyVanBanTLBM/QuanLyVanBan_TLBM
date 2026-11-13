@@ -11,6 +11,7 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       min-height: 100vh;
+      min-height: 100dvh;
       background: #efeae1;
       color: #1c1917;
       font-family: 'Cormorant Garamond', Georgia, serif;
@@ -205,7 +206,7 @@
 <body>
   <canvas id="silkCanvas" aria-hidden="true"></canvas>
 
-  <article class="editorial-paper" id="paperCard">
+  <article class="editorial-paper" id="paperCard" data-birthday-card="03">
     <div class="header-meta">
       <span data-card-field="organization_name">BẢO LONG INSURANCE</span>
       <span>EDITION • <strong data-card-field="birthday_date">—</strong></span>
@@ -224,6 +225,7 @@
       <div class="d-cell">
         <small>Chức vụ</small>
         <strong data-card-field="position">—</strong>
+        <small data-card-optional="job_title" hidden>Chức danh: <span data-card-field="job_title"></span></small>
       </div>
       <div class="d-cell">
         <small>Phòng ban</small>
