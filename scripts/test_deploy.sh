@@ -265,9 +265,25 @@ if [[ "$command" == "/usr/bin/systemctl" ]]; then
     [[ "${MOCK_NGINX_RELOAD_FAIL:-0}" == "0" ]] || exit 48
   fi
 elif [[ "$command" == "/usr/bin/install" ]]; then
-  echo nginx-install >> "$EVENTS"
-  [[ "${args[*]:$((i + 1))}" == "-m 644 $HOME/deploy/qlvb-frontend.nginx $QLVB_NGINX_SITE" ]] || exit 49
-  cp "$HOME/deploy/qlvb-frontend.nginx" "$QLVB_NGINX_SITE"
+  install_args="${args[*]:$((i + 1))}"
+  case "$install_args" in
+    "-m 644 $HOME/deploy/qlvb-frontend.nginx $QLVB_NGINX_SITE")
+      echo nginx-install >> "$EVENTS"
+      cp "$HOME/deploy/qlvb-frontend.nginx" "$QLVB_NGINX_SITE"
+      ;;
+    "-m 0644 $HOME/deploy/qlvb-backend.socket $QLVB_SYSTEMD_DIR/qlvb-backend.socket")
+      echo unit-install-socket >> "$EVENTS"
+      [[ "${MOCK_UNIT_INSTALL_FAIL:-0}" == "0" ]] || exit 51
+      cp "$HOME/deploy/qlvb-backend.socket" "$QLVB_SYSTEMD_DIR/qlvb-backend.socket"
+      ;;
+    "-D -m 0644 $HOME/deploy/qlvb-backend.service.d/socket.conf $QLVB_SYSTEMD_DIR/qlvb-backend.service.d/socket.conf")
+      echo unit-install-dropin >> "$EVENTS"
+      [[ "${MOCK_UNIT_INSTALL_FAIL:-0}" == "0" ]] || exit 51
+      mkdir -p "$QLVB_SYSTEMD_DIR/qlvb-backend.service.d"
+      cp "$HOME/deploy/qlvb-backend.service.d/socket.conf" "$QLVB_SYSTEMD_DIR/qlvb-backend.service.d/socket.conf"
+      ;;
+    *) exit 49 ;;
+  esac
 elif [[ "$command" == "/usr/sbin/nginx" ]]; then
   echo nginx-test >> "$EVENTS"
   [[ "$action" == "-t" ]] || exit 50
@@ -314,6 +330,10 @@ make_case() {
   QLVB_NGINX_SITE="$CASE_ROOT/nginx-site"
   echo 'server { listen 443; }' > "$QLVB_NGINX_SITE"
   echo 'server { listen 443; server_name new; }' > "$HOME/deploy/qlvb-frontend.nginx"
+  QLVB_SYSTEMD_DIR="$CASE_ROOT/systemd"
+  mkdir -p "$QLVB_SYSTEMD_DIR" "$HOME/deploy/qlvb-backend.service.d"
+  cp "$ROOT/deploy/qlvb-backend.socket" "$HOME/deploy/qlvb-backend.socket"
+  cp "$ROOT/deploy/qlvb-backend.service.d/socket.conf" "$HOME/deploy/qlvb-backend.service.d/socket.conf"
   echo "$QLVB_BASE/releases/previous" > "$CURRENT_FILE"
   echo "$state" > "$SERVICE_STATE"
   : > "$EVENTS"
@@ -334,9 +354,9 @@ AI_DATA_DIR=$CASE_ROOT/shared/ai
 DOCUMENT_STORAGE_ROOT=$CASE_ROOT/shared/storage
 ADMIN_PASSWORD=test-only
 ENV
-  export CASE_ROOT NAME HOME EVENTS SERVICE_STATE CURRENT_FILE RELEASE_DIR QLVB_BASE QLVB_ENVF QLVB_NGINX_SITE
+  export CASE_ROOT NAME HOME EVENTS SERVICE_STATE CURRENT_FILE RELEASE_DIR QLVB_BASE QLVB_ENVF QLVB_NGINX_SITE QLVB_SYSTEMD_DIR
   export MOCK_BIN MOCK_PYTHON MOCK_PIP MOCK_NGINX_RELOAD_FAIL=0
-  export MOCK_PENDING=0 MOCK_PREFLIGHT_FAIL=0 MOCK_MIGRATION_FAIL=0 MOCK_NON_ATOMIC=0 MOCK_MIGRATE_PLAN_FAIL=0
+  export MOCK_PENDING=0 MOCK_PREFLIGHT_FAIL=0 MOCK_MIGRATION_FAIL=0 MOCK_NON_ATOMIC=0 MOCK_MIGRATE_PLAN_FAIL=0 MOCK_UNIT_INSTALL_FAIL=0
   export MOCK_ADOPT_FAIL=0 MOCK_SEED_FAIL=0 MOCK_STOP_FAIL=0 MOCK_STOP_LEAVES_ACTIVE=0 MOCK_RESTART_FAIL=0 MOCK_RESTART_FAIL_ONCE=0 MOCK_SYSTEMCTL_QUERY_ERROR=0
   export MOCK_BACKUP_FAIL=0 MOCK_BACKUP_BAD_JSON=0 MOCK_EXTRACT_FAIL=0 MOCK_OMIT_BACKUP_TOOL=0
   export MOCK_PGVECTOR_VERSION=0.8.7
@@ -393,6 +413,12 @@ assert_event_absent stop
 assert_event_absent backup
 assert_event_absent restart
 pass "migration plan failure leaves the active service untouched"
+
+make_case rebuild-skips-early-plan
+export MOCK_MIGRATE_PLAN_FAIL=1
+run_deploy rebuild || true
+! grep -q 'Khong doc duoc ke hoach migration' "$CASE_ROOT/output.log" || fail "rebuild must not run the early migration plan"
+pass "rebuild does not depend on the early migration plan"
 
 make_case existing-release
 mkdir -p "$RELEASE_DIR"
@@ -776,6 +802,46 @@ assert_event_absent nginx-install
 assert_event_absent nginx-test
 assert_event_absent reload
 pass "unchanged nginx config is not reinstalled or reloaded"
+
+make_case units-installed-first-time
+if ! run_deploy; then
+  cat "$CASE_ROOT/output.log" >&2
+  cat "$EVENTS" >&2
+  fail "first-time unit install deployment failed unexpectedly"
+fi
+expect_state "$RELEASE_DIR" active
+assert_event_count unit-install-socket 1
+assert_event_count unit-install-dropin 1
+assert_event_count daemon-reload 1
+assert_event_count enable 1
+assert_event_before enable stop
+cmp -s "$ROOT/deploy/qlvb-backend.socket" "$QLVB_SYSTEMD_DIR/qlvb-backend.socket" || fail "socket unit was not installed"
+pass "missing socket units are installed before the service is stopped"
+
+make_case units-unchanged
+mkdir -p "$QLVB_SYSTEMD_DIR/qlvb-backend.service.d"
+cp "$HOME/deploy/qlvb-backend.socket" "$QLVB_SYSTEMD_DIR/qlvb-backend.socket"
+cp "$HOME/deploy/qlvb-backend.service.d/socket.conf" "$QLVB_SYSTEMD_DIR/qlvb-backend.service.d/socket.conf"
+if ! run_deploy; then
+  cat "$CASE_ROOT/output.log" >&2
+  cat "$EVENTS" >&2
+  fail "deployment with unchanged units failed unexpectedly"
+fi
+expect_state "$RELEASE_DIR" active
+assert_event_absent unit-install-socket
+assert_event_absent unit-install-dropin
+assert_event_absent daemon-reload
+assert_event_absent enable
+pass "unchanged socket units are not reinstalled"
+
+make_case unit-install-denied
+export MOCK_UNIT_INSTALL_FAIL=1
+expect_failure
+expect_state "$QLVB_BASE/releases/previous" active
+assert_event_absent stop
+assert_event_absent backup
+assert_event_absent restart
+pass "denied unit install fails before the service is touched"
 
 make_case rebuild-failure
 export MOCK_SEED_FAIL=1

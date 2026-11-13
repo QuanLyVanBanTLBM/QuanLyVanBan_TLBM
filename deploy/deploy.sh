@@ -14,7 +14,7 @@
 #   sync     xac minh marker/history; thu migration tren ban khoi phuc va so schema voi release DDL/baseline,
 #            sau do chay migration that tren DB hien tai. Khong dung lai DB.
 #   rebuild  xoa va dung lai DB tu release_DDL.sql (`build_db.py --seed`). Chi chon bang thao tac reset ro rang.
-# Bien tuy chon cho test: QLVB_BASE, QLVB_ENVF, QLVB_NGINX_SITE.
+# Bien tuy chon cho test: QLVB_BASE, QLVB_ENVF, QLVB_NGINX_SITE, QLVB_SYSTEMD_DIR.
 set -euo pipefail
 umask 022
 
@@ -35,6 +35,7 @@ LOG=$BASE/deploy.log
 NGINX_NEW=$HOME/deploy/qlvb-frontend.nginx
 NGINX_PREV=$HOME/deploy/qlvb-frontend.nginx.prev
 NGINX_SITE=${QLVB_NGINX_SITE:-/etc/nginx/sites-available/qlvb-frontend}
+SYSTEMD_DIR=${QLVB_SYSTEMD_DIR:-/etc/systemd/system}
 
 exec > >(exec 9>&-; exec tee -a "$LOG") 2>&1
 step() { echo; echo "[$(date -u +%H:%M:%S)] $*"; }
@@ -228,20 +229,32 @@ cd "$REL/backend"
 $PY manage.py check
 $PY manage.py collectstatic --noinput | tail -1
 
-# Kiem tra som ke hoach migration ngay khi server cu van dang phuc vu binh thuong
-if ! MIG_PLAN=$("$PY" manage.py migrate --plan 2>&1); then
-  echo "Khong doc duoc ke hoach migration; dung deploy truoc khi dung service."
+# Kiem tra som ke hoach migration khi server cu van phuc vu (chi sync; rebuild dung lai DB)
+if [ "$DB_MODE" = sync ]; then
+  if ! MIG_PLAN=$("$PY" manage.py migrate --plan 2>&1); then
+    echo "Khong doc duoc ke hoach migration; dung deploy truoc khi dung service."
+    printf '%s\n' "$MIG_PLAN"
+    exit 1
+  fi
   printf '%s\n' "$MIG_PLAN"
-  exit 1
-fi
-printf '%s\n' "$MIG_PLAN"
-if [[ "$MIG_PLAN" == *"No planned migration operations."* ]]; then
-  echo "Ke hoach migration: Khong co migration cho tren release moi."
+  if [[ "$MIG_PLAN" == *"No planned migration operations."* ]]; then
+    echo "Ke hoach migration: Khong co migration cho tren release moi."
+  fi
 fi
 
-if [ -z "${CASE_ROOT:-}" ]; then
-  sudo -n /usr/bin/install -m 0644 "$HOME/deploy/qlvb-backend.socket" /etc/systemd/system/qlvb-backend.socket
-  sudo -n /usr/bin/install -D -m 0644 "$HOME/deploy/qlvb-backend.service.d/socket.conf" /etc/systemd/system/qlvb-backend.service.d/socket.conf
+# Cai socket/drop-in systemd chi khi noi dung khac ban dang cai hoac socket chua enable.
+# Bon lenh sudo phai khop dung rule sudoers (xem build_db_runbook.md).
+UNITS_CHANGED=0
+if ! cmp -s -- "$HOME/deploy/qlvb-backend.socket" "$SYSTEMD_DIR/qlvb-backend.socket"; then
+  sudo -n /usr/bin/install -m 0644 "$HOME/deploy/qlvb-backend.socket" "$SYSTEMD_DIR/qlvb-backend.socket"
+  UNITS_CHANGED=1
+fi
+if ! cmp -s -- "$HOME/deploy/qlvb-backend.service.d/socket.conf" "$SYSTEMD_DIR/qlvb-backend.service.d/socket.conf"; then
+  sudo -n /usr/bin/install -D -m 0644 "$HOME/deploy/qlvb-backend.service.d/socket.conf" "$SYSTEMD_DIR/qlvb-backend.service.d/socket.conf"
+  UNITS_CHANGED=1
+fi
+systemctl is-enabled --quiet qlvb-backend.socket || UNITS_CHANGED=1
+if [ "$UNITS_CHANGED" -eq 1 ]; then
   sudo -n /usr/bin/systemctl daemon-reload
   sudo -n /usr/bin/systemctl enable qlvb-backend.socket
 fi
