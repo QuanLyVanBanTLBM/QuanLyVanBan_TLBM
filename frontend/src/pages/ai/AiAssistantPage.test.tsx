@@ -338,4 +338,30 @@ describe('AiAssistantPage', () => {
     expect(screen.getAllByTitle('aiAssistant.preview')).toHaveLength(1);
     expect(screen.getAllByTitle('aiAssistant.inline.targetThisDocumentForQ')).toHaveLength(2);
   });
+
+  it('moves soft-fallback note to the bottom and excludes it from clipboard copy', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    mockedAskQuestion.mockResolvedValue({
+      answer:
+        '(Không có tài liệu cụ thể được ghim. Phản hồi dựa trên nghiệp vụ hành chính tổng hợp)\n\nNội dung hướng dẫn chính.',
+      sources: [],
+    });
+
+    renderAiPage();
+    await waitFor(() => expect(mockedGetDocuments).toHaveBeenCalled());
+
+    const textarea = screen.getByRole('textbox', { name: 'aiAssistant.inputPlaceholder' });
+    fireEvent.change(textarea, { target: { value: 'Hỏi quy trình' } });
+    fireEvent.click(screen.getByRole('button', { name: 'aiAssistant.send' }));
+
+    const bodyPara = await screen.findByText('Nội dung hướng dẫn chính.', { selector: 'p' });
+    const noteEl = screen.getByText('(Không có tài liệu cụ thể được ghim. Phản hồi dựa trên nghiệp vụ hành chính tổng hợp)');
+    expect(noteEl).toHaveClass('ai-soft-fallback-note');
+    expect(bodyPara.compareDocumentPosition(noteEl) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    const copyButtons = screen.getAllByTitle('aiAssistant.copy');
+    fireEvent.click(copyButtons[copyButtons.length - 1]);
+    expect(writeText).toHaveBeenCalledWith('Nội dung hướng dẫn chính.');
+  });
 });

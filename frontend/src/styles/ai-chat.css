@@ -185,24 +185,26 @@
 }
 
 .ai-sidebar-search {
-  padding: 0 14px 12px;
+  margin: 0 14px 12px;
+  padding: 0;
   position: relative;
   flex-shrink: 0;
 }
 
 .ai-sidebar-search i {
   position: absolute;
-  left: 26px;
+  left: 12px;
   top: 50%;
   transform: translateY(-50%);
   color: var(--text-muted);
   font-size: 0.8rem;
+  line-height: 1;
   pointer-events: none;
 }
 
 .ai-sidebar-search input {
   width: 100%;
-  padding: 8px 30px 8px 32px;
+  padding: 8px 30px 8px 34px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-subtle);
   background: var(--bg-surface);
@@ -218,7 +220,7 @@
 
 .sidebar-search-clear-btn {
   position: absolute;
-  right: 22px;
+  right: 8px;
   top: 50%;
   transform: translateY(-50%);
   background: transparent;
@@ -1571,6 +1573,17 @@
   opacity: 0.6;
 }
 
+.ai-soft-fallback-note {
+  margin-top: 10px;
+  font-size: 0.78rem;
+  font-style: italic;
+  color: var(--text-muted);
+  opacity: 0.78;
+  user-select: none;
+  -webkit-user-select: none;
+  line-height: 1.45;
+}
+
 /* Quick followup prompts */
 .ai-followup-prompts {
   margin-top: 12px;
@@ -1919,7 +1932,8 @@
   }
 
   .ai-sidebar-search {
-    padding: 0 14px 10px;
+    margin: 0 14px 10px;
+    padding: 0;
   }
 
   .ai-sidebar-sessions-list {

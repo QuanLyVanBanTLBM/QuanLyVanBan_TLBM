@@ -100,6 +100,21 @@ const EMPTY_MESSAGES: ChatMessage[] = [];
 const MAX_QUESTION_LENGTH = 4000;
 const MAX_PINNED_DOCUMENTS = 5;
 
+const SOFT_FALLBACK_NOTE_REGEX =
+  /(?:^|\n)\s*(?:\*{1,2}|_{1,2})?\s*(\((?:Không có tài liệu cụ thể được ghim\. Phản hồi dựa trên nghiệp vụ hành chính tổng hợp|No specific document is pinned\. Response is based on general administrative best practices)\))\s*(?:\*{1,2}|_{1,2})?\s*(?=\n|$)/gi;
+
+function splitSoftFallbackNote(text: string): { body: string; note: string | null } {
+  let extractedNote: string | null = null;
+  const cleaned = text
+    .replace(SOFT_FALLBACK_NOTE_REGEX, (_match, noteText: string) => {
+      extractedNote = noteText;
+      return '\n';
+    })
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return { body: cleaned, note: extractedNote };
+}
+
 function createMessageTimestamp(): number {
   return Date.now();
 }
@@ -2507,6 +2522,9 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
             {messages.map((msg) => {
               const isWelcomeMessage = msg.id.startsWith('msg-welcome-');
               const displayedText = isWelcomeMessage ? t('aiAssistant.defaultSession.welcome') : msg.text;
+              const { body: messageBodyText, note: softFallbackNote } = msg.sender === 'ai'
+                ? splitSoftFallbackNote(displayedText)
+                : { body: displayedText, note: null };
               const displayedQuickPrompts = isWelcomeMessage
                 ? [1, 2, 3, 4].map((index) => t(`aiAssistant.defaultSession.quickPrompt${index}`))
                 : msg.quickPrompts;
@@ -2546,7 +2564,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                         ))}
                       </div>
                     )}
-                    <FormattedMessage text={displayedText} onInternalLink={handleInternalLink} />
+                    <FormattedMessage text={messageBodyText} onInternalLink={handleInternalLink} />
 
                     {msg.isError && msg.retryText && (
                       <div className="ai-error-retry-row" role="alert">
@@ -2569,6 +2587,12 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                         onPreview={(fn) => setPreviewFilename(fn)}
                         onNavigate={navigateToCitation}
                       />
+                    )}
+
+                    {softFallbackNote && (
+                      <div className="ai-soft-fallback-note">
+                        {softFallbackNote}
+                      </div>
                     )}
 
                     {/* Câu hỏi gợi ý tiếp theo (Follow-up prompts) */}
@@ -2596,7 +2620,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                       <button
                         type="button"
                         className="msg-tool-btn"
-                        onClick={() => handleCopy(msg.id, displayedText)}
+                        onClick={() => handleCopy(msg.id, messageBodyText)}
                         title={t('aiAssistant.copy')}
                       >
                         <i className={`fa-solid ${copiedId === msg.id ? 'fa-check' : 'fa-copy'}`} />
@@ -2606,7 +2630,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                       <button
                         type="button"
                         className="msg-tool-btn"
-                        onClick={() => handleSpeakText(msg.id, displayedText)}
+                        onClick={() => handleSpeakText(msg.id, messageBodyText)}
                         title={speakingId === msg.id ? t('aiAssistant.inline.stopReading') : t('aiAssistant.readAloud')}
                       >
                         <i className={`fa-solid ${speakingId === msg.id ? 'fa-stop' : 'fa-volume-high'}`} />
