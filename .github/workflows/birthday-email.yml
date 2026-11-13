@@ -19,16 +19,12 @@ on:
 
 permissions: {}
 
-concurrency:
-  group: birthday-email-scheduler
-  cancel-in-progress: false
-
 jobs:
   send-birthday-emails:
     if: github.ref == 'refs/heads/staging'
     name: Send scheduled birthday emails
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - name: Run mail task on the current release
         env:

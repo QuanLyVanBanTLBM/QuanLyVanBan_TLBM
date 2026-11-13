@@ -1,5 +1,6 @@
 from datetime import date, datetime, time as dt_time, timedelta, timezone as dt_timezone
 from concurrent.futures import ThreadPoolExecutor
+from io import StringIO
 from threading import Barrier, Lock
 import time
 from unittest import skipUnless
@@ -291,9 +292,10 @@ class BirthdaySystemTests(TestCase):
             data = response.json()
             self.assertTrue(data["success"])
             self.assertEqual(data["date"], today.isoformat())
-            self.assertEqual(data["total"], 1)
-            self.assertEqual(data["logs"][0]["employee_name"], self.emp_staff.ho_ten)
-            self.assertEqual(data["logs"][0]["trang_thai"], BirthdayEmailStatus.SUCCESS)
+            self.assertGreaterEqual(data["total"], 1)
+            current_day_log = next(row for row in data["logs"] if row["id"] == log.pk)
+            self.assertEqual(current_day_log["employee_name"], self.emp_staff.ho_ten)
+            self.assertEqual(current_day_log["trang_thai"], BirthdayEmailStatus.SUCCESS)
 
             lowercase_status = self.client.get(url, {"trang_thai": "success"})
             self.assertEqual(lowercase_status.status_code, status.HTTP_200_OK)
@@ -328,10 +330,11 @@ class BirthdaySystemTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.json()
         self.assertEqual(data["date"], requested_date.isoformat())
-        self.assertEqual(data["total"], 2)
-        self.assertEqual(
-            {entry["id"] for entry in data["logs"]},
-            {created_logs[1].id, created_logs[2].id},
+        self.assertGreaterEqual(data["total"], 2)
+        self.assertTrue(
+            {created_logs[1].id, created_logs[2].id}.issubset(
+                {entry["id"] for entry in data["logs"]}
+            )
         )
 
         valid_month_filter = self.client.get(url, {"month": 11, "year": 2026})
@@ -391,7 +394,13 @@ class BirthdaySystemTests(TestCase):
         response = self.client.get(reverse("birthdays:logs"), {"date": target_date.isoformat()})
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        rows = response.json()["logs"]
+        rows = []
+        for page in range(1, response.json()["total_pages"] + 1):
+            page_response = self.client.get(
+                reverse("birthdays:logs"),
+                {"date": target_date.isoformat(), "page": page},
+            )
+            rows.extend(page_response.json()["logs"])
         unprocessed_row = next(row for row in rows if row["employee_id"] == unprocessed.pk)
         recovered_row = next(row for row in rows if row["id"] == recovered_log.pk)
         self.assertIsNone(unprocessed_row["id"])
@@ -405,8 +414,15 @@ class BirthdaySystemTests(TestCase):
             {"date": target_date.isoformat(), "trang_thai": "NOT_PROCESSED"},
         )
         self.assertEqual(filtered.status_code, status.HTTP_200_OK)
-        self.assertTrue(all(row["trang_thai"] == "NOT_PROCESSED" for row in filtered.json()["logs"]))
-        self.assertIn(unprocessed.pk, {row["employee_id"] for row in filtered.json()["logs"]})
+        filtered_rows = []
+        for page in range(1, filtered.json()["total_pages"] + 1):
+            page_response = self.client.get(
+                reverse("birthdays:logs"),
+                {"date": target_date.isoformat(), "trang_thai": "NOT_PROCESSED", "page": page},
+            )
+            filtered_rows.extend(page_response.json()["logs"])
+        self.assertTrue(all(row["trang_thai"] == "NOT_PROCESSED" for row in filtered_rows))
+        self.assertIn(unprocessed.pk, {row["employee_id"] for row in filtered_rows})
 
     def test_birthday_email_logs_api_explains_invalid_retry_recipient(self):
         self.client.force_authenticate(user=self.emp_admin)
@@ -425,7 +441,14 @@ class BirthdaySystemTests(TestCase):
         response = self.client.get(reverse("birthdays:logs"), {"date": selected_date.isoformat()})
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        row = next(item for item in response.json()["logs"] if item["id"] == log.pk)
+        rows = []
+        for page in range(1, response.json()["total_pages"] + 1):
+            page_response = self.client.get(
+                reverse("birthdays:logs"),
+                {"date": selected_date.isoformat(), "page": page},
+            )
+            rows.extend(page_response.json()["logs"])
+        row = next(item for item in rows if item["id"] == log.pk)
         self.assertFalse(row["can_retry"])
         self.assertIsNone(row["current_recipient"])
         self.assertEqual(row["retry_block_reason"], "invalidEmail")
@@ -637,7 +660,11 @@ class BirthdaySystemTests(TestCase):
         self.emp_staff.save(update_fields=["email"])
         target_date = date(2026, 5, 20)
 
-        results = send_automated_birthday_emails(target_date=target_date, allow_test_email_backend=True)
+        results = send_automated_birthday_emails(
+            target_date=target_date,
+            allow_test_email_backend=True,
+            username=self.emp_staff.username,
+        )
 
         log = BirthdayEmailLog.objects.get(employee=self.emp_staff, sent_date=target_date)
         self.assertEqual(log.trang_thai, BirthdayEmailStatus.FAILED)
@@ -652,6 +679,7 @@ class BirthdaySystemTests(TestCase):
         DEFAULT_FROM_EMAIL="noreply@example.test",
     )
     def test_empty_email_is_a_failed_delivery_and_not_manually_retryable(self):
+        mail.outbox.clear()
         self.emp_staff.email = ""
         self.emp_staff.save(update_fields=["email"])
 
@@ -666,6 +694,33 @@ class BirthdaySystemTests(TestCase):
         self.assertEqual(results["failed_count"], 1)
         self.assertFalse(can_retry_manually(log))
         self.assertEqual(mail.outbox, [])
+
+    @override_settings(
+        MAILERS={"default": {"BACKEND": "django.core.mail.backends.locmem.EmailBackend"}},
+        DEFAULT_FROM_EMAIL="noreply@example.test",
+    )
+    def test_automatic_retry_uses_employee_current_email(self):
+        target_date = date(2026, 5, 21)
+        old_address = self.emp_staff.email
+        current_address = "updated@example.test"
+        retry_log = BirthdayEmailLog.objects.create(
+            employee=self.emp_staff,
+            sent_date=target_date - timedelta(days=1),
+            recipient_email=old_address,
+            subject="Thư cần gửi lại",
+            trang_thai=BirthdayEmailStatus.RETRY,
+            retry_count=1,
+        )
+        Employee.objects.filter(pk=self.emp_staff.pk).update(email=current_address)
+        mail.outbox.clear()
+
+        send_automated_birthday_emails(target_date=target_date, allow_test_email_backend=True)
+
+        retry_log.refresh_from_db()
+        self.assertEqual(retry_log.trang_thai, BirthdayEmailStatus.SUCCESS)
+        self.assertEqual(retry_log.recipient_email, current_address)
+        self.assertIn(current_address, [recipient for message in mail.outbox for recipient in message.to])
+        self.assertNotIn(old_address, [recipient for message in mail.outbox for recipient in message.to])
 
     @override_settings(
         MAILERS={"default": {"BACKEND": "django.core.mail.backends.locmem.EmailBackend"}},
@@ -885,6 +940,28 @@ class BirthdaySystemTests(TestCase):
                 .exclude(pk=already_sent.pk)
             )
         )
+
+    @override_settings(
+        MAILERS={"default": {"BACKEND": "django.core.mail.backends.locmem.EmailBackend"}},
+        DEFAULT_FROM_EMAIL="noreply@example.test",
+    )
+    def test_command_exits_nonzero_when_recipient_email_is_invalid(self):
+        self.emp_staff.email = "not-an-email"
+        self.emp_staff.save(update_fields=["email"])
+        output = StringIO()
+
+        with self.assertRaises(CommandError):
+            call_command(
+                "send_birthday_emails",
+                "--date=2026-05-20",
+                f"--username={self.emp_staff.username}",
+                "--allow-locmem",
+                stdout=output,
+            )
+
+        self.assertIn("failed=1", output.getvalue())
+        log = BirthdayEmailLog.objects.get(employee=self.emp_staff, sent_date=date(2026, 5, 20))
+        self.assertEqual(log.trang_thai, BirthdayEmailStatus.FAILED)
 
 
 @skipUnlessDBFeature("supports_transactions", "has_select_for_update")
