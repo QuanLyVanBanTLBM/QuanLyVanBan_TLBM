@@ -460,6 +460,56 @@ describe('InboundDocumentPage Component (Phân hệ Văn bản Đến)', () => {
       });
       expect(await screen.findByText(/Bạn không có quyền xem nhật ký người đọc văn bản này/i)).toBeInTheDocument();
     });
+
+    it('mở modal Import Excel thường khi có query param ?action=import nếu có quyền import_vanbanden', async () => {
+      loadWithPermissions(['view_vanbanden', 'import_vanbanden']);
+      render(
+        <MemoryRouter initialEntries={['/documents/incoming?action=import']}>
+          <InboundDocumentPage />
+        </MemoryRouter>
+      );
+
+      expect(await screen.findByText(/Nhập Văn Bản.*Từ File Excel/i)).toBeInTheDocument();
+    });
+
+    it('chặn mở modal Import khi có query param ?action=import nếu thiếu quyền import_vanbanden', async () => {
+      loadWithPermissions(['view_vanbanden']);
+      render(
+        <MemoryRouter initialEntries={['/documents/incoming?action=import']}>
+          <InboundDocumentPage />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.queryByText(/Nhập Văn Bản.*Từ File Excel/i)).not.toBeInTheDocument();
+      });
+      expect(await screen.findByText(/Bạn không có quyền import file văn bản đến/i)).toBeInTheDocument();
+    });
+
+    it('chặn mở modal Import hạn chế khi có ?action=import&import_pham_vi=HAN_CHE nếu thiếu quyền add_han_che_vanbanden', async () => {
+      loadWithPermissions(['view_vanbanden', 'import_vanbanden']);
+      render(
+        <MemoryRouter initialEntries={['/documents/incoming?action=import&import_pham_vi=HAN_CHE']}>
+          <InboundDocumentPage />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.queryByText(/Nhập Văn Bản.*Từ File Excel/i)).not.toBeInTheDocument();
+      });
+      expect(await screen.findByText(/Bạn không có quyền import văn bản đến hạn chế/i)).toBeInTheDocument();
+    });
+
+    it('mở modal Import hạn chế khi có ?action=import&import_pham_vi=HAN_CHE nếu đủ cả quyền import và thêm hạn chế', async () => {
+      loadWithPermissions(['view_vanbanden', 'import_vanbanden', 'add_han_che_vanbanden']);
+      render(
+        <MemoryRouter initialEntries={['/documents/incoming?action=import&import_pham_vi=HAN_CHE']}>
+          <InboundDocumentPage />
+        </MemoryRouter>
+      );
+
+      expect(await screen.findByText(/Nhập Văn Bản.*Từ File Excel/i)).toBeInTheDocument();
+    });
   });
 });
 
