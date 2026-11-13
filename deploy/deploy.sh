@@ -51,6 +51,17 @@ flock -n 9 || { echo "Dang co deploy khac chay."; exit 1; }
 CREATED=0; SWITCHED=0; TMPDB=""; TMPDDLDB=""; DUMP_DIR=""; DUMP=""; PREV=""; MARKFILE=""
 BACKUP_TOOL=""; BACKUP_ARCHIVE=""; BACKUP_SHA256=""; BACKUP_SIZE=""
 DB_REBUILT=0; DB_CHANGE_POSSIBLE=0; SERVICE_WAS_ACTIVE=0; SERVICE_STATE_CAPTURED=0; HAS_PENDING_MIGRATIONS=0; LIVE_SYNC_NOOP=0
+FLAG="$BASE/.maintenance"; FLAG_SET=0; SOCKET_UNIT=qlvb-backend.socket
+# Cong cho trong deploy/qlvb-backend.service.d/socket.conf: co FLAG thi service khong khoi dong,
+# socket van giu cong $PORT va xep hang yeu cau trong cua so downtime.
+clear_flag() { if [ "$FLAG_SET" -eq 1 ]; then rm -f -- "$FLAG"; FLAG_SET=0; fi; }
+# active/activating/reloading deu coi la service dang song (activating = dang cho o cong cho).
+service_live() {
+  case "$(systemctl show -p ActiveState --value "$SERVICE" 2>/dev/null)" in
+    active|activating|reloading) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 cleanup() {
   rc=$?
   if [ -n "$TMPDB" ]; then sudo -n -u postgres /usr/bin/dropdb --if-exists "$TMPDB" >/dev/null 2>&1 || true; fi
@@ -61,13 +72,23 @@ cleanup() {
   if [ $rc -ne 0 ]; then
     echo; echo "DEPLOY THAT BAI (exit $rc)."
     if [ "$DB_CHANGE_POSSIBLE" -eq 1 ]; then
-      if systemctl is-active --quiet "$SERVICE"; then
+      # Dong socket truoc, go co sau: neu go co khi socket con mo thi mot yeu cau bat ky
+      # se khoi dong lai service tren DB co the da thay doi mot phan.
+      if sudo -n /usr/bin/systemctl stop "$SOCKET_UNIT"; then
+        echo "Da dong $SOCKET_UNIT; sau khi kiem tra DB moi mo lai: sudo systemctl start $SOCKET_UNIT"
+      else
+        echo "CANH BAO: khong dong duoc $SOCKET_UNIT; giu co $FLAG (het han sau 10 phut), can dong socket thu cong ngay."
+        FLAG_SET=0 # khong go co khi socket con mo
+      fi
+      if service_live; then
         sudo -n /usr/bin/systemctl stop "$SERVICE" \
           || echo "CANH BAO: khong dung duoc $SERVICE; can dung service thu cong ngay."
       fi
+      clear_flag
       echo "DB co the da thay doi mot phan; giu service dung, khong tu dong doi code cu hoac restore/reset DB."
       [ "$DB_REBUILT" -eq 1 ] && echo "DB_MODE=rebuild da bat dau; service van phai dung cho den khi phuc hoi/kiem tra thu cong."
     else
+      clear_flag
       if [ "$SWITCHED" -eq 1 ]; then
         if [ -d "$PREV" ]; then
           ln -sfn "$PREV" "$BASE/current" \
@@ -87,7 +108,7 @@ cleanup() {
               echo "CANH BAO: service truoc deploy dang dung va khong co release truoc de restart."
             fi
           fi
-        elif systemctl is-active --quiet "$SERVICE"; then
+        elif service_live; then
           sudo -n /usr/bin/systemctl stop "$SERVICE" \
             || echo "CANH BAO: service truoc deploy khong active nhung khong dung lai duoc."
         fi
@@ -337,6 +358,8 @@ mkdir -p "$BACKUP_PARENT"
 BACKUP_PARENT=$(readlink -f "$BACKUP_PARENT") || { echo "Khong xac dinh duoc thu muc backup rieng."; exit 1; }
 BACKUP_DIR="$BACKUP_PARENT/full"
 [ -w "$BACKUP_PARENT" ] || { echo "Khong ghi duoc thu muc backup rieng."; exit 1; }
+# Bat dau cua so downtime: tao co truoc khi dung service de cong cho giu yeu cau den.
+touch "$FLAG"; FLAG_SET=1
 sudo -n /usr/bin/systemctl stop "$SERVICE" \
   || { echo "Khong dung duoc $SERVICE truoc khi backup; chua thay doi DB."; exit 1; }
 if systemctl is-active --quiet "$SERVICE"; then
@@ -467,6 +490,7 @@ fi
 
 step "7/9 Chuyen release va restart"
 ln -sfn "$REL" "$BASE/current"; SWITCHED=1
+clear_flag # service khoi dong bang code moi, cong cho khong con chan
 if ! sudo -n /usr/bin/systemctl restart "$SERVICE"; then
   echo "Restart $SERVICE THAT BAI sau khi chuyen release."
   exit 1

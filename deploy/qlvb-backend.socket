@@ -1,6 +1,5 @@
 [Unit]
 Description=QLVB Backend Gunicorn Socket
-PartOf=qlvb-backend.service
 
 [Socket]
 ListenStream=127.0.0.1:8001

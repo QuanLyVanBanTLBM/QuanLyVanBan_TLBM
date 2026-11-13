@@ -233,6 +233,11 @@ if [[ "${1:-}" == "is-active" ]]; then
   [[ "${MOCK_SYSTEMCTL_QUERY_ERROR:-0}" == "0" ]] || exit 4
   [[ "$(cat "$SERVICE_STATE")" == "active" ]] && exit 0 || exit 3
 fi
+if [[ "${1:-}" == "show" ]]; then
+  [[ "${MOCK_SYSTEMCTL_QUERY_ERROR:-0}" == "0" ]] || exit 4
+  cat "$SERVICE_STATE"
+  exit 0
+fi
 exit 0
 MOCK
 
@@ -246,7 +251,15 @@ if [[ "${args[$i]:-}" == "-u" ]]; then i=$((i + 2)); fi
 command=${args[$i]:-}
 action=${args[$((i + 1))]:-}
 if [[ "$command" == "/usr/bin/systemctl" ]]; then
+  target=${args[$((i + 2))]:-}
+  if [[ "$target" == *.socket && ( "$action" == "stop" || "$action" == "start" ) ]]; then
+    echo "$action-socket" >> "$EVENTS"
+    echo "$action-socket:$([ -e "$QLVB_BASE/.maintenance" ] && echo flag || echo noflag)" >> "$CASE_ROOT/flaglog"
+    if [[ "$action" == "stop" ]]; then [[ "${MOCK_SOCKET_STOP_FAIL:-0}" == "0" ]] || exit 52; fi
+    exit 0
+  fi
   echo "$action" >> "$EVENTS"
+  echo "$action:$([ -e "$QLVB_BASE/.maintenance" ] && echo flag || echo noflag)" >> "$CASE_ROOT/flaglog"
   case "$action" in
     stop)
       [[ "${MOCK_STOP_FAIL:-0}" == "0" ]] || exit 45
@@ -337,6 +350,7 @@ make_case() {
   echo "$QLVB_BASE/releases/previous" > "$CURRENT_FILE"
   echo "$state" > "$SERVICE_STATE"
   : > "$EVENTS"
+  : > "$CASE_ROOT/flaglog"
   cat > "$QLVB_ENVF" <<'ENV'
 DB_NAME=qlvb_test
 DB_USER=deploy_test
@@ -356,7 +370,7 @@ ADMIN_PASSWORD=test-only
 ENV
   export CASE_ROOT NAME HOME EVENTS SERVICE_STATE CURRENT_FILE RELEASE_DIR QLVB_BASE QLVB_ENVF QLVB_NGINX_SITE QLVB_SYSTEMD_DIR
   export MOCK_BIN MOCK_PYTHON MOCK_PIP MOCK_NGINX_RELOAD_FAIL=0
-  export MOCK_PENDING=0 MOCK_PREFLIGHT_FAIL=0 MOCK_MIGRATION_FAIL=0 MOCK_NON_ATOMIC=0 MOCK_MIGRATE_PLAN_FAIL=0 MOCK_UNIT_INSTALL_FAIL=0
+  export MOCK_PENDING=0 MOCK_PREFLIGHT_FAIL=0 MOCK_MIGRATION_FAIL=0 MOCK_NON_ATOMIC=0 MOCK_MIGRATE_PLAN_FAIL=0 MOCK_UNIT_INSTALL_FAIL=0 MOCK_SOCKET_STOP_FAIL=0
   export MOCK_ADOPT_FAIL=0 MOCK_SEED_FAIL=0 MOCK_STOP_FAIL=0 MOCK_STOP_LEAVES_ACTIVE=0 MOCK_RESTART_FAIL=0 MOCK_RESTART_FAIL_ONCE=0 MOCK_SYSTEMCTL_QUERY_ERROR=0
   export MOCK_BACKUP_FAIL=0 MOCK_BACKUP_BAD_JSON=0 MOCK_EXTRACT_FAIL=0 MOCK_OMIT_BACKUP_TOOL=0
   export MOCK_PGVECTOR_VERSION=0.8.7
@@ -854,3 +868,49 @@ assert_event_before stop backup
 assert_event_before backup extract
 assert_event_absent restart
 pass "failed rebuild leaves the service down without automatic restore or code rollback"
+
+assert_flaglog() { grep -qx "$1" "$CASE_ROOT/flaglog" || { cat "$CASE_ROOT/flaglog" >&2; fail "flag log lacks '$1' in $(basename "$CASE_ROOT")"; }; }
+assert_flaglog_absent() { ! grep -qx "$1" "$CASE_ROOT/flaglog" || { cat "$CASE_ROOT/flaglog" >&2; fail "unexpected flag log '$1' in $(basename "$CASE_ROOT")"; }; }
+assert_flag_file() {
+  if [ -e "$QLVB_BASE/.maintenance" ]; then [ "$1" = present ] || fail "maintenance flag left behind in $(basename "$CASE_ROOT")"
+  else [ "$1" = absent ] || fail "maintenance flag missing in $(basename "$CASE_ROOT")"; fi
+}
+
+make_case flag-success
+if ! run_deploy; then
+  cat "$CASE_ROOT/output.log" >&2
+  fail "deployment with maintenance flag failed unexpectedly"
+fi
+assert_flaglog stop:flag
+assert_flaglog restart:noflag
+assert_flaglog_absent stop-socket:flag
+assert_event_absent stop-socket
+assert_flag_file absent
+pass "maintenance flag spans stop to release switch and is gone before restart"
+
+make_case flag-before-db-failure
+export MOCK_HEALTH_CODE=503 MOCK_HEALTH_BODY='{"status":"not_ready"}'
+expect_failure
+assert_flaglog stop:flag
+assert_flaglog_absent restart:flag
+assert_event_absent stop-socket
+assert_flag_file absent
+pass "failure without DB change clears the flag and never closes the socket"
+
+make_case flag-fail-closed
+export MOCK_PENDING=1 MOCK_MIGRATION_FAIL=1 MOCK_NON_ATOMIC=1
+expect_failure
+expect_state "$QLVB_BASE/releases/previous" inactive
+assert_event_count stop-socket 1
+assert_flaglog stop-socket:flag
+assert_event_absent restart
+assert_flag_file absent
+pass "failure after DB change closes the socket before the flag is removed"
+
+make_case flag-socket-stop-fails
+export MOCK_PENDING=1 MOCK_MIGRATION_FAIL=1 MOCK_NON_ATOMIC=1 MOCK_SOCKET_STOP_FAIL=1
+expect_failure
+assert_flaglog stop-socket:flag
+assert_flag_file present
+grep -q 'khong dong duoc qlvb-backend.socket' "$CASE_ROOT/output.log" || fail "socket stop failure was not reported"
+pass "flag stays when the socket cannot be closed after a DB change"
