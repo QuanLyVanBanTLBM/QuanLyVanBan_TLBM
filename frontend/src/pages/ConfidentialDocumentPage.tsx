@@ -19,9 +19,10 @@ export const ConfidentialDocumentPage: React.FC = () => {
   const { can, isSuperuser, isSystemAdmin } = usePermissions();
   const isAdmin = Boolean(isSuperuser || isSystemAdmin);
 
-  const canAdd = Boolean(isAdmin || can('add_vanbanden') || can('add_vanbandi'));
+  const canAdd = Boolean(isAdmin || can('add_vanbanden') || can('add_vanbandi') || can('add_han_che_vanbanden') || can('add_han_che_vanbandi'));
   const canImport = Boolean(isAdmin || can('import_vanbanden') || can('import_vanbandi'));
   const canExport = Boolean(isAdmin || can('export_vanbanden') || can('export_vanbandi'));
+  const canViewReadLog = Boolean(isAdmin || can('view_read_log_vanbanden') || can('view_read_log_vanbandi'));
 
   const [searchParams, setSearchParams] = useSearchParams();
   const loaiVanBanParam = searchParams.get('loai_van_ban');
@@ -413,27 +414,62 @@ export const ConfidentialDocumentPage: React.FC = () => {
         }
 
         if (viewersParam && !isNaN(Number(viewersParam))) {
-          setSelectedDocId(Number(viewersParam));
-          setIsViewersOpen(true);
+          if (canViewReadLog) {
+            setSelectedDocId(Number(viewersParam));
+            setIsViewersOpen(true);
+          } else {
+            setIsViewersOpen(false);
+            updateModalParam({ viewers: null });
+            setAlertMsg('Bạn không có quyền xem nhật ký người đọc văn bản này.');
+            setIsAlertOpen(true);
+          }
         } else {
           setIsViewersOpen(false);
         }
 
         if (actionParam === 'create') {
-          setEditingDoc(null);
-          setIsFormOpen(true);
+          if (canAdd) {
+            setEditingDoc(null);
+            setIsFormOpen(true);
+          } else {
+            setIsFormOpen(false);
+            updateModalParam({ action: null });
+            setAlertMsg('Bạn không có quyền thêm mới văn bản hạn chế.');
+            setIsAlertOpen(true);
+          }
         } else if (editParam && !isNaN(Number(editParam))) {
           const editId = Number(editParam);
           const found = documents.find((d) => d.id === editId);
           if (found) {
-            setEditingDoc(found);
-            setIsFormOpen(true);
+            const canEditThis = isAdmin || Boolean(found.is_creator);
+            if (canEditThis) {
+              setEditingDoc(found);
+              setIsFormOpen(true);
+            } else {
+              setIsFormOpen(false);
+              updateModalParam({ edit: null });
+              setAlertMsg('Bạn không có quyền chỉnh sửa văn bản hạn chế này.');
+              setIsAlertOpen(true);
+            }
+          } else if (!isAdmin) {
+            setIsFormOpen(false);
+            updateModalParam({ edit: null });
+            setAlertMsg('Bạn không có quyền chỉnh sửa văn bản hạn chế này.');
+            setIsAlertOpen(true);
           } else {
             apiClient.get<DocumentItem>(`/api/documents/${editId}/?loai=MAT`)
               .then(res => {
                 if (!cancelled && res) {
-                  setEditingDoc(res);
-                  setIsFormOpen(true);
+                  const canEditThis = isAdmin || Boolean(res.is_creator);
+                  if (canEditThis) {
+                    setEditingDoc(res);
+                    setIsFormOpen(true);
+                  } else {
+                    setIsFormOpen(false);
+                    updateModalParam({ edit: null });
+                    setAlertMsg('Bạn không có quyền chỉnh sửa văn bản hạn chế này.');
+                    setIsAlertOpen(true);
+                  }
                 }
               })
               .catch(() => undefined);
@@ -446,6 +482,7 @@ export const ConfidentialDocumentPage: React.FC = () => {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, documents]);
 
   // Xóa văn bản mật (Quản trị viên)

@@ -40,6 +40,9 @@ export const InboundDocumentPage: React.FC = () => {
   const canImport = Boolean(isAdmin || can('import_vanbanden'));
   const canAddHanChe = Boolean(isAdmin || can('add_han_che_vanbanden'));
   const canExport = Boolean(isAdmin || can('export_vanbanden'));
+  const canEdit = Boolean(isAdmin || can('change_vanbanden'));
+  const canViewReadLog = Boolean(isAdmin || can('view_read_log_vanbanden'));
+  const canViewHetHieuLuc = Boolean(isAdmin || can('view_het_hieu_luc_vanbanden') || can('manage_het_hieu_luc_vanbanden'));
 
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -567,22 +570,65 @@ export const InboundDocumentPage: React.FC = () => {
         setIsDetailOpen(false);
       }
 
+      const hieuLucParam = searchParams.get('hieu_luc');
+      if (hieuLucParam === 'HET_HIEU_LUC' && !canViewHetHieuLuc) {
+        setAlertMsg('Bạn không có quyền xem danh sách văn bản hết hiệu lực.');
+        setIsAlertOpen(true);
+      }
+
       if (viewersParam && !isNaN(Number(viewersParam))) {
-        setSelectedDocId(Number(viewersParam));
-        setIsViewersOpen(true);
+        if (canViewReadLog) {
+          setSelectedDocId(Number(viewersParam));
+          setIsViewersOpen(true);
+        } else {
+          setIsViewersOpen(false);
+          updateModalParam({ viewers: null });
+          setAlertMsg('Bạn không có quyền xem nhật ký người đọc văn bản này.');
+          setIsAlertOpen(true);
+        }
       } else {
         setIsViewersOpen(false);
       }
 
       if (actionParam === 'create') {
-        setEditingDoc(null);
-        setIsFormOpen(true);
+        if (canAdd || canAddHanChe) {
+          setEditingDoc(null);
+          setIsFormOpen(true);
+        } else {
+          setIsFormOpen(false);
+          updateModalParam({ action: null });
+          setAlertMsg('Bạn không có quyền thêm mới văn bản đến.');
+          setIsAlertOpen(true);
+        }
+      } else if (actionParam === 'import') {
+        if (canImport) {
+          setIsImportOpen(true);
+        } else {
+          setIsImportOpen(false);
+          updateModalParam({ action: null });
+          setAlertMsg('Bạn không có quyền import file văn bản đến.');
+          setIsAlertOpen(true);
+        }
       } else if (editParam && !isNaN(Number(editParam))) {
         const editId = Number(editParam);
         const found = documents.find((d) => d.id === editId);
         if (found) {
-          setEditingDoc(found);
-          setIsFormOpen(true);
+          const isHanChe = found.pham_vi === 'HAN_CHE';
+          const canEditThis = isAdmin || (isHanChe ? Boolean(found.is_creator) : canEdit);
+          if (canEditThis) {
+            setEditingDoc(found);
+            setIsFormOpen(true);
+          } else {
+            setIsFormOpen(false);
+            updateModalParam({ edit: null });
+            setAlertMsg('Bạn không có quyền chỉnh sửa văn bản này.');
+            setIsAlertOpen(true);
+          }
+        } else if (!canEdit && !isAdmin) {
+          setIsFormOpen(false);
+          updateModalParam({ edit: null });
+          setAlertMsg('Bạn không có quyền chỉnh sửa văn bản này.');
+          setIsAlertOpen(true);
         }
       } else if (!actionParam && !editParam) {
         setIsFormOpen(false);
@@ -591,6 +637,7 @@ export const InboundDocumentPage: React.FC = () => {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, documents]);
 
   // Thực hiện xóa sau khi xác nhận ConfirmModal
