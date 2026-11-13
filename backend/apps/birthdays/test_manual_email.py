@@ -10,7 +10,7 @@ from rest_framework.test import APIClient
 
 from accounts.models import Employee, Position
 
-from birthdays.models import BirthdayEmailLog, BirthdayEmailStatus, BirthdayEmailTemplate
+from birthdays.models import BirthdayEmailLog, BirthdayEmailSource, BirthdayEmailStatus, BirthdayEmailTemplate
 from birthdays.services import send_automated_birthday_emails
 from birthdays.templates_service import LAYOUT_DEFAULTS
 
@@ -129,9 +129,11 @@ class ManualBirthdayEmailTests(TestCase):
         self.assertEqual(self.client.post(url, {"recipient": "corrected@example.test"}, format="json").status_code, 200)
         self.assertEqual(mail.outbox[0].to, ["corrected@example.test"])
         self.assertEqual(mail.outbox[0].body, log.delivery_snapshot["text"])
+        self.assertEqual(BirthdayEmailLog.objects.filter(employee=self.leader).count(), 2)
+        self.assertEqual(BirthdayEmailLog.objects.exclude(pk=log.pk).get().delivery_source, BirthdayEmailSource.MANUAL_RESEND)
 
     @patch("birthdays.manual_views.require_delivery_backend")
-    def test_unconfirmed_smtp_result_blocks_both_send_and_retry(self, _backend):
+    def test_unconfirmed_smtp_result_can_be_resent_without_overwriting_history(self, _backend):
         preview = self.preview()
         with patch("birthdays.services.send_mail", side_effect=SMTPServerDisconnected):
             response = self.send(preview)
@@ -140,7 +142,135 @@ class ManualBirthdayEmailTests(TestCase):
         self.assertFalse(log["can_retry"])
         self.assertEqual(self.send(preview).status_code, 409)
         url = reverse("birthdays:retry_email", args=[log["id"]])
-        self.assertEqual(self.client.post(url, {"recipient": self.leader.email}, format="json").status_code, 409)
+        response = self.client.post(url, {"recipient": self.leader.email}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["log"]["delivery_source"], BirthdayEmailSource.MANUAL_RESEND)
+        self.assertEqual(BirthdayEmailLog.objects.count(), 2)
+        self.assertTrue(BirthdayEmailLog.objects.get(pk=log["id"]).delivery_uncertain)
+
+    @patch("birthdays.manual_views.require_delivery_backend")
+    def test_admin_can_resend_every_logged_state_and_unprocessed_birthday_repeatedly(self, _backend):
+        statuses = (
+            BirthdayEmailStatus.SUCCESS,
+            BirthdayEmailStatus.FAILED,
+            BirthdayEmailStatus.RETRY,
+            BirthdayEmailStatus.FAILED,
+        )
+        originals = []
+        for index, email_status in enumerate(statuses):
+            originals.append(BirthdayEmailLog.objects.create(
+                employee=self.leader,
+                sent_date=date(self.year, 5, 20 + index),
+                recipient_email=self.leader.email,
+                subject="Chúc mừng sinh nhật",
+                trang_thai=email_status,
+                delivery_uncertain=index == 3,
+                error_message="Kết quả gửi không xác định." if index == 3 else "",
+            ))
+
+        resend_url = reverse("birthdays:resend_email")
+        for index, original in enumerate(originals):
+            with self.subTest(status="UNKNOWN" if index == 3 else original.trang_thai):
+                response = self.client.post(
+                    resend_url,
+                    {"employee_id": self.leader.pk, "sent_date": original.sent_date.isoformat()},
+                    format="json",
+                )
+                self.assertEqual(response.status_code, 200, response.data)
+                resend_log = BirthdayEmailLog.objects.get(pk=response.data["log"]["id"])
+                self.assertNotEqual(resend_log.pk, original.pk)
+                self.assertEqual(resend_log.delivery_source, BirthdayEmailSource.MANUAL_RESEND)
+                self.assertEqual(resend_log.last_operator, self.admin.username)
+                self.assertEqual(resend_log.delivery_snapshot["trigger_source"], "MANUAL_RESEND")
+                original.refresh_from_db()
+                self.assertEqual(original.trang_thai, statuses[index])
+                self.assertEqual(original.delivery_uncertain, index == 3)
+
+        leader_no_log = Employee.objects.create_user(
+            username="birthday-leader-no-log",
+            email="leader-no-log@example.test",
+            ho_ten="Lãnh đạo chưa xử lý",
+            chuc_vu=self.leader.chuc_vu,
+            ngay_sinh=date(1980, 6, 1),
+        )
+        unprocessed_date = date(self.year, 6, 1)
+        self.assertFalse(BirthdayEmailLog.objects.filter(employee=leader_no_log).exists())
+        for _ in range(2):
+            response = self.client.post(
+                resend_url,
+                {"employee_id": leader_no_log.pk, "sent_date": unprocessed_date.isoformat()},
+                format="json",
+            )
+            self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(
+            BirthdayEmailLog.objects.filter(
+                employee=leader_no_log,
+                sent_date=unprocessed_date,
+                delivery_source=BirthdayEmailSource.MANUAL_RESEND,
+            ).count(),
+            2,
+        )
+
+    @patch("birthdays.manual_views.require_delivery_backend")
+    def test_resend_requires_admin_valid_email_and_rejects_inflight_request(self, _backend):
+        url = reverse("birthdays:resend_email")
+        payload = {"employee_id": self.leader.pk, "sent_date": date(self.year, 5, 20).isoformat()}
+        self.client.force_authenticate(user=self.leader)
+        denied = self.client.post(url, payload, format="json")
+        self.assertEqual(denied.status_code, 403)
+        self.client.force_authenticate(user=self.admin)
+
+        Employee.objects.filter(pk=self.leader.pk).update(email="invalid-address")
+        invalid = self.client.post(url, payload, format="json")
+        self.assertEqual(invalid.status_code, 400)
+        self.assertEqual(invalid.data["error"], "invalidRecipient")
+        Employee.objects.filter(pk=self.leader.pk).update(email="leader@example.test")
+
+        BirthdayEmailLog.objects.create(
+            employee=self.leader,
+            sent_date=date(self.year, 5, 20),
+            recipient_email=self.leader.email,
+            subject="Chúc mừng sinh nhật",
+            trang_thai=BirthdayEmailStatus.SENDING,
+        )
+        in_progress = self.client.post(url, payload, format="json")
+        self.assertEqual(in_progress.status_code, 409)
+        self.assertEqual(in_progress.data["error"], "resendInProgress")
+
+    @patch("birthdays.manual_views.require_delivery_backend")
+    def test_automatic_retry_is_suppressed_after_admin_resend(self, _backend):
+        staff_position, _ = Position.objects.get_or_create(
+            name="Chuyên viên", defaults={"display_order": Position.get_next_display_order()},
+        )
+        target_date = date(self.year, 11, 13)
+        employee = Employee.objects.create_user(
+            username="birthday-retry-suppression",
+            email="retry-suppression@example.test",
+            ho_ten="Nhân viên gửi lại",
+            chuc_vu=staff_position,
+            ngay_sinh=date(1985, 11, 13),
+        )
+        auto_log = BirthdayEmailLog.objects.create(
+            employee=employee,
+            sent_date=target_date,
+            recipient_email=employee.email,
+            subject="Chúc mừng sinh nhật",
+            trang_thai=BirthdayEmailStatus.RETRY,
+            delivery_source=BirthdayEmailSource.AUTO,
+            retry_count=1,
+        )
+        resend = self.client.post(
+            reverse("birthdays:resend_email"),
+            {"employee_id": employee.pk, "sent_date": target_date.isoformat()},
+            format="json",
+        )
+        self.assertEqual(resend.status_code, 200, resend.data)
+
+        send_automated_birthday_emails(target_date, allow_test_email_backend=True)
+
+        self.assertEqual(len(mail.outbox), 1)
+        auto_log.refresh_from_db()
+        self.assertEqual(auto_log.trang_thai, BirthdayEmailStatus.RETRY)
 
     def test_automatic_delivery_skips_leaders(self):
         send_automated_birthday_emails(date(self.year, 5, 20), allow_test_email_backend=True)

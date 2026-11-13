@@ -1,13 +1,14 @@
 import { ApiError } from '@lib/apiClient';
 
 export type DeliveryResult = {
-  trang_thai: 'PENDING' | 'SENDING' | 'SUCCESS' | 'FAILED' | 'RETRY';
+  trang_thai: 'PENDING' | 'SENDING' | 'SUCCESS' | 'FAILED' | 'RETRY' | 'UNKNOWN';
   delivery_uncertain: boolean;
 };
 
 const ERROR_CODES = [
   'invalidDraft', 'invalidRecipient', 'invalidOccurrence', 'invalidInstruction',
   'previewExpired', 'deliveryConflict', 'recipientChanged', 'smtpUnavailable', 'aiUnavailable',
+  'resendInProgress', 'employeeNotFound',
 ];
 
 export function birthdayEmailError(error: unknown): string {
