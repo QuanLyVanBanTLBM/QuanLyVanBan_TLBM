@@ -498,6 +498,12 @@ jobs:
                 echo "DJANGO_CSRF_TRUSTED_ORIGINS=https://staging-quanlyvanban.bhbl.vn,http://127.0.0.1:8089" >> "$ENVF"
               fi
             fi
+            for d in /srv/qlvb/shared/data /srv/qlvb/shared/media /srv/qlvb/shared/signing /srv/qlvb/shared/storage; do
+              if [ -d "$d" ]; then
+                chmod -R u+rwX,go+rX "$d" 2>/dev/null || true
+                find "$d" -type f ! -readable -delete 2>/dev/null || true
+              fi
+            done
           '
           rsync -az -e "$SSH" "qlvb-$SHA7.tar.gz" deploy/deploy.sh "$REMOTE:deploy/"
           rsync -az -e "$SSH" deploy/qlvb-backend.socket "$REMOTE:deploy/qlvb-backend.socket"

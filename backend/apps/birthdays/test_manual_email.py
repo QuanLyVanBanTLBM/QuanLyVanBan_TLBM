@@ -106,8 +106,9 @@ class ManualBirthdayEmailTests(TestCase):
         self.assertEqual(send_response.data["log"]["smtp_response_code"], "250 OK")
         self.assertEqual(mail.outbox[-1].to, [employee.email])
 
+    @patch("birthdays.services.generate_birthday_card_token", return_value="fixed-test-token-12345")
     @patch("birthdays.manual_views.require_delivery_backend")
-    def test_preview_is_bound_to_content_and_send_is_unique(self, _backend):
+    def test_preview_is_bound_to_content_and_send_is_unique(self, _backend, _token):
         preview = self.preview()
         self.assertEqual(self.send(preview, message="Nội dung bị đổi.").status_code, 409)
         response = self.send(preview)
