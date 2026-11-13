@@ -72,8 +72,11 @@ interface DocItem {
   filename: string;
   category?: string;
   uploaded_at?: string;
-  size?: number;
+  size?: number | null;
   file_type?: string;
+  source_type?: string;
+  source_id?: number;
+  is_managed?: boolean;
 }
 
 interface CategoryItem {
@@ -2089,35 +2092,39 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                                             >
                                               <i className="fa-solid fa-crosshairs" />
                                             </button>
-                                            <button
-                                              type="button"
-                                              className="sidebar-doc-btn"
-                                              onClick={() => setPreviewFilename(d.filename)}
-                                              title={t('aiAssistant.preview')}
-                                            >
-                                              <i className="fa-solid fa-eye" />
-                                            </button>
-                                            {currentUser.isAdmin && (
+                                            {!d.is_managed && (
                                               <>
                                                 <button
                                                   type="button"
                                                   className="sidebar-doc-btn"
-                                                  onClick={() => handleReclassifyDoc(d.filename)}
-                                                  disabled={reclassifyingDoc === d.filename}
-                                                  title={reclassifyingDoc === d.filename ? t('aiAssistant.inline.reclassifying') : t('aiAssistant.inline.reclassifyDoc')}
-                                                  aria-label={`${t('aiAssistant.inline.reclassifyDoc')}: ${d.filename}`}
+                                                  onClick={() => setPreviewFilename(d.filename)}
+                                                  title={t('aiAssistant.preview')}
                                                 >
-                                                  <i className={`fa-solid ${reclassifyingDoc === d.filename ? 'fa-spinner fa-spin' : 'fa-tags'}`} />
+                                                  <i className="fa-solid fa-eye" />
                                                 </button>
-                                                <button
-                                                  type="button"
-                                                  className="sidebar-doc-btn delete-btn"
-                                                  onClick={() => handleDeleteDoc(d.filename)}
-                                                  title={t('aiAssistant.deleteDoc')}
-                                                  aria-label={`${t('aiAssistant.deleteDoc')}: ${d.filename}`}
-                                                >
-                                                  <i className="fa-solid fa-trash" />
-                                                </button>
+                                                {currentUser.isAdmin && (
+                                                  <>
+                                                    <button
+                                                      type="button"
+                                                      className="sidebar-doc-btn"
+                                                      onClick={() => handleReclassifyDoc(d.filename)}
+                                                      disabled={reclassifyingDoc === d.filename}
+                                                      title={reclassifyingDoc === d.filename ? t('aiAssistant.inline.reclassifying') : t('aiAssistant.inline.reclassifyDoc')}
+                                                      aria-label={`${t('aiAssistant.inline.reclassifyDoc')}: ${d.filename}`}
+                                                    >
+                                                      <i className={`fa-solid ${reclassifyingDoc === d.filename ? 'fa-spinner fa-spin' : 'fa-tags'}`} />
+                                                    </button>
+                                                    <button
+                                                      type="button"
+                                                      className="sidebar-doc-btn delete-btn"
+                                                      onClick={() => handleDeleteDoc(d.filename)}
+                                                      title={t('aiAssistant.deleteDoc')}
+                                                      aria-label={`${t('aiAssistant.deleteDoc')}: ${d.filename}`}
+                                                    >
+                                                      <i className="fa-solid fa-trash" />
+                                                    </button>
+                                                  </>
+                                                )}
                                               </>
                                             )}
                                           </div>
@@ -2174,35 +2181,39 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                                     >
                                       <i className="fa-solid fa-crosshairs" />
                                     </button>
-                                    <button
-                                      type="button"
-                                      className="sidebar-doc-btn"
-                                      onClick={() => setPreviewFilename(d.filename)}
-                                      title={t('aiAssistant.preview')}
-                                    >
-                                      <i className="fa-solid fa-eye" />
-                                    </button>
-                                    {currentUser.isAdmin && (
+                                    {!d.is_managed && (
                                       <>
                                         <button
                                           type="button"
                                           className="sidebar-doc-btn"
-                                          onClick={() => handleReclassifyDoc(d.filename)}
-                                          disabled={reclassifyingDoc === d.filename}
-                                          title={reclassifyingDoc === d.filename ? t('aiAssistant.inline.reclassifying') : t('aiAssistant.inline.reclassifyDoc')}
-                                          aria-label={`${t('aiAssistant.inline.reclassifyDoc')}: ${d.filename}`}
+                                          onClick={() => setPreviewFilename(d.filename)}
+                                          title={t('aiAssistant.preview')}
                                         >
-                                          <i className={`fa-solid ${reclassifyingDoc === d.filename ? 'fa-spinner fa-spin' : 'fa-tags'}`} />
+                                          <i className="fa-solid fa-eye" />
                                         </button>
-                                        <button
-                                          type="button"
-                                          className="sidebar-doc-btn delete-btn"
-                                          onClick={() => handleDeleteDoc(d.filename)}
-                                          title={t('aiAssistant.deleteDoc')}
-                                          aria-label={`${t('aiAssistant.deleteDoc')}: ${d.filename}`}
-                                        >
-                                          <i className="fa-solid fa-trash" />
-                                        </button>
+                                        {currentUser.isAdmin && (
+                                          <>
+                                            <button
+                                              type="button"
+                                              className="sidebar-doc-btn"
+                                              onClick={() => handleReclassifyDoc(d.filename)}
+                                              disabled={reclassifyingDoc === d.filename}
+                                              title={reclassifyingDoc === d.filename ? t('aiAssistant.inline.reclassifying') : t('aiAssistant.inline.reclassifyDoc')}
+                                              aria-label={`${t('aiAssistant.inline.reclassifyDoc')}: ${d.filename}`}
+                                            >
+                                              <i className={`fa-solid ${reclassifyingDoc === d.filename ? 'fa-spinner fa-spin' : 'fa-tags'}`} />
+                                            </button>
+                                            <button
+                                              type="button"
+                                              className="sidebar-doc-btn delete-btn"
+                                              onClick={() => handleDeleteDoc(d.filename)}
+                                              title={t('aiAssistant.deleteDoc')}
+                                              aria-label={`${t('aiAssistant.deleteDoc')}: ${d.filename}`}
+                                            >
+                                              <i className="fa-solid fa-trash" />
+                                            </button>
+                                          </>
+                                        )}
                                       </>
                                     )}
                                   </div>
