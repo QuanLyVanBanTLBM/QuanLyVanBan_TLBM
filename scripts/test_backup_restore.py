@@ -24,11 +24,14 @@ from backup_restore import (  # noqa: E402
     _check_private_file,
     _database_info,
     _empty_state,
+    _extract_file_tree,
     _hash_file,
     _inspect_file_tree,
+    _mode_without_named_acl,
     _parse_private_config,
     _restore,
     _verified_archive,
+    _write_tree_archive,
     main,
 )
 
@@ -87,6 +90,64 @@ class PrivateInputTests(unittest.TestCase):
                     archive_path,
                     expected={"entries": 1, "files": 1, "bytes": 1},
                 )
+
+
+class FileRootPermissionTests(unittest.TestCase):
+    @staticmethod
+    def _named_user_acl_data():
+        import struct
+
+        acl_entries = (
+            (0x01, 0o6, 0xFFFFFFFF),
+            (0x02, 0o4, 1000),
+            (0x04, 0o0, 0xFFFFFFFF),
+            (0x10, 0o4, 0xFFFFFFFF),
+            (0x20, 0o0, 0xFFFFFFFF),
+        )
+        return struct.pack("<I", 0x0002) + b"".join(
+            struct.pack("<HHI", *entry) for entry in acl_entries
+        )
+
+    def test_named_user_acl_mask_keeps_group_mode_at_base_permission(self):
+        from unittest.mock import patch
+
+        with patch(
+            "backup_restore.os.getxattr",
+            return_value=self._named_user_acl_data(),
+            create=True,
+        ):
+            mode = _mode_without_named_acl(Path("sample.pdf"), 0o640)
+        self.assertEqual(mode, 0o600)
+
+    def test_named_user_acl_mask_does_not_become_group_mode_in_archive_or_restore(self):
+        import errno
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory(prefix="qlvb-acl-mode-") as temp_name:
+            root = Path(temp_name) / "source"
+            root.mkdir()
+            source_file = root / "sample.pdf"
+            source_file.write_bytes(b"synthetic-pdf")
+            os.chmod(source_file, 0o640)
+            acl_data = self._named_user_acl_data()
+            archive_path = Path(temp_name) / "files.tar"
+            destination = Path(temp_name) / "restored"
+
+            def fake_getxattr(path, attribute, *, follow_symlinks=True):
+                if Path(path) == source_file and attribute == "system.posix_acl_access":
+                    return acl_data
+                missing_errno = getattr(errno, "ENODATA", getattr(errno, "ENOATTR", errno.EIO))
+                raise OSError(missing_errno, "attribute not found")
+
+            with patch("backup_restore.os.getxattr", side_effect=fake_getxattr, create=True):
+                _write_tree_archive(root, archive_path)
+            with tarfile.open(archive_path, mode="r:") as archive:
+                self.assertEqual(archive.getmember("sample.pdf").mode, 0o600)
+            _extract_file_tree(archive_path, destination)
+
+            if os.name == "posix":
+                restored_mode = (destination / "sample.pdf").stat().st_mode & 0o777
+                self.assertEqual(restored_mode, 0o600)
 
 
 class PostgreSQLBackupRestoreDrill(unittest.TestCase):
