@@ -564,6 +564,75 @@ def _default_snapshot(
     }
 
 
+def create_manual_resend_log(
+    employee_id: int,
+    sent_date: date,
+    recipient: str | None,
+    operator: str,
+) -> tuple[BirthdayEmailLog | None, str | None]:
+    """Create an auditable admin resend row without changing prior delivery logs."""
+    now = timezone.now()
+    with transaction.atomic():
+        employee = (
+            Employee.objects.select_related("chuc_vu", "don_vi")
+            .select_for_update(of=("self",))
+            .filter(pk=employee_id, is_active=True)
+            .first()
+        )
+        if not employee:
+            return None, "employeeNotFound"
+
+        current_recipient = (employee.email or "").strip()
+        if recipient is not None and recipient.strip() != current_recipient:
+            return None, "recipientChanged"
+        try:
+            validate_email(current_recipient)
+        except ValidationError:
+            return None, "invalidRecipient"
+
+        occurrence_logs = BirthdayEmailLog.objects.filter(employee=employee, sent_date=sent_date)
+        if not occurrence_logs.exists() and not is_birthday_on_date(
+            employee.ngay_sinh,
+            sent_date,
+            leap_year_strategy=getattr(settings, "BIRTHDAY_LEAP_DAY_STRATEGY", "FEB_28"),
+        ):
+            return None, "invalidOccurrence"
+
+        if occurrence_logs.filter(trang_thai=BirthdayEmailStatus.SENDING).exists():
+            return None, "resendInProgress"
+
+        latest_log = occurrence_logs.order_by("-sent_at", "-pk").first()
+        snapshot = (
+            latest_log.delivery_snapshot
+            if latest_log and isinstance(latest_log.delivery_snapshot, dict)
+            else None
+        )
+        if not snapshot or not snapshot.get("html") or not snapshot.get("text"):
+            snapshot = _default_snapshot(employee)
+        snapshot = {**snapshot, "trigger_source": "MANUAL_RESEND"}
+        subject = ((latest_log.subject or "").strip() if latest_log else "") or (
+            (snapshot.get("subject") or "").strip()
+        )
+        if not subject:
+            subject = f"{getattr(settings, 'BRAND_NAME', 'Bảo Long Insurance')} - Chúc mừng sinh nhật"
+
+        log = BirthdayEmailLog.objects.create(
+            employee=employee,
+            sent_date=sent_date,
+            sent_at=now,
+            recipient_email=current_recipient,
+            subject=subject,
+            card_template=snapshot.get("layout") or "01",
+            trang_thai=BirthdayEmailStatus.SENDING,
+            retry_count=1,
+            delivery_source=BirthdayEmailSource.MANUAL_RESEND,
+            delivery_snapshot=snapshot,
+            last_operator=operator,
+            delivery_uncertain=False,
+        )
+    return log, None
+
+
 def deliver_claimed_email(log: BirthdayEmailLog, max_retries: int = 0) -> None:
     uncertain = False
     error_message = ""

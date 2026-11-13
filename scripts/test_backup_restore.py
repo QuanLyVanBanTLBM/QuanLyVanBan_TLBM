@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import errno
 import hashlib
 import io
 import json
@@ -11,6 +12,7 @@ import sys
 import tarfile
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,17 +22,19 @@ sys.path.insert(0, str(ROOT / "backend" / "apps"))
 
 from backup_restore import (  # noqa: E402
     BackupError,
+    _assert_safe_path,
     _backup,
     _check_private_file,
     _database_info,
     _empty_state,
-    _extract_file_tree,
     _hash_file,
     _inspect_file_tree,
+    _extract_file_tree,
     _mode_without_named_acl,
     _parse_private_config,
     _restore,
     _verified_archive,
+    _walk_tree,
     _write_tree_archive,
     main,
 )
@@ -92,6 +96,132 @@ class PrivateInputTests(unittest.TestCase):
                 )
 
 
+class FileTreeReadDiagnosticTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == "posix", "POSIX permission-mode contract")
+    def test_unreadable_file_mode_reports_eacces(self):
+        if hasattr(os, "geteuid") and os.geteuid() == 0:
+            self.skipTest("root can bypass ordinary file-mode read restrictions")
+        with tempfile.TemporaryDirectory(prefix="qlvb-mode-denied-root-") as temp_name:
+            root = Path(temp_name)
+            source = root / "private.dat"
+            source.write_bytes(b"synthetic-only")
+            os.chmod(source, 0)
+            try:
+                with self.assertRaisesRegex(
+                    BackupError,
+                    r"root=media; path=private\.dat; errno=EACCES\(13\)",
+                ):
+                    _walk_tree(root, "media")
+            finally:
+                os.chmod(source, 0o600)
+
+    def test_file_read_permission_error_reports_root_relative_path_and_errno(self):
+        with tempfile.TemporaryDirectory(prefix="qlvb-unreadable-root-") as temp_name:
+            root = Path(temp_name)
+            source = root / "restricted.dat"
+            source.write_bytes(b"synthetic-only")
+            error = PermissionError(errno.EACCES, "synthetic permission failure", str(source))
+
+            with mock.patch.object(Path, "open", autospec=True, side_effect=error):
+                with self.assertRaisesRegex(
+                    BackupError,
+                    r"root=storage; path=restricted\.dat; errno=EACCES\(13\)",
+                ):
+                    _walk_tree(root, "storage")
+
+    def test_file_disappearing_after_enumeration_reports_enoent(self):
+        with tempfile.TemporaryDirectory(prefix="qlvb-disappeared-root-") as temp_name:
+            root = Path(temp_name)
+            source = root / "removed.dat"
+            source.write_bytes(b"synthetic-only")
+            error = FileNotFoundError(errno.ENOENT, "synthetic missing file", str(source))
+
+            with mock.patch.object(Path, "open", autospec=True, side_effect=error):
+                with self.assertRaisesRegex(
+                    BackupError,
+                    r"root=media; path=removed\.dat; errno=ENOENT\(2\)",
+                ):
+                    _walk_tree(root, "media")
+
+    def test_file_read_error_during_archive_streaming_keeps_source_context(self):
+        with tempfile.TemporaryDirectory(prefix="qlvb-stream-error-root-") as temp_name:
+            root = Path(temp_name) / "ai-data"
+            root.mkdir()
+            source = root / "index.bin"
+            source.write_bytes(b"synthetic-only")
+            archive_path = root.parent / "ai.tar"
+            real_open = Path.open
+            source_open_count = 0
+
+            class FailingReader:
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *_args):
+                    return False
+
+                def read(self, _size=-1):
+                    raise OSError(errno.EIO, "synthetic read failure", str(source))
+
+            def open_source(path, *args, **kwargs):
+                nonlocal source_open_count
+                if path == source:
+                    source_open_count += 1
+                    if source_open_count == 2:
+                        return FailingReader()
+                return real_open(path, *args, **kwargs)
+
+            with mock.patch.object(Path, "open", autospec=True, side_effect=open_source):
+                with self.assertRaisesRegex(
+                    BackupError,
+                    r"root=ai; path=index\.bin; errno=EIO\(5\)",
+                ):
+                    _write_tree_archive(root, archive_path, "ai")
+
+    def test_unreadable_directory_reports_root_relative_path_and_errno(self):
+        with tempfile.TemporaryDirectory(prefix="qlvb-unreadable-directory-root-") as temp_name:
+            root = Path(temp_name)
+            blocked = root / "restricted"
+            blocked.mkdir()
+            real_scandir = os.scandir
+
+            def failing_scandir(path):
+                if Path(path) == blocked:
+                    raise PermissionError(errno.EACCES, "synthetic directory failure", str(blocked))
+                return real_scandir(path)
+
+            with mock.patch.object(os, "scandir", side_effect=failing_scandir):
+                with self.assertRaisesRegex(
+                    BackupError,
+                    r"root=media; path=restricted; errno=EACCES\(13\)",
+                ):
+                    _walk_tree(root, "media")
+
+    def test_inaccessible_data_root_reports_errno_before_walk(self):
+        with tempfile.TemporaryDirectory(prefix="qlvb-unreadable-data-root-") as temp_name:
+            root = Path(temp_name)
+            error = PermissionError(errno.EACCES, "synthetic root failure", str(root))
+            with mock.patch("backup_restore.os.scandir", side_effect=error):
+                with self.assertRaisesRegex(
+                    BackupError,
+                    r"root=media; path=\.; errno=EACCES\(13\)",
+                ):
+                    _assert_safe_path(root, "media")
+
+    def test_acl_inspection_os_error_keeps_root_path_and_errno(self):
+        with tempfile.TemporaryDirectory(prefix="qlvb-acl-read-error-") as temp_name:
+            root = Path(temp_name)
+            source = root / "protected.dat"
+            source.write_bytes(b"synthetic-only")
+            error = PermissionError(errno.EACCES, "synthetic ACL failure", str(source))
+            with mock.patch("backup_restore.os.getxattr", side_effect=error, create=True):
+                with self.assertRaisesRegex(
+                    BackupError,
+                    r"root=media; path=protected\.dat; errno=EACCES\(13\)",
+                ):
+                    _walk_tree(root, "media")
+
+
 class FileRootPermissionTests(unittest.TestCase):
     @staticmethod
     def _named_user_acl_data():
@@ -109,20 +239,11 @@ class FileRootPermissionTests(unittest.TestCase):
         )
 
     def test_named_user_acl_mask_keeps_group_mode_at_base_permission(self):
-        from unittest.mock import patch
-
-        with patch(
-            "backup_restore.os.getxattr",
-            return_value=self._named_user_acl_data(),
-            create=True,
-        ):
+        with mock.patch("backup_restore.os.getxattr", return_value=self._named_user_acl_data(), create=True):
             mode = _mode_without_named_acl(Path("sample.pdf"), 0o640)
         self.assertEqual(mode, 0o600)
 
-    def test_named_user_acl_mask_does_not_become_group_mode_in_archive_or_restore(self):
-        import errno
-        from unittest.mock import patch
-
+    def test_named_user_acl_mode_is_preserved_in_archive_and_restore(self):
         with tempfile.TemporaryDirectory(prefix="qlvb-acl-mode-") as temp_name:
             root = Path(temp_name) / "source"
             root.mkdir()
@@ -139,7 +260,7 @@ class FileRootPermissionTests(unittest.TestCase):
                 missing_errno = getattr(errno, "ENODATA", getattr(errno, "ENOATTR", errno.EIO))
                 raise OSError(missing_errno, "attribute not found")
 
-            with patch("backup_restore.os.getxattr", side_effect=fake_getxattr, create=True):
+            with mock.patch("backup_restore.os.getxattr", side_effect=fake_getxattr, create=True):
                 _write_tree_archive(root, archive_path)
             with tarfile.open(archive_path, mode="r:") as archive:
                 self.assertEqual(archive.getmember("sample.pdf").mode, 0o600)
