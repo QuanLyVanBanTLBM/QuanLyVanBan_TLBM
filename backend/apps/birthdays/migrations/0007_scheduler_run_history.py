@@ -9,35 +9,69 @@ class Migration(migrations.Migration):
         ('birthdays', '0006_manual_resend_logs'),
     ]
 
-    operations = [
-        migrations.AddField(
-            model_name='birthdayemaillog',
-            name='resend_request_id',
-            field=models.UUIDField(blank=True, null=True, unique=True),
-        ),
-        migrations.CreateModel(
-            name='BirthdaySchedulerRun',
-            fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('execution_id', models.CharField(max_length=80, unique=True)),
-                ('processing_date', models.DateField()),
-                ('trigger_source', models.CharField(choices=[('SCHEDULED', 'Theo lịch'), ('RECOVERY', 'Chạy bù')], max_length=9)),
-                ('scheduled_slot', models.CharField(choices=[('07:00', '07:00'), ('07:37', '07:37')], max_length=5, null=True)),
-                ('started_at', models.DateTimeField()),
-                ('ended_at', models.DateTimeField(null=True)),
-                ('status', models.CharField(choices=[('RUNNING', 'Đang chạy'), ('SUCCESS', 'Thành công'), ('FAILED', 'Thất bại'), ('UNKNOWN', 'Chưa xác định')], max_length=7)),
-                ('total_eligible', models.IntegerField(null=True)),
-                ('sent_count', models.IntegerField(null=True)),
-                ('failed_count', models.IntegerField(null=True)),
-                ('skipped_count', models.IntegerField(null=True)),
-                ('retry_count', models.IntegerField(null=True)),
-                ('error_reason', models.TextField(null=True)),
-                ('github_run_id', models.CharField(max_length=24, null=True)),
-            ],
-            options={
-                'db_table': 'birthdays_birthdayschedulerrun',
-                'ordering': ['-started_at', '-pk'],
-                'indexes': [models.Index(fields=['processing_date', '-started_at'], name='idx_birthdayrun_date_started')],
-            },
-        ),
-    ]
+    # A restored database can already contain the release DDL with older migration history.
+    operations = [migrations.SeparateDatabaseAndState(
+        database_operations=[
+            migrations.RunSQL(
+                sql="""
+                    ALTER TABLE birthdays_birthdayemaillog
+                        ADD COLUMN IF NOT EXISTS resend_request_id UUID UNIQUE;
+                    CREATE TABLE IF NOT EXISTS birthdays_birthdayschedulerrun (
+                        id BIGSERIAL PRIMARY KEY,
+                        execution_id VARCHAR(80) NOT NULL UNIQUE,
+                        processing_date DATE NOT NULL,
+                        trigger_source VARCHAR(9) NOT NULL,
+                        scheduled_slot VARCHAR(5),
+                        started_at TIMESTAMPTZ NOT NULL,
+                        ended_at TIMESTAMPTZ,
+                        status VARCHAR(7) NOT NULL,
+                        total_eligible INTEGER,
+                        sent_count INTEGER,
+                        failed_count INTEGER,
+                        skipped_count INTEGER,
+                        retry_count INTEGER,
+                        error_reason TEXT,
+                        github_run_id VARCHAR(24)
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_birthdayrun_date_started
+                        ON birthdays_birthdayschedulerrun (processing_date, started_at DESC);
+                """,
+                reverse_sql="""
+                    DROP TABLE birthdays_birthdayschedulerrun;
+                    ALTER TABLE birthdays_birthdayemaillog DROP COLUMN resend_request_id;
+                """,
+            ),
+        ],
+        state_operations=[
+            migrations.AddField(
+                model_name='birthdayemaillog',
+                name='resend_request_id',
+                field=models.UUIDField(blank=True, null=True, unique=True),
+            ),
+            migrations.CreateModel(
+                name='BirthdaySchedulerRun',
+                fields=[
+                    ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                    ('execution_id', models.CharField(max_length=80, unique=True)),
+                    ('processing_date', models.DateField()),
+                    ('trigger_source', models.CharField(choices=[('SCHEDULED', 'Theo lịch'), ('RECOVERY', 'Chạy bù')], max_length=9)),
+                    ('scheduled_slot', models.CharField(choices=[('07:00', '07:00'), ('07:37', '07:37')], max_length=5, null=True)),
+                    ('started_at', models.DateTimeField()),
+                    ('ended_at', models.DateTimeField(null=True)),
+                    ('status', models.CharField(choices=[('RUNNING', 'Đang chạy'), ('SUCCESS', 'Thành công'), ('FAILED', 'Thất bại'), ('UNKNOWN', 'Chưa xác định')], max_length=7)),
+                    ('total_eligible', models.IntegerField(null=True)),
+                    ('sent_count', models.IntegerField(null=True)),
+                    ('failed_count', models.IntegerField(null=True)),
+                    ('skipped_count', models.IntegerField(null=True)),
+                    ('retry_count', models.IntegerField(null=True)),
+                    ('error_reason', models.TextField(null=True)),
+                    ('github_run_id', models.CharField(max_length=24, null=True)),
+                ],
+                options={
+                    'db_table': 'birthdays_birthdayschedulerrun',
+                    'ordering': ['-started_at', '-pk'],
+                    'indexes': [models.Index(fields=['processing_date', '-started_at'], name='idx_birthdayrun_date_started')],
+                },
+            ),
+        ],
+    )]
