@@ -3,18 +3,21 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import patch
+from types import ModuleType, SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 from backend.services.pgvector_store import _compile_where_dict
 from backend.services.rag_service import (
     _authorized_fallback_nodes,
     _fallback_query_filter,
+    _is_document_overview_query,
     _local_attachment_digest,
     _read_authorized_attachment_pages,
     _rerank_hybrid_nodes,
+    build_answer_prompt,
     extract_target_from_question,
     read_document_pages,
+    read_pdf_pages_with_pdfplumber,
 )
 
 
@@ -64,9 +67,11 @@ class AttachmentRetrievalTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "attachment.doc"
             path.write_bytes(b"document bytes")
-            with patch("legacy_doc.extract_text", return_value=SimpleNamespace(text="Nội dung văn bản")) as extract:
+            mock_module = ModuleType("legacy_doc")
+            mock_module.extract_text = MagicMock(return_value=SimpleNamespace(text="Nội dung văn bản"))
+            with patch.dict("sys.modules", {"legacy_doc": mock_module}):
                 pages = read_document_pages(path)
-            extract.assert_called_once_with(b"document bytes")
+            mock_module.extract_text.assert_called_once_with(b"document bytes")
             self.assertEqual(pages[0]["text"], "Nội dung văn bản")
 
     def test_authorized_attachment_pages_uses_shutil_and_reads_text(self):
@@ -172,4 +177,55 @@ class AttachmentRetrievalTests(unittest.TestCase):
                 extract_target_from_question("Tóm tắt HuynhVuongThanhNha_CV giúp tôi"),
                 "HuynhVuongThanhNha_CV (1).pdf",
             )
+
+    def test_is_document_overview_query_detection(self):
+        # Overview / general inquiries about documents
+        self.assertTrue(_is_document_overview_query("Thông Tin chung"))
+        self.assertTrue(_is_document_overview_query("thông tin"))
+        self.assertTrue(_is_document_overview_query("Tổng quan"))
+        self.assertTrue(_is_document_overview_query("Tóm tắt nội dung"))
+        self.assertTrue(_is_document_overview_query("Tài liệu này nói gì"))
+        self.assertTrue(_is_document_overview_query("Cho tôi biết nội dung chính của tài liệu"))
+        self.assertTrue(_is_document_overview_query("general information"))
+        self.assertTrue(_is_document_overview_query("overview"))
+
+        # Specific questions should NOT be treated as overview queries
+        self.assertFalse(_is_document_overview_query("Số hiệu văn bản 123/QĐ-BCT ban hành ngày nào?"))
+        self.assertFalse(_is_document_overview_query("Ai là người ký quyết định này?"))
+
+    def test_build_answer_prompt_contains_overview_directives_for_pinned_doc(self):
+        prompt_vi = build_answer_prompt(
+            question="Thông Tin chung",
+            context="Nội dung tóm tắt tài liệu môn học IE402",
+            history=None,
+            target_filename="IE402.pdf",
+            language="vi",
+        )
+        self.assertIn("IE402.pdf", prompt_vi)
+        self.assertIn("thông tin chung", prompt_vi.lower())
+        self.assertIn("tổng quan", prompt_vi.lower())
+
+        prompt_en = build_answer_prompt(
+            question="General information",
+            context="Summary of course IE402",
+            history=None,
+            target_filename="IE402.pdf",
+            language="en",
+        )
+        self.assertIn("IE402.pdf", prompt_en)
+        self.assertIn("general information", prompt_en.lower())
+
+    def test_read_pdf_pages_falls_back_to_pypdf_when_pdfplumber_empty(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fake_pdf = Path(directory) / "test.pdf"
+            fake_pdf.write_bytes(b"%PDF-1.4 dummy")
+
+            with patch("pdfplumber.open", side_effect=Exception("pdfplumber corrupted stream")):
+                mock_pypdf_reader = MagicMock()
+                mock_pypdf_reader.pages = [MagicMock(extract_text=lambda: "Nội dung trích xuất từ pypdf")]
+                with patch("pypdf.PdfReader", return_value=mock_pypdf_reader):
+                    pages = read_pdf_pages_with_pdfplumber(fake_pdf)
+                    self.assertEqual(len(pages), 1)
+                    self.assertEqual(pages[0]["text"], "Nội dung trích xuất từ pypdf")
+                    self.assertEqual(pages[0]["reader"], "pypdf")
 

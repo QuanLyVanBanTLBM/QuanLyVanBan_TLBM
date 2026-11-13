@@ -243,6 +243,7 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 0 10px;
   display: flex;
   flex-direction: column;
@@ -275,6 +276,8 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+  width: 100%;
+  min-width: 0;
 }
 
 .session-item-btn {
@@ -291,6 +294,7 @@
   text-align: left;
   transition: all var(--transition-fast);
   position: relative;
+  min-width: 0;
 }
 
 .session-item-btn:hover {
@@ -318,15 +322,19 @@
   flex: 1;
   min-width: 0;
   display: block;
+  overflow: hidden;
+  max-width: 100%;
 }
 
 .session-item-title {
+  display: block;
   font-weight: 700;
   font-size: 0.82rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--text-main);
+  max-width: 100%;
 }
 
 .session-item-btn.active .session-item-title {
@@ -341,6 +349,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   margin-top: 2px;
+  max-width: 100%;
 }
 
 .session-item-delete {
@@ -987,13 +996,18 @@
 
 .session-item-row {
   display: flex;
-  align-items: stretch;
+  align-items: center;
   gap: 4px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .session-item-row .session-item-btn {
-  flex: 1;
-  width: auto;
+  flex: 1 1 0%;
+  width: 0;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .session-item-delete {
