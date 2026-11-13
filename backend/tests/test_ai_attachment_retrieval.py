@@ -480,6 +480,46 @@ class AttachmentRetrievalTests(unittest.TestCase):
         self.assertIn("Nội dung chính", fallback_reply)
         self.assertIn("Chữ ký chuẩn & Nơi nhận", fallback_reply)
         self.assertIn("Trân trọng cảm ơn", fallback_reply)
+        self.assertIn("(/documents)", fallback_reply)
+
+    def test_unpinned_drafting_and_advisory_filter_out_noisy_keyword_sources(self):
+        from backend.services.rag_service import ask_document
+
+        # Mô phỏng node nhiễu chỉ khớp lỏng lẻo từ khóa phổ thông ("đề nghị", "phối hợp")
+        noisy_kw_node = SimpleNamespace(
+            text="Công văn 15/CV-ĐT về việc đề nghị phối hợp tổ chức hoạt động học tập thực tế cho sinh viên.",
+            metadata={"file_name": "15_CV_DT.pdf", "doc_code": "15/CV-ĐT", "chunk_id": "1-2"},
+            score=0.35,
+        )
+        ranked = _rerank_hybrid_nodes([], [noisy_kw_node], "Soạn giúp tôi email đôn đốc các phòng ban nộp báo cáo tháng")
+        self.assertLess(ranked[0].score, 0.30)
+
+        mock_retriever = MagicMock()
+        mock_retriever.retrieve.return_value = [noisy_kw_node]
+        mock_index = MagicMock()
+        mock_index.as_retriever.return_value = mock_retriever
+
+        with patch("backend.services.ai_access.has_permission_codename", return_value=True), patch(
+            "backend.services.sql_document_source.is_postgres_source", return_value=True
+        ), patch(
+            "backend.services.sql_document_source.accessible_document_keys", return_value={"vanbandi:15"}
+        ), patch(
+            "backend.services.business_knowledge.match_business_sources", return_value=[]
+        ), patch("backend.services.rag_service.setup_llamaindex"), patch(
+            "backend.services.rag_service.get_index", return_value=mock_index
+        ), patch("backend.services.faq_response_cache.get_cached_answer", return_value=None), patch(
+            "backend.services.rag_service.Settings"
+        ) as mock_settings:
+            mock_settings.llm = MagicMock()
+            result = ask_document(
+                "Soạn giúp tôi email đôn đốc các phòng ban nộp báo cáo tháng",
+                user=SimpleNamespace(is_authenticated=True, id=1),
+                filename=None,
+                language="vi",
+            )
+            self.assertEqual(result["sources"], [])
+            self.assertIn("(/documents)", result["answer"])
+
 
 
 

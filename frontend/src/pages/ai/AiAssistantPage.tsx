@@ -838,18 +838,39 @@ function CitationsBox({
   onNavigate?: (page: ActivePageId, urlOverride?: string) => void;
 }) {
   const { t } = useTranslation();
+  const [isCollapsed, setIsCollapsed] = useState(false);
   if (!sources || sources.length === 0) return null;
 
   const uniqueSources = deduplicateCitations(sources);
+  const toggleLabel = isCollapsed
+    ? t('aiAssistant.toggleCitationsExpand')
+    : t('aiAssistant.toggleCitationsCollapse');
 
   return (
-    <div className="ai-citations-box">
-      <div className="citations-title">
-        <i className="fa-solid fa-link" />
-        <span>{t('aiAssistant.citations')}</span>
-      </div>
+    <div className={`ai-citations-box ${isCollapsed ? 'is-collapsed' : ''}`}>
+      <button
+        type="button"
+        className="citations-toggle-btn"
+        onClick={() => setIsCollapsed((prev) => !prev)}
+        aria-expanded={!isCollapsed}
+        aria-label={toggleLabel}
+        title={toggleLabel}
+      >
+        <span className="citations-title">
+          <i className="fa-solid fa-link" />
+          <span>{t('aiAssistant.citations')}</span>
+          <span className="citations-count-badge">
+            {t('aiAssistant.citationsCount', { count: uniqueSources.length })}
+          </span>
+        </span>
+        <i
+          className={`fa-solid ${isCollapsed ? 'fa-chevron-down' : 'fa-chevron-up'} citations-chevron`}
+          aria-hidden="true"
+        />
+      </button>
 
-      <div className="citations-list">
+      {!isCollapsed && (
+        <div className="citations-list">
         {uniqueSources.map((src, idx) => {
           const defaultDocLabel = t('aiAssistant.inline.documentValue', { value: idx + 1 });
           const fileName = src.file_name || src.label || defaultDocLabel;
@@ -906,7 +927,8 @@ function CitationsBox({
             </button>
           );
         })}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

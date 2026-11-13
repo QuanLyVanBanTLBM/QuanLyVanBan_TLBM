@@ -2645,7 +2645,7 @@ def build_secretary_fallback_answer(
                 "### 4. Proposals / Recommendations (Đề xuất / Kiến nghị)\n"
                 "- Kindly request leadership review, guidance, and approval so the unit can proceed on schedule.\n\n"
                 "---\n"
-                "*Tip: For official internal forms and regulations, please refer to the **[Kho Tài Liệu & Biểu Mẫu](https://github.com/copilot)**.*"
+                "*Tip: For official internal forms and regulations, please refer to the **[Kho Tài Liệu & Biểu Mẫu](/documents)**.*"
             )
         return (
             f"{note}"
@@ -2657,7 +2657,7 @@ def build_secretary_fallback_answer(
             "2. **Step 2 — Processing & Coordination:** Assign to the responsible unit/specialist, review content, and prepare the required response or form.\n"
             "3. **Step 3 — Approval, Issuance & Archiving:** Submit for authorized signature, register in the document log, and archive the dossier according to regulations.\n\n"
             "### 3. Đề xuất / Kiến nghị (Recommendations)\n"
-            "- Please verify specific timelines and authority levels in your unit's internal regulations, or consult the **[Kho Tài Liệu & Biểu Mẫu](https://github.com/copilot)** to cross-check official documents and templates."
+            "- Please verify specific timelines and authority levels in your unit's internal regulations, or consult the **[Kho Tài Liệu & Biểu Mẫu](/documents)** to cross-check official documents and templates."
         )
 
     note = f"{SOFT_FALLBACK_NOTE_VI}\n\n" if include_note else ""
@@ -2691,7 +2691,7 @@ def build_secretary_fallback_answer(
             "  *Trân trọng cảm ơn,*\n"
             "  **[Họ và tên người ký]** — *[Chức vụ / Phòng ban] — [Số điện thoại / Email liên hệ]*\n\n"
             "---\n"
-            "*Gợi ý: Để đối chiếu văn bản quy định hoặc tải biểu mẫu chuẩn chính thức của đơn vị, anh/chị vui lòng tham khảo thêm tại **[Kho Tài Liệu & Biểu Mẫu](https://github.com/copilot)**.*"
+            "*Gợi ý: Để đối chiếu văn bản quy định hoặc tải biểu mẫu chuẩn chính thức của đơn vị, anh/chị vui lòng tham khảo thêm tại **[Kho Tài Liệu & Biểu Mẫu](/documents)**.*"
         )
 
     return (
@@ -2704,7 +2704,7 @@ def build_secretary_fallback_answer(
         "2. **Bước 2 — Thẩm định & Xử lý chuyên môn:** Chuyên viên phụ trách rà soát nội dung, đối chiếu quy chế hiện hành và soạn thảo văn bản/tờ trình phản hồi.\n"
         "3. **Bước 3 — Trình ký, Phát hành & Lưu trữ:** Trình lãnh đạo có thẩm quyền phê duyệt/ký số, vào sổ đăng ký văn bản và lưu hồ sơ theo quy định.\n\n"
         "### 3. Đề xuất / Kiến nghị\n"
-        "- Anh/chị có thể ghim trực tiếp văn bản cần tra cứu vào khung chat hoặc truy cập **[Kho Tài Liệu & Biểu Mẫu](https://github.com/copilot)** để đối chiếu quy định, biểu mẫu chính thức đang áp dụng tại đơn vị."
+        "- Anh/chị có thể ghim trực tiếp văn bản cần tra cứu vào khung chat hoặc truy cập **[Kho Tài Liệu & Biểu Mẫu](/documents)** để đối chiếu quy định, biểu mẫu chính thức đang áp dụng tại đơn vị."
     )
 
 
@@ -2761,7 +2761,7 @@ The user is SPECIFICALLY asking directly about document '{primary_target}'.
                 "You MUST start your response with the exact note: "
                 f"\"{SOFT_FALLBACK_NOTE_EN}\" and then provide a thorough, proactive professional advisory/drafting answer based on standard administrative procedures, "
                 "including sections for **Kính gửi (Salutation/Scope)**, **Nội dung chính (Main Content/Steps)**, and **Đề xuất/Kiến nghị (Recommendations)**, "
-                "and advise checking the **[Kho Tài Liệu & Biểu Mẫu](https://github.com/copilot)** for official forms."
+                "and advise checking the **[Kho Tài Liệu & Biểu Mẫu](/documents)** for official forms."
             )
         else:
             source_section = (
@@ -2788,7 +2788,7 @@ The user is SPECIFICALLY asking directly about document '{primary_target}'.
 
 # OUTPUT FORMAT
 - Direct, Proactive & Structured: Use clear headings (*Kính gửi / Scope*, *Nội dung chính / Main Content*, *Đề xuất & Kiến nghị / Recommendations* when advising or drafting).
-- Evidence-based: Clearly state which section/document the information comes from when [PROVIDED DOCUMENTS] are present; when in Soft Fallback mode, include `{SOFT_FALLBACK_NOTE_EN}` and recommend consulting **[Kho Tài Liệu & Biểu Mẫu](https://github.com/copilot)**.
+- Evidence-based: Clearly state which section/document the information comes from when [PROVIDED DOCUMENTS] are present; when in Soft Fallback mode, include `{SOFT_FALLBACK_NOTE_EN}` and recommend consulting **[Kho Tài Liệu & Biểu Mẫu](/documents)**.
 
 ---
 
@@ -2833,7 +2833,7 @@ Người dùng đang CHỈ ĐỊNH hỏi trực tiếp về tài liệu '{primar
             f"Bạn BẮT BUỘC mở đầu câu trả lời bằng dòng chú thích: \"{SOFT_FALLBACK_NOTE_VI}\", "
             "sau đó chủ động tư vấn nhiệt tình, giải đáp quy trình nghiệp vụ hoặc soạn thảo văn bản theo cấu trúc chuẩn công sở "
             "(gồm **Kính gửi**, **Nội dung chính**, **Đề xuất / Kiến nghị**), đồng thời khuyên người dùng tham khảo "
-            "**[Kho Tài Liệu & Biểu Mẫu](https://github.com/copilot)** nếu cần đối chiếu văn bản chính thức."
+            "**[Kho Tài Liệu & Biểu Mẫu](/documents)** nếu cần đối chiếu văn bản chính thức."
         )
     else:
         source_section = (
@@ -2854,7 +2854,7 @@ Người dùng đang CHỈ ĐỊNH hỏi trực tiếp về tài liệu '{primar
 
 # ĐỊNH DẠNG ĐẦU RA
 - **Chủ động, Chuẩn mực & Có cấu trúc:** Trình bày rõ ràng theo văn phong hành chính công sở (sử dụng cấu trúc *Kính gửi*, *Nội dung chính*, *Đề xuất / Kiến nghị* khi tư vấn quy trình hoặc soạn thảo).
-- **Có dẫn chứng & Định hướng:** Nêu rõ nguồn trích dẫn khi có `[TÀI LIỆU CUNG CẤP]`; khi ở chế độ Soft Fallback, luôn kèm chú thích `{SOFT_FALLBACK_NOTE_VI}` và gợi ý đối chiếu tại **[Kho Tài Liệu & Biểu Mẫu](https://github.com/copilot)**.
+- **Có dẫn chứng & Định hướng:** Nêu rõ nguồn trích dẫn khi có `[TÀI LIỆU CUNG CẤP]`; khi ở chế độ Soft Fallback, luôn kèm chú thích `{SOFT_FALLBACK_NOTE_VI}` và gợi ý đối chiếu tại **[Kho Tài Liệu & Biểu Mẫu](/documents)**.
 
 ---
 
@@ -3308,8 +3308,10 @@ def _rerank_hybrid_nodes(dense_nodes, keyword_nodes, question: str, rrf_k: int =
         rrf_contrib = 1.0 / (rrf_k + rank)
         entry = merged.get(key)
         if entry is None:
+            # Không ép sàn SOURCE_SCORE_THRESHOLD cho keyword_source đơn lẻ;
+            # node chỉ khớp từ khóa phổ thông phải có dense_score, dual-hit hoặc bonus đủ cao mới vượt ngưỡng.
             base = float(raw_score) if raw_score is not None and not is_keyword_source else (
-                max(SOURCE_SCORE_THRESHOLD, float(raw_score) * 0.45) if raw_score is not None else SOURCE_SCORE_THRESHOLD
+                min(0.20, float(raw_score) * 0.35) if raw_score is not None else 0.10
             )
             entry = {
                 "node": TextNode(text=text, metadata=meta),
@@ -3339,8 +3341,9 @@ def _rerank_hybrid_nodes(dense_nodes, keyword_nodes, question: str, rrf_k: int =
     for entry in merged.values():
         node_obj = entry["node"]
         rrf_raw = entry["rrf_score"]
-        # Chuẩn hóa điểm RRF về thang [0.25..0.75] tương thích với ngưỡng SOURCE_SCORE_THRESHOLD
-        rrf_normalized = rrf_raw * (rrf_k + 1) * 0.34
+        # Chuẩn hóa điểm RRF về thang [0.0..0.36] (rank #1 đơn nguồn ~0.18, dual-hit ~0.36 + 0.12 synergy)
+        # để tránh nguồn chỉ khớp từ khóa phổ thông bị đẩy vượt ngưỡng SOURCE_SCORE_THRESHOLD.
+        rrf_normalized = rrf_raw * (rrf_k + 1) * 0.18
         dual_hit_synergy = 0.12 if (entry["dense_rank"] is not None and entry["keyword_rank"] is not None) else 0.0
         fused_base = max(entry["base_score"], rrf_normalized) + dual_hit_synergy
         bonus = _keyword_match_score(node_obj.metadata, node_obj.text, keywords)
@@ -3350,6 +3353,7 @@ def _rerank_hybrid_nodes(dense_nodes, keyword_nodes, question: str, rrf_k: int =
         else:
             final_score = max(0.0, raw_total)
         node_obj.metadata["rrf_score"] = round(rrf_raw, 6)
+        node_obj.metadata["keyword_bonus"] = round(bonus, 4)
         ranked_entries.append((raw_total, rrf_raw, bonus, NodeWithScore(node=node_obj, score=round(final_score, 6))))
 
     ranked_entries.sort(key=lambda item: (item[0], item[1], item[2]), reverse=True)
@@ -3714,6 +3718,27 @@ def prepare_ask_document(
                 if (getattr(node, "metadata", {}) or {}).get("sql_doc_key") in allowed_keys
                 or (getattr(node, "metadata", {}) or {}).get("source_class") == "ai_knowledge_base"
             ]
+        # Khi người dùng KHÔNG ghim tài liệu: lọc nhiễu theo ngưỡng tin cậy và ngưỡng tương đối
+        # để tránh đính kèm văn bản lạc đề vào phản hồi Agentic Secretary / Soạn thảo.
+        if not clean_filenames and nodes:
+            is_drafting_req = _detect_drafting_intent(question) is not None
+            min_unpinned_score = max(SOURCE_SCORE_THRESHOLD + 0.30, 0.55) if is_drafting_req else max(SOURCE_SCORE_THRESHOLD, 0.35)
+            scored_values = [
+                float(getattr(n, "score", 0.0))
+                for n in nodes
+                if getattr(n, "score", None) is not None
+            ]
+            top_score = max(scored_values) if scored_values else 0.0
+            dynamic_floor = max(min_unpinned_score, top_score * 0.65)
+            filtered_nodes = []
+            for n in nodes:
+                n_score = getattr(n, "score", None)
+                if n_score is None:
+                    filtered_nodes.append(n)
+                    continue
+                if float(n_score) >= dynamic_floor:
+                    filtered_nodes.append(n)
+            nodes = filtered_nodes
         set_fields(authz_hits=len(nodes or []))
         max_source_limit = MAX_MULTI_DOC_SOURCES if is_multi_pinned else MAX_VISIBLE_SOURCES
         document_sources = (
