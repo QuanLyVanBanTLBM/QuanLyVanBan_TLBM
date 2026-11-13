@@ -492,15 +492,39 @@ def normalize_source_text(text: str) -> str:
 def read_pdf_pages_with_pdfplumber(file_path: Path):
     page_items = []
 
-    with pdfplumber.open(str(file_path)) as pdf:
-        for page_number, page in enumerate(pdf.pages, start=1):
-            page_text = (page.extract_text() or "").strip()
+    try:
+        with pdfplumber.open(str(file_path)) as pdf:
+            for page_number, page in enumerate(pdf.pages, start=1):
+                page_text = (page.extract_text() or "").strip()
 
-            page_items.append({
-                "text": page_text,
-                "page": page_number,
-                "reader": "pdfplumber",
-            })
+                page_items.append({
+                    "text": page_text,
+                    "page": page_number,
+                    "reader": "pdfplumber",
+                })
+    except Exception as exc:
+        logger.warning("pdfplumber error on %s: %s", file_path.name, exc)
+        page_items = []
+
+    total_extracted = sum(len(item.get("text", "")) for item in page_items)
+    if total_extracted == 0:
+        try:
+            import pypdf
+
+            reader = pypdf.PdfReader(str(file_path))
+            pypdf_items = []
+            for page_number, page in enumerate(reader.pages, start=1):
+                page_text = (page.extract_text() or "").strip()
+                pypdf_items.append({
+                    "text": page_text,
+                    "page": page_number,
+                    "reader": "pypdf",
+                })
+            if sum(len(item.get("text", "")) for item in pypdf_items) > 0:
+                logger.info("pypdf fallback successfully extracted text from %s", file_path.name)
+                return pypdf_items
+        except Exception as exc:
+            logger.debug("pypdf fallback also failed on %s: %s", file_path.name, exc)
 
     return page_items
 
@@ -2031,7 +2055,8 @@ def build_answer_prompt(question: str, context: str, history, target_filename: s
 The user is SPECIFICALLY asking directly about document '{target_filename}'.
 - You MUST answer directly and accurately based on the content of '{target_filename}' provided in [PROVIDED DOCUMENTS] below.
 - NEVER use information from other documents or previously discussed topics.
-- Go straight to the answer, clearly citing specific steps/articles/data found in the document.
+- When the user asks general, overview, summary, or introductory questions (e.g. "general information", "overview", "summary", "main content", "what is this document about"): you MUST synthesize and summarize the main topics, purpose, and key points from the provided document chunks; NEVER refuse or apologize for lacking information when document chunks are provided.
+- For specific inquiries, go straight to the answer, clearly citing specific steps/articles/data found in the document.
 \n"""
         source_section = (
             f"[PROVIDED DOCUMENTS]:\n<documents>\n{context}\n</documents>"
@@ -2069,7 +2094,7 @@ You are an intelligent assistant dedicated to reading, retrieving, and answering
    - If the documents do not contain enough data to answer all or part of the question, you MUST refuse to answer that part.
 
 3. **Response when information does not exist:**
-   - When the question is outside the scope of the documents, or not mentioned, or irrelevant, you must answer EXACTLY according to the template:
+   - When the question is outside the scope of the documents, or not mentioned at all (except for general overview/summary/introductory questions about the provided document), you must answer EXACTLY according to the template:
      "Sorry, the information you asked for is not found in the provided documents, so I cannot answer."
    - Never attempt to answer half-way or apologize and then answer using external knowledge.
 
@@ -2106,7 +2131,8 @@ CURRENT USER QUESTION:
 Người dùng đang CHỈ ĐỊNH hỏi trực tiếp về tài liệu '{target_filename}'.
 - Bạn PHẢI trả lời trực tiếp, chính xác dựa trên nội dung tài liệu '{target_filename}' được cung cấp trong [TÀI LIỆU CUNG CẤP] dưới đây.
 - TUYỆT ĐỐI KHÔNG sử dụng thông tin từ các tài liệu khác hoặc các chủ đề đã bàn luận trong quá khứ.
-- Hãy đi thẳng vào câu trả lời, trích dẫn rõ từng bước/điều khoản/dữ liệu cụ thể có trong tài liệu.
+- Khi người dùng hỏi thông tin chung, tổng quan, tóm tắt, mục đích hoặc nội dung của tài liệu (ví dụ: "thông tin chung", "tổng quan", "tóm tắt", "nội dung chính", "tài liệu này nói gì", "văn bản này về việc gì"): Bạn PHẢI tổng hợp các điểm cốt lõi, chủ đề chính và nội dung quan trọng từ các đoạn tài liệu được cung cấp dưới đây để trả lời người dùng; TUYỆT ĐỐI KHÔNG từ chối hoặc báo không có thông tin khi tài liệu đã có nội dung.
+- Với các câu hỏi tra cứu cụ thể, hãy đi thẳng vào câu trả lời, trích dẫn rõ từng bước/điều khoản/dữ liệu cụ thể có trong tài liệu.
 \n"""
 
     source_section = (
@@ -2140,7 +2166,7 @@ Nhiệm vụ duy nhất của bạn là trả lời câu hỏi của người d�
    - Nếu tài liệu không đủ dữ liệu để trả lời toàn bộ hoặc một phần câu hỏi, bạn PHẢI từ chối trả lời phần đó.
 
 3. **Quy tắc phản hồi khi thông tin không tồn tại:**
-   - Khi câu hỏi nằm ngoài phạm vi tài liệu, hoặc tài liệu không đề cập đến, bạn phải trả lời đúng theo mẫu:
+   - Khi câu hỏi nằm ngoài phạm vi tài liệu, hoặc tài liệu hoàn toàn không đề cập đến (trừ câu hỏi tổng quan/thông tin chung/tóm tắt về tài liệu đang được cung cấp), bạn phải trả lời đúng theo mẫu:
      "Xin lỗi, thông tin bạn hỏi không có trong tài liệu được cung cấp nên tôi không thể trả lời."
    - Tuyệt đối không cố gắng trả lời nửa vời hoặc xin lỗi rồi trả lời bằng kiến thức riêng.
 
@@ -2379,6 +2405,26 @@ def generate_conversational_response(question: str, history=None, language: str 
     if any(k in norm for k in ("buon", "met", "ap luc", "stress", "that vong")):
         return "Mình hiểu cảm giác của bạn lúc này. Bạn nhớ nghỉ ngơi một chút và giữ gìn sức khỏe nhé. Bất cứ khi nào cần hỗ trợ công việc, mình luôn ở đây!"
     return "Xin chào bạn! Mình là Trợ lý AI TLBM. Mình luôn sẵn sàng lắng nghe và hỗ trợ bạn tra cứu văn bản, quy trình nội bộ khi cần nhé!"
+
+
+def _is_document_overview_query(question: str) -> bool:
+    if not question:
+        return False
+    norm = normalize_for_match(question)
+    overview_patterns = [
+        "thong tin chung", "thong tin", "tong quan", "tom tat", "gioi thieu",
+        "noi dung chinh", "noi dung", "khai quat", "muc dich", "chu de",
+        "tai lieu nay ve gi", "tai lieu nay noi gi", "tai lieu noi ve gi",
+        "tai lieu noi gi", "van ban nay noi gi", "van ban ve gi",
+        "co noi dung gi", "overview", "summary", "summarize", "about",
+        "introduction", "main content", "general information", "general info",
+    ]
+    if any(pat in norm for pat in overview_patterns):
+        return True
+    tokens = [t for t in re.findall(r"[a-z0-9]+", norm) if t not in HYBRID_STOPWORDS]
+    if len(tokens) <= 3 and any(t in tokens for t in ["thong", "tin", "dung", "quat", "quan", "tat"]):
+        return True
+    return False
 
 
 def _fallback_query_filter(filename, allowed_keys):
@@ -2641,6 +2687,7 @@ def prepare_ask_document(
         retriever_kwargs = {"similarity_top_k": SIMILARITY_TOP_K}
 
         target_filters = []
+        is_overview = _is_document_overview_query(question)
         if clean_filename:
             target_filters.append(
                 MetadataFilter(
@@ -2651,10 +2698,9 @@ def prepare_ask_document(
             )
             print(f"🎯 Lọc retrieval theo tài liệu chỉ định: {clean_filename}")
             retriever_kwargs["similarity_top_k"] = max(SIMILARITY_TOP_K * 2, 10)
-            # Chỉ làm giàu retrieval query nếu người dùng hỏi mang tính tóm tắt tổng quan
-            q_lower = question.lower()
-            if any(w in q_lower for w in ["tóm tắt", "tong quan", "gioi thieu"]):
-                retrieval_query = f"{retrieval_query} {clean_filename} nội dung tóm tắt thông tin chính"
+            # Chỉ làm giàu retrieval query nếu người dùng hỏi mang tính tóm tắt tổng quan / thông tin chung
+            if is_overview:
+                retrieval_query = f"{clean_filename} {retrieval_query} thông tin chung nội dung tổng quan tóm tắt giới thiệu mục đích"
         elif category and category.strip():
             clean_category = category.strip()
             target_filters.append(
@@ -2732,18 +2778,35 @@ def prepare_ask_document(
                 node for node in nodes
                 if score_is_usable(getattr(node, "score", None))
             ]
-            # Nếu retriever không trả về chunk nào đạt ngưỡng (ví dụ câu hỏi quá ngắn hoặc embedding lệch),
-            # thực hiện fallback: lấy trực tiếp chunk của file đó từ PostgreSQL theo thứ tự tài liệu!
-            if not usable_nodes:
-                print(f"⚠️ Retriever không trả về node đạt ngưỡng cho {clean_filename}, thực hiện fallback từ PostgreSQL")
-                set_fields(fallback=True)
+            # Nếu retriever không trả về chunk nào đạt ngưỡng hoặc câu hỏi là câu hỏi tổng quan/thông tin chung,
+            # lấy thêm/fallback trực tiếp các chunk đầu của file đó từ PostgreSQL theo thứ tự tài liệu!
+            if not usable_nodes or is_overview:
                 fallback_collection = get_vector_collection()
                 fallback_where = _fallback_query_filter(clean_filename, allowed_keys if sql_mode else None)
                 vector_result = fallback_collection.get(
                     where=fallback_where,
                     include=["documents", "metadatas"],
                 )
-                nodes = _authorized_fallback_nodes(vector_result, allowed_keys if sql_mode else None, question=question)
+                fallback_nodes = _authorized_fallback_nodes(vector_result, allowed_keys if sql_mode else None, question=question)
+                if not usable_nodes:
+                    print(f"⚠️ Retriever không trả về node đạt ngưỡng cho {clean_filename}, thực hiện fallback từ PostgreSQL")
+                    set_fields(fallback=True)
+                    nodes = fallback_nodes
+                elif is_overview and fallback_nodes:
+                    # Gộp các chunk đầu (mở đầu, tổng quan) vào nodes để bảo đảm LLM có đủ thông tin
+                    existing_chunk_ids = {
+                        (getattr(n, "metadata", {}) or {}).get("chunk_id")
+                        for n in usable_nodes
+                    }
+                    merged_nodes = list(usable_nodes)
+                    for fn in fallback_nodes[:5]:
+                        c_id = (getattr(fn, "metadata", {}) or {}).get("chunk_id")
+                        if c_id not in existing_chunk_ids:
+                            merged_nodes.append(fn)
+                            existing_chunk_ids.add(c_id)
+                    nodes = merged_nodes
+            else:
+                nodes = usable_nodes
         if sql_mode and nodes:
             nodes = [
                 node for node in nodes
