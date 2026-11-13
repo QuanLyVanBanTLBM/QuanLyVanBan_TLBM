@@ -213,7 +213,10 @@ describe('Birthday email log actions', () => {
 
     resolveSend?.({ log: acceptedLog });
     expect(await screen.findByText(/Gửi email thành công/)).toBeInTheDocument();
-    expect(get.mock.calls.filter(([url]) => String(url).includes('/api/birthdays/logs/')).length).toBeGreaterThanOrEqual(2);
+    await waitFor(() => {
+      expect(get.mock.calls.filter(([url]) => String(url).includes('/api/birthdays/logs/')).length)
+        .toBeGreaterThanOrEqual(2);
+    });
   });
 
   it('offers a retry only for the log that can be resent and confirms its current address', async () => {
@@ -240,11 +243,11 @@ describe('Birthday email log actions', () => {
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining('corrected@example.test'));
     expect(post).toHaveBeenCalledWith('/api/birthdays/logs/2/retry/', { recipient: 'corrected@example.test' });
     expect(await screen.findByText(/Gửi email thành công/)).toBeInTheDocument();
-    expect(apiClient.get).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(apiClient.get).toHaveBeenCalledTimes(2));
   });
 
-  it('shows unprocessed birthdays and keeps scheduled, recovery, and manual sources distinct', async () => {
-    vi.spyOn(apiClient, 'get').mockResolvedValue({ total: 4, logs: [
+  it('shows unprocessed birthdays and distinguishes scheduled, recovery, and manual sources', async () => {
+    vi.spyOn(apiClient, 'get').mockResolvedValue({ total: 5, logs: [
       {
         id: null, employee_id: 1, employee_name: 'CBNV chưa xử lý', recipient_email: '', position: 'Chuyên viên',
         department: 'Đơn vị A', sent_date: '12/11/2026', sent_at: null, trang_thai: 'NOT_PROCESSED', retry_count: 0,
@@ -273,6 +276,13 @@ describe('Birthday email log actions', () => {
         delivery_context: null, delivery_uncertain: false, template_version: null, last_operator: 'admin',
         can_retry: false, current_recipient: null, retry_block_reason: 'alreadySent',
       },
+      {
+        id: 5, employee_id: 5, employee_name: 'CBNV gửi lại thư thủ công', recipient_email: 'resent@example.test', position: 'Giám đốc',
+        department: 'Đơn vị A', sent_date: '12/11/2026', sent_at: '12/11/2026 12:46:00', trang_thai: 'SUCCESS',
+        retry_count: 1, error_message: '', smtp_response_code: '250 OK', delivery_source: 'MANUAL',
+        delivery_context: 'RETRY', delivery_uncertain: false, template_version: null, last_operator: 'admin',
+        can_retry: false, current_recipient: null, retry_block_reason: 'alreadySent',
+      },
     ] });
     render(<BirthdayEmailLogs />);
 
@@ -282,10 +292,12 @@ describe('Birthday email log actions', () => {
     const scheduledRow = screen.getByRole('row', { name: /CBNV đã gửi/ });
     const recoveryRow = screen.getByRole('row', { name: /CBNV gửi bù/ });
     const manualRow = screen.getByRole('row', { name: /CBNV gửi thủ công/ });
+    const manualRetryRow = screen.getByRole('row', { name: /CBNV gửi lại thư thủ công/ });
     expect(within(notProcessedRow).queryByText('Tự động theo lịch')).not.toBeInTheDocument();
     expect(within(scheduledRow).getByText('Tự động theo lịch')).toBeInTheDocument();
     expect(within(recoveryRow).getByText('Chạy bù')).toBeInTheDocument();
     expect(within(manualRow).getByText('Thủ công')).toBeInTheDocument();
+    expect(within(manualRetryRow).getByText('Quản trị viên gửi lại')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Gửi lại' })).not.toBeInTheDocument();
   });
 

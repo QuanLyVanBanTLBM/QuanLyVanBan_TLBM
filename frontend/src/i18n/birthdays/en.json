@@ -114,6 +114,9 @@
         "alreadySent": "The mail server accepted this email; this action cannot resend it.",
         "notRetryable": "The current status does not allow a resend."
       },
+      "sent": "The mail server accepted the message for delivery.",
+      "sendFailed": "Email delivery failed. Check the log for details.",
+      "needsReview": "Delivery outcome unknown. Reconciliation is required.",
       "successTitle": "Email accepted for delivery",
       "successMessage": "The birthday email for {employee} ({email}) was accepted by the mail server for further delivery at {sentAt}.",
       "successMessageWithoutTime": "The birthday email for {employee} ({email}) was accepted by the mail server for further delivery.",
