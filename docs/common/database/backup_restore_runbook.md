@@ -117,6 +117,8 @@ Archive tạo trước khi có kho tệp nghiệp vụ không có **storage/**; 
 
 Thư mục gốc có quyền owner-only; tệp private config có quyền **0600**. **recovered-paths.json** chỉ là gợi ý đường dẫn mới. Tệp **backend.env** được khôi phục nguyên trạng và vẫn có thể trỏ đến đường dẫn cũ; người vận hành phải kiểm tra rồi hợp nhất các path mới vào cấu hình dịch vụ trước khi khởi động ứng dụng. Không source cấu hình vừa khôi phục trước khi kiểm tra.
 
+File-root archive chỉ khôi phục mode POSIX cơ sở hiệu lực; POSIX ACL theo named user/group và default ACL không được lưu hoặc khôi phục.
+
 Nếu **pg_restore** lỗi, giao dịch restore được rollback và database không bị drop. Nếu marker hoặc cài file lỗi sau khi database đã nạp thành công, database và backup vẫn được giữ; không tự reset, cần kiểm tra trạng thái rồi hoàn tất thủ công từ backup. Thư mục staging được giữ trong trường hợp cần tiếp tục cài file.
 
 ## Cây thư mục tệp nghiệp vụ
