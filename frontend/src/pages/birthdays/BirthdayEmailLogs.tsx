@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { ApiError, apiClient } from '@lib/apiClient';
 import { useTranslation } from '@i18n/translate';
 import { Button } from '@components/common/Button';
+import { usePermissions } from '@lib/permissions';
 import BirthdayEmailComposer from './BirthdayEmailComposer';
 import { birthdayEmailError, type DeliveryResult } from './emailDelivery';
 
-type EmailStatus = 'PENDING' | 'SENDING' | 'SUCCESS' | 'FAILED' | 'RETRY' | 'NOT_PROCESSED';
+type EmailStatus = 'PENDING' | 'SENDING' | 'SUCCESS' | 'FAILED' | 'RETRY' | 'NOT_PROCESSED' | 'UNKNOWN';
 type StatusFilter = EmailStatus | 'ALL';
 
 interface BirthdayEmailLog {
@@ -16,13 +17,14 @@ interface BirthdayEmailLog {
   position: string;
   department: string;
   sent_date: string;
+  sent_date_iso: string;
   sent_at: string | null;
   trang_thai: EmailStatus;
   retry_count: number;
   error_message: string;
   smtp_response_code: string;
-  delivery_source: 'AUTO' | 'MANUAL';
-  delivery_context: 'SCHEDULED' | 'RECOVERY' | 'RETRY' | null;
+  delivery_source: 'AUTO' | 'MANUAL' | 'MANUAL_RESEND';
+  delivery_context: 'SCHEDULED' | 'RECOVERY' | 'RETRY' | 'MANUAL_RESEND' | null;
   delivery_uncertain: boolean;
   template_version: string | null;
   last_operator: string | null;
@@ -67,6 +69,7 @@ const STATUS_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
   { value: 'FAILED', label: 'statusFailed' },
   { value: 'RETRY', label: 'statusRetry' },
   { value: 'NOT_PROCESSED', label: 'statusNotProcessed' },
+  { value: 'UNKNOWN', label: 'statusUnknown' },
 ];
 
 const STATUS_STYLES: Record<EmailStatus, string> = {
@@ -76,6 +79,7 @@ const STATUS_STYLES: Record<EmailStatus, string> = {
   FAILED: 'bg-danger-subtle text-danger',
   RETRY: 'bg-warning-subtle text-warning-text',
   NOT_PROCESSED: 'bg-surface-hover text-secondary',
+  UNKNOWN: 'bg-warning-subtle text-warning-text',
 };
 
 function statusLabelKey(status: EmailStatus): string {
@@ -106,13 +110,14 @@ function displayDate(isoDate: string): string {
 
 export default function BirthdayEmailLogs() {
   const { t } = useTranslation();
+  const { isSystemAdmin } = usePermissions();
   const [initialToday] = useState(projectToday);
   const [selectedDate, setSelectedDate] = useState(initialToday);
   const [status, setStatus] = useState<StatusFilter>('ALL');
   const [page, setPage] = useState(1);
   const [retry, setRetry] = useState(0);
   const [showComposer, setShowComposer] = useState(false);
-  const [retrying, setRetrying] = useState(false);
+  const [resendingKey, setResendingKey] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<ActionNotice | null>(null);
   const [loadState, setLoadState] = useState<LoadState>({ key: '', data: null, error: null });
   const selectedDateRef = useRef(initialToday);
@@ -234,25 +239,51 @@ export default function BirthdayEmailLogs() {
     setRetry((value) => value + 1);
   };
 
-  const retryEmail = async (log: BirthdayEmailLog) => {
-    const recipient = log.current_recipient;
-    if (!recipient || !window.confirm(t('birthdayPage.manualEmail.retryConfirm', { email: recipient }))) return;
-    setRetrying(true);
+  const resendEmail = async (log: BirthdayEmailLog, rowKey: string) => {
+    const recipient = log.current_recipient || log.recipient_email || '—';
+    if (!window.confirm(t('birthdayPage.manualEmail.retryConfirm', { email: recipient }))) return;
+    setResendingKey(rowKey);
     setActionNotice(null);
     try {
       const response = await apiClient.post<{ log: DeliveryResult }>(
-        `/api/birthdays/logs/${log.id}/retry/`, { recipient },
+        '/api/birthdays/logs/resend/', {
+          employee_id: log.employee_id,
+          sent_date: log.sent_date_iso,
+        },
       );
-      deliveryFinished(response.log);
+      if (response.log.delivery_uncertain) {
+        setActionNotice({
+          kind: 'warning',
+          titleKey: 'birthdayPage.manualEmail.needsReviewTitle',
+          messageKey: 'birthdayPage.manualEmail.resendUncertain',
+        });
+      } else if (response.log.trang_thai === 'SUCCESS') {
+        setActionNotice({
+          kind: 'success',
+          titleKey: 'birthdayPage.manualEmail.resendSuccessTitle',
+          messageKey: 'birthdayPage.manualEmail.resendSuccess',
+          values: {
+            employee: response.log.employee_name || log.employee_name,
+            email: response.log.recipient_email || recipient,
+            sentAt: response.log.sent_at || '',
+          },
+        });
+      } else {
+        setActionNotice({
+          kind: 'error',
+          titleKey: 'birthdayPage.manualEmail.sendFailedTitle',
+          messageKey: 'birthdayPage.manualEmail.sendFailed',
+        });
+      }
     } catch (reason) {
       setActionNotice({
         kind: 'error',
         titleKey: 'birthdayPage.manualEmail.sendFailedTitle',
         messageKey: birthdayEmailError(reason),
       });
-      setRetry((value) => value + 1);
     } finally {
-      setRetrying(false);
+      setResendingKey(null);
+      setRetry((value) => value + 1);
     }
   };
 
@@ -371,23 +402,20 @@ export default function BirthdayEmailLogs() {
                     <th scope="col" className="px-3 py-2.5 font-semibold">{t('birthdayPage.emailLogs.retries')}</th>
                     <th scope="col" className="px-3 py-2.5 font-semibold">{t('birthdayPage.manualEmail.source')}</th>
                     <th scope="col" className="px-3 py-2.5 font-semibold">{t('birthdayPage.emailLogs.details')}</th>
+                    {isSystemAdmin && (
+                      <th scope="col" className="px-3 py-2.5 font-semibold">{t('birthdayPage.emailLogs.actions')}</th>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {logs.map((log) => (
-                    <tr key={log.id ?? `not-processed-${log.employee_id}`} className="align-top text-main hover:bg-surface-hover/60">
+                  {logs.map((log) => {
+                    const rowKey = log.id !== null
+                      ? `log-${log.id}`
+                      : `employee-${log.employee_id}-${log.sent_date_iso}`;
+                    return (
+                    <tr key={rowKey} className="align-top text-main hover:bg-surface-hover/60">
                       <td className="px-3 py-3 font-semibold">{log.employee_name}</td>
-                      <td className="px-3 py-3 text-secondary">
-                        {log.recipient_email || '—'}
-                        {(log.trang_thai === 'FAILED' || log.trang_thai === 'RETRY') && log.can_retry && (
-                          <button
-                            type="button" onClick={() => void retryEmail(log)} disabled={retrying || !log.current_recipient}
-                            className="mt-1 block whitespace-nowrap font-semibold text-primary hover:underline disabled:opacity-50"
-                          >
-                            {t('birthdayPage.manualEmail.retry')}
-                          </button>
-                        )}
-                      </td>
+                      <td className="px-3 py-3 text-secondary">{log.recipient_email || '—'}</td>
                       <td className="px-3 py-3 text-secondary">{log.position || '—'}</td>
                       <td className="px-3 py-3 text-secondary">{log.department || '—'}</td>
                       <td className="whitespace-nowrap px-3 py-3">{log.sent_date}</td>
@@ -401,15 +429,15 @@ export default function BirthdayEmailLogs() {
                       <td className="px-3 py-3 text-secondary">
                         {log.trang_thai === 'NOT_PROCESSED'
                           ? '—'
-                          : t(log.delivery_source === 'MANUAL'
-                          ? log.delivery_context === 'RETRY'
+                          : t(log.delivery_source === 'MANUAL_RESEND'
                             ? 'birthdayPage.manualEmail.retrySource'
-                            : 'birthdayPage.manualEmail.manual'
-                          : log.delivery_context === 'RECOVERY'
-                            ? 'birthdayPage.manualEmail.recovery'
-                            : log.delivery_context === 'RETRY'
-                              ? 'birthdayPage.manualEmail.retrySource'
-                              : 'birthdayPage.manualEmail.automatic')}
+                            : log.delivery_source === 'MANUAL'
+                              ? 'birthdayPage.manualEmail.manual'
+                              : log.delivery_context === 'RECOVERY'
+                                ? 'birthdayPage.manualEmail.recovery'
+                                : log.delivery_context === 'RETRY'
+                                  ? 'birthdayPage.manualEmail.retrySource'
+                                  : 'birthdayPage.manualEmail.automatic')}
                         {log.last_operator && <p className="text-xs">{log.last_operator}</p>}
                         {log.template_version && <p className="text-xs">{log.template_version}</p>}
                       </td>
@@ -418,12 +446,27 @@ export default function BirthdayEmailLogs() {
                           ? t('birthdayPage.emailLogs.notProcessedDetail')
                           : log.delivery_uncertain
                             ? t('birthdayPage.manualEmail.needsReview')
-                            : (log.trang_thai === 'FAILED' || log.trang_thai === 'RETRY') && log.retry_block_reason
-                              ? t(`birthdayPage.manualEmail.retryBlocked.${log.retry_block_reason}`)
-                              : log.error_message || log.smtp_response_code || '—'}
+                            : log.error_message || log.smtp_response_code || '—'}
                       </td>
+                      {isSystemAdmin && (
+                        <td className="px-3 py-3">
+                          <Button
+                            type="button"
+                            variant="primary"
+                            size="sm"
+                            icon="fa-rotate-right"
+                            isLoading={resendingKey === rowKey}
+                            disabled={resendingKey !== null && resendingKey !== rowKey}
+                            onClick={() => void resendEmail(log, rowKey)}
+                            className="whitespace-nowrap"
+                          >
+                            {t('birthdayPage.manualEmail.retry')}
+                          </Button>
+                        </td>
+                      )}
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

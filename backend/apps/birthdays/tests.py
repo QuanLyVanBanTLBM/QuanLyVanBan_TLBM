@@ -450,7 +450,7 @@ class BirthdaySystemTests(TestCase):
             rows.extend(page_response.json()["logs"])
         row = next(item for item in rows if item["id"] == log.pk)
         self.assertFalse(row["can_retry"])
-        self.assertIsNone(row["current_recipient"])
+        self.assertEqual(row["current_recipient"], "not-an-email")
         self.assertEqual(row["retry_block_reason"], "invalidEmail")
 
     def test_public_birthday_card_api_returns_only_signed_card_fields(self):
