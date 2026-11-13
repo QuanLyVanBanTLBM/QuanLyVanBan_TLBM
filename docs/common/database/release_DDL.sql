@@ -1919,6 +1919,7 @@ CREATE TABLE birthdays_birthdayemaillog (
     delivery_source VARCHAR(16) NOT NULL DEFAULT 'AUTO',
     delivery_snapshot JSONB,
     last_operator VARCHAR(150),
+    resend_request_id UUID UNIQUE,
     delivery_uncertain BOOLEAN NOT NULL DEFAULT false,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -1946,6 +1947,27 @@ CREATE TABLE birthdays_birthdayemailtemplate (
     message TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT statement_timestamp()
 );
+
+CREATE TABLE birthdays_birthdayschedulerrun (
+    id BIGSERIAL PRIMARY KEY,
+    execution_id VARCHAR(80) NOT NULL UNIQUE,
+    processing_date DATE NOT NULL,
+    trigger_source VARCHAR(9) NOT NULL,
+    scheduled_slot VARCHAR(5),
+    started_at TIMESTAMPTZ NOT NULL,
+    ended_at TIMESTAMPTZ,
+    status VARCHAR(7) NOT NULL,
+    total_eligible INTEGER,
+    sent_count INTEGER,
+    failed_count INTEGER,
+    skipped_count INTEGER,
+    retry_count INTEGER,
+    error_reason TEXT,
+    github_run_id VARCHAR(24)
+);
+
+CREATE INDEX idx_birthdayrun_date_started
+    ON birthdays_birthdayschedulerrun (processing_date, started_at DESC);
 
 COMMIT;
 

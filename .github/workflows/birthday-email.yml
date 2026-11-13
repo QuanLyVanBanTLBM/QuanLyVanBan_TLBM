@@ -17,7 +17,8 @@ on:
         required: true
         type: string
 
-permissions: {}
+permissions:
+  actions: read
 
 jobs:
   send-birthday-emails:
@@ -32,6 +33,7 @@ jobs:
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -47,26 +49,32 @@ jobs:
           chmod 600 "$HOME/.ssh/known_hosts"
 
           trigger_source=SCHEDULED
+          scheduled_slot=-
+          target_username=
           if [[ "$GITHUB_EVENT_NAME" == schedule ]]; then
             event_schedule=$(jq -r '.schedule // ""' "$GITHUB_EVENT_PATH")
             if [[ "$event_schedule" == "37 0 * * *" ]]; then
               trigger_source=RECOVERY
-            elif [[ "$event_schedule" != "0 0 * * *" ]]; then
+              scheduled_slot=07:37
+            elif [[ "$event_schedule" == "0 0 * * *" ]]; then
+              scheduled_slot=07:00
+            else
               echo "Unsupported birthday email schedule: $event_schedule" >&2
               exit 1
             fi
-          fi
-
-          remote_command="bash -s -- '$trigger_source'"
-          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            created_at=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .created_at)
+            target_date=$(TZ=Asia/Ho_Chi_Minh date --date="$created_at" +%F)
+          else
+            trigger_source=RECOVERY
             target_username=$(jq -r '.inputs.username // "" | strings' "$GITHUB_EVENT_PATH")
             target_date=$(jq -er '.inputs.date | strings' "$GITHUB_EVENT_PATH")
-            if [[ -n "$target_username" ]]; then
-              [[ "$target_username" =~ ^[A-Za-z0-9_.@+-]{1,150}$ ]]
-            fi
-            [[ "$target_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]
-            remote_command="bash -s -- 'RECOVERY' '$target_username' '$target_date'"
           fi
+          if [[ -n "$target_username" ]]; then
+            [[ "$target_username" =~ ^[A-Za-z0-9_.@+-]{1,150}$ ]]
+          fi
+          [[ "$target_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]
+          [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ && "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]]
+          remote_command="bash -s -- '$trigger_source' '$target_username' '$target_date' '$scheduled_slot' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT'"
           ssh -i "$HOME/.ssh/id_ed25519" -p 2150 \
             -o BatchMode=yes \
             -o StrictHostKeyChecking=yes \
@@ -77,25 +85,16 @@ jobs:
           umask 077
           touch "$LOG"
           chmod 600 "$LOG"
-          trigger_source=${1:-SCHEDULED}
-          if [[ "$trigger_source" != SCHEDULED && "$trigger_source" != RECOVERY ]]; then
-            echo "Invalid birthday email trigger source." >&2
+          if (( $# != 6 )); then
+            echo "Invalid birthday email execution arguments." >&2
             exit 2
           fi
-          shift || true
-
-          args=("--trigger-source=$trigger_source")
-          if (( $# > 0 )); then
-            if (( $# != 2 )); then
-              echo "Invalid recovery arguments." >&2
-              exit 2
-            fi
-            target_username=$1
-            target_date=$2
-            args+=("--date=$target_date")
-            if [[ -n "$target_username" ]]; then
-              args+=("--username=$target_username")
-            fi
+          args=("--trigger-source=$1" "--date=$3" "--github-run-id=$5" "--github-run-attempt=$6")
+          if [[ -n "$2" ]]; then
+            args+=("--username=$2")
+          fi
+          if [[ "$4" != "-" ]]; then
+            args+=("--scheduled-slot=$4")
           fi
 
           set +e
