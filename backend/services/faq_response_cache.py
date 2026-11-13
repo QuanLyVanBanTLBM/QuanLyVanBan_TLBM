@@ -124,28 +124,45 @@ def _scope_sources_are_current(scope_sources):
         return False
     if not scope_sources:
         return True
+
+    expected_by_file = {}
+    for source in scope_sources:
+        if not isinstance(source, dict):
+            return False
+        filename = source.get("file_name")
+        if not filename:
+            return False
+        category = source.get("category")
+        if filename in expected_by_file and expected_by_file[filename] != category:
+            return False
+        expected_by_file[filename] = category
+
     from django.db import connection
 
     try:
+        filenames = list(expected_by_file.keys())
         with connection.cursor() as cursor:
-            for source in scope_sources:
-                filename = source.get("file_name")
-                if not filename:
-                    return False
-                cursor.execute(
-                    """SELECT DISTINCT metadata ->> 'source_class', metadata ->> 'category'
-                       FROM ai_document_embedding WHERE metadata ->> 'file_name' = %s""",
-                    [filename],
-                )
-                rows = cursor.fetchall()
-                if not rows or any(
-                    source_class != "ai_knowledge_base"
-                    or category != source.get("category")
-                    or not sources_are_shareable([{"source_class": source_class, "category": category}])
-                    for source_class, category in rows
-                ):
-                    return False
-        return True
+            cursor.execute(
+                """SELECT DISTINCT metadata ->> 'file_name',
+                                   metadata ->> 'source_class',
+                                   metadata ->> 'category'
+                   FROM ai_document_embedding
+                   WHERE metadata ->> 'file_name' = ANY(%s)""",
+                [filenames],
+            )
+            rows = cursor.fetchall()
+
+        seen_files = set()
+        for filename, source_class, category in rows:
+            seen_files.add(filename)
+            if (
+                source_class != "ai_knowledge_base"
+                or category != expected_by_file.get(filename)
+                or not sources_are_shareable([{"source_class": source_class, "category": category}])
+            ):
+                return False
+
+        return seen_files == set(filenames)
     except Exception as error:
         logger.warning("FAQ answer cache scope validation failed (%s)", type(error).__name__)
         return False
