@@ -13,6 +13,7 @@ from django.test import SimpleTestCase, TestCase
 
 from backend.services.sql_document_source import (
     SqlDocumentAccessError,
+    accessible_document_keys,
     accessible_documents,
     verify_sql_schema,
 )
@@ -116,6 +117,38 @@ class ExpiredDocumentPolicyTests(SimpleTestCase):
                     if params and params[0] == "qlvb.can_view_expired_vanbanden"
                 ]
                 self.assertEqual(expired_setting, [["qlvb.can_view_expired_vanbanden", "on" if can_view_expired else "off"]])
+
+    @patch("backend.services.sql_document_source.is_postgres_source", return_value=True)
+    def test_accessible_document_keys_fetches_only_ids_without_attachments(self, _is_postgres):
+        user = SimpleNamespace(is_superuser=False)
+        role_cursor = FakeCursor(fetchone_row=("qlvb_readonly", True, False, False))
+        union_cursor = FakeCursor(
+            columns=("source_type", "source_id"),
+            rows=(("vanbanden", 8), ("tailieu", 12)),
+        )
+        readonly = FakeReadonlyConnection([role_cursor, union_cursor])
+        db_connections = FakeConnections(readonly)
+        with (
+            patch(
+                "backend.services.sql_document_source.has_permission_codename",
+                side_effect=lambda _u, code: code in {"use_aiassistant", "view_vanbanden", "view_tailieu"},
+            ),
+            patch("backend.services.sql_document_source.co_quyen_xem_het_hieu_luc", return_value=False),
+            patch("backend.services.sql_document_source.connections", db_connections),
+            patch("backend.services.sql_document_source.transaction.atomic", return_value=nullcontext()),
+            patch("backend.services.sql_document_source.van_ban_xem_duoc", side_effect=authorized_ids),
+        ):
+            keys = accessible_document_keys(user, employee_id=42)
+
+        self.assertEqual(keys, {"vanbanden:8", "tailieu:12"})
+        self.assertEqual(len(readonly.used_cursors), 2)
+        union_sql, union_params = union_cursor.executed[-1]
+        self.assertIn("UNION ALL", union_sql)
+        self.assertIn("FROM ai_vanbanden", union_sql)
+        self.assertIn("FROM ai_tailieu", union_sql)
+        self.assertNotIn("ai_vanbandi", union_sql)
+        self.assertNotIn("attachment", union_sql)
+        self.assertEqual(union_params, [[8]])
 
 
 class SqlDocumentSourceTests(TestCase):
@@ -228,6 +261,34 @@ class SqlDocumentSourceTests(TestCase):
     @patch("backend.services.sql_document_source.is_postgres_source", return_value=False)
     def test_schema_verification_is_skipped_for_non_postgres_connection(self, _is_postgres):
         self.assertEqual(verify_sql_schema()["status"], "skipped")
+
+    @patch("backend.services.sql_document_source.is_postgres_source", return_value=True)
+    def test_accessible_document_keys_fetches_only_ids_without_attachments(self, _is_postgres):
+        grant_codename(self.user, "view_vanbanden")
+        grant_codename(self.user, "view_tailieu")
+        role_cursor = FakeCursor(fetchone_row=("qlvb_readonly", True, False, False))
+        union_cursor = FakeCursor(
+            columns=("source_type", "source_id"),
+            rows=(("vanbanden", 8), ("tailieu", 12)),
+        )
+        readonly = FakeReadonlyConnection([role_cursor, union_cursor])
+        db_connections = FakeConnections(readonly)
+        with (
+            patch("backend.services.sql_document_source.connections", db_connections),
+            patch("backend.services.sql_document_source.transaction.atomic", return_value=nullcontext()),
+            patch("backend.services.sql_document_source.van_ban_xem_duoc", side_effect=authorized_ids),
+        ):
+            keys = accessible_document_keys(self.user, employee_id=42)
+
+        self.assertEqual(keys, {"vanbanden:8", "tailieu:12"})
+        self.assertEqual(len(readonly.used_cursors), 2)
+        union_sql, union_params = union_cursor.executed[-1]
+        self.assertIn("UNION ALL", union_sql)
+        self.assertIn("FROM ai_vanbanden", union_sql)
+        self.assertIn("FROM ai_tailieu", union_sql)
+        self.assertNotIn("ai_vanbandi", union_sql)  # DI list was empty, so skipped!
+        self.assertNotIn("attachment", union_sql)
+        self.assertEqual(union_params, [[8]])
 
 
 class ReadonlyAliasSettingsTests(TestCase):

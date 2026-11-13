@@ -22,6 +22,8 @@ export default function ScreenLockModal({ isLocked, onUnlock }: ScreenLockModalP
   const { t, currentLang } = useTranslation();
   const [password, setPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   if (!isLocked) {
     return null;
@@ -41,12 +43,30 @@ export default function ScreenLockModal({ isLocked, onUnlock }: ScreenLockModalP
   const rawRole = session?.roleTitle;
   const displayRoleOrEmail = rawRole ? formatRoleTitle(rawRole, currentLang) : (session?.email || 'Hệ thống Quản lý Văn bản');
 
-  const handleUnlockSubmit = (e?: React.FormEvent) => {
+  const handleUnlockSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    setPassword('');
+    const cleanPass = password.trim();
+    if (!cleanPass) {
+      setErrorMsg(t('settings.passwordRequired') || 'Vui lòng nhập mật khẩu để mở khóa.');
+      return;
+    }
+
+    setLoading(true);
     setErrorMsg('');
-    // Chấp nhận mở khóa trực tiếp hoặc khi nhập mật khẩu (tối ưu cho buổi demo/chấm thi)
-    onUnlock();
+    try {
+      const isValid = await authService.verifyPassword(cleanPass);
+      if (isValid) {
+        setPassword('');
+        setErrorMsg('');
+        onUnlock();
+      } else {
+        setErrorMsg(t('settings.wrongPassword') || 'Mật khẩu không chính xác. Vui lòng thử lại.');
+      }
+    } catch {
+      setErrorMsg(t('settings.wrongPassword') || 'Mật khẩu không chính xác. Vui lòng thử lại.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleLogout = () => {
@@ -111,17 +131,33 @@ export default function ScreenLockModal({ isLocked, onUnlock }: ScreenLockModalP
               <i className="fa-solid fa-key" />
             </span>
             <input
-              type="password"
+              type={showPassword ? 'text' : 'password'}
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                if (errorMsg) setErrorMsg('');
+              }}
               placeholder="Nhập mật khẩu để mở khóa..."
-              className="w-full pl-10 pr-4 py-2.5 bg-surface border border-border-subtle rounded-xl text-sm text-main placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all"
+              disabled={loading}
+              className="w-full pl-10 pr-10 py-2.5 bg-surface border border-border-subtle rounded-xl text-sm text-main placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all disabled:opacity-50"
               autoFocus
             />
+            <button
+              type="button"
+              onClick={() => setShowPassword((prev) => !prev)}
+              tabIndex={-1}
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted hover:text-main text-xs transition-colors p-1"
+              title={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+            >
+              <i className={`fa-solid ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`} />
+            </button>
           </div>
 
           {errorMsg && (
-            <div className="text-xs text-danger font-medium text-left">{errorMsg}</div>
+            <div className="text-xs text-danger font-medium text-left flex items-center gap-1.5 animate-in fade-in duration-150">
+              <i className="fa-solid fa-circle-exclamation text-[11px]" />
+              <span>{errorMsg}</span>
+            </div>
           )}
 
           <div className="flex flex-col gap-2 pt-1">
@@ -129,16 +165,27 @@ export default function ScreenLockModal({ isLocked, onUnlock }: ScreenLockModalP
               type="submit"
               variant="primary"
               size="md"
-              className="w-full justify-center gap-2 py-2.5 font-bold shadow-sm shadow-primary/25"
+              disabled={loading}
+              className="w-full justify-center gap-2 py-2.5 font-bold shadow-sm shadow-primary/25 disabled:opacity-60"
             >
-              <i className="fa-solid fa-lock-open text-xs" />
-              <span>{t('settings.unlockButton') || 'Mở khóa làm việc'}</span>
+              {loading ? (
+                <>
+                  <i className="fa-solid fa-circle-notch fa-spin text-xs" />
+                  <span>Đang kiểm tra...</span>
+                </>
+              ) : (
+                <>
+                  <i className="fa-solid fa-lock-open text-xs" />
+                  <span>{t('settings.unlockButton') || 'Mở khóa làm việc'}</span>
+                </>
+              )}
             </Button>
 
             <button
               type="button"
               onClick={handleLogout}
-              className="text-xs text-muted hover:text-danger transition-colors py-1 flex items-center justify-center gap-1.5"
+              disabled={loading}
+              className="text-xs text-muted hover:text-danger transition-colors py-1 flex items-center justify-center gap-1.5 disabled:opacity-50"
             >
               <i className="fa-solid fa-arrow-right-from-bracket text-[11px]" />
               <span>{t('settings.logoutSwitchUser') || 'Đăng xuất tài khoản khác'}</span>

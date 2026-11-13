@@ -270,8 +270,8 @@ function Buoc1({ onXong }: { onXong: (ho_so: HoSoChiTiet, tep: ArrayBuffer | nul
               {chon && <p className="text-xs text-muted">{t('tao.goiYTepDinhKem')}</p>}
             </>
           ) : (
-            <div className="grid gap-4 md:grid-cols-[minmax(0,14rem)_minmax(0,1fr)] items-start">
-              <p className="text-xs text-muted md:col-span-2">{t('tao.goiYNhapKhac')}</p>
+            <div className="space-y-3">
+              <p className="text-xs text-muted">{t('tao.goiYNhapKhac')}</p>
               <TruongNhap nhan={t('tao.trichYeu')} batBuoc ghiChu={`${trichYeu.length}/${GIOI_HAN.trichYeu} ${t('chung.kyTu')}`} loi={loiTrichYeu}>
                 <input
                   aria-label={t('tao.trichYeu')}

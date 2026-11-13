@@ -170,6 +170,18 @@ sudo -u postgres psql -d "$DB_NAME" -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION IF N
 ```
 
   Thiếu quyền stop, deploy hủy trước backup; nếu service ban đầu active và đã dừng thì cleanup khởi động lại release trước. Thiếu secret hoặc rule sudo cho reset, `rebuild` dừng trước `dropdb`.
+- Socket giữ cổng `127.0.0.1:8001` trong lúc deploy: `deploy/qlvb-backend.socket` và `deploy/qlvb-backend.service.d/socket.conf` được `deploy.sh` cài khi nội dung đổi. Socket không còn `PartOf=` service nên dừng service không đóng cổng; yêu cầu mới xếp hàng thay vì bị từ chối. Trong cửa sổ downtime, `deploy.sh` tạo cờ `/srv/qlvb/.maintenance` ngay trước `systemctl stop` và gỡ ngay sau khi chuyển symlink `current`, trước `restart`. Khi có cờ (tối đa 10 phút, quá hạn tự bỏ qua) `ExecStartPre` giữ service ở trạng thái `activating` nên Gunicorn không khởi động trên DB đang đổi.
+  - Lỗi sau khi DB có thể đã đổi (fail-closed): `deploy.sh` chạy `systemctl stop qlvb-backend.socket` trước, dừng service, rồi mới gỡ cờ. Cổng 8001 đóng cho tới khi quản trị viên kiểm tra DB và chạy `sudo systemctl start qlvb-backend.socket`.
+  - Rule sudoers bổ sung (đúng nguyên văn, user deploy là `<user deploy>`):
+
+    ```
+    <user deploy> ALL=(root) NOPASSWD: /usr/bin/install -m 0644 /home/<user deploy>/deploy/qlvb-backend.socket /etc/systemd/system/qlvb-backend.socket
+    <user deploy> ALL=(root) NOPASSWD: /usr/bin/install -D -m 0644 /home/<user deploy>/deploy/qlvb-backend.service.d/socket.conf /etc/systemd/system/qlvb-backend.service.d/socket.conf
+    <user deploy> ALL=(root) NOPASSWD: /usr/bin/systemctl daemon-reload
+    <user deploy> ALL=(root) NOPASSWD: /usr/bin/systemctl enable qlvb-backend.socket
+    <user deploy> ALL=(root) NOPASSWD: /usr/bin/systemctl stop qlvb-backend.socket
+    <user deploy> ALL=(root) NOPASSWD: /usr/bin/systemctl start qlvb-backend.socket
+    ```
 - Role ứng dụng (`DB_USER`) là owner DB, không cần `CREATEDB` hay superuser. Cluster hỗ trợ ICU và locale `C.UTF-8`.
 - `/etc/qlvb/backend.env` đọc được bởi user deploy (script `source` file này), có cấu hình PostgreSQL, `DJANGO_SECRET_KEY`, `SIGNING_PIN_SECRET` literal và ba data root tường minh. Backup từ chối private config nếu file cho group/other quyền truy cập; không sao chép secret sang file quyền khác để né kiểm tra.
 - User deploy có quyền tạo thư mục archive private `0700` và archive `0600` dưới `/srv/qlvb/backups/full`; dump preflight tạm nằm trong thư mục private và được dọn sau deploy.

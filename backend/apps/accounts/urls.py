@@ -18,6 +18,9 @@ urlpatterns = [
     # Đổi mật khẩu cá nhân
     path("change-password/", views.change_password_view, name="change_password"),
 
+    # Xác thực mật khẩu phiên làm việc (mở khóa màn hình / bảo mật)
+    path("verify-password/", views.verify_password_view, name="verify_password"),
+
     # Admin đặt lại mật khẩu cho tài khoản (admin set pass)
     path("admin-set-password/", views.admin_set_password_view, name="admin_set_password"),
 

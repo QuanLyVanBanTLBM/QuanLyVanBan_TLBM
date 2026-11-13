@@ -13,7 +13,7 @@ from documents.signals import (
     handle_vanbandi_attachment_change,
     handle_vanbandi_change,
 )
-from documents.tasks import sync_sql_document_vectors
+from documents.tasks import sync_registered_ai_documents, sync_sql_document_vectors
 from backend.services.rag_service import ask_document, delete_sql_document_vectors, is_ai_configured
 from backend.services.sql_document_source import (
     get_all_document_records_for_index,
@@ -71,6 +71,18 @@ class CeleryIndexingTaskTests(SimpleTestCase):
         delete_sql_document_vectors("vanbanden", 42)
         mock_col.delete.assert_called_once_with(where={"sql_doc_key": "vanbanden:42"})
 
+    @patch("backend.services.rag_service.sync_documents_if_needed")
+    @patch("backend.services.rag_service.is_ai_configured", return_value=True)
+    def test_sync_registered_ai_documents_task_runs_when_configured(self, _mock_cfg, mock_sync):
+        self.assertTrue(sync_registered_ai_documents())
+        mock_sync.assert_called_once_with()
+
+    @patch("backend.services.rag_service.sync_documents_if_needed")
+    @patch("backend.services.rag_service.is_ai_configured", return_value=False)
+    def test_sync_registered_ai_documents_task_skips_when_unconfigured(self, _mock_cfg, mock_sync):
+        self.assertFalse(sync_registered_ai_documents())
+        mock_sync.assert_not_called()
+
 
 class AskDocumentNoSyncIndexingTests(SimpleTestCase):
     @patch("backend.services.rag_service.sync_documents_if_needed")
@@ -79,31 +91,29 @@ class AskDocumentNoSyncIndexingTests(SimpleTestCase):
     @patch("backend.services.rag_service.setup_llamaindex")
     @patch("backend.services.business_knowledge.match_business_sources", return_value=[])
     @patch("backend.services.rag_service.index_sql_document")
-    @patch("backend.services.sql_document_source.accessible_documents")
+    @patch("backend.services.sql_document_source.accessible_document_keys")
     @patch("backend.services.sql_document_source.is_postgres_source", return_value=True)
-    def test_ask_document_does_not_call_index_sql_document(
+    def test_ask_document_does_not_call_index_sql_document_or_sync_registry(
         self,
         mock_is_pg,
-        mock_accessible,
+        mock_accessible_keys,
         mock_index_sql,
         _match_biz,
         _setup,
         mock_get_index,
         mock_settings,
-        _sync_docs=None,
+        mock_sync_docs,
     ):
-        mock_accessible.return_value = [
-            {"source_type": "vanbanden", "source_id": 1, "attachments": []},
-            {"source_type": "vanbandi", "source_id": 2, "attachments": []},
-            {"source_type": "tailieu", "source_id": 3, "attachments": []},
-        ]
+        mock_accessible_keys.return_value = {"vanbanden:1", "vanbandi:2", "tailieu:3"}
         mock_retriever = MagicMock()
         mock_retriever.retrieve.return_value = []
         mock_get_index.return_value.as_retriever.return_value = mock_retriever
 
         result = ask_document("Thủ tục trình ký như thế nào?")
-        # Crucial check: index_sql_document MUST NOT be called in chat request!
+        # Crucial checks: neither index_sql_document nor sync_documents_if_needed may run in chat!
         mock_index_sql.assert_not_called()
+        mock_sync_docs.assert_not_called()
+        mock_accessible_keys.assert_called_once()
         self.assertIn("answer", result)
 
         # Verify filters passed to retriever include allowed_keys
