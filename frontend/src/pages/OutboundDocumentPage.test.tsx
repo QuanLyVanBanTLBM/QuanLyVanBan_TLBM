@@ -442,6 +442,34 @@ describe('OutboundDocumentPage Component (Phân hệ Văn bản Đi)', () => {
         expect(screen.getByText('Nhập văn bản hạn chế').closest('button')).not.toBeDisabled();
       });
     });
+
+    it('chặn mở modal Thêm mới khi có query param ?action=create nếu thiếu quyền tạo văn bản', async () => {
+      loadWithPermissions(['view_vanbandi']);
+      render(
+        <MemoryRouter initialEntries={['/documents/outgoing?action=create']}>
+          <OutboundDocumentPage />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.queryByText(/Thêm Mới Văn Bản Đi/i)).not.toBeInTheDocument();
+      });
+      expect(await screen.findByText(/Bạn không có quyền thêm mới văn bản đi/i)).toBeInTheDocument();
+    });
+
+    it('chặn mở modal Nhật ký người đọc khi có query param ?viewers=201 nếu thiếu quyền view_read_log', async () => {
+      loadWithPermissions(['view_vanbandi']);
+      render(
+        <MemoryRouter initialEntries={['/documents/outgoing?viewers=201']}>
+          <OutboundDocumentPage />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.queryByText(/Lịch Sử Người Đọc/i)).not.toBeInTheDocument();
+      });
+      expect(await screen.findByText(/Bạn không có quyền xem nhật ký người đọc văn bản này/i)).toBeInTheDocument();
+    });
   });
 });
 
