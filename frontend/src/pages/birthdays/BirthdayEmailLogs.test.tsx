@@ -240,7 +240,7 @@ describe('Birthday email log actions', () => {
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining('corrected@example.test'));
     expect(post).toHaveBeenCalledWith('/api/birthdays/logs/2/retry/', { recipient: 'corrected@example.test' });
     expect(await screen.findByText(/Gửi email thành công/)).toBeInTheDocument();
-    expect(apiClient.get).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(apiClient.get).toHaveBeenCalledTimes(2));
   });
 
   it('shows unprocessed birthdays and distinguishes scheduled, recovery, and manual sources', async () => {
