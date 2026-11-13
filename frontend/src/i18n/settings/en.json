@@ -29,6 +29,8 @@
     "screenLockedTitle": "Session Temporarily Locked",
     "screenLockedDesc": "Screen automatically locked to protect sensitive document records per Bao Long security policy.",
     "unlockButton": "Unlock Session",
+    "passwordRequired": "Please enter your password to unlock.",
+    "wrongPassword": "Incorrect password. Please try again.",
     "logoutSwitchUser": "Logout to switch account",
     "localeSectionTitle": "Language & Regional Settings",
     "localeLanguage": "Display Language",

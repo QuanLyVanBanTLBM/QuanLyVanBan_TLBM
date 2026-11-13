@@ -80,7 +80,8 @@ export default function SettingsPage() {
     return localStorage.getItem('tlbm_sec_auto_lock') !== 'false';
   });
   const [secLockTimeout, setSecLockTimeout] = useState<number>(() => {
-    return parseInt(localStorage.getItem('tlbm_sec_lock_timeout') || '15', 10);
+    const val = parseFloat(localStorage.getItem('tlbm_sec_lock_timeout') || '15');
+    return isNaN(val) || val <= 0 ? 15 : val;
   });
   const [showSavedToast, setShowSavedToast] = useState(false);
 
@@ -249,6 +250,8 @@ export default function SettingsPage() {
                 disabled={!secAutoLock}
                 className="text-xs bg-surface border border-border-subtle rounded-lg px-2.5 py-1 text-main font-medium focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
               >
+                <option value={0.5}>30 giây (Thử nghiệm demo)</option>
+                <option value={1}>1 phút (Kiểm thử nhanh)</option>
                 <option value={5}>5 phút</option>
                 <option value={15}>15 phút (Chuẩn)</option>
                 <option value={30}>30 phút</option>
