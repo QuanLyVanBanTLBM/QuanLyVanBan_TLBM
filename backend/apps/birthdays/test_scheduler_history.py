@@ -145,3 +145,22 @@ class BirthdaySchedulerHistoryTests(TestCase):
         log.refresh_from_db()
         self.assertEqual((log.trang_thai, log.delivery_snapshot["trigger_source"]), ("SUCCESS", "RETRY"))
         self.assertEqual([message.to for message in mail.outbox], [[employee.email]])
+
+    def test_automatic_lookup_ignores_a_failed_admin_resend_for_the_same_day(self):
+        employee = Employee.objects.create_user(
+            username="lookup-recipient", email="lookup@example.test", ngay_sinh=date(2000, 2, 29),
+        )
+        fields = {
+            "employee": employee, "sent_date": self.processing_date,
+            "recipient_email": employee.email, "subject": "Birthday",
+        }
+        automatic = BirthdayEmailLog.objects.create(**fields, delivery_source="AUTO")
+        resend = BirthdayEmailLog.objects.create(
+            **fields, delivery_source="MANUAL_RESEND", trang_thai="FAILED", error_message="Rejected",
+        )
+        self.run_slot(501, "07:37")
+        automatic.refresh_from_db()
+        resend.refresh_from_db()
+        self.assertEqual((automatic.trang_thai, resend.trang_thai), ("SUCCESS", "FAILED"))
+        self.assertEqual(resend.error_message, "Rejected")
+        self.assertEqual([message.to for message in mail.outbox], [[employee.email]])
