@@ -32,12 +32,15 @@ if not settings.configured:
     django.setup()
 
 from birthdays.templates_service import (
+    LAYOUT_DEFAULTS,
     SENIOR_LEADERSHIP_ROLE,
     MIDDLE_MANAGEMENT_ROLE,
     STAFF_ROLE,
     TEMPLATE_POOLS,
     get_employee_role_category,
+    get_automated_template_pool,
     get_template_pool,
+    pick_automated_template,
     pick_hybrid_template,
     template_catalog,
 )
@@ -92,6 +95,18 @@ class SmartHybridTemplateTests(unittest.TestCase):
         for seed in range(10):
             layout, draft = pick_hybrid_template("Chuyên viên", seed=seed)
             self.assertIn(layout, TEMPLATE_POOLS[STAFF_ROLE])
+
+    def test_automated_template_picker_uses_the_shared_valid_layout_pool(self):
+        pool = get_automated_template_pool()
+        self.assertEqual(pool, list(LAYOUT_DEFAULTS))
+
+        for seed in range(100):
+            layout, draft = pick_automated_template(seed=seed)
+            self.assertIn(layout, pool)
+            self.assertTrue(draft["subject"].strip())
+            self.assertTrue(draft["message"].strip())
+
+        self.assertEqual(pick_automated_template(seed=42), pick_automated_template(seed=42))
 
     @unittest.mock.patch("birthdays.templates_service.BirthdayEmailTemplate.objects.all", return_value=[])
     def test_template_catalog_includes_recommended_roles(self, _mock_all):

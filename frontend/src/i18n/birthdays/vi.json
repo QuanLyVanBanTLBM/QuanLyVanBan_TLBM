@@ -172,6 +172,7 @@
       "statusFailed": "Thất bại",
       "statusRetry": "Chờ gửi lại",
       "statusNotProcessed": "Chưa được xử lý",
+      "statusDeliveryUncertain": "Chưa rõ kết quả SMTP",
       "notProcessedDetail": "Chưa có bản ghi gửi cho ngày sinh này; kiểm tra lượt scheduler hoặc chạy gửi bù.",
       "today": "Hôm nay",
       "refresh": "Tải lại nhật ký",

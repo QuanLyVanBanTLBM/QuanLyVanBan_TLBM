@@ -7,14 +7,14 @@ WORKFLOW_PATH = Path(__file__).resolve().parents[3] / ".github" / "workflows" / 
 
 
 class BirthdaySchedulerConfigurationTests(unittest.TestCase):
-    def test_staggered_recovery_schedule_is_tagged_for_recovery(self):
+    def test_0700_schedule_and_staggered_recovery_are_tagged_correctly(self):
         workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
         schedules = re.findall(r'^\s*-\s+cron:\s+["\']([^"\']+)["\']', workflow, re.MULTILINE)
 
-        self.assertEqual(schedules, ["7 0 * * *", "37 0 * * *"])
+        self.assertEqual(schedules, ["0 0 * * *", "37 0 * * *"])
         self.assertIn("Asia/Ho_Chi_Minh (UTC+7)", workflow)
         self.assertIn('if [[ "$event_schedule" == "37 0 * * *" ]]; then\n              trigger_source=RECOVERY', workflow)
-        self.assertIn('elif [[ "$event_schedule" != "7 0 * * *" ]]; then', workflow)
+        self.assertIn('elif [[ "$event_schedule" != "0 0 * * *" ]]; then', workflow)
         self.assertIn('remote_command="bash -s -- \'RECOVERY\' \'$target_username\' \'$target_date\'"', workflow)
         self.assertIn("trigger_source=SCHEDULED", workflow)
         self.assertIn('"--trigger-source=$trigger_source"', workflow)

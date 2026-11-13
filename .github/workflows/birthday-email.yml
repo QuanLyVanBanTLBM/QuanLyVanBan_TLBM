@@ -2,8 +2,8 @@ name: Birthday email scheduler
 
 on:
   schedule:
-    # 07:07 Asia/Ho_Chi_Minh (UTC+7), offset from the top of the hour.
-    - cron: "7 0 * * *"
+    # 07:00 Asia/Ho_Chi_Minh (UTC+7).
+    - cron: "0 0 * * *"
     # Secondary pass at 07:37; catches a missed primary run when this schedule fires.
     - cron: "37 0 * * *"
   workflow_dispatch:
@@ -51,7 +51,7 @@ jobs:
             event_schedule=$(jq -r '.schedule // ""' "$GITHUB_EVENT_PATH")
             if [[ "$event_schedule" == "37 0 * * *" ]]; then
               trigger_source=RECOVERY
-            elif [[ "$event_schedule" != "7 0 * * *" ]]; then
+            elif [[ "$event_schedule" != "0 0 * * *" ]]; then
               echo "Unsupported birthday email schedule: $event_schedule" >&2
               exit 1
             fi

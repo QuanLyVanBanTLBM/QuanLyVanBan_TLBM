@@ -32,6 +32,7 @@ from birthdays.services import (
     is_birthday_on_date,
     send_automated_birthday_emails,
 )
+from birthdays.templates_service import LAYOUT_DEFAULTS
 from organizations.models import DonVi, KhoiKhuVuc
 
 Employee = get_user_model()
@@ -424,6 +425,66 @@ class BirthdaySystemTests(TestCase):
         self.assertTrue(all(row["trang_thai"] == "NOT_PROCESSED" for row in filtered_rows))
         self.assertIn(unprocessed.pk, {row["employee_id"] for row in filtered_rows})
 
+    @override_settings(
+        MAILERS={"default": {"BACKEND": "django.core.mail.backends.locmem.EmailBackend"}},
+        DEFAULT_FROM_EMAIL="noreply@example.test",
+    )
+    def test_automated_delivery_includes_director_and_updates_public_admin_log_after_smtp_accepts(self):
+        target_date = date(2026, 6, 17)
+        position = Position.objects.create(
+            display_order=Position.get_next_display_order(),
+            name="Giám đốc",
+        )
+        director = Employee.objects.create_user(
+            username="birthday-director",
+            password="password123",
+            email="director@example.test",
+            ho_ten="Nhân viên quản lý",
+            ngay_sinh=date(1990, 6, 17),
+            don_vi=self.don_vi,
+            chuc_vu=position,
+            is_active=True,
+        )
+        self.client.force_authenticate(user=self.emp_admin)
+        log_url = reverse("birthdays:logs")
+
+        def birthday_rows():
+            first_page = self.client.get(log_url, {"date": target_date.isoformat()})
+            self.assertEqual(first_page.status_code, status.HTTP_200_OK)
+            rows = list(first_page.json()["logs"])
+            for page in range(2, first_page.json()["total_pages"] + 1):
+                rows.extend(self.client.get(
+                    log_url, {"date": target_date.isoformat(), "page": page},
+                ).json()["logs"])
+            return rows
+
+        before_send = next(row for row in birthday_rows() if row["employee_id"] == director.pk)
+        self.assertEqual(before_send["trang_thai"], "NOT_PROCESSED")
+
+        mail.outbox.clear()
+        with patch(
+            "birthdays.services.pick_automated_template",
+            return_value=("05", LAYOUT_DEFAULTS["05"]),
+        ) as shared_picker:
+            results = send_automated_birthday_emails(
+                target_date=target_date,
+                username=director.username,
+                allow_test_email_backend=True,
+            )
+
+        self.assertEqual(results["sent_count"], 1)
+        shared_picker.assert_called_once()
+        log = BirthdayEmailLog.objects.get(employee=director, sent_date=target_date)
+        self.assertEqual(log.trang_thai, BirthdayEmailStatus.SUCCESS)
+        self.assertEqual(log.card_template, "05")
+        self.assertIn('href="https://staging-quanlyvanban.bhbl.vn/birthday-cards/05.html#token=', log.delivery_snapshot["html"])
+        self.assertEqual(log.delivery_snapshot["html"], mail.outbox[0].alternatives[0].content)
+
+        after_send = next(row for row in birthday_rows() if row["employee_id"] == director.pk)
+        self.assertEqual(after_send["trang_thai"], BirthdayEmailStatus.SUCCESS)
+        self.assertEqual(after_send["delivery_source"], "AUTO")
+        self.assertEqual(after_send["delivery_context"], "SCHEDULED")
+
     def test_birthday_email_logs_api_explains_invalid_retry_recipient(self):
         self.client.force_authenticate(user=self.emp_admin)
         self.emp_staff.email = "not-an-email"
@@ -625,6 +686,46 @@ class BirthdaySystemTests(TestCase):
             self.emp_no_perm.email,
             [recipient for message in mail.outbox for recipient in message.to],
         )
+
+    @override_settings(
+        MAILERS={"default": {"BACKEND": "django.core.mail.backends.locmem.EmailBackend"}},
+        DEFAULT_FROM_EMAIL="noreply@example.test",
+    )
+    def test_automatic_retry_includes_leadership_employee(self):
+        target_date = date(2026, 6, 17)
+        position = Position.objects.create(
+            display_order=Position.get_next_display_order(),
+            name="Giám đốc",
+        )
+        director = Employee.objects.create_user(
+            username="birthday-director-retry",
+            password="password123",
+            email="director-retry@example.test",
+            ho_ten="Nhân viên quản lý cần gửi lại",
+            ngay_sinh=date(1990, 6, 16),
+            don_vi=self.don_vi,
+            chuc_vu=position,
+            is_active=True,
+        )
+        retry_log = BirthdayEmailLog.objects.create(
+            employee=director,
+            sent_date=target_date - timedelta(days=1),
+            recipient_email=director.email,
+            subject="Thư sinh nhật cần gửi lại",
+            trang_thai=BirthdayEmailStatus.RETRY,
+            retry_count=1,
+        )
+
+        mail.outbox.clear()
+        with patch("birthdays.services.get_eligible_automated_birthday_employees", return_value=[]):
+            send_automated_birthday_emails(
+                target_date=target_date,
+                allow_test_email_backend=True,
+            )
+
+        retry_log.refresh_from_db()
+        self.assertEqual(retry_log.trang_thai, BirthdayEmailStatus.SUCCESS)
+        self.assertEqual([message.to for message in mail.outbox], [[director.email]])
 
     @override_settings(
         MAILERS={"default": {"BACKEND": "django.core.mail.backends.locmem.EmailBackend"}},
