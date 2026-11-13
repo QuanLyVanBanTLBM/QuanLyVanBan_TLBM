@@ -185,24 +185,26 @@
 }
 
 .ai-sidebar-search {
-  padding: 0 14px 12px;
+  margin: 0 14px 12px;
+  padding: 0;
   position: relative;
   flex-shrink: 0;
 }
 
 .ai-sidebar-search i {
   position: absolute;
-  left: 26px;
+  left: 12px;
   top: 50%;
   transform: translateY(-50%);
   color: var(--text-muted);
   font-size: 0.8rem;
+  line-height: 1;
   pointer-events: none;
 }
 
 .ai-sidebar-search input {
   width: 100%;
-  padding: 8px 30px 8px 32px;
+  padding: 8px 30px 8px 34px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-subtle);
   background: var(--bg-surface);
@@ -218,7 +220,7 @@
 
 .sidebar-search-clear-btn {
   position: absolute;
-  right: 22px;
+  right: 8px;
   top: 50%;
   transform: translateY(-50%);
   background: transparent;
@@ -426,6 +428,52 @@
 
 .ai-sidebar-docs-list::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted, rgba(0, 0, 0, 0.3));
+}
+
+.sidebar-doc-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sidebar-doc-section + .sidebar-doc-section {
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border-subtle);
+}
+
+.sidebar-doc-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}
+
+.sidebar-doc-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-doc-section-count {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: var(--radius-full);
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  flex-shrink: 0;
 }
 
 /* Dropzone tải lên file */
@@ -1525,6 +1573,17 @@
   opacity: 0.6;
 }
 
+.ai-soft-fallback-note {
+  margin-top: 10px;
+  font-size: 0.78rem;
+  font-style: italic;
+  color: var(--text-muted);
+  opacity: 0.78;
+  user-select: none;
+  -webkit-user-select: none;
+  line-height: 1.45;
+}
+
 /* Quick followup prompts */
 .ai-followup-prompts {
   margin-top: 12px;
@@ -1598,6 +1657,10 @@
 .thinking-spinner {
   width: 18px;
   height: 18px;
+  min-width: 18px;
+  min-height: 18px;
+  flex-shrink: 0;
+  aspect-ratio: 1 / 1;
   border: 2px solid var(--color-primary-subtle);
   border-top-color: var(--color-primary);
   border-radius: 50%;
@@ -1696,25 +1759,37 @@
 }
 
 .input-box-container:focus-within {
-  border-color: var(--color-primary);
-  box-shadow: 0 4px 20px var(--color-primary-glow);
+  border-color: var(--border-subtle);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
 }
 
-.chat-textarea {
+.ai-chat-page-root .input-box-container .chat-textarea {
   flex: 1;
-  border: none;
-  background: transparent;
+  min-height: 38px;
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
   color: var(--text-main);
   font-size: 0.92rem;
-  line-height: 1.5;
-  outline: none;
+  line-height: 22px;
+  outline: none !important;
   resize: none;
-  padding: 6px 4px;
+  padding: 8px 4px;
+  margin: 0;
   max-height: 120px;
   font-family: inherit;
   overflow-y: auto;
   scrollbar-width: none; /* Firefox: Ẩn thanh cuộn */
   -ms-overflow-style: none; /* IE 10+ / Edge: Ẩn thanh cuộn */
+}
+
+.ai-chat-page-root .input-box-container .chat-textarea:focus,
+.ai-chat-page-root .input-box-container .chat-textarea:focus-visible {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
 }
 
 .chat-textarea::-webkit-scrollbar {
@@ -1869,7 +1944,8 @@
   }
 
   .ai-sidebar-search {
-    padding: 0 14px 10px;
+    margin: 0 14px 10px;
+    padding: 0;
   }
 
   .ai-sidebar-sessions-list {
@@ -2104,11 +2180,11 @@
     -webkit-tap-highlight-color: transparent;
   }
 
-  .chat-textarea {
+  .ai-chat-page-root .input-box-container .chat-textarea {
     font-size: var(--font-size-input); /* Chống zoom tự động trên iOS Safari / Android Chrome */
     min-height: 38px;
-    padding: 7px 6px;
-    line-height: 1.4;
+    padding: 8px 6px;
+    line-height: 22px;
     overflow-y: auto;
     scrollbar-width: none !important;
     -ms-overflow-style: none !important;

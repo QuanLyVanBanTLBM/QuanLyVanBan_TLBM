@@ -3569,13 +3569,52 @@ def prepare_ask_document(
                 retrieval_query = f"{clean_filename} {retrieval_query} thông tin chung nội dung tổng quan tóm tắt giới thiệu mục đích"
         elif category and category.strip():
             clean_category = category.strip()
-            target_filters.append(
-                MetadataFilter(
-                    key="category",
-                    value=clean_category,
-                    operator=FilterOperator.EQ,
+            if sql_mode and clean_category == "Văn bản đến":
+                target_filters.append(
+                    MetadataFilter(key="category", value="vanbanden", operator=FilterOperator.EQ)
                 )
-            )
+            elif sql_mode and clean_category == "Văn bản đi":
+                target_filters.append(
+                    MetadataFilter(key="category", value="vanbandi", operator=FilterOperator.EQ)
+                )
+            elif sql_mode and clean_category == "Kho tài liệu":
+                target_filters.append(
+                    MetadataFilter(key="category", value="tailieu", operator=FilterOperator.EQ)
+                )
+            elif sql_mode and clean_category.startswith("Kho tài liệu / "):
+                folder_name = clean_category.split("Kho tài liệu / ", 1)[1].strip()
+                folder_keys = []
+                try:
+                    from document_templates.models import TaiLieuChiTiet
+
+                    folder_ids = list(
+                        TaiLieuChiTiet.objects.filter(
+                            dm_tai_lieu__ten_tai_lieu=folder_name
+                        ).values_list("id", flat=True)
+                    )
+                    allowed_set = set(allowed_keys or [])
+                    folder_keys = [
+                        f"tailieu:{tid}"
+                        for tid in folder_ids
+                        if f"tailieu:{tid}" in allowed_set
+                    ]
+                except Exception:
+                    folder_keys = []
+                target_filters.append(
+                    MetadataFilter(
+                        key="sql_doc_key",
+                        value=folder_keys or ["__none__"],
+                        operator=FilterOperator.IN,
+                    )
+                )
+            else:
+                target_filters.append(
+                    MetadataFilter(
+                        key="category",
+                        value=clean_category,
+                        operator=FilterOperator.EQ,
+                    )
+                )
             print(f"🔎 Lọc retrieval theo chủ đề: {clean_category}")
 
         if sql_mode:
@@ -3979,9 +4018,7 @@ def ask_document_stream(
 
 
 def clear_vector_database():
-    from django.db import connection
-    with connection.cursor() as cursor:
-        cursor.execute("TRUNCATE TABLE ai_document_embedding")
+    get_vector_collection().delete(where={"sql_doc_key": {"$exists": False}})
     from backend.services.faq_response_cache import clear_faq_cache
     clear_faq_cache()
 

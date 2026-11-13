@@ -302,4 +302,66 @@ describe('AiAssistantPage', () => {
       )
     );
   });
+
+  it('separates uploaded documents from managed PostgreSQL documents (view & pin only)', async () => {
+    mockedUsePermissions.mockReturnValue({
+      loaded: true,
+      can: (perm: string) => perm === 'use_aiassistant',
+      isSuperuser: true,
+      isSystemAdmin: true,
+      refresh: vi.fn(),
+    } as unknown as ReturnType<typeof usePermissions>);
+    mockedGetDocuments.mockResolvedValue({
+      documents: [
+        { filename: 'uploaded_guide.pdf', category: 'Hướng dẫn', size: 120 },
+        {
+          filename: '12/CV-UBND — Công văn mẫu',
+          category: 'Văn bản đến',
+          is_managed: true,
+          source_type: 'vanbanden',
+          source_id: 12,
+        },
+      ],
+    });
+
+    renderAiPage();
+    await waitFor(() => expect(mockedGetDocuments).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: /aiAssistant\.tabDocs/ }));
+    expect(await screen.findByText('aiAssistant.inline.uploadedDocsSection')).toBeInTheDocument();
+    expect(screen.getByText('aiAssistant.inline.systemDocsSection')).toBeInTheDocument();
+    expect(screen.getByText('uploaded_guide.pdf')).toBeInTheDocument();
+    expect(screen.getByText('12/CV-UBND — Công văn mẫu')).toBeInTheDocument();
+
+    // Chỉ tài liệu tải lên mới có nút xóa/phân loại/xem trước; tài liệu hệ thống chỉ có nút ghim
+    expect(screen.getAllByTitle('aiAssistant.deleteDoc')).toHaveLength(1);
+    expect(screen.getAllByTitle('aiAssistant.preview')).toHaveLength(1);
+    expect(screen.getAllByTitle('aiAssistant.inline.targetThisDocumentForQ')).toHaveLength(2);
+  });
+
+  it('moves soft-fallback note to the bottom and excludes it from clipboard copy', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    mockedAskQuestion.mockResolvedValue({
+      answer:
+        '(Không có tài liệu cụ thể được ghim. Phản hồi dựa trên nghiệp vụ hành chính tổng hợp)\n\nNội dung hướng dẫn chính.',
+      sources: [],
+    });
+
+    renderAiPage();
+    await waitFor(() => expect(mockedGetDocuments).toHaveBeenCalled());
+
+    const textarea = screen.getByRole('textbox', { name: 'aiAssistant.inputPlaceholder' });
+    fireEvent.change(textarea, { target: { value: 'Hỏi quy trình' } });
+    fireEvent.click(screen.getByRole('button', { name: 'aiAssistant.send' }));
+
+    const bodyPara = await screen.findByText('Nội dung hướng dẫn chính.', { selector: 'p' });
+    const noteEl = screen.getByText('(Không có tài liệu cụ thể được ghim. Phản hồi dựa trên nghiệp vụ hành chính tổng hợp)');
+    expect(noteEl).toHaveClass('ai-soft-fallback-note');
+    expect(bodyPara.compareDocumentPosition(noteEl) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    const copyButtons = screen.getAllByTitle('aiAssistant.copy');
+    fireEvent.click(copyButtons[copyButtons.length - 1]);
+    expect(writeText).toHaveBeenCalledWith('Nội dung hướng dẫn chính.');
+  });
 });
