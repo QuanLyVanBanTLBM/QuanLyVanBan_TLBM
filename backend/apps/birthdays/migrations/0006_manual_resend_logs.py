@@ -8,9 +8,22 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RemoveConstraint(
-            model_name="birthdayemaillog",
-            name="uq_emaillog_employee_date",
+        migrations.SeparateDatabaseAndState(
+            database_operations=[
+                migrations.RunSQL(
+                    sql=(
+                        'ALTER TABLE "birthdays_birthdayemaillog" '
+                        'DROP CONSTRAINT IF EXISTS "uq_emaillog_employee_date"'
+                    ),
+                    reverse_sql=None,
+                ),
+            ],
+            state_operations=[
+                migrations.RemoveConstraint(
+                    model_name="birthdayemaillog",
+                    name="uq_emaillog_employee_date",
+                ),
+            ],
         ),
         migrations.AlterField(
             model_name="birthdayemaillog",
