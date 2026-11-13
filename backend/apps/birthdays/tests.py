@@ -795,15 +795,29 @@ class BirthdaySystemTests(TestCase):
     )
     def test_send_birthday_emails_management_command(self):
         """Kiểm tra lệnh quản trị send_birthday_emails qua call_command."""
+        from io import StringIO
+
         mail.outbox.clear()
+        output = StringIO()
         call_command(
             "send_birthday_emails",
             "--date=2026-05-20",
             "--allow-locmem",
+            stdout=output,
         )
         sent_recipients = [recipient for message in mail.outbox for recipient in message.to]
         self.assertIn(self.emp_staff.email, sent_recipients)
         self.assertIn(self.emp_admin.email, sent_recipients)
+        self.assertRegex(
+            output.getvalue(),
+            r"BIRTHDAY_EMAIL_START date=2026-05-20 trigger=RECOVERY started_at=.*\+07:00",
+        )
+        self.assertRegex(
+            output.getvalue(),
+            r"BIRTHDAY_EMAIL_SUMMARY date=2026-05-20 trigger=RECOVERY started_at=.* ended_at=.* "
+            r"duration_ms=\d+ eligible=\d+ sent=\d+ skipped=\d+ retry=\d+ stale=\d+ failed=\d+ "
+            r"outcome=completed",
+        )
 
 
     @override_settings(

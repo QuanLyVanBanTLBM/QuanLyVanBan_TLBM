@@ -4,6 +4,8 @@ on:
   schedule:
     # 07:07 Asia/Ho_Chi_Minh (UTC+7), offset from the top of the hour.
     - cron: "7 0 * * *"
+    # Secondary pass at 07:37; catches a missed primary run when this schedule fires.
+    - cron: "37 0 * * *"
   workflow_dispatch:
     inputs:
       username:
@@ -48,7 +50,18 @@ jobs:
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/known_hosts"
 
-          remote_command='bash -s'
+          trigger_source=SCHEDULED
+          if [[ "$GITHUB_EVENT_NAME" == schedule ]]; then
+            event_schedule=$(jq -r '.schedule // ""' "$GITHUB_EVENT_PATH")
+            if [[ "$event_schedule" == "37 0 * * *" ]]; then
+              trigger_source=RECOVERY
+            elif [[ "$event_schedule" != "7 0 * * *" ]]; then
+              echo "Unsupported birthday email schedule: $event_schedule" >&2
+              exit 1
+            fi
+          fi
+
+          remote_command="bash -s -- '$trigger_source'"
           if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
             target_username=$(jq -r '.inputs.username // "" | strings' "$GITHUB_EVENT_PATH")
             target_date=$(jq -er '.inputs.date | strings' "$GITHUB_EVENT_PATH")
@@ -56,7 +69,7 @@ jobs:
               [[ "$target_username" =~ ^[A-Za-z0-9_.@+-]{1,150}$ ]]
             fi
             [[ "$target_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]
-            remote_command="bash -s -- '$target_username' '$target_date'"
+            remote_command="bash -s -- 'RECOVERY' '$target_username' '$target_date'"
           fi
           ssh -i "$HOME/.ssh/id_ed25519" -p 2150 \
             -o BatchMode=yes \
@@ -68,11 +81,22 @@ jobs:
           umask 077
           touch "$LOG"
           chmod 600 "$LOG"
-          args=()
+          trigger_source=${1:-SCHEDULED}
+          if [[ "$trigger_source" != SCHEDULED && "$trigger_source" != RECOVERY ]]; then
+            echo "Invalid birthday email trigger source." >&2
+            exit 2
+          fi
+          shift || true
+
+          args=("--trigger-source=$trigger_source")
           if (( $# > 0 )); then
+            if (( $# != 2 )); then
+              echo "Invalid recovery arguments." >&2
+              exit 2
+            fi
             target_username=$1
             target_date=$2
-            args=("--date=$target_date" "--trigger-source=RECOVERY")
+            args+=("--date=$target_date")
             if [[ -n "$target_username" ]]; then
               args+=("--username=$target_username")
             fi
