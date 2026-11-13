@@ -9,6 +9,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+  <script src="/birthday-cards/motion.js" defer></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -117,7 +118,7 @@
 <body>
   <canvas id="lanternWebGL"></canvas>
 
-  <div class="sunrise-shell" id="sCard">
+  <div class="sunrise-shell" id="sCard" data-birthday-card="08">
     <div class="s-head">
       <div>
         <small style="font-family:Montserrat,sans-serif; letter-spacing:2px; color:#fed7aa; font-weight:700;" data-card-field="organization_name">BẢO LONG INSURANCE</small>
@@ -132,7 +133,7 @@
 
     <div class="s-bar">
       <div>Họ tên: <strong data-card-field="employee_name">—</strong></div>
-      <div>Chức vụ: <strong data-card-field="position">—</strong></div>
+      <div>Chức vụ: <strong data-card-field="position">—</strong><span data-card-optional="job_title" hidden> · Chức danh: <strong data-card-field="job_title"></strong></span></div>
       <div>Phòng ban: <strong data-card-field="department">—</strong></div>
     </div>
 

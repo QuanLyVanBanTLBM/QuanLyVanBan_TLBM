@@ -6,8 +6,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Thiệp 09 - Thư Tín Điển Chế & Ấn Sáp Vàng | Bảo Long Insurance</title>
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Playfair+Display:wght@700;800&family=Montserrat:wght@600;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+  <script src="/birthday-cards/motion.js" defer></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -125,7 +127,7 @@
   </style>
 </head>
 <body>
-  <div class="scroll-outer" id="scrollBox">
+  <div class="scroll-outer" id="scrollBox" data-birthday-card="09">
     <div class="scroll-inner">
       <div class="crest-top">
         <div class="wax-seal" id="waxSeal" title="Bấm vào Ấn Sáp Vinh Danh">BL</div>
@@ -141,6 +143,10 @@
         <tr>
           <td class="lbl">Chức vụ công tác</td>
           <td class="val" data-card-field="position">—</td>
+        </tr>
+        <tr data-card-optional="job_title" hidden>
+          <td class="lbl">Chức danh</td>
+          <td class="val" data-card-field="job_title"></td>
         </tr>
         <tr>
           <td class="lbl">Phòng ban / Đơn vị</td>

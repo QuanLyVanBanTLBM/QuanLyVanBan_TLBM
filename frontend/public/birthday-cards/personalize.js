@@ -25,5 +25,12 @@
       const value = card[field.dataset.cardField];
       if (typeof value === 'string') field.textContent = value;
     }
+
+    for (const optional of document.querySelectorAll('[data-card-optional]')) {
+      const value = card[optional.dataset.cardOptional];
+      const isEmpty = typeof value !== 'string' || !value.trim();
+      optional.hidden = isEmpty;
+      optional.style.display = isEmpty ? 'none' : '';
+    }
   });
 })();

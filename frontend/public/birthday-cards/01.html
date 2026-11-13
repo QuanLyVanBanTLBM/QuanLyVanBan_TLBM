@@ -11,6 +11,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+  <script src="/birthday-cards/motion.js" defer></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -39,15 +40,6 @@
       width: 100%;
       max-width: 560px;
       transform-style: preserve-3d;
-    }
-    #dragonCanvas {
-      position: absolute;
-      top: -50px;
-      left: -50px;
-      width: calc(100% + 100px);
-      height: calc(100% + 100px);
-      pointer-events: none;
-      z-index: 20;
     }
     .royal-card {
       background: #ffffff;
@@ -246,9 +238,7 @@
   <canvas id="bgWebGL"></canvas>
 
   <div class="stage" id="cardStage">
-    <canvas id="dragonCanvas"></canvas>
-
-    <div class="royal-card" id="royalCard">
+    <div class="royal-card" id="royalCard" data-birthday-card="01">
       <div class="card-top">
         <div class="top-bar">
           <div>
@@ -296,6 +286,7 @@
         <div class="ps-item">
           <small>Chức vụ</small>
           <strong data-card-field="position">—</strong>
+          <small data-card-optional="job_title" hidden>Chức danh: <span data-card-field="job_title"></span></small>
         </div>
         <div class="ps-item">
           <small>Phòng ban / Đơn vị</small>

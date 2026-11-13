@@ -93,6 +93,7 @@ def _birthday_card_data(employee: Employee) -> dict:
     return {
         "employee_name": employee.ho_ten,
         "birthday_date": employee.ngay_sinh.strftime("%d/%m") if employee.ngay_sinh else "",
+        "job_title": (employee.chuc_danh or "").strip(),
         "department": employee.don_vi.ten if employee.don_vi else "Cơ quan",
         "position": employee.chuc_vu.name if employee.chuc_vu else "Cán bộ",
         "brand_name": brand_name,

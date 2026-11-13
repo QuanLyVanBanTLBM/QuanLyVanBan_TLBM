@@ -9,6 +9,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+  <script src="/birthday-cards/motion.js" defer></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -138,7 +139,7 @@
 <body>
   <canvas id="waveWebGL"></canvas>
 
-  <div class="sapphire-shell" id="sapphireCard">
+  <div class="sapphire-shell" id="sapphireCard" data-birthday-card="05">
     <div class="sapphire-top">
       <div class="top-chips">
         <span class="chip-org" data-card-field="organization_name">BẢO LONG INSURANCE</span>
@@ -156,6 +157,7 @@
       <div class="hb-col">
         <small>Chức vụ</small>
         <strong data-card-field="position">—</strong>
+        <small data-card-optional="job_title" hidden>Chức danh: <span data-card-field="job_title"></span></small>
       </div>
       <div class="hb-col">
         <small>Phòng ban</small>
