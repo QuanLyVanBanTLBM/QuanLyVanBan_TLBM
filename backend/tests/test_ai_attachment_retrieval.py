@@ -229,3 +229,46 @@ class AttachmentRetrievalTests(unittest.TestCase):
                     self.assertEqual(pages[0]["text"], "Nội dung trích xuất từ pypdf")
                     self.assertEqual(pages[0]["reader"], "pypdf")
 
+    def test_rrf_hybrid_reranking_matches_admin_code_and_acronym_without_accents(self):
+        from backend.services.rag_service import _extract_hybrid_keywords
+
+        kw_list = _extract_hybrid_keywords("Nội dung quyết định số 123/QĐ-UBND về phân công phòng HC-NS")
+        self.assertIn("123/qd-ubnd", kw_list)
+        self.assertIn("hcns", kw_list)
+
+        # Truy vấn gõ không dấu + viết tắt liền "quyet dinh 123 phong hcns"
+        dense = [
+            SimpleNamespace(
+                text="Quyết định số 124/QĐ-UBND về việc khen thưởng cuối năm cho các đơn vị.",
+                metadata={"file_name": "QD_124_UBND.pdf", "doc_code": "124/QĐ-UBND", "chunk_id": "1-1"},
+                score=0.72,
+            ),
+            SimpleNamespace(
+                text="Quyết định số 123/QĐ-UBND phân công nhiệm vụ Phòng Hành chính - Nhân sự (HC-NS).",
+                metadata={"file_name": "QD_123_UBND.pdf", "doc_code": "123/QĐ-UBND", "chunk_id": "1-1"},
+                score=0.61,
+            ),
+        ]
+        keyword = [
+            SimpleNamespace(
+                text="Quyết định số 123/QĐ-UBND phân công nhiệm vụ Phòng Hành chính - Nhân sự (HC-NS).",
+                metadata={"file_name": "QD_123_UBND.pdf", "doc_code": "123/QĐ-UBND", "chunk_id": "1-1"},
+                score=0.65,
+            ),
+        ]
+        ranked = _rerank_hybrid_nodes(dense, keyword, "quyet dinh 123 phong hcns")
+        self.assertEqual(ranked[0].node.metadata["file_name"], "QD_123_UBND.pdf")
+        self.assertGreater(ranked[0].node.metadata.get("rrf_score", 0), 0.03)
+
+    def test_build_answer_prompt_supports_multi_document_comparison(self):
+        prompt_vi = build_answer_prompt(
+            question="So sánh điểm khác biệt chính giữa các văn bản này",
+            context="[1] QD_01.pdf\nNội dung 1\n\n[2] QD_02.pdf\nNội dung 2",
+            history=None,
+            target_filenames=["QD_01.pdf", "QD_02.pdf"],
+            language="vi",
+        )
+        self.assertIn("GHIM ĐỒNG THỜI NHIỀU TÀI LIỆU", prompt_vi)
+        self.assertIn("QD_01.pdf", prompt_vi)
+        self.assertIn("QD_02.pdf", prompt_vi)
+

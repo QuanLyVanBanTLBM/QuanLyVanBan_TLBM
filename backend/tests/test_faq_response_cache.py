@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 from llama_index.core.schema import Document, NodeWithScore, TextNode
 
 from backend.services.ai_logging import end_trace, start_trace
@@ -160,7 +160,91 @@ class FaqResponseCacheTests(TestCase):
         self.assertIsNone(get_cached_answer("Quy trình hồ sơ là gì?", "vi"))
         collection.delete(ids=ids)
 
+    def test_cache_does_not_bypass_permission_or_sql_source_check(self):
+        from backend.services import rag_service
+        from backend.services.sql_document_source import SqlDocumentAccessError
+
+        set_cached_answer(
+            "Quy trình chung là gì?", "vi", "Câu trả lời đã cache",
+            [{"file_name": "Quy trình", "source_type": "business_spec"}],
+        )
+        unauth_user = SimpleNamespace(is_authenticated=True, is_active=True, is_superuser=False)
+        with patch("backend.services.ai_access.has_permission_codename", return_value=False):
+            with self.assertRaises(SqlDocumentAccessError) as ctx:
+                rag_service.ask_document("Quy trình chung là gì?", user=unauth_user, employee_id=1)
+            self.assertEqual(ctx.exception.ai_reason, "no_ai_permission")
+
+        auth_user = SimpleNamespace(is_authenticated=True, is_active=True, is_superuser=True)
+        with (
+            patch("backend.services.sql_document_source.is_postgres_source", return_value=True),
+            patch(
+                "backend.services.sql_document_source.accessible_document_keys",
+                side_effect=SqlDocumentAccessError("No employee", ai_reason="employee_unresolved"),
+            ),
+        ):
+            with self.assertRaises(SqlDocumentAccessError) as ctx:
+                rag_service.ask_document("Quy trình chung là gì?", user=auth_user, employee_id=None)
+            self.assertEqual(ctx.exception.ai_reason, "employee_unresolved")
+
 
 class _StubEmbedding:
     def get_text_embedding_batch(self, texts, show_progress=False):
         return [[1.0] + [0.0] * 3071 for _ in texts]
+
+
+class FaqCachePermissionAndBatchTests(SimpleTestCase):
+    def setUp(self):
+        clear_faq_cache()
+
+    def tearDown(self):
+        clear_faq_cache()
+
+    def test_cache_does_not_bypass_permission_or_sql_source_check(self):
+        from backend.services import rag_service
+        from backend.services.sql_document_source import SqlDocumentAccessError
+
+        set_cached_answer(
+            "Quy trình chung là gì?", "vi", "Câu trả lời đã cache",
+            [{"file_name": "Quy trình", "source_type": "business_spec"}],
+        )
+        unauth_user = SimpleNamespace(is_authenticated=True, is_active=True, is_superuser=False)
+        with patch("backend.services.ai_access.has_permission_codename", return_value=False):
+            with self.assertRaises(SqlDocumentAccessError) as ctx:
+                rag_service.ask_document("Quy trình chung là gì?", user=unauth_user, employee_id=1)
+            self.assertEqual(ctx.exception.ai_reason, "no_ai_permission")
+
+        auth_user = SimpleNamespace(is_authenticated=True, is_active=True, is_superuser=True)
+        with (
+            patch("backend.services.sql_document_source.is_postgres_source", return_value=True),
+            patch(
+                "backend.services.sql_document_source.accessible_document_keys",
+                side_effect=SqlDocumentAccessError("No employee", ai_reason="employee_unresolved"),
+            ),
+        ):
+            with self.assertRaises(SqlDocumentAccessError) as ctx:
+                rag_service.ask_document("Quy trình chung là gì?", user=auth_user, employee_id=None)
+            self.assertEqual(ctx.exception.ai_reason, "employee_unresolved")
+
+    def test_scope_sources_validation_uses_single_batched_query(self):
+        from backend.services.faq_response_cache import _scope_sources_are_current
+
+        fake_cursor = Mock()
+        fake_cursor.fetchall.return_value = [
+            ("doc1.pdf", "ai_knowledge_base", "Quy trình"),
+            ("doc2.pdf", "ai_knowledge_base", "Hướng dẫn"),
+        ]
+        fake_conn = Mock()
+        fake_conn.cursor.return_value.__enter__ = Mock(return_value=fake_cursor)
+        fake_conn.cursor.return_value.__exit__ = Mock(return_value=False)
+
+        scope = [
+            {"file_name": "doc1.pdf", "category": "Quy trình"},
+            {"file_name": "doc2.pdf", "category": "Hướng dẫn"},
+        ]
+        with patch("django.db.connection", fake_conn):
+            self.assertTrue(_scope_sources_are_current(scope))
+
+        self.assertEqual(fake_cursor.execute.call_count, 1)
+        sql, params = fake_cursor.execute.call_args.args
+        self.assertIn("ANY(%s)", sql)
+        self.assertEqual(params, [["doc1.pdf", "doc2.pdf"]])

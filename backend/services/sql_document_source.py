@@ -142,6 +142,87 @@ def _employee_id_value(employee_id):
     return value
 
 
+def accessible_document_keys(user, employee_id=None) -> set[str]:
+    """Return ``<source_type>:<source_id>`` keys admitted by ``ai_*`` views and user permissions.
+
+    Optimized for the chat hot path: fetches only integer IDs in a single query without loading
+    document text columns or attachment tables.
+    """
+    if not is_postgres_source():
+        return set()
+    if not has_permission_codename(user, "use_aiassistant"):
+        raise SqlDocumentAccessError(
+            "Tài khoản chưa được cấp quyền sử dụng trợ lý AI.", ai_reason="no_ai_permission"
+        )
+
+    document_ids = {
+        "vanbanden": list(
+            van_ban_xem_duoc(user, "DEN").values_list("pk", flat=True)
+        ),
+        "vanbandi": list(
+            van_ban_xem_duoc(user, "DI").values_list("pk", flat=True)
+        ),
+    }
+    can_read_tailieu = has_permission_codename(user, "view_tailieu")
+    employee_id = _employee_id_value(employee_id)
+    if "readonly" not in connections.databases:
+        raise SqlDocumentAccessError(
+            "Thiếu cấu hình kết nối CSDL chỉ đọc cho AI.", ai_reason="readonly_alias_missing"
+        )
+
+    allowed_keys: set[str] = set()
+    try:
+        with transaction.atomic(using="readonly"):
+            readonly = connections["readonly"]
+            with readonly.cursor() as cursor:
+                _assert_readonly_connection(cursor)
+            with readonly.cursor() as cursor:
+                cursor.execute(
+                    "SELECT set_config('qlvb.employee_id', %s, true)",
+                    [str(employee_id or "")],
+                )
+                for source_type in DOCUMENT_VIEWS:
+                    cursor.execute(
+                        "SELECT set_config(%s, %s, true)",
+                        [f"qlvb.can_view_{source_type}", "on"],
+                    )
+                    cursor.execute(
+                        "SELECT set_config(%s, %s, true)",
+                        [
+                            f"qlvb.can_view_expired_{source_type}",
+                            "on" if co_quyen_xem_het_hieu_luc(user, source_type) else "off",
+                        ],
+                    )
+                union_parts = []
+                union_params = []
+                if document_ids["vanbanden"]:
+                    union_parts.append(
+                        "SELECT 'vanbanden'::text AS source_type, id AS source_id FROM ai_vanbanden WHERE id = ANY(%s)"
+                    )
+                    union_params.append(document_ids["vanbanden"])
+                if document_ids["vanbandi"]:
+                    union_parts.append(
+                        "SELECT 'vanbandi'::text AS source_type, id AS source_id FROM ai_vanbandi WHERE id = ANY(%s)"
+                    )
+                    union_params.append(document_ids["vanbandi"])
+                if can_read_tailieu:
+                    union_parts.append(
+                        "SELECT 'tailieu'::text AS source_type, id AS source_id FROM ai_tailieu"
+                    )
+                if union_parts:
+                    cursor.execute(" UNION ALL ".join(union_parts), union_params)
+                    for source_type, source_id in cursor.fetchall():
+                        allowed_keys.add(f"{source_type}:{source_id}")
+    except SqlDocumentAccessError:
+        raise
+    except Exception as error:
+        raise SqlDocumentAccessError(
+            "Không thể truy cập nguồn CSDL chỉ đọc an toàn cho AI.", ai_reason="readonly_query_failed"
+        ) from error
+
+    return allowed_keys
+
+
 def accessible_documents(user, employee_id=None):
     """Return rows admitted by ``ai_*`` views and the user's document permissions."""
     if not is_postgres_source():
