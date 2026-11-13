@@ -29,6 +29,8 @@
     "screenLockedTitle": "Phiên Làm Việc Đã Tạm Khóa",
     "screenLockedDesc": "Màn hình tự động khóa để bảo mật dữ liệu văn bản theo chính sách an toàn thông tin Bảo Long Insurance.",
     "unlockButton": "Mở khóa làm việc",
+    "passwordRequired": "Vui lòng nhập mật khẩu để mở khóa.",
+    "wrongPassword": "Mật khẩu không chính xác. Vui lòng thử lại.",
     "logoutSwitchUser": "Đăng xuất tài khoản khác",
     "localeSectionTitle": "Ngôn ngữ & Khu vực",
     "localeLanguage": "Ngôn ngữ hiển thị",

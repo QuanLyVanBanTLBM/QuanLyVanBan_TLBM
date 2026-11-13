@@ -12,6 +12,7 @@ vi.mock('@components/common/Logo', () => ({
 vi.mock('@lib/authService', () => ({
   default: {
     logout: vi.fn(),
+    verifyPassword: vi.fn(),
   },
 }));
 
@@ -45,14 +46,51 @@ describe('ScreenLockModal Component', () => {
     expect(screen.getByPlaceholderText('Nhập mật khẩu để mở khóa...')).toBeInTheDocument();
   });
 
-  it('calls onUnlock when unlock form is submitted', () => {
+  it('shows error and does not unlock when password is empty', async () => {
     const handleUnlock = vi.fn();
     render(<ScreenLockModal isLocked={true} onUnlock={handleUnlock} />);
 
     const unlockButton = screen.getByRole('button', { name: /mở khóa làm việc/i });
     fireEvent.click(unlockButton);
 
-    expect(handleUnlock).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(/vui lòng nhập mật khẩu/i)).toBeInTheDocument();
+    expect(handleUnlock).not.toHaveBeenCalled();
+  });
+
+  it('shows error and does not unlock when password is incorrect', async () => {
+    const authService = (await import('@lib/authService')).default;
+    vi.mocked(authService.verifyPassword).mockResolvedValue(false);
+
+    const handleUnlock = vi.fn();
+    render(<ScreenLockModal isLocked={true} onUnlock={handleUnlock} />);
+
+    const input = screen.getByPlaceholderText('Nhập mật khẩu để mở khóa...');
+    fireEvent.change(input, { target: { value: 'WrongPassword' } });
+
+    const unlockButton = screen.getByRole('button', { name: /mở khóa làm việc/i });
+    fireEvent.click(unlockButton);
+
+    expect(await screen.findByText(/mật khẩu không chính xác/i)).toBeInTheDocument();
+    expect(handleUnlock).not.toHaveBeenCalled();
+  });
+
+  it('calls onUnlock when correct password is submitted', async () => {
+    const authService = (await import('@lib/authService')).default;
+    vi.mocked(authService.verifyPassword).mockResolvedValue(true);
+
+    const handleUnlock = vi.fn();
+    render(<ScreenLockModal isLocked={true} onUnlock={handleUnlock} />);
+
+    const input = screen.getByPlaceholderText('Nhập mật khẩu để mở khóa...');
+    fireEvent.change(input, { target: { value: 'CorrectPassword123' } });
+
+    const unlockButton = screen.getByRole('button', { name: /mở khóa làm việc/i });
+    fireEvent.click(unlockButton);
+
+    expect(authService.verifyPassword).toHaveBeenCalledWith('CorrectPassword123');
+    await vi.waitFor(() => {
+      expect(handleUnlock).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('logs out and redirects to /login when logout button is clicked', async () => {

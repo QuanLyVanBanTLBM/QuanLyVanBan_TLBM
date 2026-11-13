@@ -251,6 +251,20 @@ export const authService = {
   getRefreshToken(): string | null {
     return localStorage.getItem('tlbm_refresh_token');
   },
+
+  /**
+   * Xác thực mật khẩu tài khoản hiện tại để mở khóa màn hình hoặc xác nhận bảo mật.
+   */
+  async verifyPassword(password: string): Promise<boolean> {
+    try {
+      const data = await apiClient.post<{ success: boolean; valid: boolean }>('/api/auth/verify-password/', {
+        password,
+      });
+      return Boolean(data?.valid ?? data?.success);
+    } catch {
+      return false;
+    }
+  },
 };
 
 export default authService;

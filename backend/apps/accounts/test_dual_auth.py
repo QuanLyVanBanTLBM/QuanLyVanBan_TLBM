@@ -352,3 +352,27 @@ class DualAuthenticationTests(TestCase):
         self.assertEqual(response.data["auth_provider"], "alpaca_api")
         self.assertEqual(response.data["user"]["fullName"], "Trần Phương Duy")
         self.assertTrue(User.objects.filter(username="duytp").exists())
+
+    def test_verify_password_for_screen_lock(self):
+        """Kiểm tra API xác thực mật khẩu /api/auth/verify-password/ cho chức năng khóa màn hình."""
+        # 1. Chưa đăng nhập -> 401 Unauthorized
+        res_unauth = self.client.post("/api/auth/verify-password/", {"password": "any"}, format="json")
+        self.assertEqual(res_unauth.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        # 2. Đăng nhập với tài khoản staff
+        self.client.force_authenticate(user=self.staff)
+
+        # 2.1. Không gửi mật khẩu -> 400
+        res_empty = self.client.post("/api/auth/verify-password/", {"password": ""}, format="json")
+        self.assertEqual(res_empty.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(res_empty.data["valid"])
+
+        # 2.2. Nhập sai mật khẩu -> 400
+        res_wrong = self.client.post("/api/auth/verify-password/", {"password": "WrongPassword123"}, format="json")
+        self.assertEqual(res_wrong.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(res_wrong.data["valid"])
+
+        # 2.3. Nhập đúng mật khẩu -> 200
+        res_ok = self.client.post("/api/auth/verify-password/", {"password": "InitialPassword@123"}, format="json")
+        self.assertEqual(res_ok.status_code, status.HTTP_200_OK)
+        self.assertTrue(res_ok.data["valid"])
