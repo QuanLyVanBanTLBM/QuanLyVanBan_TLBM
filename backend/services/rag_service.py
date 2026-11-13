@@ -4018,9 +4018,7 @@ def ask_document_stream(
 
 
 def clear_vector_database():
-    from django.db import connection
-    with connection.cursor() as cursor:
-        cursor.execute("TRUNCATE TABLE ai_document_embedding")
+    get_vector_collection().delete(where={"sql_doc_key": {"$exists": False}})
     from backend.services.faq_response_cache import clear_faq_cache
     clear_faq_cache()
 

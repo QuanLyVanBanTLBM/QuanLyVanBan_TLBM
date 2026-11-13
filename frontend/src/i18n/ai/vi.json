@@ -138,7 +138,7 @@
       "askAboutMultipleValue": "Hỏi về {count} tài liệu đã ghim...",
       "clearAllTargetedDocuments": "Bỏ ghim tất cả",
       "maxPinnedDocuments": "Chỉ được ghim tối đa {max} tài liệu cùng lúc.",
-      "targetedCount": "Đang ghim {count}/{max} tài liệu",
+      "targetedCount": "{count}/{max}",
       "uploadedDocsSection": "Tài liệu đã tải lên",
       "systemDocsSection": "Tài liệu hệ thống (Chỉ xem & chỉ định)"
     },
