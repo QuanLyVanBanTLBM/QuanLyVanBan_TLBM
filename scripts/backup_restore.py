@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import datetime as dt
+import errno
 import gzip
 import hashlib
 import json
@@ -13,6 +14,7 @@ import os
 import re
 import shutil
 import stat
+import struct
 import subprocess
 import sys
 import tarfile
@@ -176,6 +178,64 @@ def _assert_safe_path(path: Path, label: str) -> Path:
     return resolved
 
 
+_POSIX_ACL_MISSING_ERRNOS = frozenset(
+    getattr(errno, name)
+    for name in ("ENODATA", "ENOATTR", "ENOTSUP", "EOPNOTSUPP")
+    if hasattr(errno, name)
+)
+
+
+def _mode_without_named_acl(path: Path, mode: int) -> int:
+    fallback_mode = stat.S_IMODE(mode)
+    getxattr = getattr(os, "getxattr", None)
+    if getxattr is None:
+        return fallback_mode
+
+    try:
+        acl_data = getxattr(path, "system.posix_acl_access", follow_symlinks=False)
+    except OSError as exc:
+        if exc.errno in _POSIX_ACL_MISSING_ERRNOS:
+            return fallback_mode
+        raise BackupError("could not inspect data-root permissions safely.") from exc
+
+    if len(acl_data) < 4 or (len(acl_data) - 4) % 8:
+        raise BackupError("data root contains an invalid POSIX ACL.")
+    if struct.unpack_from("<I", acl_data, 0)[0] != 0x0002:
+        raise BackupError("data root contains an unsupported POSIX ACL version.")
+
+    base_permissions: dict[int, int] = {}
+    mask: int | None = None
+    has_named_entries = False
+    for offset in range(4, len(acl_data), 8):
+        tag, permissions, _entry_id = struct.unpack_from("<HHI", acl_data, offset)
+        if permissions & ~0o7:
+            raise BackupError("data root contains invalid POSIX ACL permissions.")
+        if tag in (0x01, 0x04, 0x20):
+            if tag in base_permissions:
+                raise BackupError("data root contains duplicate POSIX ACL entries.")
+            base_permissions[tag] = permissions
+        elif tag == 0x10:
+            if mask is not None:
+                raise BackupError("data root contains duplicate POSIX ACL masks.")
+            mask = permissions
+        elif tag in (0x02, 0x08):
+            has_named_entries = True
+        else:
+            raise BackupError("data root contains an unsupported POSIX ACL entry.")
+
+    if not {0x01, 0x04, 0x20}.issubset(base_permissions):
+        raise BackupError("data root contains an incomplete POSIX ACL.")
+    if has_named_entries and mask is None:
+        raise BackupError("data root contains a POSIX ACL without a required mask.")
+
+    group_permissions = base_permissions[0x04] & (mask if mask is not None else 0o7)
+    return (
+        (base_permissions[0x01] << 6)
+        | (group_permissions << 3)
+        | base_permissions[0x20]
+    )
+
+
 def _walk_tree(root: Path) -> list[dict[str, object]]:
     entries: list[dict[str, object]] = []
 
@@ -211,7 +271,7 @@ def _walk_tree(root: Path) -> list[dict[str, object]]:
                 raise BackupError("data roots may contain only regular files and directories.")
             entries.append({
                 "path": relative, "kind": kind, "size": size,
-                "mode": stat.S_IMODE(info.st_mode),
+                "mode": _mode_without_named_acl(path, info.st_mode),
                 "uid": getattr(info, "st_uid", 0), "gid": getattr(info, "st_gid", 0),
                 "mtime": int(info.st_mtime),
             })
