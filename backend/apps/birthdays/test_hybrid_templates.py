@@ -3,6 +3,7 @@ from unittest.mock import MagicMock
 from datetime import date
 
 from django.conf import settings
+from django.test import override_settings
 if not settings.configured:
     settings.configure(
         SECRET_KEY="test-key",
@@ -31,12 +32,15 @@ if not settings.configured:
     django.setup()
 
 from birthdays.templates_service import (
+    LAYOUT_DEFAULTS,
     SENIOR_LEADERSHIP_ROLE,
     MIDDLE_MANAGEMENT_ROLE,
     STAFF_ROLE,
     TEMPLATE_POOLS,
     get_employee_role_category,
+    get_automated_template_pool,
     get_template_pool,
+    pick_automated_template,
     pick_hybrid_template,
     template_catalog,
 )
@@ -92,6 +96,18 @@ class SmartHybridTemplateTests(unittest.TestCase):
             layout, draft = pick_hybrid_template("Chuyên viên", seed=seed)
             self.assertIn(layout, TEMPLATE_POOLS[STAFF_ROLE])
 
+    def test_automated_template_picker_uses_the_shared_valid_layout_pool(self):
+        pool = get_automated_template_pool()
+        self.assertEqual(pool, list(LAYOUT_DEFAULTS))
+
+        for seed in range(100):
+            layout, draft = pick_automated_template(seed=seed)
+            self.assertIn(layout, pool)
+            self.assertTrue(draft["subject"].strip())
+            self.assertTrue(draft["message"].strip())
+
+        self.assertEqual(pick_automated_template(seed=42), pick_automated_template(seed=42))
+
     @unittest.mock.patch("birthdays.templates_service.BirthdayEmailTemplate.objects.all", return_value=[])
     def test_template_catalog_includes_recommended_roles(self, _mock_all):
         catalog = template_catalog()
@@ -106,9 +122,15 @@ class SmartHybridTemplateTests(unittest.TestCase):
         self.assertIn(SENIOR_LEADERSHIP_ROLE, by_layout["02"]["recommended_roles"])
         self.assertIn(MIDDLE_MANAGEMENT_ROLE, by_layout["02"]["recommended_roles"])
 
+    @override_settings(
+        DEBUG=True,
+        BIRTHDAY_CARD_BASE_URL="",
+        SIGNING_FRONTEND_URL="https://qlvb.baolong.vn",
+    )
     def test_default_snapshot_renders_hybrid_layout_and_card(self):
         employee = MagicMock()
         employee.id = 101
+        employee.pk = 101
         employee.ho_ten = "Nguyễn Văn Test"
         employee.ngay_sinh = date(1995, 8, 15)
         employee.chuc_danh = "Chuyên viên Cao cấp"

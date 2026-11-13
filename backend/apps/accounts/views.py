@@ -389,6 +389,54 @@ def change_password_view(request):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# POST /api/auth/verify-password/
+# ─────────────────────────────────────────────────────────────────────────────
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def verify_password_view(request):
+    """
+    Xác thực mật khẩu người dùng hiện tại để mở khóa màn hình làm việc hoặc xác nhận thao tác an toàn.
+    Body: { "password": "..." }
+    """
+    password = request.data.get("password", "")
+    if not password:
+        msg = "Vui lòng nhập mật khẩu."
+        return Response(
+            {"success": False, "valid": False, "detail": msg, "error": msg},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    user = request.user
+    is_valid = False
+
+    # 1. Kiểm tra mật khẩu cục bộ nếu có mật khẩu hợp lệ
+    if user.has_usable_password():
+        is_valid = user.check_password(password)
+
+    # 2. Nếu mật khẩu cục bộ chưa khớp, thử kiểm tra qua nhà cung cấp Alpaca (trừ tài khoản quản trị hệ thống)
+    if not is_valid and not (user.is_superuser or user.is_staff):
+        try:
+            alpaca_res = check_alpaca_auth(user.username, password)
+            if alpaca_res.get("result") is True or alpaca_res.get("success") is True:
+                is_valid = True
+        except Exception:
+            pass
+
+    if is_valid:
+        return Response(
+            {"success": True, "valid": True, "detail": "Mật khẩu chính xác."},
+            status=status.HTTP_200_OK,
+        )
+
+    msg = "Mật khẩu không chính xác. Vui lòng thử lại."
+    return Response(
+        {"success": False, "valid": False, "detail": msg, "error": msg},
+        status=status.HTTP_400_BAD_REQUEST,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # POST /api/auth/logout/
 # ─────────────────────────────────────────────────────────────────────────────
 

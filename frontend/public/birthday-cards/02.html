@@ -6,13 +6,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Thiệp 02 - Ngọc Lục Bảo Thịnh Vượng 3D | Bảo Long Insurance</title>
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,400&family=Playfair+Display:wght@600;700;800&family=Montserrat:wght@500;600;700;800&display=swap" rel="stylesheet">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js" defer></script>
+  <script src="/birthday-cards/motion.js" defer></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       min-height: 100vh;
+      min-height: 100dvh;
       background: radial-gradient(circle at 50% 25%, #0f4c35 0%, #052217 65%, #020e09 100%);
       font-family: 'Playfair Display', Georgia, serif;
       display: flex;
@@ -166,7 +168,7 @@
 <body>
   <canvas id="emeraldWebGL"></canvas>
 
-  <div class="emerald-card" id="cardRoot">
+  <div class="emerald-card" id="cardRoot" data-birthday-card="02">
     <div class="banner">
       <div class="gem-canvas-holder" id="gemHolder" title="Bấm vào viên Ngọc Lục Bảo 3D!"></div>
       <div class="banner-org" data-card-field="organization_name">BẢO LONG INSURANCE</div>
@@ -177,7 +179,7 @@
     <div class="plaque-3d">
       <div class="plaque-name" data-card-field="employee_name">—</div>
       <div class="plaque-badges">
-        <span class="p-badge">Chức vụ: <span data-card-field="position">—</span></span>
+        <span class="p-badge">Chức vụ: <span data-card-field="position">—</span><br><span data-card-optional="job_title" hidden>Chức danh: <span data-card-field="job_title"></span></span></span>
         <span class="p-badge dept">Đơn vị: <span data-card-field="department">—</span></span>
       </div>
     </div>

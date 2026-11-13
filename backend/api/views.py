@@ -193,10 +193,19 @@ def _stream_response(request, payload=None):
     history = payload.get("history", [])
     category = payload.get("category")
     filename = payload.get("filename")
+    filenames = payload.get("filenames")
+    if isinstance(filename, list) and not filenames:
+        filenames = filename
+        filename = None
     if filename and not isinstance(filename, str):
         filename = None
     elif filename:
         filename = filename.strip()
+    clean_filenames = (
+        [f.strip() for f in filenames if isinstance(f, str) and f.strip()][:10]
+        if isinstance(filenames, list)
+        else None
+    )
     if not isinstance(question, str) or not question.strip():
         return _error("Câu hỏi không được để trống.")
     if len(question) > MAX_CHAT_QUESTION_LENGTH:
@@ -222,7 +231,7 @@ def _stream_response(request, payload=None):
             employee_resolved=employee_id is not None,
             question_chars=len(question),
             history_items=len(safe_history),
-            has_filename=bool(filename),
+            has_filename=bool(filename or clean_filenames),
             has_category=bool(category),
             stream=True,
         )
@@ -237,6 +246,7 @@ def _stream_response(request, payload=None):
                 employee_id=employee_id,
                 filename=filename,
                 language=language,
+                filenames=clean_filenames,
             ):
                 yield event_chunk
         except GeneratorExit:
@@ -281,10 +291,19 @@ def _answer_chat(request, payload=None):
     history = payload.get("history", [])
     category = payload.get("category")
     filename = payload.get("filename")
+    filenames = payload.get("filenames")
+    if isinstance(filename, list) and not filenames:
+        filenames = filename
+        filename = None
     if filename and not isinstance(filename, str):
         filename = None
     elif filename:
         filename = filename.strip()
+    clean_filenames = (
+        [f.strip() for f in filenames if isinstance(f, str) and f.strip()][:10]
+        if isinstance(filenames, list)
+        else None
+    )
     if not isinstance(question, str) or not question.strip():
         return _error("Câu hỏi không được để trống.")
     if len(question) > MAX_CHAT_QUESTION_LENGTH:
@@ -301,7 +320,7 @@ def _answer_chat(request, payload=None):
             employee_resolved=employee_id is not None,
             question_chars=len(question),
             history_items=len(safe_history),
-            has_filename=bool(filename),
+            has_filename=bool(filename or clean_filenames),
             has_category=bool(category),
         )
         language = payload.get("language")
@@ -318,8 +337,16 @@ def _answer_chat(request, payload=None):
             employee_id=employee_id,
             filename=filename,
             language=language,
+            filenames=clean_filenames,
         )
-        return JsonResponse({"question": question.strip(), "category": category or None, "filename": filename or None, "language": language, **result})
+        return JsonResponse({
+            "question": question.strip(),
+            "category": category or None,
+            "filename": filename or (clean_filenames[0] if clean_filenames and len(clean_filenames) == 1 else None),
+            "filenames": clean_filenames or ([filename] if filename else None),
+            "language": language,
+            **result,
+        })
     except SqlDocumentAccessError as error:
         mark_error("ask_document", error.ai_reason)
         log_exception()

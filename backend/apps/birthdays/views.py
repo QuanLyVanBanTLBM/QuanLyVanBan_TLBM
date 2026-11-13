@@ -2,8 +2,10 @@ import calendar
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core import signing
 from django.core.paginator import Paginator
+from django.core.validators import validate_email
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
@@ -15,6 +17,7 @@ from accounts.models import Employee
 from .models import BirthdayEmailLog, BirthdayEmailStatus
 from .services import (
     can_retry_manually,
+    get_eligible_automated_birthday_employees,
     is_birthday_on_date,
     load_birthday_card_token,
     retry_block_reason,
@@ -22,6 +25,17 @@ from .services import (
 )
 
 VIETNAM_TIME_ZONE = ZoneInfo("Asia/Ho_Chi_Minh")
+
+
+def _active_employee_email(employee: Employee) -> str | None:
+    if not employee.is_active:
+        return None
+    email = (employee.email or "").strip()
+    try:
+        validate_email(email)
+    except ValidationError:
+        return None
+    return email
 
 
 def serialize_email_log(log: BirthdayEmailLog) -> dict:
@@ -46,14 +60,16 @@ def serialize_email_log(log: BirthdayEmailLog) -> dict:
         "error_message": log.error_message or "",
         "smtp_response_code": log.smtp_response_code or "",
         "delivery_source": log.delivery_source,
-        "delivery_uncertain": log.delivery_uncertain,
         "delivery_context": delivery_snapshot.get("trigger_source") or (
             "RETRY" if log.last_operator and log.delivery_source != "MANUAL" else None
         ),
+        "delivery_uncertain": log.delivery_uncertain,
+        "employee_is_active": log.employee.is_active,
         "template_version": delivery_snapshot.get("template_version"),
         "last_operator": log.last_operator,
         "can_retry": can_retry,
-        "current_recipient": (log.employee.email or "").strip(),
+        "current_recipient": _active_employee_email(log.employee) if can_retry else None,
+        "admin_resend_recipient": _active_employee_email(log.employee),
         "retry_block_reason": retry_block_reason(log),
     }
 
@@ -79,10 +95,12 @@ def serialize_not_processed_employee(employee: Employee, target_date: date) -> d
         "delivery_source": "AUTO",
         "delivery_context": None,
         "delivery_uncertain": False,
+        "employee_is_active": employee.is_active,
         "template_version": None,
         "last_operator": None,
         "can_retry": False,
-        "current_recipient": (employee.email or "").strip(),
+        "current_recipient": None,
+        "admin_resend_recipient": _active_employee_email(employee),
         "retry_block_reason": None,
     }
 
@@ -266,7 +284,8 @@ def birthday_card_api(request):
 def birthday_email_logs_api(request):
     """
     API xem nhật ký gửi email chúc mừng sinh nhật tự động và thủ công.
-    `date=YYYY-MM-DD` lọc theo khoảng `sent_at` của ngày tại múi giờ dự án; mặc định là ngày hiện tại.
+    `date=YYYY-MM-DD` trả nhật ký gửi trong ngày hoặc thuộc kỳ sinh nhật đó, cùng nhân viên đủ điều kiện
+    chưa có log; mặc định là ngày hiện tại theo múi giờ Việt Nam.
     `month`/`year` tiếp tục được hỗ trợ cho các client cũ.
     Tạm thời chỉ quản trị hệ thống (superuser, nhóm ADMIN) được xem cho đến khi DDL có quyền riêng.
     """
@@ -348,32 +367,25 @@ def birthday_email_logs_api(request):
         page_number = page_obj.number
         total_pages = paginator.num_pages
     else:
+        log_items = list(logs)
         rows = [
             (log.sent_at or datetime.min.replace(tzinfo=VIETNAM_TIME_ZONE), log.pk, serialize_email_log(log))
-            for log in logs
+            for log in log_items
         ]
         if normalized_trang_thai in (None, "NOT_PROCESSED"):
             logged_employee_ids = set(
                 BirthdayEmailLog.objects.filter(sent_date=selected_date)
                 .values_list("employee_id", flat=True)
             )
-            employees = Employee.objects.exclude(ngay_sinh__isnull=True).select_related("don_vi", "chuc_vu")
-            leap_year_strategy = getattr(settings, "BIRTHDAY_LEAP_DAY_STRATEGY", "FEB_28")
-            for employee in employees:
-                if employee.pk not in logged_employee_ids and is_birthday_on_date(
-                    employee.ngay_sinh,
-                    selected_date,
-                    leap_year_strategy=leap_year_strategy,
-                ):
-                    rows.append((
-                        datetime.min.replace(tzinfo=VIETNAM_TIME_ZONE),
-                        -employee.pk,
-                        serialize_not_processed_employee(employee, selected_date),
-                    ))
+            unprocessed = get_eligible_automated_birthday_employees(selected_date)
+            for employee in unprocessed:
+                if employee.pk not in logged_employee_ids:
+                    rows.append((datetime.min.replace(tzinfo=VIETNAM_TIME_ZONE), -employee.pk,
+                        serialize_not_processed_employee(employee, selected_date)))
         rows.sort(key=lambda item: (item[0], item[1]), reverse=True)
         paginator = Paginator(rows, 15)
         page_obj = paginator.get_page(request.GET.get("page", 1))
-        page_logs = [item[2] for item in page_obj.object_list]
+        page_logs = [entry[2] for entry in page_obj.object_list]
         total = paginator.count
         page_number = page_obj.number
         total_pages = paginator.num_pages

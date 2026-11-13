@@ -95,6 +95,10 @@ class BirthdayEmailResendSerializer(serializers.Serializer):
     recipient = serializers.EmailField(max_length=254, required=False)
 
 
+class BirthdayEmailRetrySerializer(serializers.Serializer):
+    recipient = serializers.EmailField(max_length=254)
+
+
 class DeliveryProblem(Exception):
     def __init__(self, code: str, status: int = 400):
         self.code = code
@@ -320,14 +324,34 @@ def _send_manual_resend(request, data):
 @api_view(["POST"])
 @permission_classes([SystemAdminOnly])
 def retry_api(request, log_id):
-    log = get_object_or_404(BirthdayEmailLog.objects.only("employee_id", "sent_date"), pk=log_id)
-    payload = {
-        "employee_id": log.employee_id,
-        "sent_date": log.sent_date.isoformat(),
-    }
-    if "recipient" in request.data:
-        payload["recipient"] = request.data["recipient"]
-    serializer = BirthdayEmailResendSerializer(data=payload)
+    serializer = BirthdayEmailRetrySerializer(data=request.data)
     if not serializer.is_valid():
         return Response({"error": "invalidRecipient"}, status=400)
-    return _send_manual_resend(request, serializer.validated_data)
+    try:
+        _ready_to_send()
+        with transaction.atomic():
+            log = get_object_or_404(
+                BirthdayEmailLog.objects.select_related("employee"),
+                pk=log_id,
+            )
+            employee = get_object_or_404(
+                Employee.objects.select_related("chuc_vu", "don_vi").select_for_update(of=("self",)),
+                pk=log.employee_id,
+                is_active=True,
+            )
+            recipient = _recipient(employee)
+            if serializer.validated_data["recipient"] != recipient:
+                raise DeliveryProblem("recipientChanged", 409)
+            log.employee = employee
+            if not _claim_delivery(
+                log,
+                recipient,
+                log.subject,
+                operator=request.user.get_username(),
+            ):
+                raise DeliveryProblem("deliveryConflict", 409)
+    except DeliveryProblem as error:
+        return error.response()
+
+    deliver_claimed_email(log)
+    return Response({"log": serialize_email_log(log)})

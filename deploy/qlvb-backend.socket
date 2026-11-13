@@ -1,0 +1,10 @@
+[Unit]
+Description=QLVB Backend Gunicorn Socket
+
+[Socket]
+ListenStream=127.0.0.1:8001
+Accept=no
+Backlog=512
+
+[Install]
+WantedBy=sockets.target
