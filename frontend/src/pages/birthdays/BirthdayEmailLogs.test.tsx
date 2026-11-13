@@ -213,7 +213,10 @@ describe('Birthday email log actions', () => {
 
     resolveSend?.({ log: acceptedLog });
     expect(await screen.findByText(/Gửi email thành công/)).toBeInTheDocument();
-    expect(get.mock.calls.filter(([url]) => String(url).includes('/api/birthdays/logs/')).length).toBeGreaterThanOrEqual(2);
+    await waitFor(() => {
+      expect(get.mock.calls.filter(([url]) => String(url).includes('/api/birthdays/logs/')).length)
+        .toBeGreaterThanOrEqual(2);
+    });
   });
 
   it('offers a retry only for the log that can be resent and confirms its current address', async () => {
