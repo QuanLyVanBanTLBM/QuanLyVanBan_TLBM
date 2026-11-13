@@ -224,3 +224,5 @@ Workflow lịch chạy trên nhánh mặc định `staging`. Cửa sổ chờ kh
 
 Để gửi bù trên staging, chọn **Run workflow** trong **Birthday email scheduler** và nhập ngày `YYYY-MM-DD`. Để gửi bù toàn ngày, để trống tên đăng nhập; để xử lý một người, nhập tài khoản cần gửi. Tác vụ dùng luồng gửi tự động, ghi nguồn `RECOVERY`, giữ cơ chế khóa/chống gửi trùng hiện tại, không gửi lại `SUCCESS` hoặc kết quả SMTP chưa xác định, và trả lỗi khi còn thư chưa được máy chủ chấp nhận.
 
+Nếu cả hai lượt `schedule` đều không xuất hiện trong lịch sử Actions, workflow không tự tạo lượt thứ ba hoặc tự phát hiện ngày bị lỡ. Người vận hành phải kiểm tra lịch sử Actions, log máy chủ và nhật ký email rồi chủ động chạy `workflow_dispatch` cho ngày cần recovery; kết quả SMTP chưa xác định vẫn bị chặn và cần đối soát.
+
