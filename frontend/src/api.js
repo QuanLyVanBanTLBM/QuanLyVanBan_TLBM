@@ -19,10 +19,14 @@ export async function getUploadProgress(jobId) {
   return apiClient(apiPath(`/upload/progress/${encodeURIComponent(jobId)}`));
 }
 
-export async function askQuestion(question, history = [], category = null, filename = null, language = null) {
+export async function askQuestion(question, history = [], category = null, filename = null, language = null, filenames = null) {
   const payload = { question, history };
   if (category) payload.category = category;
-  if (filename) payload.filename = filename;
+  if (Array.isArray(filenames) && filenames.length > 0) {
+    payload.filenames = filenames.slice(0, 5);
+  } else if (filename) {
+    payload.filename = filename;
+  }
   const lang = language || (typeof window !== "undefined" ? localStorage.getItem("tlbm_lang") : null) || "vi";
   payload.language = lang;
   return apiClient.post(apiPath("/chat"), payload);
@@ -34,6 +38,7 @@ export async function askQuestionStream(
     history = [],
     category = null,
     filename = null,
+    filenames = null,
     language = null,
     signal = null,
     onSources = null,
@@ -43,7 +48,11 @@ export async function askQuestionStream(
 ) {
   const payload = { question, history };
   if (category) payload.category = category;
-  if (filename) payload.filename = filename;
+  if (Array.isArray(filenames) && filenames.length > 0) {
+    payload.filenames = filenames.slice(0, 5);
+  } else if (filename) {
+    payload.filename = filename;
+  }
   const lang = language || (typeof window !== "undefined" ? localStorage.getItem("tlbm_lang") : null) || "vi";
   payload.language = lang;
 

@@ -202,7 +202,7 @@ def _stream_response(request, payload=None):
     elif filename:
         filename = filename.strip()
     clean_filenames = (
-        [f.strip() for f in filenames if isinstance(f, str) and f.strip()][:10]
+        [f.strip() for f in filenames if isinstance(f, str) and f.strip()][:5]
         if isinstance(filenames, list)
         else None
     )
@@ -300,7 +300,7 @@ def _answer_chat(request, payload=None):
     elif filename:
         filename = filename.strip()
     clean_filenames = (
-        [f.strip() for f in filenames if isinstance(f, str) and f.strip()][:10]
+        [f.strip() for f in filenames if isinstance(f, str) and f.strip()][:5]
         if isinstance(filenames, list)
         else None
     )

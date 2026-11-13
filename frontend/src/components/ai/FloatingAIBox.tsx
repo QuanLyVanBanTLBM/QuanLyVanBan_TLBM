@@ -124,7 +124,7 @@ function FloatingCitationsToggle({
   onNavigate: (source: Source) => void;
 }) {
   const { t } = useTranslation();
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(true);
   const visibleSources = deduplicateFloatingSources(sources);
   if (visibleSources.length === 0) return null;
   const toggleLabel = isCollapsed

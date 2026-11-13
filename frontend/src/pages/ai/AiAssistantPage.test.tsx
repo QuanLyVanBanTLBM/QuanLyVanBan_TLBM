@@ -8,7 +8,6 @@ import {
   getDocuments,
   previewDocument,
   reclassifyDocument,
-  updateAISettings,
 } from '../../api';
 import { usePermissions } from '@lib/permissions';
 import AiAssistantPage from './AiAssistantPage';
@@ -46,7 +45,6 @@ const mockedAskQuestion = vi.mocked(askQuestion);
 const mockedGetDocuments = vi.mocked(getDocuments);
 const mockedGetCategories = vi.mocked(getCategories);
 const mockedGetAISettings = vi.mocked(getAISettings);
-const mockedUpdateAISettings = vi.mocked(updateAISettings);
 const mockedPreviewDocument = vi.mocked(previewDocument);
 const mockedReclassifyDocument = vi.mocked(reclassifyDocument);
 const mockedUsePermissions = vi.mocked(usePermissions);
@@ -128,7 +126,8 @@ describe('AiAssistantPage', () => {
         [],
         null,
         null,
-        'vi'
+        'vi',
+        null
       )
     );
 
@@ -147,12 +146,13 @@ describe('AiAssistantPage', () => {
         ],
         null,
         null,
-        'vi'
+        'vi',
+        null
       )
     );
   });
 
-  it('hides delete, reclassify, and AI settings controls from non-admin users and shows them to admins', async () => {
+  it('hides delete and reclassify controls from non-admin users, shows them to admins, and never renders AI settings button', async () => {
     const { unmount } = renderAiPage();
     await waitFor(() => expect(mockedGetDocuments).toHaveBeenCalled());
 
@@ -173,7 +173,6 @@ describe('AiAssistantPage', () => {
       refresh: vi.fn(),
     } as unknown as ReturnType<typeof usePermissions>);
     mockedReclassifyDocument.mockResolvedValue({ category: 'Hành chính' });
-    mockedUpdateAISettings.mockResolvedValue({ provider: 'openai', llm_model: 'gpt-6-luna' });
 
     renderAiPage();
     await waitFor(() => expect(mockedGetDocuments).toHaveBeenCalled());
@@ -181,20 +180,7 @@ describe('AiAssistantPage', () => {
     const deleteBtns = await screen.findAllByTitle('aiAssistant.deleteDoc');
     expect(deleteBtns.length).toBeGreaterThan(0);
     expect(screen.getAllByTitle('aiAssistant.inline.reclassifyDoc').length).toBeGreaterThan(0);
-
-    fireEvent.click(screen.getByRole('button', { name: 'aiAssistant.inline.aiSettings' }));
-    fireEvent.change(screen.getByLabelText('aiAssistant.settingsModal.apiKeyLabel'), {
-      target: { value: 'sk-test-new-key-999' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'aiAssistant.settingsModal.save' }));
-
-    await waitFor(() =>
-      expect(mockedUpdateAISettings).toHaveBeenCalledWith({
-        provider: 'openai',
-        api_key: 'sk-test-new-key-999',
-        llm_model: 'gpt-6-luna',
-      })
-    );
+    expect(screen.queryByRole('button', { name: 'aiAssistant.inline.aiSettings' })).not.toBeInTheDocument();
   });
 
   it('deduplicates SQL citations, navigates with ?detail=id, and skips preview on business_spec', async () => {
@@ -214,12 +200,15 @@ describe('AiAssistantPage', () => {
     fireEvent.change(textarea, { target: { value: 'Tìm VB-99' } });
     fireEvent.click(screen.getByRole('button', { name: 'aiAssistant.send' }));
 
+    await screen.findByText('Kết quả tra cứu', { selector: 'p' });
+    expect(screen.queryByTitle('aiAssistant.viewDocument: VB-99')).not.toBeInTheDocument();
+
+    // Kiểm tra nút mở rộng / thu nhỏ nguồn trích dẫn (mặc định đóng)
+    fireEvent.click(screen.getByRole('button', { name: 'aiAssistant.toggleCitationsExpand' }));
     const sqlButtons = await screen.findAllByTitle('aiAssistant.viewDocument: VB-99');
     expect(sqlButtons).toHaveLength(1);
 
-    // Kiểm tra nút thu nhỏ / mở rộng nguồn trích dẫn
-    const collapseBtn = screen.getByRole('button', { name: 'aiAssistant.toggleCitationsCollapse' });
-    fireEvent.click(collapseBtn);
+    fireEvent.click(screen.getByRole('button', { name: 'aiAssistant.toggleCitationsCollapse' }));
     expect(screen.queryByTitle('aiAssistant.viewDocument: VB-99')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'aiAssistant.toggleCitationsExpand' }));
     expect(screen.getByTitle('aiAssistant.viewDocument: VB-99')).toBeInTheDocument();
@@ -239,6 +228,7 @@ describe('AiAssistantPage', () => {
     const textarea2 = screen.getByRole('textbox', { name: 'aiAssistant.inputPlaceholder' });
     fireEvent.change(textarea2, { target: { value: 'Tìm VB-99' } });
     fireEvent.click(screen.getByRole('button', { name: 'aiAssistant.send' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'aiAssistant.toggleCitationsExpand' }));
     fireEvent.click(await screen.findByTitle('aiAssistant.viewDocument: VB-99'));
     expect(await screen.findByTestId('location-probe')).toHaveTextContent('/documents/incoming?detail=99');
   });
@@ -254,10 +244,10 @@ describe('AiAssistantPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /aiAssistant\.tabDocs/ }));
     await screen.findByText('quy_trinh.pdf');
     fireEvent.click(screen.getAllByTitle('aiAssistant.inline.targetThisDocumentForQ')[0]);
-    expect(screen.getByText('aiAssistant.inline.targeted')).toBeInTheDocument();
+    expect(screen.getByText(/aiAssistant\.inline\.targetedCount/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /aiAssistant\.newChat/ }));
-    expect(screen.queryByText('aiAssistant.inline.targeted')).not.toBeInTheDocument();
+    expect(screen.queryByText(/aiAssistant\.inline\.targetedCount/)).not.toBeInTheDocument();
 
     const textarea = screen.getByRole('textbox', { name: 'aiAssistant.inputPlaceholder' });
     fireEvent.change(textarea, { target: { value: 'Hỏi thử nghiệm' } });
@@ -267,5 +257,49 @@ describe('AiAssistantPage', () => {
     fireEvent.click(retryBtn);
 
     expect(await screen.findByText('Đã khôi phục câu trả lời', { selector: 'p' })).toBeInTheDocument();
+  });
+
+  it('allows pinning up to 5 documents simultaneously and blocks the 6th', async () => {
+    mockedGetDocuments.mockResolvedValue({
+      documents: [
+        { filename: 'doc1.pdf', category: 'folder1', size: 100, chunk_count: 1 },
+        { filename: 'doc2.pdf', category: 'folder1', size: 100, chunk_count: 1 },
+        { filename: 'doc3.pdf', category: 'folder1', size: 100, chunk_count: 1 },
+        { filename: 'doc4.pdf', category: 'folder1', size: 100, chunk_count: 1 },
+        { filename: 'doc5.pdf', category: 'folder1', size: 100, chunk_count: 1 },
+        { filename: 'doc6.pdf', category: 'folder1', size: 100, chunk_count: 1 },
+      ],
+    });
+    mockedAskQuestion.mockResolvedValue({ answer: 'Đã đối chiếu 5 tài liệu', sources: [] });
+
+    renderAiPage();
+    await waitFor(() => expect(mockedGetDocuments).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: /aiAssistant\.tabDocs/ }));
+    await screen.findByText('doc1.pdf');
+
+    const pinButtons = screen.getAllByTitle('aiAssistant.inline.targetThisDocumentForQ');
+    expect(pinButtons).toHaveLength(6);
+
+    for (let i = 0; i < 6; i += 1) {
+      fireEvent.click(pinButtons[i]);
+    }
+
+    expect(await screen.findByText(/aiAssistant\.inline\.maxPinnedDocuments/)).toBeInTheDocument();
+
+    const textarea = screen.getByRole('textbox', { name: /aiAssistant\.inline\.askAboutMultipleValue/ });
+    fireEvent.change(textarea, { target: { value: 'So sánh 5 văn bản' } });
+    fireEvent.click(screen.getByRole('button', { name: 'aiAssistant.send' }));
+
+    await waitFor(() =>
+      expect(mockedAskQuestion).toHaveBeenCalledWith(
+        'So sánh 5 văn bản',
+        [],
+        null,
+        null,
+        'vi',
+        ['doc1.pdf', 'doc2.pdf', 'doc3.pdf', 'doc4.pdf', 'doc5.pdf']
+      )
+    );
   });
 });

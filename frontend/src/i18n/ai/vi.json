@@ -56,10 +56,12 @@
     "removeAttachment": "Bỏ tệp",
     "send": "Gửi câu hỏi",
     "stop": "Dừng tạo câu trả lời",
-    "citations": "Nguồn trích dẫn quy trình & văn bản:",
+    "citations": "Nguồn trích dẫn quy trình & văn bản",
     "citationsCount": "{count} nguồn",
     "toggleCitationsCollapse": "Thu gọn nguồn trích dẫn",
     "toggleCitationsExpand": "Mở rộng nguồn trích dẫn",
+    "statusActive": "Đang hoạt động",
+    "statusDisconnected": "Đang ngắt",
     "viewDocument": "Xem tài liệu",
     "copied": "Đã sao chép",
     "copy": "Sao chép",
@@ -132,7 +134,11 @@
       "systemRecordedYourFeedbackTo": "Hệ thống đã ghi nhận phản hồi để hoàn thiện mô hình AI!",
       "aiAssistantIsSearchingThe": "Trợ lý AI đang tra cứu cơ sở dữ liệu văn bản TLBM và tổng hợp câu trả lời...",
       "dropToTargetThisDocument": "Thả vào đây để chỉ định tra cứu tài liệu này",
-      "askAboutValue": "Hỏi về tài liệu \"{value}\"..."
+      "askAboutValue": "Hỏi về tài liệu \"{value}\"...",
+      "askAboutMultipleValue": "Hỏi về {count} tài liệu đã ghim...",
+      "clearAllTargetedDocuments": "Bỏ ghim tất cả",
+      "maxPinnedDocuments": "Chỉ được ghim tối đa {max} tài liệu cùng lúc.",
+      "targetedCount": "Đang ghim {count}/{max} tài liệu"
     },
     "settingsModal": {
       "title": "Cài đặt mô hình & API Key AI",
@@ -181,7 +187,7 @@
         "query": "Hệ thống phân quyền cán bộ nhân viên hoạt động như thế nào?"
       }
     },
-    "assistantSenderName": "Trợ Lý AI TLBM ({provider})",
+    "assistantSenderName": "Trợ Lý AI TLBM",
     "msg": {
       "noModelResponse": "Không có phản hồi từ mô hình AI.",
       "questionTooLong": "Câu hỏi không được vượt quá 4000 ký tự.",
