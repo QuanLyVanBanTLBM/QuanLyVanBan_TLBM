@@ -1,4 +1,5 @@
 import calendar
+import ipaddress
 import smtplib
 from datetime import date, timedelta
 from urllib.parse import urlencode, urlsplit, urlunsplit
@@ -10,7 +11,6 @@ from django.core.mail import send_mail
 from django.core.validators import validate_email
 from django.db import transaction
 from django.db.models import Q
-from django.template.loader import render_to_string
 from django.utils import timezone
 
 from accounts.models import Employee
@@ -101,43 +101,87 @@ def _birthday_card_data(employee: Employee) -> dict:
 
 
 def generate_birthday_card_token(employee: Employee) -> str:
-    """Ký snapshot tối thiểu của thiệp để người nhận xem mà không cần đăng nhập."""
-    return signing.dumps(_birthday_card_data(employee), salt=BIRTHDAY_CARD_TOKEN_SALT, compress=True)
+    """Ký ID nhân viên để người nhận xem thiệp công khai mà token không lộ dữ liệu cá nhân."""
+    return signing.dumps({"employee_id": employee.pk}, salt=BIRTHDAY_CARD_TOKEN_SALT, compress=True)
 
 
 def load_birthday_card_token(token: str) -> dict:
-    """Xác minh chữ ký và thời hạn token thiệp (30 ngày)."""
-    return signing.loads(
+    """Xác minh token 30 ngày rồi lấy từ DB dữ liệu thiệp tối thiểu hiện tại."""
+    payload = signing.loads(
         token,
         salt=BIRTHDAY_CARD_TOKEN_SALT,
         max_age=BIRTHDAY_CARD_TOKEN_MAX_AGE_SECONDS,
     )
+    if not isinstance(payload, dict):
+        raise signing.BadSignature("Invalid birthday card payload")
+
+    if set(payload) == {"employee_id"} and type(payload["employee_id"]) is int and payload["employee_id"] > 0:
+        try:
+            employee = Employee.objects.select_related("don_vi", "chuc_vu").get(pk=payload["employee_id"])
+        except Employee.DoesNotExist as exc:
+            raise signing.BadSignature("Birthday card recipient no longer exists") from exc
+        return _birthday_card_data(employee)
+
+    # Accept already-issued signed snapshot tokens until their existing 30-day expiry.
+    legacy_fields = {
+        "employee_name", "birthday_date", "department", "position", "brand_name", "organization_name",
+    }
+    if set(payload) == legacy_fields and all(isinstance(value, str) for value in payload.values()):
+        return payload
+    raise signing.BadSignature("Invalid birthday card payload")
 
 
 def generate_birthday_card_url(employee: Employee, layout: str | None = None) -> str:
-    """Tạo URL thiệp từ override riêng hoặc địa chỉ frontend dùng cho email."""
+    """Tạo URL public đến đúng card HTML theo layout, với token cá nhân hóa đã ký."""
+    layout = layout or "01"
+    if layout not in LAYOUT_DEFAULTS:
+        raise ValueError("Unknown birthday card layout")
+
     base_url = (getattr(settings, "BIRTHDAY_CARD_BASE_URL", "") or "").strip()
     if not base_url:
         frontend_url = (getattr(settings, "SIGNING_FRONTEND_URL", "") or "").strip().rstrip("/")
         if not frontend_url:
-            return ""
-        base_url = f"{frontend_url}/birthday-card.html"
+            raise ImproperlyConfigured("SIGNING_FRONTEND_URL is required for birthday card links")
+        base_url = frontend_url
 
     parsed = urlsplit(base_url)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        return ""
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password:
+        raise ImproperlyConfigured("Birthday card base URL must be an HTTP(S) URL without credentials")
+    frontend_url = urlsplit((getattr(settings, "SIGNING_FRONTEND_URL", "") or "").strip())
+    if not getattr(settings, "DEBUG", False) and (
+        parsed.scheme != "https"
+        or frontend_url.scheme != "https"
+        or parsed.hostname != frontend_url.hostname
+    ):
+        raise ImproperlyConfigured("Production birthday card URL must use the HTTPS frontend origin")
+    hostname = parsed.hostname or ""
+    try:
+        is_loopback = ipaddress.ip_address(hostname).is_loopback
+    except ValueError:
+        is_loopback = hostname.lower() == "localhost" or hostname.lower().endswith(".localhost")
+    if not getattr(settings, "DEBUG", False) and is_loopback:
+        raise ImproperlyConfigured("Birthday card URL cannot use localhost outside DEBUG mode")
+
+    path = parsed.path.rstrip("/")
+    final_segment = path.rsplit("/", 1)[-1]
+    parent = path.rsplit("/", 1)[0] if "/" in path else ""
+    if final_segment == "birthday-card.html" or final_segment == "birthday-cards":
+        path = parent
+    elif parent.rsplit("/", 1)[-1] == "birthday-cards" and final_segment in {
+        f"{item}.html" for item in LAYOUT_DEFAULTS
+    }:
+        path = parent.rsplit("/", 1)[0]
 
     fragment = urlencode({"token": generate_birthday_card_token(employee)})
-    if layout is not None:
-        folder = parsed.path.rsplit("/", 1)[0]
-        parsed = parsed._replace(path=f"{folder}/birthday-cards/{layout}.html", query="")
-    return urlunsplit(parsed._replace(fragment=fragment))
+    card_path = f"{path}/birthday-cards/{layout}.html" if path else f"/birthday-cards/{layout}.html"
+    return urlunsplit(parsed._replace(path=card_path, query="", fragment=fragment))
 
 
 def generate_birthday_email_html(
     employee: Employee,
     card_template: str = "GOLDEN",
     card_url: str | None = None,
+    layout: str = "01",
 ) -> str:
     """
     Kết xuất thiệp email theo thiết kế Bảo Long và dữ liệu của cán bộ nhân viên.
@@ -145,15 +189,19 @@ def generate_birthday_email_html(
     TUÂN THỦ QUY ĐỊNH BẢO MẬT:
     - Tuyệt đối không hiển thị tuổi hoặc năm sinh trong nội dung thư chúc mừng.
     """
-    card_data = _birthday_card_data(employee)
-    return render_to_string(
-        "birthdays/birthday_email.html",
-        {
-            **card_data,
-            "chuc_danh": (employee.chuc_danh or "").strip(),
-            "birthday_card_url": card_url if card_url is not None else generate_birthday_card_url(employee),
-        },
+    layout = layout if layout in LAYOUT_DEFAULTS else "01"
+    draft = {
+        "layout": layout,
+        "template_id": f"layout:{layout}",
+        "subject": LAYOUT_DEFAULTS[layout]["subject"],
+        "message": LAYOUT_DEFAULTS[layout]["message"],
+    }
+    _, snapshot = render_email_draft(
+        draft,
+        {**_birthday_card_data(employee), "chuc_danh": (employee.chuc_danh or "").strip()},
+        card_url if card_url is not None else generate_birthday_card_url(employee, layout),
     )
+    return snapshot["html"]
 
 
 def generate_birthday_email_text(employee: Employee, card_url: str | None = None) -> str:
@@ -178,11 +226,11 @@ def generate_birthday_email_text(employee: Employee, card_url: str | None = None
         f"{brand_name} lan tỏa những giá trị tốt đẹp đến khách hàng và cộng đồng.\n\n"
         f"Thân mến,\nBan Lãnh đạo và tập thể {brand_name}"
     )
-    resolved_card_url = card_url if card_url is not None else generate_birthday_card_url(employee)
+    resolved_card_url = card_url if card_url is not None else generate_birthday_card_url(employee, "01")
     if job_title:
         text += f"\n\nChức danh: {job_title}"
     if resolved_card_url:
-        text += f"\n\nMở thiệp chúc mừng sinh nhật: {resolved_card_url}"
+        text += f"\n\n🎁 Mở thiệp sinh nhật 3D: {resolved_card_url}"
     return text
 
 
@@ -477,37 +525,28 @@ def require_delivery_backend(allow_test_email_backend: bool = False) -> None:
 
 def _default_snapshot(employee: Employee, *, layout: str | None = None, seed: int | str | None = None) -> dict:
     position_name = employee.chuc_vu.name if employee.chuc_vu else ""
-    try:
-        if layout is None:
-            layout, template_draft = pick_hybrid_template(position_name, seed=seed)
-        else:
-            template_draft = LAYOUT_DEFAULTS.get(layout, LAYOUT_DEFAULTS["01"])
+    if layout is None:
+        layout, template_draft = pick_hybrid_template(position_name, seed=seed)
+    else:
+        template_draft = LAYOUT_DEFAULTS.get(layout, LAYOUT_DEFAULTS["01"])
+        layout = layout if layout in LAYOUT_DEFAULTS else "01"
 
-        card_url = generate_birthday_card_url(employee, layout)
-        data = {
-            **_birthday_card_data(employee),
-            "chuc_danh": (employee.chuc_danh or "").strip(),
-        }
-        draft = {
-            "layout": layout,
-            "template_id": f"layout:{layout}",
-            "subject": template_draft["subject"],
-            "message": template_draft["message"],
-        }
-        subject, snapshot = render_email_draft(draft, data, card_url)
-        return {
-            **snapshot,
-            "subject": subject,
-        }
-    except Exception:
-        card_url = generate_birthday_card_url(employee)
-        return {
-            "layout": "GOLDEN",
-            "template_version": "default:1",
-            "html": generate_birthday_email_html(employee, card_url=card_url),
-            "text": generate_birthday_email_text(employee, card_url=card_url),
-            "subject": f"[{getattr(settings, 'BRAND_NAME', 'Bảo Long Insurance')}] Chúc mừng sinh nhật {employee.ho_ten}",
-        }
+    card_url = generate_birthday_card_url(employee, layout)
+    data = {
+        **_birthday_card_data(employee),
+        "chuc_danh": (employee.chuc_danh or "").strip(),
+    }
+    draft = {
+        "layout": layout,
+        "template_id": f"layout:{layout}",
+        "subject": template_draft["subject"],
+        "message": template_draft["message"],
+    }
+    subject, snapshot = render_email_draft(draft, data, card_url)
+    return {
+        **snapshot,
+        "subject": subject,
+    }
 
 
 def deliver_claimed_email(log: BirthdayEmailLog, max_retries: int = 0) -> None:

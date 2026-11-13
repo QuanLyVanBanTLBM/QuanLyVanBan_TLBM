@@ -3,6 +3,10 @@ import { ApiError } from '@lib/apiClient';
 export type DeliveryResult = {
   trang_thai: 'PENDING' | 'SENDING' | 'SUCCESS' | 'FAILED' | 'RETRY';
   delivery_uncertain: boolean;
+  employee_name?: string;
+  recipient_email?: string;
+  sent_at?: string | null;
+  delivery_source?: 'AUTO' | 'MANUAL';
 };
 
 const ERROR_CODES = [

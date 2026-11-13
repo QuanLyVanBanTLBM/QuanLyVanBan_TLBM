@@ -3,6 +3,7 @@ from unittest.mock import MagicMock
 from datetime import date
 
 from django.conf import settings
+from django.test import override_settings
 if not settings.configured:
     settings.configure(
         SECRET_KEY="test-key",
@@ -106,9 +107,15 @@ class SmartHybridTemplateTests(unittest.TestCase):
         self.assertIn(SENIOR_LEADERSHIP_ROLE, by_layout["02"]["recommended_roles"])
         self.assertIn(MIDDLE_MANAGEMENT_ROLE, by_layout["02"]["recommended_roles"])
 
+    @override_settings(
+        DEBUG=True,
+        BIRTHDAY_CARD_BASE_URL="",
+        SIGNING_FRONTEND_URL="https://qlvb.baolong.vn",
+    )
     def test_default_snapshot_renders_hybrid_layout_and_card(self):
         employee = MagicMock()
         employee.id = 101
+        employee.pk = 101
         employee.ho_ten = "Nguyễn Văn Test"
         employee.ngay_sinh = date(1995, 8, 15)
         employee.chuc_danh = "Chuyên viên Cao cấp"

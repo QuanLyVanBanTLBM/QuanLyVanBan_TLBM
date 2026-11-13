@@ -9,6 +9,7 @@ from unittest.mock import patch
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.core import mail
+from django.core import signing
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.core.management.base import CommandError
@@ -25,6 +26,7 @@ from birthdays.models import BirthdayEmailLog, BirthdayEmailStatus, BirthdayWish
 from birthdays.services import (
     can_retry_manually,
     generate_birthday_card_token,
+    generate_birthday_card_url,
     generate_birthday_email_html,
     generate_birthday_email_text,
     is_birthday_on_date,
@@ -35,6 +37,7 @@ from organizations.models import DonVi, KhoiKhuVuc
 Employee = get_user_model()
 
 
+@override_settings(SIGNING_FRONTEND_URL="https://staging-quanlyvanban.bhbl.vn")
 class BirthdaySystemTests(TestCase):
     def setUp(self):
         self.client = APIClient()
@@ -452,6 +455,10 @@ class BirthdaySystemTests(TestCase):
 
     def test_public_birthday_card_api_returns_only_signed_card_fields(self):
         token = generate_birthday_card_token(self.emp_staff)
+        self.assertEqual(
+            signing.loads(token, salt="birthdays.animated-card"),
+            {"employee_id": self.emp_staff.pk},
+        )
 
         response = self.client.post(
             reverse("birthdays:birthday_card"),
@@ -468,6 +475,46 @@ class BirthdaySystemTests(TestCase):
         self.assertNotIn("email", card)
         self.assertEqual(response["Cache-Control"], "private, no-store")
 
+    @override_settings(BIRTHDAY_CARD_BASE_URL="https://example.test/birthday-card.html")
+    def test_public_card_token_expires_after_configured_lifetime(self):
+        token = generate_birthday_card_token(self.emp_staff)
+        with patch("birthdays.services.BIRTHDAY_CARD_TOKEN_MAX_AGE_SECONDS", -1):
+            response = self.client.post(
+                reverse("birthdays:birthday_card"), {"token": token}, format="json",
+            )
+        self.assertEqual(response.status_code, status.HTTP_410_GONE)
+
+    @override_settings(
+        BIRTHDAY_CARD_BASE_URL="https://example.test/birthday-card.html",
+        SIGNING_FRONTEND_URL="https://example.test",
+    )
+    def test_layout_ids_map_to_matching_public_card_pages(self):
+        for layout in (f"{value:02d}" for value in range(1, 11)):
+            with self.subTest(layout=layout):
+                self.assertTrue(
+                    generate_birthday_card_url(self.emp_staff, layout)
+                    .startswith(f"https://example.test/birthday-cards/{layout}.html#token=")
+                )
+
+    @override_settings(DEBUG=False, BIRTHDAY_CARD_BASE_URL="", SIGNING_FRONTEND_URL="http://localhost:5173")
+    def test_production_card_url_rejects_localhost(self):
+        from django.core.exceptions import ImproperlyConfigured
+
+        with self.assertRaises(ImproperlyConfigured):
+            generate_birthday_card_url(self.emp_staff, "01")
+
+    @override_settings(
+        DEBUG=False,
+        BIRTHDAY_CARD_BASE_URL="",
+        SIGNING_FRONTEND_URL="https://staging-quanlyvanban.bhbl.vn",
+    )
+    def test_staging_card_url_uses_public_https_frontend(self):
+        self.assertTrue(
+            generate_birthday_card_url(self.emp_staff, "10").startswith(
+                "https://staging-quanlyvanban.bhbl.vn/birthday-cards/10.html#token="
+            )
+        )
+
     def test_public_birthday_card_api_rejects_invalid_token(self):
         response = self.client.post(
             reverse("birthdays:birthday_card"),
@@ -477,20 +524,36 @@ class BirthdaySystemTests(TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    @override_settings(BIRTHDAY_CARD_BASE_URL="https://example.test/birthday-card.html")
+    def test_public_birthday_card_api_rejects_a_tampered_signed_token(self):
+        token = generate_birthday_card_token(self.emp_staff)
+        response = self.client.post(
+            reverse("birthdays:birthday_card"),
+            {"token": f"{token}tampered"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @override_settings(
+        BIRTHDAY_CARD_BASE_URL="https://example.test/birthday-card.html",
+        SIGNING_FRONTEND_URL="https://example.test",
+    )
     def test_birthday_email_includes_card_button_and_plain_text_link(self):
         html = generate_birthday_email_html(self.emp_staff)
         text = generate_birthday_email_text(self.emp_staff)
 
-        self.assertIn('href="https://example.test/birthday-card.html#token=', html)
-        self.assertIn("Mở thiệp chúc mừng sinh nhật", html)
-        self.assertIn("Mở thiệp chúc mừng sinh nhật: https://example.test/birthday-card.html#token=", text)
+        card_url = 'https://example.test/birthday-cards/01.html#token='
+        self.assertIn(f'href="{card_url}', html)
+        self.assertIn("🎁 Mở thiệp sinh nhật 3D", html)
+        self.assertIn(f"🎁 Mở thiệp sinh nhật 3D: {card_url}", text)
+        self.assertNotRegex(html, r"(?is)<script\b|<iframe\b|<canvas\b|@keyframes|\banimation\s*:|\btransform\s*:")
+        self.assertIn("Chúc mừng sinh nhật", html)
 
     @override_settings(BIRTHDAY_CARD_BASE_URL="", SIGNING_FRONTEND_URL="https://example.test")
     def test_birthday_card_url_uses_shared_frontend_url_by_default(self):
         html = generate_birthday_email_html(self.emp_staff)
 
-        self.assertIn('href="https://example.test/birthday-card.html#token=', html)
+        self.assertIn('href="https://example.test/birthday-cards/01.html#token=', html)
 
     def test_birthday_wishes_route_is_not_exposed(self):
         """Issue #23 không cung cấp API lời chúc thủ công; model vẫn được giữ theo DDL."""
@@ -686,13 +749,49 @@ class BirthdaySystemTests(TestCase):
             self.assertEqual(rerun["skipped_count"], 1)
             self.assertEqual(send.call_count, 1)
 
-    @override_settings(BRAND_NAME="Tên thương hiệu kiểm thử", ORGANIZATION_NAME="Đơn vị kiểm thử")
+    @override_settings(
+        BRAND_NAME="Tên thương hiệu kiểm thử",
+        ORGANIZATION_NAME="Đơn vị kiểm thử",
+        SIGNING_FRONTEND_URL="https://staging-quanlyvanban.bhbl.vn",
+    )
     def test_email_uses_configured_branding(self):
         html = generate_birthday_email_html(self.emp_staff)
         self.assertIn("Tên thương hiệu kiểm thử", html)
         self.assertIn("Đơn vị kiểm thử", html)
         self.assertNotIn("Ban Giám hiệu", html)
         self.assertNotIn("Tài liệu Mật", html)
+
+    @override_settings(
+        MAILERS={"default": {"BACKEND": "django.core.mail.backends.locmem.EmailBackend"}},
+        BIRTHDAY_CARD_BASE_URL="https://example.test/birthday-card.html",
+        SIGNING_FRONTEND_URL="https://example.test",
+        DEFAULT_FROM_EMAIL="noreply@example.test",
+    )
+    def test_automatic_email_uses_email_safe_renderer_and_matching_web_card(self):
+        staff = Employee.objects.create_user(
+            username="automatic-card-recipient",
+            email="recipient@example.test",
+            ho_ten="Nhân viên sinh nhật",
+            ngay_sinh=date(1990, 5, 20),
+            don_vi=self.don_vi,
+            chuc_vu=self.chuc_vu,
+            is_active=True,
+        )
+        mail.outbox.clear()
+
+        results = send_automated_birthday_emails(
+            target_date=date(2026, 5, 20),
+            allow_test_email_backend=True,
+            username=staff.username,
+        )
+
+        self.assertEqual(results["sent_count"], 1)
+        log = BirthdayEmailLog.objects.get(employee=staff)
+        html = mail.outbox[-1].alternatives[0].content
+        card_url = f'https://example.test/birthday-cards/{log.delivery_snapshot["layout"]}.html#token='
+        self.assertIn(f'href="{card_url}', html)
+        self.assertNotRegex(html, r"(?is)<script\b|<iframe\b|<canvas\b|@keyframes|\banimation\s*:|\btransform\s*:")
+        self.assertEqual(log.delivery_snapshot["html"], html)
 
     @override_settings(
         MAILERS={"default": {"BACKEND": "django.core.mail.backends.locmem.EmailBackend"}},
@@ -852,6 +951,7 @@ class BirthdaySystemTests(TestCase):
 
 
 @skipUnlessDBFeature("supports_transactions", "has_select_for_update")
+@override_settings(SIGNING_FRONTEND_URL="https://staging-quanlyvanban.bhbl.vn")
 class BirthdayEmailConcurrencyTests(TransactionTestCase):
     """The delivery claim must remain single-writer on databases with row locks."""
 
