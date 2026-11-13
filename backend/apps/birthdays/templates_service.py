@@ -112,23 +112,6 @@ def get_template_pool(role_category: str) -> list[str]:
     return TEMPLATE_POOLS.get(role_category, TEMPLATE_POOLS[STAFF_ROLE])
 
 
-def get_automated_template_pool() -> list[str]:
-    """Return configured built-in layouts with valid email content and a web theme."""
-    configured_layouts = {layout for pool in TEMPLATE_POOLS.values() for layout in pool}
-    return [
-        layout
-        for layout, draft in LAYOUT_DEFAULTS.items()
-        if layout in configured_layouts
-        and layout in EMAIL_LAYOUT_THEMES
-        and all(
-            isinstance(draft.get(field), str)
-            and draft[field].strip()
-            and valid_placeholders(draft[field])
-            for field in ("subject", "message")
-        )
-    ]
-
-
 def pick_hybrid_template(position_name: str | None, *, seed: int | str | None = None) -> tuple[str, dict]:
     """
     Chọn mẫu layout ngẫu nhiên trong pool an toàn của nhóm chức vụ.
@@ -143,16 +126,6 @@ def pick_hybrid_template(position_name: str | None, *, seed: int | str | None = 
         layout = "01"
         draft = LAYOUT_DEFAULTS[layout]
     return layout, draft
-
-
-def pick_automated_template(*, seed: int | str | None = None) -> tuple[str, dict]:
-    """Pick randomly from the shared set of valid built-in layouts."""
-    pool = get_automated_template_pool()
-    if not pool:
-        raise ValueError("No valid automatic birthday email layouts are configured.")
-    rng = random.Random(seed) if seed is not None else random
-    layout = rng.choice(pool)
-    return layout, LAYOUT_DEFAULTS[layout]
 
 
 def valid_placeholders(value: str) -> bool:

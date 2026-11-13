@@ -172,7 +172,6 @@
       "statusFailed": "Failed",
       "statusRetry": "Waiting to retry",
       "statusNotProcessed": "Not processed",
-      "statusDeliveryUncertain": "Delivery outcome uncertain",
       "notProcessedDetail": "No delivery log exists for this birthday; check the scheduler or run recovery.",
       "today": "Today",
       "refresh": "Refresh log",

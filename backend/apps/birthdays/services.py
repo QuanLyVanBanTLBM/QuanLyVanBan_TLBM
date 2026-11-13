@@ -15,12 +15,7 @@ from django.utils import timezone
 
 from accounts.models import Employee
 from .models import BirthdayEmailLog, BirthdayEmailSource, BirthdayEmailStatus
-from .templates_service import (
-    LAYOUT_DEFAULTS,
-    pick_automated_template,
-    pick_hybrid_template,
-    render_email_draft,
-)
+from .templates_service import LAYOUT_DEFAULTS, pick_hybrid_template, render_email_draft
 
 PRE_ACCEPTANCE_SMTP_ERRORS = (
     smtplib.SMTPAuthenticationError,
@@ -252,7 +247,7 @@ def get_eligible_automated_birthday_employees(
     username: str | None = None,
     leap_year_strategy: str | None = None,
 ) -> list[Employee]:
-    """Return active employees whose birthday matches the target date."""
+    """Return the same active, non-leadership birthday recipients used by the sender."""
     if leap_year_strategy is None:
         leap_year_strategy = getattr(settings, "BIRTHDAY_LEAP_DAY_STRATEGY", "FEB_28")
     if leap_year_strategy not in ("SKIP", "FEB_28", "MAR_01"):
@@ -261,6 +256,7 @@ def get_eligible_automated_birthday_employees(
     employees = (
         Employee.objects.filter(is_active=True)
         .exclude(ngay_sinh__isnull=True)
+        .exclude(chuc_vu__name__in=LEADERSHIP_POSITIONS)
         .select_related("don_vi", "chuc_vu")
         .order_by("ho_ten", "pk")
     )
@@ -365,6 +361,8 @@ def _claim_delivery(
                     and locked_log.retry_count <= max_retries
                 )
             )
+            if employee.chuc_vu and employee.chuc_vu.name in LEADERSHIP_POSITIONS:
+                is_eligible = False
             if locked_log.next_retry_at and locked_log.next_retry_at > timezone.now():
                 is_eligible = False
         is_eligible = is_eligible and not (
@@ -384,10 +382,7 @@ def _claim_delivery(
             locked_log.card_template = manual_snapshot["layout"]
             locked_log.delivery_snapshot = manual_snapshot
         elif locked_log.delivery_snapshot is None:
-            snapshot = _default_snapshot(
-                locked_log.employee,
-                shared_template_pool=locked_log.delivery_source == BirthdayEmailSource.AUTO,
-            )
+            snapshot = _default_snapshot(locked_log.employee)
             locked_log.delivery_snapshot = snapshot
             if "layout" in snapshot:
                 locked_log.card_template = snapshot["layout"]
@@ -529,19 +524,10 @@ def require_delivery_backend(allow_test_email_backend: bool = False) -> None:
         raise ImproperlyConfigured("Birthday email delivery requires an SMTP backend.")
 
 
-def _default_snapshot(
-    employee: Employee,
-    *,
-    layout: str | None = None,
-    seed: int | str | None = None,
-    shared_template_pool: bool = False,
-) -> dict:
+def _default_snapshot(employee: Employee, *, layout: str | None = None, seed: int | str | None = None) -> dict:
     position_name = employee.chuc_vu.name if employee.chuc_vu else ""
     if layout is None:
-        if shared_template_pool:
-            layout, template_draft = pick_automated_template(seed=seed)
-        else:
-            layout, template_draft = pick_hybrid_template(position_name, seed=seed)
+        layout, template_draft = pick_hybrid_template(position_name, seed=seed)
     else:
         template_draft = LAYOUT_DEFAULTS.get(layout, LAYOUT_DEFAULTS["01"])
         layout = layout if layout in LAYOUT_DEFAULTS else "01"
@@ -610,7 +596,7 @@ def send_automated_birthday_emails(
     username: str | None = None,
     trigger_source: str = "SCHEDULED",
 ) -> dict:
-    """Send due active birthdays and eligible automatic retries."""
+    """Send due non-leadership birthdays and eligible automatic retries."""
     if target_date is None:
         target_date = timezone.localdate()
     if not 0 <= max_retries <= 10:
@@ -656,6 +642,7 @@ def send_automated_birthday_emails(
             sent_date__gte=retry_start_date,
             sent_date__lte=target_date,
         )
+        .exclude(employee__chuc_vu__name__in=LEADERSHIP_POSITIONS)
         .filter(Q(next_retry_at__isnull=True) | Q(next_retry_at__lte=now))
         .select_related("employee", "employee__don_vi", "employee__chuc_vu")
         .order_by("sent_date", "id")

@@ -179,12 +179,9 @@ class ManualBirthdayEmailTests(TestCase):
         url = reverse("birthdays:retry_email", args=[log["id"]])
         self.assertEqual(self.client.post(url, {"recipient": self.leader.email}, format="json").status_code, 409)
 
-    def test_automatic_delivery_includes_leaders(self):
+    def test_automatic_delivery_skips_leaders(self):
         send_automated_birthday_emails(date(self.year, 5, 20), allow_test_email_backend=True)
-        log = BirthdayEmailLog.objects.get(employee=self.leader)
-        self.assertEqual(log.trang_thai, BirthdayEmailStatus.SUCCESS)
-        self.assertEqual(log.delivery_source, "AUTO")
-        self.assertEqual(mail.outbox[-1].to, [self.leader.email])
+        self.assertFalse(BirthdayEmailLog.objects.filter(employee=self.leader).exists())
 
     @patch("birthdays.draft_ai.complete_draft")
     def test_ai_draft_requires_admin_and_explicit_save(self, complete):
