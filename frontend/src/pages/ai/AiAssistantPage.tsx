@@ -2379,26 +2379,30 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                 <>
                   {docSourceFilter !== 'managed' && uploadedDocs.length > 0 && (
                     <div className="sidebar-doc-section">
-                      <div className="sidebar-doc-section-header">
-                        <span className="sidebar-doc-section-title">
-                          <i className="fa-solid fa-cloud-arrow-up text-primary" />
-                          <span>{t('aiAssistant.inline.uploadedDocsSection')}</span>
-                        </span>
-                        <span className="sidebar-doc-section-count">{uploadedDocs.length}</span>
-                      </div>
+                      {docSourceFilter === 'all' && (
+                        <div className="sidebar-doc-section-header">
+                          <span className="sidebar-doc-section-title">
+                            <i className="fa-solid fa-cloud-arrow-up text-primary" />
+                            <span>{t('aiAssistant.inline.uploadedDocsSection')}</span>
+                          </span>
+                          <span className="sidebar-doc-section-count">{uploadedDocs.length}</span>
+                        </div>
+                      )}
                       {renderFolderTree(uploadedTree, 'uploaded')}
                     </div>
                   )}
 
                   {docSourceFilter !== 'uploaded' && managedDocs.length > 0 && (
                     <div className="sidebar-doc-section">
-                      <div className="sidebar-doc-section-header">
-                        <span className="sidebar-doc-section-title">
-                          <i className="fa-solid fa-database text-primary" />
-                          <span>{t('aiAssistant.inline.systemDocsSection')}</span>
-                        </span>
-                        <span className="sidebar-doc-section-count">{managedDocs.length}</span>
-                      </div>
+                      {docSourceFilter === 'all' && (
+                        <div className="sidebar-doc-section-header">
+                          <span className="sidebar-doc-section-title">
+                            <i className="fa-solid fa-database text-primary" />
+                            <span>{t('aiAssistant.inline.systemDocsSection')}</span>
+                          </span>
+                          <span className="sidebar-doc-section-count">{managedDocs.length}</span>
+                        </div>
+                      )}
                       {renderFolderTree(managedTree, 'managed')}
                     </div>
                   )}
