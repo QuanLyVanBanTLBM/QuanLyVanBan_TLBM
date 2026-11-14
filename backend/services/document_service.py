@@ -32,6 +32,12 @@ def ensure_dir_permissions(directory: Path, mode: int = DEFAULT_DIR_MODE) -> Non
         pass
 
 
+def sanitize_document_filename(name: str) -> str:
+    """Loại bỏ mọi ký tự phân cách thư mục trên cả Windows và POSIX để chống path traversal."""
+    cleaned = str(name or "").strip().replace("\\", "/")
+    return Path(cleaned).name
+
+
 def cleanup_stale_staging_uploads(staging_dir: Path | None = None, max_age_seconds: int = 3600) -> int:
     """Dọn dẹp các tệp tạm mồ côi trong .staging đã cũ hơn max_age_seconds (mặc định 1 giờ)."""
     target_dir = staging_dir or (DOCS_DIR / ".staging")
@@ -63,7 +69,7 @@ def stage_upload_file(file) -> tuple[Path, str, bool]:
     ensure_dir_permissions(staging_dir, DEFAULT_DIR_MODE)
     cleanup_stale_staging_uploads(staging_dir)
 
-    filename = Path(file.name).name
+    filename = sanitize_document_filename(file.name)
     final_path = DOCS_DIR / filename
     descriptor, temporary_name = tempfile.mkstemp(
         prefix="upload-", suffix=Path(filename).suffix, dir=staging_dir
@@ -81,7 +87,8 @@ def stage_upload_file(file) -> tuple[Path, str, bool]:
 
 
 def commit_staged_upload(staged_path: Path, filename: str) -> Path:
-    final_path = DOCS_DIR / Path(filename).name
+    safe_name = sanitize_document_filename(filename)
+    final_path = DOCS_DIR / safe_name
     final_path.parent.mkdir(parents=True, exist_ok=True)
     ensure_dir_permissions(final_path.parent, DEFAULT_DIR_MODE)
     staged_path.replace(final_path)
@@ -227,7 +234,7 @@ def clear_documents():
 def delete_document_file(filename: str) -> bool:
     DOCS_DIR.mkdir(parents=True, exist_ok=True)
 
-    safe_name = Path(filename).name
+    safe_name = sanitize_document_filename(filename)
     file_path = DOCS_DIR / safe_name
     file_existed = file_path.exists() and file_path.is_file()
 
