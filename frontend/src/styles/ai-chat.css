@@ -406,7 +406,7 @@
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 0 10px 16px;
+  padding: 4px 10px 16px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -567,15 +567,14 @@
 .sidebar-dropzone:hover {
   border-color: var(--color-primary);
   background: var(--color-primary-subtle);
-  transform: translateY(-1px);
+  box-shadow: 0 2px 8px var(--color-primary-glow);
 }
 
 .sidebar-dropzone.is-dragging {
   border-color: var(--color-primary);
   background: var(--color-primary-subtle);
   border-style: solid;
-  transform: scale(1.01);
-  box-shadow: 0 4px 16px var(--color-primary-glow);
+  box-shadow: 0 4px 12px var(--color-primary-glow);
 }
 
 .sidebar-dropzone-icon {
@@ -594,7 +593,7 @@
 
 .sidebar-dropzone:hover .sidebar-dropzone-icon {
   background: var(--color-primary);
-  color: var(--text-white);
+  color: var(--text-white, rgb(255, 255, 255));
   transform: scale(1.05);
 }
 
