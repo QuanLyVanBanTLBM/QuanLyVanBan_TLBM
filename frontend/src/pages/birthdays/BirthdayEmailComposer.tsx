@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from '@i18n/translate';
 import { apiClient } from '@lib/apiClient';
 import { Button } from '@components/common/Button';
-import { birthdayEmailError, type DeliveryResult } from './emailDelivery';
+import { birthdayEmailError, isUnconfirmedDeliveryError, type DeliveryResult } from './emailDelivery';
 
 interface Draft {
   layout: string;
@@ -168,13 +168,24 @@ export default function BirthdayEmailComposer({ initialYear, onClose, onDelivere
     setPreview(await apiClient.post<Preview>('/api/birthdays/manual/preview/', payload));
   });
 
-  const send = () => request(async () => {
-    if (!preview) return;
-    const { log } = await apiClient.post<{ log: DeliveryResult }>('/api/birthdays/manual/send/', {
-      ...payload, preview_token: preview.preview_token,
+  const send = () => {
+    if (!preview || busyRef.current) return;
+    if (!window.confirm(t('birthdayPage.manualEmail.sendConfirm', {
+      employee: selectedRecipient?.name || preview.recipient,
+      email: preview.recipient,
+    }))) return;
+    return request(async () => {
+      try {
+        const { log } = await apiClient.post<{ log: DeliveryResult }>('/api/birthdays/manual/send/', {
+          ...payload, preview_token: preview.preview_token,
+        }, { signal: AbortSignal.timeout(60_000) });
+        onDelivered(log);
+      } catch (reason) {
+        if (!isUnconfirmedDeliveryError(reason)) throw reason;
+        onDelivered({ trang_thai: 'UNKNOWN', delivery_uncertain: true });
+      }
     });
-    onDelivered(log);
-  });
+  };
 
   const makeDraft = () => request(async () => {
     setAiDraft(null);

@@ -229,3 +229,297 @@ class AttachmentRetrievalTests(unittest.TestCase):
                     self.assertEqual(pages[0]["text"], "Nội dung trích xuất từ pypdf")
                     self.assertEqual(pages[0]["reader"], "pypdf")
 
+    def test_rrf_hybrid_reranking_matches_admin_code_and_acronym_without_accents(self):
+        from backend.services.rag_service import _extract_hybrid_keywords
+
+        kw_list = _extract_hybrid_keywords("Nội dung quyết định số 123/QĐ-UBND về phân công phòng HC-NS")
+        self.assertIn("123/qd-ubnd", kw_list)
+        self.assertIn("hcns", kw_list)
+
+        # Truy vấn gõ không dấu + viết tắt liền "quyet dinh 123 phong hcns"
+        dense = [
+            SimpleNamespace(
+                text="Quyết định số 124/QĐ-UBND về việc khen thưởng cuối năm cho các đơn vị.",
+                metadata={"file_name": "QD_124_UBND.pdf", "doc_code": "124/QĐ-UBND", "chunk_id": "1-1"},
+                score=0.72,
+            ),
+            SimpleNamespace(
+                text="Quyết định số 123/QĐ-UBND phân công nhiệm vụ Phòng Hành chính - Nhân sự (HC-NS).",
+                metadata={"file_name": "QD_123_UBND.pdf", "doc_code": "123/QĐ-UBND", "chunk_id": "1-1"},
+                score=0.61,
+            ),
+        ]
+        keyword = [
+            SimpleNamespace(
+                text="Quyết định số 123/QĐ-UBND phân công nhiệm vụ Phòng Hành chính - Nhân sự (HC-NS).",
+                metadata={"file_name": "QD_123_UBND.pdf", "doc_code": "123/QĐ-UBND", "chunk_id": "1-1"},
+                score=0.65,
+            ),
+        ]
+        ranked = _rerank_hybrid_nodes(dense, keyword, "quyet dinh 123 phong hcns")
+        self.assertEqual(ranked[0].node.metadata["file_name"], "QD_123_UBND.pdf")
+        self.assertGreater(ranked[0].node.metadata.get("rrf_score", 0), 0.03)
+
+    def test_build_answer_prompt_supports_multi_document_comparison(self):
+        prompt_vi = build_answer_prompt(
+            question="So sánh điểm khác biệt chính giữa các văn bản này",
+            context="[1] QD_01.pdf\nNội dung 1\n\n[2] QD_02.pdf\nNội dung 2",
+            history=None,
+            target_filenames=["QD_01.pdf", "QD_02.pdf"],
+            language="vi",
+        )
+        self.assertIn("GHIM ĐỒNG THỜI NHIỀU TÀI LIỆU", prompt_vi)
+        self.assertIn("QD_01.pdf", prompt_vi)
+        self.assertIn("QD_02.pdf", prompt_vi)
+
+    def test_secretary_system_prompt_and_soft_fallback_context_builder(self):
+        from backend.services.rag_service import (
+            SECRETARY_SYSTEM_PROMPT,
+            SOFT_FALLBACK_NOTE_VI,
+            _is_drafting_or_action_query,
+            build_flexible_context_and_prompt,
+        )
+
+        self.assertIn("Kho Tài Liệu & Biểu Mẫu", SECRETARY_SYSTEM_PROMPT)
+        self.assertTrue(_is_drafting_or_action_query("Soạn giúp tôi email thông báo lịch họp giao ban"))
+        self.assertTrue(_is_drafting_or_action_query("Tóm tắt các bước lập tờ trình xin phê duyệt kinh phí"))
+
+        # Low-score nodes below SOURCE_SCORE_THRESHOLD trigger Soft Fallback with sources == []
+        low_score_node = SimpleNamespace(
+            node=SimpleNamespace(
+                metadata={"file_name": "Tap_tin_nhieu.pdf", "page_label": "1"},
+                get_content=lambda: "Nội dung rời rạc điểm thấp",
+            ),
+            score=0.12,
+        )
+        ctx = build_flexible_context_and_prompt(
+            question="Soạn giúp tôi email đôn đốc các phòng ban nộp báo cáo tháng",
+            sources=[],
+            history=[],
+            clean_filenames=None,
+            language="vi",
+            raw_nodes=[low_score_node],
+        )
+        self.assertTrue(ctx["soft_fallback"])
+        self.assertEqual(ctx["sources"], [])
+        self.assertIn(SOFT_FALLBACK_NOTE_VI, ctx["prompt"])
+        self.assertIn("Kính gửi", ctx["prompt"])
+        self.assertIn("Nội dung chính", ctx["prompt"])
+        self.assertIn("Đề xuất / Kiến nghị", ctx["prompt"])
+
+    def test_ask_document_and_stream_soft_fallback_without_pinned_doc(self):
+        import json
+        from backend.services.rag_service import (
+            SOFT_FALLBACK_NOTE_VI,
+            ask_document,
+            ask_document_stream,
+        )
+
+        mock_llm = MagicMock()
+        mock_llm.complete.return_value = (
+            "1. **Kính gửi**: Trưởng các phòng ban, đơn vị trực thuộc.\n"
+            "2. **Nội dung chính**: Đề nghị các đơn vị hoàn thiện và gửi báo cáo công tác định kỳ trước 16h00.\n"
+            "3. **Đề xuất / Kiến nghị**: Vui lòng tham khảo biểu mẫu chuẩn tại Kho Tài Liệu & Biểu Mẫu."
+        )
+        mock_chunk = SimpleNamespace(delta=mock_llm.complete.return_value)
+        mock_llm.stream_complete.return_value = [mock_chunk]
+
+        mock_retriever = MagicMock()
+        mock_retriever.retrieve.return_value = []
+        mock_index = MagicMock()
+        mock_index.as_retriever.return_value = mock_retriever
+
+        with patch("backend.services.ai_access.has_permission_codename", return_value=True), patch(
+            "backend.services.sql_document_source.is_postgres_source", return_value=True
+        ), patch(
+            "backend.services.sql_document_source.accessible_document_keys", return_value={"vanbanden:1"}
+        ), patch(
+            "backend.services.business_knowledge.match_business_sources", return_value=[]
+        ), patch("backend.services.rag_service.setup_llamaindex"), patch(
+            "backend.services.rag_service.get_index", return_value=mock_index
+        ), patch("backend.services.faq_response_cache.get_cached_answer", return_value=None), patch(
+            "backend.services.rag_service.Settings"
+        ) as mock_settings:
+            mock_settings.llm = mock_llm
+            result = ask_document(
+                "Soạn giúp tôi email đôn đốc báo cáo định kỳ",
+                user=SimpleNamespace(is_authenticated=True, id=1),
+                filename=None,
+                language="vi",
+            )
+            self.assertEqual(result["sources"], [])
+            self.assertIn(SOFT_FALLBACK_NOTE_VI, result["answer"])
+            self.assertIn("Kính gửi", result["answer"])
+            self.assertIn("Nội dung chính", result["answer"])
+            self.assertIn("Đề xuất / Kiến nghị", result["answer"])
+            self.assertNotIn("Tôi không tìm thấy thông tin phù hợp", result["answer"])
+
+            stream_events = list(
+                ask_document_stream(
+                    "Soạn giúp tôi email đôn đốc báo cáo định kỳ",
+                    user=SimpleNamespace(is_authenticated=True, id=1),
+                    filename=None,
+                    language="vi",
+                )
+            )
+            sources_event = next(ev for ev in stream_events if ev.startswith("event: sources"))
+            done_event = next(ev for ev in stream_events if ev.startswith("event: done"))
+            sources_payload = json.loads(sources_event.split("data: ", 1)[1].strip())
+            done_payload = json.loads(done_event.split("data: ", 1)[1].strip())
+            self.assertEqual(sources_payload, [])
+            self.assertIn(SOFT_FALLBACK_NOTE_VI, done_payload["answer"])
+            self.assertIn("Kính gửi", done_payload["answer"])
+
+    def test_chat_api_view_returns_200_when_no_pinned_document(self):
+        import json
+        from django.test import RequestFactory
+        from backend.api.views import _answer_chat
+        from backend.services.rag_service import SOFT_FALLBACK_NOTE_VI
+
+        rf = RequestFactory()
+        payload = {
+            "question": "Tóm tắt các bước lập tờ trình xin phê duyệt kế hoạch công tác",
+            "history": [],
+            "filename": None,
+            "language": "vi",
+        }
+        request = rf.post(
+            "/api/ai/chat",
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+        request.user = SimpleNamespace(is_authenticated=True, is_superuser=True, id=1, username="admin")
+
+        mock_retriever = MagicMock()
+        mock_retriever.retrieve.return_value = []
+        mock_index = MagicMock()
+        mock_index.as_retriever.return_value = mock_retriever
+
+        with patch("backend.api.views._require_ai_access", return_value=None), patch(
+            "backend.api.views.resolve_employee_id", return_value=1
+        ), patch("backend.services.ai_access.has_permission_codename", return_value=True), patch(
+            "backend.services.sql_document_source.is_postgres_source", return_value=True
+        ), patch(
+            "backend.services.sql_document_source.accessible_document_keys", return_value=set()
+        ), patch(
+            "backend.services.business_knowledge.match_business_sources", return_value=[]
+        ), patch("backend.services.rag_service.setup_llamaindex"), patch(
+            "backend.services.rag_service.get_index", return_value=mock_index
+        ), patch("backend.services.faq_response_cache.get_cached_answer", return_value=None), patch(
+            "backend.services.rag_service.Settings"
+        ) as mock_settings:
+            mock_settings.llm = MagicMock()
+            response = _answer_chat(request, payload=payload)
+            self.assertEqual(response.status_code, 200)
+            body = json.loads(response.content.decode("utf-8"))
+            self.assertEqual(body["sources"], [])
+            self.assertIn(SOFT_FALLBACK_NOTE_VI, body["answer"])
+            self.assertIn("Kính gửi", body["answer"])
+            self.assertIn("Kho Tài Liệu & Biểu Mẫu", body["answer"])
+
+    def test_detect_drafting_intent_and_prompt_enhancement_for_admin_templates(self):
+        from backend.services.rag_service import (
+            _detect_drafting_intent,
+            build_answer_prompt,
+            build_drafting_prompt_enhancement,
+            build_secretary_fallback_answer,
+        )
+
+        # 1. Kiểm tra nhận diện đúng từng phân loại: Email công vụ, Công văn, Tờ trình / Đề xuất
+        self.assertEqual(
+            _detect_drafting_intent("Soạn giúp tôi email đôn đốc nộp báo cáo"),
+            "email",
+        )
+        self.assertEqual(
+            _detect_drafting_intent("Soạn công văn đôn đốc các đơn vị thực hiện báo cáo quý"),
+            "cong_van",
+        )
+        self.assertEqual(
+            _detect_drafting_intent("Viết giúp tờ trình đề xuất phê duyệt kinh phí đào tạo"),
+            "to_trinh",
+        )
+        self.assertIsNone(
+            _detect_drafting_intent("Quyết định số 123/QĐ-UBND ban hành ngày nào?")
+        )
+
+        # 2. Kiểm tra build_drafting_prompt_enhancement tạo đúng cấu trúc chuẩn
+        email_enhancement = build_drafting_prompt_enhancement("Soạn giúp tôi email đôn đốc nộp báo cáo")
+        self.assertIn("MẪU EMAIL CÔNG VỤ CHUẨN HÀNH CHÍNH", email_enhancement)
+        self.assertIn("Tiêu đề Email (Subject)", email_enhancement)
+        self.assertIn("Kính gửi", email_enhancement)
+        self.assertIn("Nội dung chính", email_enhancement)
+        self.assertIn("Chữ ký chuẩn (Signature)", email_enhancement)
+
+        cong_van_enhancement = build_drafting_prompt_enhancement("Soạn công văn phúc đáp Sở Nội vụ")
+        self.assertIn("MẪU CÔNG VĂN HÀNH CHÍNH CHUẨN", cong_van_enhancement)
+        self.assertIn("CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM", cong_van_enhancement)
+        self.assertIn("THỦ TRƯỞNG CƠ QUAN / ĐƠN VỊ", cong_van_enhancement)
+
+        to_trinh_enhancement = build_drafting_prompt_enhancement("Lập tờ trình đề xuất mua sắm thiết bị")
+        self.assertIn("MẪU TỜ TRÌNH / ĐỀ XUẤT PHÊ DUYỆT CHUẨN CÔNG SỞ", to_trinh_enhancement)
+        self.assertIn("Căn cứ pháp lý & Sự cần thiết", to_trinh_enhancement)
+        self.assertIn("Ý KIẾN PHÊ DUYỆT CỦA LÃNH ĐẠO", to_trinh_enhancement)
+
+        # 3. Kiểm tra tích hợp vào system instruction của build_answer_prompt và kết quả trả về
+        prompt = build_answer_prompt(
+            question="Soạn giúp tôi email đôn đốc nộp báo cáo",
+            context="",
+            history=[],
+            language="vi",
+            soft_fallback=True,
+        )
+        self.assertIn("MẪU EMAIL CÔNG VỤ CHUẨN HÀNH CHÍNH", prompt)
+        self.assertIn("Chữ ký chuẩn (Signature)", prompt)
+
+        fallback_reply = build_secretary_fallback_answer(
+            "Soạn giúp tôi email đôn đốc nộp báo cáo",
+            language="vi",
+        )
+        self.assertIn("Tiêu đề / Chủ đề", fallback_reply)
+        self.assertIn("Kính gửi", fallback_reply)
+        self.assertIn("Nội dung chính", fallback_reply)
+        self.assertIn("Chữ ký chuẩn & Nơi nhận", fallback_reply)
+        self.assertIn("Trân trọng cảm ơn", fallback_reply)
+        self.assertIn("(/documents)", fallback_reply)
+
+    def test_unpinned_drafting_and_advisory_filter_out_noisy_keyword_sources(self):
+        from backend.services.rag_service import ask_document
+
+        # Mô phỏng node nhiễu chỉ khớp lỏng lẻo từ khóa phổ thông ("đề nghị", "phối hợp")
+        noisy_kw_node = SimpleNamespace(
+            text="Công văn 15/CV-ĐT về việc đề nghị phối hợp tổ chức hoạt động học tập thực tế cho sinh viên.",
+            metadata={"file_name": "15_CV_DT.pdf", "doc_code": "15/CV-ĐT", "chunk_id": "1-2"},
+            score=0.35,
+        )
+        ranked = _rerank_hybrid_nodes([], [noisy_kw_node], "Soạn giúp tôi email đôn đốc các phòng ban nộp báo cáo tháng")
+        self.assertLess(ranked[0].score, 0.30)
+
+        mock_retriever = MagicMock()
+        mock_retriever.retrieve.return_value = [noisy_kw_node]
+        mock_index = MagicMock()
+        mock_index.as_retriever.return_value = mock_retriever
+
+        with patch("backend.services.ai_access.has_permission_codename", return_value=True), patch(
+            "backend.services.sql_document_source.is_postgres_source", return_value=True
+        ), patch(
+            "backend.services.sql_document_source.accessible_document_keys", return_value={"vanbandi:15"}
+        ), patch(
+            "backend.services.business_knowledge.match_business_sources", return_value=[]
+        ), patch("backend.services.rag_service.setup_llamaindex"), patch(
+            "backend.services.rag_service.get_index", return_value=mock_index
+        ), patch("backend.services.faq_response_cache.get_cached_answer", return_value=None), patch(
+            "backend.services.rag_service.Settings"
+        ) as mock_settings:
+            mock_settings.llm = MagicMock()
+            result = ask_document(
+                "Soạn giúp tôi email đôn đốc các phòng ban nộp báo cáo tháng",
+                user=SimpleNamespace(is_authenticated=True, id=1),
+                filename=None,
+                language="vi",
+            )
+            self.assertEqual(result["sources"], [])
+            self.assertIn("(/documents)", result["answer"])
+
+
+
+

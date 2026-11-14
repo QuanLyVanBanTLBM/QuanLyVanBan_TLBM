@@ -1916,13 +1916,25 @@ CREATE TABLE birthdays_birthdayemaillog (
     opened_at TIMESTAMPTZ,
     clicked_count INTEGER NOT NULL DEFAULT 0,
     email_provider VARCHAR(50),
-    delivery_source VARCHAR(8) NOT NULL DEFAULT 'AUTO',
+    delivery_source VARCHAR(16) NOT NULL DEFAULT 'AUTO',
     delivery_snapshot JSONB,
     last_operator VARCHAR(150),
+    resend_request_id UUID UNIQUE,
     delivery_uncertain BOOLEAN NOT NULL DEFAULT false,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT uq_emaillog_employee_date UNIQUE (employee_id, sent_date)
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE UNIQUE INDEX uq_emaillog_employee_date_auto
+    ON birthdays_birthdayemaillog (employee_id, sent_date)
+    WHERE delivery_source = 'AUTO';
+
+CREATE UNIQUE INDEX uq_emaillog_employee_date_manual
+    ON birthdays_birthdayemaillog (employee_id, sent_date)
+    WHERE delivery_source = 'MANUAL';
+
+CREATE UNIQUE INDEX uq_emaillog_resend_inflight
+    ON birthdays_birthdayemaillog (employee_id, sent_date)
+    WHERE delivery_source = 'MANUAL_RESEND' AND trang_thai = 'SENDING';
 
 CREATE TRIGGER trg_emaillog_updated_at BEFORE UPDATE ON birthdays_birthdayemaillog
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
@@ -1935,6 +1947,27 @@ CREATE TABLE birthdays_birthdayemailtemplate (
     message TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT statement_timestamp()
 );
+
+CREATE TABLE birthdays_birthdayschedulerrun (
+    id BIGSERIAL PRIMARY KEY,
+    execution_id VARCHAR(80) NOT NULL UNIQUE,
+    processing_date DATE NOT NULL,
+    trigger_source VARCHAR(9) NOT NULL,
+    scheduled_slot VARCHAR(5),
+    started_at TIMESTAMPTZ NOT NULL,
+    ended_at TIMESTAMPTZ,
+    status VARCHAR(7) NOT NULL,
+    total_eligible INTEGER,
+    sent_count INTEGER,
+    failed_count INTEGER,
+    skipped_count INTEGER,
+    retry_count INTEGER,
+    error_reason TEXT,
+    github_run_id VARCHAR(24)
+);
+
+CREATE INDEX idx_birthdayrun_date_started
+    ON birthdays_birthdayschedulerrun (processing_date, started_at DESC);
 
 COMMIT;
 

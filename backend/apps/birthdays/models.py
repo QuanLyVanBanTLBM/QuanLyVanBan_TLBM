@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.db.models import Q
 from django.db.models.functions import Now
 from django.utils import timezone
 
@@ -76,6 +77,46 @@ class BirthdayEmailStatus(models.TextChoices):
 class BirthdayEmailSource(models.TextChoices):
     AUTO = "AUTO", "Tự động"
     MANUAL = "MANUAL", "Thủ công"
+    MANUAL_RESEND = "MANUAL_RESEND", "Quản trị viên gửi lại"
+
+
+class BirthdaySchedulerStatus(models.TextChoices):
+    RUNNING = "RUNNING", "Đang chạy"
+    SUCCESS = "SUCCESS", "Thành công"
+    FAILED = "FAILED", "Thất bại"
+    UNKNOWN = "UNKNOWN", "Chưa xác định"
+
+
+class BirthdaySchedulerRun(models.Model):
+    class Trigger(models.TextChoices):
+        SCHEDULED = "SCHEDULED", "Theo lịch"
+        RECOVERY = "RECOVERY", "Chạy bù"
+
+    class Slot(models.TextChoices):
+        PRIMARY = "07:00", "07:00"
+        FALLBACK = "07:37", "07:37"
+
+    execution_id = models.CharField(max_length=80, unique=True)
+    processing_date = models.DateField()
+    trigger_source = models.CharField(max_length=9, choices=Trigger.choices)
+    scheduled_slot = models.CharField(max_length=5, choices=Slot.choices, null=True)
+    started_at = models.DateTimeField()
+    ended_at = models.DateTimeField(null=True)
+    status = models.CharField(max_length=7, choices=BirthdaySchedulerStatus.choices)
+    total_eligible = models.IntegerField(null=True)
+    sent_count = models.IntegerField(null=True)
+    failed_count = models.IntegerField(null=True)
+    skipped_count = models.IntegerField(null=True)
+    retry_count = models.IntegerField(null=True)
+    error_reason = models.TextField(null=True)
+    github_run_id = models.CharField(max_length=24, null=True)
+
+    class Meta:
+        db_table = "birthdays_birthdayschedulerrun"
+        ordering = ["-started_at", "-pk"]
+        indexes = [
+            models.Index(fields=["processing_date", "-started_at"], name="idx_birthdayrun_date_started"),
+        ]
 
 
 class BirthdayEmailTemplate(models.Model):
@@ -155,11 +196,12 @@ class BirthdayEmailLog(models.Model):
         verbose_name="Nhà cung cấp dịch vụ email",
     )
     delivery_source = models.CharField(
-        max_length=8, choices=BirthdayEmailSource.choices,
+        max_length=16, choices=BirthdayEmailSource.choices,
         default=BirthdayEmailSource.AUTO, db_default=BirthdayEmailSource.AUTO,
     )
     delivery_snapshot = models.JSONField(null=True, blank=True)
     last_operator = models.CharField(max_length=150, null=True, blank=True)
+    resend_request_id = models.UUIDField(null=True, blank=True, unique=True)
     delivery_uncertain = models.BooleanField(default=False, db_default=False)
     updated_at = models.DateTimeField(
         auto_now=True,
@@ -175,7 +217,21 @@ class BirthdayEmailLog(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["employee", "sent_date"],
-                name="uq_emaillog_employee_date",
+                condition=Q(delivery_source=BirthdayEmailSource.AUTO),
+                name="uq_emaillog_employee_date_auto",
+            ),
+            models.UniqueConstraint(
+                fields=["employee", "sent_date"],
+                condition=Q(delivery_source=BirthdayEmailSource.MANUAL),
+                name="uq_emaillog_employee_date_manual",
+            ),
+            models.UniqueConstraint(
+                fields=["employee", "sent_date"],
+                condition=Q(
+                    delivery_source=BirthdayEmailSource.MANUAL_RESEND,
+                    trang_thai=BirthdayEmailStatus.SENDING,
+                ),
+                name="uq_emaillog_resend_inflight",
             ),
         ]
 

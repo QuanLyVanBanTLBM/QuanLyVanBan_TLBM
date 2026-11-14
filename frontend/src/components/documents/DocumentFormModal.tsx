@@ -394,6 +394,8 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
     can(isDi ? 'send_mail_all_vanbandi' : 'send_mail_all_vanbanden') ||
     Boolean(initDoc?.can_send_mail_all)
   );
+  // Phân quyền thêm văn bản thường (contract: add_vanbanden / add_vanbandi)
+  const canAddNoiBo = Boolean(isAdmin || can(isDi ? 'add_vanbandi' : 'add_vanbanden'));
   // Phân quyền thêm văn bản hạn chế (contract: add_han_che_vanbanden / add_han_che_vanbandi)
   const canAddHanChe = Boolean(isAdmin || can(isDi ? 'add_han_che_vanbandi' : 'add_han_che_vanbanden'));
   const [units, setUnits] = useState<string[]>(DEFAULT_UNITS);
@@ -1345,6 +1347,21 @@ export default function DocumentFormModal({ open, onClose, initial, onSaved, def
       setAlertMsg('Vui lòng chọn ít nhất một Cán bộ nhận / xử lý (*)');
       setAlertOpen(true);
       return;
+    }
+
+    // Kiểm tra phân quyền tạo mới văn bản thường vs văn bản hạn chế
+    if (!initial?.id) {
+      const isHanChe = form.loai === 'MAT' || form.pham_vi === 'HAN_CHE';
+      if (isHanChe && !canAddHanChe) {
+        setAlertMsg('Bạn không có quyền tạo văn bản phạm vi Hạn chế. Vui lòng liên hệ Quản trị viên để được cấp quyền.');
+        setAlertOpen(true);
+        return;
+      }
+      if (!isHanChe && !canAddNoiBo) {
+        setAlertMsg('Bạn không có quyền tạo văn bản mới. Vui lòng liên hệ Quản trị viên để được cấp quyền.');
+        setAlertOpen(true);
+        return;
+      }
     }
 
     setLoading(true);

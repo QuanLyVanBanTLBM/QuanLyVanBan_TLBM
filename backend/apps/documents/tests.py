@@ -760,6 +760,11 @@ class DocumentPermissionOption2Tests(TestCase):
         self.admin = User.objects.create_superuser(username="admin_perm", password="password", is_staff=True)
         self.staff1 = User.objects.create_user(username="staff1", password="password")
         self.staff2 = User.objects.create_user(username="staff2", password="password")
+        from django.contrib.auth.models import Permission
+
+        view_perm = Permission.objects.get(codename="view_vanbanden")
+        self.staff1.user_permissions.add(view_perm)
+        self.staff2.user_permissions.add(view_perm)
 
         self.doc_staff1 = VanBanDen.objects.create(
             nam=2026, so_hieu="10/CV-STAFF1", so_thu_tu=1,

@@ -87,6 +87,7 @@ class TepDaKyTienTrinhTests(KyBase):
     def test_nguoi_ngoai_khong_xem_duoc_tep_da_ky(self):
         """Người dùng không có quyền xem hồ sơ nhận 404."""
         nguoi_ngoai = User.objects.create_user(username="nguoi_la_686", password="123")
+        cap_quyen(nguoi_ngoai, "view_trinhky")
         client_la = self.client_cua(nguoi_ngoai)
         r = client_la.get(f"{BASE}/{self.pk}/tep-da-ky/")
         self.assertEqual(r.status_code, 404)

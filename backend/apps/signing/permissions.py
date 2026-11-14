@@ -41,6 +41,27 @@ def co_quyen(user, codename):
     )
 
 
+# Mọi mã quyền của phân hệ Trình ký: có ít nhất một mã thì mới được dùng API (người chỉ có quyền ký hoặc kiểm toán
+# vẫn vào được, không phụ thuộc đúng view_trinhky).
+MA_QUYEN_TRINH_KY = (
+    XEM_TRINH_KY, TAO_TRINH_KY, QUAN_LY_QUY_TRINH, GUI_TRINH_KY, KY_TRINH_KY, HUY_TRINH_KY, XEM_NHAT_KY, XEM_TAT_CA,
+)
+
+
+def co_quyen_truy_cap_trinh_ky(user):
+    return any(co_quyen(user, ma) for ma in MA_QUYEN_TRINH_KY)
+
+
+def yeu_cau_truy_cap_trinh_ky(user):
+    if not co_quyen_truy_cap_trinh_ky(user):
+        raise SigningError(
+            code="khong_co_quyen",
+            detail="Tài khoản không có quyền sử dụng phân hệ Trình ký.",
+            status_code=status.HTTP_403_FORBIDDEN,
+            fields={"quyen": [XEM_TRINH_KY]},
+        )
+
+
 def yeu_cau_quyen(user, codename):
     if not co_quyen(user, codename):
         raise SigningError(

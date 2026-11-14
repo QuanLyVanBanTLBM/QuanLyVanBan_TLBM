@@ -1,13 +1,17 @@
 import logging
 from django.core.management.base import BaseCommand
-from backend.services.rag_service import get_vector_collection, index_sql_document
+from backend.services.rag_service import (
+    get_vector_collection,
+    index_sql_document,
+    sync_documents_if_needed,
+)
 from backend.services.sql_document_source import get_all_document_records_for_index
 
 logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
-    help = "Quét lại và lập chỉ mục vector cho toàn bộ văn bản SQL vào kho lưu trữ vector."
+    help = "Quét lại và lập chỉ mục vector cho toàn bộ văn bản SQL và tài liệu tri thức vào kho lưu trữ vector."
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -21,10 +25,24 @@ class Command(BaseCommand):
             action="store_true",
             help="Xóa toàn bộ vector SQL cũ trước khi lập chỉ mục lại.",
         )
+        parser.add_argument(
+            "--sync-registry",
+            action="store_true",
+            help="Đồng bộ cả các tài liệu tri thức đã đăng ký trong doc_registry.json.",
+        )
 
     def handle(self, *args, **options):
         source_type = options.get("source_type")
         clear = options.get("clear")
+        sync_registry = options.get("sync_registry")
+
+        if sync_registry:
+            self.stdout.write("Đang đồng bộ tài liệu tri thức từ registry...")
+            try:
+                sync_documents_if_needed()
+                self.stdout.write(self.style.SUCCESS("Đã đồng bộ tài liệu registry thành công."))
+            except Exception as exc:
+                self.stdout.write(self.style.WARNING(f"Không thể đồng bộ tài liệu registry: {exc}"))
 
         if clear:
             self.stdout.write("Đang dọn dẹp vector SQL cũ...")

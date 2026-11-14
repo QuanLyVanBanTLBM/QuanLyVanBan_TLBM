@@ -70,7 +70,7 @@ class WorkTestBase(APITestCase):
         )
         permissions = [
             Permission.objects.get(codename=codename)
-            for codename in ("add_congviec", "view_vanbanden", "view_vanbandi")
+            for codename in ("add_congviec", "change_congviec", "delete_congviec", "approve_congviec", "view_vanbanden", "view_vanbandi")
         ]
         self.creator.user_permissions.add(*permissions)
         self.units = {}
@@ -516,9 +516,13 @@ class TaskListApiTests(WorkTestBase):
         self.assertEqual([p["id"] for p in item["directors"]], [self.director.pk])
         self.assertEqual([p["id"] for p in item["participants"]], [self.member.pk])
         self.assertEqual(item["myRoles"], ["CHU_TRI"])
+        # Chủ trì là người nhận việc: chỉ xem, không sửa, xóa, duyệt dù trong seed có change_congviec.
         self.assertEqual(
             item["permissions"],
-            {"canEdit": True, "canDelete": True, "canExtend": False, "canApprove": False, "canUnapprove": False},
+            {
+                "canEdit": False, "canDelete": False, "canExtend": False,
+                "canReview": False, "canApprove": False, "canUnapprove": False,
+            },
         )
 
     def test_tinh_trang_khong_hop_le(self):
@@ -1021,9 +1025,9 @@ class BrokenEmailBackend:
 
 
 class TaskUpdateDeleteApiTests(WorkTestBase):
-    def test_chu_tri_sua_duoc_va_giu_ngay_tao_cu(self):
+    def test_nguoi_co_quyen_sua_giu_ngay_tao_cu(self):
         task = self.make_task(created_offset=-3, due_offset=3)
-        self.login(self.host)
+        self.login(self.creator)
         response = self.client.patch(self.task_url(task), {"title": "Tiêu đề mới"}, format="multipart")
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertEqual(response.data["title"], "Tiêu đề mới")
@@ -1034,7 +1038,7 @@ class TaskUpdateDeleteApiTests(WorkTestBase):
         self.login(self.director)
         response = self.client.patch(self.task_url(task), {"title": "X"}, format="multipart")
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertIn("liên hệ người tạo hoặc người chủ trì", response.data["detail"])
+        self.assertIn("liên hệ người có quyền sửa hoặc người giao việc", response.data["detail"])
 
     def test_admin_co_du_quyen_rbac_sua_xoa_duoc_du_khong_lien_quan(self):
         # Superuser được cấp toàn bộ quyền RBAC (gồm change/delete_congviec) nên sửa / xóa
@@ -1400,8 +1404,9 @@ class TaskApprovalApiTests(WorkTestBase):
         self.add_evidence(task)
         return task
 
-    def test_chi_dao_duyet_thanh_hoan_thanh(self):
+    def test_chi_dao_co_approve_congviec_duyet_thanh_hoan_thanh(self):
         task = self.waiting_task()
+        self.director.user_permissions.add(Permission.objects.get(codename="approve_congviec"))
         self.login(self.director)
         response = self.client.post(self.task_url(task, "approve/"))
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
@@ -1453,20 +1458,20 @@ class TaskApprovalApiTests(WorkTestBase):
 
     def test_chua_co_bang_chung_khong_duyet_duoc(self):
         task = self.make_task(first_opened_at=timezone.now())
-        self.login(self.host)
+        self.login(self.creator)
         response = self.client.post(self.task_url(task, "approve/"))
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("gửi ý kiến kèm file kết quả", response.data["detail"])
 
     def test_cho_duyet_qua_han_van_duyet_duoc(self):
         task = self.waiting_task(created_offset=-5, due_offset=-1)
-        self.login(self.host)
+        self.login(self.creator)
         response = self.client.post(self.task_url(task, "approve/"))
         self.assertEqual(response.data["status"], "HOAN_THANH")
 
     def test_huy_duyet_quay_ve_cho_duyet_roi_duyet_lai_khi_qua_han(self):
         task = self.waiting_task(created_offset=-5, due_offset=-1)
-        self.login(self.host)
+        self.login(self.creator)
         self.client.post(self.task_url(task, "approve/"))
 
         response = self.client.post(self.task_url(task, "unapprove/"))
@@ -1479,13 +1484,13 @@ class TaskApprovalApiTests(WorkTestBase):
 
     def test_huy_duyet_khi_chua_duyet_bao_loi(self):
         task = self.waiting_task()
-        self.login(self.host)
+        self.login(self.creator)
         response = self.client.post(self.task_url(task, "unapprove/"))
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_co_quyen_trong_danh_sach_theo_trang_thai(self):
         task = self.waiting_task()
-        self.login(self.director)
+        self.login(self.creator)
         item = self.client.get("/api/work/tasks/").data["results"][0]
         self.assertTrue(item["permissions"]["canApprove"])
         self.assertFalse(item["permissions"]["canUnapprove"])

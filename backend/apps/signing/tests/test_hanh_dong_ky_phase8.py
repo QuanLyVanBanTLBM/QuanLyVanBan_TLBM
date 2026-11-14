@@ -154,6 +154,7 @@ class LuongKyTests(KyBase):
 
     def test_sign_permission_required(self):
         User.objects.get(pk=self.ky1.pk).user_permissions.clear()
+        cap_quyen(self.ky1, "view_trinhky")  # còn vào được phân hệ, nhưng không có quyền ký
         r = self.ky(self.ky1)
         self.assertEqual((r.status_code, r.data["fields"]), (403, {"quyen": ["sign_trinhky"]}))
 

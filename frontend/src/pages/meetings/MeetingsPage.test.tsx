@@ -841,4 +841,80 @@ describe('MeetingsPage Component (Issue #22)', () => {
       'Cuộc họp 5 - Đã hủy muộn',
     ]);
   });
+
+  it('giữ cụm nút thao tác (Xem chi tiết, Sửa, Hủy lịch) cố định trên 1 dòng kể cả khi tên phòng rất dài', async () => {
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+
+    const longNameBookings = [
+      {
+        id: 201,
+        room: 1,
+        room_detail: {
+          id: 1,
+          name: 'QA Thịnh 2610 phòng kiểm thử siêu dài chuyên dụng',
+          location: 'Tầng 99 - dữ liệu kiểm thử nhóm 3 mở rộng rất dài',
+        },
+        title: 'Họp kiểm thử bố cục giao diện Desktop',
+        date: todayStr,
+        start_time: '09:00:00',
+        end_time: '10:00:00',
+        attendees_count: 5,
+        purpose: 'Kiểm tra không nhảy dòng cụm nút thao tác',
+        trang_thai: 'CONFIRMED',
+        organizer: 1,
+        organizer_detail: {
+          id: 1,
+          username: 'user1',
+          ho_ten: 'Đặng Thị Mai',
+          chuc_vu_ten: 'Trưởng phòng',
+          don_vi_ten: 'Bảo Long Tân Sơn Nhất',
+        },
+      },
+    ];
+
+    apiClient.get = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/meeting-rooms/')) {
+        return Promise.resolve({ results: mockRooms });
+      }
+      if (url.includes('/api/meeting-bookings/')) {
+        return Promise.resolve({ results: longNameBookings });
+      }
+      if (url.includes('/api/auth/profile/')) {
+        return Promise.resolve(mockProfile);
+      }
+      return Promise.resolve({});
+    });
+
+    render(
+      <MemoryRouter>
+        <MeetingsPage />
+      </MemoryRouter>
+    );
+
+    const scheduleTabBtn = screen.getByRole('button', { name: /Lịch đặt phòng họp theo ngày/i });
+    fireEvent.click(scheduleTabBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText('Họp kiểm thử bố cục giao diện Desktop')).toBeInTheDocument();
+    });
+
+    const detailBtn = screen.getByRole('button', { name: /Xem chi tiết/i });
+    const editBtn = screen.getByRole('button', { name: /Sửa/i });
+    const cancelBtn = screen.getByRole('button', { name: /Hủy lịch/i });
+
+    expect(detailBtn.className).toContain('whitespace-nowrap');
+    expect(editBtn.className).toContain('whitespace-nowrap');
+    expect(cancelBtn.className).toContain('whitespace-nowrap');
+
+    const actionsContainer = detailBtn.parentElement;
+    expect(actionsContainer?.className).toContain('shrink-0');
+    expect(actionsContainer?.className).toContain('lg:w-80');
+    expect(actionsContainer?.className).toContain('sm:flex-nowrap');
+
+    const leftContainer = actionsContainer?.previousElementSibling;
+    expect(leftContainer?.className).toContain('flex-1');
+    expect(leftContainer?.className).toContain('min-w-0');
+  });
 });

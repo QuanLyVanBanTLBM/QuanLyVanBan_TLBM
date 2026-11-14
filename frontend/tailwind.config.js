@@ -123,10 +123,20 @@ export default {
           from: { transform: 'translateY(1rem)', opacity: '0' },
           to: { transform: 'translateY(0)', opacity: '1' },
         },
+        zoomIn: {
+          from: { transform: 'scale(0.97)', opacity: '0' },
+          to: { transform: 'scale(1)', opacity: '1' },
+        },
+        scaleUp: {
+          from: { transform: 'scale(0.96)', opacity: '0' },
+          to: { transform: 'scale(1)', opacity: '1' },
+        },
       },
       animation: {
         'fade-in': 'fadeIn 150ms ease-out both',
         'slide-in-bottom': 'slideInFromBottom 200ms ease-out both',
+        'zoom-in': 'zoomIn 150ms cubic-bezier(0.16, 1, 0.3, 1) both',
+        'scale-up': 'scaleUp 150ms cubic-bezier(0.16, 1, 0.3, 1) both',
       },
       transitionDuration: {
         fast: '150ms',

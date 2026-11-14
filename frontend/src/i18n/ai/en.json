@@ -21,8 +21,8 @@
     "searchSessionsPlaceholder": "Search chat sessions...",
     "clearSearch": "Clear search",
     "searchDocsPlaceholder": "Search documents...",
-    "dropzoneText": "Drag & drop or Click to upload",
-    "dropzoneSub": "Supported: PDF, DOC, DOCX, TXT, CSV, PPTX, MD, HTML, JSON, XML, and images",
+    "dropzoneText": "Upload document",
+    "dropzoneSub": "Drag & drop or choose file (PDF, DOCX, TXT, Images...)",
     "emptySessions": "No conversations yet.",
     "emptySessionsSearch": "No matching conversations found.",
     "emptyDocs": "No documents in knowledge base.",
@@ -56,7 +56,12 @@
     "removeAttachment": "Remove file",
     "send": "Send question",
     "stop": "Stop generating",
-    "citations": "Cited documents & procedures:",
+    "citations": "Cited documents & procedures",
+    "citationsCount": "{count} sources",
+    "toggleCitationsCollapse": "Collapse citations",
+    "toggleCitationsExpand": "Expand citations",
+    "statusActive": "Active",
+    "statusDisconnected": "Disconnected",
     "viewDocument": "View document",
     "copied": "Copied",
     "copy": "Copy",
@@ -129,7 +134,17 @@
       "systemRecordedYourFeedbackTo": "System recorded your feedback to enhance the AI model!",
       "aiAssistantIsSearchingThe": "AI Assistant is searching the TLBM document database and synthesizing response...",
       "dropToTargetThisDocument": "Drop to target this document for queries",
-      "askAboutValue": "Ask about \"{value}\"..."
+      "askAboutValue": "Ask about \"{value}\"...",
+      "askAboutMultipleValue": "Ask about {count} pinned documents...",
+      "clearAllTargetedDocuments": "Unpin all",
+      "maxPinnedDocuments": "You can pin up to {max} documents at the same time.",
+      "targetedCount": "{count}/{max}",
+      "uploadedDocsSection": "AI uploaded documents",
+      "systemDocsSection": "Server document repository",
+      "allDocSources": "All document sources",
+      "serverDocSource": "Server document repository",
+      "aiUploadedDocSource": "AI uploaded documents",
+      "filterDocSource": "Filter document source"
     },
     "settingsModal": {
       "title": "AI Model & API Key Settings",
@@ -178,7 +193,7 @@
         "query": "How does the staff permission and role management system work?"
       }
     },
-    "assistantSenderName": "TLBM AI Assistant ({provider})",
+    "assistantSenderName": "TLBM AI Assistant",
     "msg": {
       "noModelResponse": "No response from the AI model.",
       "questionTooLong": "Questions cannot exceed 4,000 characters.",

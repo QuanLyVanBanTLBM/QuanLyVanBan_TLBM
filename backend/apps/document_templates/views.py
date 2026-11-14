@@ -296,7 +296,7 @@ class LoaiTaiLieuViewSet(viewsets.ModelViewSet):
     filterset_fields = ['dm_tai_lieu', 'is_public']
     search_fields = ['ten_loai', 'ghi_chu']
     ordering_fields = ['id', 'ten_loai', 'created_at']
-    ordering = ['id']
+    ordering = ['-id']
 
     def get_permissions(self):
         if self.action == "create":

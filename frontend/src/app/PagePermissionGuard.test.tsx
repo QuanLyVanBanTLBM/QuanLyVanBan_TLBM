@@ -39,6 +39,18 @@ describe('PagePermissionGuard', () => {
     expect(screen.queryByText('noi dung trang')).not.toBeInTheDocument();
   });
 
+  it('chuyển về tổng quan khi gõ URL Trình ký mà thiếu view_trinhky, cho vào khi có', () => {
+    renderAt('/approvals');
+    expect(screen.getByText('trang tong quan')).toBeInTheDocument();
+    expect(screen.queryByText('noi dung trang')).not.toBeInTheDocument();
+  });
+
+  it('Trình ký mở được khi có view_trinhky', () => {
+    state.perms = new Set(['view_trinhky']);
+    renderAt('/approvals/hop-thu');
+    expect(screen.getByText('noi dung trang')).toBeInTheDocument();
+  });
+
   it('cho vào khi có quyền xem tương ứng', () => {
     state.perms = new Set(['view_nhomquyen']);
     renderAt('/roles');
