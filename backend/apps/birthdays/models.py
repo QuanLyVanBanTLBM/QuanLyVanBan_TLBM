@@ -80,6 +80,45 @@ class BirthdayEmailSource(models.TextChoices):
     MANUAL_RESEND = "MANUAL_RESEND", "Quản trị viên gửi lại"
 
 
+class BirthdaySchedulerStatus(models.TextChoices):
+    RUNNING = "RUNNING", "Đang chạy"
+    SUCCESS = "SUCCESS", "Thành công"
+    FAILED = "FAILED", "Thất bại"
+    UNKNOWN = "UNKNOWN", "Chưa xác định"
+
+
+class BirthdaySchedulerRun(models.Model):
+    class Trigger(models.TextChoices):
+        SCHEDULED = "SCHEDULED", "Theo lịch"
+        RECOVERY = "RECOVERY", "Chạy bù"
+
+    class Slot(models.TextChoices):
+        PRIMARY = "07:00", "07:00"
+        FALLBACK = "07:37", "07:37"
+
+    execution_id = models.CharField(max_length=80, unique=True)
+    processing_date = models.DateField()
+    trigger_source = models.CharField(max_length=9, choices=Trigger.choices)
+    scheduled_slot = models.CharField(max_length=5, choices=Slot.choices, null=True)
+    started_at = models.DateTimeField()
+    ended_at = models.DateTimeField(null=True)
+    status = models.CharField(max_length=7, choices=BirthdaySchedulerStatus.choices)
+    total_eligible = models.IntegerField(null=True)
+    sent_count = models.IntegerField(null=True)
+    failed_count = models.IntegerField(null=True)
+    skipped_count = models.IntegerField(null=True)
+    retry_count = models.IntegerField(null=True)
+    error_reason = models.TextField(null=True)
+    github_run_id = models.CharField(max_length=24, null=True)
+
+    class Meta:
+        db_table = "birthdays_birthdayschedulerrun"
+        ordering = ["-started_at", "-pk"]
+        indexes = [
+            models.Index(fields=["processing_date", "-started_at"], name="idx_birthdayrun_date_started"),
+        ]
+
+
 class BirthdayEmailTemplate(models.Model):
     name = models.CharField(max_length=120)
     layout = models.CharField(max_length=2)
@@ -162,6 +201,7 @@ class BirthdayEmailLog(models.Model):
     )
     delivery_snapshot = models.JSONField(null=True, blank=True)
     last_operator = models.CharField(max_length=150, null=True, blank=True)
+    resend_request_id = models.UUIDField(null=True, blank=True, unique=True)
     delivery_uncertain = models.BooleanField(default=False, db_default=False)
     updated_at = models.DateTimeField(
         auto_now=True,
