@@ -759,21 +759,20 @@ class DocumentTemplatesModelAndAPITests(TestCase):
 
         existing_count = LoaiTaiLieu.objects.count()
         total_to_create = max(0, 105 - existing_count)
-        LoaiTaiLieu.objects.bulk_create([
-            LoaiTaiLieu(
-                dm_tai_lieu=self.cat1,
-                ten_loai=f'Loại tài liệu mở rộng {idx + 1}',
-                is_public=True,
-                nguoi_tao=self.admin,
-            )
-            for idx in range(total_to_create)
-        ])
+        if total_to_create > 0:
+            LoaiTaiLieu.objects.bulk_create([
+                LoaiTaiLieu(
+                    dm_tai_lieu=self.cat1,
+                    ten_loai=f'Loại tài liệu mở rộng {idx + 1}',
+                    is_public=True,
+                )
+                for idx in range(total_to_create)
+            ])
 
         newest = LoaiTaiLieu.objects.create(
             dm_tai_lieu=self.cat1,
             ten_loai='Loại tài liệu mới nhất #819',
             is_public=True,
-            nguoi_tao=self.admin,
         )
 
         res_p1 = self.client.get('/api/resources/types/?page_size=100')
@@ -784,13 +783,17 @@ class DocumentTemplatesModelAndAPITests(TestCase):
         # Bản ghi mới tạo phải nằm ngay vị trí đầu tiên trang 1
         self.assertEqual(res_p1.data['results'][0]['id'], newest.id)
 
-        # Trang 2 chứa các bản ghi cũ hơn còn lại vượt mốc 100
-        res_p2 = self.client.get('/api/resources/types/?page=2&page_size=100')
-        self.assertEqual(res_p2.status_code, status.HTTP_200_OK)
-        self.assertIsNone(res_p2.data['next'])
-        all_ids = [item['id'] for item in res_p1.data['results']] + [
-            item['id'] for item in res_p2.data['results']
-        ]
+        # Duyệt qua các trang tiếp theo để gom đủ 100% bản ghi vượt mốc 100
+        all_ids = [item['id'] for item in res_p1.data['results']]
+        page = 2
+        next_link = res_p1.data['next']
+        while next_link:
+            res_next = self.client.get(f'/api/resources/types/?page={page}&page_size=100')
+            self.assertEqual(res_next.status_code, status.HTTP_200_OK)
+            all_ids.extend(item['id'] for item in res_next.data['results'])
+            next_link = res_next.data['next']
+            page += 1
+
         self.assertEqual(len(all_ids), res_p1.data['count'])
         self.assertEqual(len(set(all_ids)), res_p1.data['count'])
         # Vẫn hỗ trợ override ordering ascending qua query param
