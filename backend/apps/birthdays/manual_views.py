@@ -93,6 +93,7 @@ class BirthdayEmailResendSerializer(serializers.Serializer):
     employee_id = serializers.IntegerField(min_value=1, max_value=2**63 - 1)
     sent_date = serializers.DateField()
     recipient = serializers.EmailField(max_length=254, required=False)
+    request_id = serializers.UUIDField(required=False)
 
 
 class BirthdayEmailRetrySerializer(serializers.Serializer):
@@ -299,11 +300,12 @@ def resend_api(request):
 def _send_manual_resend(request, data):
     try:
         _ready_to_send()
-        log, error_code = create_manual_resend_log(
+        log, error_code, created = create_manual_resend_log(
             employee_id=data["employee_id"],
             sent_date=data["sent_date"],
             recipient=data.get("recipient"),
             operator=request.user.get_username(),
+            request_id=data.get("request_id"),
         )
     except DeliveryProblem as error:
         return error.response()
@@ -312,12 +314,14 @@ def _send_manual_resend(request, data):
             "employeeNotFound": 404,
             "resendInProgress": 409,
             "recipientChanged": 409,
+            "deliveryConflict": 409,
             "invalidOccurrence": 400,
             "invalidRecipient": 400,
         }.get(error_code, 400)
         return Response({"error": error_code}, status=status_code)
 
-    deliver_claimed_email(log)
+    if created:
+        deliver_claimed_email(log)
     return Response({"log": serialize_email_log(log)})
 
 

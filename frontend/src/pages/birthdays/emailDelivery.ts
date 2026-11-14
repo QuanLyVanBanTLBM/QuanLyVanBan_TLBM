@@ -9,6 +9,11 @@ export type DeliveryResult = {
   delivery_source?: 'AUTO' | 'MANUAL' | 'MANUAL_RESEND';
 };
 
+export function isUnconfirmedDeliveryError(error: unknown): boolean {
+  return error instanceof ApiError && [0, 408, 502, 503, 504].includes(error.status)
+    && error.data.error !== 'smtpUnavailable';
+}
+
 const ERROR_CODES = [
   'invalidDraft', 'invalidRecipient', 'invalidOccurrence', 'invalidInstruction',
   'previewExpired', 'deliveryConflict', 'recipientChanged', 'smtpUnavailable', 'aiUnavailable',
