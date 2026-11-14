@@ -5,3 +5,4 @@ export * from './CategoryManagementModal';
 export * from './ConfirmationModal';
 export * from './Toast';
 export * from './FilePreviewModal';
+export * from './DropdownSearchInput';
