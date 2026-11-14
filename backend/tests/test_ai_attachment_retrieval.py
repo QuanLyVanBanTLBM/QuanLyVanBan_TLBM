@@ -520,6 +520,210 @@ class AttachmentRetrievalTests(unittest.TestCase):
             self.assertEqual(result["sources"], [])
             self.assertIn("(/documents)", result["answer"])
 
+    def test_detect_drafting_intent_rejects_unrelated_topics(self):
+        from backend.services.rag_service import (
+            _detect_drafting_intent,
+            _is_drafting_or_action_query,
+        )
+
+        unrelated_queries = [
+            "Cách nấu phở bò ngon?",
+            "Viết code Python sắp xếp mảng",
+            "Mẫu xe máy đẹp",
+            "1 + 1 bằng mấy?",
+            "Đề xuất thực đơn ăn kiêng",
+            "Tóm tắt các bước nấu phở",
+            "Draft a poem about rain",
+        ]
+        for query in unrelated_queries:
+            self.assertIsNone(_detect_drafting_intent(query), msg=f"Unexpected drafting intent for: {query}")
+            self.assertFalse(_is_drafting_or_action_query(query))
+
+        self.assertEqual(
+            _detect_drafting_intent("Soạn giúp tôi email đôn đốc các phòng ban nộp báo cáo tháng"),
+            "email",
+        )
+        self.assertEqual(_detect_drafting_intent("Tóm tắt các bước lập tờ trình"), "to_trinh")
+        self.assertEqual(_detect_drafting_intent("Soạn công văn đề nghị phối hợp"), "cong_van")
+        self.assertEqual(_detect_drafting_intent("Lập biên bản cuộc họp giao ban"), "general_draft")
+        self.assertEqual(_detect_drafting_intent("Xin mẫu báo cáo tổng kết quý"), "general_draft")
+
+    def test_build_flexible_context_and_prompt_disables_soft_fallback_for_unrelated_and_pinned_misses(self):
+        from backend.services.rag_service import build_flexible_context_and_prompt
+
+        for query in (
+            "Cách nấu phở bò ngon?",
+            "Viết code Python sắp xếp mảng",
+            "1 + 1 bằng mấy?",
+        ):
+            bundle = build_flexible_context_and_prompt(
+                question=query,
+                sources=[],
+                clean_filenames=[],
+                language="vi",
+            )
+            self.assertFalse(bundle["soft_fallback"])
+            self.assertEqual(bundle["sources"], [])
+            self.assertEqual(bundle["prompt"], "")
+
+        pinned_miss = build_flexible_context_and_prompt(
+            question="Soạn giúp tôi email đôn đốc",
+            sources=[],
+            clean_filenames=["quyet_dinh.pdf"],
+            language="vi",
+        )
+        self.assertFalse(pinned_miss["soft_fallback"])
+        self.assertEqual(pinned_miss["sources"], [])
+        self.assertEqual(pinned_miss["prompt"], "")
+
+    def test_finalize_secretary_answer_preserves_refusal_for_non_drafting_queries(self):
+        from backend.services.rag_service import (
+            NO_ANSWER_VI,
+            SOFT_FALLBACK_NOTE_VI,
+            _finalize_secretary_answer,
+        )
+
+        final_answer, is_refusal = _finalize_secretary_answer(
+            raw_answer=NO_ANSWER_VI,
+            question="Cách nấu phở bò ngon?",
+            language="vi",
+            soft_fallback=True,
+            context_note=SOFT_FALLBACK_NOTE_VI,
+            no_ans=NO_ANSWER_VI,
+        )
+        self.assertTrue(is_refusal)
+        self.assertEqual(final_answer, NO_ANSWER_VI)
+
+    def test_ask_document_and_stream_reject_unrelated_questions_immediately(self):
+        import json
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock, patch
+        from backend.services.rag_service import NO_ANSWER_VI, ask_document, ask_document_stream
+
+        mock_retriever = MagicMock()
+        mock_retriever.retrieve.return_value = []
+        mock_index = MagicMock()
+        mock_index.as_retriever.return_value = mock_retriever
+        mock_settings = MagicMock()
+        mock_settings.llm = MagicMock()
+        user = SimpleNamespace(is_authenticated=True, is_active=True, is_superuser=True, id=1)
+
+        with (
+            patch("backend.services.rag_service.is_ai_configured", return_value=True),
+            patch("backend.services.rag_service.setup_llamaindex"),
+            patch("backend.services.rag_service.sync_documents_if_needed"),
+            patch("backend.services.rag_service.get_index", return_value=mock_index),
+            patch("backend.services.rag_service.Settings", mock_settings),
+            patch("backend.services.sql_document_source.is_postgres_source", return_value=False),
+            patch("backend.services.business_knowledge.match_business_sources", return_value=[]),
+            patch("backend.services.faq_response_cache.get_cached_answer", return_value=None),
+        ):
+            for query in (
+                "Cách nấu phở bò ngon?",
+                "Viết code Python sắp xếp mảng",
+                "1 + 1 bằng mấy?",
+            ):
+                result = ask_document(query, user=user, filename=None, language="vi")
+                self.assertEqual(result["answer"], NO_ANSWER_VI)
+                self.assertEqual(result["sources"], [])
+
+                raw_sse = "".join(ask_document_stream(query, user=user, filename=None, language="vi"))
+                done_payload = None
+                sources_events = []
+                for frame in raw_sse.strip().split("\n\n"):
+                    lines = frame.strip().splitlines()
+                    if len(lines) >= 2 and lines[0].startswith("event:") and lines[1].startswith("data:"):
+                        ev = lines[0].split("event:", 1)[1].strip()
+                        data = json.loads(lines[1].split("data:", 1)[1].strip())
+                        if ev == "sources":
+                            sources_events.append(data)
+                        elif ev == "done":
+                            done_payload = data
+                self.assertIsNotNone(done_payload)
+                self.assertEqual(done_payload["answer"], NO_ANSWER_VI)
+                self.assertEqual(done_payload["sources"], [])
+                self.assertTrue(all(ev == [] for ev in sources_events))
+
+            mock_settings.llm.complete.assert_not_called()
+            mock_settings.llm.stream_complete.assert_not_called()
+
+    def test_ask_document_and_stream_clear_sources_when_llm_refuses_pinned_or_matched_chunks(self):
+        import json
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock, patch
+        from backend.services.rag_service import NO_ANSWER_VI, ask_document, ask_document_stream
+
+        matched_node = SimpleNamespace(
+            score=0.92,
+            text="Quyết định ban hành quy chế quản lý văn bản và công tác văn thư lưu trữ nội bộ.",
+            metadata={
+                "file_name": "quyet_dinh.pdf",
+                "page": 1,
+                "chunk_id": "c1",
+                "parent_context": "Quyết định ban hành quy chế quản lý văn bản và công tác văn thư lưu trữ nội bộ.",
+                "source_class": "ai_knowledge_base",
+            },
+        )
+        mock_retriever = MagicMock()
+        mock_retriever.retrieve.return_value = [matched_node]
+        mock_index = MagicMock()
+        mock_index.as_retriever.return_value = mock_retriever
+        mock_collection = SimpleNamespace(list_filenames=lambda allowed_keys=None: ["quyet_dinh.pdf"])
+        mock_settings = MagicMock()
+        mock_settings.llm = MagicMock()
+        mock_settings.llm.complete.return_value = SimpleNamespace(text=NO_ANSWER_VI)
+        mock_settings.llm.stream_complete.return_value = [
+            SimpleNamespace(delta=NO_ANSWER_VI[:12]),
+            SimpleNamespace(delta=NO_ANSWER_VI[12:]),
+        ]
+        user = SimpleNamespace(is_authenticated=True, is_active=True, is_superuser=True, id=1)
+
+        with (
+            patch("backend.services.rag_service.is_ai_configured", return_value=True),
+            patch("backend.services.rag_service.setup_llamaindex"),
+            patch("backend.services.rag_service.sync_documents_if_needed"),
+            patch("backend.services.rag_service.get_index", return_value=mock_index),
+            patch("backend.services.rag_service.get_vector_collection", return_value=mock_collection),
+            patch("backend.services.rag_service.Settings", mock_settings),
+            patch("backend.services.sql_document_source.is_postgres_source", return_value=False),
+            patch("backend.services.business_knowledge.match_business_sources", return_value=[]),
+            patch("backend.services.faq_response_cache.get_cached_answer", return_value=None),
+        ):
+            result = ask_document(
+                "Cách nấu phở bò ngon?",
+                user=user,
+                filename="quyet_dinh.pdf",
+                language="vi",
+            )
+            self.assertEqual(result["answer"], NO_ANSWER_VI)
+            self.assertEqual(result["sources"], [])
+
+            raw_sse = "".join(
+                ask_document_stream(
+                    "Cách nấu phở bò ngon?",
+                    user=user,
+                    filename="quyet_dinh.pdf",
+                    language="vi",
+                )
+            )
+            sources_events = []
+            done_payload = None
+            for frame in raw_sse.strip().split("\n\n"):
+                lines = frame.strip().splitlines()
+                if len(lines) >= 2 and lines[0].startswith("event:") and lines[1].startswith("data:"):
+                    ev = lines[0].split("event:", 1)[1].strip()
+                    data = json.loads(lines[1].split("data:", 1)[1].strip())
+                    if ev == "sources":
+                        sources_events.append(data)
+                    elif ev == "done":
+                        done_payload = data
+
+            self.assertIsNotNone(done_payload)
+            self.assertEqual(done_payload["answer"], NO_ANSWER_VI)
+            self.assertEqual(done_payload["sources"], [])
+            self.assertGreaterEqual(len(sources_events), 1)
+            self.assertEqual(sources_events[-1], [])
+
 
 
 
