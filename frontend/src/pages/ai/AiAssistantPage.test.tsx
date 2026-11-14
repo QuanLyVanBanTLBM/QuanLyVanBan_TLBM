@@ -375,21 +375,21 @@ describe('AiAssistantPage', () => {
 
     renderAiPage();
     await waitFor(() => expect(mockedGetDocuments).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole('button', { name: /aiAssistant\.tabDocs/ }));
+    const docsTabBtn = screen.getByRole('button', { name: /aiAssistant\.tabDocs/ });
+    fireEvent.click(docsTabBtn);
     await waitFor(() => expect(screen.getByText('uploaded_guide.pdf')).toBeInTheDocument());
     expect(screen.getByText('01/QD — Quy chế máy chủ')).toBeInTheDocument();
     expect(screen.getByText('aiAssistant.inline.systemDocsSection')).toBeInTheDocument();
     expect(screen.getByText('aiAssistant.inline.uploadedDocsSection')).toBeInTheDocument();
 
-    const trigger = screen.getByRole('button', { name: 'aiAssistant.inline.filterDocSource' });
-    fireEvent.click(trigger);
+    fireEvent.click(docsTabBtn);
     fireEvent.click(screen.getByRole('option', { name: /aiAssistant\.inline\.serverDocSource/ }));
 
     expect(screen.queryByText('uploaded_guide.pdf')).not.toBeInTheDocument();
     expect(screen.getByText('01/QD — Quy chế máy chủ')).toBeInTheDocument();
     expect(screen.queryByText('aiAssistant.inline.systemDocsSection')).not.toBeInTheDocument();
 
-    fireEvent.click(trigger);
+    fireEvent.click(docsTabBtn);
     fireEvent.click(screen.getByRole('option', { name: /aiAssistant\.inline\.aiUploadedDocSource/ }));
 
     expect(screen.getByText('uploaded_guide.pdf')).toBeInTheDocument();
