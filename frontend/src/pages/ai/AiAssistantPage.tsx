@@ -1038,6 +1038,9 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
   const [aiConfig, setAiConfig] = useState<AIConfig | null>(null);
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
   const categoryDropdownRef = useRef<HTMLDivElement>(null);
+  const [docSourceFilter, setDocSourceFilter] = useState<'all' | 'managed' | 'uploaded'>('all');
+  const [isDocSourceDropdownOpen, setIsDocSourceDropdownOpen] = useState(false);
+  const docSourceDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!isCategoryDropdownOpen) return;
@@ -1056,6 +1059,24 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [isCategoryDropdownOpen]);
+
+  useEffect(() => {
+    if (!isDocSourceDropdownOpen) return;
+    const handlePointerDown = (e: MouseEvent) => {
+      if (docSourceDropdownRef.current && !docSourceDropdownRef.current.contains(e.target as Node)) {
+        setIsDocSourceDropdownOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsDocSourceDropdownOpen(false);
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isDocSourceDropdownOpen]);
 
   // Chat input states
   const [inputVal, setInputVal] = useState('');
@@ -2215,9 +2236,94 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
               )}
             </div>
 
+            {/* Dropdown phân loại Kho tài liệu máy chủ / Kho tài liệu tải lên từ AI */}
+            <div className="sidebar-source-dropdown" ref={docSourceDropdownRef}>
+              <button
+                type="button"
+                className={`sidebar-source-dropdown-trigger ${isDocSourceDropdownOpen ? 'is-open' : ''}`}
+                onClick={() => setIsDocSourceDropdownOpen((prev) => !prev)}
+                aria-label={t('aiAssistant.inline.filterDocSource')}
+                aria-haspopup="listbox"
+                aria-expanded={isDocSourceDropdownOpen}
+              >
+                <span className="sidebar-source-dropdown-trigger-left">
+                  <i
+                    className={`fa-solid ${
+                      docSourceFilter === 'managed'
+                        ? 'fa-database text-primary'
+                        : docSourceFilter === 'uploaded'
+                        ? 'fa-cloud-arrow-up text-primary'
+                        : 'fa-layer-group text-primary'
+                    }`}
+                  />
+                  <span className="sidebar-source-dropdown-trigger-label">
+                    {docSourceFilter === 'managed'
+                      ? t('aiAssistant.inline.serverDocSource')
+                      : docSourceFilter === 'uploaded'
+                      ? t('aiAssistant.inline.aiUploadedDocSource')
+                      : t('aiAssistant.inline.allDocSources')}
+                  </span>
+                </span>
+                <span className="sidebar-source-dropdown-trigger-right">
+                  <span className="sidebar-doc-section-count">
+                    {docSourceFilter === 'managed'
+                      ? managedDocs.length
+                      : docSourceFilter === 'uploaded'
+                      ? uploadedDocs.length
+                      : uploadedDocs.length + managedDocs.length}
+                  </span>
+                  <i className={`fa-solid fa-chevron-down category-dropdown-chevron ${isDocSourceDropdownOpen ? 'is-open' : ''}`} />
+                </span>
+              </button>
+
+              {isDocSourceDropdownOpen && (
+                <div className="sidebar-source-dropdown-menu" role="listbox" aria-label={t('aiAssistant.inline.filterDocSource')}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={docSourceFilter === 'all'}
+                    className={`category-dropdown-option ${docSourceFilter === 'all' ? 'is-selected' : ''}`}
+                    onClick={() => {
+                      setDocSourceFilter('all');
+                      setIsDocSourceDropdownOpen(false);
+                    }}
+                  >
+                    <span className="category-dropdown-option-text">{t('aiAssistant.inline.allDocSources')}</span>
+                    <span className="category-dropdown-option-count">{uploadedDocs.length + managedDocs.length}</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={docSourceFilter === 'managed'}
+                    className={`category-dropdown-option ${docSourceFilter === 'managed' ? 'is-selected' : ''}`}
+                    onClick={() => {
+                      setDocSourceFilter('managed');
+                      setIsDocSourceDropdownOpen(false);
+                    }}
+                  >
+                    <span className="category-dropdown-option-text">{t('aiAssistant.inline.serverDocSource')}</span>
+                    <span className="category-dropdown-option-count">{managedDocs.length}</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={docSourceFilter === 'uploaded'}
+                    className={`category-dropdown-option ${docSourceFilter === 'uploaded' ? 'is-selected' : ''}`}
+                    onClick={() => {
+                      setDocSourceFilter('uploaded');
+                      setIsDocSourceDropdownOpen(false);
+                    }}
+                  >
+                    <span className="category-dropdown-option-text">{t('aiAssistant.inline.aiUploadedDocSource')}</span>
+                    <span className="category-dropdown-option-count">{uploadedDocs.length}</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
             <div className="ai-sidebar-docs-list">
-              {/* Drag & Drop Upload Zone - Chỉ hiển thị cho Quản trị viên */}
-              {currentUser.isAdmin && (
+              {/* Drag & Drop Upload Zone - Chỉ hiển thị cho Quản trị viên khi xem Tất cả hoặc Kho tải lên từ AI */}
+              {currentUser.isAdmin && docSourceFilter !== 'managed' && (
                 <button
                   ref={dropZoneRef}
                   type="button"
@@ -2261,15 +2367,17 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                 </div>
               )}
 
-              {/* Danh mục tài liệu chia 2 nhóm: Tài liệu tải lên & Tài liệu hệ thống */}
-              {uploadedDocs.length === 0 && managedDocs.length === 0 ? (
+              {/* Danh mục tài liệu chia 2 nhóm: Kho tài liệu tải lên từ AI & Kho tài liệu máy chủ */}
+              {(docSourceFilter === 'all' && uploadedDocs.length === 0 && managedDocs.length === 0) ||
+              (docSourceFilter === 'managed' && managedDocs.length === 0) ||
+              (docSourceFilter === 'uploaded' && uploadedDocs.length === 0) ? (
                 <div className="sidebar-empty-state">
                   <i className="fa-regular fa-folder-open sidebar-empty-icon" />
                   <div>{documents.length === 0 ? t('aiAssistant.emptyDocs') : t('aiAssistant.emptyDocsSearch')}</div>
                 </div>
               ) : (
                 <>
-                  {uploadedDocs.length > 0 && (
+                  {docSourceFilter !== 'managed' && uploadedDocs.length > 0 && (
                     <div className="sidebar-doc-section">
                       <div className="sidebar-doc-section-header">
                         <span className="sidebar-doc-section-title">
@@ -2282,7 +2390,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                     </div>
                   )}
 
-                  {managedDocs.length > 0 && (
+                  {docSourceFilter !== 'uploaded' && managedDocs.length > 0 && (
                     <div className="sidebar-doc-section">
                       <div className="sidebar-doc-section-header">
                         <span className="sidebar-doc-section-title">
@@ -2297,7 +2405,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                 </>
               )}
 
-              {currentUser.isAdmin && documents.some((d) => !d.is_managed) && (
+              {currentUser.isAdmin && docSourceFilter !== 'managed' && documents.some((d) => !d.is_managed) && (
                 <button
                   type="button"
                   className="sidebar-clear-all-btn"

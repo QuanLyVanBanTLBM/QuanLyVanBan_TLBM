@@ -139,8 +139,12 @@
       "clearAllTargetedDocuments": "Bỏ ghim tất cả",
       "maxPinnedDocuments": "Chỉ được ghim tối đa {max} tài liệu cùng lúc.",
       "targetedCount": "{count}/{max}",
-      "uploadedDocsSection": "Tài liệu đã tải lên",
-      "systemDocsSection": "Tài liệu hệ thống (Chỉ xem & chỉ định)"
+      "uploadedDocsSection": "Kho tài liệu tải lên từ AI",
+      "systemDocsSection": "Kho tài liệu máy chủ",
+      "allDocSources": "Tất cả kho tài liệu",
+      "serverDocSource": "Kho tài liệu máy chủ",
+      "aiUploadedDocSource": "Kho tài liệu tải lên từ AI",
+      "filterDocSource": "Phân loại kho tài liệu"
     },
     "settingsModal": {
       "title": "Cài đặt mô hình & API Key AI",

@@ -139,8 +139,12 @@
       "clearAllTargetedDocuments": "Unpin all",
       "maxPinnedDocuments": "You can pin up to {max} documents at the same time.",
       "targetedCount": "{count}/{max}",
-      "uploadedDocsSection": "Uploaded documents",
-      "systemDocsSection": "System documents (View & target only)"
+      "uploadedDocsSection": "AI uploaded documents",
+      "systemDocsSection": "Server document repository",
+      "allDocSources": "All document sources",
+      "serverDocSource": "Server document repository",
+      "aiUploadedDocSource": "AI uploaded documents",
+      "filterDocSource": "Filter document source"
     },
     "settingsModal": {
       "title": "AI Model & API Key Settings",
