@@ -484,13 +484,35 @@
 .sidebar-tab-chevron {
   font-size: 0.65rem;
   color: var(--text-muted);
-  transition: transform var(--transition-fast), color var(--transition-fast);
-  margin-left: 1px;
+  max-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  margin-left: 0;
+  transform: scale(0.6) translateY(-1px);
+  transition: max-width 0.22s ease, opacity 0.2s ease, margin-left 0.22s ease, transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), color var(--transition-fast);
 }
 
-.sidebar-tab-chevron.is-open {
-  transform: rotate(180deg);
+.sidebar-tab-chevron.is-visible {
+  max-width: 14px;
+  opacity: 1;
+  margin-left: 2px;
+  transform: scale(1) translateY(0);
+}
+
+.sidebar-tab-chevron.is-visible.is-open {
+  transform: scale(1) rotate(180deg);
   color: var(--color-primary);
+}
+
+@keyframes sidebarDropdownReveal {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .sidebar-tab-dropdown-menu {
@@ -507,6 +529,8 @@
   flex-direction: column;
   gap: 2px;
   z-index: 50;
+  transform-origin: top center;
+  animation: sidebarDropdownReveal 0.18s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* Compact Upload Button + Dropzone tải lên file */

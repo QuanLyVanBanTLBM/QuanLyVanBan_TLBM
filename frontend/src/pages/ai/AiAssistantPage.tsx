@@ -2139,9 +2139,12 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                       : documents.length}
                   </span>
                 )}
-                {sidebarTab === 'docs' && (
-                  <i className={`fa-solid fa-chevron-down sidebar-tab-chevron ${isDocSourceDropdownOpen ? 'is-open' : ''}`} />
-                )}
+                <i
+                  className={`fa-solid fa-chevron-down sidebar-tab-chevron ${
+                    sidebarTab === 'docs' ? 'is-visible' : ''
+                  } ${sidebarTab === 'docs' && isDocSourceDropdownOpen ? 'is-open' : ''}`}
+                  aria-hidden="true"
+                />
               </button>
             </div>
 
