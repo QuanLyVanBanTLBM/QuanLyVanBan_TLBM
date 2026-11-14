@@ -82,6 +82,10 @@ def save_ai_settings(updates: dict) -> dict:
     try:
         file_path.parent.mkdir(parents=True, exist_ok=True)
         file_path.write_text(json.dumps(current, ensure_ascii=False, indent=2), encoding="utf-8")
+        try:
+            file_path.chmod(0o640)
+        except OSError:
+            pass
     except Exception as exc:
         logger.warning("Could not save to %s: %s", file_path, exc)
 
