@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from '@i18n/translate';
 import { Button } from '@components/common';
+import TwoFactorSecurityCard from '@components/settings/TwoFactorSecurityCard';
 import soundAlert from '@lib/soundAlert';
 
 // Component Toggle Switch phong cách Hiện đại (Modern UI)
@@ -79,7 +80,8 @@ export default function SettingsPage() {
     return localStorage.getItem('tlbm_sec_auto_lock') !== 'false';
   });
   const [secLockTimeout, setSecLockTimeout] = useState<number>(() => {
-    return parseInt(localStorage.getItem('tlbm_sec_lock_timeout') || '15', 10);
+    const val = parseFloat(localStorage.getItem('tlbm_sec_lock_timeout') || '15');
+    return isNaN(val) || val <= 0 ? 15 : val;
   });
   const [showSavedToast, setShowSavedToast] = useState(false);
 
@@ -248,6 +250,8 @@ export default function SettingsPage() {
                 disabled={!secAutoLock}
                 className="text-xs bg-surface border border-border-subtle rounded-lg px-2.5 py-1 text-main font-medium focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
               >
+                <option value={0.5}>30 giây (Thử nghiệm demo)</option>
+                <option value={1}>1 phút (Kiểm thử nhanh)</option>
                 <option value={5}>5 phút</option>
                 <option value={15}>15 phút (Chuẩn)</option>
                 <option value={30}>30 phút</option>
@@ -266,6 +270,9 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+
+      {/* 2.5. Xác thực hai yếu tố (2FA TOTP) */}
+      <TwoFactorSecurityCard />
 
       {/* 3. Cấu hình mô hình AI phân tích văn bản */}
       <div className="bg-surface border border-border-subtle rounded-2xl p-6 shadow-xs space-y-4">

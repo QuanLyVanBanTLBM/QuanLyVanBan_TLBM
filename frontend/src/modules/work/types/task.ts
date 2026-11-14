@@ -56,6 +56,8 @@ export interface TaskPermissions {
   canUnapprove: boolean;
   /** Được gia hạn việc đã quá hạn (người giao việc, quản trị hệ thống). */
   canExtend?: boolean;
+  /** Có quyền duyệt (approve_congviec hoặc quản trị hệ thống), không phụ thuộc trạng thái việc. */
+  canReview?: boolean;
   /** Được đính kèm file kết quả khi ghi ý kiến (chủ trì, cán bộ tham gia). */
   canSubmitEvidence?: boolean;
   canComment?: boolean;

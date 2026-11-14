@@ -1,6 +1,7 @@
 from django.contrib.auth import authenticate, get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -11,6 +12,7 @@ from rest_framework_simplejwt.exceptions import TokenError
 from authorization.permissions import require_permission
 from .serializers import ChangePasswordSerializer
 from .alpaca_auth import check_alpaca_auth
+from . import twofa
 
 
 def _provision_alpaca_employee(username, user_info):
@@ -90,7 +92,53 @@ def _build_user_payload(user):
         "phone": user.sdt,
         "avatar_url": "",
         "birthday": user.ngay_sinh.isoformat() if user.ngay_sinh else None,
+        "is_2fa_enabled": bool(getattr(user, "is_2fa_enabled", False)),
+        "has_usable_credential": bool(user.has_usable_password()),
     }
+
+
+def _issue_jwt_response(user, auth_provider: str, verified_via: str | None = None):
+    """Cấp cặp access/refresh JWT và payload user thống nhất sau khi xác thực hoàn tất."""
+    refresh = RefreshToken.for_user(user)
+    access_token = str(refresh.access_token)
+
+    user_payload = _build_user_payload(user)
+    user_payload["auth_provider"] = auth_provider
+
+    body = {
+        "success": True,
+        "token": access_token,
+        "access": access_token,
+        "refresh": str(refresh),
+        "user": user_payload,
+        "auth_provider": auth_provider,
+    }
+    if verified_via:
+        body["verified_via"] = verified_via
+    return Response(body, status=status.HTTP_200_OK)
+
+
+def _login_or_2fa_response(user, auth_provider: str):
+    """Kiểm tra trạng thái 2FA: trả phiên challenge tạm thời nếu bật 2FA, ngược lại cấp JWT."""
+    if getattr(user, "is_2fa_enabled", False) and getattr(user, "totp_secret", ""):
+        return Response(
+            {
+                "success": True,
+                "require_2fa": True,
+                "temp_token": twofa.create_login_challenge_token(user.id, auth_provider),
+                "method": "totp",
+                "auth_provider": auth_provider,
+            },
+            status=status.HTTP_200_OK,
+        )
+    return _issue_jwt_response(user, auth_provider)
+
+
+def _twofa_error_response(exc: twofa.TwoFactorError) -> Response:
+    return Response(
+        {"detail": exc.message, "code": exc.code, **exc.extra},
+        status=exc.http_status,
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -130,23 +178,7 @@ def login_view(request):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        refresh = RefreshToken.for_user(user)
-        access_token = str(refresh.access_token)
-
-        user_payload = _build_user_payload(user)
-        user_payload["auth_provider"] = "local"
-
-        return Response(
-            {
-                "success": True,
-                "token": access_token,
-                "access": access_token,
-                "refresh": str(refresh),
-                "user": user_payload,
-                "auth_provider": "local",
-            },
-            status=status.HTTP_200_OK,
-        )
+        return _login_or_2fa_response(user, "local")
 
     # 2. Xử lý khi xác thực cục bộ thất bại:
     # 2.1. Nếu tài khoản cục bộ tồn tại nhưng bị vô hiệu hóa và đúng mật khẩu
@@ -199,23 +231,7 @@ def login_view(request):
         # [Điểm 2 từ Nhóm 7]:
         # KHÔNG ghi đè mật khẩu cục bộ của tài khoản (không gọi target_user.set_password).
         # Cấp token JWT trực tiếp cho phiên làm việc hiện tại của nhân viên.
-        refresh = RefreshToken.for_user(target_user)
-        access_token = str(refresh.access_token)
-
-        user_payload = _build_user_payload(target_user)
-        user_payload["auth_provider"] = "alpaca_api"
-
-        return Response(
-            {
-                "success": True,
-                "token": access_token,
-                "access": access_token,
-                "refresh": str(refresh),
-                "user": user_payload,
-                "auth_provider": "alpaca_api",
-            },
-            status=status.HTTP_200_OK,
-        )
+        return _login_or_2fa_response(target_user, "alpaca_api")
     else:
         # Nếu Alpaca thông báo tài khoản bị khóa hoặc vô hiệu hóa
         if alpaca_res.get("status") in (0, 3):
@@ -373,6 +389,54 @@ def change_password_view(request):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# POST /api/auth/verify-password/
+# ─────────────────────────────────────────────────────────────────────────────
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def verify_password_view(request):
+    """
+    Xác thực mật khẩu người dùng hiện tại để mở khóa màn hình làm việc hoặc xác nhận thao tác an toàn.
+    Body: { "password": "..." }
+    """
+    password = request.data.get("password", "")
+    if not password:
+        msg = "Vui lòng nhập mật khẩu."
+        return Response(
+            {"success": False, "valid": False, "detail": msg, "error": msg},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    user = request.user
+    is_valid = False
+
+    # 1. Kiểm tra mật khẩu cục bộ nếu có mật khẩu hợp lệ
+    if user.has_usable_password():
+        is_valid = user.check_password(password)
+
+    # 2. Nếu mật khẩu cục bộ chưa khớp, thử kiểm tra qua nhà cung cấp Alpaca (trừ tài khoản quản trị hệ thống)
+    if not is_valid and not (user.is_superuser or user.is_staff):
+        try:
+            alpaca_res = check_alpaca_auth(user.username, password)
+            if alpaca_res.get("result") is True or alpaca_res.get("success") is True:
+                is_valid = True
+        except Exception:
+            pass
+
+    if is_valid:
+        return Response(
+            {"success": True, "valid": True, "detail": "Mật khẩu chính xác."},
+            status=status.HTTP_200_OK,
+        )
+
+    msg = "Mật khẩu không chính xác. Vui lòng thử lại."
+    return Response(
+        {"success": False, "valid": False, "detail": msg, "error": msg},
+        status=status.HTTP_400_BAD_REQUEST,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # POST /api/auth/logout/
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -447,5 +511,241 @@ def staffs_view(request):
             "chuc_vu_ten": position_name,
         })
     return Response(data, status=status.HTTP_200_OK)
+
+
+def _verify_sensitive_2fa_action(user, data) -> None:
+    """Xác minh chủ sở hữu bằng mã OTP/Backup Code hoặc mật khẩu cục bộ khi thao tác nhạy cảm."""
+    if not user.is_2fa_enabled or not user.totp_secret:
+        raise twofa.TwoFactorError(
+            "twofa_not_enabled",
+            "Tài khoản chưa kích hoạt xác thực hai yếu tố.",
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+    raw_code = str(data.get("code") or "").strip()
+    if raw_code:
+        twofa.verify_user_twofa_code(user.id, raw_code, allow_backup_code=True)
+        return
+
+    raw_credential = data.get("password")
+    if raw_credential is not None and str(raw_credential) != "":
+        if not user.has_usable_password():
+            raise twofa.TwoFactorError(
+                "otp_required_for_external_auth",
+                "Tài khoản đăng nhập qua hệ thống ngoài chưa có mật khẩu cục bộ. Vui lòng nhập mã OTP hiện tại hoặc mã dự phòng.",
+                status.HTTP_400_BAD_REQUEST,
+            )
+        if not user.check_password(str(raw_credential)):
+            raise twofa.TwoFactorError(
+                "invalid_credential",
+                "Mật khẩu hiện tại không chính xác.",
+                status.HTTP_401_UNAUTHORIZED,
+            )
+        return
+
+    raise twofa.TwoFactorError(
+        "verification_required",
+        "Vui lòng xác nhận bằng mật khẩu hiện tại hoặc mã xác thực 2FA.",
+        status.HTTP_400_BAD_REQUEST,
+    )
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def verify_2fa_view(request):
+    """Bước 2 đăng nhập: xác thực TOTP 6 chữ số hoặc Backup Code từ temp_token để cấp JWT."""
+    temp_token = str(request.data.get("temp_token") or "").strip()
+    raw_code = str(request.data.get("code") or "").strip()
+
+    try:
+        challenge = twofa.load_login_challenge_token(temp_token)
+        verified_user, verified_method = twofa.verify_user_twofa_code(
+            challenge["uid"],
+            raw_code,
+            allow_backup_code=True,
+        )
+    except twofa.TwoFactorError as exc:
+        return _twofa_error_response(exc)
+
+    return _issue_jwt_response(
+        verified_user,
+        auth_provider=challenge.get("provider") or "local",
+        verified_via=verified_method,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def twofa_status_view(request):
+    """Lấy trạng thái 2FA và số lượng mã dự phòng còn lại của tài khoản đang đăng nhập."""
+    user = request.user
+    enabled = bool(user.is_2fa_enabled)
+    return Response(
+        {
+            "enabled": enabled,
+            "backup_codes_remaining": len(user.twofa_backup_codes or []) if enabled else 0,
+            "has_usable_credential": bool(user.has_usable_password()),
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def twofa_setup_view(request):
+    """Khởi tạo mã QR TOTP + secret tạm thời (chưa kích hoạt DB cho đến khi verify)."""
+    user = request.user
+    if user.is_2fa_enabled:
+        return _twofa_error_response(
+            twofa.TwoFactorError(
+                "twofa_already_enabled",
+                "Tài khoản đã bật xác thực hai yếu tố.",
+                status.HTTP_400_BAD_REQUEST,
+            )
+        )
+    return Response(twofa.create_setup_payload(user), status=status.HTTP_200_OK)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def twofa_confirm_view(request):
+    """Xác nhận mã OTP 6 số đầu tiên để bật 2FA chính thức và cấp 10 Backup Codes."""
+    user = request.user
+    if user.is_2fa_enabled:
+        return _twofa_error_response(
+            twofa.TwoFactorError(
+                "twofa_already_enabled",
+                "Tài khoản đã bật xác thực hai yếu tố.",
+                status.HTTP_400_BAD_REQUEST,
+            )
+        )
+
+    setup_token = str(request.data.get("setup_token") or "").strip()
+    raw_code = str(request.data.get("code") or "").strip()
+
+    try:
+        raw_secret = twofa.load_setup_token(setup_token, expected_user_id=user.id)
+        matched_step = twofa.find_matching_totp_step(raw_secret, raw_code, last_used_step=None)
+    except twofa.TwoFactorError as exc:
+        return _twofa_error_response(exc)
+
+    if matched_step is None:
+        return _twofa_error_response(
+            twofa.TwoFactorError(
+                "otp_invalid",
+                "Mã OTP 6 chữ số không chính xác. Vui lòng kiểm tra đồng hồ thiết bị và thử lại.",
+                status.HTTP_400_BAD_REQUEST,
+            )
+        )
+
+    plain_codes, hashed_codes = twofa.generate_backup_codes()
+    encrypted_secret = twofa.encrypt_secret(raw_secret)
+    UserModel = get_user_model()
+
+    with transaction.atomic():
+        locked_user = UserModel.objects.select_for_update().get(pk=user.id)
+        if locked_user.is_2fa_enabled:
+            return _twofa_error_response(
+                twofa.TwoFactorError(
+                    "twofa_already_enabled",
+                    "Tài khoản đã bật xác thực hai yếu tố.",
+                    status.HTTP_400_BAD_REQUEST,
+                )
+            )
+        locked_user.is_2fa_enabled = True
+        locked_user.totp_secret = encrypted_secret
+        locked_user.twofa_backup_codes = hashed_codes
+        locked_user.totp_last_used_step = matched_step
+        locked_user.twofa_failed_attempts = 0
+        locked_user.twofa_locked_until = None
+        locked_user.save(
+            update_fields=[
+                "is_2fa_enabled",
+                "totp_secret",
+                "twofa_backup_codes",
+                "totp_last_used_step",
+                "twofa_failed_attempts",
+                "twofa_locked_until",
+            ]
+        )
+
+    return Response(
+        {
+            "success": True,
+            "enabled": True,
+            "backup_codes": plain_codes,
+            "backup_codes_remaining": len(plain_codes),
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def twofa_disable_view(request):
+    """Tắt xác thực hai yếu tố và xóa secret/backup codes sau khi xác minh danh tính."""
+    try:
+        _verify_sensitive_2fa_action(request.user, request.data)
+    except twofa.TwoFactorError as exc:
+        return _twofa_error_response(exc)
+
+    UserModel = get_user_model()
+    with transaction.atomic():
+        locked_user = UserModel.objects.select_for_update().get(pk=request.user.id)
+        locked_user.is_2fa_enabled = False
+        locked_user.totp_secret = ""
+        locked_user.twofa_backup_codes = []
+        locked_user.totp_last_used_step = None
+        locked_user.twofa_failed_attempts = 0
+        locked_user.twofa_locked_until = None
+        locked_user.save(
+            update_fields=[
+                "is_2fa_enabled",
+                "totp_secret",
+                "twofa_backup_codes",
+                "totp_last_used_step",
+                "twofa_failed_attempts",
+                "twofa_locked_until",
+            ]
+        )
+
+    return Response(
+        {"success": True, "enabled": False, "backup_codes_remaining": 0},
+        status=status.HTTP_200_OK,
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def twofa_regenerate_backup_codes_view(request):
+    """Tạo mới bộ 10 mã dự phòng (vô hiệu hóa bộ cũ) sau khi xác minh danh tính."""
+    try:
+        _verify_sensitive_2fa_action(request.user, request.data)
+    except twofa.TwoFactorError as exc:
+        return _twofa_error_response(exc)
+
+    plain_codes, hashed_codes = twofa.generate_backup_codes()
+    UserModel = get_user_model()
+    with transaction.atomic():
+        locked_user = UserModel.objects.select_for_update().get(pk=request.user.id)
+        if not locked_user.is_2fa_enabled:
+            return _twofa_error_response(
+                twofa.TwoFactorError(
+                    "twofa_not_enabled",
+                    "Tài khoản chưa kích hoạt xác thực hai yếu tố.",
+                    status.HTTP_400_BAD_REQUEST,
+                )
+            )
+        locked_user.twofa_backup_codes = hashed_codes
+        locked_user.save(update_fields=["twofa_backup_codes"])
+
+    return Response(
+        {
+            "success": True,
+            "backup_codes": plain_codes,
+            "backup_codes_remaining": len(plain_codes),
+        },
+        status=status.HTTP_200_OK,
+    )
 
 

@@ -19,6 +19,7 @@ import { getAbsoluteFileUrl } from '@lib/fileUtils';
 import { authService } from '@lib/authService';
 import { usePermissions } from '@lib/permissions';
 import { computeEffectiveStatus } from '@lib/resourceValidity';
+import { fetchAllResourcePages } from '@lib/resourcePagination';
 
 const STORAGE_KEY = 'tlbm_resources_filter_state';
 const STORAGE_DOCS = 'tlbm_documents_v2';
@@ -341,18 +342,9 @@ export default function ResourceManagementPage() {
         const seq = ++fetchSeqRef.current;
 
         const [catsRes, typesRes, docsRes] = await Promise.all([
-          apiClient<unknown>('/api/resources/categories/?page_size=100').catch((err) => {
-            console.warn('Lỗi tải categories:', err);
-            return null;
-          }),
-          apiClient<unknown>('/api/resources/types/?page_size=100').catch((err) => {
-            console.warn('Lỗi tải types:', err);
-            return null;
-          }),
-          apiClient<unknown>('/api/resources/documents/?page_size=100').catch((err) => {
-            console.warn('Lỗi tải documents:', err);
-            return null;
-          }),
+          fetchAllResourcePages<ResourceCategory>('/api/resources/categories/', 'categories'),
+          fetchAllResourcePages<ResourceType>('/api/resources/types/', 'types'),
+          fetchAllResourcePages<ResourceItem>('/api/resources/documents/', 'documents'),
         ]);
 
         // Nếu có request mới hơn đã cam kết, bỏ qua response cũ này để tránh race condition
@@ -1389,7 +1381,8 @@ export default function ResourceManagementPage() {
         };
 
         // Cập nhật local state ngay lập tức (instant UI feedback)
-        setDocuments((prev) => [savedDoc, ...prev]);
+        setDocuments((prev) => [savedDoc, ...prev.filter((d) => d.id !== savedDoc.id)]);
+        setCurrentPage(1);
         setIsFormOpen(false);
         setFormInitialData(null);
         showToast(`Đã thêm mới thành công tài liệu: "${savedDoc.tieu_de}"`, 'success', 'Thêm mới tài liệu');
@@ -1471,7 +1464,10 @@ export default function ResourceManagementPage() {
             }
           }
           if (createdTypes.length > 0) {
-            setTypes((prev) => [...prev.filter((t) => !createdTypes.some((ct) => ct.id === t.id)), ...createdTypes]);
+            setTypes((prev) => [
+              ...[...createdTypes].reverse(),
+              ...prev.filter((t) => !createdTypes.some((ct) => ct.id === t.id)),
+            ]);
             setVisibleTypeIds((prev) => [
               ...prev,
               ...createdTypes.map((ct) => ct.id).filter((id) => !prev.includes(id)),
@@ -1563,9 +1559,9 @@ export default function ResourceManagementPage() {
           ghi_chu: typeItem.ghi_chu || '',
         };
         const saved = await apiClient.post<ResourceType>('/api/resources/types/', payload);
-        // Cập nhật local state ngay lập tức (instant UI feedback)
-        setTypes((prev) => [...prev.filter((t) => t.id !== saved.id), saved]);
-        setVisibleTypeIds((prev) => (prev.includes(saved.id) ? prev : [...prev, saved.id]));
+        // Cập nhật local state ngay lập tức (instant UI feedback): bản ghi mới tạo nằm ở đầu danh sách
+        setTypes((prev) => [saved, ...prev.filter((t) => t.id !== saved.id)]);
+        setVisibleTypeIds((prev) => (prev.includes(saved.id) ? prev : [saved.id, ...prev]));
         if (!silent) {
           showToast(`Đã thêm mới thành công loại tài liệu: "${saved.ten_loai}"`, 'success', 'Thêm mới Loại tài liệu');
         }

@@ -67,6 +67,21 @@ TEMPLATE_POOLS = {
     STAFF_ROLE: ["04", "05", "06", "08", "10"],
 }
 
+# Inline email colors keep the ten selectable layouts distinct without relying on
+# embedded styles, animation, remote fonts, or browser-only rendering features.
+EMAIL_LAYOUT_THEMES = {
+    "01": {"header": "#14233B", "accent": "#A87935", "surface": "#F7F3EC"},
+    "02": {"header": "#123D35", "accent": "#B69A54", "surface": "#F2F6F2"},
+    "03": {"header": "#24211F", "accent": "#A87935", "surface": "#F7F4EE"},
+    "04": {"header": "#632D32", "accent": "#D0A15A", "surface": "#FBF4F1"},
+    "05": {"header": "#183A5A", "accent": "#6BA3C9", "surface": "#F1F6FA"},
+    "06": {"header": "#365448", "accent": "#A7B781", "surface": "#F4F6EF"},
+    "07": {"header": "#29264F", "accent": "#B6A9E8", "surface": "#F4F2FA"},
+    "08": {"header": "#704A36", "accent": "#D59A65", "surface": "#FBF4EC"},
+    "09": {"header": "#3B342D", "accent": "#B79A69", "surface": "#F7F4EE"},
+    "10": {"header": "#713C42", "accent": "#E3B85C", "surface": "#FCF5EF"},
+}
+
 
 def get_employee_role_category(position_name: str | None) -> str:
     """Phân nhóm nhân viên vào 1 trong 3 nhóm chức vụ theo quy định."""
@@ -97,6 +112,23 @@ def get_template_pool(role_category: str) -> list[str]:
     return TEMPLATE_POOLS.get(role_category, TEMPLATE_POOLS[STAFF_ROLE])
 
 
+def get_automated_template_pool() -> list[str]:
+    """Return configured built-in layouts with valid email content and a web theme."""
+    configured_layouts = {layout for pool in TEMPLATE_POOLS.values() for layout in pool}
+    return [
+        layout
+        for layout, draft in LAYOUT_DEFAULTS.items()
+        if layout in configured_layouts
+        and layout in EMAIL_LAYOUT_THEMES
+        and all(
+            isinstance(draft.get(field), str)
+            and draft[field].strip()
+            and valid_placeholders(draft[field])
+            for field in ("subject", "message")
+        )
+    ]
+
+
 def pick_hybrid_template(position_name: str | None, *, seed: int | str | None = None) -> tuple[str, dict]:
     """
     Chọn mẫu layout ngẫu nhiên trong pool an toàn của nhóm chức vụ.
@@ -111,6 +143,16 @@ def pick_hybrid_template(position_name: str | None, *, seed: int | str | None = 
         layout = "01"
         draft = LAYOUT_DEFAULTS[layout]
     return layout, draft
+
+
+def pick_automated_template(*, seed: int | str | None = None) -> tuple[str, dict]:
+    """Pick randomly from the shared set of valid built-in layouts."""
+    pool = get_automated_template_pool()
+    if not pool:
+        raise ValueError("No valid automatic birthday email layouts are configured.")
+    rng = random.Random(seed) if seed is not None else random
+    layout = rng.choice(pool)
+    return layout, LAYOUT_DEFAULTS[layout]
 
 
 def valid_placeholders(value: str) -> bool:
@@ -160,11 +202,15 @@ def render_email_draft(draft: dict, data: dict, card_url: str) -> tuple[str, dic
         f"Chức danh: {data['chuc_danh']}" if data["chuc_danh"] else "",
         f"Ngày sinh: {data['birthday_date']}",
         f"\n{greeting}",
-        f"\nMở thiệp chúc mừng sinh nhật: {card_url}" if card_url else "",
+        f"\n🎁 Mở thiệp sinh nhật 3D: {card_url}" if card_url else "",
     ]))
     layout = draft["layout"]
     html = render_to_string(f"birthdays/layouts/{layout}.html", {
-        **data, "subject": subject, "greeting": greeting, "birthday_card_url": card_url,
+        **data,
+        "subject": subject,
+        "greeting": greeting,
+        "birthday_card_url": card_url,
+        "email_theme": EMAIL_LAYOUT_THEMES[layout],
     })
     version = draft["template_id"]
     if version.startswith("layout:"):

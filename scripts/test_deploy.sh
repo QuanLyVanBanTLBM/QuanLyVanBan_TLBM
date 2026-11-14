@@ -61,6 +61,10 @@ if [[ "${1:-}" == "manage.py" ]]; then
     check|collectstatic) exit 0 ;;
     migrate)
       if [[ "${3:-}" == "--plan" ]]; then
+        if [[ "${MOCK_MIGRATE_PLAN_FAIL:-0}" == "1" ]]; then
+          echo "mock migrate plan failed" >&2
+          exit 42
+        fi
         echo "Planned operations:"
         if [[ "${MOCK_PENDING:-0}" == "1" ]]; then
           echo "accounts.0007_test_migration"
@@ -181,6 +185,8 @@ cat > "$MOCK_BIN/psql" <<'MOCK'
 #!/usr/bin/env bash
 set -euo pipefail
 case "$*" in
+  *default_version*) if [ -n "${MOCK_PGVECTOR_VERSION-0.8.7}" ]; then echo "$MOCK_PGVECTOR_VERSION"; fi ;;
+  *extversion*) echo "${MOCK_PGVECTOR_DB_VERSION-0.8.7}" ;;
   *datlocprovider*) echo 'i|vi-VN' ;;
   *shobj_description*)
     hash=$(sha256sum "$RELEASE_DIR/docs/common/database/release_DDL.sql" | awk '{print $1}')
@@ -227,6 +233,11 @@ if [[ "${1:-}" == "is-active" ]]; then
   [[ "${MOCK_SYSTEMCTL_QUERY_ERROR:-0}" == "0" ]] || exit 4
   [[ "$(cat "$SERVICE_STATE")" == "active" ]] && exit 0 || exit 3
 fi
+if [[ "${1:-}" == "show" ]]; then
+  [[ "${MOCK_SYSTEMCTL_QUERY_ERROR:-0}" == "0" ]] || exit 4
+  cat "$SERVICE_STATE"
+  exit 0
+fi
 exit 0
 MOCK
 
@@ -240,7 +251,15 @@ if [[ "${args[$i]:-}" == "-u" ]]; then i=$((i + 2)); fi
 command=${args[$i]:-}
 action=${args[$((i + 1))]:-}
 if [[ "$command" == "/usr/bin/systemctl" ]]; then
+  target=${args[$((i + 2))]:-}
+  if [[ "$target" == *.socket && ( "$action" == "stop" || "$action" == "start" ) ]]; then
+    echo "$action-socket" >> "$EVENTS"
+    echo "$action-socket:$([ -e "$QLVB_BASE/.maintenance" ] && echo flag || echo noflag)" >> "$CASE_ROOT/flaglog"
+    if [[ "$action" == "stop" ]]; then [[ "${MOCK_SOCKET_STOP_FAIL:-0}" == "0" ]] || exit 52; fi
+    exit 0
+  fi
   echo "$action" >> "$EVENTS"
+  echo "$action:$([ -e "$QLVB_BASE/.maintenance" ] && echo flag || echo noflag)" >> "$CASE_ROOT/flaglog"
   case "$action" in
     stop)
       [[ "${MOCK_STOP_FAIL:-0}" == "0" ]] || exit 45
@@ -259,9 +278,25 @@ if [[ "$command" == "/usr/bin/systemctl" ]]; then
     [[ "${MOCK_NGINX_RELOAD_FAIL:-0}" == "0" ]] || exit 48
   fi
 elif [[ "$command" == "/usr/bin/install" ]]; then
-  echo nginx-install >> "$EVENTS"
-  [[ "${args[*]:$((i + 1))}" == "-m 644 $HOME/deploy/qlvb-frontend.nginx $QLVB_NGINX_SITE" ]] || exit 49
-  cp "$HOME/deploy/qlvb-frontend.nginx" "$QLVB_NGINX_SITE"
+  install_args="${args[*]:$((i + 1))}"
+  case "$install_args" in
+    "-m 644 $HOME/deploy/qlvb-frontend.nginx $QLVB_NGINX_SITE")
+      echo nginx-install >> "$EVENTS"
+      cp "$HOME/deploy/qlvb-frontend.nginx" "$QLVB_NGINX_SITE"
+      ;;
+    "-m 0644 $HOME/deploy/qlvb-backend.socket $QLVB_SYSTEMD_DIR/qlvb-backend.socket")
+      echo unit-install-socket >> "$EVENTS"
+      [[ "${MOCK_UNIT_INSTALL_FAIL:-0}" == "0" ]] || exit 51
+      cp "$HOME/deploy/qlvb-backend.socket" "$QLVB_SYSTEMD_DIR/qlvb-backend.socket"
+      ;;
+    "-D -m 0644 $HOME/deploy/qlvb-backend.service.d/socket.conf $QLVB_SYSTEMD_DIR/qlvb-backend.service.d/socket.conf")
+      echo unit-install-dropin >> "$EVENTS"
+      [[ "${MOCK_UNIT_INSTALL_FAIL:-0}" == "0" ]] || exit 51
+      mkdir -p "$QLVB_SYSTEMD_DIR/qlvb-backend.service.d"
+      cp "$HOME/deploy/qlvb-backend.service.d/socket.conf" "$QLVB_SYSTEMD_DIR/qlvb-backend.service.d/socket.conf"
+      ;;
+    *) exit 49 ;;
+  esac
 elif [[ "$command" == "/usr/sbin/nginx" ]]; then
   echo nginx-test >> "$EVENTS"
   [[ "$action" == "-t" ]] || exit 50
@@ -308,9 +343,14 @@ make_case() {
   QLVB_NGINX_SITE="$CASE_ROOT/nginx-site"
   echo 'server { listen 443; }' > "$QLVB_NGINX_SITE"
   echo 'server { listen 443; server_name new; }' > "$HOME/deploy/qlvb-frontend.nginx"
+  QLVB_SYSTEMD_DIR="$CASE_ROOT/systemd"
+  mkdir -p "$QLVB_SYSTEMD_DIR" "$HOME/deploy/qlvb-backend.service.d"
+  cp "$ROOT/deploy/qlvb-backend.socket" "$HOME/deploy/qlvb-backend.socket"
+  cp "$ROOT/deploy/qlvb-backend.service.d/socket.conf" "$HOME/deploy/qlvb-backend.service.d/socket.conf"
   echo "$QLVB_BASE/releases/previous" > "$CURRENT_FILE"
   echo "$state" > "$SERVICE_STATE"
   : > "$EVENTS"
+  : > "$CASE_ROOT/flaglog"
   cat > "$QLVB_ENVF" <<'ENV'
 DB_NAME=qlvb_test
 DB_USER=deploy_test
@@ -328,11 +368,13 @@ AI_DATA_DIR=$CASE_ROOT/shared/ai
 DOCUMENT_STORAGE_ROOT=$CASE_ROOT/shared/storage
 ADMIN_PASSWORD=test-only
 ENV
-  export CASE_ROOT NAME HOME EVENTS SERVICE_STATE CURRENT_FILE RELEASE_DIR QLVB_BASE QLVB_ENVF QLVB_NGINX_SITE
+  export CASE_ROOT NAME HOME EVENTS SERVICE_STATE CURRENT_FILE RELEASE_DIR QLVB_BASE QLVB_ENVF QLVB_NGINX_SITE QLVB_SYSTEMD_DIR
   export MOCK_BIN MOCK_PYTHON MOCK_PIP MOCK_NGINX_RELOAD_FAIL=0
-  export MOCK_PENDING=0 MOCK_PREFLIGHT_FAIL=0 MOCK_MIGRATION_FAIL=0 MOCK_NON_ATOMIC=0
+  export MOCK_PENDING=0 MOCK_PREFLIGHT_FAIL=0 MOCK_MIGRATION_FAIL=0 MOCK_NON_ATOMIC=0 MOCK_MIGRATE_PLAN_FAIL=0 MOCK_UNIT_INSTALL_FAIL=0 MOCK_SOCKET_STOP_FAIL=0
   export MOCK_ADOPT_FAIL=0 MOCK_SEED_FAIL=0 MOCK_STOP_FAIL=0 MOCK_STOP_LEAVES_ACTIVE=0 MOCK_RESTART_FAIL=0 MOCK_RESTART_FAIL_ONCE=0 MOCK_SYSTEMCTL_QUERY_ERROR=0
   export MOCK_BACKUP_FAIL=0 MOCK_BACKUP_BAD_JSON=0 MOCK_EXTRACT_FAIL=0 MOCK_OMIT_BACKUP_TOOL=0
+  export MOCK_PGVECTOR_VERSION=0.8.7
+  export MOCK_PGVECTOR_DB_VERSION=0.8.7
   export MOCK_MARK_VERSION=3
   export MOCK_HEALTH_CODE=200 MOCK_HEALTH_BODY="{\"status\":\"ready\",\"release\":\"$NAME\"}"
 }
@@ -376,6 +418,21 @@ assert_event_absent stop
 assert_event_absent restart
 assert_event_absent backup
 pass "missing tarball leaves the initially active service untouched"
+
+make_case migration-plan-fails
+export MOCK_MIGRATE_PLAN_FAIL=1
+expect_failure
+expect_state "$QLVB_BASE/releases/previous" active
+assert_event_absent stop
+assert_event_absent backup
+assert_event_absent restart
+pass "migration plan failure leaves the active service untouched"
+
+make_case rebuild-skips-early-plan
+export MOCK_MIGRATE_PLAN_FAIL=1
+run_deploy rebuild || true
+! grep -q 'Khong doc duoc ke hoach migration' "$CASE_ROOT/output.log" || fail "rebuild must not run the early migration plan"
+pass "rebuild does not depend on the early migration plan"
 
 make_case existing-release
 mkdir -p "$RELEASE_DIR"
@@ -428,6 +485,42 @@ assert_event_absent stop
 assert_event_absent restart
 assert_event_absent backup
 pass "unexpected service-state query failure aborts without changing service state"
+
+make_case missing-pgvector-extension
+export MOCK_PGVECTOR_VERSION=
+expect_failure
+expect_state "$QLVB_BASE/releases/previous" active
+assert_event_absent stop
+assert_event_absent backup
+grep -q 'postgresql-16-pgvector' "$CASE_ROOT/output.log" || fail "missing pgvector prerequisite was not reported"
+pass "missing pgvector server package aborts before service stop or backup"
+
+make_case old-pgvector-extension
+export MOCK_PGVECTOR_VERSION=0.6.0
+expect_failure
+expect_state "$QLVB_BASE/releases/previous" active
+assert_event_absent stop
+assert_event_absent backup
+grep -q '>= 0.7.0' "$CASE_ROOT/output.log" || fail "old pgvector version requirement was not reported"
+pass "pgvector without halfvec support aborts before service stop or backup"
+
+make_case missing-pgvector-database-extension
+export MOCK_PGVECTOR_DB_VERSION=
+expect_failure
+expect_state "$QLVB_BASE/releases/previous" active
+assert_event_absent stop
+assert_event_absent backup
+grep -q 'CREATE EXTENSION vector' "$CASE_ROOT/output.log" || fail "missing database extension prerequisite was not reported"
+pass "pgvector absent from target database aborts read-only before service stop or backup"
+
+make_case old-pgvector-database-extension
+export MOCK_PGVECTOR_DB_VERSION=0.6.0
+expect_failure
+expect_state "$QLVB_BASE/releases/previous" active
+assert_event_absent stop
+assert_event_absent backup
+grep -q 'ALTER EXTENSION vector UPDATE' "$CASE_ROOT/output.log" || fail "old target database extension version was not reported"
+pass "old pgvector database extension aborts before service stop or backup"
 
 make_case invalid-release-name
 if ( export PATH="$MOCK_BIN:$PATH"; cd "$CASE_ROOT"; bash "$DEPLOY" "_invalid" ); then
@@ -724,6 +817,46 @@ assert_event_absent nginx-test
 assert_event_absent reload
 pass "unchanged nginx config is not reinstalled or reloaded"
 
+make_case units-installed-first-time
+if ! run_deploy; then
+  cat "$CASE_ROOT/output.log" >&2
+  cat "$EVENTS" >&2
+  fail "first-time unit install deployment failed unexpectedly"
+fi
+expect_state "$RELEASE_DIR" active
+assert_event_count unit-install-socket 1
+assert_event_count unit-install-dropin 1
+assert_event_count daemon-reload 1
+assert_event_count enable 1
+assert_event_before enable stop
+cmp -s "$ROOT/deploy/qlvb-backend.socket" "$QLVB_SYSTEMD_DIR/qlvb-backend.socket" || fail "socket unit was not installed"
+pass "missing socket units are installed before the service is stopped"
+
+make_case units-unchanged
+mkdir -p "$QLVB_SYSTEMD_DIR/qlvb-backend.service.d"
+cp "$HOME/deploy/qlvb-backend.socket" "$QLVB_SYSTEMD_DIR/qlvb-backend.socket"
+cp "$HOME/deploy/qlvb-backend.service.d/socket.conf" "$QLVB_SYSTEMD_DIR/qlvb-backend.service.d/socket.conf"
+if ! run_deploy; then
+  cat "$CASE_ROOT/output.log" >&2
+  cat "$EVENTS" >&2
+  fail "deployment with unchanged units failed unexpectedly"
+fi
+expect_state "$RELEASE_DIR" active
+assert_event_absent unit-install-socket
+assert_event_absent unit-install-dropin
+assert_event_absent daemon-reload
+assert_event_absent enable
+pass "unchanged socket units are not reinstalled"
+
+make_case unit-install-denied
+export MOCK_UNIT_INSTALL_FAIL=1
+expect_failure
+expect_state "$QLVB_BASE/releases/previous" active
+assert_event_absent stop
+assert_event_absent backup
+assert_event_absent restart
+pass "denied unit install fails before the service is touched"
+
 make_case rebuild-failure
 export MOCK_SEED_FAIL=1
 expect_failure rebuild
@@ -735,3 +868,49 @@ assert_event_before stop backup
 assert_event_before backup extract
 assert_event_absent restart
 pass "failed rebuild leaves the service down without automatic restore or code rollback"
+
+assert_flaglog() { grep -qx "$1" "$CASE_ROOT/flaglog" || { cat "$CASE_ROOT/flaglog" >&2; fail "flag log lacks '$1' in $(basename "$CASE_ROOT")"; }; }
+assert_flaglog_absent() { ! grep -qx "$1" "$CASE_ROOT/flaglog" || { cat "$CASE_ROOT/flaglog" >&2; fail "unexpected flag log '$1' in $(basename "$CASE_ROOT")"; }; }
+assert_flag_file() {
+  if [ -e "$QLVB_BASE/.maintenance" ]; then [ "$1" = present ] || fail "maintenance flag left behind in $(basename "$CASE_ROOT")"
+  else [ "$1" = absent ] || fail "maintenance flag missing in $(basename "$CASE_ROOT")"; fi
+}
+
+make_case flag-success
+if ! run_deploy; then
+  cat "$CASE_ROOT/output.log" >&2
+  fail "deployment with maintenance flag failed unexpectedly"
+fi
+assert_flaglog stop:flag
+assert_flaglog restart:noflag
+assert_flaglog_absent stop-socket:flag
+assert_event_absent stop-socket
+assert_flag_file absent
+pass "maintenance flag spans stop to release switch and is gone before restart"
+
+make_case flag-before-db-failure
+export MOCK_HEALTH_CODE=503 MOCK_HEALTH_BODY='{"status":"not_ready"}'
+expect_failure
+assert_flaglog stop:flag
+assert_flaglog_absent restart:flag
+assert_event_absent stop-socket
+assert_flag_file absent
+pass "failure without DB change clears the flag and never closes the socket"
+
+make_case flag-fail-closed
+export MOCK_PENDING=1 MOCK_MIGRATION_FAIL=1 MOCK_NON_ATOMIC=1
+expect_failure
+expect_state "$QLVB_BASE/releases/previous" inactive
+assert_event_count stop-socket 1
+assert_flaglog stop-socket:flag
+assert_event_absent restart
+assert_flag_file absent
+pass "failure after DB change closes the socket before the flag is removed"
+
+make_case flag-socket-stop-fails
+export MOCK_PENDING=1 MOCK_MIGRATION_FAIL=1 MOCK_NON_ATOMIC=1 MOCK_SOCKET_STOP_FAIL=1
+expect_failure
+assert_flaglog stop-socket:flag
+assert_flag_file present
+grep -q 'khong dong duoc qlvb-backend.socket' "$CASE_ROOT/output.log" || fail "socket stop failure was not reported"
+pass "flag stays when the socket cannot be closed after a DB change"

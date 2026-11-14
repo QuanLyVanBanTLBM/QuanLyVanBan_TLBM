@@ -157,7 +157,7 @@ def can_edit_document(user, instance):
 
 
 def can_create_document(user, loai="DEN"):
-    """Kiểm tra quyền tạo văn bản (RBAC add_vanbanden, add_vanbandi, add_vanbanmat)."""
+    """Kiểm tra quyền tạo văn bản (RBAC add_vanbanden, add_vanbandi, add_han_che_*)."""
     if not user or not user.is_authenticated:
         return False
     if is_admin_user(user):
@@ -167,7 +167,8 @@ def can_create_document(user, loai="DEN"):
     if loai_str in ("DI", "VANBANDI"):
         model_name = "vanbandi"
     elif loai_str in ("MAT", "VANBANMAT"):
-        model_name = "vanbanmat"
+        from .selectors import co_quyen_them_han_che
+        return co_quyen_them_han_che(user, "vanbanden") or co_quyen_them_han_che(user, "vanbandi")
 
     try:
         if (
@@ -332,27 +333,14 @@ def can_send_mail_all(user, loai="DEN"):
     Kiểm tra quyền gửi email thông báo toàn hệ thống.
     Quyền: documents.send_mail_all_vanbanden / documents.send_mail_all_vanbandi.
     - Quản trị viên (Admin) luôn có quyền.
-    - Nhóm Văn thư (VT) mặc định có quyền theo DDL seed.
-    - Cán bộ sở hữu quyền send_mail_all_* do Nhóm 7 cấp có quyền.
+    - Nhóm khác chỉ khi được cấp send_mail_all_* trong Phân quyền (seed mặc định chỉ cấp cho Quản trị hệ thống).
     """
     if not user or not user.is_authenticated:
         return False
     if is_admin_user(user):
         return True
 
-    profile = getattr(user, "profile", None)
-    if profile and getattr(profile, "role", None) in ("admin", "vt", "vanthu", "van_thu"):
-        return True
-    if getattr(user, "role", None) in ("admin", "vt", "vanthu", "van_thu"):
-        return True
-
-    try:
-        user_groups = {g.name.upper() for g in user.groups.all()}
-        if "ADMIN" in user_groups:
-            return True
-    except Exception:
-        pass
-
+    # Không ghi cứng theo tên nhóm hay role: ngoài quản trị hệ thống, chỉ quyền send_mail_all_* trong Phân quyền.
     model_name = "vanbandi" if str(loai).upper() in ("DI", "VANBANDI") else "vanbanden"
     perm_code = f"send_mail_all_{model_name}"
 
@@ -573,18 +561,16 @@ class DocumentViewSet(viewsets.ViewSet):
         serializer.is_valid(raise_exception=True)
 
         loai = serializer.validated_data.get("loai", LoaiVanBan.DEN)
-        if not can_create_document(request.user, loai):
-            raise PermissionDenied("Bạn không có quyền tạo văn bản mới. Vui lòng liên hệ Quản trị viên để được cấp quyền.")
+        pham_vi = serializer.validated_data.get("pham_vi", PhamVi.NOI_BO)
+        model_name = "vanbandi" if str(loai).upper() in ("DI", "VANBANDI") else "vanbanden"
 
         # Văn bản Đến/Đi phạm vi Hạn chế cần quyền riêng add_han_che_vanbanden/vanbandi (Văn bản Mật có luồng riêng).
-        if (
-            serializer.validated_data.get("pham_vi") == PhamVi.HAN_CHE
-            and str(loai).upper() not in ("MAT", "VANBANMAT")
-            and not co_quyen_them_han_che(
-                request.user, "vanbandi" if str(loai).upper() in ("DI", "VANBANDI") else "vanbanden"
-            )
-        ):
-            raise PermissionDenied("Bạn không có quyền thêm văn bản hạn chế. Vui lòng liên hệ Quản trị viên để được cấp quyền.")
+        if pham_vi == PhamVi.HAN_CHE and str(loai).upper() not in ("MAT", "VANBANMAT"):
+            if not co_quyen_them_han_che(request.user, model_name):
+                raise PermissionDenied("Bạn không có quyền thêm văn bản hạn chế. Vui lòng liên hệ Quản trị viên để được cấp quyền.")
+        else:
+            if not can_create_document(request.user, loai):
+                raise PermissionDenied("Bạn không có quyền tạo văn bản mới. Vui lòng liên hệ Quản trị viên để được cấp quyền.")
 
         nam = serializer.validated_data.get("nam", timezone.now().year)
 
@@ -936,6 +922,12 @@ class DocumentViewSet(viewsets.ViewSet):
     def next_so(self, request):
         """GET /api/documents/next-so/?loai=DEN&nam=2026"""
         raw_loai = request.query_params.get("loai") or request.query_params.get("type", "DEN")
+        is_di = str(raw_loai).upper() in ("DI", "VANBANDI")
+        model_name = "vanbandi" if is_di else "vanbanden"
+        has_add = can_create_document(request.user, raw_loai) or co_quyen_them_han_che(request.user, model_name)
+        if not has_add:
+            raise PermissionDenied("Bạn không có quyền tạo văn bản mới. Vui lòng liên hệ Quản trị viên để được cấp quyền.")
+
         raw_nam = request.query_params.get("nam")
         try:
             nam = int(raw_nam) if raw_nam else timezone.now().year
@@ -1037,13 +1029,23 @@ class VanBanDenViewSet(viewsets.ModelViewSet):
         return super().partial_update(request, *args, **kwargs)
 
     def create(self, request, *args, **kwargs):
-        if not can_create_document(request.user, "DEN"):
-            raise PermissionDenied("Bạn không có quyền tạo văn bản đến mới. Vui lòng liên hệ Quản trị viên.")
+        pham_vi = request.data.get("pham_vi", PhamVi.NOI_BO)
+        if pham_vi == PhamVi.HAN_CHE:
+            if not co_quyen_them_han_che(request.user, "vanbanden"):
+                raise PermissionDenied("Bạn không có quyền thêm văn bản hạn chế. Vui lòng liên hệ Quản trị viên để được cấp quyền.")
+        else:
+            if not can_create_document(request.user, "DEN"):
+                raise PermissionDenied("Bạn không có quyền tạo văn bản đến mới. Vui lòng liên hệ Quản trị viên.")
         return super().create(request, *args, **kwargs)
 
     def perform_create(self, serializer):
-        if not can_create_document(self.request.user, "DEN"):
-            raise PermissionDenied("Bạn không có quyền tạo văn bản đến mới. Vui lòng liên hệ Quản trị viên.")
+        pham_vi = serializer.validated_data.get("pham_vi", PhamVi.NOI_BO)
+        if pham_vi == PhamVi.HAN_CHE:
+            if not co_quyen_them_han_che(self.request.user, "vanbanden"):
+                raise PermissionDenied("Bạn không có quyền thêm văn bản hạn chế. Vui lòng liên hệ Quản trị viên để được cấp quyền.")
+        else:
+            if not can_create_document(self.request.user, "DEN"):
+                raise PermissionDenied("Bạn không có quyền tạo văn bản đến mới. Vui lòng liên hệ Quản trị viên.")
         validate_attachment_files(self.request)
         nam = serializer.validated_data.get("nam", timezone.now().year)
         so_thu_tu = generate_so_thu_tu("DEN", nam)
@@ -1132,13 +1134,23 @@ class VanBanDiViewSet(viewsets.ModelViewSet):
         return super().partial_update(request, *args, **kwargs)
 
     def create(self, request, *args, **kwargs):
-        if not can_create_document(request.user, "DI"):
-            raise PermissionDenied("Bạn không có quyền tạo văn bản đi mới. Vui lòng liên hệ Quản trị viên.")
+        pham_vi = request.data.get("pham_vi", PhamVi.NOI_BO)
+        if pham_vi == PhamVi.HAN_CHE:
+            if not co_quyen_them_han_che(request.user, "vanbandi"):
+                raise PermissionDenied("Bạn không có quyền thêm văn bản hạn chế. Vui lòng liên hệ Quản trị viên để được cấp quyền.")
+        else:
+            if not can_create_document(request.user, "DI"):
+                raise PermissionDenied("Bạn không có quyền tạo văn bản đi mới. Vui lòng liên hệ Quản trị viên.")
         return super().create(request, *args, **kwargs)
 
     def perform_create(self, serializer):
-        if not can_create_document(self.request.user, "DI"):
-            raise PermissionDenied("Bạn không có quyền tạo văn bản đi mới. Vui lòng liên hệ Quản trị viên.")
+        pham_vi = serializer.validated_data.get("pham_vi", PhamVi.NOI_BO)
+        if pham_vi == PhamVi.HAN_CHE:
+            if not co_quyen_them_han_che(self.request.user, "vanbandi"):
+                raise PermissionDenied("Bạn không có quyền thêm văn bản hạn chế. Vui lòng liên hệ Quản trị viên để được cấp quyền.")
+        else:
+            if not can_create_document(self.request.user, "DI"):
+                raise PermissionDenied("Bạn không có quyền tạo văn bản đi mới. Vui lòng liên hệ Quản trị viên.")
         validate_attachment_files(self.request)
         nam = serializer.validated_data.get("nam", timezone.now().year)
         so_thu_tu = generate_so_thu_tu("DI", nam)

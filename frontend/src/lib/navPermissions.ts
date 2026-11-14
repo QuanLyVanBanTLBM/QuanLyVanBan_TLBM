@@ -18,6 +18,7 @@ export const PAGE_VIEW_PERMISSION: Record<string, string> = {
   positions: 'view_chucvu',
   employees: 'view_list_cbnv',
   roles: 'view_nhomquyen',
+  approvals: 'view_trinhky',
   ai_assistant: 'use_aiassistant',
 };
 

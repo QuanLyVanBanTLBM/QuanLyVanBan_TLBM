@@ -3,7 +3,7 @@ import os
 from django.contrib.auth.hashers import make_password
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
-from django.db import transaction
+from django.db import connection, transaction
 from organizations.models import KhoiKhuVuc, DonVi
 from accounts.models import Employee, Position
 from accounts.standard_positions import ADMIN_POSITION, STANDARD_POSITIONS
@@ -119,6 +119,58 @@ POSITION_DATA = STANDARD_POSITIONS
 SYSTEM_PASSWORD_PLACEHOLDER = "!system_seed_placeholder"
 
 
+def _get_table_columns(table_name):
+    """Return existing database column names for ``table_name``."""
+    with connection.cursor() as cursor:
+        return {
+            col.name
+            for col in connection.introspection.get_table_description(cursor, table_name)
+        }
+
+
+def _ensure_seeded_user(UserModel, username, defaults, existing_columns, schema_matches):
+    """Create a seed user via ORM, or column-filtered SQL when DB precedes migrations."""
+    if schema_matches:
+        return UserModel.objects.get_or_create(username=username, defaults=defaults)
+
+    existing = (
+        UserModel.objects.filter(username=username)
+        .only("id", "username", "password")
+        .first()
+    )
+    if existing is not None:
+        return existing, False
+
+    row_values = {"username": username, **defaults}
+    col_names = []
+    params = []
+    for field in UserModel._meta.concrete_fields:
+        if field.column in existing_columns and field.name in row_values:
+            raw_val = row_values[field.name]
+            val = raw_val.pk if field.is_relation and hasattr(raw_val, "pk") else raw_val
+            col_names.append(field.column)
+            params.append(val)
+
+    qn = connection.ops.quote_name
+    table_sql = qn(UserModel._meta.db_table)
+    cols_sql = ", ".join(qn(c) for c in col_names)
+    placeholders = ", ".join(["%s"] * len(col_names))
+    pk_sql = qn(UserModel._meta.pk.column)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"INSERT INTO {table_sql} ({cols_sql}) VALUES ({placeholders}) RETURNING {pk_sql}",
+            params,
+        )
+        new_pk = cursor.fetchone()[0]
+
+    created_obj = (
+        UserModel.objects.filter(pk=new_pk)
+        .only("id", "username", "password")
+        .first()
+    )
+    return created_obj, True
+
+
 class Command(BaseCommand):
     help = "Seed reference data and bootstrap the system administrator without changing existing accounts"
 
@@ -129,7 +181,11 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         UserModel = get_user_model()
-        admin = UserModel.objects.filter(username="admin").first()
+        admin = (
+            UserModel.objects.filter(username="admin")
+            .only("id", "username", "password")
+            .first()
+        )
         admin_password = os.environ.get("ADMIN_PASSWORD")
         if admin_password is not None and not admin_password.strip():
             admin_password = None
@@ -184,13 +240,28 @@ class Command(BaseCommand):
                 "is_superuser": True,
                 "is_active": True,
             }
-            admin, created = UserModel.objects.get_or_create(username="admin", defaults=admin_defaults)
+            existing_user_columns = _get_table_columns(UserModel._meta.db_table)
+            schema_matches = {f.column for f in UserModel._meta.concrete_fields}.issubset(
+                existing_user_columns
+            )
+            admin, created = _ensure_seeded_user(
+                UserModel,
+                "admin",
+                admin_defaults,
+                existing_user_columns,
+                schema_matches,
+            )
             initialized = False
             if not created and admin.password == SYSTEM_PASSWORD_PLACEHOLDER:
                 # This exact unusable sentinel is not a user credential. Initialize it once;
                 # subsequent seed runs preserve every existing account field.
-                admin.set_password(admin_password)
-                admin.save(update_fields=["password"])
+                if schema_matches:
+                    admin.set_password(admin_password)
+                    admin.save(update_fields=["password"])
+                else:
+                    UserModel.objects.filter(pk=admin.pk).update(
+                        password=make_password(admin_password)
+                    )
                 initialized = True
             self.stdout.write(
                 self.style.SUCCESS(
@@ -207,9 +278,10 @@ class Command(BaseCommand):
                 ]
                 created_count = 0
                 for username, full_name, position_name, phone in demo_users:
-                    _, was_created = UserModel.objects.get_or_create(
-                        username=username,
-                        defaults={
+                    _, was_created = _ensure_seeded_user(
+                        UserModel,
+                        username,
+                        {
                             "email": f"{username}@baolong.vn",
                             "password": make_password(demo_password),
                             "ho_ten": full_name,
@@ -223,6 +295,8 @@ class Command(BaseCommand):
                             "is_staff": False,
                             "is_superuser": False,
                         },
+                        existing_user_columns,
+                        schema_matches,
                     )
                     created_count += int(was_created)
                 self.stdout.write(self.style.SUCCESS(f" [OK] Demo accounts created: {created_count}."))

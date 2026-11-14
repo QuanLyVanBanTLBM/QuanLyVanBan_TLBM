@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.db.models import Q
 from django.db.models.functions import Now
 from django.utils import timezone
 
@@ -76,6 +77,7 @@ class BirthdayEmailStatus(models.TextChoices):
 class BirthdayEmailSource(models.TextChoices):
     AUTO = "AUTO", "Tự động"
     MANUAL = "MANUAL", "Thủ công"
+    MANUAL_RESEND = "MANUAL_RESEND", "Quản trị viên gửi lại"
 
 
 class BirthdayEmailTemplate(models.Model):
@@ -155,7 +157,7 @@ class BirthdayEmailLog(models.Model):
         verbose_name="Nhà cung cấp dịch vụ email",
     )
     delivery_source = models.CharField(
-        max_length=8, choices=BirthdayEmailSource.choices,
+        max_length=16, choices=BirthdayEmailSource.choices,
         default=BirthdayEmailSource.AUTO, db_default=BirthdayEmailSource.AUTO,
     )
     delivery_snapshot = models.JSONField(null=True, blank=True)
@@ -175,7 +177,21 @@ class BirthdayEmailLog(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["employee", "sent_date"],
-                name="uq_emaillog_employee_date",
+                condition=Q(delivery_source=BirthdayEmailSource.AUTO),
+                name="uq_emaillog_employee_date_auto",
+            ),
+            models.UniqueConstraint(
+                fields=["employee", "sent_date"],
+                condition=Q(delivery_source=BirthdayEmailSource.MANUAL),
+                name="uq_emaillog_employee_date_manual",
+            ),
+            models.UniqueConstraint(
+                fields=["employee", "sent_date"],
+                condition=Q(
+                    delivery_source=BirthdayEmailSource.MANUAL_RESEND,
+                    trang_thai=BirthdayEmailStatus.SENDING,
+                ),
+                name="uq_emaillog_resend_inflight",
             ),
         ]
 

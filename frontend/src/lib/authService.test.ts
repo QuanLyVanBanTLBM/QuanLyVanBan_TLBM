@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import authService from './authService';
+import authService, { TwoFactorRequiredError } from './authService';
 import apiClient, { ApiError } from './apiClient';
 
 describe('authService Unit Tests (Issue #8 Django Auth & Session Management)', () => {
@@ -206,5 +206,63 @@ describe('authService Unit Tests (Issue #8 Django Auth & Session Management)', (
     await expect(apiClient('/api/protected/')).rejects.toThrow(ApiError);
     expect(localStorage.getItem('tlbm_access_token')).toBeNull();
     expect(localStorage.getItem('tlbm_session')).toBeNull();
+  });
+
+  it('throws TwoFactorRequiredError when backend requires 2FA challenge and verifyTwoFactor completes login', async () => {
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/auth/login/')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'content-type': 'application/json' }),
+          json: async () => ({
+            success: true,
+            require_2fa: true,
+            temp_token: 'temp-2fa-token-abc',
+            method: 'totp',
+            auth_provider: 'local',
+          }),
+        });
+      }
+      if (url.includes('/api/auth/verify-2fa/')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'content-type': 'application/json' }),
+          json: async () => ({
+            success: true,
+            access: 'final-jwt-access',
+            refresh: 'final-jwt-refresh',
+            verified_via: 'totp',
+            user: {
+              id: 7,
+              username: 'canbo_2fa',
+              fullName: 'Cán bộ 2FA',
+              role: 'staff',
+              is_2fa_enabled: true,
+              has_usable_credential: true,
+            },
+          }),
+        });
+      }
+      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+    });
+
+    await expect(
+      authService.login({ username: 'canbo_2fa', password: 'Secret@123' })
+    ).rejects.toBeInstanceOf(TwoFactorRequiredError);
+
+    expect(authService.isAuthenticated()).toBe(false);
+
+    const session = await authService.verifyTwoFactor({
+      tempToken: 'temp-2fa-token-abc',
+      code: '123456',
+      username: 'canbo_2fa',
+    });
+
+    expect(session.username).toBe('canbo_2fa');
+    expect(session.is_2fa_enabled).toBe(true);
+    expect(localStorage.getItem('tlbm_access_token')).toBe('final-jwt-access');
+    expect(authService.isAuthenticated()).toBe(true);
   });
 });

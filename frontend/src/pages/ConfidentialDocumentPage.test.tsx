@@ -254,4 +254,27 @@ describe('ConfidentialDocumentPage Component (Phân hệ Văn bản Mật)', () 
       expect(screen.getByText(/Thêm Mới Văn Bản Mật/i)).toBeInTheDocument();
     });
   });
+
+  it('chặn mở modal Thêm mới khi có query param ?action=create nếu thiếu quyền tạo văn bản', async () => {
+    resetPermissionsCache();
+    mockedApiClient.get.mockImplementation(async (url: string) => {
+      if (url.includes('/auth/me/permissions/')) {
+        return { is_superuser: false, permissions: ['view_vanbanden'] };
+      }
+      if (url.includes('/api/documents/years/')) return [2026];
+      if (url.includes('/api/documents/')) return { count: 0, results: [] };
+      return {};
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/documents/confidential?action=create']}>
+        <ConfidentialDocumentPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Thêm Mới Văn Bản Mật/i)).not.toBeInTheDocument();
+    });
+    expect(await screen.findByText(/Bạn không có quyền thêm mới văn bản hạn chế/i)).toBeInTheDocument();
+  });
 });

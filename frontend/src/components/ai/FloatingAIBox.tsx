@@ -1,16 +1,20 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivePageId } from '@app-types/navigation';
-import { askQuestion, getAISettings } from '../../api';
+import { askQuestion, askQuestionStream, getAISettings, getDocuments } from '../../api';
 import { t as translate, useTranslation, type SupportedLanguage } from '@i18n/translate';
 
 interface FloatingAIBoxProps {
   onNavigate?: (pageId: ActivePageId) => void;
+  onNavigateUrl?: (url: string) => void;
 }
 
 interface Source {
   file_name?: string;
   page?: number | null;
   source_type?: string | null;
+  source_id?: number | string | null;
+  chunk_id?: string | number | null;
+  index?: number | null;
 }
 
 interface Message {
@@ -20,6 +24,12 @@ interface Message {
   createdAt: number;
   quickReplies?: string[];
   sources?: Source[];
+  targetedFile?: string;
+}
+
+interface DocumentOption {
+  filename: string;
+  category?: string;
 }
 
 interface AIConfig {
@@ -35,6 +45,9 @@ interface Position {
 const MAX_WIDGET_QUESTION_LENGTH = 4000;
 
 let floatingMsgSeq = 0;
+function getNextAiMessageId(): string {
+  return `ai-${++floatingMsgSeq}`;
+}
 function createBoxMessage(sender: Message['sender'], text: string, extras: Partial<Message> = {}): Message {
   return {
     id: `${sender}-${Date.now().toString(36)}-${++floatingMsgSeq}`,
@@ -73,8 +86,96 @@ function safeLinkTarget(href: string): string | null {
   }
 }
 
-function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
-  const pattern = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[[^\]]+\]\((?:https?:\/\/|\/)[^)]+\))/g;
+const BUSINESS_SPEC_PAGE_MAP: Record<string, ActivePageId> = {
+  'branch-01-dashboard': 'dashboard',
+  'branch-02-documents': 'documents_incoming',
+  'branch-03-records': 'records',
+  'branch-04-templates': 'resources',
+  'branch-05-signing': 'approvals',
+  'branch-06-tasks': 'tasks',
+  'branch-07-system': 'organizations',
+};
+
+function deduplicateFloatingSources(sources: Source[]): Source[] {
+  const seen = new Set<string>();
+  return sources.filter((src) => {
+    const isEntity =
+      src.source_type === 'vanbanden' ||
+      src.source_type === 'vanbandi' ||
+      src.source_type === 'tailieu' ||
+      src.source_type === 'business_spec';
+    const key =
+      isEntity && src.source_id != null
+        ? `${src.source_type}:${src.source_id}`
+        : `${src.source_type || 'doc'}:${src.file_name || ''}:${src.page ?? ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function FloatingCitationsToggle({
+  sources,
+  sourceTypeLabels,
+  onNavigate,
+}: {
+  sources: Source[];
+  sourceTypeLabels: Record<string, string>;
+  onNavigate: (source: Source) => void;
+}) {
+  const { t } = useTranslation();
+  const [isCollapsed, setIsCollapsed] = useState(true);
+  const visibleSources = deduplicateFloatingSources(sources);
+  if (visibleSources.length === 0) return null;
+  const toggleLabel = isCollapsed
+    ? t('aiAssistant.toggleCitationsExpand')
+    : t('aiAssistant.toggleCitationsCollapse');
+
+  return (
+    <div className="text-[10px] text-text-muted px-1 flex flex-col gap-1">
+      <button
+        type="button"
+        className="inline-flex items-center gap-1.5 self-start text-[10px] font-semibold text-text-secondary hover:text-primary transition-colors cursor-pointer"
+        onClick={() => setIsCollapsed((prev) => !prev)}
+        aria-expanded={!isCollapsed}
+        aria-label={toggleLabel}
+        title={toggleLabel}
+      >
+        <span>{t('floatingAI.sources')}</span>
+        <span className="px-1.5 py-0.5 rounded-full bg-surface border border-subtle text-[9px]">
+          {t('aiAssistant.citationsCount', { count: visibleSources.length })}
+        </span>
+        <i className={`fa-solid ${isCollapsed ? 'fa-chevron-down' : 'fa-chevron-up'} text-[9px]`} aria-hidden="true" />
+      </button>
+      {!isCollapsed && (
+        <div className="flex flex-wrap items-center gap-1">
+          {visibleSources.map((source, index) => {
+            const label = `${source.file_name || sourceTypeLabels[source.source_type || ''] || t('floatingAI.documentSource')}${source.page ? `, ${t('floatingAI.page', { page: source.page })}` : ''}`;
+            return (
+              <button
+                key={`${source.source_type || 'doc'}-${source.source_id ?? source.file_name ?? index}-${index}`}
+                type="button"
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-surface hover:bg-primary-subtle text-text-secondary hover:text-primary border border-subtle hover:border-primary/40 transition-colors cursor-pointer"
+                onClick={() => onNavigate(source)}
+                title={label}
+              >
+                <i className="fa-solid fa-link text-[9px]" />
+                <span className="truncate max-w-[180px]">{label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function renderInline(
+  text: string,
+  keyPrefix: string,
+  onInternalLink?: (href: string) => void
+): React.ReactNode[] {
+  const pattern = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\$(?!\s)[^$\n]+?(?<!\s)\$(?!\d)|\[[^\]]+\]\((?:https?:\/\/|\/)[^)]+\))/g;
   const nodes: React.ReactNode[] = [];
   let cursor = 0;
   let match: RegExpExecArray | null;
@@ -85,11 +186,27 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
       nodes.push(<strong key={`${keyPrefix}-${match.index}`}>{token.slice(2, -2)}</strong>);
     } else if (token.startsWith('`')) {
       nodes.push(<code key={`${keyPrefix}-${match.index}`} className="rounded bg-surface-hover px-1">{token.slice(1, -1)}</code>);
+    } else if (token.startsWith('$') && token.endsWith('$') && token.length > 2) {
+      nodes.push(<code key={`${keyPrefix}-${match.index}`} className="ai-math-inline">{token.slice(1, -1)}</code>);
     } else if (token.startsWith('[')) {
       const linkMatch = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(token);
       const href = linkMatch ? safeLinkTarget(linkMatch[2]) : null;
       nodes.push(href ? (
-        <a key={`${keyPrefix}-${match.index}`} href={href} target={href.startsWith('/') ? undefined : '_blank'} rel="noreferrer" className="text-primary underline">
+        <a
+          key={`${keyPrefix}-${match.index}`}
+          href={href}
+          target={href.startsWith('/') ? undefined : '_blank'}
+          rel="noreferrer"
+          className="text-primary underline"
+          onClick={
+            href.startsWith('/') && onInternalLink
+              ? (event) => {
+                  event.preventDefault();
+                  onInternalLink(href);
+                }
+              : undefined
+          }
+        >
           {linkMatch?.[1]}
         </a>
       ) : token);
@@ -102,14 +219,21 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
   return nodes;
 }
 
-function FormattedMessage({ text }: { text: string }) {
+function FormattedMessage({
+  text,
+  onInternalLink,
+}: {
+  text: string;
+  onInternalLink?: (href: string) => void;
+}) {
   const lines = text.split('\n');
   const blocks: React.ReactNode[] = [];
   let index = 0;
 
   while (index < lines.length) {
     const line = lines[index];
-    if (line.trim().startsWith('```')) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('```')) {
       const code: string[] = [];
       index += 1;
       while (index < lines.length && !lines[index].trim().startsWith('```')) {
@@ -120,8 +244,24 @@ function FormattedMessage({ text }: { text: string }) {
       index += 1;
       continue;
     }
+    if (trimmed.startsWith('$$')) {
+      const singleLineMatch = /^\$\$(.+)\$\$$/.exec(trimmed);
+      if (singleLineMatch) {
+        blocks.push(<pre key={`math-${index}`} className="ai-math-block"><code>{singleLineMatch[1].trim()}</code></pre>);
+        index += 1;
+        continue;
+      }
+      const mathLines: string[] = [];
+      index += 1;
+      while (index < lines.length && !lines[index].trim().startsWith('$$')) {
+        mathLines.push(lines[index]);
+        index += 1;
+      }
+      blocks.push(<pre key={`math-${index}`} className="ai-math-block"><code>{mathLines.join('\n')}</code></pre>);
+      index += 1;
+      continue;
+    }
 
-    const trimmed = line.trim();
     if (!trimmed) {
       blocks.push(<div key={`space-${index}`} className="h-1" />);
       index += 1;
@@ -139,19 +279,19 @@ function FormattedMessage({ text }: { text: string }) {
       }
       blocks.push(<div key={`table-${index}`} className="my-2 max-w-full overflow-x-auto">
         <table className="w-full border-collapse text-left text-[11px]">
-          <thead><tr>{headers.map((cell, cellIndex) => <th key={cellIndex} className="border border-subtle bg-surface-hover px-2 py-1">{renderInline(cell, `table-head-${index}-${cellIndex}`)}</th>)}</tr></thead>
-          <tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}>{headers.map((_, cellIndex) => <td key={cellIndex} className="border border-subtle px-2 py-1">{renderInline(row[cellIndex] || '', `table-cell-${index}-${rowIndex}-${cellIndex}`)}</td>)}</tr>)}</tbody>
+          <thead><tr>{headers.map((cell, cellIndex) => <th key={cellIndex} className="border border-subtle bg-surface-hover px-2 py-1">{renderInline(cell, `table-head-${index}-${cellIndex}`, onInternalLink)}</th>)}</tr></thead>
+          <tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}>{headers.map((_, cellIndex) => <td key={cellIndex} className="border border-subtle px-2 py-1">{renderInline(row[cellIndex] || '', `table-cell-${index}-${rowIndex}-${cellIndex}`, onInternalLink)}</td>)}</tr>)}</tbody>
         </table>
       </div>);
       continue;
     }
     if (/^#{1,3}\s/.test(trimmed)) {
-      blocks.push(<h4 key={`heading-${index}`} className="my-1 font-bold">{renderInline(trimmed.replace(/^#{1,3}\s+/, ''), `heading-${index}`)}</h4>);
+      blocks.push(<h4 key={`heading-${index}`} className="my-1 font-bold">{renderInline(trimmed.replace(/^#{1,3}\s+/, ''), `heading-${index}`, onInternalLink)}</h4>);
       index += 1;
       continue;
     }
     if (trimmed.startsWith('> ')) {
-      blocks.push(<blockquote key={`quote-${index}`} className="my-1 border-l-2 border-primary ps-2 text-text-secondary">{renderInline(trimmed.slice(2), `quote-${index}`)}</blockquote>);
+      blocks.push(<blockquote key={`quote-${index}`} className="my-1 border-l-2 border-primary ps-2 text-text-secondary">{renderInline(trimmed.slice(2), `quote-${index}`, onInternalLink)}</blockquote>);
       index += 1;
       continue;
     }
@@ -164,17 +304,17 @@ function FormattedMessage({ text }: { text: string }) {
       }
       const List = ordered ? 'ol' : 'ul';
       blocks.push(<List key={`list-${index}`} className={`my-1 space-y-0.5 ps-5 ${ordered ? 'list-decimal' : 'list-disc'}`}>
-        {items.map((item, itemIndex) => <li key={itemIndex}>{renderInline(item, `list-${index}-${itemIndex}`)}</li>)}
+        {items.map((item, itemIndex) => <li key={itemIndex}>{renderInline(item, `list-${index}-${itemIndex}`, onInternalLink)}</li>)}
       </List>);
       continue;
     }
-    blocks.push(<p key={`paragraph-${index}`} className="my-1">{renderInline(line, `paragraph-${index}`)}</p>);
+    blocks.push(<p key={`paragraph-${index}`} className="my-1">{renderInline(line, `paragraph-${index}`, onInternalLink)}</p>);
     index += 1;
   }
   return <div className="break-words">{blocks}</div>;
 }
 
-export default function FloatingAIBox({ onNavigate }: FloatingAIBoxProps) {
+export default function FloatingAIBox({ onNavigate, onNavigateUrl }: FloatingAIBoxProps) {
   const { t, currentLang } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
@@ -182,6 +322,10 @@ export default function FloatingAIBox({ onNavigate }: FloatingAIBoxProps) {
   const [isTyping, setIsTyping] = useState(false);
   const [error, setError] = useState('');
   const [aiConfig, setAiConfig] = useState<AIConfig | null>(null);
+  const [documents, setDocuments] = useState<DocumentOption[]>([]);
+  const [selectedDocument, setSelectedDocument] = useState('');
+  const [isDocPickerOpen, setIsDocPickerOpen] = useState(false);
+  const [docSearchQuery, setDocSearchQuery] = useState('');
   const [messages, setMessages] = useState<Message[]>(() => createInitialMessages(currentLang));
   const visibleMessages = useMemo(() => {
     const localizedWelcome = createInitialMessages(currentLang)[0];
@@ -460,6 +604,27 @@ export default function FloatingAIBox({ onNavigate }: FloatingAIBoxProps) {
   }, []);
 
   useEffect(() => {
+    if (!isOpen || typeof getDocuments !== 'function') return;
+    let cancelled = false;
+    getDocuments()
+      .then((data: { documents?: Array<{ filename?: string; category?: string }> }) => {
+        if (!cancelled && Array.isArray(data?.documents)) {
+          setDocuments(
+            data.documents.filter(
+              (doc): doc is DocumentOption => typeof doc?.filename === 'string' && doc.filename.length > 0,
+            ),
+          );
+        }
+      })
+      .catch(() => {
+        // Widget continues working for general questions even if document listing fails.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
     if (isOpen && !isMinimized) chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [visibleMessages, isOpen, isMinimized, isTyping]);
 
@@ -473,22 +638,66 @@ export default function FloatingAIBox({ onNavigate }: FloatingAIBoxProps) {
 
     sendingRef.current = true;
     setError('');
+    setIsDocPickerOpen(false);
+    const activeTarget = selectedDocument.trim();
     const previousMessages = messages.filter((message) => message.id !== 'msg-init');
     const history = previousMessages.slice(-8).map((message) => ({
       role: message.sender === 'ai' ? 'assistant' : 'user',
       content: message.text,
     }));
-    setMessages((previous) => [...previous, createBoxMessage('user', text)]);
+    setMessages((previous) => [
+      ...previous,
+      createBoxMessage('user', text, activeTarget ? { targetedFile: activeTarget } : {}),
+    ]);
     setInputMessage('');
     setIsTyping(true);
 
     try {
-      const response = await askQuestion(text, history);
-      const answer = typeof response?.answer === 'string' && response.answer.trim()
-        ? response.answer
-        : t('floatingAI.emptyResponse');
-      const sources = Array.isArray(response?.sources) ? response.sources as Source[] : [];
-      setMessages((previous) => [...previous, createBoxMessage('ai', answer, { sources })]);
+      let accumulated = '';
+      let streamedSources: Source[] = [];
+      const aiMsgId = getNextAiMessageId();
+      let streamed = false;
+
+      try {
+        await askQuestionStream(text, {
+          history,
+          filename: activeTarget || null,
+          language: currentLang,
+          onSources: (sources) => {
+            streamedSources = sources as Source[];
+          },
+          onDelta: (_delta, full) => {
+            accumulated = full;
+            if (!streamed) {
+              streamed = true;
+              setIsTyping(false);
+              setMessages((prev) => [...prev, createBoxMessage('ai', accumulated, { id: aiMsgId, sources: streamedSources })]);
+            } else {
+              setMessages((prev) => prev.map((m) => (m.id === aiMsgId ? { ...m, text: accumulated, sources: streamedSources } : m)));
+            }
+          },
+          onDone: (data) => {
+            if (data?.answer) accumulated = data.answer;
+            if (Array.isArray(data?.sources)) streamedSources = data.sources as Source[];
+            if (streamed) {
+              setMessages((prev) => prev.map((m) => (m.id === aiMsgId ? { ...m, text: accumulated, sources: streamedSources } : m)));
+            }
+          },
+        });
+      } catch (streamErr) {
+        if (!streamed) {
+          const response = activeTarget
+            ? await askQuestion(text, history, null, activeTarget)
+            : await askQuestion(text, history);
+          const answer = typeof response?.answer === 'string' && response.answer.trim()
+            ? response.answer
+            : t('floatingAI.emptyResponse');
+          const sources = Array.isArray(response?.sources) ? response.sources as Source[] : [];
+          setMessages((previous) => [...previous, createBoxMessage('ai', answer, { sources })]);
+        } else {
+          throw streamErr;
+        }
+      }
     } catch {
       setError('floatingAI.requestFailed');
     } finally {
@@ -501,6 +710,9 @@ export default function FloatingAIBox({ onNavigate }: FloatingAIBoxProps) {
     if (isTyping) return;
     if (window.confirm(t('floatingAI.clearConfirm'))) {
       setMessages(createInitialMessages(currentLang));
+      setSelectedDocument('');
+      setIsDocPickerOpen(false);
+      setDocSearchQuery('');
       setError('');
     }
   };
@@ -514,7 +726,51 @@ export default function FloatingAIBox({ onNavigate }: FloatingAIBoxProps) {
     handleQuickNavigate('ai_assistant');
   };
 
+  const handleInternalLink = (href: string) => {
+    setIsOpen(false);
+    if (onNavigateUrl) {
+      onNavigateUrl(href);
+    }
+  };
+
+  const handleSourceNavigate = (source: Source) => {
+    const sqlRoutes: Record<string, { urlPrefix: string; page: ActivePageId }> = {
+      vanbanden: { urlPrefix: '/documents/incoming', page: 'documents_incoming' },
+      vanbandi: { urlPrefix: '/documents/outgoing', page: 'documents_outgoing' },
+      tailieu: { urlPrefix: '/resources', page: 'resources' },
+    };
+    if (source.source_type && sqlRoutes[source.source_type]) {
+      const entry = sqlRoutes[source.source_type];
+      setIsOpen(false);
+      if (source.source_id != null && onNavigateUrl) {
+        onNavigateUrl(`${entry.urlPrefix}?detail=${encodeURIComponent(String(source.source_id))}`);
+      } else {
+        handleQuickNavigate(entry.page);
+      }
+      return;
+    }
+    if (source.source_type === 'business_spec') {
+      const targetPage = BUSINESS_SPEC_PAGE_MAP[String(source.source_id || '')] || 'ai_assistant';
+      setIsOpen(false);
+      handleQuickNavigate(targetPage);
+      return;
+    }
+    if (source.file_name) {
+      setIsOpen(false);
+      if (onNavigateUrl) {
+        onNavigateUrl(`/ai-assistant?preview=${encodeURIComponent(source.file_name)}`);
+      } else {
+        handleQuickNavigate('ai_assistant');
+      }
+    }
+  };
+
   const modelLabel = aiConfig?.llm_model;
+  const filteredDocuments = useMemo(() => {
+    const query = docSearchQuery.trim().toLowerCase();
+    if (!query) return documents;
+    return documents.filter((doc) => doc.filename.toLowerCase().includes(query));
+  }, [documents, docSearchQuery]);
   const sourceTypeLabels: Record<string, string> = {
     vanbanden: t('floatingAI.sourceTypes.incoming'),
     vanbandi: t('floatingAI.sourceTypes.outgoing'),
@@ -625,17 +881,20 @@ export default function FloatingAIBox({ onNavigate }: FloatingAIBoxProps) {
                     {message.sender === 'ai' && <div className="w-7 h-7 rounded-lg bg-primary-subtle text-primary flex items-center justify-center text-xs shrink-0 mt-0.5"><i className="fa-solid fa-brain" /></div>}
                     <div className="flex flex-col gap-1 max-w-[85%] min-w-0">
                       <div className={`p-3 text-xs leading-relaxed ${message.sender === 'user' ? 'bg-primary text-white rounded-2xl rounded-tr-sm shadow-xs' : 'bg-surface border border-subtle text-text-main rounded-2xl rounded-tl-sm shadow-xs'}`}>
-                        <FormattedMessage text={message.text} />
+                        {message.sender === 'user' && message.targetedFile && (
+                          <div className="mb-1.5 inline-flex items-center gap-1 rounded-md bg-white/15 border border-white/25 px-1.5 py-0.5 text-[10px] font-medium max-w-full">
+                            <i className="fa-solid fa-file-lines text-[9px] shrink-0" />
+                            <span className="truncate">{message.targetedFile}</span>
+                          </div>
+                        )}
+                        <FormattedMessage text={message.text} onInternalLink={handleInternalLink} />
                       </div>
                       {message.sources && message.sources.length > 0 && (
-                        <div className="text-[10px] text-text-muted px-1">
-                          <span className="font-semibold">{t('floatingAI.sources')}: </span>
-                          {message.sources.map((source, index) => (
-                            <span key={`${source.file_name || source.source_type || 'source'}-${index}`}>
-                              {index > 0 ? ', ' : ''}{source.file_name || sourceTypeLabels[source.source_type || ''] || t('floatingAI.documentSource')}{source.page ? `, ${t('floatingAI.page', { page: source.page })}` : ''}
-                            </span>
-                          ))}
-                        </div>
+                        <FloatingCitationsToggle
+                          sources={message.sources}
+                          sourceTypeLabels={sourceTypeLabels}
+                          onNavigate={handleSourceNavigate}
+                        />
                       )}
                       {message.quickReplies && message.quickReplies.length > 0 && (
                         <div className="flex flex-col gap-1 mt-1">
@@ -663,8 +922,105 @@ export default function FloatingAIBox({ onNavigate }: FloatingAIBoxProps) {
                 <div ref={chatEndRef} />
               </div>
 
+              {selectedDocument && (
+                <div className="px-3 py-1.5 bg-primary-subtle/60 border-t border-subtle flex items-center justify-between gap-2 text-[11px] text-primary">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <i className="fa-solid fa-file-lines text-[10px] shrink-0" />
+                    <span className="font-medium shrink-0">{t('floatingAI.targetedDoc')}:</span>
+                    <span className="font-semibold truncate" title={selectedDocument}>{selectedDocument}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="w-5 h-5 rounded-md hover:bg-primary/15 flex items-center justify-center shrink-0 cursor-pointer"
+                    onClick={() => setSelectedDocument('')}
+                    title={t('floatingAI.clearTarget')}
+                    aria-label={t('floatingAI.clearTarget')}
+                  >
+                    <i className="fa-solid fa-xmark text-[10px]" />
+                  </button>
+                </div>
+              )}
+
+              {isDocPickerOpen && (
+                <div className="border-t border-subtle bg-surface p-2 flex flex-col gap-1.5">
+                  <input
+                    type="text"
+                    value={docSearchQuery}
+                    onChange={(event) => setDocSearchQuery(event.target.value)}
+                    placeholder={t('floatingAI.searchDocuments')}
+                    aria-label={t('floatingAI.searchDocuments')}
+                    className="w-full bg-surface-elevated border border-subtle rounded-lg px-2.5 py-1.5 text-xs text-text-main placeholder:text-text-muted focus:border-primary"
+                  />
+                  <div className="max-h-36 overflow-y-auto flex flex-col gap-1">
+                    <button
+                      type="button"
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between gap-2 cursor-pointer transition-colors ${
+                        !selectedDocument ? 'bg-primary-subtle text-primary font-semibold' : 'text-text-secondary hover:bg-surface-hover'
+                      }`}
+                      onClick={() => {
+                        setSelectedDocument('');
+                        setIsDocPickerOpen(false);
+                      }}
+                    >
+                      <span className="truncate">{t('floatingAI.allDocuments')}</span>
+                      {!selectedDocument && <i className="fa-solid fa-check text-[10px]" />}
+                    </button>
+                    {filteredDocuments.length === 0 ? (
+                      <div className="px-2.5 py-2 text-[11px] text-text-muted text-center">
+                        {t('floatingAI.noMatchingDocuments')}
+                      </div>
+                    ) : (
+                      filteredDocuments.map((doc) => {
+                        const isSelected = selectedDocument === doc.filename;
+                        return (
+                          <button
+                            key={doc.filename}
+                            type="button"
+                            className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between gap-2 cursor-pointer transition-colors ${
+                              isSelected ? 'bg-primary-subtle text-primary font-semibold' : 'text-text-main hover:bg-surface-hover'
+                            }`}
+                            onClick={() => {
+                              setSelectedDocument(doc.filename);
+                              setIsDocPickerOpen(false);
+                            }}
+                            title={doc.filename}
+                          >
+                            <span className="truncate">{doc.filename}</span>
+                            {isSelected && <i className="fa-solid fa-check text-[10px] shrink-0" />}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+
               <form className="p-2.5 bg-surface border-t border-subtle flex items-center gap-2" onSubmit={(event) => { event.preventDefault(); void handleSendMessage(); }}>
-                <input type="text" maxLength={MAX_WIDGET_QUESTION_LENGTH} className="flex-1 min-w-0 bg-surface-elevated border border-subtle rounded-xl px-3 py-2 text-xs text-text-main placeholder:text-text-muted focus:border-primary transition-colors disabled:opacity-50" placeholder={t('floatingAI.placeholder')} value={inputMessage} onChange={(event) => setInputMessage(event.target.value)} disabled={isTyping} aria-label={t('floatingAI.placeholder')} />
+                <button
+                  type="button"
+                  className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs transition-colors cursor-pointer shrink-0 ${
+                    selectedDocument || isDocPickerOpen
+                      ? 'bg-primary-subtle text-primary'
+                      : 'text-text-muted hover:text-primary hover:bg-primary-subtle'
+                  }`}
+                  title={t('floatingAI.selectDocument')}
+                  aria-label={t('floatingAI.selectDocument')}
+                  aria-expanded={isDocPickerOpen}
+                  onClick={() => setIsDocPickerOpen((prev) => !prev)}
+                  disabled={isTyping}
+                >
+                  <i className="fa-solid fa-paperclip text-sm" />
+                </button>
+                <input
+                  type="text"
+                  maxLength={MAX_WIDGET_QUESTION_LENGTH}
+                  className="flex-1 min-w-0 bg-surface-elevated border border-subtle rounded-xl px-3 py-2 text-xs text-text-main placeholder:text-text-muted focus:border-primary transition-colors disabled:opacity-50"
+                  placeholder={selectedDocument ? t('floatingAI.placeholderWithTarget', { filename: selectedDocument }) : t('floatingAI.placeholder')}
+                  value={inputMessage}
+                  onChange={(event) => setInputMessage(event.target.value)}
+                  disabled={isTyping}
+                  aria-label={t('floatingAI.placeholder')}
+                />
                 <button type="button" className="w-8 h-8 rounded-lg text-text-muted hover:text-primary hover:bg-primary-subtle flex items-center justify-center text-xs transition-colors cursor-pointer group" title={t('floatingAI.fullAssistant')} aria-label={t('floatingAI.fullAssistant')} onClick={openFullAssistant}>
                   <i className="fa-solid fa-expand text-sm" />
                 </button>

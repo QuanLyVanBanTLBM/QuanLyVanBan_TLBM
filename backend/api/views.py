@@ -10,8 +10,9 @@ from pathlib import Path
 from urllib.parse import unquote
 
 from django.conf import settings
+from django.core.cache import cache
 from django.db import DatabaseError, connection
-from django.http import FileResponse, JsonResponse
+from django.http import FileResponse, JsonResponse, StreamingHttpResponse
 from django.views.decorators.http import require_GET
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -74,18 +75,51 @@ def _require_ai_admin(request):
     return None
 
 
+def _job_cache_key(job_id):
+    return f"ai:upload_job:{job_id}"
+
+
 def _set_job(job_id, **values):
     with _jobs_lock:
-        _jobs.setdefault(job_id, {}).update(values)
-        _jobs[job_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
+        current = dict(_jobs.get(job_id) or {})
+        current.update(values)
+        current["updated_at"] = datetime.now(timezone.utc).isoformat()
+        _jobs[job_id] = current
+    try:
+        cache.set(_job_cache_key(job_id), current, timeout=3600)
+    except Exception:
+        logger.debug("Upload job cache write unavailable for job_id=%s", job_id)
 
 
-def _run_index_job(job_id, staged_path, filename):
+def _get_job(job_id):
+    with _jobs_lock:
+        if job_id in _jobs:
+            return dict(_jobs[job_id])
+    try:
+        cached = cache.get(_job_cache_key(job_id))
+        if cached:
+            return dict(cached)
+    except Exception:
+        logger.debug("Upload job cache read unavailable for job_id=%s", job_id)
+    return {}
+
+
+def _run_index_job(job_id, staged_path, filename, replace_existing=True):
     try:
         from backend.services.rag_service import index_document
 
         _set_job(job_id, status="processing", message="Đang lập chỉ mục tài liệu...")
         with _upload_lock:
+            existing_path = config.DOCS_DIR / filename
+            if existing_path.is_file() and not replace_existing:
+                discard_staged_upload(staged_path)
+                _set_job(
+                    job_id,
+                    status="error",
+                    message="Tài liệu trùng tên đã tồn tại. Vui lòng xác nhận ghi đè trước khi tải lên.",
+                    error="duplicate_filename",
+                )
+                return
             result = index_document(staged_path, source_metadata={"file_name": filename})
             category = result.get("category", "Chưa phân loại")
             final_path = commit_staged_upload(staged_path, filename)
@@ -119,10 +153,14 @@ def ai_health(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def chat(request):
+    payload = _json_body(request)
+    if isinstance(payload, dict) and payload.get("stream") is True:
+        return _stream_response(request, payload=payload)
+
     trace, token = start_trace(user_id=request.user.pk)
     status = 500
     try:
-        response = _answer_chat(request)
+        response = _answer_chat(request, payload=payload)
         status = response.status_code
         return response
     finally:
@@ -130,24 +168,142 @@ def chat(request):
         end_trace(token)
 
 
-def _answer_chat(request):
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def chat_stream(request):
+    return _stream_response(request)
+
+
+def _stream_response(request, payload=None):
     if request.method != "POST":
         return _error("Phương thức không được hỗ trợ.", 405)
     denied = _require_ai_access(request)
     if denied:
+        trace, token = start_trace(user_id=request.user.pk)
         mark_error("permission", "no_ai_permission")
+        log_summary(trace, 403)
+        end_trace(token)
         return denied
-    payload = _json_body(request)
+
+    if payload is None:
+        payload = _json_body(request)
     if not isinstance(payload, dict):
         return _error("Dữ liệu gửi lên không hợp lệ.")
     question = payload.get("question")
     history = payload.get("history", [])
     category = payload.get("category")
     filename = payload.get("filename")
+    filenames = payload.get("filenames")
+    if isinstance(filename, list) and not filenames:
+        filenames = filename
+        filename = None
     if filename and not isinstance(filename, str):
         filename = None
     elif filename:
         filename = filename.strip()
+    clean_filenames = (
+        [f.strip() for f in filenames if isinstance(f, str) and f.strip()][:5]
+        if isinstance(filenames, list)
+        else None
+    )
+    if not isinstance(question, str) or not question.strip():
+        return _error("Câu hỏi không được để trống.")
+    if len(question) > MAX_CHAT_QUESTION_LENGTH:
+        return _error("Câu hỏi không được vượt quá 4000 ký tự.")
+    if not isinstance(history, list):
+        return _error("Lịch sử hội thoại không hợp lệ.")
+    safe_history = [
+        item for item in history[-8:]
+        if isinstance(item, dict) and item.get("role") in {"user", "assistant"} and isinstance(item.get("content"), str)
+    ]
+
+    employee_id = resolve_employee_id(request)
+    language = payload.get("language")
+    if not language or not isinstance(language, str):
+        accept_lang = request.headers.get("Accept-Language", "")
+        language = "en" if "en" in accept_lang.lower() else "vi"
+    else:
+        language = "en" if language.lower().startswith("en") else "vi"
+
+    def event_stream_generator():
+        trace, token = start_trace(user_id=request.user.pk)
+        set_fields(
+            employee_resolved=employee_id is not None,
+            question_chars=len(question),
+            history_items=len(safe_history),
+            has_filename=bool(filename or clean_filenames),
+            has_category=bool(category),
+            stream=True,
+        )
+        status = 200
+        try:
+            from backend.services.rag_service import ask_document_stream
+            for event_chunk in ask_document_stream(
+                question.strip(),
+                history=safe_history,
+                category=category if isinstance(category, str) else None,
+                user=request.user,
+                employee_id=employee_id,
+                filename=filename,
+                language=language,
+                filenames=clean_filenames,
+            ):
+                yield event_chunk
+        except GeneratorExit:
+            status = 499
+            set_fields(client_aborted=True)
+            raise
+        except SqlDocumentAccessError as error:
+            status = 503
+            mark_error("ask_document_stream", error.ai_reason)
+            log_exception()
+            yield f"event: error\ndata: {json.dumps({'error': 'Không thể truy cập nguồn dữ liệu AI lúc này.'}, ensure_ascii=False)}\n\n"
+        except Exception as error:
+            status = 502
+            mark_error("ask_document_stream", type(error).__name__)
+            log_exception()
+            yield f"event: error\ndata: {json.dumps({'error': 'Không thể xử lý yêu cầu lúc này. Vui lòng thử lại sau.'}, ensure_ascii=False)}\n\n"
+        finally:
+            log_summary(trace, status)
+            end_trace(token)
+
+    response = StreamingHttpResponse(
+        event_stream_generator(),
+        content_type="text/event-stream; charset=utf-8",
+    )
+    response["Cache-Control"] = "no-cache"
+    response["X-Accel-Buffering"] = "no"
+    return response
+
+
+def _answer_chat(request, payload=None):
+    if request.method != "POST":
+        return _error("Phương thức không được hỗ trợ.", 405)
+    denied = _require_ai_access(request)
+    if denied:
+        mark_error("permission", "no_ai_permission")
+        return denied
+    if payload is None:
+        payload = _json_body(request)
+    if not isinstance(payload, dict):
+        return _error("Dữ liệu gửi lên không hợp lệ.")
+    question = payload.get("question")
+    history = payload.get("history", [])
+    category = payload.get("category")
+    filename = payload.get("filename")
+    filenames = payload.get("filenames")
+    if isinstance(filename, list) and not filenames:
+        filenames = filename
+        filename = None
+    if filename and not isinstance(filename, str):
+        filename = None
+    elif filename:
+        filename = filename.strip()
+    clean_filenames = (
+        [f.strip() for f in filenames if isinstance(f, str) and f.strip()][:5]
+        if isinstance(filenames, list)
+        else None
+    )
     if not isinstance(question, str) or not question.strip():
         return _error("Câu hỏi không được để trống.")
     if len(question) > MAX_CHAT_QUESTION_LENGTH:
@@ -164,7 +320,7 @@ def _answer_chat(request):
             employee_resolved=employee_id is not None,
             question_chars=len(question),
             history_items=len(safe_history),
-            has_filename=bool(filename),
+            has_filename=bool(filename or clean_filenames),
             has_category=bool(category),
         )
         language = payload.get("language")
@@ -181,8 +337,16 @@ def _answer_chat(request):
             employee_id=employee_id,
             filename=filename,
             language=language,
+            filenames=clean_filenames,
         )
-        return JsonResponse({"question": question.strip(), "category": category or None, "filename": filename or None, "language": language, **result})
+        return JsonResponse({
+            "question": question.strip(),
+            "category": category or None,
+            "filename": filename or (clean_filenames[0] if clean_filenames and len(clean_filenames) == 1 else None),
+            "filenames": clean_filenames or ([filename] if filename else None),
+            "language": language,
+            **result,
+        })
     except SqlDocumentAccessError as error:
         mark_error("ask_document", error.ai_reason)
         log_exception()
@@ -229,11 +393,16 @@ def upload_async(request):
     replacement_error = _validate_upload_replacement(request, upload)
     if replacement_error:
         return replacement_error
+    replace_existing = str(request.data.get("replace_existing", "")).lower() == "true"
     staged_path, filename, is_reupload = stage_upload_file(upload)
     job_id = str(uuid.uuid4())
     _set_job(job_id, status="queued", message="Đang chờ xử lý...", filename=filename, category=None, result=None, error=None, started_at=datetime.now(timezone.utc).isoformat())
-    threading.Thread(target=_run_index_job, args=(job_id, staged_path, filename), daemon=True).start()
-    return JsonResponse({"job_id": job_id, "filename": filename, "reupload": is_reupload, "message": "Đã nhận tệp, đang lập chỉ mục...", "poll_url": f"/upload/progress/{job_id}"}, status=202)
+    threading.Thread(
+        target=_run_index_job,
+        args=(job_id, staged_path, filename, replace_existing),
+        daemon=True,
+    ).start()
+    return JsonResponse({"job_id": job_id, "filename": filename, "reupload": is_reupload, "message": "Đã nhận tệp, đang lập chỉ mục...", "poll_url": f"/api/ai/upload/progress/{job_id}"}, status=202)
 
 
 @api_view(["GET"])
@@ -242,8 +411,7 @@ def upload_progress(request, job_id):
     denied = _require_ai_admin(request)
     if denied:
         return denied
-    with _jobs_lock:
-        job = dict(_jobs.get(job_id, {}))
+    job = _get_job(job_id)
     return JsonResponse(job or {"detail": "Không tìm thấy tiến trình tải lên."}, status=200 if job else 404)
 
 
@@ -260,11 +428,20 @@ def upload_sync(request):
     replacement_error = _validate_upload_replacement(request, upload)
     if replacement_error:
         return replacement_error
+    replace_existing = str(request.data.get("replace_existing", "")).lower() == "true"
     staged_path, filename, is_reupload = stage_upload_file(upload)
     try:
         from backend.services.rag_service import index_document
 
         with _upload_lock:
+            existing_path = config.DOCS_DIR / filename
+            if existing_path.is_file() and not replace_existing:
+                discard_staged_upload(staged_path)
+                return _error(
+                    "A document with this filename already exists. Confirm replacement before uploading.",
+                    409,
+                    "duplicate_filename",
+                )
             result = index_document(staged_path, source_metadata={"file_name": filename})
             category = result.get("category", "Chưa phân loại")
             final_path = commit_staged_upload(staged_path, filename)
@@ -274,6 +451,71 @@ def upload_sync(request):
         logger.exception("Synchronous AI document indexing failed for filename=%s", filename)
         discard_staged_upload(staged_path)
         return _error("Không thể lập chỉ mục tài liệu. Tệp chưa được thêm vào kho.", 500)
+
+
+def _list_accessible_postgres_documents(user, employee_id=None):
+    from backend.services.sql_document_source import (
+        SqlDocumentAccessError,
+        accessible_documents,
+        is_postgres_source,
+    )
+
+    if not is_postgres_source():
+        return []
+    try:
+        records = accessible_documents(user, employee_id=employee_id)
+    except SqlDocumentAccessError as exc:
+        logger.warning(
+            "Unable to list PostgreSQL documents for AI sidebar (%s): %s",
+            exc.ai_reason,
+            exc,
+        )
+        return []
+
+    tailieu_ids = [
+        int(r["source_id"])
+        for r in records
+        if r.get("source_type") == "tailieu" and r.get("source_id") is not None
+    ]
+    folder_by_tailieu_id = {}
+    if tailieu_ids:
+        try:
+            from document_templates.models import TaiLieuChiTiet
+
+            for tid, folder_name in TaiLieuChiTiet.objects.filter(
+                id__in=tailieu_ids
+            ).values_list("id", "dm_tai_lieu__ten_tai_lieu"):
+                if folder_name:
+                    folder_by_tailieu_id[int(tid)] = folder_name
+        except Exception:
+            pass
+
+    docs = []
+    for r in records:
+        source_type = r.get("source_type")
+        source_id = r.get("source_id")
+        display_name = str(r.get("display_name") or r.get("trich_yeu") or "Tài liệu")[:240]
+        if source_type == "vanbanden":
+            category = "Văn bản đến"
+        elif source_type == "vanbandi":
+            category = "Văn bản đi"
+        elif source_type == "tailieu":
+            folder_name = folder_by_tailieu_id.get(int(source_id)) if source_id is not None else None
+            category = f"Kho tài liệu / {folder_name}" if folder_name else "Kho tài liệu"
+        else:
+            category = "Chưa phân loại"
+
+        updated_at = r.get("updated_at")
+        docs.append({
+            "filename": display_name,
+            "size": None,
+            "category": category,
+            "upload_time": updated_at.isoformat() if hasattr(updated_at, "isoformat") else updated_at,
+            "source_type": source_type,
+            "source_id": source_id,
+            "is_managed": True,
+        })
+    return docs
 
 
 @api_view(["GET", "DELETE"])
@@ -292,7 +534,15 @@ def documents(request, filename=None):
             }
             for item in list_documents()
         ]
-        return JsonResponse({"documents": public_documents})
+        postgres_documents = _list_accessible_postgres_documents(
+            request.user,
+            employee_id=resolve_employee_id(request),
+        )
+        seen_names = {doc["filename"] for doc in postgres_documents}
+        combined = postgres_documents + [
+            doc for doc in public_documents if doc["filename"] not in seen_names
+        ]
+        return JsonResponse({"documents": combined})
     denied = _require_ai_admin(request)
     if denied:
         return denied
@@ -315,7 +565,24 @@ def categories(request):
     denied = _require_ai_access(request)
     if denied:
         return denied
-    return JsonResponse({"categories": list_categories()})
+    base_categories = list_categories()
+    postgres_documents = _list_accessible_postgres_documents(
+        request.user,
+        employee_id=resolve_employee_id(request),
+    )
+    if not postgres_documents:
+        return JsonResponse({"categories": base_categories})
+
+    counts = {item["name"]: item["count"] for item in base_categories}
+    for doc in postgres_documents:
+        cat = doc.get("category") or "Chưa phân loại"
+        counts[cat] = counts.get(cat, 0) + 1
+    return JsonResponse({
+        "categories": [
+            {"name": name, "count": count}
+            for name, count in sorted(counts.items())
+        ]
+    })
 
 
 @api_view(["DELETE"])
@@ -352,7 +619,28 @@ def document_file(request, filename):
     file_path = config.DOCS_DIR / safe_name
     if not file_path.is_file():
         return _error(f"Không tìm thấy tài liệu '{safe_name}'.", 404)
-    media_types = {".pdf": "application/pdf", ".txt": "text/plain; charset=utf-8", ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
+    media_types = {
+        ".pdf": "application/pdf",
+        ".txt": "text/plain; charset=utf-8",
+        ".md": "text/markdown; charset=utf-8",
+        ".markdown": "text/markdown; charset=utf-8",
+        ".csv": "text/csv; charset=utf-8",
+        ".json": "application/json; charset=utf-8",
+        ".xml": "application/xml; charset=utf-8",
+        ".html": "text/html; charset=utf-8",
+        ".htm": "text/html; charset=utf-8",
+        ".doc": "application/msword",
+        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp",
+        ".bmp": "image/bmp",
+        ".tiff": "image/tiff",
+        ".tif": "image/tiff",
+        ".gif": "image/gif",
+    }
     response = FileResponse(file_path.open("rb"), content_type=media_types.get(file_path.suffix.lower(), "application/octet-stream"), filename=safe_name)
     response["Content-Disposition"] = f'inline; filename="{safe_name}"'
     return response
@@ -369,22 +657,47 @@ def preview_document(request, filename):
     if safe_name != unquote(filename) or not file_path.is_file():
         return _error("Không tìm thấy tài liệu.", 404)
     suffix = file_path.suffix.lower()
+    image_extensions = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif", ".gif"}
+    text_extract_extensions = {".doc", ".csv", ".pptx", ".md", ".markdown", ".html", ".htm", ".json", ".xml"}
     if suffix == ".pdf":
-        return JsonResponse({"filename": safe_name, "file_type": "PDF", "render_mode": "pdf", "file_url": f"/documents/{safe_name}/file"})
+        return JsonResponse({"filename": safe_name, "file_type": "PDF", "render_mode": "pdf", "file_url": f"/api/ai/documents/{safe_name}/file"})
+    if suffix in image_extensions:
+        return JsonResponse({"filename": safe_name, "file_type": suffix[1:].upper(), "render_mode": "image", "file_url": f"/api/ai/documents/{safe_name}/file"})
     if suffix == ".docx":
         try:
-            from docx import Document
-            lines = [paragraph.text for paragraph in Document(str(file_path)).paragraphs]
-            full_text = "\n".join(lines)
-            pages = [{"page": index // 60 + 1, "text": "\n".join(lines[index:index + 60])} for index in range(0, len(lines), 60)]
+            from backend.services.rag_service import read_docx
+
+            full_text = read_docx(file_path)
+            lines = full_text.splitlines()
+            pages = [{"page": index // 60 + 1, "text": "\n".join(lines[index:index + 60])} for index in range(0, max(1, len(lines)), 60)]
         except Exception as exc:
             return _error(f"Không đọc được DOCX: {exc}", 500)
     elif suffix == ".txt":
         try:
             full_text = file_path.read_text(encoding="utf-8", errors="replace")
-            pages = [{"page": 1, "text": full_text}]
+            lines = full_text.splitlines()
+            pages = (
+                [{"page": index // 60 + 1, "text": "\n".join(lines[index:index + 60])} for index in range(0, len(lines), 60)]
+                if len(lines) > 60
+                else [{"page": 1, "text": full_text}]
+            )
         except OSError as exc:
             return _error(f"Không đọc được TXT: {exc}", 500)
+    elif suffix in text_extract_extensions:
+        try:
+            from backend.services.rag_service import read_document_pages
+
+            extracted = read_document_pages(file_path) or []
+            pages = [
+                {"page": page.get("page") or idx + 1, "text": page.get("text", "")}
+                for idx, page in enumerate(extracted)
+                if page.get("text", "").strip()
+            ]
+            if not pages:
+                pages = [{"page": 1, "text": ""}]
+            full_text = "\n\n".join(page["text"] for page in pages if page["text"])
+        except Exception as exc:
+            return _error(f"Không đọc được {suffix[1:].upper()}: {exc}", 500)
     else:
         return _error(f"Không hỗ trợ xem trước định dạng '{suffix}'.", 400)
     return JsonResponse({"filename": safe_name, "file_type": suffix[1:].upper(), "render_mode": "text", "total_pages": len(pages), "pages": pages, "full_text": full_text})

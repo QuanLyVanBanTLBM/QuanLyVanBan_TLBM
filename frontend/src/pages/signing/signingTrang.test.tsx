@@ -119,14 +119,14 @@ describe('TaoHoSoPage văn bản trình ký', () => {
     fireEvent.click(luu);
     expect(await screen.findByText('Vui lòng nhập trích yếu văn bản.')).toBeInTheDocument();
     expect(api.taoNhap).not.toHaveBeenCalled();
-    fireEvent.change(screen.getByLabelText('Số hiệu tham chiếu'), { target: { value: '05/TTr' } });
     fireEvent.change(screen.getByLabelText('Trích yếu'), { target: { value: 'Tờ trình đào tạo' } });
     fireEvent.click(luu);
     await waitFor(() => expect(api.taoNhap).toHaveBeenCalledTimes(1));
     const form = api.taoNhap.mock.calls[0][0] as FormData;
     expect([form.get('van_ban_id'), form.get('document_type')]).toEqual([null, null]);
-    expect([form.get('so_hieu_van_ban'), form.get('trich_yeu_van_ban'), form.get('quy_trinh')])
-      .toEqual(['05/TTr', 'Tờ trình đào tạo', '2']);
+    expect([form.get('trich_yeu_van_ban'), form.get('quy_trinh')]).toEqual(['Tờ trình đào tạo', '2']);
+    expect(form.has('so_hieu_van_ban')).toBe(false);
+    expect(screen.queryByLabelText('Số hiệu tham chiếu')).not.toBeInTheDocument();
   });
 });
 

@@ -50,15 +50,18 @@ def get_active_ai_settings() -> dict:
                     val = stored.get(k)
                     if val is not None and str(val).strip():
                         settings[k] = str(val).strip()
+                stored_llm = str(stored.get("llm_model") or "").strip()
+                if stored_llm in provider_config["llm_models"]:
+                    settings["llm_model"] = stored_llm
+                    settings["vision_model"] = stored_llm
+                stored_vision = str(stored.get("vision_model") or "").strip()
+                if stored_vision in provider_config["llm_models"]:
+                    settings["vision_model"] = stored_vision
         except Exception as exc:
             logger.warning("Could not read ai_settings.json: %s", exc)
 
-    settings.update({
-        "provider": provider,
-        "llm_model": provider_config["default_llm"],
-        "embed_model": provider_config["embed_model"],
-        "vision_model": provider_config["default_llm"],
-    })
+    settings["provider"] = provider
+    settings["embed_model"] = provider_config["embed_model"]
     return settings
 
 

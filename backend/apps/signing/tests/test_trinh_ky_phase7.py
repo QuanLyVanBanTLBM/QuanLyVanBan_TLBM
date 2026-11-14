@@ -96,6 +96,7 @@ class TrinhKyBase(TestCase):
         self.ky2 = User.objects.create_user("phap_che")
         self.ky3 = User.objects.create_user("giam_doc")
         self.la = User.objects.create_user("nguoi_ngoai")
+        cap_quyen(self.la, "view_trinhky")  # vào được phân hệ nhưng không liên quan hồ sơ
         self.position = Position.objects.create(
             display_order=Position.get_next_display_order(), name="Trưởng phòng"
         )
@@ -204,7 +205,6 @@ class TaoNhapTests(TrinhKyBase):
                 self.tao,
                 quy_trinh=self.process,
                 tep=tep_pdf(),
-                so_hieu_van_ban="01/TTr",
                 trich_yeu_van_ban="x" * 1001,
             )
         self.assertEqual(ctx.exception.detail.code, "trich_yeu_qua_dai")
@@ -326,6 +326,7 @@ class LienKetVanBanDiTests(TrinhKyBase):
         r = self.lien_ket(pk, client=self.client_cua(User.objects.get(pk=self.la.pk)))
         self.assertEqual((r.status_code, r.data["code"]), (403, "khong_co_quyen"))
         self.tao.user_permissions.clear()
+        cap_quyen(self.tao, "view_trinhky")  # vẫn vào được phân hệ, nhưng không còn quyền tạo hồ sơ
         self.c = self.client_cua(User.objects.get(pk=self.tao.pk))
         for van_ban_id, http_status, code in (
             (11, 400, "van_ban_han_che_khong_trinh_ky"),

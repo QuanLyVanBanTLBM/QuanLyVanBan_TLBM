@@ -465,6 +465,12 @@ CREATE TABLE accounts_employee (
     is_public BOOLEAN NOT NULL DEFAULT TRUE,
     trang_thai employee_work_status NOT NULL DEFAULT 'LAM_VIEC',
     ghi_chu TEXT,
+    is_2fa_enabled BOOLEAN NOT NULL DEFAULT FALSE, -- Cờ bật xác thực hai yếu tố (TOTP)
+    totp_secret VARCHAR(255), -- Khóa bí mật TOTP đã mã hóa đối xứng bằng Fernet
+    twofa_backup_codes JSONB NOT NULL DEFAULT '[]'::jsonb, -- Danh sách mã băm SHA-256 của 10 mã dự phòng
+    totp_last_used_step BIGINT, -- Bước thời gian 30s cuối đã xác thực (chống dùng lại mã OTP)
+    twofa_failed_attempts INT NOT NULL DEFAULT 0, -- Số lần nhập sai OTP/mã dự phòng liên tiếp
+    twofa_locked_until TIMESTAMPTZ, -- Thời điểm mở khóa nếu nhập sai 2FA quá giới hạn
     last_login TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -1910,13 +1916,24 @@ CREATE TABLE birthdays_birthdayemaillog (
     opened_at TIMESTAMPTZ,
     clicked_count INTEGER NOT NULL DEFAULT 0,
     email_provider VARCHAR(50),
-    delivery_source VARCHAR(8) NOT NULL DEFAULT 'AUTO',
+    delivery_source VARCHAR(16) NOT NULL DEFAULT 'AUTO',
     delivery_snapshot JSONB,
     last_operator VARCHAR(150),
     delivery_uncertain BOOLEAN NOT NULL DEFAULT false,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT uq_emaillog_employee_date UNIQUE (employee_id, sent_date)
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE UNIQUE INDEX uq_emaillog_employee_date_auto
+    ON birthdays_birthdayemaillog (employee_id, sent_date)
+    WHERE delivery_source = 'AUTO';
+
+CREATE UNIQUE INDEX uq_emaillog_employee_date_manual
+    ON birthdays_birthdayemaillog (employee_id, sent_date)
+    WHERE delivery_source = 'MANUAL';
+
+CREATE UNIQUE INDEX uq_emaillog_resend_inflight
+    ON birthdays_birthdayemaillog (employee_id, sent_date)
+    WHERE delivery_source = 'MANUAL_RESEND' AND trang_thai = 'SENDING';
 
 CREATE TRIGGER trg_emaillog_updated_at BEFORE UPDATE ON birthdays_birthdayemaillog
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();

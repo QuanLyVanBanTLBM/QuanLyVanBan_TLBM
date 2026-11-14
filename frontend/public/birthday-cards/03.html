@@ -5,14 +5,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Thiệp 03 - Tối Giản Tinh Tế (Editorial Kinetic) | Bảo Long Insurance</title>
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+  <link href="/birthday-cards/fonts.css" rel="stylesheet">
+  <script src="/birthday-cards/motion-03.js" defer></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       min-height: 100vh;
+      min-height: 100dvh;
       background: #efeae1;
       color: #1c1917;
       font-family: 'Cormorant Garamond', Georgia, serif;
@@ -27,9 +26,10 @@
       inset: 0;
       width: 100%;
       height: 100%;
+      display: block;
       pointer-events: none;
       z-index: 1;
-      opacity: 0.65;
+      opacity: 0.76;
     }
     .editorial-paper {
       position: relative;
@@ -40,6 +40,13 @@
       border: 1px solid #d6d3cd;
       padding: 48px 46px;
       box-shadow: 0 25px 60px rgba(28, 25, 23, 0.12);
+      animation: paper-float 8s ease-in-out infinite;
+      transform-style: preserve-3d;
+      transition: transform 180ms ease-out;
+    }
+    @keyframes paper-float {
+      0%, 100% { translate: 0 0; }
+      50% { translate: 0 -0.22rem; }
     }
     .header-meta {
       display: flex;
@@ -118,6 +125,57 @@
       margin: 10px 0 26px;
       transition: all 0.25s;
     }
+    .editorial-btn:focus-visible {
+      outline: 2px solid hsl(38 52% 46%);
+      outline-offset: 4px;
+    }
+    .editorial-btn.is-cheers {
+      animation: cheers 520ms ease-in-out;
+    }
+    .birthday-toast {
+      position: fixed;
+      top: 1.5rem;
+      left: 50%;
+      z-index: 30;
+      max-width: min(90vw, 32rem);
+      padding: 0.9rem 1.25rem;
+      border: 1px solid hsl(38 52% 46%);
+      background: hsl(22 10% 10%);
+      color: hsl(42 100% 98%);
+      box-shadow: 0 0.5rem 2rem hsl(22 10% 10% / 28%);
+      font-family: 'Plus Jakarta Sans', Arial, sans-serif;
+      font-size: 0.9rem;
+      line-height: 1.5;
+      text-align: center;
+      transform: translateX(-50%);
+      animation: toast-arrive 2.8s ease forwards;
+    }
+    @keyframes cheers {
+      25% { transform: translateY(-0.15rem) rotate(-1.5deg); }
+      70% { transform: translateY(-0.15rem) rotate(1.5deg); }
+    }
+    @keyframes toast-arrive {
+      0% { opacity: 0; transform: translate(-50%, -0.5rem); }
+      12%, 82% { opacity: 1; transform: translate(-50%, 0); }
+      100% { opacity: 0; transform: translate(-50%, -0.4rem); }
+    }
+    body.silk-css-fallback::before {
+      position: fixed;
+      inset: -15%;
+      z-index: 1;
+      background:
+        radial-gradient(ellipse at 22% 45%, hsl(39 43% 78% / 58%), transparent 48%),
+        radial-gradient(ellipse at 80% 38%, hsl(28 31% 71% / 48%), transparent 42%),
+        radial-gradient(ellipse at 54% 88%, hsl(45 47% 84% / 62%), transparent 46%);
+      content: '';
+      pointer-events: none;
+      animation: silk-drift 12s ease-in-out infinite alternate;
+    }
+    body.silk-css-fallback #silkCanvas { display: none; }
+    @keyframes silk-drift {
+      from { transform: translate3d(-1.5%, -1%, 0) scale(1); }
+      to { transform: translate3d(1.5%, 1%, 0) scale(1.06); }
+    }
     .editorial-btn:hover {
       background: #9a6b26;
       border-color: #9a6b26;
@@ -134,12 +192,21 @@
       .dossier-grid { grid-template-columns: 1fr; }
       .big-heading { font-size: 34px; }
     }
+    @media (prefers-reduced-motion: reduce) {
+      .editorial-paper,
+      .editorial-btn,
+      .birthday-toast,
+      body.silk-css-fallback::before {
+        animation: none !important;
+        transition: none !important;
+      }
+    }
   </style>
 </head>
 <body>
-  <canvas id="silkCanvas"></canvas>
+  <canvas id="silkCanvas" aria-hidden="true"></canvas>
 
-  <article class="editorial-paper" id="paperCard">
+  <article class="editorial-paper" id="paperCard" data-birthday-card="03">
     <div class="header-meta">
       <span data-card-field="organization_name">BẢO LONG INSURANCE</span>
       <span>EDITION • <strong data-card-field="birthday_date">—</strong></span>
@@ -158,6 +225,7 @@
       <div class="d-cell">
         <small>Chức vụ</small>
         <strong data-card-field="position">—</strong>
+        <small data-card-optional="job_title" hidden>Chức danh: <span data-card-field="job_title"></span></small>
       </div>
       <div class="d-cell">
         <small>Phòng ban</small>
@@ -177,7 +245,7 @@
       </p>
     </div>
 
-    <button class="editorial-btn" id="toastBtn">🥂 Nâng Ly Chúc Mừng Tuổi Mới</button>
+    <button type="button" class="editorial-btn" id="toastBtn" aria-label="Nâng ly chúc mừng tuổi mới">🥂 Nâng Ly Chúc Mừng Tuổi Mới</button>
 
     <div class="editorial-footer">
       <div>

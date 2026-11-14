@@ -629,7 +629,7 @@ Prefix `/api/v1/`. Tên đoạn đường dẫn theo convention tiếng Việt �
 
 Đã triển khai ở Phase 7 (#80), đường dẫn `/signing/trinh-ky/`:
 - `GET /signing/trinh-ky/?hop=can_toi_ky|toi_gui|tat_ca&trang_thai=`: `can_toi_ky` = người ký đã được mở, đang chờ ký, trên lượt `CHO_KY`; `tat_ca` = hồ sơ người dùng được xem (người tạo, người ký của hồ sơ; `view_signing_audit` xem tất cả).
-- `POST /signing/trinh-ky/` (multipart): dùng một trong hai nguồn: văn bản đi (`document_type=vanbandi`, `van_ban_id`, `tep_dinh_kem_id` là tệp PDF còn hiệu lực trên bản ghi; không gửi `tep`) hoặc PDF dự thảo (`tep` ≤ 20 MB, `trich_yeu_van_ban` bắt buộc, `so_hieu_van_ban` tùy chọn). Server kiểm và sao chép PDF vào kho Trình ký, tính SHA-256; tạo `NHAP`. Quyền `add_trinhky`.
+- `POST /signing/trinh-ky/` (multipart): dùng một trong hai nguồn: văn bản đi (`document_type=vanbandi`, `van_ban_id`, `tep_dinh_kem_id` là tệp PDF còn hiệu lực trên bản ghi; không gửi `tep`) hoặc PDF dự thảo (`tep` ≤ 20 MB, `trich_yeu_van_ban` bắt buộc; server tự cấp mã hồ sơ `HS-<năm>-<khóa chính 6 chữ số>` vào `so_hieu_van_ban`, bỏ qua giá trị client gửi). Server kiểm và sao chép PDF vào kho Trình ký, tính SHA-256; tạo `NHAP`. Quyền `add_trinhky`.
 - `POST /signing/trinh-ky/{id}/lien-ket-van-ban-di/`: người tạo liên kết PDF dự thảo đã duyệt với bản ghi Văn bản đi đã đăng ký; yêu cầu hồ sơ `HOAN_THANH` và PDF kết quả `THANH_CONG`; chỉ liên kết một lần, kiểm quyền xem đích và ghi nhật ký. Không tự tạo bản ghi hoặc cấp số văn bản.
 - `GET /signing/trinh-ky/{id}/`: tổng quan, các lượt trình (cấp, người ký, hạn), người đang chờ, lịch sử. Không trả đường dẫn lưu tệp.
 - `PATCH /signing/trinh-ky/{id}/`: chỉ khi `NHAP`, chỉ người tạo; thay tệp tăng `phien_ban_van_ban`.

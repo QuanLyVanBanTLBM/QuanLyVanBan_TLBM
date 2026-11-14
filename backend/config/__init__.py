@@ -64,7 +64,7 @@ VISION_OCR_PARALLEL_WORKERS = int(os.getenv("VISION_OCR_PARALLEL_WORKERS", "3"))
 SIMILARITY_TOP_K = 6
 
 ALLOWED_EXTENSIONS = (
-    ".pdf", ".docx", ".txt",
+    ".pdf", ".doc", ".docx", ".txt",
     ".csv",
     ".pptx",
     ".md", ".markdown",

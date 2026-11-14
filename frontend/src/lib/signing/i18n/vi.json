@@ -158,12 +158,11 @@
     "chonVanBanDi": "Chọn văn bản đi đã đăng ký",
     "nhapVanBanKhac": "Tải PDF dự thảo",
     "goiYChonVanBanDi": "Chọn văn bản đi đã đăng ký rồi chọn một tệp PDF trên bản ghi đó. Số hiệu và trích yếu lấy từ văn bản đi.",
-    "goiYNhapKhac": "PDF tải lên là bản nháp, chưa có số văn bản. Sau khi ký duyệt, tạo văn bản đi và tải lên PDF đã ký, rồi quay lại liên kết hồ sơ.",
+    "goiYNhapKhac": "PDF tải lên là bản nháp, chưa có số văn bản; hệ thống tự cấp mã hồ sơ. Sau khi ký duyệt, tạo văn bản đi và tải lên PDF đã ký, rồi quay lại liên kết hồ sơ.",
     "tepDinhKem": "Tệp PDF trên văn bản đi",
     "chonTepDinhKem": "— Chọn tệp PDF —",
     "khongCoTepPdf": "Văn bản đi này chưa có tệp PDF đính kèm.",
     "goiYTepDinhKem": "Tệp được sao chép vào kho Trình ký để giữ nguyên bản đã gửi; không thể tải thêm PDF khác cho văn bản này.",
-    "soHieu": "Số hiệu tham chiếu",
     "trichYeu": "Trích yếu",
     "daChonVanBan": "Đã chọn",
     "boChon": "Bỏ chọn",
@@ -172,7 +171,6 @@
     "loiHanChot": "Hạn chót phải sau thời điểm hiện tại.",
     "khongCoQuyen": "Tài khoản của bạn chưa được cấp quyền tạo hồ sơ trình ký.",
     "huongDanRangBuoc": "Các trường có dấu (*) là thông tin bắt buộc. Vui lòng hoàn thành đầy đủ trước khi lưu nháp và xem trước.",
-    "soHieuGhiChu": "Tối đa 100 ký tự (không bắt buộc)",
     "tepGhiChu": "Định dạng PDF (.pdf), tối đa 20 MB, không có mật khẩu bảo vệ.",
     "quyTrinhGhiChu": "Chọn quy trình ký duyệt áp dụng cho hồ sơ.",
     "hanChotGhiChu": "Sau thời điểm hiện tại (không bắt buộc).",
@@ -237,7 +235,7 @@
     "goiYThayTep": "Để trống nếu giữ tệp hiện tại; thay tệp sẽ tăng phiên bản văn bản.",
     "danhSachTep": "Danh sách tệp",
     "banDuThao": "Bản dự thảo",
-    "banLuot": "Bản trình ký",
+    "banLuot": "Tệp gốc (chưa ký)",
     "banDaKy": "Bản đã ký (tiến trình)",
     "bangChungJson": "Tải bằng chứng",
     "xemChiTiet": "Xem chi tiết"
@@ -594,6 +592,7 @@
     "kenhNhan": "Nhận OTP qua",
     "sms": "SMS",
     "email": "Email",
+    "doiHoacKhoiPhuc": "Đổi hoặc khôi phục PIN",
     "guiOtp": "Gửi OTP",
     "otpDaGui": "Đã gửi mã qua {kenh}. Mã có hiệu lực trong 10 phút.",
     "maOtp": "Mã OTP",
@@ -621,6 +620,10 @@
     "chinhSuaLai": "Chỉnh sửa lại",
     "dongYApDung": "Xác nhận áp dụng",
     "ketQuaCat": "Ảnh sau khi cắt",
-    "thuPhong": "Thu phóng"
+    "thuPhong": "Thu phóng",
+    "phongTo": "Phóng to",
+    "thuNho": "Thu nhỏ",
+    "datLaiViTri": "Đặt lại",
+    "huongDanCat": "Kéo để di chuyển, lăn chuột hoặc chụm hai ngón để thu phóng."
   }
 }

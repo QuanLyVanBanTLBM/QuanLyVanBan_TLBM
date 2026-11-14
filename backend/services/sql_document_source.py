@@ -112,6 +112,7 @@ def _assert_readonly_connection(cursor):
                    JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
                    WHERE namespace.nspname = 'public'
                      AND relation.relkind IN ('r', 'p', 'f')
+                     AND relation.relname <> 'ai_document_embedding'
                      AND has_table_privilege(current_user, relation.oid, 'SELECT')
                )
         FROM pg_roles role
@@ -139,6 +140,87 @@ def _employee_id_value(employee_id):
             "Mã nhân viên từ phiên đăng nhập QLVB không hợp lệ.", ai_reason="employee_id_invalid"
         )
     return value
+
+
+def accessible_document_keys(user, employee_id=None) -> set[str]:
+    """Return ``<source_type>:<source_id>`` keys admitted by ``ai_*`` views and user permissions.
+
+    Optimized for the chat hot path: fetches only integer IDs in a single query without loading
+    document text columns or attachment tables.
+    """
+    if not is_postgres_source():
+        return set()
+    if not has_permission_codename(user, "use_aiassistant"):
+        raise SqlDocumentAccessError(
+            "Tài khoản chưa được cấp quyền sử dụng trợ lý AI.", ai_reason="no_ai_permission"
+        )
+
+    document_ids = {
+        "vanbanden": list(
+            van_ban_xem_duoc(user, "DEN").values_list("pk", flat=True)
+        ),
+        "vanbandi": list(
+            van_ban_xem_duoc(user, "DI").values_list("pk", flat=True)
+        ),
+    }
+    can_read_tailieu = has_permission_codename(user, "view_tailieu")
+    employee_id = _employee_id_value(employee_id)
+    if "readonly" not in connections.databases:
+        raise SqlDocumentAccessError(
+            "Thiếu cấu hình kết nối CSDL chỉ đọc cho AI.", ai_reason="readonly_alias_missing"
+        )
+
+    allowed_keys: set[str] = set()
+    try:
+        with transaction.atomic(using="readonly"):
+            readonly = connections["readonly"]
+            with readonly.cursor() as cursor:
+                _assert_readonly_connection(cursor)
+            with readonly.cursor() as cursor:
+                cursor.execute(
+                    "SELECT set_config('qlvb.employee_id', %s, true)",
+                    [str(employee_id or "")],
+                )
+                for source_type in DOCUMENT_VIEWS:
+                    cursor.execute(
+                        "SELECT set_config(%s, %s, true)",
+                        [f"qlvb.can_view_{source_type}", "on"],
+                    )
+                    cursor.execute(
+                        "SELECT set_config(%s, %s, true)",
+                        [
+                            f"qlvb.can_view_expired_{source_type}",
+                            "on" if co_quyen_xem_het_hieu_luc(user, source_type) else "off",
+                        ],
+                    )
+                union_parts = []
+                union_params = []
+                if document_ids["vanbanden"]:
+                    union_parts.append(
+                        "SELECT 'vanbanden'::text AS source_type, id AS source_id FROM ai_vanbanden WHERE id = ANY(%s)"
+                    )
+                    union_params.append(document_ids["vanbanden"])
+                if document_ids["vanbandi"]:
+                    union_parts.append(
+                        "SELECT 'vanbandi'::text AS source_type, id AS source_id FROM ai_vanbandi WHERE id = ANY(%s)"
+                    )
+                    union_params.append(document_ids["vanbandi"])
+                if can_read_tailieu:
+                    union_parts.append(
+                        "SELECT 'tailieu'::text AS source_type, id AS source_id FROM ai_tailieu"
+                    )
+                if union_parts:
+                    cursor.execute(" UNION ALL ".join(union_parts), union_params)
+                    for source_type, source_id in cursor.fetchall():
+                        allowed_keys.add(f"{source_type}:{source_id}")
+    except SqlDocumentAccessError:
+        raise
+    except Exception as error:
+        raise SqlDocumentAccessError(
+            "Không thể truy cập nguồn CSDL chỉ đọc an toàn cho AI.", ai_reason="readonly_query_failed"
+        ) from error
+
+    return allowed_keys
 
 
 def accessible_documents(user, employee_id=None):
@@ -272,3 +354,169 @@ def get_accessible_document(user, source_type, source_id, employee_id=None):
         ),
         None,
     )
+
+
+def get_document_record_for_index(source_type: str, source_id: int):
+    """Retrieve full metadata and attachments for a single SQL document to index in ChromaDB.
+
+    Returns None if the document does not exist, is not internal (NOI_BO), or is hidden.
+    """
+    if not is_postgres_source():
+        return None
+
+    try:
+        source_id = int(source_id)
+    except (TypeError, ValueError):
+        return None
+
+    db_alias = "default"
+    connection = connections[db_alias]
+
+    queries = {
+        "vanbanden": """
+            SELECT 'vanbanden'::text AS source_type, id AS source_id,
+                   so_hieu, so_thu_tu AS sort_number, nam,
+                   ngay_den AS document_date, trich_yeu, noi_ban_hanh,
+                   ngay_van_ban, nguoi_ky, chuc_vu, hieu_luc::text AS hieu_luc,
+                   ngay_het_hieu_luc, ghi_chu, updated_at
+            FROM documents_vanbanden
+            WHERE id = %s AND pham_vi = 'NOI_BO' AND hien_thi IS TRUE
+        """,
+        "vanbandi": """
+            SELECT 'vanbandi'::text AS source_type, id AS source_id,
+                   so_hieu, so_thu_tu AS sort_number, nam,
+                   ngay_ban_hanh AS document_date, trich_yeu,
+                   (
+                       SELECT string_agg(dv.ten, ', ' ORDER BY dv.ten)
+                       FROM documents_vanbandi_noibanhanh nb
+                       JOIN organizations_donvi dv ON dv.id = nb.donvi_id
+                       WHERE nb.vanbandi_id = documents_vanbandi.id
+                   ) AS noi_ban_hanh,
+                   ngay_van_ban, nguoi_ky, chuc_vu, hieu_luc::text AS hieu_luc,
+                   ngay_het_hieu_luc, ghi_chu, updated_at
+            FROM documents_vanbandi
+            WHERE id = %s AND pham_vi = 'NOI_BO' AND hien_thi IS TRUE
+        """,
+        "tailieu": """
+            SELECT 'tailieu'::text AS source_type, id AS source_id,
+                   ky_hieu AS so_hieu, NULL::integer AS sort_number,
+                   NULL::smallint AS nam, ngay_dang::timestamptz AS document_date,
+                   tieu_de AS trich_yeu, noi_ban_hanh,
+                   NULL::timestamptz AS ngay_van_ban, NULL::text AS nguoi_ky,
+                   NULL::text AS chuc_vu, hieu_luc::text AS hieu_luc,
+                   ngay_het_hieu_luc::timestamptz AS ngay_het_hieu_luc,
+                   ghi_chu, updated_at
+            FROM records_chitiettailieu
+            WHERE id = %s AND hien_thi IN ('TAT_CA', 'NOI_BO_PHONG_BAN')
+        """,
+    }
+
+    attachment_queries = {
+        "vanbanden": "SELECT id, document_id, name, path FROM documents_vanbanden_attachment WHERE document_id = %s AND is_deleted IS FALSE ORDER BY id",
+        "vanbandi": "SELECT id, document_id, name, path FROM documents_vanbandi_attachment WHERE document_id = %s AND is_deleted IS FALSE ORDER BY id",
+        "tailieu": "SELECT id, document_id, name, path FROM records_chitiettailieu_attachment WHERE document_id = %s AND is_deleted IS FALSE ORDER BY id",
+    }
+
+    if source_type not in queries:
+        return None
+
+    with connection.cursor() as cursor:
+        cursor.execute(queries[source_type], [source_id])
+        rows = _dict_rows(cursor)
+        if not rows:
+            return None
+        row = rows[0]
+
+        attachments = []
+        if source_type in attachment_queries:
+            cursor.execute(attachment_queries[source_type], [source_id])
+            attachments = _dict_rows(cursor)
+
+        if source_type == "tailieu":
+            row["display_name"] = f"{row['so_hieu'] or 'Tài liệu'} — {row['trich_yeu']}"[:240]
+        else:
+            row["display_name"] = f"{row['so_hieu']} — {row['trich_yeu']}"[:240]
+        row["attachments"] = attachments
+        return row
+
+
+def get_all_document_records_for_index(source_type: str | None = None):
+    """Retrieve all internal documents across specified or all document types for indexing."""
+    if not is_postgres_source():
+        return []
+
+    types_to_fetch = [source_type] if source_type else ["vanbanden", "vanbandi", "tailieu"]
+    connection = connections["default"]
+
+    queries = {
+        "vanbanden": """
+            SELECT 'vanbanden'::text AS source_type, id AS source_id,
+                   so_hieu, so_thu_tu AS sort_number, nam,
+                   ngay_den AS document_date, trich_yeu, noi_ban_hanh,
+                   ngay_van_ban, nguoi_ky, chuc_vu, hieu_luc::text AS hieu_luc,
+                   ngay_het_hieu_luc, ghi_chu, updated_at
+            FROM documents_vanbanden
+            WHERE pham_vi = 'NOI_BO' AND hien_thi IS TRUE
+            ORDER BY updated_at DESC
+        """,
+        "vanbandi": """
+            SELECT 'vanbandi'::text AS source_type, id AS source_id,
+                   so_hieu, so_thu_tu AS sort_number, nam,
+                   ngay_ban_hanh AS document_date, trich_yeu,
+                   (
+                       SELECT string_agg(dv.ten, ', ' ORDER BY dv.ten)
+                       FROM documents_vanbandi_noibanhanh nb
+                       JOIN organizations_donvi dv ON dv.id = nb.donvi_id
+                       WHERE nb.vanbandi_id = documents_vanbandi.id
+                   ) AS noi_ban_hanh,
+                   ngay_van_ban, nguoi_ky, chuc_vu, hieu_luc::text AS hieu_luc,
+                   ngay_het_hieu_luc, ghi_chu, updated_at
+            FROM documents_vanbandi
+            WHERE pham_vi = 'NOI_BO' AND hien_thi IS TRUE
+            ORDER BY updated_at DESC
+        """,
+        "tailieu": """
+            SELECT 'tailieu'::text AS source_type, id AS source_id,
+                   ky_hieu AS so_hieu, NULL::integer AS sort_number,
+                   NULL::smallint AS nam, ngay_dang::timestamptz AS document_date,
+                   tieu_de AS trich_yeu, noi_ban_hanh,
+                   NULL::timestamptz AS ngay_van_ban, NULL::text AS nguoi_ky,
+                   NULL::text AS chuc_vu, hieu_luc::text AS hieu_luc,
+                   ngay_het_hieu_luc::timestamptz AS ngay_het_hieu_luc,
+                   ghi_chu, updated_at
+            FROM records_chitiettailieu
+            WHERE hien_thi IN ('TAT_CA', 'NOI_BO_PHONG_BAN')
+            ORDER BY updated_at DESC
+        """,
+    }
+
+    attachment_queries = {
+        "vanbanden": "SELECT id, document_id, name, path FROM documents_vanbanden_attachment WHERE is_deleted IS FALSE ORDER BY document_id, id",
+        "vanbandi": "SELECT id, document_id, name, path FROM documents_vanbandi_attachment WHERE is_deleted IS FALSE ORDER BY document_id, id",
+        "tailieu": "SELECT id, document_id, name, path FROM records_chitiettailieu_attachment WHERE is_deleted IS FALSE ORDER BY document_id, id",
+    }
+
+    docs = []
+    with connection.cursor() as cursor:
+        for st in types_to_fetch:
+            if st not in queries:
+                continue
+
+            attachments_by_doc = {}
+            if st in attachment_queries:
+                cursor.execute(attachment_queries[st])
+                for att in _dict_rows(cursor):
+                    attachments_by_doc.setdefault(att["document_id"], []).append(att)
+
+            cursor.execute(queries[st])
+            rows = _dict_rows(cursor)
+            for row in rows:
+                if st == "tailieu":
+                    row["display_name"] = f"{row['so_hieu'] or 'Tài liệu'} — {row['trich_yeu']}"[:240]
+                else:
+                    row["display_name"] = f"{row['so_hieu']} — {row['trich_yeu']}"[:240]
+                row["attachments"] = attachments_by_doc.get(row["source_id"], [])
+                docs.append(row)
+
+    return docs
+

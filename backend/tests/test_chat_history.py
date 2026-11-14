@@ -49,3 +49,27 @@ class RagRegressionTests(unittest.TestCase):
         assert "Câu 5" in formatted
         assert "Người dùng:" in formatted
         assert "Trợ lý:" in formatted
+
+    def test_long_elliptical_follow_up_detection_and_conversational_rewriting(self):
+        # Các câu hỏi nối tiếp dài > 6 từ thường gặp trong thực tế (Tình huống 4)
+        assert is_follow_up_question("Áp dụng cho nhân sự thử việc không?")
+        assert is_follow_up_question("Vậy trường hợp làm việc trên 5 năm thì sao?")
+        assert is_follow_up_question("Đối với phòng hành chính nhân sự thì như thế nào?")
+
+        history = [
+            {"role": "user", "content": "Quy định nghỉ phép năm 2026 thế nào?"},
+            {
+                "role": "assistant",
+                "content": "Theo Quyết định 45/QĐ-TLBM (Điều 4), nhân viên chính thức có 12 ngày phép/năm.",
+            },
+            {"role": "user", "content": "Vậy trường hợp làm việc trên 5 năm thì sao?"},
+            {
+                "role": "assistant",
+                "content": "Theo Khoản 2 Điều 4 Quyết định 45/QĐ-TLBM, cứ đủ 5 năm thâm niên được cộng thêm 1 ngày phép.",
+            },
+        ]
+
+        rewritten = build_retrieval_query("Áp dụng cho nhân sự thử việc không?", history)
+        assert "Quy định nghỉ phép năm 2026 thế nào?" in rewritten
+        assert "45/QĐ-TLBM" in rewritten
+        assert "Áp dụng cho nhân sự thử việc không?" in rewritten
