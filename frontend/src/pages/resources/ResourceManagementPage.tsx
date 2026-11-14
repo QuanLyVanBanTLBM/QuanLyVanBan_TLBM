@@ -13,6 +13,7 @@ import { CategoryManagementModal } from '@components/resources/CategoryManagemen
 import { FolderManagerModal } from '@components/folders/FolderManagerModal';
 import { Button } from '@components/common/Button';
 import { Toast, ToastNotification } from '@components/resources/Toast';
+import { DropdownSearchInput } from '@components/resources/DropdownSearchInput';
 import { useTranslation } from '@i18n/translate';
 import { apiClient, downloadBlob, ApiError } from '@lib/apiClient';
 import { getAbsoluteFileUrl } from '@lib/fileUtils';
@@ -20,6 +21,11 @@ import { authService } from '@lib/authService';
 import { usePermissions } from '@lib/permissions';
 import { computeEffectiveStatus } from '@lib/resourceValidity';
 import { fetchAllResourcePages } from '@lib/resourcePagination';
+import {
+  normalizeSearchText,
+  filterResourceCategories,
+  filterResourceTypes,
+} from '@lib/resourceSearch';
 
 const STORAGE_KEY = 'tlbm_resources_filter_state';
 const STORAGE_DOCS = 'tlbm_documents_v2';
@@ -102,16 +108,6 @@ interface PersistedResourceState {
   page?: number;
   pageSize?: number;
 }
-
-const normalizeSearchText = (str?: string | null): string => {
-  return (str || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/đ/g, 'd')
-    .replace(/Đ/g, 'd')
-    .trim();
-};
 
 const SEARCH_FIELD_OPTIONS: { value: SearchScopeType; labelKey: string; icon: string; placeholderKey: string }[] = [
   { value: 'all', labelKey: 'searchScopeAll', icon: 'fa-solid fa-layer-group', placeholderKey: 'searchPlaceholderAll' },
@@ -1192,24 +1188,46 @@ export default function ResourceManagementPage() {
     };
   }, [hasTypeBar]);
 
-  // Đổi Thư mục: Tự động reset Loại tài liệu về 'all' và về trang 1
-  const handleCategorySelect = (newCat: string) => {
-    setSelectedCategory(newCat);
-    setSelectedType('all');
-    setCurrentPage(1);
-    setIsCategoryDropdownOpen(false);
-    setIsTypeDropdownOpen(false);
-  };
-
   // Dropdown Popovers State (Nút bấm sổ dropdown bên phải cho Danh mục, Loại tài liệu, Năm & Hiệu lực)
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
   const [isTypeDropdownOpen, setIsTypeDropdownOpen] = useState(false);
+  const [categoryDropdownSearch, setCategoryDropdownSearch] = useState('');
+  const [typeDropdownSearch, setTypeDropdownSearch] = useState('');
   const [isYearDropdownOpen, setIsYearDropdownOpen] = useState(false);
   const [isStatusDropdownOpen, setIsStatusDropdownOpen] = useState(false);
   const categoryDropdownRef = useRef<HTMLDivElement>(null);
   const typeDropdownRef = useRef<HTMLDivElement>(null);
   const yearDropdownRef = useRef<HTMLDivElement>(null);
   const statusDropdownRef = useRef<HTMLDivElement>(null);
+
+  const closeCategoryDropdown = useCallback(() => {
+    setIsCategoryDropdownOpen(false);
+    setCategoryDropdownSearch('');
+  }, []);
+
+  const closeTypeDropdown = useCallback(() => {
+    setIsTypeDropdownOpen(false);
+    setTypeDropdownSearch('');
+  }, []);
+
+  const filteredDropdownCategories = useMemo(
+    () => filterResourceCategories(sortedCategories, categoryDropdownSearch),
+    [sortedCategories, categoryDropdownSearch]
+  );
+
+  const filteredDropdownTypes = useMemo(
+    () => filterResourceTypes(availableTypesForFilter, typeDropdownSearch),
+    [availableTypesForFilter, typeDropdownSearch]
+  );
+
+  // Đổi Thư mục: Tự động reset Loại tài liệu về 'all' và về trang 1
+  const handleCategorySelect = (newCat: string) => {
+    setSelectedCategory(newCat);
+    setSelectedType('all');
+    setCurrentPage(1);
+    closeCategoryDropdown();
+    closeTypeDropdown();
+  };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -1218,13 +1236,13 @@ export default function ResourceManagementPage() {
         categoryDropdownRef.current &&
         !categoryDropdownRef.current.contains(target)
       ) {
-        setIsCategoryDropdownOpen(false);
+        closeCategoryDropdown();
       }
       if (
         typeDropdownRef.current &&
         !typeDropdownRef.current.contains(target)
       ) {
-        setIsTypeDropdownOpen(false);
+        closeTypeDropdown();
       }
       if (
         yearDropdownRef.current &&
@@ -1249,7 +1267,7 @@ export default function ResourceManagementPage() {
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, []);
+  }, [closeCategoryDropdown, closeTypeDropdown]);
 
   // Xóa toàn bộ bộ lọc
   const handleClearFilters = () => {
@@ -1260,8 +1278,8 @@ export default function ResourceManagementPage() {
     setSelectedYear('all');
     setStatusFilter('all');
     setCurrentPage(1);
-    setIsCategoryDropdownOpen(false);
-    setIsTypeDropdownOpen(false);
+    closeCategoryDropdown();
+    closeTypeDropdown();
     setIsYearDropdownOpen(false);
     setIsStatusDropdownOpen(false);
     setIsSearchFieldDropdownOpen(false);
@@ -2070,8 +2088,13 @@ export default function ResourceManagementPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    setIsCategoryDropdownOpen((prev) => !prev);
-                    setIsTypeDropdownOpen(false);
+                    if (isCategoryDropdownOpen) {
+                      closeCategoryDropdown();
+                    } else {
+                      setCategoryDropdownSearch('');
+                      setIsCategoryDropdownOpen(true);
+                    }
+                    closeTypeDropdown();
                   }}
                   className={`w-full px-2.5 sm:px-4 text-xs sm:text-[13px] font-semibold transition-colors flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer whitespace-nowrap rounded-tr-xl ${
                     !hasBottomRow ? 'rounded-br-xl' : ''
@@ -2117,12 +2140,23 @@ export default function ResourceManagementPage() {
                       </button>
                     </div>
 
+                    <div className="mb-1.5">
+                      <DropdownSearchInput
+                        value={categoryDropdownSearch}
+                        onChange={setCategoryDropdownSearch}
+                        placeholder={t('resourceManagement.catSearchPlaceholder')}
+                        clearLabel={t('resourceManagement.clearSearch')}
+                        autoFocus
+                        onEscape={closeCategoryDropdown}
+                      />
+                    </div>
+
                     {/* Nút 'Tất cả thư mục' */}
                     <button
                       type="button"
                       onClick={() => {
                         handleCategorySelect('all');
-                        setIsCategoryDropdownOpen(false);
+                        closeCategoryDropdown();
                       }}
                       className={`w-full px-2.5 py-2 rounded-lg text-left text-xs flex items-center justify-between gap-2 transition-colors cursor-pointer ${
                         selectedCategory === 'all'
@@ -2149,65 +2183,73 @@ export default function ResourceManagementPage() {
 
                     {/* Danh sách danh mục kèm checkbox (chỉ hiện trên tablet/desktop, ẩn checkbox trên mobile) */}
                     <div className="max-h-60 overflow-y-auto space-y-1 pr-0.5">
-                      {sortedCategories.map((cat) => {
-                        const isSelected = selectedCategory === String(cat.id);
-                        const tickIndex = visibleCategoryIds.indexOf(cat.id);
-                        const isVisibleOnBar = tickIndex !== -1;
-                        const count = docCountByCategory.get(cat.id) ?? 0;
+                      {filteredDropdownCategories.length === 0 ? (
+                        <div className="px-2.5 py-4 text-center text-xs text-muted">
+                          {sortedCategories.length === 0
+                            ? t('resourceManagement.noFoldersAvailable')
+                            : t('resourceManagement.noMatchingCategories')}
+                        </div>
+                      ) : (
+                        filteredDropdownCategories.map((cat) => {
+                          const isSelected = selectedCategory === String(cat.id);
+                          const tickIndex = visibleCategoryIds.indexOf(cat.id);
+                          const isVisibleOnBar = tickIndex !== -1;
+                          const count = docCountByCategory.get(cat.id) ?? 0;
 
-                        return (
-                          <div
-                            key={cat.id}
-                            className={`w-full px-2 py-1.5 rounded-lg text-xs flex items-center justify-between gap-2 transition-colors ${
-                              isSelected
-                                ? 'bg-primary/10 border border-primary/20 text-primary font-bold'
-                                : 'text-main hover:bg-surface-elevated'
-                            }`}
-                          >
-                            {/* Checkbox: Chỉ hiện trên sm:flex, ẨN trên mobile (hidden sm:flex) */}
-                            <label
-                              className="hidden sm:flex items-center gap-1.5 cursor-pointer shrink-0 select-none"
-                              title={isVisibleOnBar ? t('resourceManagement.displayedAtPosOnBar', { pos: tickIndex + 1 }) : t('resourceManagement.tickToDisplayTooltip')}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={isVisibleOnBar}
-                                onChange={() => toggleCategoryVisibility(cat.id)}
-                                className="w-4 h-4 rounded border-border-subtle text-primary focus:ring-primary/20 cursor-pointer accent-primary"
-                              />
-                              {isVisibleOnBar && (
-                                <span className="text-[10px] font-bold text-primary bg-primary/10 border border-primary/20 px-1 py-0.2 rounded leading-none">
-                                  #{tickIndex + 1}
-                                </span>
-                              )}
-                            </label>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                handleCategorySelect(String(cat.id));
-                                setIsCategoryDropdownOpen(false);
-                              }}
-                              className="flex items-center gap-2 truncate flex-1 text-left cursor-pointer hover:text-primary transition-colors py-0.5"
-                              title={cat.ghi_chu || cat.ten_tai_lieu}
-                            >
-                              <i
-                                className={`fa-solid ${isSelected ? 'fa-folder-open text-primary' : 'fa-folder text-muted'} text-xs shrink-0`}
-                              />
-                              <span className="truncate">{cat.ten_tai_lieu}</span>
-                            </button>
-                            <span
-                              className={`min-w-[20px] h-5 px-1.5 inline-flex items-center justify-center text-[11px] rounded-full font-bold leading-none shrink-0 ${
+                          return (
+                            <div
+                              key={cat.id}
+                              className={`w-full px-2 py-1.5 rounded-lg text-xs flex items-center justify-between gap-2 transition-colors ${
                                 isSelected
-                                  ? 'bg-primary text-white'
-                                  : 'bg-surface-elevated text-secondary border border-border-subtle'
+                                  ? 'bg-primary/10 border border-primary/20 text-primary font-bold'
+                                  : 'text-main hover:bg-surface-elevated'
                               }`}
                             >
-                              {count}
-                            </span>
-                          </div>
-                        );
-                      })}
+                              {/* Checkbox: Chỉ hiện trên sm:flex, ẨN trên mobile (hidden sm:flex) */}
+                              <label
+                                className="hidden sm:flex items-center gap-1.5 cursor-pointer shrink-0 select-none"
+                                title={isVisibleOnBar ? t('resourceManagement.displayedAtPosOnBar', { pos: tickIndex + 1 }) : t('resourceManagement.tickToDisplayTooltip')}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isVisibleOnBar}
+                                  onChange={() => toggleCategoryVisibility(cat.id)}
+                                  className="w-4 h-4 rounded border-border-subtle text-primary focus:ring-primary/20 cursor-pointer accent-primary"
+                                />
+                                {isVisibleOnBar && (
+                                  <span className="text-[10px] font-bold text-primary bg-primary/10 border border-primary/20 px-1 py-0.2 rounded leading-none">
+                                    #{tickIndex + 1}
+                                  </span>
+                                )}
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleCategorySelect(String(cat.id));
+                                  closeCategoryDropdown();
+                                }}
+                                className="flex items-center gap-2 truncate flex-1 text-left cursor-pointer hover:text-primary transition-colors py-0.5"
+                                title={cat.ghi_chu || cat.ten_tai_lieu}
+                              >
+                                <i
+                                  className={`fa-solid ${isSelected ? 'fa-folder-open text-primary' : 'fa-folder text-muted'} text-xs shrink-0`}
+                                />
+                                <span className="truncate">{cat.ten_tai_lieu}</span>
+                              </button>
+                              <span
+                                className={`min-w-[20px] h-5 px-1.5 inline-flex items-center justify-center text-[11px] rounded-full font-bold leading-none shrink-0 ${
+                                  isSelected
+                                    ? 'bg-primary text-white'
+                                    : 'bg-surface-elevated text-secondary border border-border-subtle'
+                                }`}
+                              >
+                                {count}
+                              </span>
+                            </div>
+                          );
+                        })
+                      )}
                     </div>
 
                     {canManageCategory && (
@@ -2218,7 +2260,7 @@ export default function ResourceManagementPage() {
                           type="button"
                           onClick={() => {
                             setIsCategoryModalOpen(true);
-                            setIsCategoryDropdownOpen(false);
+                            closeCategoryDropdown();
                           }}
                           className="w-full px-2.5 py-2 rounded-lg text-left text-xs font-semibold text-primary hover:bg-primary/5 flex items-center justify-between transition-colors cursor-pointer border border-primary/20 hover:border-primary/40 bg-primary/2"
                           title={t('resourceManagement.openCategoryManagementTooltip')}
@@ -2342,8 +2384,13 @@ export default function ResourceManagementPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    setIsTypeDropdownOpen((prev) => !prev);
-                    setIsCategoryDropdownOpen(false);
+                    if (isTypeDropdownOpen) {
+                      closeTypeDropdown();
+                    } else {
+                      setTypeDropdownSearch('');
+                      setIsTypeDropdownOpen(true);
+                    }
+                    closeCategoryDropdown();
                   }}
                   className={`w-full px-2.5 sm:px-4 text-xs sm:text-[13px] font-semibold transition-colors flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer whitespace-nowrap rounded-br-xl ${
                     selectedType !== 'all'
@@ -2393,12 +2440,23 @@ export default function ResourceManagementPage() {
                       );
                     })()}
 
+                    <div className="mb-1.5">
+                      <DropdownSearchInput
+                        value={typeDropdownSearch}
+                        onChange={setTypeDropdownSearch}
+                        placeholder={t('resourceManagement.typeSearchPlaceholder')}
+                        clearLabel={t('resourceManagement.clearSearch')}
+                        autoFocus
+                        onEscape={closeTypeDropdown}
+                      />
+                    </div>
+
                     <button
                       type="button"
                       onClick={() => {
                         setSelectedType('all');
                         setCurrentPage(1);
-                        setIsTypeDropdownOpen(false);
+                        closeTypeDropdown();
                       }}
                       className={`w-full px-2.5 py-2 rounded-lg text-left text-xs flex items-center justify-between gap-2 transition-colors cursor-pointer ${
                         selectedType === 'all'
@@ -2421,68 +2479,75 @@ export default function ResourceManagementPage() {
 
                     {/* Danh sách loại tài liệu kèm checkbox (ẩn checkbox trên mobile) */}
                     <div className="max-h-60 overflow-y-auto space-y-1 pr-0.5">
-                      {availableTypesForFilter.map((typeItem) => {
-                        const isSelected = selectedType === String(typeItem.id);
+                      {filteredDropdownTypes.length === 0 ? (
+                        <div className="px-2.5 py-4 text-center text-xs text-muted">
+                          {t('resourceManagement.noMatchingTypes')}
+                        </div>
+                      ) : (() => {
                         const currentScopeTypeIds = availableTypesForFilter.map((item) => item.id);
                         const activeInScope = visibleTypeIds.filter((id) => currentScopeTypeIds.includes(id));
-                        const tickIndex = activeInScope.indexOf(typeItem.id);
-                        const isVisibleOnBar = tickIndex !== -1;
-                        const docCount = docCountByCategoryAndType.get(`${selectedCategory}:${typeItem.id}`) ?? 0;
 
-                        return (
-                          <div
-                            key={typeItem.id}
-                            className={`relative w-full px-2 py-1.5 rounded-lg text-xs flex items-center justify-between gap-2 transition-colors ${
-                              isSelected
-                                ? 'bg-primary/10 border border-primary/20 text-primary font-bold'
-                                : 'text-main hover:bg-surface-elevated'
-                            }`}
-                          >
-                            {/* Checkbox: Chỉ hiện trên sm:flex, ẨN trên mobile (hidden sm:flex) */}
-                            <label
-                              className="hidden sm:flex items-center gap-1.5 cursor-pointer shrink-0 select-none"
-                              title={isVisibleOnBar ? t('resourceManagement.displayedAtPosOnSubBar', { pos: tickIndex + 1 }) : t('resourceManagement.tickToDisplayOnBarTooltip')}
-                              onClick={(e) => e.stopPropagation()}
+                        return filteredDropdownTypes.map((typeItem) => {
+                          const isSelected = selectedType === String(typeItem.id);
+                          const tickIndex = activeInScope.indexOf(typeItem.id);
+                          const isVisibleOnBar = tickIndex !== -1;
+                          const docCount = docCountByCategoryAndType.get(`${selectedCategory}:${typeItem.id}`) ?? 0;
+
+                          return (
+                            <div
+                              key={typeItem.id}
+                              className={`relative w-full px-2 py-1.5 rounded-lg text-xs flex items-center justify-between gap-2 transition-colors ${
+                                isSelected
+                                  ? 'bg-primary/10 border border-primary/20 text-primary font-bold'
+                                  : 'text-main hover:bg-surface-elevated'
+                              }`}
                             >
-                              <input
-                                type="checkbox"
-                                checked={isVisibleOnBar}
-                                onChange={() => toggleTypeVisibility(typeItem.id)}
-                                className="w-4 h-4 rounded border-border-subtle text-primary focus:ring-primary/20 cursor-pointer accent-primary"
-                              />
-                              {isVisibleOnBar && (
-                                <span className="text-[10px] font-bold text-primary bg-primary/10 border border-primary/20 px-1 py-0.2 rounded leading-none">
-                                  #{tickIndex + 1}
-                                </span>
-                              )}
-                            </label>
+                              {/* Checkbox: Chỉ hiện trên sm:flex, ẨN trên mobile (hidden sm:flex) */}
+                              <label
+                                className="hidden sm:flex items-center gap-1.5 cursor-pointer shrink-0 select-none"
+                                title={isVisibleOnBar ? t('resourceManagement.displayedAtPosOnSubBar', { pos: tickIndex + 1 }) : t('resourceManagement.tickToDisplayOnBarTooltip')}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isVisibleOnBar}
+                                  onChange={() => toggleTypeVisibility(typeItem.id)}
+                                  className="w-4 h-4 rounded border-border-subtle text-primary focus:ring-primary/20 cursor-pointer accent-primary"
+                                />
+                                {isVisibleOnBar && (
+                                  <span className="text-[10px] font-bold text-primary bg-primary/10 border border-primary/20 px-1 py-0.2 rounded leading-none">
+                                    #{tickIndex + 1}
+                                  </span>
+                                )}
+                              </label>
 
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSelectedType(String(typeItem.id));
-                                setCurrentPage(1);
-                                setIsTypeDropdownOpen(false);
-                              }}
-                              className="flex items-center gap-2 truncate flex-1 text-left cursor-pointer hover:text-primary transition-colors py-0.5"
-                              title={typeItem.ghi_chu || typeItem.ten_loai}
-                            >
-                              {!typeItem.is_public ? (
-                                <i className="fa-solid fa-lock text-[10px] opacity-70 shrink-0" />
-                              ) : (
-                                <i className="fa-solid fa-tag text-xs opacity-70 shrink-0" />
-                              )}
-                              <span className="truncate">{typeItem.ten_loai}</span>
-                            </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedType(String(typeItem.id));
+                                  setCurrentPage(1);
+                                  closeTypeDropdown();
+                                }}
+                                className="flex items-center gap-2 truncate flex-1 text-left cursor-pointer hover:text-primary transition-colors py-0.5"
+                                title={typeItem.ghi_chu || typeItem.ten_loai}
+                              >
+                                {!typeItem.is_public ? (
+                                  <i className="fa-solid fa-lock text-[10px] opacity-70 shrink-0" />
+                                ) : (
+                                  <i className="fa-solid fa-tag text-xs opacity-70 shrink-0" />
+                                )}
+                                <span className="truncate">{typeItem.ten_loai}</span>
+                              </button>
 
-                            <span className={`min-w-[20px] h-5 px-1.5 inline-flex items-center justify-center text-[11px] rounded-full font-bold leading-none shrink-0 ${
-                              isSelected ? 'bg-primary text-white' : 'bg-surface-elevated text-secondary border border-border-subtle'
-                            }`}>
-                              {docCount}
-                            </span>
-                          </div>
-                        );
-                      })}
+                              <span className={`min-w-[20px] h-5 px-1.5 inline-flex items-center justify-center text-[11px] rounded-full font-bold leading-none shrink-0 ${
+                                isSelected ? 'bg-primary text-white' : 'bg-surface-elevated text-secondary border border-border-subtle'
+                              }`}>
+                                {docCount}
+                              </span>
+                            </div>
+                          );
+                        });
+                      })()}
                     </div>
 
                     {canManageCategory && (
@@ -2493,7 +2558,7 @@ export default function ResourceManagementPage() {
                           type="button"
                           onClick={() => {
                             setIsCategoryModalOpen(true);
-                            setIsTypeDropdownOpen(false);
+                            closeTypeDropdown();
                           }}
                           className="w-full px-2.5 py-2 rounded-lg text-left text-xs font-semibold text-primary hover:bg-primary/5 flex items-center justify-between transition-colors cursor-pointer border border-primary/20 hover:border-primary/40 bg-primary/2"
                           title={t('resourceManagement.openCategoryManagementTooltip')}
@@ -2546,8 +2611,8 @@ export default function ResourceManagementPage() {
                   setIsSearchFieldDropdownOpen((prev) => !prev);
                   setIsYearDropdownOpen(false);
                   setIsStatusDropdownOpen(false);
-                  setIsCategoryDropdownOpen(false);
-                  setIsTypeDropdownOpen(false);
+                  closeCategoryDropdown();
+                  closeTypeDropdown();
                 }}
                 className={`h-10 px-2.5 sm:px-3 text-xs sm:text-[13px] font-semibold bg-surface-elevated hover:bg-surface border border-r-0 rounded-l-lg text-secondary hover:text-primary flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
                   isSearchFieldDropdownOpen
@@ -2637,8 +2702,8 @@ export default function ResourceManagementPage() {
               onClick={() => {
                 setIsYearDropdownOpen((prev) => !prev);
                 setIsStatusDropdownOpen(false);
-                setIsCategoryDropdownOpen(false);
-                setIsTypeDropdownOpen(false);
+                closeCategoryDropdown();
+                closeTypeDropdown();
               }}
               className={`w-full h-10 px-3 text-[13px] rounded-lg bg-surface-elevated text-main border transition-colors flex items-center justify-between gap-2 cursor-pointer font-medium ${
                 isYearDropdownOpen ? 'border-primary ring-1 ring-primary/20' : 'border-border-subtle hover:border-primary/50'
@@ -2721,8 +2786,8 @@ export default function ResourceManagementPage() {
               onClick={() => {
                 setIsStatusDropdownOpen((prev) => !prev);
                 setIsYearDropdownOpen(false);
-                setIsCategoryDropdownOpen(false);
-                setIsTypeDropdownOpen(false);
+                closeCategoryDropdown();
+                closeTypeDropdown();
               }}
               className={`w-full h-10 px-3 text-[13px] rounded-lg bg-surface-elevated text-main border transition-colors flex items-center justify-between gap-2 cursor-pointer font-medium ${
                 isStatusDropdownOpen ? 'border-primary ring-1 ring-primary/20' : 'border-border-subtle hover:border-primary/50'
