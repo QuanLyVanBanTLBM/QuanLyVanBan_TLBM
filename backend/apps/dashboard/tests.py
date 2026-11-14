@@ -259,9 +259,9 @@ class DashboardOverviewPayloadTests(DashboardAPITests):
             "sender": "Cơ quan ban hành",
             "scope": PhamVi.NOI_BO,
             "attachments": [
-                {"name": "a.DOCX", "url": att_docx.path, "type": "word", "size": ""},
-                {"name": "b.png", "url": att_png.path, "type": "image", "size": ""},
-                {"name": "scan", "url": att_noext.path, "type": "pdf", "size": ""},
+                {"id": att_docx.pk, "name": "a.DOCX", "url": f"/api/documents/{newest.pk}/attachments/{att_docx.pk}/download/", "type": "word", "size": ""},
+                {"id": att_png.pk, "name": "b.png", "url": f"/api/documents/{newest.pk}/attachments/{att_png.pk}/download/", "type": "image", "size": ""},
+                {"id": att_noext.pk, "name": "scan", "url": f"/api/documents/{newest.pk}/attachments/{att_noext.pk}/download/", "type": "pdf", "size": ""},
             ],
         })
         self.assertEqual(data["recentIncoming"][1]["sender"], "Cơ quan 4")
@@ -295,7 +295,7 @@ class DashboardOverviewPayloadTests(DashboardAPITests):
                 "date": "04/03/" + str(self.today.year),
                 "recipient": "Nơi nhận",
                 "scope": PhamVi.NOI_BO,
-                "attachments": [{"name": "bao-cao.xls", "url": att.path, "type": "excel", "size": ""}],
+                "attachments": [{"id": att.pk, "name": "bao-cao.xls", "url": f"/api/documents/{doc.pk}/attachments/{att.pk}/download/", "type": "excel", "size": ""}],
             },
             {
                 "id": older.pk,
