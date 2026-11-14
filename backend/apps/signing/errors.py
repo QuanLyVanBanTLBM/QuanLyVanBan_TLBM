@@ -110,3 +110,10 @@ class SigningAPIView(APIView):
 
     def get_exception_handler(self):
         return exception_handler
+
+    def initial(self, request, *args, **kwargs):
+        # Xác thực và IsAuthenticated chạy trước (401); sau đó chỉ người có quyền thuộc phân hệ Trình ký mới vào được API.
+        super().initial(request, *args, **kwargs)
+        from .permissions import yeu_cau_truy_cap_trinh_ky
+
+        yeu_cau_truy_cap_trinh_ky(request.user)

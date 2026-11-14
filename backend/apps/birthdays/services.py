@@ -1,4 +1,5 @@
 import calendar
+import ipaddress
 import smtplib
 from datetime import date, timedelta
 from urllib.parse import urlencode, urlsplit, urlunsplit
@@ -10,12 +11,16 @@ from django.core.mail import send_mail
 from django.core.validators import validate_email
 from django.db import transaction
 from django.db.models import Q
-from django.template.loader import render_to_string
 from django.utils import timezone
 
 from accounts.models import Employee
 from .models import BirthdayEmailLog, BirthdayEmailSource, BirthdayEmailStatus
-from .templates_service import LAYOUT_DEFAULTS, pick_hybrid_template, render_email_draft
+from .templates_service import (
+    LAYOUT_DEFAULTS,
+    pick_automated_template,
+    pick_hybrid_template,
+    render_email_draft,
+)
 
 PRE_ACCEPTANCE_SMTP_ERRORS = (
     smtplib.SMTPAuthenticationError,
@@ -93,6 +98,7 @@ def _birthday_card_data(employee: Employee) -> dict:
     return {
         "employee_name": employee.ho_ten,
         "birthday_date": employee.ngay_sinh.strftime("%d/%m") if employee.ngay_sinh else "",
+        "job_title": (employee.chuc_danh or "").strip(),
         "department": employee.don_vi.ten if employee.don_vi else "Cơ quan",
         "position": employee.chuc_vu.name if employee.chuc_vu else "Cán bộ",
         "brand_name": brand_name,
@@ -101,43 +107,87 @@ def _birthday_card_data(employee: Employee) -> dict:
 
 
 def generate_birthday_card_token(employee: Employee) -> str:
-    """Ký snapshot tối thiểu của thiệp để người nhận xem mà không cần đăng nhập."""
-    return signing.dumps(_birthday_card_data(employee), salt=BIRTHDAY_CARD_TOKEN_SALT, compress=True)
+    """Ký ID nhân viên để người nhận xem thiệp công khai mà token không lộ dữ liệu cá nhân."""
+    return signing.dumps({"employee_id": employee.pk}, salt=BIRTHDAY_CARD_TOKEN_SALT, compress=True)
 
 
 def load_birthday_card_token(token: str) -> dict:
-    """Xác minh chữ ký và thời hạn token thiệp (30 ngày)."""
-    return signing.loads(
+    """Xác minh token 30 ngày rồi lấy từ DB dữ liệu thiệp tối thiểu hiện tại."""
+    payload = signing.loads(
         token,
         salt=BIRTHDAY_CARD_TOKEN_SALT,
         max_age=BIRTHDAY_CARD_TOKEN_MAX_AGE_SECONDS,
     )
+    if not isinstance(payload, dict):
+        raise signing.BadSignature("Invalid birthday card payload")
+
+    if set(payload) == {"employee_id"} and type(payload["employee_id"]) is int and payload["employee_id"] > 0:
+        try:
+            employee = Employee.objects.select_related("don_vi", "chuc_vu").get(pk=payload["employee_id"])
+        except Employee.DoesNotExist as exc:
+            raise signing.BadSignature("Birthday card recipient no longer exists") from exc
+        return _birthday_card_data(employee)
+
+    # Accept already-issued signed snapshot tokens until their existing 30-day expiry.
+    legacy_fields = {
+        "employee_name", "birthday_date", "department", "position", "brand_name", "organization_name",
+    }
+    if set(payload) == legacy_fields and all(isinstance(value, str) for value in payload.values()):
+        return payload
+    raise signing.BadSignature("Invalid birthday card payload")
 
 
 def generate_birthday_card_url(employee: Employee, layout: str | None = None) -> str:
-    """Tạo URL thiệp từ override riêng hoặc địa chỉ frontend dùng cho email."""
+    """Tạo URL public đến đúng card HTML theo layout, với token cá nhân hóa đã ký."""
+    layout = layout or "01"
+    if layout not in LAYOUT_DEFAULTS:
+        raise ValueError("Unknown birthday card layout")
+
     base_url = (getattr(settings, "BIRTHDAY_CARD_BASE_URL", "") or "").strip()
     if not base_url:
         frontend_url = (getattr(settings, "SIGNING_FRONTEND_URL", "") or "").strip().rstrip("/")
         if not frontend_url:
-            return ""
-        base_url = f"{frontend_url}/birthday-card.html"
+            raise ImproperlyConfigured("SIGNING_FRONTEND_URL is required for birthday card links")
+        base_url = frontend_url
 
     parsed = urlsplit(base_url)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        return ""
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password:
+        raise ImproperlyConfigured("Birthday card base URL must be an HTTP(S) URL without credentials")
+    frontend_url = urlsplit((getattr(settings, "SIGNING_FRONTEND_URL", "") or "").strip())
+    if not getattr(settings, "DEBUG", False) and (
+        parsed.scheme != "https"
+        or frontend_url.scheme != "https"
+        or parsed.hostname != frontend_url.hostname
+    ):
+        raise ImproperlyConfigured("Production birthday card URL must use the HTTPS frontend origin")
+    hostname = parsed.hostname or ""
+    try:
+        is_loopback = ipaddress.ip_address(hostname).is_loopback
+    except ValueError:
+        is_loopback = hostname.lower() == "localhost" or hostname.lower().endswith(".localhost")
+    if not getattr(settings, "DEBUG", False) and is_loopback:
+        raise ImproperlyConfigured("Birthday card URL cannot use localhost outside DEBUG mode")
+
+    path = parsed.path.rstrip("/")
+    final_segment = path.rsplit("/", 1)[-1]
+    parent = path.rsplit("/", 1)[0] if "/" in path else ""
+    if final_segment == "birthday-card.html" or final_segment == "birthday-cards":
+        path = parent
+    elif parent.rsplit("/", 1)[-1] == "birthday-cards" and final_segment in {
+        f"{item}.html" for item in LAYOUT_DEFAULTS
+    }:
+        path = parent.rsplit("/", 1)[0]
 
     fragment = urlencode({"token": generate_birthday_card_token(employee)})
-    if layout is not None:
-        folder = parsed.path.rsplit("/", 1)[0]
-        parsed = parsed._replace(path=f"{folder}/birthday-cards/{layout}.html", query="")
-    return urlunsplit(parsed._replace(fragment=fragment))
+    card_path = f"{path}/birthday-cards/{layout}.html" if path else f"/birthday-cards/{layout}.html"
+    return urlunsplit(parsed._replace(path=card_path, query="", fragment=fragment))
 
 
 def generate_birthday_email_html(
     employee: Employee,
     card_template: str = "GOLDEN",
     card_url: str | None = None,
+    layout: str = "01",
 ) -> str:
     """
     Kết xuất thiệp email theo thiết kế Bảo Long và dữ liệu của cán bộ nhân viên.
@@ -145,15 +195,19 @@ def generate_birthday_email_html(
     TUÂN THỦ QUY ĐỊNH BẢO MẬT:
     - Tuyệt đối không hiển thị tuổi hoặc năm sinh trong nội dung thư chúc mừng.
     """
-    card_data = _birthday_card_data(employee)
-    return render_to_string(
-        "birthdays/birthday_email.html",
-        {
-            **card_data,
-            "chuc_danh": (employee.chuc_danh or "").strip(),
-            "birthday_card_url": card_url if card_url is not None else generate_birthday_card_url(employee),
-        },
+    layout = layout if layout in LAYOUT_DEFAULTS else "01"
+    draft = {
+        "layout": layout,
+        "template_id": f"layout:{layout}",
+        "subject": LAYOUT_DEFAULTS[layout]["subject"],
+        "message": LAYOUT_DEFAULTS[layout]["message"],
+    }
+    _, snapshot = render_email_draft(
+        draft,
+        {**_birthday_card_data(employee), "chuc_danh": (employee.chuc_danh or "").strip()},
+        card_url if card_url is not None else generate_birthday_card_url(employee, layout),
     )
+    return snapshot["html"]
 
 
 def generate_birthday_email_text(employee: Employee, card_url: str | None = None) -> str:
@@ -178,11 +232,11 @@ def generate_birthday_email_text(employee: Employee, card_url: str | None = None
         f"{brand_name} lan tỏa những giá trị tốt đẹp đến khách hàng và cộng đồng.\n\n"
         f"Thân mến,\nBan Lãnh đạo và tập thể {brand_name}"
     )
-    resolved_card_url = card_url if card_url is not None else generate_birthday_card_url(employee)
+    resolved_card_url = card_url if card_url is not None else generate_birthday_card_url(employee, "01")
     if job_title:
         text += f"\n\nChức danh: {job_title}"
     if resolved_card_url:
-        text += f"\n\nMở thiệp chúc mừng sinh nhật: {resolved_card_url}"
+        text += f"\n\n🎁 Mở thiệp sinh nhật 3D: {resolved_card_url}"
     return text
 
 
@@ -192,15 +246,50 @@ def other_birthday_logs(employee_id: int, sent_date: date):
     ).exclude(sent_date=sent_date)
 
 
+def get_eligible_automated_birthday_employees(
+    target_date: date,
+    *,
+    username: str | None = None,
+    leap_year_strategy: str | None = None,
+) -> list[Employee]:
+    """Return active employees whose birthday matches the target date."""
+    if leap_year_strategy is None:
+        leap_year_strategy = getattr(settings, "BIRTHDAY_LEAP_DAY_STRATEGY", "FEB_28")
+    if leap_year_strategy not in ("SKIP", "FEB_28", "MAR_01"):
+        raise ValueError("Invalid leap-year birthday strategy")
+
+    employees = (
+        Employee.objects.filter(is_active=True)
+        .exclude(ngay_sinh__isnull=True)
+        .select_related("don_vi", "chuc_vu")
+        .order_by("ho_ten", "pk")
+    )
+    if username is not None:
+        employees = employees.filter(username=username)
+    return [
+        employee
+        for employee in employees
+        if is_birthday_on_date(employee.ngay_sinh, target_date, leap_year_strategy=leap_year_strategy)
+    ]
+
+
 def _email_log(employee: Employee, sent_date: date, recipient: str, subject: str) -> BirthdayEmailLog | None:
     # Serialize creation across effective birthday dates if the employee record changed.
     with transaction.atomic():
         locked_employee = Employee.objects.select_for_update().filter(pk=employee.pk, is_active=True).first()
         if not locked_employee or other_birthday_logs(employee.pk, sent_date).exists():
             return None
+        if BirthdayEmailLog.objects.filter(employee=locked_employee, sent_date=sent_date).exclude(
+            delivery_source=BirthdayEmailSource.AUTO,
+        ).filter(
+            Q(trang_thai__in=(BirthdayEmailStatus.SENDING, BirthdayEmailStatus.SUCCESS))
+            | Q(delivery_uncertain=True)
+        ).exists():
+            return None
         log, _ = BirthdayEmailLog.objects.get_or_create(
             employee=locked_employee,
             sent_date=sent_date,
+            delivery_source=BirthdayEmailSource.AUTO,
             defaults={
                 "sent_at": timezone.now(),
                 "recipient_email": recipient or "unknown",
@@ -220,21 +309,42 @@ def _safe_error(error: Exception) -> str:
 
 
 def can_retry_manually(log: BirthdayEmailLog) -> bool:
-    return (
-        log.trang_thai == BirthdayEmailStatus.FAILED
-        or (
-            log.trang_thai == BirthdayEmailStatus.RETRY
-            and log.employee.chuc_vu is not None
-            and log.employee.chuc_vu.name in LEADERSHIP_POSITIONS
-        )
-    ) and not (
-        log.delivery_uncertain or (log.error_message or "").startswith(STALE_SENDING_NOTE)
+    return retry_block_reason(log) is None
+
+
+def retry_block_reason(log: BirthdayEmailLog) -> str | None:
+    """Return a stable UI reason when a log must not be manually resent."""
+    if log.delivery_uncertain or (log.error_message or "").startswith(STALE_SENDING_NOTE):
+        return "needsReview"
+    if not log.employee.is_active:
+        return "inactive"
+    if log.trang_thai == BirthdayEmailStatus.SUCCESS:
+        return "alreadySent"
+    if log.delivery_source == BirthdayEmailSource.MANUAL_RESEND:
+        return "notRetryable"
+
+    is_manual_retry_status = log.trang_thai == BirthdayEmailStatus.FAILED or (
+        log.trang_thai == BirthdayEmailStatus.RETRY
+        and log.employee.chuc_vu is not None
+        and log.employee.chuc_vu.name in LEADERSHIP_POSITIONS
     )
+    if not is_manual_retry_status:
+        return "automaticRetryPending" if log.trang_thai == BirthdayEmailStatus.RETRY else "notRetryable"
+
+    current_recipient = (log.employee.email or "").strip()
+    if not current_recipient:
+        return "missingEmail"
+    try:
+        validate_email(current_recipient)
+    except ValidationError:
+        return "invalidEmail"
+    return None
 
 
 def _claim_delivery(
     log: BirthdayEmailLog, recipient: str, subject: str, max_retries: int = 0,
     *, operator: str | None = None, manual_snapshot: dict | None = None,
+    trigger_source: str | None = None,
 ) -> bool:
     """Use the same locked log row for automatic, manual, and retry claims."""
     with transaction.atomic():
@@ -244,6 +354,11 @@ def _claim_delivery(
         )
         if not employee:
             return False
+        if BirthdayEmailLog.objects.filter(
+            employee=employee, sent_date__year=log.sent_date.year, trang_thai=BirthdayEmailStatus.SENDING,
+        ).exists():
+            log.refresh_from_db()
+            return False
         locked_log = (
             BirthdayEmailLog.objects.select_for_update()
             .filter(pk=log.pk)
@@ -252,6 +367,9 @@ def _claim_delivery(
         if not locked_log:
             return False
         locked_log.employee = employee
+        period_logs = BirthdayEmailLog.objects.filter(
+            employee=employee, sent_date__year=locked_log.sent_date.year,
+        ).exclude(pk=locked_log.pk)
 
         if manual_snapshot is not None:
             is_eligible = locked_log.trang_thai == BirthdayEmailStatus.PENDING
@@ -265,16 +383,19 @@ def _claim_delivery(
                     and locked_log.retry_count <= max_retries
                 )
             )
-            if employee.chuc_vu and employee.chuc_vu.name in LEADERSHIP_POSITIONS:
-                is_eligible = False
             if locked_log.next_retry_at and locked_log.next_retry_at > timezone.now():
+                is_eligible = False
+            # Use the address on the locked employee row, including for old queued retries.
+            recipient = (employee.email or "").strip()
+            try:
+                validate_email(recipient)
+            except ValidationError:
                 is_eligible = False
         is_eligible = is_eligible and not (
             locked_log.delivery_uncertain or (locked_log.error_message or "").startswith(STALE_SENDING_NOTE)
         )
-        if is_eligible and other_birthday_logs(employee.pk, locked_log.sent_date).filter(
-            Q(trang_thai__in=(BirthdayEmailStatus.SENDING, BirthdayEmailStatus.SUCCESS))
-            | Q(delivery_uncertain=True)
+        if is_eligible and period_logs.filter(
+            Q(trang_thai=BirthdayEmailStatus.SUCCESS) | Q(delivery_uncertain=True)
         ).exists():
             is_eligible = False
         if not is_eligible:
@@ -286,13 +407,25 @@ def _claim_delivery(
             locked_log.card_template = manual_snapshot["layout"]
             locked_log.delivery_snapshot = manual_snapshot
         elif locked_log.delivery_snapshot is None:
-            snapshot = _default_snapshot(locked_log.employee)
+            snapshot = _default_snapshot(
+                locked_log.employee,
+                shared_template_pool=locked_log.delivery_source == BirthdayEmailSource.AUTO,
+            )
             locked_log.delivery_snapshot = snapshot
             if "layout" in snapshot:
                 locked_log.card_template = snapshot["layout"]
             if "subject" in snapshot and snapshot["subject"]:
                 locked_log.subject = snapshot["subject"]
                 subject = snapshot["subject"]
+        if manual_snapshot is None:
+            effective_trigger_source = (
+                "RETRY" if operator is not None or locked_log.retry_count else trigger_source
+            )
+            if effective_trigger_source:
+                locked_log.delivery_snapshot = {
+                    **(locked_log.delivery_snapshot or {}),
+                    "trigger_source": effective_trigger_source,
+                }
         if operator is not None:
             locked_log.last_operator = operator
 
@@ -421,42 +554,143 @@ def require_delivery_backend(allow_test_email_backend: bool = False) -> None:
         raise ImproperlyConfigured("Birthday email delivery requires an SMTP backend.")
 
 
-def _default_snapshot(employee: Employee, *, layout: str | None = None, seed: int | str | None = None) -> dict:
+def _default_snapshot(
+    employee: Employee,
+    *,
+    layout: str | None = None,
+    seed: int | str | None = None,
+    shared_template_pool: bool = False,
+) -> dict:
     position_name = employee.chuc_vu.name if employee.chuc_vu else ""
-    try:
-        if layout is None:
-            layout, template_draft = pick_hybrid_template(position_name, seed=seed)
+    if layout is None:
+        if shared_template_pool:
+            layout, template_draft = pick_automated_template(seed=seed)
         else:
-            template_draft = LAYOUT_DEFAULTS.get(layout, LAYOUT_DEFAULTS["01"])
+            layout, template_draft = pick_hybrid_template(position_name, seed=seed)
+    else:
+        template_draft = LAYOUT_DEFAULTS.get(layout, LAYOUT_DEFAULTS["01"])
+        layout = layout if layout in LAYOUT_DEFAULTS else "01"
 
-        card_url = generate_birthday_card_url(employee, layout)
-        data = {
-            **_birthday_card_data(employee),
-            "chuc_danh": (employee.chuc_danh or "").strip(),
-        }
-        draft = {
-            "layout": layout,
-            "template_id": f"layout:{layout}",
-            "subject": template_draft["subject"],
-            "message": template_draft["message"],
-        }
-        subject, snapshot = render_email_draft(draft, data, card_url)
-        return {
-            **snapshot,
-            "subject": subject,
-        }
-    except Exception:
-        card_url = generate_birthday_card_url(employee)
-        return {
-            "layout": "GOLDEN",
-            "template_version": "default:1",
-            "html": generate_birthday_email_html(employee, card_url=card_url),
-            "text": generate_birthday_email_text(employee, card_url=card_url),
-            "subject": f"[{getattr(settings, 'BRAND_NAME', 'Bảo Long Insurance')}] Chúc mừng sinh nhật {employee.ho_ten}",
-        }
+    card_url = generate_birthday_card_url(employee, layout)
+    data = {
+        **_birthday_card_data(employee),
+        "chuc_danh": (employee.chuc_danh or "").strip(),
+    }
+    draft = {
+        "layout": layout,
+        "template_id": f"layout:{layout}",
+        "subject": template_draft["subject"],
+        "message": template_draft["message"],
+    }
+    subject, snapshot = render_email_draft(draft, data, card_url)
+    return {
+        **snapshot,
+        "subject": subject,
+    }
+
+
+def create_manual_resend_log(
+    employee_id: int,
+    sent_date: date,
+    recipient: str | None,
+    operator: str,
+    request_id=None,
+) -> tuple[BirthdayEmailLog | None, str | None, bool]:
+    """Create an auditable admin resend row without changing prior delivery logs."""
+    now = timezone.now()
+    with transaction.atomic():
+        employee = (
+            Employee.objects.select_related("chuc_vu", "don_vi")
+            .select_for_update(of=("self",))
+            .filter(pk=employee_id, is_active=True)
+            .first()
+        )
+        if not employee:
+            return None, "employeeNotFound", False
+
+        current_recipient = (employee.email or "").strip()
+        if recipient is not None and recipient.strip() != current_recipient:
+            return None, "recipientChanged", False
+        try:
+            validate_email(current_recipient)
+        except ValidationError:
+            return None, "invalidRecipient", False
+
+        occurrence_logs = BirthdayEmailLog.objects.filter(employee=employee, sent_date=sent_date)
+        if request_id is not None:
+            existing = BirthdayEmailLog.objects.filter(resend_request_id=request_id).first()
+            if existing:
+                if (
+                    existing.employee_id != employee_id or existing.sent_date != sent_date
+                    or existing.last_operator != operator or existing.recipient_email != current_recipient
+                ):
+                    return None, "deliveryConflict", False
+                if existing.trang_thai == BirthdayEmailStatus.SENDING:
+                    return None, "resendInProgress", False
+                existing.employee = employee
+                return existing, None, False
+        if not occurrence_logs.exists() and not is_birthday_on_date(
+            employee.ngay_sinh,
+            sent_date,
+            leap_year_strategy=getattr(settings, "BIRTHDAY_LEAP_DAY_STRATEGY", "FEB_28"),
+        ):
+            return None, "invalidOccurrence", False
+
+        if BirthdayEmailLog.objects.filter(
+            employee=employee, sent_date__year=sent_date.year, trang_thai=BirthdayEmailStatus.SENDING,
+        ).exists():
+            return None, "resendInProgress", False
+
+        latest_log = occurrence_logs.order_by("-sent_at", "-pk").first()
+        snapshot = (
+            latest_log.delivery_snapshot
+            if latest_log and isinstance(latest_log.delivery_snapshot, dict)
+            else None
+        )
+        if not snapshot or not snapshot.get("html") or not snapshot.get("text"):
+            snapshot = _default_snapshot(employee)
+        snapshot = {**snapshot, "trigger_source": "MANUAL_RESEND"}
+        subject = ((latest_log.subject or "").strip() if latest_log else "") or (
+            (snapshot.get("subject") or "").strip()
+        )
+        if not subject:
+            subject = f"{getattr(settings, 'BRAND_NAME', 'Bảo Long Insurance')} - Chúc mừng sinh nhật"
+
+        create_fields = dict(
+            employee=employee,
+            sent_date=sent_date,
+            sent_at=now,
+            recipient_email=current_recipient,
+            subject=subject,
+            card_template=snapshot.get("layout") or "01",
+            trang_thai=BirthdayEmailStatus.SENDING,
+            delivery_source=BirthdayEmailSource.MANUAL_RESEND,
+            delivery_snapshot=snapshot,
+            last_operator=operator,
+            delivery_uncertain=False,
+        )
+        if request_id is None:
+            log = BirthdayEmailLog.objects.create(**create_fields)
+        else:
+            log, created = BirthdayEmailLog.objects.get_or_create(
+                resend_request_id=request_id, defaults=create_fields,
+            )
+            if not created:
+                return None, "deliveryConflict", False
+    return log, None, True
 
 
 def deliver_claimed_email(log: BirthdayEmailLog, max_retries: int = 0) -> None:
+    # Keep the claim visible to other senders and protect live SMTP from stale cleanup.
+    with transaction.atomic():
+        current = BirthdayEmailLog.objects.select_for_update().get(pk=log.pk)
+        if current.trang_thai != BirthdayEmailStatus.SENDING:
+            log.refresh_from_db()
+            return
+        _deliver_claimed_email(log, max_retries)
+
+
+def _deliver_claimed_email(log: BirthdayEmailLog, max_retries: int) -> None:
     uncertain = False
     error_message = ""
     smtp_code = None
@@ -500,12 +734,15 @@ def send_automated_birthday_emails(
     allow_test_email_backend: bool = False,
     *,
     username: str | None = None,
+    trigger_source: str = "SCHEDULED",
 ) -> dict:
-    """Send due non-leadership birthdays and eligible automatic retries."""
+    """Send due active birthdays and eligible automatic retries."""
     if target_date is None:
         target_date = timezone.localdate()
     if not 0 <= max_retries <= 10:
         raise ValueError("max_retries must be between 0 and 10")
+    if trigger_source not in ("SCHEDULED", "RECOVERY"):
+        raise ValueError("Invalid birthday email trigger source")
 
     require_delivery_backend(allow_test_email_backend)
 
@@ -522,27 +759,21 @@ def send_automated_birthday_emails(
     )
     if username is not None:
         stale_logs = stale_logs.filter(employee__username=username, sent_date=target_date)
-    stale_failed_count = stale_logs.update(
-        trang_thai=BirthdayEmailStatus.FAILED,
-        error_message=STALE_SENDING_NOTE,
-        delivery_uncertain=True,
-        next_retry_at=None,
-        updated_at=now,
-    )
+    with transaction.atomic():
+        stale_ids = list(stale_logs.select_for_update(skip_locked=True).values_list("pk", flat=True))
+        stale_failed_count = BirthdayEmailLog.objects.filter(pk__in=stale_ids).update(
+            trang_thai=BirthdayEmailStatus.FAILED,
+            error_message=STALE_SENDING_NOTE,
+            delivery_uncertain=True,
+            next_retry_at=None,
+            updated_at=now,
+        )
 
-    active_employees = (
-        Employee.objects.filter(is_active=True)
-        .exclude(ngay_sinh__isnull=True)
-        .exclude(chuc_vu__name__in=LEADERSHIP_POSITIONS)
-        .select_related("don_vi", "chuc_vu")
+    eligible_employees = get_eligible_automated_birthday_employees(
+        target_date,
+        username=username,
+        leap_year_strategy=leap_year_strategy,
     )
-    if username is not None:
-        active_employees = active_employees.filter(username=username)
-    eligible_employees = [
-        emp
-        for emp in active_employees
-        if is_birthday_on_date(emp.ngay_sinh, target_date, leap_year_strategy=leap_year_strategy)
-    ]
     retry_start_date = target_date - timedelta(days=3)
     retry_logs = [] if username is not None else list(
         BirthdayEmailLog.objects.filter(
@@ -553,7 +784,6 @@ def send_automated_birthday_emails(
             sent_date__gte=retry_start_date,
             sent_date__lte=target_date,
         )
-        .exclude(employee__chuc_vu__name__in=LEADERSHIP_POSITIONS)
         .filter(Q(next_retry_at__isnull=True) | Q(next_retry_at__lte=now))
         .select_related("employee", "employee__don_vi", "employee__chuc_vu")
         .order_by("sent_date", "id")
@@ -566,20 +796,19 @@ def send_automated_birthday_emails(
         "total_eligible": len(candidate_keys),
         "sent_count": 0,
         "skipped_count": 0,
-        "failed_count": stale_failed_count,
+        "failed_count": 0,
         "stale_failed_count": stale_failed_count,
         "retry_count": 0,
+        "retried_count": 0,
         "details": [],
     }
 
     brand_name = getattr(settings, "BRAND_NAME", "Bảo Long Insurance")
 
     def process_delivery(employee: Employee, sent_date: date, existing_log=None) -> None:
-        recipient = (
-            existing_log.recipient_email
-            if existing_log is not None
-            else (employee.email or "")
-        ).strip()
+        # Automatic retries must follow the employee's current address. Manual retries
+        # use the separately confirmed current_recipient in retry_api.
+        recipient = (employee.email or "").strip()
         subject = (
             existing_log.subject
             if existing_log is not None
@@ -594,18 +823,36 @@ def send_automated_birthday_emails(
             try:
                 validate_email(recipient)
             except ValidationError:
-                _mark_invalid_email(log, "Địa chỉ email không hợp lệ hoặc bị để trống.")
-                results["skipped_count"] += 1
-                results["details"].append({
-                    "employee_id": employee.id,
-                    "full_name": employee.ho_ten,
-                    "skipped": True,
-                    "trang_thai": BirthdayEmailStatus.FAILED,
-                    "reason": "Địa chỉ email không hợp lệ hoặc bị để trống.",
-                })
+                reason = "Địa chỉ email không hợp lệ hoặc bị để trống."
+                marked_failed = _mark_invalid_email(log, reason)
+                log.refresh_from_db()
+                if marked_failed:
+                    results["failed_count"] += 1
+                    results["details"].append({
+                        "employee_id": employee.id,
+                        "full_name": employee.ho_ten,
+                        "trang_thai": log.trang_thai,
+                        "error": reason,
+                    })
+                else:
+                    results["skipped_count"] += 1
+                    results["details"].append({
+                        "employee_id": employee.id,
+                        "full_name": employee.ho_ten,
+                        "skipped": True,
+                        "trang_thai": log.trang_thai,
+                        "reason": log.error_message or reason,
+                    })
                 return
 
-            claimed = _claim_delivery(log, recipient, subject, max_retries)
+            previous_failures = log.retry_count
+            claimed = _claim_delivery(
+                log,
+                recipient,
+                subject,
+                max_retries,
+                trigger_source=trigger_source,
+            )
             if not claimed:
                 reason = {
                     BirthdayEmailStatus.SUCCESS: "Đã gửi thành công trước đó.",
@@ -627,6 +874,8 @@ def send_automated_birthday_emails(
                 return
 
             deliver_claimed_email(log, max_retries)
+            if previous_failures:
+                results["retried_count"] += 1
             if log.trang_thai != BirthdayEmailStatus.SUCCESS:
                 results["failed_count"] += 1
                 if log.trang_thai == BirthdayEmailStatus.RETRY:
@@ -643,7 +892,7 @@ def send_automated_birthday_emails(
                     "employee_id": employee.id,
                     "full_name": employee.ho_ten,
                     "trang_thai": "SUCCESS",
-                    "recipient_email": recipient,
+                    "recipient_email": log.recipient_email,
                 })
         except Exception as exc:
             error_message = _safe_error(exc)

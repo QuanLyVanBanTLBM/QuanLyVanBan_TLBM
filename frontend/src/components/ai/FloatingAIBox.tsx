@@ -114,6 +114,62 @@ function deduplicateFloatingSources(sources: Source[]): Source[] {
   });
 }
 
+function FloatingCitationsToggle({
+  sources,
+  sourceTypeLabels,
+  onNavigate,
+}: {
+  sources: Source[];
+  sourceTypeLabels: Record<string, string>;
+  onNavigate: (source: Source) => void;
+}) {
+  const { t } = useTranslation();
+  const [isCollapsed, setIsCollapsed] = useState(true);
+  const visibleSources = deduplicateFloatingSources(sources);
+  if (visibleSources.length === 0) return null;
+  const toggleLabel = isCollapsed
+    ? t('aiAssistant.toggleCitationsExpand')
+    : t('aiAssistant.toggleCitationsCollapse');
+
+  return (
+    <div className="text-[10px] text-text-muted px-1 flex flex-col gap-1">
+      <button
+        type="button"
+        className="inline-flex items-center gap-1.5 self-start text-[10px] font-semibold text-text-secondary hover:text-primary transition-colors cursor-pointer"
+        onClick={() => setIsCollapsed((prev) => !prev)}
+        aria-expanded={!isCollapsed}
+        aria-label={toggleLabel}
+        title={toggleLabel}
+      >
+        <span>{t('floatingAI.sources')}</span>
+        <span className="px-1.5 py-0.5 rounded-full bg-surface border border-subtle text-[9px]">
+          {t('aiAssistant.citationsCount', { count: visibleSources.length })}
+        </span>
+        <i className={`fa-solid ${isCollapsed ? 'fa-chevron-down' : 'fa-chevron-up'} text-[9px]`} aria-hidden="true" />
+      </button>
+      {!isCollapsed && (
+        <div className="flex flex-wrap items-center gap-1">
+          {visibleSources.map((source, index) => {
+            const label = `${source.file_name || sourceTypeLabels[source.source_type || ''] || t('floatingAI.documentSource')}${source.page ? `, ${t('floatingAI.page', { page: source.page })}` : ''}`;
+            return (
+              <button
+                key={`${source.source_type || 'doc'}-${source.source_id ?? source.file_name ?? index}-${index}`}
+                type="button"
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-surface hover:bg-primary-subtle text-text-secondary hover:text-primary border border-subtle hover:border-primary/40 transition-colors cursor-pointer"
+                onClick={() => onNavigate(source)}
+                title={label}
+              >
+                <i className="fa-solid fa-link text-[9px]" />
+                <span className="truncate max-w-[180px]">{label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function renderInline(
   text: string,
   keyPrefix: string,
@@ -833,29 +889,13 @@ export default function FloatingAIBox({ onNavigate, onNavigateUrl }: FloatingAIB
                         )}
                         <FormattedMessage text={message.text} onInternalLink={handleInternalLink} />
                       </div>
-                      {message.sources && message.sources.length > 0 && (() => {
-                        const visibleSources = deduplicateFloatingSources(message.sources);
-                        return (
-                          <div className="text-[10px] text-text-muted px-1 flex flex-wrap items-center gap-1">
-                            <span className="font-semibold">{t('floatingAI.sources')}:</span>
-                            {visibleSources.map((source, index) => {
-                              const label = `${source.file_name || sourceTypeLabels[source.source_type || ''] || t('floatingAI.documentSource')}${source.page ? `, ${t('floatingAI.page', { page: source.page })}` : ''}`;
-                              return (
-                                <button
-                                  key={`${source.source_type || 'doc'}-${source.source_id ?? source.file_name ?? index}-${index}`}
-                                  type="button"
-                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-surface hover:bg-primary-subtle text-text-secondary hover:text-primary border border-subtle hover:border-primary/40 transition-colors cursor-pointer"
-                                  onClick={() => handleSourceNavigate(source)}
-                                  title={label}
-                                >
-                                  <i className="fa-solid fa-link text-[9px]" />
-                                  <span className="truncate max-w-[180px]">{label}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        );
-                      })()}
+                      {message.sources && message.sources.length > 0 && (
+                        <FloatingCitationsToggle
+                          sources={message.sources}
+                          sourceTypeLabels={sourceTypeLabels}
+                          onNavigate={handleSourceNavigate}
+                        />
+                      )}
                       {message.quickReplies && message.quickReplies.length > 0 && (
                         <div className="flex flex-col gap-1 mt-1">
                           {message.quickReplies.map((reply, replyIndex) => (

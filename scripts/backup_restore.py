@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import datetime as dt
+import errno
 import gzip
 import hashlib
 import json
@@ -13,6 +14,7 @@ import os
 import re
 import shutil
 import stat
+import struct
 import subprocess
 import sys
 import tarfile
@@ -160,11 +162,31 @@ def _safe_relative_path(name: str) -> PurePosixPath:
     return path
 
 
+def _data_root_error(action: str, root_label: str, root: Path, path: object, exc: OSError) -> BackupError:
+    if isinstance(path, bytes):
+        path = os.fsdecode(path)
+    try:
+        target = Path(path) if path is not None else root
+        relative = target.relative_to(root).as_posix() or "."
+    except (TypeError, ValueError):
+        relative = Path(path).name if isinstance(path, (str, os.PathLike)) else "."
+    error_name = errno.errorcode.get(exc.errno, "UNKNOWN")
+    error_code = f"{error_name}({exc.errno})" if exc.errno is not None else error_name
+    if action == "inspect" and exc.errno == errno.ENOENT and Path(path) == root:
+        return BackupError(
+            f"required {root_label} path is missing (root={root_label}; path={relative}; "
+            f"errno={error_code})."
+        )
+    return BackupError(
+        f"could not {action} required data root (root={root_label}; path={relative}; errno={error_code})."
+    )
+
+
 def _assert_safe_path(path: Path, label: str) -> Path:
     try:
         info = path.lstat()
     except OSError as exc:
-        raise BackupError(f"required {label} path is missing or unreadable.") from exc
+        raise _data_root_error("inspect", label, path, path, exc) from exc
     if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
         raise BackupError(f"required {label} path must be a real directory, not a symlink.")
     try:
@@ -172,16 +194,91 @@ def _assert_safe_path(path: Path, label: str) -> Path:
         with os.scandir(resolved):
             pass
     except OSError as exc:
-        raise BackupError(f"required {label} path is unreadable.") from exc
+        raise _data_root_error("list", label, path, path, exc) from exc
     return resolved
 
 
-def _walk_tree(root: Path) -> list[dict[str, object]]:
+class _DataRootReader:
+    """Preserve source-path context if a data file fails during archive streaming."""
+
+    def __init__(self, source, root_label: str, root: Path, path: Path):
+        self._source = source
+        self._root_label = root_label
+        self._root = root
+        self._path = path
+
+    def read(self, size: int = -1) -> bytes:
+        try:
+            return self._source.read(size)
+        except OSError as exc:
+            raise _data_root_error("read", self._root_label, self._root, self._path, exc) from exc
+
+
+_POSIX_ACL_MISSING_ERRNOS = frozenset(
+    getattr(errno, name)
+    for name in ("ENODATA", "ENOATTR", "ENOTSUP", "EOPNOTSUPP")
+    if hasattr(errno, name)
+)
+
+
+def _mode_without_named_acl(path: Path, mode: int) -> int:
+    """Return only the effective owner/group/other mode represented by a POSIX ACL."""
+    fallback_mode = stat.S_IMODE(mode)
+    getxattr = getattr(os, "getxattr", None)
+    if getxattr is None:
+        return fallback_mode
+
+    try:
+        acl_data = getxattr(path, "system.posix_acl_access", follow_symlinks=False)
+    except OSError as exc:
+        if exc.errno in _POSIX_ACL_MISSING_ERRNOS:
+            return fallback_mode
+        raise
+
+    if len(acl_data) < 4 or (len(acl_data) - 4) % 8:
+        raise BackupError("data root contains an invalid POSIX ACL.")
+    if struct.unpack_from("<I", acl_data, 0)[0] != 0x0002:
+        raise BackupError("data root contains an unsupported POSIX ACL version.")
+
+    base_permissions: dict[int, int] = {}
+    mask: int | None = None
+    has_named_entries = False
+    for offset in range(4, len(acl_data), 8):
+        tag, permissions, _entry_id = struct.unpack_from("<HHI", acl_data, offset)
+        if permissions & ~0o7:
+            raise BackupError("data root contains invalid POSIX ACL permissions.")
+        if tag in (0x01, 0x04, 0x20):
+            if tag in base_permissions:
+                raise BackupError("data root contains duplicate POSIX ACL entries.")
+            base_permissions[tag] = permissions
+        elif tag == 0x10:
+            if mask is not None:
+                raise BackupError("data root contains duplicate POSIX ACL masks.")
+            mask = permissions
+        elif tag in (0x02, 0x08):
+            has_named_entries = True
+        else:
+            raise BackupError("data root contains an unsupported POSIX ACL entry.")
+
+    if not {0x01, 0x04, 0x20}.issubset(base_permissions):
+        raise BackupError("data root contains an incomplete POSIX ACL.")
+    if has_named_entries and mask is None:
+        raise BackupError("data root contains a POSIX ACL without a required mask.")
+
+    group_permissions = base_permissions[0x04] & (mask if mask is not None else 0o7)
+    return (
+        (base_permissions[0x01] << 6)
+        | (group_permissions << 3)
+        | base_permissions[0x20]
+    )
+
+
+def _walk_tree(root: Path, root_label: str = "data") -> list[dict[str, object]]:
     entries: list[dict[str, object]] = []
 
     def raise_walk_error(exc: OSError) -> None:
-        target = getattr(exc, "filename", None) or str(exc)
-        raise BackupError(f"a required data directory or file is unreadable: {target}") from exc
+        target = getattr(exc, "filename", None) or root
+        raise _data_root_error("list", root_label, root, target, exc) from exc
 
     for current, directories, filenames in os.walk(root, topdown=True, followlinks=False, onerror=raise_walk_error):
         directories.sort()
@@ -192,11 +289,15 @@ def _walk_tree(root: Path) -> list[dict[str, object]]:
             try:
                 info = path.lstat()
             except OSError as exc:
-                raise BackupError("a required data directory or file became unreadable.") from exc
+                raise _data_root_error("inspect", root_label, root, path, exc) from exc
             relative = path.relative_to(root).as_posix()
             _safe_relative_path(relative)
             if stat.S_ISLNK(info.st_mode):
                 raise BackupError("data roots may not contain symlinks.")
+            try:
+                mode = _mode_without_named_acl(path, info.st_mode)
+            except OSError as exc:
+                raise _data_root_error("inspect permissions", root_label, root, path, exc) from exc
             if stat.S_ISDIR(info.st_mode):
                 kind, size = "directory", 0
             elif stat.S_ISREG(info.st_mode):
@@ -206,12 +307,12 @@ def _walk_tree(root: Path) -> list[dict[str, object]]:
                         while source.read(1024 * 1024):
                             pass
                 except OSError as exc:
-                    raise BackupError("a required data file is unreadable.") from exc
+                    raise _data_root_error("read", root_label, root, path, exc) from exc
             else:
                 raise BackupError("data roots may contain only regular files and directories.")
             entries.append({
                 "path": relative, "kind": kind, "size": size,
-                "mode": stat.S_IMODE(info.st_mode),
+                "mode": mode,
                 "uid": getattr(info, "st_uid", 0), "gid": getattr(info, "st_gid", 0),
                 "mtime": int(info.st_mtime),
             })
@@ -422,8 +523,8 @@ def _json_bytes(value: object) -> bytes:
     return (json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
 
 
-def _write_tree_archive(root: Path, target: Path) -> dict[str, int]:
-    entries = _walk_tree(root)
+def _write_tree_archive(root: Path, target: Path, root_label: str = "data") -> dict[str, int]:
+    entries = _walk_tree(root, root_label)
     files, total_bytes = 0, 0
     try:
         with tarfile.open(target, mode="w", format=tarfile.PAX_FORMAT) as archive:
@@ -441,12 +542,18 @@ def _write_tree_archive(root: Path, target: Path) -> dict[str, int]:
                     archive.addfile(info)
                 else:
                     info.size = int(entry["size"])
-                    with source.open("rb") as content:
-                        archive.addfile(info, content)
+                    try:
+                        content = source.open("rb")
+                    except OSError as exc:
+                        raise _data_root_error("read", root_label, root, source, exc) from exc
+                    with content:
+                        archive.addfile(info, _DataRootReader(content, root_label, root, source))
                     files += 1
                     total_bytes += info.size
     except (OSError, tarfile.TarError) as exc:
-        raise BackupError("could not package a required data root.") from exc
+        if isinstance(exc, OSError):
+            raise _data_root_error("package", root_label, root, "<archive>", exc) from exc
+        raise BackupError(f"could not package required data root (root={root_label}; path=<archive>; error=TarError).") from exc
     return {"entries": len(entries), "files": files, "bytes": total_bytes}
 
 
@@ -506,8 +613,8 @@ def _backup(
     output = _private_output_dir(output_dir)
     config = private_config.resolve(strict=True)
     _assert_paths_do_not_overlap(output, resolved_roots, config)
-    for root in resolved_roots.values():
-        _walk_tree(root)
+    for root_name, root in resolved_roots.items():
+        _walk_tree(root, root_name)
     source_db = _database_info(database)
     _tool_major("pg_dump")
     _tool_major("pg_restore")
@@ -531,7 +638,7 @@ def _backup(
         root_metadata: dict[str, dict[str, object]] = {}
         for name, root in resolved_roots.items():
             tree_path = temp / f"{name}.tar"
-            counts = _write_tree_archive(root, tree_path)
+            counts = _write_tree_archive(root, tree_path, name)
             os.chmod(tree_path, 0o600)
             root_metadata[name] = {"source_path": str(root), **counts}
 

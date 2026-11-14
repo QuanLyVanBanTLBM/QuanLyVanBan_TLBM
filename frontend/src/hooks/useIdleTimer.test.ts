@@ -78,4 +78,50 @@ describe('useIdleTimer hook', () => {
     });
     expect(result.current.isLocked).toBe(true);
   });
+
+  it('supports short demo timeout of 0.5 minutes (30 seconds)', () => {
+    localStorage.setItem('tlbm_sec_lock_timeout', '0.5');
+    const { result } = renderHook(() => useIdleTimer());
+
+    expect(result.current.isLocked).toBe(false);
+
+    // Advance 29 seconds -> still unlocked
+    act(() => {
+      vi.advanceTimersByTime(29 * 1000);
+    });
+    expect(result.current.isLocked).toBe(false);
+
+    // Advance 2 more seconds (31s total) -> locked
+    act(() => {
+      vi.advanceTimersByTime(2 * 1000);
+    });
+    expect(result.current.isLocked).toBe(true);
+  });
+
+  it('synchronizes lock and unlock across tabs via storage event', () => {
+    const { result } = renderHook(() => useIdleTimer());
+    expect(result.current.isLocked).toBe(false);
+
+    // Another tab locks the screen
+    act(() => {
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key: 'tlbm_screen_locked',
+          newValue: 'true',
+        })
+      );
+    });
+    expect(result.current.isLocked).toBe(true);
+
+    // Another tab unlocks the screen
+    act(() => {
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key: 'tlbm_screen_locked',
+          newValue: null,
+        })
+      );
+    });
+    expect(result.current.isLocked).toBe(false);
+  });
 });

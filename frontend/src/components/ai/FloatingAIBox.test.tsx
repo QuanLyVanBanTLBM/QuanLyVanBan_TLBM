@@ -151,12 +151,17 @@ describe('FloatingAIBox', () => {
     });
     fireEvent.submit(screen.getByRole('textbox', { name: 'floatingAI.placeholder' }).closest('form')!);
 
+    await screen.findByText('Thông tin văn bản');
+    expect(screen.queryByRole('button', { name: /CV 123/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'aiAssistant.toggleCitationsExpand' }));
+
     const incomingBtn = await screen.findByRole('button', { name: /CV 123/ });
     expect(screen.getAllByRole('button', { name: /CV 123/ })).toHaveLength(1);
     fireEvent.click(incomingBtn);
     expect(onNavigateUrl).toHaveBeenCalledWith('/documents/incoming?detail=42');
 
     fireEvent.click(screen.getByRole('button', { name: 'floatingAI.openTitle' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'aiAssistant.toggleCitationsExpand' }));
     const specBtn = await screen.findByRole('button', { name: /Nghiệp vụ Ký số/ });
     fireEvent.click(specBtn);
     expect(onNavigate).toHaveBeenCalledWith('approvals');

@@ -6,13 +6,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Thiệp 06 - Thiên Nhiên Thanh Lịch 3D | Bảo Long Insurance</title>
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,400&family=Playfair+Display:wght@600;700&family=Montserrat:wght@500;600;700&display=swap" rel="stylesheet">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js" defer></script>
+  <script src="/birthday-cards/motion.js" defer></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       min-height: 100vh;
+      min-height: 100dvh;
       background: linear-gradient(160deg, #cfe3d4 0%, #e4efe7 55%, #f5f2eb 100%);
       font-family: 'Playfair Display', Georgia, serif;
       display: flex;
@@ -130,7 +132,7 @@
 <body>
   <canvas id="botanicalWebGL"></canvas>
 
-  <div class="botanical-card" id="bCard">
+  <div class="botanical-card" id="bCard" data-birthday-card="06">
     <div class="b-header">
       <svg width="72" height="36" viewBox="0 0 70 36" fill="none">
         <path d="M5 30 Q35 10 65 30" stroke="#8c6d3f" stroke-width="1.6"/>
@@ -151,6 +153,7 @@
       <div class="bs-col">
         <small>Chức vụ</small>
         <strong data-card-field="position">—</strong>
+        <small data-card-optional="job_title" hidden>Chức danh: <span data-card-field="job_title"></span></small>
       </div>
       <div class="bs-col">
         <small>Phòng ban</small>

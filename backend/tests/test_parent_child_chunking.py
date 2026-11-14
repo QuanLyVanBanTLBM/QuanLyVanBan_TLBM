@@ -224,3 +224,80 @@ class RagRegressionTests(unittest.TestCase):
         assert "[1] Quy_trinh_bao_mat.pdf" in llm_context
         assert "QUY TRÌNH XỬ LÝ TÀI LIỆU BẢO MẬT" in llm_context
         assert "Bước 3: Bàn giao trực tiếp" in llm_context
+
+    def test_structure_aware_chunking_and_contextual_retrieval_metadata(self):
+        """Kiểm tra cắt chunk theo cấu trúc hành chính (Điều/Khoản) và gắn tiền tố ngữ cảnh (Contextual Retrieval)."""
+        legal_text = (
+            "ỦY BAN NHÂN DÂN THÀNH PHỐ\n"
+            "Số: 123/QĐ-UBND\n"
+            "QUYẾT ĐỊNH Về việc phân công nhiệm vụ phòng HC-NS\n"
+            "Điều 1. Phạm vi điều chỉnh và đối tượng áp dụng\n"
+            "Quyết định này quy định chức năng, nhiệm vụ và quyền hạn của Phòng Hành chính - Nhân sự (HC-NS) "
+            "trong công tác quản lý văn bản mật và lưu trữ hồ sơ nội bộ.\n"
+            "Điều 2. Nhiệm vụ cụ thể của bộ phận văn thư bảo mật\n"
+            "1. Tiếp nhận, đăng ký và kiểm tra tính hợp lệ của toàn bộ văn bản đến có đóng dấu độ mật.\n"
+            "2. Thực hiện phân phối văn bản đến đúng cá nhân có thẩm quyền xử lý trong vòng 02 giờ làm việc.\n"
+            "Điều 3. Trách nhiệm thi hành và hiệu lực\n"
+            "Các trưởng phòng ban và toàn thể cán bộ nhân viên chịu trách nhiệm thi hành Quyết định này."
+        )
+        page_items = [{"text": legal_text, "page": 1, "reader": "pdfplumber"}]
+        docs = build_parent_child_documents(
+            Path("QD_123_UBND.pdf"),
+            page_items,
+            category="Quyết định hành chính",
+        )
+
+        assert len(docs) >= 2
+        for doc in docs:
+            assert doc.metadata.get("doc_code") == "123/QĐ-UBND"
+            prefix = doc.metadata.get("contextual_prefix") or ""
+            assert "QD_123_UBND.pdf" in prefix
+            assert "123/QĐ-UBND" in prefix
+            assert "Quyết định hành chính" in prefix
+            assert doc.metadata["child_text"] == doc.text
+            assert doc.text in doc.metadata["parent_context"]
+
+        headings = [doc.metadata.get("structural_heading") for doc in docs if doc.metadata.get("structural_heading")]
+        assert any("Điều" in h for h in headings)
+
+    def test_multi_document_sources_round_robin_and_balanced_context(self):
+        """Kiểm tra ghim đồng thời nhiều tài liệu: phân bổ đều nguồn (round-robin) và cân bằng context."""
+        nodes = []
+        for i in range(1, 5):
+            n1 = MagicMock()
+            n1.score = 0.95 - i * 0.01
+            n1.text = f"Nội dung điều {i} của văn bản A quy định chi tiết quy trình kiểm soát."
+            n1.metadata = {
+                "file_name": "Van_ban_A.pdf",
+                "page": i,
+                "chunk_id": f"1-{i}",
+                "child_text": n1.text,
+                "parent_context": n1.text,
+            }
+            nodes.append(n1)
+
+        for i in range(1, 3):
+            n2 = MagicMock()
+            n2.score = 0.75 - i * 0.01
+            n2.text = f"Nội dung điều {i} của văn bản B quy định chế tài xử lý vi phạm."
+            n2.metadata = {
+                "file_name": "Van_ban_B.pdf",
+                "page": i,
+                "chunk_id": f"1-{i}",
+                "child_text": n2.text,
+                "parent_context": n2.text,
+            }
+            nodes.append(n2)
+
+        pinned = ["Van_ban_A.pdf", "Van_ban_B.pdf"]
+        sources = build_sources(nodes, "So sánh điểm khác biệt giữa hai văn bản", target_filenames=pinned)
+        file_names_in_sources = [s["file_name"] for s in sources]
+
+        assert "Van_ban_A.pdf" in file_names_in_sources
+        assert "Van_ban_B.pdf" in file_names_in_sources
+        # Hai vị trí đầu tiên phải đại diện cho cả 2 tài liệu nhờ round-robin
+        assert set(file_names_in_sources[:2]) == {"Van_ban_A.pdf", "Van_ban_B.pdf"}
+
+        context = build_context_from_sources(sources)
+        assert "[1] Van_ban_A.pdf" in context
+        assert "[2] Van_ban_B.pdf" in context

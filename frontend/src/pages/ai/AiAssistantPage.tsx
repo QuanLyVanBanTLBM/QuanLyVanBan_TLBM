@@ -16,7 +16,6 @@ import {
   previewDocument,
   reclassifyDocument,
   getAISettings,
-  updateAISettings,
 } from '../../api';
 import { t as translate, useTranslation, type SupportedLanguage } from '@i18n/translate';
 import { usePermissions } from '@lib/permissions';
@@ -56,6 +55,7 @@ interface ChatMessage {
   citations?: CitationSource[];
   quickPrompts?: string[];
   targetDoc?: TargetDocInfo;
+  targetDocs?: TargetDocInfo[];
   isError?: boolean;
   retryText?: string;
 }
@@ -72,8 +72,11 @@ interface DocItem {
   filename: string;
   category?: string;
   uploaded_at?: string;
-  size?: number;
+  size?: number | null;
   file_type?: string;
+  source_type?: string;
+  source_id?: number;
+  is_managed?: boolean;
 }
 
 interface CategoryItem {
@@ -95,6 +98,22 @@ export interface RootFolderGroup {
 
 const EMPTY_MESSAGES: ChatMessage[] = [];
 const MAX_QUESTION_LENGTH = 4000;
+const MAX_PINNED_DOCUMENTS = 5;
+
+const SOFT_FALLBACK_NOTE_REGEX =
+  /(?:^|\n)\s*(?:\*{1,2}|_{1,2})?\s*(\((?:Không có tài liệu cụ thể được ghim\. Phản hồi dựa trên nghiệp vụ hành chính tổng hợp|No specific document is pinned\. Response is based on general administrative best practices)\))\s*(?:\*{1,2}|_{1,2})?\s*(?=\n|$)/gi;
+
+function splitSoftFallbackNote(text: string): { body: string; note: string | null } {
+  let extractedNote: string | null = null;
+  const cleaned = text
+    .replace(SOFT_FALLBACK_NOTE_REGEX, (_match, noteText: string) => {
+      extractedNote = noteText;
+      return '\n';
+    })
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return { body: cleaned, note: extractedNote };
+}
 
 function createMessageTimestamp(): number {
   return Date.now();
@@ -685,120 +704,6 @@ function DocumentPreviewModal({ filename, onClose }: PreviewModalProps) {
   );
 }
 
-interface AiSettingsModalProps {
-  initialConfig: AIConfig | null;
-  onClose: () => void;
-  onSaved: (updated: AIConfig) => void;
-}
-
-function AiSettingsModal({ initialConfig, onClose, onSaved }: AiSettingsModalProps) {
-  const { t } = useTranslation();
-  const modelOptions = (initialConfig?.model_options as { openai?: { llm_models?: string[] } } | undefined)
-    ?.openai?.llm_models || ['gpt-6-luna'];
-  const [llmModel, setLlmModel] = useState(
-    String(initialConfig?.llm_model || modelOptions[0] || 'gpt-6-luna')
-  );
-  const [apiKey, setApiKey] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
-  }, [onClose]);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const cleanKey = apiKey.trim();
-    if (!cleanKey) {
-      setError(t('aiAssistant.settingsModal.apiKeyRequired'));
-      return;
-    }
-    setSaving(true);
-    setError('');
-    try {
-      const updated = await updateAISettings({
-        provider: 'openai',
-        api_key: cleanKey,
-        llm_model: llmModel,
-      });
-      onSaved(updated);
-    } catch (err: unknown) {
-      setError(getSafeApiErrorDetail(err, t('aiAssistant.settingsModal.saveFailed')));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="ai-settings-backdrop" onClick={onClose}>
-      <div className="ai-settings-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={t('aiAssistant.settingsModal.title')}>
-        <div className="ai-settings-header">
-          <h3 className="ai-settings-title">
-            <i className="fa-solid fa-sliders text-primary" />
-            <span>{t('aiAssistant.settingsModal.title')}</span>
-          </h3>
-          <button type="button" className="preview-close-btn" onClick={onClose} title={t('aiAssistant.previewModal.close')}>
-            <i className="fa-solid fa-xmark" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit}>
-          <div className="ai-settings-body">
-            <p className="ai-settings-subtitle">{t('aiAssistant.settingsModal.subtitle')}</p>
-
-            <div className="ai-settings-field">
-              <label className="ai-settings-label" htmlFor="ai-provider-input">{t('aiAssistant.settingsModal.providerLabel')}</label>
-              <input id="ai-provider-input" className="ai-settings-input" value={String(initialConfig?.provider || 'openai').toUpperCase()} disabled />
-            </div>
-
-            <div className="ai-settings-field">
-              <label className="ai-settings-label" htmlFor="ai-model-select">{t('aiAssistant.settingsModal.llmModelLabel')}</label>
-              <select id="ai-model-select" className="ai-settings-input" value={llmModel} onChange={(e) => setLlmModel(e.target.value)}>
-                {modelOptions.map((modelName) => (
-                  <option key={modelName} value={modelName}>{modelName}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="ai-settings-field">
-              <label className="ai-settings-label" htmlFor="ai-apikey-input">{t('aiAssistant.settingsModal.apiKeyLabel')}</label>
-              <input
-                id="ai-apikey-input"
-                type="password"
-                className="ai-settings-input"
-                placeholder={t('aiAssistant.settingsModal.apiKeyPlaceholder')}
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                autoComplete="off"
-              />
-              <span className="ai-settings-hint">
-                {initialConfig?.api_key_masked
-                  ? t('aiAssistant.settingsModal.apiKeyCurrent', { masked: String(initialConfig.api_key_masked) })
-                  : t('aiAssistant.settingsModal.apiKeyNotConfigured')}
-              </span>
-            </div>
-
-            {error && <div className="ai-settings-error" role="alert">{error}</div>}
-          </div>
-
-          <div className="ai-settings-actions">
-            <button type="button" className="ai-settings-btn-cancel" onClick={onClose} disabled={saving}>
-              {t('aiAssistant.settingsModal.cancel')}
-            </button>
-            <button type="submit" className="ai-settings-btn-save" disabled={saving}>
-              {saving ? t('aiAssistant.settingsModal.saving') : t('aiAssistant.settingsModal.save')}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
 const BUSINESS_SPEC_PAGE_MAP: Record<string, ActivePageId> = {
   'branch-01-dashboard': 'dashboard',
   'branch-02-documents': 'documents_incoming',
@@ -838,18 +743,39 @@ function CitationsBox({
   onNavigate?: (page: ActivePageId, urlOverride?: string) => void;
 }) {
   const { t } = useTranslation();
+  const [isCollapsed, setIsCollapsed] = useState(true);
   if (!sources || sources.length === 0) return null;
 
   const uniqueSources = deduplicateCitations(sources);
+  const toggleLabel = isCollapsed
+    ? t('aiAssistant.toggleCitationsExpand')
+    : t('aiAssistant.toggleCitationsCollapse');
 
   return (
-    <div className="ai-citations-box">
-      <div className="citations-title">
-        <i className="fa-solid fa-link" />
-        <span>{t('aiAssistant.citations')}</span>
-      </div>
+    <div className={`ai-citations-box ${isCollapsed ? 'is-collapsed' : ''}`}>
+      <button
+        type="button"
+        className="citations-toggle-btn"
+        onClick={() => setIsCollapsed((prev) => !prev)}
+        aria-expanded={!isCollapsed}
+        aria-label={toggleLabel}
+        title={toggleLabel}
+      >
+        <span className="citations-title">
+          <i className="fa-solid fa-link" />
+          <span>{t('aiAssistant.citations')}</span>
+          <span className="citations-count-badge">
+            {t('aiAssistant.citationsCount', { count: uniqueSources.length })}
+          </span>
+        </span>
+        <i
+          className={`fa-solid ${isCollapsed ? 'fa-chevron-down' : 'fa-chevron-up'} citations-chevron`}
+          aria-hidden="true"
+        />
+      </button>
 
-      <div className="citations-list">
+      {!isCollapsed && (
+        <div className="citations-list">
         {uniqueSources.map((src, idx) => {
           const defaultDocLabel = t('aiAssistant.inline.documentValue', { value: idx + 1 });
           const fileName = src.file_name || src.label || defaultDocLabel;
@@ -906,7 +832,8 @@ function CitationsBox({
             </button>
           );
         })}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -947,7 +874,6 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     return true;
   });
   const sidebarRef = useRef<HTMLElement>(null);
-  const sidebarOpenButtonRef = useRef<HTMLButtonElement>(null);
 
   // Tự động đóng mở sidebar và cập nhật isMobile khi chuyển đổi giữa Desktop và Mobile
   useEffect(() => {
@@ -963,7 +889,6 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
   useEffect(() => {
     if (!isMobile || !isSidebarOpen || !sidebarRef.current) return;
     const sidebar = sidebarRef.current;
-    const opener = sidebarOpenButtonRef.current;
     const selector = 'a[href], button:not([disabled]), input:not([disabled]):not([type="file"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
     const getFocusable = () => Array.from(sidebar.querySelectorAll<HTMLElement>(selector));
     getFocusable()[0]?.focus();
@@ -993,7 +918,6 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     document.addEventListener('keydown', handleKeyDown);
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
-      opener?.focus();
     };
   }, [isMobile, isSidebarOpen]);
   const [sidebarTab, setSidebarTab] = useState<'sessions' | 'docs'>('sessions');
@@ -1072,7 +996,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
   };
 
   const setActiveSessionId = (id: string) => {
-    setTargetDocument(null);
+    setTargetDocuments([]);
     setChatHistoryState((current) => {
       if (current.storageKey !== storageKey) return current;
       return { ...current, activeSessionId: id };
@@ -1112,7 +1036,47 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     }
   };
   const [aiConfig, setAiConfig] = useState<AIConfig | null>(null);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
+  const categoryDropdownRef = useRef<HTMLDivElement>(null);
+  const [docSourceFilter, setDocSourceFilter] = useState<'all' | 'managed' | 'uploaded'>('all');
+  const [isDocSourceDropdownOpen, setIsDocSourceDropdownOpen] = useState(false);
+  const docSourceDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isCategoryDropdownOpen) return;
+    const handlePointerDown = (e: MouseEvent) => {
+      if (categoryDropdownRef.current && !categoryDropdownRef.current.contains(e.target as Node)) {
+        setIsCategoryDropdownOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsCategoryDropdownOpen(false);
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isCategoryDropdownOpen]);
+
+  useEffect(() => {
+    if (!isDocSourceDropdownOpen) return;
+    const handlePointerDown = (e: MouseEvent) => {
+      if (docSourceDropdownRef.current && !docSourceDropdownRef.current.contains(e.target as Node)) {
+        setIsDocSourceDropdownOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsDocSourceDropdownOpen(false);
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isDocSourceDropdownOpen]);
 
   // Chat input states
   const [inputVal, setInputVal] = useState('');
@@ -1126,8 +1090,45 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [aiAlertOpen, setAiAlertOpen] = useState(false);
   const [aiAlertMsg, setAiAlertMsg] = useState('');
-  const [targetDocument, setTargetDocument] = useState<TargetDocInfo | null>(null);
+  const [targetDocuments, setTargetDocuments] = useState<TargetDocInfo[]>([]);
   const [isChatDragOver, setIsChatDragOver] = useState(false);
+
+  const isAiConnected = aiConfig
+    ? aiConfig.configured !== false && aiConfig.api_key_configured !== false
+    : false;
+
+  const isDocumentPinned = (filename: string) =>
+    targetDocuments.some((doc) => doc.filename === filename);
+
+  const pinTargetDocument = (doc: TargetDocInfo) => {
+    setTargetDocuments((prev) => {
+      if (prev.some((item) => item.filename === doc.filename)) return prev;
+      if (prev.length >= MAX_PINNED_DOCUMENTS) {
+        setAiAlertMsg(t('aiAssistant.inline.maxPinnedDocuments', { max: MAX_PINNED_DOCUMENTS }));
+        setAiAlertOpen(true);
+        return prev;
+      }
+      return [...prev, doc];
+    });
+  };
+
+  const toggleTargetDocument = (doc: TargetDocInfo) => {
+    setTargetDocuments((prev) => {
+      if (prev.some((item) => item.filename === doc.filename)) {
+        return prev.filter((item) => item.filename !== doc.filename);
+      }
+      if (prev.length >= MAX_PINNED_DOCUMENTS) {
+        setAiAlertMsg(t('aiAssistant.inline.maxPinnedDocuments', { max: MAX_PINNED_DOCUMENTS }));
+        setAiAlertOpen(true);
+        return prev;
+      }
+      return [...prev, doc];
+    });
+  };
+
+  const removeTargetDocument = (filename: string) => {
+    setTargetDocuments((prev) => prev.filter((item) => item.filename !== filename));
+  };
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1213,7 +1214,10 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
       .then((data) => {
         if (!cancelled) setAiConfig(data);
       })
-      .catch(console.error);
+      .catch((err) => {
+        console.error(err);
+        if (!cancelled) setAiConfig({ configured: false });
+      });
 
     getDocuments()
       .then((data) => {
@@ -1246,7 +1250,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     setSidebarTab('sessions');
     setInputVal('');
     setSelectedCategory('');
-    setTargetDocument(null);
+    setTargetDocuments([]);
     if (typeof window !== 'undefined' && window.innerWidth <= 860) {
       setIsSidebarOpen(false);
     }
@@ -1383,9 +1387,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     if (confirm(t('aiAssistant.deleteDocConfirm', { filename }))) {
       try {
         await deleteDocument(filename);
-        if (targetDocument?.filename === filename) {
-          setTargetDocument(null);
-        }
+        removeTargetDocument(filename);
         await refreshDocuments();
       } catch {
         alert(t('aiAssistant.inline.failedToDeleteDocument'));
@@ -1419,7 +1421,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
         prompt(t('aiAssistant.clearAllDocsTypeConfirm')) === 'DELETE') {
       try {
         await deleteDocuments('DELETE');
-        setTargetDocument(null);
+        setTargetDocuments([]);
         await refreshDocuments();
       } catch {
         alert(t('aiAssistant.inline.failedToClearDocuments'));
@@ -1452,6 +1454,10 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
       .slice(-8)
       .map((message) => ({ role: message.sender === 'user' ? 'user' : 'assistant', content: message.text }));
 
+    const pinnedFilenames = targetDocuments.map((doc) => doc.filename);
+    const singleFilename = pinnedFilenames.length === 1 ? pinnedFilenames[0] : null;
+    const multipleFilenames = pinnedFilenames.length > 0 ? pinnedFilenames : null;
+
     const messageTimestamp = createMessageTimestamp();
     const shouldAppendUserMsg = !removeErrorMsgId;
     const userMsg: ChatMessage = {
@@ -1459,7 +1465,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
       sender: 'user',
       text,
       time: new Date().toLocaleTimeString(currentLang === 'en' ? 'en-US' : 'vi-VN', { hour: '2-digit', minute: '2-digit' }),
-      targetDoc: targetDocument || undefined,
+      targetDocs: targetDocuments.length > 0 ? targetDocuments : undefined,
     };
     const newMessages = shouldAppendUserMsg ? [...baseMessages, userMsg] : baseMessages;
     const isFirstQuestion = !baseMessages.some((message) => message.sender === 'user');
@@ -1515,7 +1521,8 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
         await askQuestionStream(text, {
           history,
           category: selectedCategory || null,
-          filename: targetDocument?.filename || null,
+          filename: singleFilename,
+          filenames: multipleFilenames,
           language: currentLang,
           onSources: (sources) => {
             streamedSources = (sources || []) as CitationSource[];
@@ -1540,7 +1547,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
       } catch (streamError: unknown) {
         if (!messageStreamed) {
           console.warn('Stream failed, falling back to askQuestion:', streamError);
-          const response = await askQuestion(text, history, selectedCategory || null, targetDocument?.filename || null, currentLang);
+          const response = await askQuestion(text, history, selectedCategory || null, singleFilename, currentLang, multipleFilenames);
           const aiText = response.answer || response.text;
           if (typeof aiText !== 'string' || !aiText.trim()) throw new Error('Empty AI response', { cause: streamError });
           updateOrAddAiMessage(aiText, response.sources || response.citations || []);
@@ -1719,10 +1726,13 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     );
   });
 
-  const hierarchicalDocs: Record<string, RootFolderGroup> = useMemo(() => {
+  const buildHierarchicalDocs = (
+    docsList: DocItem[],
+    uncategorizedLabel: string
+  ): Record<string, RootFolderGroup> => {
     const groups: Record<string, RootFolderGroup> = {};
 
-    for (const doc of filteredDocs) {
+    for (const doc of docsList) {
       const rawCategory = doc.category?.trim();
       const normalizedCategory = rawCategory
         ?.normalize('NFD')
@@ -1731,7 +1741,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
         .toLowerCase();
       const effectiveCategory = rawCategory && normalizedCategory !== 'chua phan loai'
         ? rawCategory
-        : t('aiAssistant.uncategorized');
+        : uncategorizedLabel;
 
       const slashIdx = effectiveCategory.indexOf(' / ');
       const rootName = slashIdx > 0 ? effectiveCategory.slice(0, slashIdx).trim() : effectiveCategory;
@@ -1758,7 +1768,289 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     }
 
     return groups;
-  }, [filteredDocs, t]);
+  };
+
+  const uploadedDocs = useMemo(
+    () => filteredDocs.filter((d) => !d.is_managed),
+    [filteredDocs]
+  );
+
+  const managedDocs = useMemo(
+    () => filteredDocs.filter((d) => Boolean(d.is_managed)),
+    [filteredDocs]
+  );
+
+  const uploadedTree: Record<string, RootFolderGroup> = useMemo(
+    () => buildHierarchicalDocs(uploadedDocs, t('aiAssistant.uncategorized')),
+    [uploadedDocs, t]
+  );
+
+  const managedTree: Record<string, RootFolderGroup> = useMemo(
+    () => buildHierarchicalDocs(managedDocs, t('aiAssistant.uncategorized')),
+    [managedDocs, t]
+  );
+
+  const renderFolderTree = (tree: Record<string, RootFolderGroup>, sectionPrefix: string) =>
+    Object.values(tree).map((root: RootFolderGroup) => {
+      const rootKey = `${sectionPrefix}:${root.name}`;
+      const isRootCollapsed = !!collapsedRoots[rootKey];
+      return (
+        <div key={rootKey} className={`sidebar-doc-category ${isRootCollapsed ? 'is-collapsed' : ''}`}>
+          {/* Thư mục gốc duy nhất (Level 1) */}
+          <button
+            type="button"
+            className="sidebar-category-header"
+            onClick={() => toggleRoot(rootKey)}
+            aria-expanded={!isRootCollapsed}
+            title={
+              isRootCollapsed
+                ? t('aiAssistant.inline.expandFolderName', { name: root.name })
+                : t('aiAssistant.inline.collapseFolderName', { name: root.name })
+            }
+          >
+            <span className="sidebar-category-title">
+              <i
+                className={`sidebar-chevron-icon fa-solid ${
+                  isRootCollapsed ? 'fa-chevron-right' : 'fa-chevron-down'
+                }`}
+              />
+              <i className="fa-solid fa-folder text-warning" />
+              <span className="sidebar-category-name" title={root.name}>
+                {root.name}
+              </span>
+            </span>
+            <span className="sidebar-category-count font-bold">
+              {root.totalCount}
+            </span>
+          </button>
+
+          {/* Danh sách Item bên trong Folder nhỏ */}
+          {!isRootCollapsed && (
+            <div className="sidebar-root-content">
+              {Object.values(root.subFolders).map((sub: SubFolderGroup) => {
+                const subKey = `${rootKey}_${sub.name}`;
+                const isSubCollapsed = !!collapsedSubs[subKey];
+                return (
+                  <div
+                    key={sub.name}
+                    className={`sidebar-subfolder-card ${isSubCollapsed ? 'is-collapsed' : ''}`}
+                  >
+                    {/* Top Header */}
+                    <button
+                      type="button"
+                      className="sidebar-subfolder-header"
+                      onClick={() => toggleSub(subKey)}
+                      aria-expanded={!isSubCollapsed}
+                      title={
+                        isSubCollapsed
+                          ? t('aiAssistant.inline.expandName', { name: sub.name })
+                          : t('aiAssistant.inline.collapseName', { name: sub.name })
+                      }
+                    >
+                      <span className="sidebar-subfolder-title">
+                        <i
+                          className={`text-[10px] text-muted transition-transform fa-solid ${
+                            isSubCollapsed ? 'fa-chevron-right' : 'fa-chevron-down'
+                          }`}
+                        />
+                        <i
+                          className={`fa-solid ${
+                            isSubCollapsed ? 'fa-folder text-warning' : 'fa-folder-open text-warning'
+                          } text-xs`}
+                        />
+                        <span className="sidebar-subfolder-name" title={sub.name}>
+                          {sub.name}
+                        </span>
+                      </span>
+                      <span className="sidebar-subfolder-count">
+                        {sub.docs.length}
+                      </span>
+                    </button>
+
+                    {/* Danh sách Item bên trong Folder nhỏ */}
+                    {!isSubCollapsed && (
+                      <div className="sidebar-doc-list">
+                        {sub.docs.map((d) => {
+                          const itemLabel = d.filename;
+                          const isPinned = isDocumentPinned(d.filename);
+
+                          return (
+                            <div
+                              key={d.filename}
+                              className={`sidebar-doc-row ${isPinned ? 'is-targeted' : ''}`}
+                              draggable={true}
+                              onDragStart={(e) => {
+                                e.dataTransfer.setData(
+                                  'application/x-tlbm-doc',
+                                  JSON.stringify({ filename: d.filename, label: itemLabel, category: d.category })
+                                );
+                                e.dataTransfer.effectAllowed = 'copy';
+                              }}
+                              title={
+                                t('aiAssistant.inline.dragItemlabelToChatOr', { itemLabel })
+                              }
+                            >
+                              <div className="sidebar-doc-info" title={d.filename}>
+                                <i
+                                  className={`sidebar-doc-icon fa-solid ${
+                                    d.filename.toLowerCase().endsWith('.pdf')
+                                      ? 'fa-file-pdf text-danger'
+                                      : 'fa-file-lines text-primary'
+                                  }`}
+                                />
+                                <span className="sidebar-doc-name">
+                                  {itemLabel}
+                                </span>
+                              </div>
+                              <div className="sidebar-doc-actions">
+                                {/* Nút chỉ định nhanh */}
+                                <button
+                                  type="button"
+                                  className={`sidebar-doc-btn pin-btn ${isPinned ? 'is-active text-primary' : ''}`}
+                                  onClick={() => toggleTargetDocument({ filename: d.filename, label: itemLabel, category: d.category })}
+                                  title={
+                                    isPinned
+                                      ? (t('aiAssistant.inline.unpinTargetDocument'))
+                                      : (t('aiAssistant.inline.targetThisDocumentForQ'))
+                                  }
+                                >
+                                  <i className="fa-solid fa-crosshairs" />
+                                </button>
+                                {!d.is_managed && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      className="sidebar-doc-btn"
+                                      onClick={() => setPreviewFilename(d.filename)}
+                                      title={t('aiAssistant.preview')}
+                                    >
+                                      <i className="fa-solid fa-eye" />
+                                    </button>
+                                    {currentUser.isAdmin && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          className="sidebar-doc-btn"
+                                          onClick={() => handleReclassifyDoc(d.filename)}
+                                          disabled={reclassifyingDoc === d.filename}
+                                          title={reclassifyingDoc === d.filename ? t('aiAssistant.inline.reclassifying') : t('aiAssistant.inline.reclassifyDoc')}
+                                          aria-label={`${t('aiAssistant.inline.reclassifyDoc')}: ${d.filename}`}
+                                        >
+                                          <i className={`fa-solid ${reclassifyingDoc === d.filename ? 'fa-spinner fa-spin' : 'fa-tags'}`} />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="sidebar-doc-btn delete-btn"
+                                          onClick={() => handleDeleteDoc(d.filename)}
+                                          title={t('aiAssistant.deleteDoc')}
+                                          aria-label={`${t('aiAssistant.deleteDoc')}: ${d.filename}`}
+                                        >
+                                          <i className="fa-solid fa-trash" />
+                                        </button>
+                                      </>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* Tài liệu cấp trực tiếp (nếu có) */}
+              {root.directDocs.length > 0 && (
+                <div className="sidebar-doc-list">
+                  {root.directDocs.map((d) => {
+                    const isPinned = isDocumentPinned(d.filename);
+                    return (
+                    <div
+                      key={d.filename}
+                      className={`sidebar-doc-row ${isPinned ? 'is-targeted' : ''}`}
+                      draggable={true}
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData(
+                          'application/x-tlbm-doc',
+                          JSON.stringify({ filename: d.filename, label: d.filename, category: d.category })
+                        );
+                        e.dataTransfer.effectAllowed = 'copy';
+                      }}
+                      title={
+                        t('aiAssistant.inline.dragFilenameToChatOr', { filename: d.filename })
+                      }
+                    >
+                      <div className="sidebar-doc-info" title={d.filename}>
+                        <i
+                          className={`sidebar-doc-icon fa-solid ${
+                            d.filename.toLowerCase().endsWith('.pdf')
+                              ? 'fa-file-pdf text-danger'
+                              : 'fa-file-lines text-primary'
+                          }`}
+                        />
+                        <span className="sidebar-doc-name">{d.filename}</span>
+                      </div>
+                      <div className="sidebar-doc-actions">
+                        <button
+                          type="button"
+                          className={`sidebar-doc-btn pin-btn ${isPinned ? 'is-active text-primary' : ''}`}
+                          onClick={() => toggleTargetDocument({ filename: d.filename, label: d.filename, category: d.category })}
+                          title={
+                            isPinned
+                              ? (t('aiAssistant.inline.unpinTargetDocument'))
+                              : (t('aiAssistant.inline.targetThisDocumentForQ'))
+                          }
+                        >
+                          <i className="fa-solid fa-crosshairs" />
+                        </button>
+                        {!d.is_managed && (
+                          <>
+                            <button
+                              type="button"
+                              className="sidebar-doc-btn"
+                              onClick={() => setPreviewFilename(d.filename)}
+                              title={t('aiAssistant.preview')}
+                            >
+                              <i className="fa-solid fa-eye" />
+                            </button>
+                            {currentUser.isAdmin && (
+                              <>
+                                <button
+                                  type="button"
+                                  className="sidebar-doc-btn"
+                                  onClick={() => handleReclassifyDoc(d.filename)}
+                                  disabled={reclassifyingDoc === d.filename}
+                                  title={reclassifyingDoc === d.filename ? t('aiAssistant.inline.reclassifying') : t('aiAssistant.inline.reclassifyDoc')}
+                                  aria-label={`${t('aiAssistant.inline.reclassifyDoc')}: ${d.filename}`}
+                                >
+                                  <i className={`fa-solid ${reclassifyingDoc === d.filename ? 'fa-spinner fa-spin' : 'fa-tags'}`} />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="sidebar-doc-btn delete-btn"
+                                  onClick={() => handleDeleteDoc(d.filename)}
+                                  title={t('aiAssistant.deleteDoc')}
+                                  aria-label={`${t('aiAssistant.deleteDoc')}: ${d.filename}`}
+                                >
+                                  <i className="fa-solid fa-trash" />
+                                </button>
+                              </>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    });
 
   if (!aiPermissionLoaded) {
     return <div className="flex h-full items-center justify-center text-text-secondary">{t('aiAssistant.accessChecking')}</div>;
@@ -1807,26 +2099,98 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
           </button>
         </div>
 
-        {/* Tab Switcher: Hội thoại vs Kho tài liệu */}
+        {/* Tab Switcher: Hội thoại vs Kho tài liệu (tích hợp dropdown phân loại kho) */}
         {isSidebarOpen && (
-          <div className="sidebar-tab-switcher">
-            <button
-              type="button"
-              className={`sidebar-tab-pill ${sidebarTab === 'sessions' ? 'active' : ''}`}
-              onClick={() => setSidebarTab('sessions')}
-            >
-              <i className="fa-regular fa-message" />
-              <span>{t('aiAssistant.tabSessions')}</span>
-            </button>
-            <button
-              type="button"
-              className={`sidebar-tab-pill ${sidebarTab === 'docs' ? 'active' : ''}`}
-              onClick={() => setSidebarTab('docs')}
-            >
-              <i className="fa-solid fa-folder-open" />
-              <span>{t('aiAssistant.tabDocs')}</span>
-              {documents.length > 0 && <span className="sidebar-tab-badge">{documents.length}</span>}
-            </button>
+          <div className="sidebar-tab-switcher-wrap" ref={docSourceDropdownRef}>
+            <div className="sidebar-tab-switcher">
+              <button
+                type="button"
+                className={`sidebar-tab-pill ${sidebarTab === 'sessions' ? 'active' : ''}`}
+                onClick={() => {
+                  setSidebarTab('sessions');
+                  setIsDocSourceDropdownOpen(false);
+                }}
+              >
+                <i className="fa-regular fa-message" />
+                <span>{t('aiAssistant.tabSessions')}</span>
+              </button>
+              <button
+                type="button"
+                className={`sidebar-tab-pill ${sidebarTab === 'docs' ? 'active' : ''}`}
+                onClick={() => {
+                  if (sidebarTab !== 'docs') {
+                    setSidebarTab('docs');
+                  } else {
+                    setIsDocSourceDropdownOpen((prev) => !prev);
+                  }
+                }}
+                aria-haspopup="listbox"
+                aria-expanded={sidebarTab === 'docs' && isDocSourceDropdownOpen}
+                title={t('aiAssistant.inline.filterDocSource')}
+              >
+                <i className="fa-solid fa-folder-open" />
+                <span>{t('aiAssistant.tabDocs')}</span>
+                {documents.length > 0 && (
+                  <span className="sidebar-tab-badge">
+                    {docSourceFilter === 'managed'
+                      ? managedDocs.length
+                      : docSourceFilter === 'uploaded'
+                      ? uploadedDocs.length
+                      : documents.length}
+                  </span>
+                )}
+                <i
+                  className={`fa-solid fa-chevron-down sidebar-tab-chevron ${
+                    sidebarTab === 'docs' ? 'is-visible' : ''
+                  } ${sidebarTab === 'docs' && isDocSourceDropdownOpen ? 'is-open' : ''}`}
+                  aria-hidden="true"
+                />
+              </button>
+            </div>
+
+            {sidebarTab === 'docs' && isDocSourceDropdownOpen && (
+              <div className="sidebar-tab-dropdown-menu" role="listbox" aria-label={t('aiAssistant.inline.filterDocSource')}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={docSourceFilter === 'all'}
+                  className={`category-dropdown-option ${docSourceFilter === 'all' ? 'is-selected' : ''}`}
+                  onClick={() => {
+                    setDocSourceFilter('all');
+                    setIsDocSourceDropdownOpen(false);
+                  }}
+                >
+                  <span className="category-dropdown-option-text">{t('aiAssistant.inline.allDocSources')}</span>
+                  <span className="category-dropdown-option-count">{uploadedDocs.length + managedDocs.length}</span>
+                </button>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={docSourceFilter === 'managed'}
+                  className={`category-dropdown-option ${docSourceFilter === 'managed' ? 'is-selected' : ''}`}
+                  onClick={() => {
+                    setDocSourceFilter('managed');
+                    setIsDocSourceDropdownOpen(false);
+                  }}
+                >
+                  <span className="category-dropdown-option-text">{t('aiAssistant.inline.serverDocSource')}</span>
+                  <span className="category-dropdown-option-count">{managedDocs.length}</span>
+                </button>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={docSourceFilter === 'uploaded'}
+                  className={`category-dropdown-option ${docSourceFilter === 'uploaded' ? 'is-selected' : ''}`}
+                  onClick={() => {
+                    setDocSourceFilter('uploaded');
+                    setIsDocSourceDropdownOpen(false);
+                  }}
+                >
+                  <span className="category-dropdown-option-text">{t('aiAssistant.inline.aiUploadedDocSource')}</span>
+                  <span className="category-dropdown-option-count">{uploadedDocs.length}</span>
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -1945,8 +2309,8 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
             </div>
 
             <div className="ai-sidebar-docs-list">
-              {/* Drag & Drop Upload Zone - Chỉ hiển thị cho Quản trị viên */}
-              {currentUser.isAdmin && (
+              {/* Drag & Drop Upload Zone - Chỉ hiển thị cho Quản trị viên khi xem Tất cả hoặc Kho tải lên từ AI */}
+              {currentUser.isAdmin && docSourceFilter !== 'managed' && (
                 <button
                   ref={dropZoneRef}
                   type="button"
@@ -1960,9 +2324,13 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                   onClick={() => fileInputRef.current?.click()}
                   aria-label={`${t('aiAssistant.dropzoneText')}. ${t('aiAssistant.dropzoneSub')}`}
                 >
-                  <i className="fa-solid fa-cloud-arrow-up sidebar-dropzone-icon" />
-                  <span className="sidebar-dropzone-text">{t('aiAssistant.dropzoneText')}</span>
-                  <span className="sidebar-dropzone-subtext">{t('aiAssistant.dropzoneSub')}</span>
+                  <span className="sidebar-dropzone-icon" aria-hidden="true">
+                    <i className="fa-solid fa-plus" />
+                  </span>
+                  <span className="sidebar-dropzone-content">
+                    <span className="sidebar-dropzone-text">{t('aiAssistant.dropzoneText')}</span>
+                    <span className="sidebar-dropzone-subtext">{t('aiAssistant.dropzoneSub')}</span>
+                  </span>
                 </button>
               )}
 
@@ -1990,267 +2358,49 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                 </div>
               )}
 
-              {/* Danh mục tài liệu theo cấu trúc Thư mục nhiều cấp */}
-              {Object.keys(hierarchicalDocs).length === 0 ? (
+              {/* Danh mục tài liệu chia 2 nhóm: Kho tài liệu tải lên từ AI & Kho tài liệu máy chủ */}
+              {(docSourceFilter === 'all' && uploadedDocs.length === 0 && managedDocs.length === 0) ||
+              (docSourceFilter === 'managed' && managedDocs.length === 0) ||
+              (docSourceFilter === 'uploaded' && uploadedDocs.length === 0) ? (
                 <div className="sidebar-empty-state">
                   <i className="fa-regular fa-folder-open sidebar-empty-icon" />
                   <div>{documents.length === 0 ? t('aiAssistant.emptyDocs') : t('aiAssistant.emptyDocsSearch')}</div>
                 </div>
               ) : (
-                Object.values(hierarchicalDocs).map((root: RootFolderGroup) => {
-                  const isRootCollapsed = !!collapsedRoots[root.name];
-                  return (
-                    <div key={root.name} className={`sidebar-doc-category ${isRootCollapsed ? 'is-collapsed' : ''}`}>
-                      {/* Thư mục gốc duy nhất (Level 1) */}
-                      <button
-                        type="button"
-                        className="sidebar-category-header"
-                        onClick={() => toggleRoot(root.name)}
-                        aria-expanded={!isRootCollapsed}
-                        title={
-                          isRootCollapsed
-                            ? t('aiAssistant.inline.expandFolderName', { name: root.name })
-                            : t('aiAssistant.inline.collapseFolderName', { name: root.name })
-                        }
-                      >
-                        <span className="sidebar-category-title">
-                          <i
-                            className={`sidebar-chevron-icon fa-solid ${
-                              isRootCollapsed ? 'fa-chevron-right' : 'fa-chevron-down'
-                            }`}
-                          />
-                          <i className="fa-solid fa-folder text-warning" />
-                          <span className="sidebar-category-name" title={root.name}>
-                            {root.name}
+                <>
+                  {docSourceFilter !== 'managed' && uploadedDocs.length > 0 && (
+                    <div className="sidebar-doc-section">
+                      {docSourceFilter === 'all' && (
+                        <div className="sidebar-doc-section-header">
+                          <span className="sidebar-doc-section-title">
+                            <i className="fa-solid fa-cloud-arrow-up text-primary" />
+                            <span>{t('aiAssistant.inline.uploadedDocsSection')}</span>
                           </span>
-                        </span>
-                        <span className="sidebar-category-count font-bold">
-                          {root.totalCount}
-                        </span>
-                      </button>
-
-                      {/* Danh sách Item bên trong Folder nhỏ */}
-                      {!isRootCollapsed && (
-                        <div className="sidebar-root-content">
-                          {Object.values(root.subFolders).map((sub: SubFolderGroup) => {
-                            const subKey = `${root.name}_${sub.name}`;
-                            const isSubCollapsed = !!collapsedSubs[subKey];
-                            return (
-                              <div
-                                key={sub.name}
-                                className={`sidebar-subfolder-card ${isSubCollapsed ? 'is-collapsed' : ''}`}
-                              >
-                                {/* Top Header */}
-                                <button
-                                  type="button"
-                                  className="sidebar-subfolder-header"
-                                  onClick={() => toggleSub(subKey)}
-                                  aria-expanded={!isSubCollapsed}
-                                  title={
-                                    isSubCollapsed
-                                      ? t('aiAssistant.inline.expandName', { name: sub.name })
-                                      : t('aiAssistant.inline.collapseName', { name: sub.name })
-                                  }
-                                >
-                                  <span className="sidebar-subfolder-title">
-                                    <i
-                                      className={`text-[10px] text-muted transition-transform fa-solid ${
-                                        isSubCollapsed ? 'fa-chevron-right' : 'fa-chevron-down'
-                                      }`}
-                                    />
-                                    <i
-                                      className={`fa-solid ${
-                                        isSubCollapsed ? 'fa-folder text-warning' : 'fa-folder-open text-warning'
-                                      } text-xs`}
-                                    />
-                                    <span className="sidebar-subfolder-name" title={sub.name}>
-                                      {sub.name}
-                                    </span>
-                                  </span>
-                                  <span className="sidebar-subfolder-count">
-                                    {sub.docs.length}
-                                  </span>
-                                </button>
-
-                                {/* Danh sách Item bên trong Folder nhỏ */}
-                                {!isSubCollapsed && (
-                                  <div className="sidebar-doc-list">
-                                    {sub.docs.map((d) => {
-                                      const itemLabel = d.filename;
-
-                                      return (
-                                        <div
-                                          key={d.filename}
-                                          className={`sidebar-doc-row ${targetDocument?.filename === d.filename ? 'is-targeted' : ''}`}
-                                          draggable={true}
-                                          onDragStart={(e) => {
-                                            e.dataTransfer.setData(
-                                              'application/x-tlbm-doc',
-                                              JSON.stringify({ filename: d.filename, label: itemLabel, category: d.category })
-                                            );
-                                            e.dataTransfer.effectAllowed = 'copy';
-                                          }}
-                                          title={
-                                            t('aiAssistant.inline.dragItemlabelToChatOr', { itemLabel })
-                                          }
-                                        >
-                                          <div className="sidebar-doc-info" title={d.filename}>
-                                            <i
-                                              className={`sidebar-doc-icon fa-solid ${
-                                                d.filename.toLowerCase().endsWith('.pdf')
-                                                  ? 'fa-file-pdf text-danger'
-                                                  : 'fa-file-lines text-primary'
-                                              }`}
-                                            />
-                                            <span className="sidebar-doc-name">
-                                              {itemLabel}
-                                            </span>
-                                          </div>
-                                          <div className="sidebar-doc-actions">
-                                            {/* Nút chỉ định nhanh */}
-                                            <button
-                                              type="button"
-                                              className={`sidebar-doc-btn pin-btn ${targetDocument?.filename === d.filename ? 'is-active text-primary' : ''}`}
-                                              onClick={() => setTargetDocument(
-                                                targetDocument?.filename === d.filename ? null : { filename: d.filename, label: itemLabel, category: d.category }
-                                              )}
-                                              title={
-                                                targetDocument?.filename === d.filename
-                                                  ? (t('aiAssistant.inline.unpinTargetDocument'))
-                                                  : (t('aiAssistant.inline.targetThisDocumentForQ'))
-                                              }
-                                            >
-                                              <i className="fa-solid fa-crosshairs" />
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="sidebar-doc-btn"
-                                              onClick={() => setPreviewFilename(d.filename)}
-                                              title={t('aiAssistant.preview')}
-                                            >
-                                              <i className="fa-solid fa-eye" />
-                                            </button>
-                                            {currentUser.isAdmin && (
-                                              <>
-                                                <button
-                                                  type="button"
-                                                  className="sidebar-doc-btn"
-                                                  onClick={() => handleReclassifyDoc(d.filename)}
-                                                  disabled={reclassifyingDoc === d.filename}
-                                                  title={reclassifyingDoc === d.filename ? t('aiAssistant.inline.reclassifying') : t('aiAssistant.inline.reclassifyDoc')}
-                                                  aria-label={`${t('aiAssistant.inline.reclassifyDoc')}: ${d.filename}`}
-                                                >
-                                                  <i className={`fa-solid ${reclassifyingDoc === d.filename ? 'fa-spinner fa-spin' : 'fa-tags'}`} />
-                                                </button>
-                                                <button
-                                                  type="button"
-                                                  className="sidebar-doc-btn delete-btn"
-                                                  onClick={() => handleDeleteDoc(d.filename)}
-                                                  title={t('aiAssistant.deleteDoc')}
-                                                  aria-label={`${t('aiAssistant.deleteDoc')}: ${d.filename}`}
-                                                >
-                                                  <i className="fa-solid fa-trash" />
-                                                </button>
-                                              </>
-                                            )}
-                                          </div>
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-
-                          {/* Tài liệu cấp trực tiếp (nếu có) */}
-                          {root.directDocs.length > 0 && (
-                            <div className="sidebar-doc-list">
-                              {root.directDocs.map((d) => (
-                                <div
-                                  key={d.filename}
-                                  className={`sidebar-doc-row ${targetDocument?.filename === d.filename ? 'is-targeted' : ''}`}
-                                  draggable={true}
-                                  onDragStart={(e) => {
-                                    e.dataTransfer.setData(
-                                      'application/x-tlbm-doc',
-                                      JSON.stringify({ filename: d.filename, label: d.filename, category: d.category })
-                                    );
-                                    e.dataTransfer.effectAllowed = 'copy';
-                                  }}
-                                  title={
-                                    t('aiAssistant.inline.dragFilenameToChatOr', { filename: d.filename })
-                                  }
-                                >
-                                  <div className="sidebar-doc-info" title={d.filename}>
-                                    <i
-                                      className={`sidebar-doc-icon fa-solid ${
-                                        d.filename.toLowerCase().endsWith('.pdf')
-                                          ? 'fa-file-pdf text-danger'
-                                          : 'fa-file-lines text-primary'
-                                      }`}
-                                    />
-                                    <span className="sidebar-doc-name">{d.filename}</span>
-                                  </div>
-                                  <div className="sidebar-doc-actions">
-                                    <button
-                                      type="button"
-                                      className={`sidebar-doc-btn pin-btn ${targetDocument?.filename === d.filename ? 'is-active text-primary' : ''}`}
-                                      onClick={() => setTargetDocument(
-                                        targetDocument?.filename === d.filename ? null : { filename: d.filename, label: d.filename, category: d.category }
-                                      )}
-                                      title={
-                                        targetDocument?.filename === d.filename
-                                          ? (t('aiAssistant.inline.unpinTargetDocument'))
-                                          : (t('aiAssistant.inline.targetThisDocumentForQ'))
-                                      }
-                                    >
-                                      <i className="fa-solid fa-crosshairs" />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="sidebar-doc-btn"
-                                      onClick={() => setPreviewFilename(d.filename)}
-                                      title={t('aiAssistant.preview')}
-                                    >
-                                      <i className="fa-solid fa-eye" />
-                                    </button>
-                                    {currentUser.isAdmin && (
-                                      <>
-                                        <button
-                                          type="button"
-                                          className="sidebar-doc-btn"
-                                          onClick={() => handleReclassifyDoc(d.filename)}
-                                          disabled={reclassifyingDoc === d.filename}
-                                          title={reclassifyingDoc === d.filename ? t('aiAssistant.inline.reclassifying') : t('aiAssistant.inline.reclassifyDoc')}
-                                          aria-label={`${t('aiAssistant.inline.reclassifyDoc')}: ${d.filename}`}
-                                        >
-                                          <i className={`fa-solid ${reclassifyingDoc === d.filename ? 'fa-spinner fa-spin' : 'fa-tags'}`} />
-                                        </button>
-                                        <button
-                                          type="button"
-                                          className="sidebar-doc-btn delete-btn"
-                                          onClick={() => handleDeleteDoc(d.filename)}
-                                          title={t('aiAssistant.deleteDoc')}
-                                          aria-label={`${t('aiAssistant.deleteDoc')}: ${d.filename}`}
-                                        >
-                                          <i className="fa-solid fa-trash" />
-                                        </button>
-                                      </>
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
+                          <span className="sidebar-doc-section-count">{uploadedDocs.length}</span>
                         </div>
                       )}
+                      {renderFolderTree(uploadedTree, 'uploaded')}
                     </div>
-                  );
-                })
+                  )}
+
+                  {docSourceFilter !== 'uploaded' && managedDocs.length > 0 && (
+                    <div className="sidebar-doc-section">
+                      {docSourceFilter === 'all' && (
+                        <div className="sidebar-doc-section-header">
+                          <span className="sidebar-doc-section-title">
+                            <i className="fa-solid fa-database text-primary" />
+                            <span>{t('aiAssistant.inline.systemDocsSection')}</span>
+                          </span>
+                          <span className="sidebar-doc-section-count">{managedDocs.length}</span>
+                        </div>
+                      )}
+                      {renderFolderTree(managedTree, 'managed')}
+                    </div>
+                  )}
+                </>
               )}
 
-              {currentUser.isAdmin && documents.length > 0 && (
+              {currentUser.isAdmin && docSourceFilter !== 'managed' && documents.some((d) => !d.is_managed) && (
                 <button
                   type="button"
                   className="sidebar-clear-all-btn"
@@ -2284,19 +2434,6 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
         {/* Top Header */}
         <header className="ai-chat-top-header">
           <div className="top-header-left">
-            {!isSidebarOpen && (
-              <button
-                type="button"
-                className="open-sidebar-btn"
-                ref={sidebarOpenButtonRef}
-                onClick={() => setIsSidebarOpen(true)}
-                title={t('aiAssistant.expandSidebar')}
-                aria-label={t('aiAssistant.expandSidebar')}
-              >
-                <i className="fa-solid fa-bars" />
-              </button>
-            )}
-
             <div className="ai-brand-badge">
               <div className="ai-brand-icon">
                 <i className="fa-solid fa-robot" />
@@ -2304,7 +2441,6 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
               <div>
                 <div className="ai-brand-title">
                   <span>{t('aiAssistant.pageTitle')}</span>
-                  <span className="team-badge">LlamaIndex · PostgreSQL pgvector</span>
                 </div>
                 <div className="ai-brand-sub">
                   {t('aiAssistant.pageSubtitle')}
@@ -2316,49 +2452,74 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
           <div className="top-header-actions">
             {/* Bộ lọc chủ đề */}
             {categories.length > 0 && (
-              <div className="model-selector-wrapper category-filter-wrapper">
-                <i className="fa-solid fa-filter text-primary" />
-                <select
-                  className="model-select"
+              <div className="category-filter-dropdown" ref={categoryDropdownRef}>
+                <button
+                  type="button"
+                  className={`model-selector-wrapper category-filter-wrapper category-dropdown-trigger ${isCategoryDropdownOpen ? 'is-open' : ''}`}
+                  onClick={() => setIsCategoryDropdownOpen((prev) => !prev)}
+                  aria-haspopup="listbox"
+                  aria-expanded={isCategoryDropdownOpen}
                   aria-label={t('aiAssistant.allCategories')}
-                  value={selectedCategory}
-                  onChange={(e) => setSelectedCategory(e.target.value)}
                 >
-                  <option value="">{t('aiAssistant.allCategories')} ({documents.length})</option>
-                  {categories.map((c) => (
-                    <option key={c.name} value={c.name}>
-                      {c.name} ({c.count})
-                    </option>
-                  ))}
-                </select>
+                  <i className="fa-solid fa-filter text-primary" />
+                  <span className="category-dropdown-label">
+                    {selectedCategory
+                      ? `${selectedCategory} (${categories.find((c) => c.name === selectedCategory)?.count ?? 0})`
+                      : `${t('aiAssistant.allCategories')} (${documents.length})`}
+                  </span>
+                  <i className={`fa-solid fa-chevron-down category-dropdown-chevron ${isCategoryDropdownOpen ? 'is-open' : ''}`} />
+                </button>
+
+                {isCategoryDropdownOpen && (
+                  <div className="category-dropdown-menu" role="listbox" aria-label={t('aiAssistant.allCategories')}>
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={selectedCategory === ''}
+                      className={`category-dropdown-option ${selectedCategory === '' ? 'is-selected' : ''}`}
+                      onClick={() => {
+                        setSelectedCategory('');
+                        setIsCategoryDropdownOpen(false);
+                      }}
+                    >
+                      <span className="category-dropdown-option-text">{t('aiAssistant.allCategories')}</span>
+                      <span className="category-dropdown-option-count">{documents.length}</span>
+                    </button>
+                    {categories.map((c) => (
+                      <button
+                        key={c.name}
+                        type="button"
+                        role="option"
+                        aria-selected={selectedCategory === c.name}
+                        className={`category-dropdown-option ${selectedCategory === c.name ? 'is-selected' : ''}`}
+                        onClick={() => {
+                          setSelectedCategory(c.name);
+                          setIsCategoryDropdownOpen(false);
+                        }}
+                      >
+                        <span className="category-dropdown-option-text">{c.name}</span>
+                        <span className="category-dropdown-option-count">{c.count}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
-            {/* Model Badge */}
+            {/* AI Connection Status Badge */}
             {aiConfig && (
               <div
                 className="model-selector-wrapper ai-model-badge"
                 style={{ display: 'flex' }}
                 aria-live="polite"
-                aria-label={aiConfig.provider || 'OPENAI'}
-                title={aiConfig.provider || 'OPENAI'}
+                aria-label={isAiConnected ? t('aiAssistant.statusActive') : t('aiAssistant.statusDisconnected')}
+                title={isAiConnected ? t('aiAssistant.statusActive') : t('aiAssistant.statusDisconnected')}
               >
-                <span className="live-pulse-dot" />
-                <span className="text-uppercase font-bold">{aiConfig.provider || 'OPENAI'}</span>
+                <span className={`live-pulse-dot ${isAiConnected ? '' : 'is-disconnected'}`} />
+                <span className="ai-status-badge-text">
+                  {isAiConnected ? t('aiAssistant.statusActive') : t('aiAssistant.statusDisconnected')}
+                </span>
               </div>
-            )}
-
-            {currentUser.isAdmin && (
-              <button
-                type="button"
-                className="chat-action-btn"
-                onClick={() => setIsSettingsOpen(true)}
-                title={t('aiAssistant.inline.aiModelApiKeySettings')}
-                aria-label={t('aiAssistant.inline.aiSettings')}
-              >
-                <i className="fa-solid fa-gear" />
-                <span className="hidden xl:inline">{t('aiAssistant.inline.aiSettings')}</span>
-              </button>
             )}
 
             {/* Nút Xuất file */}
@@ -2385,7 +2546,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                       s.id === activeSessionId ? createDefaultSession(s.id, currentLang) : s
                     )
                   );
-                  setTargetDocument(null);
+                  setTargetDocuments([]);
                   setInputVal('');
                 }
               }}
@@ -2419,7 +2580,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
               setIsChatDragOver(false);
               try {
                 const doc = JSON.parse(raw);
-                setTargetDocument(doc);
+                pinTargetDocument(doc);
                 textareaRef.current?.focus();
               } catch (err) {
                 console.error(err);
@@ -2464,6 +2625,9 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
             {messages.map((msg) => {
               const isWelcomeMessage = msg.id.startsWith('msg-welcome-');
               const displayedText = isWelcomeMessage ? t('aiAssistant.defaultSession.welcome') : msg.text;
+              const { body: messageBodyText, note: softFallbackNote } = msg.sender === 'ai'
+                ? splitSoftFallbackNote(displayedText)
+                : { body: displayedText, note: null };
               const displayedQuickPrompts = isWelcomeMessage
                 ? [1, 2, 3, 4].map((index) => t(`aiAssistant.defaultSession.quickPrompt${index}`))
                 : msg.quickPrompts;
@@ -2487,19 +2651,23 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                     <span className="sender-name">
                       {msg.sender === 'user'
                         ? currentUser.fullName
-                        : t('aiAssistant.assistantSenderName', { provider: aiConfig?.provider ? aiConfig.provider.toUpperCase() : 'OPENAI' })}
+                        : t('aiAssistant.assistantSenderName')}
                     </span>
                     <span className="message-time">{msg.time}</span>
                   </div>
 
                   <div className="message-bubble-body">
-                    {msg.sender === 'user' && msg.targetDoc && (
-                      <div className="message-target-doc-tag">
-                        <i className={`fa-solid ${msg.targetDoc.filename.toLowerCase().endsWith('.pdf') ? 'fa-file-pdf' : 'fa-file-lines'}`} />
-                        <span>{msg.targetDoc.label || msg.targetDoc.filename}</span>
+                    {msg.sender === 'user' && (msg.targetDocs?.length || msg.targetDoc) && (
+                      <div className="message-target-doc-list">
+                        {(msg.targetDocs && msg.targetDocs.length > 0 ? msg.targetDocs : msg.targetDoc ? [msg.targetDoc] : []).map((doc) => (
+                          <div key={doc.filename} className="message-target-doc-tag">
+                            <i className={`fa-solid ${doc.filename.toLowerCase().endsWith('.pdf') ? 'fa-file-pdf' : 'fa-file-lines'}`} />
+                            <span>{doc.label || doc.filename}</span>
+                          </div>
+                        ))}
                       </div>
                     )}
-                    <FormattedMessage text={displayedText} onInternalLink={handleInternalLink} />
+                    <FormattedMessage text={messageBodyText} onInternalLink={handleInternalLink} />
 
                     {msg.isError && msg.retryText && (
                       <div className="ai-error-retry-row" role="alert">
@@ -2522,6 +2690,12 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                         onPreview={(fn) => setPreviewFilename(fn)}
                         onNavigate={navigateToCitation}
                       />
+                    )}
+
+                    {softFallbackNote && (
+                      <div className="ai-soft-fallback-note">
+                        {softFallbackNote}
+                      </div>
                     )}
 
                     {/* Câu hỏi gợi ý tiếp theo (Follow-up prompts) */}
@@ -2549,7 +2723,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                       <button
                         type="button"
                         className="msg-tool-btn"
-                        onClick={() => handleCopy(msg.id, displayedText)}
+                        onClick={() => handleCopy(msg.id, messageBodyText)}
                         title={t('aiAssistant.copy')}
                       >
                         <i className={`fa-solid ${copiedId === msg.id ? 'fa-check' : 'fa-copy'}`} />
@@ -2559,7 +2733,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                       <button
                         type="button"
                         className="msg-tool-btn"
-                        onClick={() => handleSpeakText(msg.id, displayedText)}
+                        onClick={() => handleSpeakText(msg.id, messageBodyText)}
                         title={speakingId === msg.id ? t('aiAssistant.inline.stopReading') : t('aiAssistant.readAloud')}
                       >
                         <i className={`fa-solid ${speakingId === msg.id ? 'fa-stop' : 'fa-volume-high'}`} />
@@ -2616,7 +2790,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
               setIsChatDragOver(false);
               try {
                 const doc = JSON.parse(raw);
-                setTargetDocument(doc);
+                pinTargetDocument(doc);
                 textareaRef.current?.focus();
               } catch (err) {
                 console.error(err);
@@ -2624,32 +2798,50 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
             }
           }}
         >
-          {/* Huy hiệu chỉ định tài liệu tra cứu riêng (Target Document) */}
-          {targetDocument && (
-            <div className="target-doc-pinned-badge">
-              <div className="target-doc-badge-left">
-                <i
-                  className={`fa-solid ${
-                    targetDocument.filename.toLowerCase().endsWith('.pdf')
-                      ? 'fa-file-pdf text-danger'
-                      : 'fa-file-lines text-primary'
-                  }`}
-                />
-                <span className="target-doc-label" title={targetDocument.filename}>
-                  {targetDocument.label || targetDocument.filename}
-                </span>
+          {/* Huy hiệu chỉ định tài liệu tra cứu riêng (Target Documents, tối đa 5) */}
+          {targetDocuments.length > 0 && (
+            <div className="target-doc-pinned-list">
+              <div className="target-doc-pinned-header">
                 <span className="target-doc-tag">
-                  {t('aiAssistant.inline.targeted')}
+                  {t('aiAssistant.inline.targetedCount', { count: targetDocuments.length, max: MAX_PINNED_DOCUMENTS })}
                 </span>
+                {targetDocuments.length > 1 && (
+                  <button
+                    type="button"
+                    className="target-doc-clear-all-btn"
+                    onClick={() => setTargetDocuments([])}
+                    title={t('aiAssistant.inline.clearAllTargetedDocuments')}
+                  >
+                    {t('aiAssistant.inline.clearAllTargetedDocuments')}
+                  </button>
+                )}
               </div>
-              <button
-                type="button"
-                className="target-doc-remove-btn"
-                onClick={() => setTargetDocument(null)}
-                title={t('aiAssistant.inline.clearTargetedDocument')}
-              >
-                <i className="fa-solid fa-xmark" />
-              </button>
+              <div className="target-doc-pinned-items">
+                {targetDocuments.map((doc) => (
+                  <div key={doc.filename} className="target-doc-pinned-badge">
+                    <div className="target-doc-badge-left">
+                      <i
+                        className={`fa-solid ${
+                          doc.filename.toLowerCase().endsWith('.pdf')
+                            ? 'fa-file-pdf text-danger'
+                            : 'fa-file-lines text-primary'
+                        }`}
+                      />
+                      <span className="target-doc-label" title={doc.filename}>
+                        {doc.label || doc.filename}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="target-doc-remove-btn"
+                      onClick={() => removeTargetDocument(doc.filename)}
+                      title={t('aiAssistant.inline.clearTargetedDocument')}
+                    >
+                      <i className="fa-solid fa-xmark" />
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -2732,14 +2924,18 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
               ref={textareaRef}
               className="chat-textarea"
               placeholder={
-                targetDocument
-                  ? (t('aiAssistant.inline.askAboutValue', { value: targetDocument.label || targetDocument.filename }))
+                targetDocuments.length === 1
+                  ? (t('aiAssistant.inline.askAboutValue', { value: targetDocuments[0].label || targetDocuments[0].filename }))
+                  : targetDocuments.length > 1
+                  ? (t('aiAssistant.inline.askAboutMultipleValue', { count: targetDocuments.length }))
                   : isMobile
                   ? t('aiAssistant.inputPlaceholderMobile')
                   : t('aiAssistant.inputPlaceholder')
               }
-              aria-label={targetDocument
-                ? t('aiAssistant.inline.askAboutValue', { value: targetDocument.label || targetDocument.filename })
+              aria-label={targetDocuments.length === 1
+                ? t('aiAssistant.inline.askAboutValue', { value: targetDocuments[0].label || targetDocuments[0].filename })
+                : targetDocuments.length > 1
+                ? t('aiAssistant.inline.askAboutMultipleValue', { count: targetDocuments.length })
                 : t('aiAssistant.inputPlaceholder')}
               rows={1}
               maxLength={MAX_QUESTION_LENGTH}
@@ -2799,22 +2995,6 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
           key={previewFilename}
           filename={previewFilename}
           onClose={() => setPreviewFilename(null)}
-        />
-      )}
-
-      {/* Modal Cài đặt Mô hình & API Key AI (Admin) */}
-      {isSettingsOpen && currentUser.isAdmin && (
-        <AiSettingsModal
-          initialConfig={aiConfig}
-          onClose={() => setIsSettingsOpen(false)}
-          onSaved={(updated) => {
-            setAiConfig(updated);
-            setIsSettingsOpen(false);
-            window.dispatchEvent(new CustomEvent('tlbm_ai_config_updated', { detail: updated }));
-            setAiAlertMsg(t('aiAssistant.settingsModal.saveSuccess'));
-            setAiAlertOpen(true);
-            getAISettings().then(setAiConfig).catch(() => {});
-          }}
         />
       )}
 

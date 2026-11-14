@@ -193,10 +193,19 @@ def _stream_response(request, payload=None):
     history = payload.get("history", [])
     category = payload.get("category")
     filename = payload.get("filename")
+    filenames = payload.get("filenames")
+    if isinstance(filename, list) and not filenames:
+        filenames = filename
+        filename = None
     if filename and not isinstance(filename, str):
         filename = None
     elif filename:
         filename = filename.strip()
+    clean_filenames = (
+        [f.strip() for f in filenames if isinstance(f, str) and f.strip()][:5]
+        if isinstance(filenames, list)
+        else None
+    )
     if not isinstance(question, str) or not question.strip():
         return _error("Câu hỏi không được để trống.")
     if len(question) > MAX_CHAT_QUESTION_LENGTH:
@@ -222,7 +231,7 @@ def _stream_response(request, payload=None):
             employee_resolved=employee_id is not None,
             question_chars=len(question),
             history_items=len(safe_history),
-            has_filename=bool(filename),
+            has_filename=bool(filename or clean_filenames),
             has_category=bool(category),
             stream=True,
         )
@@ -237,6 +246,7 @@ def _stream_response(request, payload=None):
                 employee_id=employee_id,
                 filename=filename,
                 language=language,
+                filenames=clean_filenames,
             ):
                 yield event_chunk
         except GeneratorExit:
@@ -281,10 +291,19 @@ def _answer_chat(request, payload=None):
     history = payload.get("history", [])
     category = payload.get("category")
     filename = payload.get("filename")
+    filenames = payload.get("filenames")
+    if isinstance(filename, list) and not filenames:
+        filenames = filename
+        filename = None
     if filename and not isinstance(filename, str):
         filename = None
     elif filename:
         filename = filename.strip()
+    clean_filenames = (
+        [f.strip() for f in filenames if isinstance(f, str) and f.strip()][:5]
+        if isinstance(filenames, list)
+        else None
+    )
     if not isinstance(question, str) or not question.strip():
         return _error("Câu hỏi không được để trống.")
     if len(question) > MAX_CHAT_QUESTION_LENGTH:
@@ -301,7 +320,7 @@ def _answer_chat(request, payload=None):
             employee_resolved=employee_id is not None,
             question_chars=len(question),
             history_items=len(safe_history),
-            has_filename=bool(filename),
+            has_filename=bool(filename or clean_filenames),
             has_category=bool(category),
         )
         language = payload.get("language")
@@ -318,8 +337,16 @@ def _answer_chat(request, payload=None):
             employee_id=employee_id,
             filename=filename,
             language=language,
+            filenames=clean_filenames,
         )
-        return JsonResponse({"question": question.strip(), "category": category or None, "filename": filename or None, "language": language, **result})
+        return JsonResponse({
+            "question": question.strip(),
+            "category": category or None,
+            "filename": filename or (clean_filenames[0] if clean_filenames and len(clean_filenames) == 1 else None),
+            "filenames": clean_filenames or ([filename] if filename else None),
+            "language": language,
+            **result,
+        })
     except SqlDocumentAccessError as error:
         mark_error("ask_document", error.ai_reason)
         log_exception()
@@ -426,6 +453,71 @@ def upload_sync(request):
         return _error("Không thể lập chỉ mục tài liệu. Tệp chưa được thêm vào kho.", 500)
 
 
+def _list_accessible_postgres_documents(user, employee_id=None):
+    from backend.services.sql_document_source import (
+        SqlDocumentAccessError,
+        accessible_documents,
+        is_postgres_source,
+    )
+
+    if not is_postgres_source():
+        return []
+    try:
+        records = accessible_documents(user, employee_id=employee_id)
+    except SqlDocumentAccessError as exc:
+        logger.warning(
+            "Unable to list PostgreSQL documents for AI sidebar (%s): %s",
+            exc.ai_reason,
+            exc,
+        )
+        return []
+
+    tailieu_ids = [
+        int(r["source_id"])
+        for r in records
+        if r.get("source_type") == "tailieu" and r.get("source_id") is not None
+    ]
+    folder_by_tailieu_id = {}
+    if tailieu_ids:
+        try:
+            from document_templates.models import TaiLieuChiTiet
+
+            for tid, folder_name in TaiLieuChiTiet.objects.filter(
+                id__in=tailieu_ids
+            ).values_list("id", "dm_tai_lieu__ten_tai_lieu"):
+                if folder_name:
+                    folder_by_tailieu_id[int(tid)] = folder_name
+        except Exception:
+            pass
+
+    docs = []
+    for r in records:
+        source_type = r.get("source_type")
+        source_id = r.get("source_id")
+        display_name = str(r.get("display_name") or r.get("trich_yeu") or "Tài liệu")[:240]
+        if source_type == "vanbanden":
+            category = "Văn bản đến"
+        elif source_type == "vanbandi":
+            category = "Văn bản đi"
+        elif source_type == "tailieu":
+            folder_name = folder_by_tailieu_id.get(int(source_id)) if source_id is not None else None
+            category = f"Kho tài liệu / {folder_name}" if folder_name else "Kho tài liệu"
+        else:
+            category = "Chưa phân loại"
+
+        updated_at = r.get("updated_at")
+        docs.append({
+            "filename": display_name,
+            "size": None,
+            "category": category,
+            "upload_time": updated_at.isoformat() if hasattr(updated_at, "isoformat") else updated_at,
+            "source_type": source_type,
+            "source_id": source_id,
+            "is_managed": True,
+        })
+    return docs
+
+
 @api_view(["GET", "DELETE"])
 @permission_classes([IsAuthenticated])
 def documents(request, filename=None):
@@ -442,7 +534,15 @@ def documents(request, filename=None):
             }
             for item in list_documents()
         ]
-        return JsonResponse({"documents": public_documents})
+        postgres_documents = _list_accessible_postgres_documents(
+            request.user,
+            employee_id=resolve_employee_id(request),
+        )
+        seen_names = {doc["filename"] for doc in postgres_documents}
+        combined = postgres_documents + [
+            doc for doc in public_documents if doc["filename"] not in seen_names
+        ]
+        return JsonResponse({"documents": combined})
     denied = _require_ai_admin(request)
     if denied:
         return denied
@@ -465,7 +565,24 @@ def categories(request):
     denied = _require_ai_access(request)
     if denied:
         return denied
-    return JsonResponse({"categories": list_categories()})
+    base_categories = list_categories()
+    postgres_documents = _list_accessible_postgres_documents(
+        request.user,
+        employee_id=resolve_employee_id(request),
+    )
+    if not postgres_documents:
+        return JsonResponse({"categories": base_categories})
+
+    counts = {item["name"]: item["count"] for item in base_categories}
+    for doc in postgres_documents:
+        cat = doc.get("category") or "Chưa phân loại"
+        counts[cat] = counts.get(cat, 0) + 1
+    return JsonResponse({
+        "categories": [
+            {"name": name, "count": count}
+            for name, count in sorted(counts.items())
+        ]
+    })
 
 
 @api_view(["DELETE"])

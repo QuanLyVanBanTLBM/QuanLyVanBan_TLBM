@@ -355,8 +355,8 @@ jobs:
   deploy-frontend:
     name: Deploy frontend to Ubuntu
     if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
-    # Chi day frontend sau khi deploy.sh xac nhan release cua commit nay dang chay;
-    # re-run commit cu bi deploy.sh tu choi thi frontend cu khong de len ban moi.
+    # Chi day frontend sau khi deploy-backend xong (deploy hoac bo qua vi backend khong doi)
+    # va khi commit cua run la dau staging; run cu hoac re-run commit cu khong de frontend cu len ban moi.
     needs: deploy-backend
     runs-on: ubuntu-latest
     steps:
@@ -366,7 +366,22 @@ jobs:
           name: frontend-dist
           path: dist
 
+      - name: Check commit is staging tip
+        id: fresh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TIP=$(gh api "repos/$GITHUB_REPOSITORY/commits/staging" --jq .sha)
+          if [ "$TIP" = "$GITHUB_SHA" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            echo "==> $GITHUB_SHA khong phai dau staging ($TIP); bo qua frontend cu de khong ghi de ban moi."
+          fi
+
       - name: Deploy frontend over SSH
+        if: steps.fresh.outputs.deploy == 'true'
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
@@ -393,6 +408,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Package release
         run: |
@@ -438,7 +455,24 @@ jobs:
           chmod 600 ~/.ssh/known_hosts
           SSH='ssh -i ~/.ssh/id_ed25519 -p 2150'
           REMOTE="$DEPLOY_USER@$DEPLOY_HOST"
-          $SSH "$REMOTE" 'mkdir -p ~/deploy'
+          $SSH "$REMOTE" 'mkdir -p ~/deploy/qlvb-backend.service.d'
+
+          # Kiem tra ban release va trang thai service dang chay thuc te tren host
+          CURRENT_RELEASE=$($SSH "$REMOTE" 'readlink -f /srv/qlvb/current 2>/dev/null || true')
+          PREV_SHA=$(basename "$CURRENT_RELEASE")
+          SERVICE_ACTIVE=$($SSH "$REMOTE" 'systemctl is-active --quiet qlvb-backend && echo 1 || echo 0')
+
+          # Neu service dang hoat dong binh thuong va commit cu hop le: so sanh thay doi backend/infra
+          if [ "$SERVICE_ACTIVE" = "1" ] && [ -n "$PREV_SHA" ] && [ "${RESET_DATABASE:-false}" != "true" ] && git rev-parse --verify "$PREV_SHA^{commit}" >/dev/null 2>&1; then
+            if git diff --quiet "$PREV_SHA" HEAD -- backend scripts deploy docs/common/database .github/scripts .env.example; then
+              echo "==> Khong co thay doi trong backend, scripts, deploy, database giua $PREV_SHA va $SHA7."
+              echo "==> Service qlvb-backend dang active tren host. Bo qua deploy backend de giu on dinh dich vu (0s downtime)."
+              exit 0
+            fi
+            echo "==> Phat hien thay doi trong backend/infra giua $PREV_SHA va $SHA7; bat dau deploy backend..."
+          else
+            echo "==> Tien hanh deploy backend (service_active=$SERVICE_ACTIVE, prev_sha=$PREV_SHA, reset_db=${RESET_DATABASE:-false})..."
+          fi
           $SSH "$REMOTE" '
             ENVF=/etc/qlvb/backend.env
             if [ -f "$ENVF" ] && [ -w "$ENVF" ]; then
@@ -464,8 +498,15 @@ jobs:
                 echo "DJANGO_CSRF_TRUSTED_ORIGINS=https://staging-quanlyvanban.bhbl.vn,http://127.0.0.1:8089" >> "$ENVF"
               fi
             fi
+            for d in /srv/qlvb/shared/data /srv/qlvb/shared/media /srv/qlvb/shared/signing /srv/qlvb/shared/storage; do
+              if [ -d "$d" ]; then
+                chmod -R u+rwX,g+rX,o-rwx "$d" 2>/dev/null || true
+              fi
+            done
           '
           rsync -az -e "$SSH" "qlvb-$SHA7.tar.gz" deploy/deploy.sh "$REMOTE:deploy/"
+          rsync -az -e "$SSH" deploy/qlvb-backend.socket "$REMOTE:deploy/qlvb-backend.socket"
+          rsync -az -e "$SSH" deploy/qlvb-backend.service.d/socket.conf "$REMOTE:deploy/qlvb-backend.service.d/socket.conf"
           rsync -az -e "$SSH" deploy/nginx/qlvb-frontend.conf "$REMOTE:deploy/qlvb-frontend.nginx"
           DB_MODE=sync
           if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$RESET_DATABASE" == "true" ]]; then

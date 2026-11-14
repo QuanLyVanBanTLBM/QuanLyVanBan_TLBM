@@ -4,29 +4,28 @@ on:
   schedule:
     # 07:00 Asia/Ho_Chi_Minh (UTC+7).
     - cron: "0 0 * * *"
+    # Secondary pass at 07:37; catches a missed primary run when this schedule fires.
+    - cron: "37 0 * * *"
   workflow_dispatch:
     inputs:
       username:
-        description: "Tài khoản staging cần gửi bù"
-        required: true
+        description: "Tài khoản cần gửi bù (để trống để recovery toàn ngày)"
+        required: false
         type: string
       date:
         description: "Ngày sinh nhật cần gửi (YYYY-MM-DD)"
         required: true
         type: string
 
-permissions: {}
-
-concurrency:
-  group: birthday-email-scheduler
-  cancel-in-progress: false
+permissions:
+  actions: read
 
 jobs:
   send-birthday-emails:
     if: github.ref == 'refs/heads/staging'
     name: Send scheduled birthday emails
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 120
     steps:
       - name: Run mail task on the current release
         env:
@@ -34,6 +33,7 @@ jobs:
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -48,14 +48,33 @@ jobs:
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/known_hosts"
 
-          remote_command='bash -s'
-          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
-            target_username=$(jq -er '.inputs.username | strings' "$GITHUB_EVENT_PATH")
+          trigger_source=SCHEDULED
+          scheduled_slot=-
+          target_username=
+          if [[ "$GITHUB_EVENT_NAME" == schedule ]]; then
+            event_schedule=$(jq -r '.schedule // ""' "$GITHUB_EVENT_PATH")
+            if [[ "$event_schedule" == "37 0 * * *" ]]; then
+              trigger_source=RECOVERY
+              scheduled_slot=07:37
+            elif [[ "$event_schedule" == "0 0 * * *" ]]; then
+              scheduled_slot=07:00
+            else
+              echo "Unsupported birthday email schedule: $event_schedule" >&2
+              exit 1
+            fi
+            created_at=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .created_at)
+            target_date=$(TZ=Asia/Ho_Chi_Minh date --date="$created_at" +%F)
+          else
+            trigger_source=RECOVERY
+            target_username=$(jq -r '.inputs.username // "" | strings' "$GITHUB_EVENT_PATH")
             target_date=$(jq -er '.inputs.date | strings' "$GITHUB_EVENT_PATH")
-            [[ "$target_username" =~ ^[A-Za-z0-9_.@+-]{1,150}$ ]]
-            [[ "$target_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]
-            remote_command="bash -s -- '$target_username' '$target_date'"
           fi
+          if [[ -n "$target_username" ]]; then
+            [[ "$target_username" =~ ^[A-Za-z0-9_.@+-]{1,150}$ ]]
+          fi
+          [[ "$target_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]
+          [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ && "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]]
+          remote_command="bash -s -- '$trigger_source' '$target_username' '$target_date' '$scheduled_slot' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT'"
           ssh -i "$HOME/.ssh/id_ed25519" -p 2150 \
             -o BatchMode=yes \
             -o StrictHostKeyChecking=yes \
@@ -66,23 +85,38 @@ jobs:
           umask 077
           touch "$LOG"
           chmod 600 "$LOG"
-          args=()
-          if (( $# > 0 )); then
-            args=("--username=$1" "--date=$2")
+          if (( $# != 6 )); then
+            echo "Invalid birthday email execution arguments." >&2
+            exit 2
+          fi
+          args=("--trigger-source=$1" "--date=$3" "--github-run-id=$5" "--github-run-attempt=$6")
+          if [[ -n "$2" ]]; then
+            args+=("--username=$2")
+          fi
+          if [[ "$4" != "-" ]]; then
+            args+=("--scheduled-slot=$4")
           fi
 
-          if /usr/bin/flock --wait 1800 "$BASE/.deploy.lock" /bin/bash -c '
+          set +e
+          /usr/bin/flock --wait 3600 "$BASE/.deploy.lock" /bin/bash -c '
             set -euo pipefail
             set -a
             . /etc/qlvb/backend.env
             set +a
             cd /srv/qlvb/current/backend
             exec /srv/qlvb/current/venv/bin/python manage.py send_birthday_emails "$@"
-          ' birthday-email "${args[@]}" >>"$LOG" 2>&1; then
+          ' birthday-email "${args[@]}" 2>&1 | tee -a "$LOG" | awk '/^BIRTHDAY_EMAIL_SUMMARY /'
+          pipeline_status=("${PIPESTATUS[@]}")
+          status=${pipeline_status[0]}
+          if (( status == 0 && (pipeline_status[1] != 0 || pipeline_status[2] != 0) )); then
+            status=1
+          fi
+          set -e
+
+          if (( status == 0 )); then
             echo "Birthday email task completed; details are in the protected server log and application email log."
           else
-            status=$?
-            echo "::error::Birthday email task failed (exit $status); inspect the protected server log."
+            echo "::error::Birthday email task failed (exit $status). Check the protected server log; sanitized recipient counts are shown above when available."
             exit "$status"
           fi
           REMOTE_SCRIPT

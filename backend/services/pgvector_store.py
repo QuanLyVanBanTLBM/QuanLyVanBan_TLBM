@@ -167,7 +167,12 @@ def insert_documents(documents, embed_model):
             embed_text = document.get_content(metadata_mode=MetadataMode.EMBED)
         else:
             embed_text = document.text
-        texts.append(embed_text or document.text)
+        base_text = embed_text or document.text
+        contextual_prefix = (getattr(document, "metadata", None) or {}).get("contextual_prefix")
+        if contextual_prefix and contextual_prefix not in base_text:
+            texts.append(f"{contextual_prefix}\n{base_text}")
+        else:
+            texts.append(base_text)
     vectors = embed_model.get_text_embedding_batch(texts, show_progress=True)
     rows = []
     for document, vector in zip(documents, vectors):
@@ -256,11 +261,14 @@ def keyword_search(keywords, limit=12, filters=None):
     searchable_expr = (
         "translate(lower(coalesce(content_text, '') || ' ' "
         "|| coalesce(metadata ->> 'parent_context', '') || ' ' "
+        "|| coalesce(metadata ->> 'contextual_prefix', '') || ' ' "
+        "|| coalesce(metadata ->> 'doc_code', '') || ' ' "
         "|| coalesce(metadata ->> 'file_name', '') || ' ' "
         "|| coalesce(metadata ->> 'attachment_name', '')), %s, %s)"
     )
     filename_expr = (
         "translate(lower(coalesce(metadata ->> 'file_name', '') || ' ' "
+        "|| coalesce(metadata ->> 'doc_code', '') || ' ' "
         "|| coalesce(metadata ->> 'attachment_name', '')), %s, %s)"
     )
 

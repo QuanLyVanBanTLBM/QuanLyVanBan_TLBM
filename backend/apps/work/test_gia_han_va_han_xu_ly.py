@@ -91,9 +91,9 @@ class DeadlineRulesTests(WorkTestBase):
         self.assertEqual(task.due_date, self.days(3))
 
     def test_gui_lai_dung_han_hien_tai_khong_bi_chan(self):
-        """Form sửa luôn gửi cả hạn xử lý: không đổi hạn thì chủ trì vẫn sửa được nội dung."""
+        """Form sửa luôn gửi cả hạn xử lý: không đổi hạn thì người có quyền sửa vẫn sửa được nội dung."""
         task = self.make_task()
-        self.login(self.host)
+        self.login(self.creator)
         response = self.client.patch(
             self.task_url(task),
             {"title": "Nội dung mới", "dueDate": self.days(3).strftime(URL_DATE_FMT)},
