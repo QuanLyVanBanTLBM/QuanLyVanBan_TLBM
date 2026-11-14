@@ -453,7 +453,7 @@ def upload_sync(request):
         return _error("Không thể lập chỉ mục tài liệu. Tệp chưa được thêm vào kho.", 500)
 
 
-def _list_accessible_postgres_documents(user):
+def _list_accessible_postgres_documents(user, employee_id=None):
     from backend.services.sql_document_source import (
         SqlDocumentAccessError,
         accessible_documents,
@@ -463,8 +463,13 @@ def _list_accessible_postgres_documents(user):
     if not is_postgres_source():
         return []
     try:
-        records = accessible_documents(user)
-    except SqlDocumentAccessError:
+        records = accessible_documents(user, employee_id=employee_id)
+    except SqlDocumentAccessError as exc:
+        logger.warning(
+            "Unable to list PostgreSQL documents for AI sidebar (%s): %s",
+            exc.ai_reason,
+            exc,
+        )
         return []
 
     tailieu_ids = [
@@ -529,7 +534,10 @@ def documents(request, filename=None):
             }
             for item in list_documents()
         ]
-        postgres_documents = _list_accessible_postgres_documents(request.user)
+        postgres_documents = _list_accessible_postgres_documents(
+            request.user,
+            employee_id=resolve_employee_id(request),
+        )
         seen_names = {doc["filename"] for doc in postgres_documents}
         combined = postgres_documents + [
             doc for doc in public_documents if doc["filename"] not in seen_names
@@ -558,7 +566,10 @@ def categories(request):
     if denied:
         return denied
     base_categories = list_categories()
-    postgres_documents = _list_accessible_postgres_documents(request.user)
+    postgres_documents = _list_accessible_postgres_documents(
+        request.user,
+        employee_id=resolve_employee_id(request),
+    )
     if not postgres_documents:
         return JsonResponse({"categories": base_categories})
 

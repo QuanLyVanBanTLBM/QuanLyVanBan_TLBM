@@ -233,3 +233,32 @@ class AIAccessTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["provider"], "openai")
         self.assertEqual(response.json()["llm_model"], "gpt-6-luna")
+
+    def test_documents_and_categories_pass_resolved_employee_id(self):
+        self.client.force_authenticate(self.ai_user)
+        mock_accessible = MagicMock(
+            return_value=[
+                {
+                    "source_type": "tailieu",
+                    "source_id": 10,
+                    "display_name": "01/TL — Quy trình nội bộ",
+                    "updated_at": None,
+                }
+            ]
+        )
+        with (
+            patch("backend.api.views.list_documents", return_value=[]),
+            patch("backend.api.views.list_categories", return_value=[]),
+            patch("backend.services.sql_document_source.is_postgres_source", return_value=True),
+            patch("backend.services.sql_document_source.accessible_documents", mock_accessible),
+        ):
+            docs_resp = self.client.get("/api/ai/documents")
+            cats_resp = self.client.get("/api/ai/categories")
+
+        self.assertEqual(docs_resp.status_code, 200)
+        self.assertEqual(len(docs_resp.json()["documents"]), 1)
+        self.assertTrue(docs_resp.json()["documents"][0]["is_managed"])
+        self.assertEqual(cats_resp.status_code, 200)
+        self.assertEqual(mock_accessible.call_count, 2)
+        for call in mock_accessible.call_args_list:
+            self.assertEqual(call.kwargs["employee_id"], self.ai_user.pk)
