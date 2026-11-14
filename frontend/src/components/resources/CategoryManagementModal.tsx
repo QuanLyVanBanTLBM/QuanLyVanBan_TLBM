@@ -908,6 +908,10 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
         setIsSubmittingUnified(true);
         setTypeError(null);
         await onSaveType(payload, Boolean(editingTypeId));
+        if (!editingTypeId) {
+          // Đưa bảng Loại tài liệu về trang 1 để mục mới tạo xuất hiện ngay ở dòng đầu tiên
+          setTypePage(1);
+        }
         setIsUnifiedDirty(false);
         setIsConfirmDiscardUnifiedOpen(false);
         setIsUnifiedModalOpen(false);

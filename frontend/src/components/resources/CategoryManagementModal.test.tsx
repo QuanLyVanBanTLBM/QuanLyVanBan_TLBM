@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import { CategoryManagementModal } from './CategoryManagementModal';
@@ -556,6 +557,60 @@ describe('CategoryManagementModal Component (Issue #233)', () => {
 
     const orderInput = screen.getByPlaceholderText('VD: 1, 2, 3...') as HTMLInputElement;
     expect(orderInput.value).toBe('4');
+  });
+
+  it('resets document types pagination to page 1 so a newly created type jumps to the top immediately', async () => {
+    const initialTypes: ResourceType[] = Array.from({ length: 8 }, (_, i) => ({
+      id: 8 - i,
+      dm_tai_lieu: 1,
+      ten_loai: `Loại tài liệu #${8 - i}`,
+      is_public: true,
+    }));
+
+    const Wrapper = () => {
+      const [typesState, setTypesState] = useState<ResourceType[]>(initialTypes);
+      return (
+        <CategoryManagementModal
+          isOpen={true}
+          onClose={onClose}
+          categories={mockCategories}
+          types={typesState}
+          onSaveCategory={onSaveCategory}
+          onDeleteCategory={onDeleteCategory}
+          onSaveType={async (payload) => {
+            const created: ResourceType = { ...payload, id: 99 };
+            setTypesState((prev) => [created, ...prev]);
+          }}
+          onDeleteType={onDeleteType}
+        />
+      );
+    };
+
+    render(<Wrapper />);
+
+    // Chuyển sang tab Loại tài liệu -> trang 1 hiển thị #8..#4
+    fireEvent.click(screen.getByRole('button', { name: /Loại tài liệu/i }));
+    expect(screen.getByText('Loại tài liệu #8')).toBeInTheDocument();
+
+    // Chuyển sang trang 2 (hiển thị #3..#1, ẩn #8)
+    fireEvent.click(screen.getByRole('button', { name: 'Trang 2' }));
+    expect(screen.getByText('Loại tài liệu #3')).toBeInTheDocument();
+    expect(screen.queryByText('Loại tài liệu #8')).not.toBeInTheDocument();
+
+    // Bấm + Thêm mới tạo loại tài liệu mới khi đang đứng ở trang 2
+    fireEvent.click(screen.getByTitle('Thêm mới Loại tài liệu'));
+    fireEvent.change(screen.getByPlaceholderText(/VD: Biểu mẫu bảo hiểm, Tờ trình.../i), {
+      target: { value: 'Loại mới nhảy lên đầu' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Lưu loại tài liệu/i }));
+
+    // Sau khi lưu, bảng tự quay về trang 1 và dòng đầu tiên là loại vừa tạo
+    await waitFor(() => {
+      expect(screen.getByText('Loại mới nhảy lên đầu')).toBeInTheDocument();
+    });
+    const rows = screen.getAllByRole('row');
+    expect(rows[1]).toHaveTextContent('Loại mới nhảy lên đầu');
+    expect(screen.getByText('1–5')).toBeInTheDocument();
   });
 });
 
