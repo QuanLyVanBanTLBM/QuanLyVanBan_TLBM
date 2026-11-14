@@ -2337,9 +2337,13 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                   onClick={() => fileInputRef.current?.click()}
                   aria-label={`${t('aiAssistant.dropzoneText')}. ${t('aiAssistant.dropzoneSub')}`}
                 >
-                  <i className="fa-solid fa-cloud-arrow-up sidebar-dropzone-icon" />
-                  <span className="sidebar-dropzone-text">{t('aiAssistant.dropzoneText')}</span>
-                  <span className="sidebar-dropzone-subtext">{t('aiAssistant.dropzoneSub')}</span>
+                  <span className="sidebar-dropzone-icon" aria-hidden="true">
+                    <i className="fa-solid fa-plus" />
+                  </span>
+                  <span className="sidebar-dropzone-content">
+                    <span className="sidebar-dropzone-text">{t('aiAssistant.dropzoneText')}</span>
+                    <span className="sidebar-dropzone-subtext">{t('aiAssistant.dropzoneSub')}</span>
+                  </span>
                 </button>
               )}
 
