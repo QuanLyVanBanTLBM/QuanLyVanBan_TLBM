@@ -247,6 +247,8 @@ class AIAccessTests(TestCase):
             ]
         )
         with (
+            patch("api.views.list_documents", return_value=[]),
+            patch("api.views.list_categories", return_value=[]),
             patch("backend.api.views.list_documents", return_value=[]),
             patch("backend.api.views.list_categories", return_value=[]),
             patch("backend.services.sql_document_source.is_postgres_source", return_value=True),
