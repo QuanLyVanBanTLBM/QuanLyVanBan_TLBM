@@ -311,7 +311,9 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
 
   // States cho Modal thông báo/xác nhận UI chuẩn
   const [deleteCatTarget, setDeleteCatTarget] = useState<ResourceCategory | null>(null);
+  const [isDeletingCat, setIsDeletingCat] = useState(false);
   const [deleteTypeTarget, setDeleteTypeTarget] = useState<ResourceType | null>(null);
+  const [isDeletingType, setIsDeletingType] = useState(false);
   const [deleteBlockedCat, setDeleteBlockedCat] = useState<{ cat: ResourceCategory; count: number } | null>(null);
 
   // ============================================================================
@@ -908,6 +910,10 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
         setIsSubmittingUnified(true);
         setTypeError(null);
         await onSaveType(payload, Boolean(editingTypeId));
+        if (!editingTypeId) {
+          // Đưa bảng Loại tài liệu về trang 1 để mục mới tạo xuất hiện ngay ở dòng đầu tiên
+          setTypePage(1);
+        }
         setIsUnifiedDirty(false);
         setIsConfirmDiscardUnifiedOpen(false);
         setIsUnifiedModalOpen(false);
@@ -993,7 +999,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
       aria-modal="true"
     >
       <div
-        className="w-full max-w-4xl max-h-[92vh] sm:max-h-[90vh] bg-surface rounded-2xl border border-border-subtle shadow-2xl flex flex-col overflow-hidden animate-slide-in-bottom"
+        className="w-full max-w-4xl h-[min(700px,92vh)] sm:h-[min(680px,90vh)] bg-surface rounded-2xl border border-border-subtle shadow-2xl flex flex-col overflow-hidden animate-slide-in-bottom"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header Modal */}
@@ -1150,8 +1156,9 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
               </div>
 
               {/* Bảng danh sách Thư mục */}
-              <div className="w-full overflow-x-auto rounded-xl border border-border-subtle bg-surface shadow-2xs">
-                <table className="w-full text-left text-xs border-collapse min-w-full">
+              <div className="w-full rounded-xl border border-border-subtle bg-surface shadow-2xs overflow-hidden min-h-[340px] flex flex-col justify-between">
+                <div className="w-full overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse min-w-full">
                   <thead className="bg-surface-elevated font-bold text-muted uppercase tracking-wider border-b border-border-subtle">
                     <tr>
                       <th className="hidden sm:table-cell px-2 sm:px-3 py-3 w-16 text-center">{t('resourceManagement.colOrder')}</th>
@@ -1242,6 +1249,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                     )}
                   </tbody>
                 </table>
+                </div>
 
                 {/* Thanh phân trang Thư mục */}
                 {filteredCategories.length > 0 && (
@@ -1374,8 +1382,9 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
               </div>
 
               {/* Bảng danh sách Loại tài liệu */}
-              <div className="w-full overflow-x-auto rounded-xl border border-border-subtle bg-surface shadow-2xs">
-                <table className="w-full text-left text-xs border-collapse min-w-full">
+              <div className="w-full rounded-xl border border-border-subtle bg-surface shadow-2xs overflow-hidden min-h-[340px] flex flex-col justify-between">
+                <div className="w-full overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse min-w-full">
                   <thead className="bg-surface-elevated font-bold text-muted uppercase tracking-wider border-b border-border-subtle">
                     <tr>
                       <th className="px-3 sm:px-4 py-3 min-w-[140px] sm:min-w-[200px]">{t('resourceManagement.colTypeName')}</th>
@@ -1485,6 +1494,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                     )}
                   </tbody>
                 </table>
+                </div>
 
                 {/* Thanh phân trang Loại tài liệu */}
                 {filteredTypes.length > 0 && (
@@ -1528,7 +1538,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
       {/* ============================================================================ */}
       {isUnifiedModalOpen && (
         <div
-          className="fixed inset-0 z-[10001] flex items-center justify-center p-2 sm:p-5 bg-black/60 backdrop-blur-xs animate-fade-in"
+          className="fixed inset-0 z-[10001] flex items-center justify-center p-2 sm:p-5 bg-black/45 animate-fade-in"
         >
           <div
             className="w-full max-w-xl bg-surface rounded-2xl border border-border-subtle shadow-2xl overflow-hidden animate-zoom-in flex flex-col max-h-[90vh]"
@@ -2246,12 +2256,21 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
       {/* Modal xác nhận xóa Thư mục */}
       <ConfirmationModal
         isOpen={deleteCatTarget !== null}
-        onClose={() => setDeleteCatTarget(null)}
+        isLoading={isDeletingCat}
+        onClose={() => {
+          if (!isDeletingCat) setDeleteCatTarget(null);
+        }}
         onConfirm={async () => {
-          if (deleteCatTarget) {
-            const catId = deleteCatTarget.id;
-            setDeleteCatTarget(null);
+          if (!deleteCatTarget || isDeletingCat) return;
+          const catId = deleteCatTarget.id;
+          setIsDeletingCat(true);
+          try {
             await onDeleteCategory(catId);
+          } catch {
+            /* parent handler reports error via Toast */
+          } finally {
+            setIsDeletingCat(false);
+            setDeleteCatTarget(null);
           }
         }}
         variant="danger"
@@ -2283,12 +2302,21 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
       {/* Modal xác nhận xóa Loại tài liệu */}
       <ConfirmationModal
         isOpen={deleteTypeTarget !== null}
-        onClose={() => setDeleteTypeTarget(null)}
+        isLoading={isDeletingType}
+        onClose={() => {
+          if (!isDeletingType) setDeleteTypeTarget(null);
+        }}
         onConfirm={async () => {
-          if (deleteTypeTarget) {
-            const typeId = deleteTypeTarget.id;
-            setDeleteTypeTarget(null);
+          if (!deleteTypeTarget || isDeletingType) return;
+          const typeId = deleteTypeTarget.id;
+          setIsDeletingType(true);
+          try {
             await onDeleteType(typeId);
+          } catch {
+            /* parent handler reports error via Toast */
+          } finally {
+            setIsDeletingType(false);
+            setDeleteTypeTarget(null);
           }
         }}
         variant="danger"

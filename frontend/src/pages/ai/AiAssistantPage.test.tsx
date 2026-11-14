@@ -8,7 +8,6 @@ import {
   getDocuments,
   previewDocument,
   reclassifyDocument,
-  updateAISettings,
 } from '../../api';
 import { usePermissions } from '@lib/permissions';
 import AiAssistantPage from './AiAssistantPage';
@@ -46,7 +45,6 @@ const mockedAskQuestion = vi.mocked(askQuestion);
 const mockedGetDocuments = vi.mocked(getDocuments);
 const mockedGetCategories = vi.mocked(getCategories);
 const mockedGetAISettings = vi.mocked(getAISettings);
-const mockedUpdateAISettings = vi.mocked(updateAISettings);
 const mockedPreviewDocument = vi.mocked(previewDocument);
 const mockedReclassifyDocument = vi.mocked(reclassifyDocument);
 const mockedUsePermissions = vi.mocked(usePermissions);
@@ -128,7 +126,8 @@ describe('AiAssistantPage', () => {
         [],
         null,
         null,
-        'vi'
+        'vi',
+        null
       )
     );
 
@@ -147,12 +146,13 @@ describe('AiAssistantPage', () => {
         ],
         null,
         null,
-        'vi'
+        'vi',
+        null
       )
     );
   });
 
-  it('hides delete, reclassify, and AI settings controls from non-admin users and shows them to admins', async () => {
+  it('hides delete and reclassify controls from non-admin users, shows them to admins, and never renders AI settings button', async () => {
     const { unmount } = renderAiPage();
     await waitFor(() => expect(mockedGetDocuments).toHaveBeenCalled());
 
@@ -173,7 +173,6 @@ describe('AiAssistantPage', () => {
       refresh: vi.fn(),
     } as unknown as ReturnType<typeof usePermissions>);
     mockedReclassifyDocument.mockResolvedValue({ category: 'Hành chính' });
-    mockedUpdateAISettings.mockResolvedValue({ provider: 'openai', llm_model: 'gpt-6-luna' });
 
     renderAiPage();
     await waitFor(() => expect(mockedGetDocuments).toHaveBeenCalled());
@@ -181,20 +180,7 @@ describe('AiAssistantPage', () => {
     const deleteBtns = await screen.findAllByTitle('aiAssistant.deleteDoc');
     expect(deleteBtns.length).toBeGreaterThan(0);
     expect(screen.getAllByTitle('aiAssistant.inline.reclassifyDoc').length).toBeGreaterThan(0);
-
-    fireEvent.click(screen.getByRole('button', { name: 'aiAssistant.inline.aiSettings' }));
-    fireEvent.change(screen.getByLabelText('aiAssistant.settingsModal.apiKeyLabel'), {
-      target: { value: 'sk-test-new-key-999' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'aiAssistant.settingsModal.save' }));
-
-    await waitFor(() =>
-      expect(mockedUpdateAISettings).toHaveBeenCalledWith({
-        provider: 'openai',
-        api_key: 'sk-test-new-key-999',
-        llm_model: 'gpt-6-luna',
-      })
-    );
+    expect(screen.queryByRole('button', { name: 'aiAssistant.inline.aiSettings' })).not.toBeInTheDocument();
   });
 
   it('deduplicates SQL citations, navigates with ?detail=id, and skips preview on business_spec', async () => {
@@ -214,8 +200,18 @@ describe('AiAssistantPage', () => {
     fireEvent.change(textarea, { target: { value: 'Tìm VB-99' } });
     fireEvent.click(screen.getByRole('button', { name: 'aiAssistant.send' }));
 
+    await screen.findByText('Kết quả tra cứu', { selector: 'p' });
+    expect(screen.queryByTitle('aiAssistant.viewDocument: VB-99')).not.toBeInTheDocument();
+
+    // Kiểm tra nút mở rộng / thu nhỏ nguồn trích dẫn (mặc định đóng)
+    fireEvent.click(screen.getByRole('button', { name: 'aiAssistant.toggleCitationsExpand' }));
     const sqlButtons = await screen.findAllByTitle('aiAssistant.viewDocument: VB-99');
     expect(sqlButtons).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'aiAssistant.toggleCitationsCollapse' }));
+    expect(screen.queryByTitle('aiAssistant.viewDocument: VB-99')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'aiAssistant.toggleCitationsExpand' }));
+    expect(screen.getByTitle('aiAssistant.viewDocument: VB-99')).toBeInTheDocument();
 
     fireEvent.click(screen.getByTitle('aiAssistant.viewDocument: Nghiệp vụ Văn bản'));
     expect(mockedPreviewDocument).not.toHaveBeenCalled();
@@ -232,6 +228,7 @@ describe('AiAssistantPage', () => {
     const textarea2 = screen.getByRole('textbox', { name: 'aiAssistant.inputPlaceholder' });
     fireEvent.change(textarea2, { target: { value: 'Tìm VB-99' } });
     fireEvent.click(screen.getByRole('button', { name: 'aiAssistant.send' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'aiAssistant.toggleCitationsExpand' }));
     fireEvent.click(await screen.findByTitle('aiAssistant.viewDocument: VB-99'));
     expect(await screen.findByTestId('location-probe')).toHaveTextContent('/documents/incoming?detail=99');
   });
@@ -247,10 +244,10 @@ describe('AiAssistantPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /aiAssistant\.tabDocs/ }));
     await screen.findByText('quy_trinh.pdf');
     fireEvent.click(screen.getAllByTitle('aiAssistant.inline.targetThisDocumentForQ')[0]);
-    expect(screen.getByText('aiAssistant.inline.targeted')).toBeInTheDocument();
+    expect(screen.getByText(/aiAssistant\.inline\.targetedCount/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /aiAssistant\.newChat/ }));
-    expect(screen.queryByText('aiAssistant.inline.targeted')).not.toBeInTheDocument();
+    expect(screen.queryByText(/aiAssistant\.inline\.targetedCount/)).not.toBeInTheDocument();
 
     const textarea = screen.getByRole('textbox', { name: 'aiAssistant.inputPlaceholder' });
     fireEvent.change(textarea, { target: { value: 'Hỏi thử nghiệm' } });
@@ -260,5 +257,143 @@ describe('AiAssistantPage', () => {
     fireEvent.click(retryBtn);
 
     expect(await screen.findByText('Đã khôi phục câu trả lời', { selector: 'p' })).toBeInTheDocument();
+  });
+
+  it('allows pinning up to 5 documents simultaneously and blocks the 6th', async () => {
+    mockedGetDocuments.mockResolvedValue({
+      documents: [
+        { filename: 'doc1.pdf', category: 'folder1', size: 100, chunk_count: 1 },
+        { filename: 'doc2.pdf', category: 'folder1', size: 100, chunk_count: 1 },
+        { filename: 'doc3.pdf', category: 'folder1', size: 100, chunk_count: 1 },
+        { filename: 'doc4.pdf', category: 'folder1', size: 100, chunk_count: 1 },
+        { filename: 'doc5.pdf', category: 'folder1', size: 100, chunk_count: 1 },
+        { filename: 'doc6.pdf', category: 'folder1', size: 100, chunk_count: 1 },
+      ],
+    });
+    mockedAskQuestion.mockResolvedValue({ answer: 'Đã đối chiếu 5 tài liệu', sources: [] });
+
+    renderAiPage();
+    await waitFor(() => expect(mockedGetDocuments).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: /aiAssistant\.tabDocs/ }));
+    await screen.findByText('doc1.pdf');
+
+    const pinButtons = screen.getAllByTitle('aiAssistant.inline.targetThisDocumentForQ');
+    expect(pinButtons).toHaveLength(6);
+
+    for (let i = 0; i < 6; i += 1) {
+      fireEvent.click(pinButtons[i]);
+    }
+
+    expect(await screen.findByText(/aiAssistant\.inline\.maxPinnedDocuments/)).toBeInTheDocument();
+
+    const textarea = screen.getByRole('textbox', { name: /aiAssistant\.inline\.askAboutMultipleValue/ });
+    fireEvent.change(textarea, { target: { value: 'So sánh 5 văn bản' } });
+    fireEvent.click(screen.getByRole('button', { name: 'aiAssistant.send' }));
+
+    await waitFor(() =>
+      expect(mockedAskQuestion).toHaveBeenCalledWith(
+        'So sánh 5 văn bản',
+        [],
+        null,
+        null,
+        'vi',
+        ['doc1.pdf', 'doc2.pdf', 'doc3.pdf', 'doc4.pdf', 'doc5.pdf']
+      )
+    );
+  });
+
+  it('separates uploaded documents from managed PostgreSQL documents (view & pin only)', async () => {
+    mockedUsePermissions.mockReturnValue({
+      loaded: true,
+      can: (perm: string) => perm === 'use_aiassistant',
+      isSuperuser: true,
+      isSystemAdmin: true,
+      refresh: vi.fn(),
+    } as unknown as ReturnType<typeof usePermissions>);
+    mockedGetDocuments.mockResolvedValue({
+      documents: [
+        { filename: 'uploaded_guide.pdf', category: 'Hướng dẫn', size: 120 },
+        {
+          filename: '12/CV-UBND — Công văn mẫu',
+          category: 'Văn bản đến',
+          is_managed: true,
+          source_type: 'vanbanden',
+          source_id: 12,
+        },
+      ],
+    });
+
+    renderAiPage();
+    await waitFor(() => expect(mockedGetDocuments).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: /aiAssistant\.tabDocs/ }));
+    expect(await screen.findByText('aiAssistant.inline.uploadedDocsSection')).toBeInTheDocument();
+    expect(screen.getByText('aiAssistant.inline.systemDocsSection')).toBeInTheDocument();
+    expect(screen.getByText('uploaded_guide.pdf')).toBeInTheDocument();
+    expect(screen.getByText('12/CV-UBND — Công văn mẫu')).toBeInTheDocument();
+
+    // Chỉ tài liệu tải lên mới có nút xóa/phân loại/xem trước; tài liệu hệ thống chỉ có nút ghim
+    expect(screen.getAllByTitle('aiAssistant.deleteDoc')).toHaveLength(1);
+    expect(screen.getAllByTitle('aiAssistant.preview')).toHaveLength(1);
+    expect(screen.getAllByTitle('aiAssistant.inline.targetThisDocumentForQ')).toHaveLength(2);
+  });
+
+  it('moves soft-fallback note to the bottom and excludes it from clipboard copy', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    mockedAskQuestion.mockResolvedValue({
+      answer:
+        '(Không có tài liệu cụ thể được ghim. Phản hồi dựa trên nghiệp vụ hành chính tổng hợp)\n\nNội dung hướng dẫn chính.',
+      sources: [],
+    });
+
+    renderAiPage();
+    await waitFor(() => expect(mockedGetDocuments).toHaveBeenCalled());
+
+    const textarea = screen.getByRole('textbox', { name: 'aiAssistant.inputPlaceholder' });
+    fireEvent.change(textarea, { target: { value: 'Hỏi quy trình' } });
+    fireEvent.click(screen.getByRole('button', { name: 'aiAssistant.send' }));
+
+    const bodyPara = await screen.findByText('Nội dung hướng dẫn chính.', { selector: 'p' });
+    const noteEl = screen.getByText('(Không có tài liệu cụ thể được ghim. Phản hồi dựa trên nghiệp vụ hành chính tổng hợp)');
+    expect(noteEl).toHaveClass('ai-soft-fallback-note');
+    expect(bodyPara.compareDocumentPosition(noteEl) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    const copyButtons = screen.getAllByTitle('aiAssistant.copy');
+    fireEvent.click(copyButtons[copyButtons.length - 1]);
+    expect(writeText).toHaveBeenCalledWith('Nội dung hướng dẫn chính.');
+  });
+
+  it('filters sidebar documents by server repository vs AI uploaded source dropdown', async () => {
+    mockedGetDocuments.mockResolvedValue({
+      documents: [
+        { filename: 'uploaded_guide.pdf', category: 'Hành chính', is_managed: false },
+        { filename: '01/QD — Quy chế máy chủ', category: 'Văn bản đến', is_managed: true },
+      ],
+    });
+
+    renderAiPage();
+    await waitFor(() => expect(mockedGetDocuments).toHaveBeenCalled());
+    const docsTabBtn = screen.getByRole('button', { name: /aiAssistant\.tabDocs/ });
+    fireEvent.click(docsTabBtn);
+    await waitFor(() => expect(screen.getByText('uploaded_guide.pdf')).toBeInTheDocument());
+    expect(screen.getByText('01/QD — Quy chế máy chủ')).toBeInTheDocument();
+    expect(screen.getByText('aiAssistant.inline.systemDocsSection')).toBeInTheDocument();
+    expect(screen.getByText('aiAssistant.inline.uploadedDocsSection')).toBeInTheDocument();
+
+    fireEvent.click(docsTabBtn);
+    fireEvent.click(screen.getByRole('option', { name: /aiAssistant\.inline\.serverDocSource/ }));
+
+    expect(screen.queryByText('uploaded_guide.pdf')).not.toBeInTheDocument();
+    expect(screen.getByText('01/QD — Quy chế máy chủ')).toBeInTheDocument();
+    expect(screen.queryByText('aiAssistant.inline.systemDocsSection')).not.toBeInTheDocument();
+
+    fireEvent.click(docsTabBtn);
+    fireEvent.click(screen.getByRole('option', { name: /aiAssistant\.inline\.aiUploadedDocSource/ }));
+
+    expect(screen.getByText('uploaded_guide.pdf')).toBeInTheDocument();
+    expect(screen.queryByText('01/QD — Quy chế máy chủ')).not.toBeInTheDocument();
+    expect(screen.queryByText('aiAssistant.inline.uploadedDocsSection')).not.toBeInTheDocument();
   });
 });

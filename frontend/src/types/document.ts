@@ -70,6 +70,7 @@ export interface DocumentItem {
   can_change_hieu_luc?: boolean;
   can_view_read_log?: boolean;
   can_send_mail_all?: boolean;
+  is_creator?: boolean;
   attachment_count: number;
   first_attachment_url?: string | null;
   created_at: string;
