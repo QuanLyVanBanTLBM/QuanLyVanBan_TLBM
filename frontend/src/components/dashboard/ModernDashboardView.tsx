@@ -25,6 +25,7 @@ export interface TaskItem {
 }
 
 export interface DocumentAttachment {
+  id?: number | string;
   name: string;
   size: string;
   type?: 'pdf' | 'excel' | 'word' | 'docx' | 'xlsx' | string;
