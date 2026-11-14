@@ -21,8 +21,8 @@
     "searchSessionsPlaceholder": "Tìm kiếm phiên chat...",
     "clearSearch": "Xóa tìm kiếm",
     "searchDocsPlaceholder": "Tìm file tài liệu...",
-    "dropzoneText": "Kéo thả hoặc Nhấp để nạp file",
-    "dropzoneSub": "Định dạng được hỗ trợ: PDF, DOC, DOCX, TXT, CSV, PPTX, MD, HTML, JSON, XML và ảnh",
+    "dropzoneText": "Tải lên tài liệu",
+    "dropzoneSub": "Kéo thả hoặc chọn file (PDF, DOCX, TXT, Ảnh...)",
     "emptySessions": "Chưa có cuộc trò chuyện nào.",
     "emptySessionsSearch": "Không tìm thấy cuộc trò chuyện phù hợp.",
     "emptyDocs": "Chưa có tài liệu nào trong kho.",
@@ -139,8 +139,12 @@
       "clearAllTargetedDocuments": "Bỏ ghim tất cả",
       "maxPinnedDocuments": "Chỉ được ghim tối đa {max} tài liệu cùng lúc.",
       "targetedCount": "{count}/{max}",
-      "uploadedDocsSection": "Tài liệu đã tải lên",
-      "systemDocsSection": "Tài liệu hệ thống (Chỉ xem & chỉ định)"
+      "uploadedDocsSection": "Kho tài liệu tải lên từ AI",
+      "systemDocsSection": "Kho tài liệu máy chủ",
+      "allDocSources": "Tất cả kho tài liệu",
+      "serverDocSource": "Kho tài liệu máy chủ",
+      "aiUploadedDocSource": "Kho tài liệu tải lên từ AI",
+      "filterDocSource": "Phân loại kho tài liệu"
     },
     "settingsModal": {
       "title": "Cài đặt mô hình & API Key AI",

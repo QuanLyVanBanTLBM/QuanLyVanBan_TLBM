@@ -364,4 +364,36 @@ describe('AiAssistantPage', () => {
     fireEvent.click(copyButtons[copyButtons.length - 1]);
     expect(writeText).toHaveBeenCalledWith('Nội dung hướng dẫn chính.');
   });
+
+  it('filters sidebar documents by server repository vs AI uploaded source dropdown', async () => {
+    mockedGetDocuments.mockResolvedValue({
+      documents: [
+        { filename: 'uploaded_guide.pdf', category: 'Hành chính', is_managed: false },
+        { filename: '01/QD — Quy chế máy chủ', category: 'Văn bản đến', is_managed: true },
+      ],
+    });
+
+    renderAiPage();
+    await waitFor(() => expect(mockedGetDocuments).toHaveBeenCalled());
+    const docsTabBtn = screen.getByRole('button', { name: /aiAssistant\.tabDocs/ });
+    fireEvent.click(docsTabBtn);
+    await waitFor(() => expect(screen.getByText('uploaded_guide.pdf')).toBeInTheDocument());
+    expect(screen.getByText('01/QD — Quy chế máy chủ')).toBeInTheDocument();
+    expect(screen.getByText('aiAssistant.inline.systemDocsSection')).toBeInTheDocument();
+    expect(screen.getByText('aiAssistant.inline.uploadedDocsSection')).toBeInTheDocument();
+
+    fireEvent.click(docsTabBtn);
+    fireEvent.click(screen.getByRole('option', { name: /aiAssistant\.inline\.serverDocSource/ }));
+
+    expect(screen.queryByText('uploaded_guide.pdf')).not.toBeInTheDocument();
+    expect(screen.getByText('01/QD — Quy chế máy chủ')).toBeInTheDocument();
+    expect(screen.queryByText('aiAssistant.inline.systemDocsSection')).not.toBeInTheDocument();
+
+    fireEvent.click(docsTabBtn);
+    fireEvent.click(screen.getByRole('option', { name: /aiAssistant\.inline\.aiUploadedDocSource/ }));
+
+    expect(screen.getByText('uploaded_guide.pdf')).toBeInTheDocument();
+    expect(screen.queryByText('01/QD — Quy chế máy chủ')).not.toBeInTheDocument();
+    expect(screen.queryByText('aiAssistant.inline.uploadedDocsSection')).not.toBeInTheDocument();
+  });
 });
