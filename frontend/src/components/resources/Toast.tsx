@@ -17,6 +17,17 @@ export interface ToastProps {
 
 export const Toast: React.FC<ToastProps> = ({ toast, onClose }) => {
   const [progress, setProgress] = useState(100);
+  const [prevToast, setPrevToast] = useState(toast);
+  const onCloseRef = React.useRef(onClose);
+
+  if (toast !== prevToast) {
+    setPrevToast(toast);
+    setProgress(100);
+  }
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!toast) return;
@@ -30,12 +41,12 @@ export const Toast: React.FC<ToastProps> = ({ toast, onClose }) => {
       setProgress(remainingPercent);
       if (remainingPercent <= 0) {
         clearInterval(timer);
-        onClose();
+        onCloseRef.current();
       }
     }, interval);
 
     return () => clearInterval(timer);
-  }, [toast, onClose]);
+  }, [toast]);
 
   if (!toast) return null;
   if (typeof document === 'undefined') return null;
