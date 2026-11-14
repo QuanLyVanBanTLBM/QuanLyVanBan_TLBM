@@ -753,6 +753,51 @@ class DocumentTemplatesModelAndAPITests(TestCase):
         self.assertTrue(serializer.is_valid(), serializer.errors)
         self.assertIsNone(serializer.validated_data.get('ngay_het_hieu_luc'))
 
+    def test_types_default_ordering_newest_first_and_pagination_beyond_100(self):
+        """Issue #819: Loại tài liệu mặc định trả về mới nhất trước (-id) và phân trang tiếp vượt mốc 100 bản ghi"""
+        self.client.force_authenticate(user=self.admin)
+
+        existing_count = LoaiTaiLieu.objects.count()
+        total_to_create = max(0, 105 - existing_count)
+        LoaiTaiLieu.objects.bulk_create([
+            LoaiTaiLieu(
+                dm_tai_lieu=self.cat1,
+                ten_loai=f'Loại tài liệu mở rộng {idx + 1}',
+                is_public=True,
+                nguoi_tao=self.admin,
+            )
+            for idx in range(total_to_create)
+        ])
+
+        newest = LoaiTaiLieu.objects.create(
+            dm_tai_lieu=self.cat1,
+            ten_loai='Loại tài liệu mới nhất #819',
+            is_public=True,
+            nguoi_tao=self.admin,
+        )
+
+        res_p1 = self.client.get('/api/resources/types/?page_size=100')
+        self.assertEqual(res_p1.status_code, status.HTTP_200_OK)
+        self.assertGreater(res_p1.data['count'], 100)
+        self.assertIsNotNone(res_p1.data['next'])
+        self.assertEqual(len(res_p1.data['results']), 100)
+        # Bản ghi mới tạo phải nằm ngay vị trí đầu tiên trang 1
+        self.assertEqual(res_p1.data['results'][0]['id'], newest.id)
+
+        # Trang 2 chứa các bản ghi cũ hơn còn lại vượt mốc 100
+        res_p2 = self.client.get('/api/resources/types/?page=2&page_size=100')
+        self.assertEqual(res_p2.status_code, status.HTTP_200_OK)
+        self.assertIsNone(res_p2.data['next'])
+        all_ids = [item['id'] for item in res_p1.data['results']] + [
+            item['id'] for item in res_p2.data['results']
+        ]
+        self.assertEqual(len(all_ids), res_p1.data['count'])
+        self.assertEqual(len(set(all_ids)), res_p1.data['count'])
+        # Vẫn hỗ trợ override ordering ascending qua query param
+        res_asc = self.client.get('/api/resources/types/?ordering=id&page_size=100')
+        self.assertEqual(res_asc.status_code, status.HTTP_200_OK)
+        self.assertNotEqual(res_asc.data['results'][0]['id'], newest.id)
+
 
 @override_settings(DOCUMENT_STORAGE_ROOT=TEMP_STORAGE_ROOT)
 class DocumentTemplatesRBACPermissionsTests(TestCase):
