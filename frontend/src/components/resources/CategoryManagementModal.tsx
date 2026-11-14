@@ -5,9 +5,11 @@ import { Button } from '@components/common/Button';
 import { Badge } from '@components/common/Badge';
 import { useTranslation } from '@i18n/translate';
 import { ConfirmationModal } from './ConfirmationModal';
+import { DropdownSearchInput } from './DropdownSearchInput';
 import { authService } from '@lib/authService';
 import { usePermissions } from '@lib/permissions';
 import { formatDate } from '@lib/dateUtils';
+import { filterResourceCategories } from '@lib/resourceSearch';
 
 export interface CategoryManagementModalProps {
   isOpen: boolean;
@@ -370,6 +372,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
 
   // Custom Dropdown State cho Lọc Thư mục cha (Tab 2) & Chọn Thư mục cha (Submodal)
   const [isFilterCatDropdownOpen, setIsFilterCatDropdownOpen] = useState(false);
+  const [filterCatSearch, setFilterCatSearch] = useState('');
   const filterCatDropdownRef = useRef<HTMLDivElement>(null);
   const filterCatButtonRef = useRef<HTMLButtonElement>(null);
   const filterCatMenuRef = useRef<HTMLDivElement>(null);
@@ -397,15 +400,28 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
   // Vị trí fixed của dropdown menu Thao tác — không bị cắt bởi overflow và lật lên khi ở đáy
   const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
 
-  // Danh sách thư mục lọc theo từ khóa tìm kiếm trong dropdown Loại tài liệu
-  const filteredTypeCategories = useMemo(() => {
-    if (!typeCatSearch.trim()) return categories;
-    const q = typeCatSearch.trim().toLowerCase();
-    return categories.filter((c) =>
-      c.ten_tai_lieu.toLowerCase().includes(q) ||
-      (c.ky_hieu && c.ky_hieu.toLowerCase().includes(q))
-    );
-  }, [categories, typeCatSearch]);
+  const closeFilterCatDropdown = useCallback(() => {
+    setIsFilterCatDropdownOpen(false);
+    setFilterCatMenuPos(null);
+    setFilterCatSearch('');
+  }, []);
+
+  const closeTypeCatDropdown = useCallback(() => {
+    setIsTypeCatDropdownOpen(false);
+    setTypeCatMenuPos(null);
+    setTypeCatSearch('');
+  }, []);
+
+  // Danh sách thư mục lọc theo từ khóa tìm kiếm trong 2 dropdown Thư mục cha (Tab 2 & form Loại tài liệu)
+  const filteredFilterCategories = useMemo(
+    () => filterResourceCategories(categories, filterCatSearch),
+    [categories, filterCatSearch]
+  );
+
+  const filteredTypeCategories = useMemo(
+    () => filterResourceCategories(categories, typeCatSearch),
+    [categories, typeCatSearch]
+  );
 
   // Cập nhật vị trí fixed cho Dropdown Chọn Thư mục cha (form Thêm/Sửa Loại tài liệu)
   const updateTypeCatMenuPos = useCallback(() => {
@@ -448,14 +464,14 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
     const rect = filterCatButtonRef.current.getBoundingClientRect();
     const spaceBelow = window.innerHeight - rect.bottom;
     const spaceAbove = rect.top;
-    const desiredHeight = 195; // Hiển thị 5 mục, nếu nhiều hơn thì cuộn chuột lên xuống
-    const minHeight = 120;
+    const desiredHeight = 278; // Đủ cho ô tìm kiếm + 'Tất cả thư mục' + tối đa 5 mục thư mục
+    const minHeight = 140;
 
     let top: number | undefined;
     let bottom: number | undefined;
     let maxHeight: number;
 
-    if (spaceBelow >= 200 || spaceBelow >= spaceAbove) {
+    if (spaceBelow >= 240 || spaceBelow >= spaceAbove) {
       top = rect.bottom + 6;
       maxHeight = Math.min(desiredHeight, Math.max(minHeight, spaceBelow - 16));
     } else {
@@ -485,11 +501,8 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
 
   const closeAllMenus = () => {
     closeFloatingMenu();
-    setIsFilterCatDropdownOpen(false);
-    setFilterCatMenuPos(null);
-    setIsTypeCatDropdownOpen(false);
-    setTypeCatMenuPos(null);
-    setTypeCatSearch('');
+    closeFilterCatDropdown();
+    closeTypeCatDropdown();
   };
 
   // Đóng custom dropdowns khi click ra ngoài, cuộn hoặc resize
@@ -507,8 +520,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
         !filterCatMenuRef.current?.contains(target) &&
         !filterCatDropdownRef.current?.contains(target)
       ) {
-        setIsFilterCatDropdownOpen(false);
-        setFilterCatMenuPos(null);
+        closeFilterCatDropdown();
       }
       if (
         isTypeCatDropdownOpen &&
@@ -516,9 +528,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
         !typeCatMenuRef.current?.contains(target) &&
         !typeCatDropdownRef.current?.contains(target)
       ) {
-        setIsTypeCatDropdownOpen(false);
-        setTypeCatMenuPos(null);
-        setTypeCatSearch('');
+        closeTypeCatDropdown();
       }
     };
 
@@ -536,13 +546,11 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
 
       if (isFilterCatDropdownOpen) {
         if (!filterCatButtonRef.current) {
-          setIsFilterCatDropdownOpen(false);
-          setFilterCatMenuPos(null);
+          closeFilterCatDropdown();
         } else {
           const rect = filterCatButtonRef.current.getBoundingClientRect();
           if (rect.bottom < 0 || rect.top > window.innerHeight) {
-            setIsFilterCatDropdownOpen(false);
-            setFilterCatMenuPos(null);
+            closeFilterCatDropdown();
           } else {
             updateFilterCatMenuPos();
           }
@@ -551,15 +559,11 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
 
       if (isTypeCatDropdownOpen) {
         if (!typeCatButtonRef.current) {
-          setIsTypeCatDropdownOpen(false);
-          setTypeCatMenuPos(null);
-          setTypeCatSearch('');
+          closeTypeCatDropdown();
         } else {
           const rect = typeCatButtonRef.current.getBoundingClientRect();
           if (rect.bottom < 0 || rect.top > window.innerHeight) {
-            setIsTypeCatDropdownOpen(false);
-            setTypeCatMenuPos(null);
-            setTypeCatSearch('');
+            closeTypeCatDropdown();
           } else {
             updateTypeCatMenuPos();
           }
@@ -576,7 +580,14 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
       window.removeEventListener('resize', handleScrollOrResize);
       window.removeEventListener('scroll', handleScrollOrResize, true);
     };
-  }, [isFilterCatDropdownOpen, isTypeCatDropdownOpen, updateFilterCatMenuPos, updateTypeCatMenuPos]);
+  }, [
+    isFilterCatDropdownOpen,
+    isTypeCatDropdownOpen,
+    updateFilterCatMenuPos,
+    updateTypeCatMenuPos,
+    closeFilterCatDropdown,
+    closeTypeCatDropdown,
+  ]);
 
   // Đóng floating menu Thao tác (3 chấm) khi click ngoài, scroll hoặc resize cửa sổ
   useEffect(() => {
@@ -782,11 +793,11 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         if (isTypeCatDropdownOpen) {
-          setIsTypeCatDropdownOpen(false);
+          closeTypeCatDropdown();
           return;
         }
         if (isFilterCatDropdownOpen) {
-          setIsFilterCatDropdownOpen(false);
+          closeFilterCatDropdown();
           return;
         }
         if (isUnifiedModalOpen) {
@@ -803,6 +814,8 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
     isOpen,
     isTypeCatDropdownOpen,
     isFilterCatDropdownOpen,
+    closeTypeCatDropdown,
+    closeFilterCatDropdown,
     isUnifiedModalOpen,
     isConfirmDiscardUnifiedOpen,
     handleSafeCloseUnified,
@@ -1287,9 +1300,9 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                       type="button"
                       onClick={() => {
                         if (isFilterCatDropdownOpen) {
-                          setIsFilterCatDropdownOpen(false);
-                          setFilterCatMenuPos(null);
+                          closeFilterCatDropdown();
                         } else {
+                          setFilterCatSearch('');
                           updateFilterCatMenuPos();
                           setIsFilterCatDropdownOpen(true);
                         }
@@ -1841,10 +1854,9 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                           onClick={() => {
                             if (categories.length > 0) {
                               if (isTypeCatDropdownOpen) {
-                                setIsTypeCatDropdownOpen(false);
-                                setTypeCatMenuPos(null);
-                                setTypeCatSearch('');
+                                closeTypeCatDropdown();
                               } else {
+                                setTypeCatSearch('');
                                 updateTypeCatMenuPos();
                                 setIsTypeCatDropdownOpen(true);
                               }
@@ -1993,8 +2005,8 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
         <div
           ref={filterCatMenuRef}
           role="listbox"
+          data-dropdown-container="true"
           onMouseDown={(e) => e.stopPropagation()}
-          onWheel={(e) => e.stopPropagation()}
           style={{
             position: 'fixed',
             top: filterCatMenuPos.top !== undefined ? `${filterCatMenuPos.top}px` : undefined,
@@ -2004,8 +2016,20 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
             maxHeight: `${filterCatMenuPos.maxHeight}px`,
             zIndex: 10005,
           }}
-          className="bg-surface-elevated rounded-xl border border-border-subtle shadow-2xl p-1.5 overflow-y-auto max-h-[195px] space-y-0.5 overscroll-contain pr-1 custom-scrollbar animate-in fade-in zoom-in-95 duration-100"
+          className="bg-surface-elevated rounded-xl border border-border-subtle shadow-2xl p-1.5 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100"
         >
+          {/* Ô tìm kiếm nhanh thư mục */}
+          <div className="p-1 pb-1.5 border-b border-border-subtle shrink-0">
+            <DropdownSearchInput
+              value={filterCatSearch}
+              onChange={setFilterCatSearch}
+              placeholder={t('resourceManagement.searchCategoryPlaceholder')}
+              clearLabel={t('resourceManagement.clearSearch')}
+              inputClassName="bg-surface"
+              autoFocus
+            />
+          </div>
+
           <button
             type="button"
             onMouseDown={(e) => e.stopPropagation()}
@@ -2013,10 +2037,9 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
               e.stopPropagation();
               setFilterParentCat('all');
               setTypePage(1);
-              setIsFilterCatDropdownOpen(false);
-              setFilterCatMenuPos(null);
+              closeFilterCatDropdown();
             }}
-            className={`w-full px-2.5 py-2 rounded-lg text-left text-xs font-medium flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+            className={`w-full mt-1 px-2.5 py-2 rounded-lg text-left text-xs font-medium flex items-center justify-between gap-2 transition-colors cursor-pointer shrink-0 ${
               filterParentCat === 'all'
                 ? 'bg-primary/10 text-primary font-bold'
                 : 'text-main hover:bg-surface'
@@ -2028,38 +2051,49 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
             )}
           </button>
 
-          <div className="my-1 border-t border-border-subtle" />
+          <div className="my-1 border-t border-border-subtle shrink-0" />
 
-          {categories.map((c) => {
-            const isSelected = String(c.id) === filterParentCat;
-            return (
-              <button
-                key={c.id}
-                type="button"
-                onMouseDown={(e) => e.stopPropagation()}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setFilterParentCat(String(c.id));
-                  setTypePage(1);
-                  setIsFilterCatDropdownOpen(false);
-                  setFilterCatMenuPos(null);
-                }}
-                className={`w-full px-2.5 py-2 rounded-lg text-left text-xs font-medium flex items-center justify-between gap-2 transition-colors cursor-pointer ${
-                  isSelected
-                    ? 'bg-primary/10 text-primary font-bold'
-                    : 'text-main hover:bg-surface'
-                }`}
-              >
-                <span className="truncate flex items-center gap-2">
-                  <i className="fa-solid fa-folder text-primary/70 text-xs shrink-0" />
-                  <span className="truncate">{c.ten_tai_lieu}</span>
-                </span>
-                {isSelected && (
-                  <i className="fa-solid fa-check text-primary text-xs shrink-0" />
-                )}
-              </button>
-            );
-          })}
+          <div
+            className="flex-1 overflow-y-auto max-h-[185px] space-y-0.5 overscroll-contain pr-1 custom-scrollbar"
+            role="listbox"
+            onWheel={(e) => e.stopPropagation()}
+          >
+            {filteredFilterCategories.length === 0 ? (
+              <div className="p-3 text-center text-xs text-muted">
+                {t('resourceManagement.noMatchingFolders')}
+              </div>
+            ) : (
+              filteredFilterCategories.map((c) => {
+                const isSelected = String(c.id) === filterParentCat;
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setFilterParentCat(String(c.id));
+                      setTypePage(1);
+                      closeFilterCatDropdown();
+                    }}
+                    className={`w-full px-2.5 py-2 rounded-lg text-left text-xs font-medium flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+                      isSelected
+                        ? 'bg-primary/10 text-primary font-bold'
+                        : 'text-main hover:bg-surface'
+                    }`}
+                  >
+                    <span className="truncate flex items-center gap-2">
+                      <i className="fa-solid fa-folder text-primary/70 text-xs shrink-0" />
+                      <span className="truncate">{c.ten_tai_lieu}</span>
+                    </span>
+                    {isSelected && (
+                      <i className="fa-solid fa-check text-primary text-xs shrink-0" />
+                    )}
+                  </button>
+                );
+              })
+            )}
+          </div>
         </div>,
         document.body
       )}
@@ -2084,30 +2118,14 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
         >
           {/* Ô tìm kiếm nhanh thư mục */}
           <div className="p-1 pb-1.5 border-b border-border-subtle shrink-0">
-            <div className="relative">
-              <i className="fa-solid fa-magnifying-glass absolute left-2.5 top-1/2 -translate-y-1/2 text-muted text-[11px]" />
-              <input
-                type="text"
-                value={typeCatSearch}
-                onChange={(e) => setTypeCatSearch(e.target.value)}
-                placeholder={t('resourceManagement.searchCategoryPlaceholder')}
-                className="w-full pl-7 pr-7 py-1 text-xs bg-surface border border-border-subtle rounded-lg text-main placeholder:text-muted focus:outline-hidden focus:border-primary"
-                onClick={(e) => e.stopPropagation()}
-                autoFocus
-              />
-              {typeCatSearch && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setTypeCatSearch('');
-                  }}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-main text-[11px] p-0.5 cursor-pointer"
-                >
-                  <i className="fa-solid fa-xmark" />
-                </button>
-              )}
-            </div>
+            <DropdownSearchInput
+              value={typeCatSearch}
+              onChange={setTypeCatSearch}
+              placeholder={t('resourceManagement.searchCategoryPlaceholder')}
+              clearLabel={t('resourceManagement.clearSearch')}
+              inputClassName="bg-surface"
+              autoFocus
+            />
           </div>
 
           {/* Danh sách các thư mục có scroll: hiển thị 5 mục, nếu nhiều hơn thì cuộn chuột lên xuống */}
@@ -2133,9 +2151,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                       e.stopPropagation();
                       setTypeForm((prev) => ({ ...prev, dm_tai_lieu: c.id }));
                       setIsUnifiedDirty(true);
-                      setIsTypeCatDropdownOpen(false);
-                      setTypeCatMenuPos(null);
-                      setTypeCatSearch('');
+                      closeTypeCatDropdown();
                     }}
                     className={`w-full px-2.5 py-2 rounded-lg text-left text-xs font-medium flex items-center justify-between gap-2 transition-colors cursor-pointer ${
                       isSelected
