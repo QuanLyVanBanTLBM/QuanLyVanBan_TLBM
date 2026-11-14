@@ -2258,22 +2258,13 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                   />
                   <span className="sidebar-source-dropdown-trigger-label">
                     {docSourceFilter === 'managed'
-                      ? t('aiAssistant.inline.serverDocSource')
+                      ? `${t('aiAssistant.inline.serverDocSource')} (${managedDocs.length})`
                       : docSourceFilter === 'uploaded'
-                      ? t('aiAssistant.inline.aiUploadedDocSource')
-                      : t('aiAssistant.inline.allDocSources')}
+                      ? `${t('aiAssistant.inline.aiUploadedDocSource')} (${uploadedDocs.length})`
+                      : `${t('aiAssistant.inline.allDocSources')} (${uploadedDocs.length + managedDocs.length})`}
                   </span>
                 </span>
-                <span className="sidebar-source-dropdown-trigger-right">
-                  <span className="sidebar-doc-section-count">
-                    {docSourceFilter === 'managed'
-                      ? managedDocs.length
-                      : docSourceFilter === 'uploaded'
-                      ? uploadedDocs.length
-                      : uploadedDocs.length + managedDocs.length}
-                  </span>
-                  <i className={`fa-solid fa-chevron-down category-dropdown-chevron ${isDocSourceDropdownOpen ? 'is-open' : ''}`} />
-                </span>
+                <i className={`fa-solid fa-chevron-down category-dropdown-chevron ${isDocSourceDropdownOpen ? 'is-open' : ''}`} />
               </button>
 
               {isDocSourceDropdownOpen && (
