@@ -1,9 +1,13 @@
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from smtplib import SMTPDataError, SMTPServerDisconnected
+from threading import Event
 from unittest.mock import patch
+from uuid import uuid4
 
 from django.core import mail
-from django.test import TestCase, override_settings
+from django.db import close_old_connections
+from django.test import TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -13,6 +17,66 @@ from accounts.models import Employee, Position
 from birthdays.models import BirthdayEmailLog, BirthdayEmailStatus, BirthdayEmailTemplate
 from birthdays.services import send_automated_birthday_emails
 from birthdays.templates_service import LAYOUT_DEFAULTS
+
+
+@override_settings(
+    MAILERS={"default": {"BACKEND": "django.core.mail.backends.locmem.EmailBackend"}},
+    BIRTHDAY_CARD_BASE_URL="https://example.test/birthday-card.html",
+    SIGNING_FRONTEND_URL="https://example.test",
+)
+class BirthdayDeliveryConcurrencyTests(TransactionTestCase):
+    @patch("birthdays.manual_views.require_delivery_backend")
+    def test_two_resends_and_retry_cannot_overlap_in_same_birthday_period(self, _backend):
+        admin = Employee.objects.create_superuser(username="resend-concurrency-admin", password=None)
+        employee = Employee.objects.create_user(
+            username="resend-concurrency-employee", email="employee@example.test", ngay_sinh=date(1980, 5, 20),
+        )
+        target = date(timezone.localdate().year, 5, 20)
+        old = BirthdayEmailLog.objects.create(
+            employee=employee, sent_date=target, recipient_email=employee.email,
+            subject="Birthday", trang_thai=BirthdayEmailStatus.FAILED,
+        )
+        entered_smtp = Event()
+        release_smtp = Event()
+        resend_url = reverse("birthdays:resend_email")
+        payload = {"employee_id": employee.pk, "sent_date": target.isoformat(), "recipient": employee.email}
+
+        def resend():
+            try:
+                client = APIClient()
+                client.force_authenticate(user=admin)
+                return client.post(resend_url, {**payload, "request_id": str(uuid4())}, format="json")
+            finally:
+                close_old_connections()
+
+        def accept_mail(**kwargs):
+            entered_smtp.set()
+            if not release_smtp.wait(15):
+                raise TimeoutError("The competing API requests did not complete")
+            return 1
+
+        with patch("birthdays.services.send_mail", side_effect=accept_mail) as smtp, ThreadPoolExecutor() as pool:
+            pending = pool.submit(resend)
+            try:
+                if not entered_smtp.wait(10):
+                    self.fail(f"Initial request did not reach SMTP: {pending.result(timeout=5).data}")
+                competing = resend()
+                self.assertEqual(competing.status_code, 409, competing.data)
+                self.assertEqual(competing.data["error"], "resendInProgress")
+                client = APIClient()
+                client.force_authenticate(user=admin)
+                retry = client.post(reverse("birthdays:retry_email", args=[old.pk]), {
+                    "recipient": employee.email,
+                }, format="json")
+                self.assertEqual(retry.status_code, 409, retry.data)
+            finally:
+                release_smtp.set()
+            first = pending.result(timeout=10)
+        self.assertEqual(first.data["log"]["trang_thai"], "SUCCESS", first.data)
+        self.assertEqual(smtp.call_count, 1)
+        old.refresh_from_db()
+        self.assertEqual(old.trang_thai, BirthdayEmailStatus.FAILED)
+        self.assertEqual(BirthdayEmailLog.objects.filter(employee=employee, delivery_source="MANUAL_RESEND").count(), 1)
 
 
 @override_settings(
@@ -53,6 +117,32 @@ class ManualBirthdayEmailTests(TestCase):
     def send(self, preview, **changes):
         payload = {**self.draft, "preview_token": preview["preview_token"], **changes}
         return self.client.post(reverse("birthdays:manual_send"), payload, format="json")
+
+    @patch("birthdays.manual_views.require_delivery_backend")
+    def test_admin_resend_replays_request_without_sending_and_checks_confirmed_address(self, _backend):
+        path = reverse("birthdays:resend_email")
+        payload = {
+            "employee_id": self.leader.pk, "sent_date": f"{self.year}-05-20",
+            "recipient": self.leader.email, "request_id": str(uuid4()),
+        }
+        first = self.client.post(path, payload, format="json")
+        replay = self.client.post(path, payload, format="json")
+        self.assertEqual(first.status_code, 200, first.data)
+        self.assertEqual(replay.data["log"]["id"], first.data["log"]["id"])
+        self.assertEqual(len(mail.outbox), 1)
+
+        Employee.objects.filter(pk=self.leader.pk).update(email="updated@example.test")
+        stale = self.client.post(path, {**payload, "request_id": str(uuid4())}, format="json")
+        self.assertEqual(stale.status_code, 409)
+        self.assertEqual(stale.data["error"], "recipientChanged")
+        self.assertEqual(len(mail.outbox), 1)
+
+        new_attempt = self.client.post(path, {
+            **payload, "request_id": str(uuid4()), "recipient": "updated@example.test",
+        }, format="json")
+        self.assertEqual(new_attempt.status_code, 200, new_attempt.data)
+        self.assertNotEqual(new_attempt.data["log"]["id"], first.data["log"]["id"])
+        self.assertEqual(len(mail.outbox), 2)
 
     def test_catalog_and_each_layout_render_safely_with_matching_card(self):
         catalog = self.client.get(reverse("birthdays:email_templates")).data["templates"]

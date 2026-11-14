@@ -107,7 +107,8 @@
       "retry": "Thử lại",
       "adminResend": "Quản trị viên gửi lại",
       "retryConfirm": "Xác nhận thử lại email đến {email}?",
-      "adminResendConfirm": "Quản trị viên gửi một email mới đến {email}; lượt này tạo bản ghi lịch sử riêng. Tiếp tục?",
+      "adminResendConfirm": "Gửi một email sinh nhật mới đến {employee} — {email}? Lần gửi này tạo một bản ghi lịch sử riêng.",
+      "sendConfirm": "Gửi email sinh nhật đến {employee} — {email}?",
       "retrySuccessTitle": "Thử lại email thành công",
       "retrySuccess": "Máy chủ thư đã chấp nhận lượt retry để gửi.",
       "resendSuccessTitle": "Gửi lại bởi quản trị viên thành công",
@@ -125,14 +126,14 @@
       "sendFailed": "Gửi email thất bại. Xem chi tiết trong nhật ký.",
       "needsReview": "Kết quả gửi chưa xác định. Cần đối soát.",
       "successTitle": "Gửi email thành công",
-      "successMessage": "Email sinh nhật cho {employee} ({email}) đã được máy chủ thư chấp nhận để tiếp tục gửi lúc {sentAt}.",
-      "successMessageWithoutTime": "Email sinh nhật cho {employee} ({email}) đã được máy chủ thư chấp nhận để tiếp tục gửi.",
+      "successMessage": "Máy chủ email đã tiếp nhận thư chúc mừng sinh nhật gửi đến {employee} — {email}. Thời điểm gửi {sentAt}.",
+      "successMessageWithoutTime": "Máy chủ email đã tiếp nhận thư chúc mừng sinh nhật gửi đến {employee} — {email}.",
       "successMessageWithoutEmployee": "Email đã được máy chủ thư chấp nhận để tiếp tục gửi đến {email} lúc {sentAt}.",
       "successMessageEmailOnly": "Email đã được máy chủ thư chấp nhận để tiếp tục gửi đến {email}.",
       "sendFailedTitle": "Gửi email thất bại",
       "sendFailed": "Gửi email thất bại. Kiểm tra chi tiết trong Nhật ký email.",
       "needsReviewTitle": "Cần đối soát kết quả gửi",
-      "needsReview": "Chưa thể xác định kết quả gửi email. Cần kiểm tra/đối soát trước khi gửi lại.",
+      "needsReview": "Chưa thể xác định kết quả gửi email. Kiểm tra nhật ký hoạt động trước khi gửi lại.",
       "recommended": "Gợi ý",
       "hybridRecommendation": "Gợi ý phân nhóm thông minh",
       "recommendedHint": "Các mẫu phù hợp: {layouts}",
@@ -167,6 +168,34 @@
         "aiUnavailable": "Trợ lý AI chưa trả được bản nháp. Bạn vẫn có thể sửa và lưu mẫu thủ công.",
         "rateLimited": "Đã đạt giới hạn yêu cầu AI. Hãy thử lại sau.",
         "request": "Không thể hoàn thành thao tác. Hãy thử lại."
+      }
+    },
+    "scheduler": {
+      "todayTitle": "TRẠNG THÁI GỬI EMAIL SINH NHẬT HÔM NAY",
+      "historyTitle": "LỊCH SỬ THỰC THI LỊCH GỬI EMAIL SINH NHẬT",
+      "slot": "Lượt {slot}",
+      "started": "Bắt đầu thực tế lúc {time}",
+      "ended": "Kết thúc thực tế lúc {time}",
+      "runId": "Lần chạy #{id}",
+      "githubId": "Lần chạy GitHub Actions {id}",
+      "counts": "Đủ điều kiện {eligible} · Đã gửi {sent} · Thất bại {failed} · Bỏ qua {skipped} · Đã thử lại {retried}",
+      "error": "Lý do — {reason}",
+      "trigger": {
+        "SCHEDULED": "Theo lịch",
+        "RECOVERY": "Chạy bù"
+      },
+      "status": {
+        "UPCOMING": "Chưa đến giờ chạy",
+        "MISSING": "Chưa ghi nhận lần chạy",
+        "RUNNING": "Đang chạy",
+        "SUCCESS": "Đã thực thi thành công",
+        "FAILED": "Thực thi thất bại",
+        "UNKNOWN": "Chưa xác định kết quả thực thi"
+      },
+      "errors": {
+        "DELIVERY_FAILURE": "Có email cần xử lý. Xem nhật ký hoạt động.",
+        "MISSING_COMPLETION": "Hết thời gian chạy mà scheduler chưa ghi nhận kết quả.",
+        "TARGET_NOT_SENT": "Nhân viên được chọn chưa có lần gửi thành công trong lượt này."
       }
     },
     "emailLogs": {

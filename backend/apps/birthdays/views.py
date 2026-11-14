@@ -1,6 +1,5 @@
 import calendar
 from datetime import date, datetime, time, timedelta
-from zoneinfo import ZoneInfo
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core import signing
@@ -15,6 +14,7 @@ from rest_framework.response import Response
 from authorization.permissions import is_system_admin, require_permission
 from accounts.models import Employee
 from .models import BirthdayEmailLog, BirthdayEmailStatus
+from .scheduler import VIETNAM_TIME_ZONE, scheduler_history
 from .services import (
     can_retry_manually,
     get_eligible_automated_birthday_employees,
@@ -23,9 +23,6 @@ from .services import (
     retry_block_reason,
     serialize_staff_birthday,
 )
-
-VIETNAM_TIME_ZONE = ZoneInfo("Asia/Ho_Chi_Minh")
-
 
 def _active_employee_email(employee: Employee) -> str | None:
     if not employee.is_active:
@@ -46,8 +43,9 @@ def serialize_email_log(log: BirthdayEmailLog) -> dict:
         "id": log.id,
         "employee_id": log.employee_id,
         "employee_name": log.employee.ho_ten,
-        "position": log.employee.chuc_vu.name if log.employee.chuc_vu else "",
+        "position": log.employee.chuc_vu.name if log.employee.chuc_vu else log.employee.chuc_danh or "",
         "department": log.employee.don_vi.ten if log.employee.don_vi else "",
+        "birth_date": log.employee.ngay_sinh.strftime("%d/%m/%Y") if log.employee.ngay_sinh else None,
         "sent_date": log.sent_date.strftime("%d/%m/%Y"),
         "sent_date_iso": log.sent_date.isoformat(),
         "sent_at": timezone.localtime(log.sent_at, VIETNAM_TIME_ZONE).strftime("%d/%m/%Y %H:%M:%S") if log.sent_at else None,
@@ -69,7 +67,9 @@ def serialize_email_log(log: BirthdayEmailLog) -> dict:
         "last_operator": log.last_operator,
         "can_retry": can_retry,
         "current_recipient": _active_employee_email(log.employee) if can_retry else None,
-        "admin_resend_recipient": _active_employee_email(log.employee),
+        "admin_resend_recipient": (
+            _active_employee_email(log.employee) if log.trang_thai != BirthdayEmailStatus.SENDING else None
+        ),
         "retry_block_reason": retry_block_reason(log),
     }
 
@@ -79,8 +79,9 @@ def serialize_not_processed_employee(employee: Employee, target_date: date) -> d
         "id": None,
         "employee_id": employee.pk,
         "employee_name": employee.ho_ten,
-        "position": employee.chuc_vu.name if employee.chuc_vu else "",
+        "position": employee.chuc_vu.name if employee.chuc_vu else employee.chuc_danh or "",
         "department": employee.don_vi.ten if employee.don_vi else "",
+        "birth_date": employee.ngay_sinh.strftime("%d/%m/%Y"),
         "sent_date": target_date.strftime("%d/%m/%Y"),
         "sent_date_iso": target_date.isoformat(),
         "sent_at": None,
@@ -357,7 +358,7 @@ def birthday_email_logs_api(request):
         elif normalized_trang_thai == "UNKNOWN":
             logs = logs.filter(delivery_uncertain=True)
         else:
-            logs = logs.filter(trang_thai=normalized_trang_thai)
+            logs = logs.filter(trang_thai=normalized_trang_thai, delivery_uncertain=False)
 
     if selected_date is None:
         paginator = Paginator(logs, 15)
@@ -397,6 +398,7 @@ def birthday_email_logs_api(request):
         "page": page_number,
         "total_pages": total_pages,
         "logs": page_logs,
+        "scheduler": scheduler_history(selected_date) if selected_date else None,
     })
 
 

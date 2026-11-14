@@ -13,6 +13,7 @@ import { CategoryManagementModal } from '@components/resources/CategoryManagemen
 import { FolderManagerModal } from '@components/folders/FolderManagerModal';
 import { Button } from '@components/common/Button';
 import { Toast, ToastNotification } from '@components/resources/Toast';
+import { DropdownSearchInput } from '@components/resources/DropdownSearchInput';
 import { useTranslation } from '@i18n/translate';
 import { apiClient, downloadBlob, ApiError } from '@lib/apiClient';
 import { getAbsoluteFileUrl } from '@lib/fileUtils';
@@ -20,6 +21,11 @@ import { authService } from '@lib/authService';
 import { usePermissions } from '@lib/permissions';
 import { computeEffectiveStatus } from '@lib/resourceValidity';
 import { fetchAllResourcePages } from '@lib/resourcePagination';
+import {
+  normalizeSearchText,
+  filterResourceCategories,
+  filterResourceTypes,
+} from '@lib/resourceSearch';
 
 const STORAGE_KEY = 'tlbm_resources_filter_state';
 const STORAGE_DOCS = 'tlbm_documents_v2';
@@ -31,18 +37,64 @@ const STORAGE_VISIBLE_TYPES = 'tlbm_visible_types_v2';
 const SYNC_CHANNEL_NAME = 'tlbm_resource_realtime_sync';
 const SYNC_STORAGE_KEY = 'tlbm_resource_realtime_event';
 
-const notifyMutation = () => {
+const createSyncSenderId = (): string => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `sync-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+};
+
+const notifyMutation = (senderId: string, scope?: ResourceSyncScope) => {
+  const payload = {
+    action: 'MUTATION',
+    senderId,
+    scope,
+    timestamp: Date.now(),
+  };
   try {
     if (typeof BroadcastChannel !== 'undefined') {
       const channel = new BroadcastChannel(SYNC_CHANNEL_NAME);
-      channel.postMessage({ action: 'MUTATION', timestamp: Date.now() });
+      channel.postMessage(payload);
       channel.close();
     }
-    localStorage.setItem(SYNC_STORAGE_KEY, Date.now().toString());
+    localStorage.setItem(SYNC_STORAGE_KEY, JSON.stringify(payload));
   } catch {
     /* ignore */
   }
 };
+
+export interface ResourceSyncScope {
+  categories?: boolean;
+  types?: boolean;
+  documents?: boolean;
+}
+
+const DEFAULT_SYNC_SCOPE: Required<ResourceSyncScope> = {
+  categories: true,
+  types: true,
+  documents: true,
+};
+
+const mergeSyncScope = (
+  base: ResourceSyncScope,
+  extra?: ResourceSyncScope
+): ResourceSyncScope => ({
+  categories: Boolean(base.categories || extra?.categories),
+  types: Boolean(base.types || extra?.types),
+  documents: Boolean(base.documents || extra?.documents),
+});
+
+const hasAnySyncScope = (scope: ResourceSyncScope): boolean =>
+  Boolean(scope.categories || scope.types || scope.documents);
+
+const isResourceListDifferent = <T,>(prev: T[], next: T[]): boolean => {
+  if (prev.length !== next.length) return true;
+  return JSON.stringify(prev) !== JSON.stringify(next);
+};
+
+// Khớp ordering = ['stt_uu_tien', 'id'] từ backend để item mới không nhảy hàng khi đồng bộ
+const sortCategoriesByPriority = (list: ResourceCategory[]): ResourceCategory[] =>
+  [...list].sort((a, b) => (a.stt_uu_tien ?? 0) - (b.stt_uu_tien ?? 0) || a.id - b.id);
 
 export type SearchScopeType = 'all' | 'title' | 'code' | 'date' | 'authority' | 'author' | 'attachment';
 
@@ -56,16 +108,6 @@ interface PersistedResourceState {
   page?: number;
   pageSize?: number;
 }
-
-const normalizeSearchText = (str?: string | null): string => {
-  return (str || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/đ/g, 'd')
-    .replace(/Đ/g, 'd')
-    .trim();
-};
 
 const SEARCH_FIELD_OPTIONS: { value: SearchScopeType; labelKey: string; icon: string; placeholderKey: string }[] = [
   { value: 'all', labelKey: 'searchScopeAll', icon: 'fa-solid fa-layer-group', placeholderKey: 'searchPlaceholderAll' },
@@ -130,7 +172,8 @@ const getInitialFilterState = (searchParams: URLSearchParams): PersistedResource
 export default function ResourceManagementPage() {
   const { t, currentLang } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialFilterState = useMemo(() => getInitialFilterState(searchParams), [searchParams]);
+  const [initialFilterState] = useState<PersistedResourceState>(() => getInitialFilterState(searchParams));
+  const [syncSenderId] = useState<string>(createSyncSenderId);
 
   // Khởi tạo trạng thái rỗng và dọn dẹp sạch toàn bộ cache dữ liệu mẫu cũ trong localStorage
   const [documents, setDocuments] = useState<ResourceItem[]>(() => {
@@ -323,12 +366,32 @@ export default function ResourceManagementPage() {
   const fetchSeqRef = useRef<number>(0);
   const latestCommittedSeqRef = useRef<number>(0);
   const pendingForceRefetchRef = useRef<boolean>(false);
+  const pendingSyncScopeRef = useRef<ResourceSyncScope>({});
+  const isPollPausedRef = useRef<boolean>(false);
+  const isMountedRef = useRef<boolean>(true);
 
-  // Tải dữ liệu từ Backend API (/api/resources/...)
-  const fetchResources = useCallback(async (silent?: boolean, force?: boolean): Promise<void> => {
+  // Tải dữ liệu từ Backend API (/api/resources/...) theo phạm vi cần đồng bộ
+  const fetchResources = useCallback(async (
+    silent?: boolean,
+    force?: boolean,
+    scope?: ResourceSyncScope
+  ): Promise<void> => {
+    const requestedScope: ResourceSyncScope = scope
+      ? {
+          categories: Boolean(scope.categories),
+          types: Boolean(scope.types),
+          documents: Boolean(scope.documents),
+        }
+      : DEFAULT_SYNC_SCOPE;
+
+    if (!hasAnySyncScope(requestedScope)) {
+      return;
+    }
+
     if (isFetchingRef.current) {
       if (force) {
         pendingForceRefetchRef.current = true;
+        pendingSyncScopeRef.current = mergeSyncScope(pendingSyncScopeRef.current, requestedScope);
       }
       return;
     }
@@ -336,16 +399,26 @@ export default function ResourceManagementPage() {
     if (!silent) setIsLoading(true);
 
     try {
+      let activeScope = requestedScope;
       let keepFetching = true;
       while (keepFetching) {
         pendingForceRefetchRef.current = false;
+        pendingSyncScopeRef.current = {};
         const seq = ++fetchSeqRef.current;
 
         const [catsRes, typesRes, docsRes] = await Promise.all([
-          fetchAllResourcePages<ResourceCategory>('/api/resources/categories/', 'categories'),
-          fetchAllResourcePages<ResourceType>('/api/resources/types/', 'types'),
-          fetchAllResourcePages<ResourceItem>('/api/resources/documents/', 'documents'),
+          activeScope.categories
+            ? fetchAllResourcePages<ResourceCategory>('/api/resources/categories/', 'categories')
+            : Promise.resolve(null),
+          activeScope.types
+            ? fetchAllResourcePages<ResourceType>('/api/resources/types/', 'types')
+            : Promise.resolve(null),
+          activeScope.documents
+            ? fetchAllResourcePages<ResourceItem>('/api/resources/documents/', 'documents')
+            : Promise.resolve(null),
         ]);
+
+        if (!isMountedRef.current) return;
 
         // Nếu có request mới hơn đã cam kết, bỏ qua response cũ này để tránh race condition
         if (seq >= latestCommittedSeqRef.current) {
@@ -360,39 +433,38 @@ export default function ResourceManagementPage() {
             return [];
           };
 
-          const isDifferent = (a: unknown, b: unknown) => JSON.stringify(a) !== JSON.stringify(b);
-
           if (catsRes !== null) {
             const nextCats = normalizeList<ResourceCategory>(catsRes);
-            setCategories((prev) => (isDifferent(prev, nextCats) ? nextCats : prev));
+            setCategories((prev) => (isResourceListDifferent(prev, nextCats) ? nextCats : prev));
             isCategoriesLoadedRef.current = true;
           }
 
           if (typesRes !== null) {
             const nextTypes = normalizeList<ResourceType>(typesRes);
-            setTypes((prev) => (isDifferent(prev, nextTypes) ? nextTypes : prev));
+            setTypes((prev) => (isResourceListDifferent(prev, nextTypes) ? nextTypes : prev));
             isTypesLoadedRef.current = true;
           }
 
           if (docsRes !== null) {
             const nextDocs = normalizeList<ResourceItem>(docsRes);
-            setDocuments((prev) => (isDifferent(prev, nextDocs) ? nextDocs : prev));
+            setDocuments((prev) => (isResourceListDifferent(prev, nextDocs) ? nextDocs : prev));
           }
         }
 
-        keepFetching = pendingForceRefetchRef.current;
+        keepFetching = pendingForceRefetchRef.current && hasAnySyncScope(pendingSyncScopeRef.current);
+        activeScope = pendingSyncScopeRef.current;
       }
     } catch (e) {
       console.warn('Lỗi khi tải dữ liệu từ API backend:', e);
     } finally {
       isFetchingRef.current = false;
-      if (!silent) setIsLoading(false);
+      if (!silent && isMountedRef.current) setIsLoading(false);
     }
   }, []);
 
   // Refetch ngầm (không hiển thị loading spinner) để đồng bộ dữ liệu real-time
-  const silentRefetch = useCallback((force?: boolean) => {
-    fetchResources(true, force);
+  const silentRefetch = useCallback((force?: boolean, scope?: ResourceSyncScope) => {
+    fetchResources(true, force, scope);
   }, [fetchResources]);
 
   // Hệ thống đồng bộ Real-time đa tầng:
@@ -400,16 +472,20 @@ export default function ResourceManagementPage() {
   // 2. BroadcastChannel: Đồng bộ tức thì (0ms) giữa các tab cùng trình duyệt
   // 3. Storage Event: Đồng bộ giữa các tab qua localStorage
   // 4. Window Focus & VisibilityChange: Tự động cập nhật ngay khi người dùng click chuyển qua lại giữa các cửa sổ
-  // 5. Polling định kỳ mỗi 3 giây: Đảm bảo đồng bộ liên tục cho cửa sổ ẩn danh (Incognito) hoặc giữa các thiết bị khác nhau
+  // 5. Polling định kỳ mỗi 15 giây (chỉ chạy khi tab đang hiển thị và không mở modal/thao tác CRUD)
   useEffect(() => {
+    isMountedRef.current = true;
     fetchResources();
 
     let channel: BroadcastChannel | null = null;
     if (typeof BroadcastChannel !== 'undefined') {
       try {
         channel = new BroadcastChannel(SYNC_CHANNEL_NAME);
-        channel.onmessage = () => {
-          silentRefetch(true);
+        channel.onmessage = (event: MessageEvent) => {
+          const data = event?.data as { senderId?: string; scope?: ResourceSyncScope } | undefined;
+          // Bỏ qua sự kiện do chính instance/tab hiện tại phát ra
+          if (data?.senderId === syncSenderId) return;
+          silentRefetch(true, data?.scope);
         };
       } catch {
         /* ignore */
@@ -418,7 +494,17 @@ export default function ResourceManagementPage() {
 
     const handleStorage = (e: StorageEvent) => {
       if (e.key === SYNC_STORAGE_KEY) {
-        silentRefetch(true);
+        let parsedScope: ResourceSyncScope | undefined;
+        if (e.newValue) {
+          try {
+            const parsed = JSON.parse(e.newValue) as { senderId?: string; scope?: ResourceSyncScope };
+            if (parsed?.senderId === syncSenderId) return;
+            parsedScope = parsed?.scope;
+          } catch {
+            /* ignore legacy timestamp value */
+          }
+        }
+        silentRefetch(true, parsedScope);
       }
     };
     window.addEventListener('storage', handleStorage);
@@ -436,17 +522,20 @@ export default function ResourceManagementPage() {
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     const pollInterval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      if (isPollPausedRef.current) return;
       silentRefetch();
-    }, 3000);
+    }, 15000);
 
     return () => {
+      isMountedRef.current = false;
       if (channel) channel.close();
       window.removeEventListener('storage', handleStorage);
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       clearInterval(pollInterval);
     };
-  }, [fetchResources, silentRefetch]);
+  }, [fetchResources, silentRefetch, syncSenderId]);
 
 
 
@@ -590,59 +679,26 @@ export default function ResourceManagementPage() {
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Tự động lưu trạng thái vào sessionStorage và đồng bộ URL Query Parameters hai chiều
-  // Đảm bảo URL luôn phản ánh trạng thái mới nhất khi thao tác trên trang (bộ lọc, phân trang, modal chi tiết/thêm/sửa)
+  // Tạm dừng polling khi đang mở modal hoặc thực hiện ghi dữ liệu
   useEffect(() => {
-    const stateToSave: PersistedResourceState = {
-      category: selectedCategory,
-      type: selectedType,
-      year: selectedYear,
-      status: statusFilter,
-      q: searchTerm || undefined,
-      searchField: searchField !== 'all' ? searchField : undefined,
-      page: currentPage > 1 ? currentPage : undefined,
-      pageSize: pageSize !== 5 ? pageSize : undefined,
-    };
+    isPollPausedRef.current =
+      isFormOpen ||
+      isDeleteOpen ||
+      isCategoryModalOpen ||
+      isFolderManagerOpen ||
+      isSubmittingDoc ||
+      isDeleting;
+  }, [isFormOpen, isDeleteOpen, isCategoryModalOpen, isFolderManagerOpen, isSubmittingDoc, isDeleting]);
 
-    try {
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(stateToSave));
-    } catch {
-      /* ignore */
-    }
+  const skipNextUrlReadRef = useRef<string | null>(null);
+  const suppressNextUrlWriteRef = useRef<boolean>(false);
+  const hasMountedUrlSyncRef = useRef<boolean>(false);
+  const searchParamsStr = searchParams.toString();
+  const latestSearchParamsStrRef = useRef<string>(searchParamsStr);
 
-    const newParams = new URLSearchParams();
-    if (selectedCategory !== 'all') newParams.set('category', selectedCategory);
-    if (selectedType !== 'all') newParams.set('type', selectedType);
-    if (selectedYear !== 'all') newParams.set('year', selectedYear);
-    if (statusFilter !== 'all') newParams.set('status', statusFilter);
-    if (searchTerm.trim()) newParams.set('q', searchTerm.trim());
-    if (searchField !== 'all') newParams.set('search_field', searchField);
-    if (currentPage > 1) newParams.set('page', String(currentPage));
-    if (pageSize !== 5) newParams.set('pageSize', String(pageSize));
-
-    // Đồng bộ trạng thái Modal xem chi tiết lên URL (nếu có)
-    if (isDetailOpen && detailItem) {
-      newParams.set('detail', String(detailItem.id));
-    }
-
-    // Chỉ cập nhật nếu query string thực sự có sự thay đổi
-    if (searchParams.toString() !== newParams.toString()) {
-      setSearchParams(newParams, { replace: true });
-    }
-  }, [
-    selectedCategory,
-    selectedType,
-    selectedYear,
-    statusFilter,
-    searchTerm,
-    searchField,
-    currentPage,
-    pageSize,
-    isDetailOpen,
-    detailItem,
-    searchParams,
-    setSearchParams,
-  ]);
+  useEffect(() => {
+    latestSearchParamsStrRef.current = searchParamsStr;
+  }, [searchParamsStr]);
 
   // Ref giữ documents mới nhất để tránh effect bị re-trigger liên tục khi polling/refetch
   const documentsRef = useRef(documents);
@@ -650,8 +706,23 @@ export default function ResourceManagementPage() {
     documentsRef.current = documents;
   }, [documents]);
 
-  // Lắng nghe URL query params để tự động cập nhật bộ lọc hoặc mở modal tương ứng khi truy cập link trực tiếp/back/forward
+  // Lắng nghe URL query params khi điều hướng từ bên ngoài / Back-Forward / deep-link
   useEffect(() => {
+    const isInitialMount = !hasMountedUrlSyncRef.current;
+    hasMountedUrlSyncRef.current = true;
+
+    const currentQuery = searchParams.toString();
+
+    if (skipNextUrlReadRef.current === currentQuery) {
+      skipNextUrlReadRef.current = null;
+      return;
+    }
+
+    // URL trống lúc mount: giữ nguyên state khôi phục từ sessionStorage
+    if (isInitialMount && currentQuery === '') {
+      return;
+    }
+
     const urlCategory = searchParams.get('category') || 'all';
     const urlType = searchParams.get('type') || 'all';
     const urlYear = searchParams.get('year') || 'all';
@@ -666,6 +737,7 @@ export default function ResourceManagementPage() {
     setSelectedYear((prev) => (prev !== urlYear ? urlYear : prev));
     setStatusFilter((prev) => (prev !== urlStatus ? urlStatus : prev));
     setSearchTerm((prev) => (prev !== urlQ ? urlQ : prev));
+    setSearchInput((prev) => (prev !== urlQ ? urlQ : prev));
     setSearchField((prev) => (prev !== urlSearchField ? urlSearchField : prev));
     setCurrentPage((prev) => (prev !== urlPage ? urlPage : prev));
     setPageSize((prev) => (prev !== urlPageSize ? urlPageSize : prev));
@@ -674,17 +746,18 @@ export default function ResourceManagementPage() {
     const actionParam = searchParams.get('action');
     const editParam = searchParams.get('edit');
 
+    let handledExternalDetail = false;
     if (detailParam && !isNaN(Number(detailParam))) {
       const docId = Number(detailParam);
+      handledExternalDetail = true;
       const found = documentsRef.current.find((d) => d.id === docId);
       if (found) {
         setDetailItem((prev) => (prev?.id === docId ? prev : found));
         setIsDetailOpen(true);
       } else {
-        // Tự động tải từ API nếu tài liệu chưa có sẵn trong danh sách
         apiClient<ResourceItem>(`/api/resources/documents/${docId}/`)
           .then((fetched) => {
-            if (fetched && fetched.id) {
+            if (fetched && fetched.id && isMountedRef.current) {
               setDetailItem(fetched);
               setIsDetailOpen(true);
             }
@@ -704,16 +777,19 @@ export default function ResourceManagementPage() {
       setIsFormOpen(true);
       const next = new URLSearchParams(searchParams);
       next.delete('action');
+      skipNextUrlReadRef.current = next.toString();
       setSearchParams(next, { replace: true });
     } else if (actionParam === 'categories') {
       setIsCategoryModalOpen(true);
       const next = new URLSearchParams(searchParams);
       next.delete('action');
+      skipNextUrlReadRef.current = next.toString();
       setSearchParams(next, { replace: true });
     } else if (actionParam === 'folder_tree') {
       setIsFolderManagerOpen(true);
       const next = new URLSearchParams(searchParams);
       next.delete('action');
+      skipNextUrlReadRef.current = next.toString();
       setSearchParams(next, { replace: true });
     } else if (editParam && !isNaN(Number(editParam))) {
       const editId = Number(editParam);
@@ -724,7 +800,7 @@ export default function ResourceManagementPage() {
       } else {
         apiClient<ResourceItem>(`/api/resources/documents/${editId}/`)
           .then((fetched) => {
-            if (fetched && fetched.id) {
+            if (fetched && fetched.id && isMountedRef.current) {
               setFormInitialData(fetched);
               setIsFormOpen(true);
             }
@@ -735,9 +811,75 @@ export default function ResourceManagementPage() {
       }
       const next = new URLSearchParams(searchParams);
       next.delete('edit');
+      skipNextUrlReadRef.current = next.toString();
       setSearchParams(next, { replace: true });
     }
+
+    if (handledExternalDetail || actionParam || editParam || isInitialMount) {
+      suppressNextUrlWriteRef.current = true;
+    }
   }, [searchParams, setSearchParams]);
+
+  const detailItemId = detailItem?.id ?? null;
+
+  // Đồng bộ State -> sessionStorage & URL Query Parameters (không lặp vòng ngược về Effect đọc URL)
+  useEffect(() => {
+    const stateToSave: PersistedResourceState = {
+      category: selectedCategory,
+      type: selectedType,
+      year: selectedYear,
+      status: statusFilter,
+      q: searchTerm || undefined,
+      searchField: searchField !== 'all' ? searchField : undefined,
+      page: currentPage > 1 ? currentPage : undefined,
+      pageSize: pageSize !== 5 ? pageSize : undefined,
+    };
+
+    try {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(stateToSave));
+    } catch {
+      /* ignore */
+    }
+
+    if (suppressNextUrlWriteRef.current) {
+      suppressNextUrlWriteRef.current = false;
+      return;
+    }
+
+    const newParams = new URLSearchParams();
+    if (selectedCategory !== 'all') newParams.set('category', selectedCategory);
+    if (selectedType !== 'all') newParams.set('type', selectedType);
+    if (selectedYear !== 'all') newParams.set('year', selectedYear);
+    if (statusFilter !== 'all') newParams.set('status', statusFilter);
+    if (searchTerm.trim()) newParams.set('q', searchTerm.trim());
+    if (searchField !== 'all') newParams.set('search_field', searchField);
+    if (currentPage > 1) newParams.set('page', String(currentPage));
+    if (pageSize !== 5) newParams.set('pageSize', String(pageSize));
+
+    // Đồng bộ trạng thái Modal xem chi tiết lên URL (nếu có)
+    if (isDetailOpen && detailItemId !== null) {
+      newParams.set('detail', String(detailItemId));
+    }
+
+    // Chỉ cập nhật nếu query string thực sự có sự thay đổi
+    const nextQuery = newParams.toString();
+    if (latestSearchParamsStrRef.current !== nextQuery) {
+      skipNextUrlReadRef.current = nextQuery;
+      setSearchParams(newParams, { replace: true });
+    }
+  }, [
+    selectedCategory,
+    selectedType,
+    selectedYear,
+    statusFilter,
+    searchTerm,
+    searchField,
+    currentPage,
+    pageSize,
+    isDetailOpen,
+    detailItemId,
+    setSearchParams,
+  ]);
 
   // Phân quyền người dùng (RBAC contract Issue #21)
   const { can, isSuperuser, isSystemAdmin } = usePermissions();
@@ -794,6 +936,7 @@ export default function ResourceManagementPage() {
   // Toast thông báo nổi trên cùng (z-[999999] trên tất cả modal và màn đen)
   const [toast, setToast] = useState<ToastNotification | null>(null);
   const lastToastRef = useRef<{ message: string; time: number } | null>(null);
+  const handleCloseToast = useCallback(() => setToast(null), []);
 
   const showToast = (
     message: string,
@@ -922,6 +1065,8 @@ export default function ResourceManagementPage() {
 
 
   // Hỗ trợ cuộn ngang mượt mà: con lăn chuột (Mouse Wheel), vuốt cảm ứng/trackpad và kéo giữ chuột (Drag to Scroll)
+  const hasTypeBar = Boolean(selectedCategory !== 'all' && availableTypesForFilter.length > 0);
+
   useEffect(() => {
     const attachHorizontalScroll = (el: HTMLDivElement | null) => {
       if (!el) return undefined;
@@ -1041,26 +1186,48 @@ export default function ResourceManagementPage() {
       cleanupTab?.();
       cleanupType?.();
     };
-  }, [orderedVisibleCategories, orderedVisibleTypes, availableTypesForFilter, selectedCategory]);
-
-  // Đổi Thư mục: Tự động reset Loại tài liệu về 'all' và về trang 1
-  const handleCategorySelect = (newCat: string) => {
-    setSelectedCategory(newCat);
-    setSelectedType('all');
-    setCurrentPage(1);
-    setIsCategoryDropdownOpen(false);
-    setIsTypeDropdownOpen(false);
-  };
+  }, [hasTypeBar]);
 
   // Dropdown Popovers State (Nút bấm sổ dropdown bên phải cho Danh mục, Loại tài liệu, Năm & Hiệu lực)
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
   const [isTypeDropdownOpen, setIsTypeDropdownOpen] = useState(false);
+  const [categoryDropdownSearch, setCategoryDropdownSearch] = useState('');
+  const [typeDropdownSearch, setTypeDropdownSearch] = useState('');
   const [isYearDropdownOpen, setIsYearDropdownOpen] = useState(false);
   const [isStatusDropdownOpen, setIsStatusDropdownOpen] = useState(false);
   const categoryDropdownRef = useRef<HTMLDivElement>(null);
   const typeDropdownRef = useRef<HTMLDivElement>(null);
   const yearDropdownRef = useRef<HTMLDivElement>(null);
   const statusDropdownRef = useRef<HTMLDivElement>(null);
+
+  const closeCategoryDropdown = useCallback(() => {
+    setIsCategoryDropdownOpen(false);
+    setCategoryDropdownSearch('');
+  }, []);
+
+  const closeTypeDropdown = useCallback(() => {
+    setIsTypeDropdownOpen(false);
+    setTypeDropdownSearch('');
+  }, []);
+
+  const filteredDropdownCategories = useMemo(
+    () => filterResourceCategories(sortedCategories, categoryDropdownSearch),
+    [sortedCategories, categoryDropdownSearch]
+  );
+
+  const filteredDropdownTypes = useMemo(
+    () => filterResourceTypes(availableTypesForFilter, typeDropdownSearch),
+    [availableTypesForFilter, typeDropdownSearch]
+  );
+
+  // Đổi Thư mục: Tự động reset Loại tài liệu về 'all' và về trang 1
+  const handleCategorySelect = (newCat: string) => {
+    setSelectedCategory(newCat);
+    setSelectedType('all');
+    setCurrentPage(1);
+    closeCategoryDropdown();
+    closeTypeDropdown();
+  };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -1069,13 +1236,13 @@ export default function ResourceManagementPage() {
         categoryDropdownRef.current &&
         !categoryDropdownRef.current.contains(target)
       ) {
-        setIsCategoryDropdownOpen(false);
+        closeCategoryDropdown();
       }
       if (
         typeDropdownRef.current &&
         !typeDropdownRef.current.contains(target)
       ) {
-        setIsTypeDropdownOpen(false);
+        closeTypeDropdown();
       }
       if (
         yearDropdownRef.current &&
@@ -1100,7 +1267,7 @@ export default function ResourceManagementPage() {
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, []);
+  }, [closeCategoryDropdown, closeTypeDropdown]);
 
   // Xóa toàn bộ bộ lọc
   const handleClearFilters = () => {
@@ -1111,8 +1278,8 @@ export default function ResourceManagementPage() {
     setSelectedYear('all');
     setStatusFilter('all');
     setCurrentPage(1);
-    setIsCategoryDropdownOpen(false);
-    setIsTypeDropdownOpen(false);
+    closeCategoryDropdown();
+    closeTypeDropdown();
     setIsYearDropdownOpen(false);
     setIsStatusDropdownOpen(false);
     setIsSearchFieldDropdownOpen(false);
@@ -1227,13 +1394,30 @@ export default function ResourceManagementPage() {
     });
   }, [documents, searchTerm, searchField, selectedCategory, selectedType, selectedYear, statusFilter]);
 
-  // Phân trang danh sách
+  const { docCountByCategory, docCountByCategoryAndType } = useMemo(() => {
+    const byCategory = new Map<number, number>();
+    const byCatAndType = new Map<string, number>();
+    for (const doc of documents) {
+      byCategory.set(doc.dm_tai_lieu, (byCategory.get(doc.dm_tai_lieu) ?? 0) + 1);
+      if (Array.isArray(doc.loai_tai_lieu) && doc.loai_tai_lieu.length > 0) {
+        const seenTypeIds = new Set(doc.loai_tai_lieu);
+        for (const tid of seenTypeIds) {
+          const key = `${doc.dm_tai_lieu}:${tid}`;
+          byCatAndType.set(key, (byCatAndType.get(key) ?? 0) + 1);
+        }
+      }
+    }
+    return { docCountByCategory: byCategory, docCountByCategoryAndType: byCatAndType };
+  }, [documents]);
+
+  // Phân trang danh sách (giữ effectivePage hợp lệ ngay khi xóa dòng cuối của trang đang lọc)
   const totalCount = filteredDocuments.length;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const effectivePage = Math.min(currentPage, totalPages);
   const paginatedDocuments = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
+    const start = (effectivePage - 1) * pageSize;
     return filteredDocuments.slice(start, start + pageSize);
-  }, [filteredDocuments, currentPage, pageSize]);
+  }, [filteredDocuments, effectivePage, pageSize]);
 
   // Hành động Xem chi tiết
   const handleViewDetail = (item: ResourceItem) => {
@@ -1303,16 +1487,16 @@ export default function ResourceManagementPage() {
         currentLang === 'en' ? 'Delete Document' : 'Xóa tài liệu'
       );
 
-      // Tự động điều chỉnh trang nếu trang hiện tại bị trống
-      const remainingDocs = documents.filter((d) => d.id !== targetId);
+      // Tự động điều chỉnh trang nếu trang hiện tại bị trống (tính theo danh sách đang lọc)
+      const remainingDocs = filteredDocuments.filter((d) => d.id !== targetId);
       const newTotalPages = Math.max(1, Math.ceil(remainingDocs.length / pageSize));
       if (currentPage > newTotalPages) {
         setCurrentPage(newTotalPages);
       }
 
-      // Đồng bộ ngầm với server và thông báo cho các tab/client khác
-      await fetchResources(true, true);
-      notifyMutation();
+      // Đồng bộ ngầm đúng phạm vi documents và thông báo cho các tab/client khác
+      void fetchResources(true, true, { documents: true });
+      notifyMutation(syncSenderId, { documents: true });
     } catch (error: unknown) {
       console.error('Lỗi khi xóa tài liệu trên backend:', error);
       const errInfo = formatApiError(
@@ -1387,9 +1571,9 @@ export default function ResourceManagementPage() {
         setFormInitialData(null);
         showToast(`Đã thêm mới thành công tài liệu: "${savedDoc.tieu_de}"`, 'success', 'Thêm mới tài liệu');
       }
-      // Đồng bộ ngầm với server sau khi cập nhật local state và thông báo cho các tab/client khác
-      await fetchResources(true, true);
-      notifyMutation();
+      // Đồng bộ ngầm phạm vi documents sau khi cập nhật local state và thông báo cho các tab/client khác
+      void fetchResources(true, true, { documents: true });
+      notifyMutation(syncSenderId, { documents: true });
     } catch (error: unknown) {
       console.error('Lỗi khi lưu tài liệu lên server:', error);
       const isEdit = Boolean(formInitialData);
@@ -1423,8 +1607,10 @@ export default function ResourceManagementPage() {
           ghi_chu: category.ghi_chu || '',
         };
         const updated = await apiClient.put<ResourceCategory>(`/api/resources/categories/${category.id}/`, payload);
-        // Cập nhật local state ngay lập tức (instant UI feedback)
-        setCategories((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+        // Cập nhật local state ngay lập tức theo đúng thứ tự backend
+        setCategories((prev) =>
+          sortCategoriesByPriority(prev.map((c) => (c.id === updated.id ? updated : c)))
+        );
         setDocuments((prev) =>
           prev.map((d) =>
             d.dm_tai_lieu === updated.id ? { ...d, dm_tai_lieu_name: updated.ten_tai_lieu } : d
@@ -1440,8 +1626,10 @@ export default function ResourceManagementPage() {
           ghi_chu: category.ghi_chu || '',
         };
         const savedCat = await apiClient.post<ResourceCategory>('/api/resources/categories/', payload);
-        // Cập nhật local state ngay lập tức (instant UI feedback)
-        setCategories((prev) => [...prev.filter((c) => c.id !== savedCat.id), savedCat]);
+        // Cập nhật local state ngay lập tức theo đúng thứ tự ưu tiên backend
+        setCategories((prev) =>
+          sortCategoriesByPriority([...prev.filter((c) => c.id !== savedCat.id), savedCat])
+        );
         setVisibleCategoryIds((prev) => (prev.includes(savedCat.id) ? prev : [...prev, savedCat.id]));
 
         // Nếu có danh sách loại con khởi tạo kèm theo:
@@ -1478,9 +1666,14 @@ export default function ResourceManagementPage() {
         const extraMsg = childCount && childCount > 0 ? ` (kèm ${childCount} loại con)` : '';
         showToast(`Đã thêm mới thành công thư mục: "${savedCat.ten_tai_lieu}"${extraMsg}`, 'success', 'Thêm mới Thư mục');
       }
-      // Đồng bộ ngầm với server sau khi cập nhật local state và thông báo cho các tab/client khác
-      await fetchResources(true, true);
-      notifyMutation();
+      // Đồng bộ ngầm đúng phạm vi dữ liệu bị ảnh hưởng
+      const syncScope: ResourceSyncScope = {
+        categories: true,
+        types: Boolean(!isEdit && childTypes && childTypes.length > 0),
+        documents: isEdit,
+      };
+      void fetchResources(true, true, syncScope);
+      notifyMutation(syncSenderId, syncScope);
     } catch (e) {
       console.error('Lỗi khi lưu thư mục lên máy chủ:', e);
       const errInfo = formatApiError(
@@ -1509,8 +1702,9 @@ export default function ResourceManagementPage() {
         setSelectedCategory('all');
       }
       // Đồng bộ ngầm với server và thông báo cho các tab/client khác
-      await fetchResources(true, true);
-      notifyMutation();
+      const syncScope: ResourceSyncScope = { categories: true, types: true, documents: true };
+      void fetchResources(true, true, syncScope);
+      notifyMutation(syncSenderId, syncScope);
     } catch (e) {
       console.error('Lỗi khi xóa danh mục trên máy chủ:', e);
       const errInfo = formatApiError(
@@ -1536,13 +1730,14 @@ export default function ResourceManagementPage() {
         const updated = await apiClient.put<ResourceType>(`/api/resources/types/${typeItem.id}/`, payload);
         // Cập nhật local state ngay lập tức (instant UI feedback)
         setTypes((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+        const nextTypeNameById = new Map(types.map((t) => [t.id, t.ten_loai]));
+        nextTypeNameById.set(updated.id, updated.ten_loai);
         setDocuments((prev) =>
           prev.map((d) => {
             if (d.loai_tai_lieu?.includes(updated.id)) {
-              const updatedTypes = types.map((t) => (t.id === updated.id ? updated : t));
-              const newNames = updatedTypes
-                .filter((t) => d.loai_tai_lieu.includes(t.id))
-                .map((t) => t.ten_loai);
+              const newNames = d.loai_tai_lieu
+                .map((tid) => nextTypeNameById.get(tid))
+                .filter((name): name is string => Boolean(name));
               return { ...d, loai_tai_lieu_names: newNames };
             }
             return d;
@@ -1566,9 +1761,10 @@ export default function ResourceManagementPage() {
           showToast(`Đã thêm mới thành công loại tài liệu: "${saved.ten_loai}"`, 'success', 'Thêm mới Loại tài liệu');
         }
       }
-      // Đồng bộ ngầm với server sau khi cập nhật local state và thông báo cho các tab/client khác
-      await fetchResources(true, true);
-      notifyMutation();
+      // Đồng bộ ngầm phạm vi loại tài liệu (và tài liệu nếu đang cập nhật tên)
+      const syncScope: ResourceSyncScope = { types: true, documents: isEdit };
+      void fetchResources(true, true, syncScope);
+      notifyMutation(syncSenderId, syncScope);
     } catch (e) {
       console.error('Lỗi khi lưu loại tài liệu lên máy chủ:', e);
       const errInfo = formatApiError(
@@ -1604,8 +1800,9 @@ export default function ResourceManagementPage() {
         setSelectedType('all');
       }
       // Đồng bộ ngầm với server và thông báo cho các tab/client khác
-      await fetchResources(true, true);
-      notifyMutation();
+      const syncScope: ResourceSyncScope = { types: true, documents: true };
+      void fetchResources(true, true, syncScope);
+      notifyMutation(syncSenderId, syncScope);
     } catch (e) {
       console.error('Lỗi khi xóa loại tài liệu trên máy chủ:', e);
       const errInfo = formatApiError(
@@ -1845,7 +2042,7 @@ export default function ResourceManagementPage() {
               >
                 {orderedVisibleCategories.map((cat) => {
                   const isSelected = selectedCategory === String(cat.id);
-                  const count = documents.filter((d) => d.dm_tai_lieu === cat.id).length;
+                  const count = docCountByCategory.get(cat.id) ?? 0;
 
                   return (
                     <button
@@ -1891,8 +2088,13 @@ export default function ResourceManagementPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    setIsCategoryDropdownOpen((prev) => !prev);
-                    setIsTypeDropdownOpen(false);
+                    if (isCategoryDropdownOpen) {
+                      closeCategoryDropdown();
+                    } else {
+                      setCategoryDropdownSearch('');
+                      setIsCategoryDropdownOpen(true);
+                    }
+                    closeTypeDropdown();
                   }}
                   className={`w-full px-2.5 sm:px-4 text-xs sm:text-[13px] font-semibold transition-colors flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer whitespace-nowrap rounded-tr-xl ${
                     !hasBottomRow ? 'rounded-br-xl' : ''
@@ -1938,12 +2140,23 @@ export default function ResourceManagementPage() {
                       </button>
                     </div>
 
+                    <div className="mb-1.5">
+                      <DropdownSearchInput
+                        value={categoryDropdownSearch}
+                        onChange={setCategoryDropdownSearch}
+                        placeholder={t('resourceManagement.catSearchPlaceholder')}
+                        clearLabel={t('resourceManagement.clearSearch')}
+                        autoFocus
+                        onEscape={closeCategoryDropdown}
+                      />
+                    </div>
+
                     {/* Nút 'Tất cả thư mục' */}
                     <button
                       type="button"
                       onClick={() => {
                         handleCategorySelect('all');
-                        setIsCategoryDropdownOpen(false);
+                        closeCategoryDropdown();
                       }}
                       className={`w-full px-2.5 py-2 rounded-lg text-left text-xs flex items-center justify-between gap-2 transition-colors cursor-pointer ${
                         selectedCategory === 'all'
@@ -1970,65 +2183,73 @@ export default function ResourceManagementPage() {
 
                     {/* Danh sách danh mục kèm checkbox (chỉ hiện trên tablet/desktop, ẩn checkbox trên mobile) */}
                     <div className="max-h-60 overflow-y-auto space-y-1 pr-0.5">
-                      {sortedCategories.map((cat) => {
-                        const isSelected = selectedCategory === String(cat.id);
-                        const tickIndex = visibleCategoryIds.indexOf(cat.id);
-                        const isVisibleOnBar = tickIndex !== -1;
-                        const count = documents.filter((d) => d.dm_tai_lieu === cat.id).length;
+                      {filteredDropdownCategories.length === 0 ? (
+                        <div className="px-2.5 py-4 text-center text-xs text-muted">
+                          {sortedCategories.length === 0
+                            ? t('resourceManagement.noFoldersAvailable')
+                            : t('resourceManagement.noMatchingCategories')}
+                        </div>
+                      ) : (
+                        filteredDropdownCategories.map((cat) => {
+                          const isSelected = selectedCategory === String(cat.id);
+                          const tickIndex = visibleCategoryIds.indexOf(cat.id);
+                          const isVisibleOnBar = tickIndex !== -1;
+                          const count = docCountByCategory.get(cat.id) ?? 0;
 
-                        return (
-                          <div
-                            key={cat.id}
-                            className={`w-full px-2 py-1.5 rounded-lg text-xs flex items-center justify-between gap-2 transition-colors ${
-                              isSelected
-                                ? 'bg-primary/10 border border-primary/20 text-primary font-bold'
-                                : 'text-main hover:bg-surface-elevated'
-                            }`}
-                          >
-                            {/* Checkbox: Chỉ hiện trên sm:flex, ẨN trên mobile (hidden sm:flex) */}
-                            <label
-                              className="hidden sm:flex items-center gap-1.5 cursor-pointer shrink-0 select-none"
-                              title={isVisibleOnBar ? t('resourceManagement.displayedAtPosOnBar', { pos: tickIndex + 1 }) : t('resourceManagement.tickToDisplayTooltip')}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={isVisibleOnBar}
-                                onChange={() => toggleCategoryVisibility(cat.id)}
-                                className="w-4 h-4 rounded border-border-subtle text-primary focus:ring-primary/20 cursor-pointer accent-primary"
-                              />
-                              {isVisibleOnBar && (
-                                <span className="text-[10px] font-bold text-primary bg-primary/10 border border-primary/20 px-1 py-0.2 rounded leading-none">
-                                  #{tickIndex + 1}
-                                </span>
-                              )}
-                            </label>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                handleCategorySelect(String(cat.id));
-                                setIsCategoryDropdownOpen(false);
-                              }}
-                              className="flex items-center gap-2 truncate flex-1 text-left cursor-pointer hover:text-primary transition-colors py-0.5"
-                              title={cat.ghi_chu || cat.ten_tai_lieu}
-                            >
-                              <i
-                                className={`fa-solid ${isSelected ? 'fa-folder-open text-primary' : 'fa-folder text-muted'} text-xs shrink-0`}
-                              />
-                              <span className="truncate">{cat.ten_tai_lieu}</span>
-                            </button>
-                            <span
-                              className={`min-w-[20px] h-5 px-1.5 inline-flex items-center justify-center text-[11px] rounded-full font-bold leading-none shrink-0 ${
+                          return (
+                            <div
+                              key={cat.id}
+                              className={`w-full px-2 py-1.5 rounded-lg text-xs flex items-center justify-between gap-2 transition-colors ${
                                 isSelected
-                                  ? 'bg-primary text-white'
-                                  : 'bg-surface-elevated text-secondary border border-border-subtle'
+                                  ? 'bg-primary/10 border border-primary/20 text-primary font-bold'
+                                  : 'text-main hover:bg-surface-elevated'
                               }`}
                             >
-                              {count}
-                            </span>
-                          </div>
-                        );
-                      })}
+                              {/* Checkbox: Chỉ hiện trên sm:flex, ẨN trên mobile (hidden sm:flex) */}
+                              <label
+                                className="hidden sm:flex items-center gap-1.5 cursor-pointer shrink-0 select-none"
+                                title={isVisibleOnBar ? t('resourceManagement.displayedAtPosOnBar', { pos: tickIndex + 1 }) : t('resourceManagement.tickToDisplayTooltip')}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isVisibleOnBar}
+                                  onChange={() => toggleCategoryVisibility(cat.id)}
+                                  className="w-4 h-4 rounded border-border-subtle text-primary focus:ring-primary/20 cursor-pointer accent-primary"
+                                />
+                                {isVisibleOnBar && (
+                                  <span className="text-[10px] font-bold text-primary bg-primary/10 border border-primary/20 px-1 py-0.2 rounded leading-none">
+                                    #{tickIndex + 1}
+                                  </span>
+                                )}
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleCategorySelect(String(cat.id));
+                                  closeCategoryDropdown();
+                                }}
+                                className="flex items-center gap-2 truncate flex-1 text-left cursor-pointer hover:text-primary transition-colors py-0.5"
+                                title={cat.ghi_chu || cat.ten_tai_lieu}
+                              >
+                                <i
+                                  className={`fa-solid ${isSelected ? 'fa-folder-open text-primary' : 'fa-folder text-muted'} text-xs shrink-0`}
+                                />
+                                <span className="truncate">{cat.ten_tai_lieu}</span>
+                              </button>
+                              <span
+                                className={`min-w-[20px] h-5 px-1.5 inline-flex items-center justify-center text-[11px] rounded-full font-bold leading-none shrink-0 ${
+                                  isSelected
+                                    ? 'bg-primary text-white'
+                                    : 'bg-surface-elevated text-secondary border border-border-subtle'
+                                }`}
+                              >
+                                {count}
+                              </span>
+                            </div>
+                          );
+                        })
+                      )}
                     </div>
 
                     {canManageCategory && (
@@ -2039,7 +2260,7 @@ export default function ResourceManagementPage() {
                           type="button"
                           onClick={() => {
                             setIsCategoryModalOpen(true);
-                            setIsCategoryDropdownOpen(false);
+                            closeCategoryDropdown();
                           }}
                           className="w-full px-2.5 py-2 rounded-lg text-left text-xs font-semibold text-primary hover:bg-primary/5 flex items-center justify-between transition-colors cursor-pointer border border-primary/20 hover:border-primary/40 bg-primary/2"
                           title={t('resourceManagement.openCategoryManagementTooltip')}
@@ -2063,7 +2284,7 @@ export default function ResourceManagementPage() {
         {selectedCategory !== 'all' && availableTypesForFilter.length > 0 && (() => {
           const selectedTypeObj = availableTypesForFilter.find((t) => String(t.id) === selectedType);
           const selectedTypeTitle = selectedTypeObj ? selectedTypeObj.ten_loai : t('resourceManagement.dropdownTypesTitle');
-          const categoryDocCount = documents.filter((d) => d.dm_tai_lieu === Number(selectedCategory)).length;
+          const categoryDocCount = docCountByCategory.get(Number(selectedCategory)) ?? 0;
 
           return (
             <div className="relative z-10 flex items-stretch h-10 sm:h-11 bg-slate-50/70 dark:bg-slate-800/40 border-t border-border-subtle rounded-b-xl">
@@ -2123,12 +2344,7 @@ export default function ResourceManagementPage() {
 
                 {orderedVisibleTypes.map((typeItem) => {
                   const isActive = selectedType === String(typeItem.id);
-                  const docCount = documents.filter(
-                    (d) =>
-                      d.dm_tai_lieu === Number(selectedCategory) &&
-                      Array.isArray(d.loai_tai_lieu) &&
-                      d.loai_tai_lieu.includes(typeItem.id)
-                  ).length;
+                  const docCount = docCountByCategoryAndType.get(`${selectedCategory}:${typeItem.id}`) ?? 0;
                   return (
                     <button
                       key={typeItem.id}
@@ -2168,8 +2384,13 @@ export default function ResourceManagementPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    setIsTypeDropdownOpen((prev) => !prev);
-                    setIsCategoryDropdownOpen(false);
+                    if (isTypeDropdownOpen) {
+                      closeTypeDropdown();
+                    } else {
+                      setTypeDropdownSearch('');
+                      setIsTypeDropdownOpen(true);
+                    }
+                    closeCategoryDropdown();
                   }}
                   className={`w-full px-2.5 sm:px-4 text-xs sm:text-[13px] font-semibold transition-colors flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer whitespace-nowrap rounded-br-xl ${
                     selectedType !== 'all'
@@ -2219,12 +2440,23 @@ export default function ResourceManagementPage() {
                       );
                     })()}
 
+                    <div className="mb-1.5">
+                      <DropdownSearchInput
+                        value={typeDropdownSearch}
+                        onChange={setTypeDropdownSearch}
+                        placeholder={t('resourceManagement.typeSearchPlaceholder')}
+                        clearLabel={t('resourceManagement.clearSearch')}
+                        autoFocus
+                        onEscape={closeTypeDropdown}
+                      />
+                    </div>
+
                     <button
                       type="button"
                       onClick={() => {
                         setSelectedType('all');
                         setCurrentPage(1);
-                        setIsTypeDropdownOpen(false);
+                        closeTypeDropdown();
                       }}
                       className={`w-full px-2.5 py-2 rounded-lg text-left text-xs flex items-center justify-between gap-2 transition-colors cursor-pointer ${
                         selectedType === 'all'
@@ -2247,73 +2479,75 @@ export default function ResourceManagementPage() {
 
                     {/* Danh sách loại tài liệu kèm checkbox (ẩn checkbox trên mobile) */}
                     <div className="max-h-60 overflow-y-auto space-y-1 pr-0.5">
-                      {availableTypesForFilter.map((typeItem) => {
-                        const isSelected = selectedType === String(typeItem.id);
+                      {filteredDropdownTypes.length === 0 ? (
+                        <div className="px-2.5 py-4 text-center text-xs text-muted">
+                          {t('resourceManagement.noMatchingTypes')}
+                        </div>
+                      ) : (() => {
                         const currentScopeTypeIds = availableTypesForFilter.map((item) => item.id);
                         const activeInScope = visibleTypeIds.filter((id) => currentScopeTypeIds.includes(id));
-                        const tickIndex = activeInScope.indexOf(typeItem.id);
-                        const isVisibleOnBar = tickIndex !== -1;
-                        const docCount = documents.filter(
-                          (d) =>
-                            d.dm_tai_lieu === Number(selectedCategory) &&
-                            Array.isArray(d.loai_tai_lieu) &&
-                            d.loai_tai_lieu.includes(typeItem.id)
-                        ).length;
 
-                        return (
-                          <div
-                            key={typeItem.id}
-                            className={`relative w-full px-2 py-1.5 rounded-lg text-xs flex items-center justify-between gap-2 transition-colors ${
-                              isSelected
-                                ? 'bg-primary/10 border border-primary/20 text-primary font-bold'
-                                : 'text-main hover:bg-surface-elevated'
-                            }`}
-                          >
-                            {/* Checkbox: Chỉ hiện trên sm:flex, ẨN trên mobile (hidden sm:flex) */}
-                            <label
-                              className="hidden sm:flex items-center gap-1.5 cursor-pointer shrink-0 select-none"
-                              title={isVisibleOnBar ? t('resourceManagement.displayedAtPosOnSubBar', { pos: tickIndex + 1 }) : t('resourceManagement.tickToDisplayOnBarTooltip')}
-                              onClick={(e) => e.stopPropagation()}
+                        return filteredDropdownTypes.map((typeItem) => {
+                          const isSelected = selectedType === String(typeItem.id);
+                          const tickIndex = activeInScope.indexOf(typeItem.id);
+                          const isVisibleOnBar = tickIndex !== -1;
+                          const docCount = docCountByCategoryAndType.get(`${selectedCategory}:${typeItem.id}`) ?? 0;
+
+                          return (
+                            <div
+                              key={typeItem.id}
+                              className={`relative w-full px-2 py-1.5 rounded-lg text-xs flex items-center justify-between gap-2 transition-colors ${
+                                isSelected
+                                  ? 'bg-primary/10 border border-primary/20 text-primary font-bold'
+                                  : 'text-main hover:bg-surface-elevated'
+                              }`}
                             >
-                              <input
-                                type="checkbox"
-                                checked={isVisibleOnBar}
-                                onChange={() => toggleTypeVisibility(typeItem.id)}
-                                className="w-4 h-4 rounded border-border-subtle text-primary focus:ring-primary/20 cursor-pointer accent-primary"
-                              />
-                              {isVisibleOnBar && (
-                                <span className="text-[10px] font-bold text-primary bg-primary/10 border border-primary/20 px-1 py-0.2 rounded leading-none">
-                                  #{tickIndex + 1}
-                                </span>
-                              )}
-                            </label>
+                              {/* Checkbox: Chỉ hiện trên sm:flex, ẨN trên mobile (hidden sm:flex) */}
+                              <label
+                                className="hidden sm:flex items-center gap-1.5 cursor-pointer shrink-0 select-none"
+                                title={isVisibleOnBar ? t('resourceManagement.displayedAtPosOnSubBar', { pos: tickIndex + 1 }) : t('resourceManagement.tickToDisplayOnBarTooltip')}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isVisibleOnBar}
+                                  onChange={() => toggleTypeVisibility(typeItem.id)}
+                                  className="w-4 h-4 rounded border-border-subtle text-primary focus:ring-primary/20 cursor-pointer accent-primary"
+                                />
+                                {isVisibleOnBar && (
+                                  <span className="text-[10px] font-bold text-primary bg-primary/10 border border-primary/20 px-1 py-0.2 rounded leading-none">
+                                    #{tickIndex + 1}
+                                  </span>
+                                )}
+                              </label>
 
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSelectedType(String(typeItem.id));
-                                setCurrentPage(1);
-                                setIsTypeDropdownOpen(false);
-                              }}
-                              className="flex items-center gap-2 truncate flex-1 text-left cursor-pointer hover:text-primary transition-colors py-0.5"
-                              title={typeItem.ghi_chu || typeItem.ten_loai}
-                            >
-                              {!typeItem.is_public ? (
-                                <i className="fa-solid fa-lock text-[10px] opacity-70 shrink-0" />
-                              ) : (
-                                <i className="fa-solid fa-tag text-xs opacity-70 shrink-0" />
-                              )}
-                              <span className="truncate">{typeItem.ten_loai}</span>
-                            </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedType(String(typeItem.id));
+                                  setCurrentPage(1);
+                                  closeTypeDropdown();
+                                }}
+                                className="flex items-center gap-2 truncate flex-1 text-left cursor-pointer hover:text-primary transition-colors py-0.5"
+                                title={typeItem.ghi_chu || typeItem.ten_loai}
+                              >
+                                {!typeItem.is_public ? (
+                                  <i className="fa-solid fa-lock text-[10px] opacity-70 shrink-0" />
+                                ) : (
+                                  <i className="fa-solid fa-tag text-xs opacity-70 shrink-0" />
+                                )}
+                                <span className="truncate">{typeItem.ten_loai}</span>
+                              </button>
 
-                            <span className={`min-w-[20px] h-5 px-1.5 inline-flex items-center justify-center text-[11px] rounded-full font-bold leading-none shrink-0 ${
-                              isSelected ? 'bg-primary text-white' : 'bg-surface-elevated text-secondary border border-border-subtle'
-                            }`}>
-                              {docCount}
-                            </span>
-                          </div>
-                        );
-                      })}
+                              <span className={`min-w-[20px] h-5 px-1.5 inline-flex items-center justify-center text-[11px] rounded-full font-bold leading-none shrink-0 ${
+                                isSelected ? 'bg-primary text-white' : 'bg-surface-elevated text-secondary border border-border-subtle'
+                              }`}>
+                                {docCount}
+                              </span>
+                            </div>
+                          );
+                        });
+                      })()}
                     </div>
 
                     {canManageCategory && (
@@ -2324,7 +2558,7 @@ export default function ResourceManagementPage() {
                           type="button"
                           onClick={() => {
                             setIsCategoryModalOpen(true);
-                            setIsTypeDropdownOpen(false);
+                            closeTypeDropdown();
                           }}
                           className="w-full px-2.5 py-2 rounded-lg text-left text-xs font-semibold text-primary hover:bg-primary/5 flex items-center justify-between transition-colors cursor-pointer border border-primary/20 hover:border-primary/40 bg-primary/2"
                           title={t('resourceManagement.openCategoryManagementTooltip')}
@@ -2377,8 +2611,8 @@ export default function ResourceManagementPage() {
                   setIsSearchFieldDropdownOpen((prev) => !prev);
                   setIsYearDropdownOpen(false);
                   setIsStatusDropdownOpen(false);
-                  setIsCategoryDropdownOpen(false);
-                  setIsTypeDropdownOpen(false);
+                  closeCategoryDropdown();
+                  closeTypeDropdown();
                 }}
                 className={`h-10 px-2.5 sm:px-3 text-xs sm:text-[13px] font-semibold bg-surface-elevated hover:bg-surface border border-r-0 rounded-l-lg text-secondary hover:text-primary flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
                   isSearchFieldDropdownOpen
@@ -2468,8 +2702,8 @@ export default function ResourceManagementPage() {
               onClick={() => {
                 setIsYearDropdownOpen((prev) => !prev);
                 setIsStatusDropdownOpen(false);
-                setIsCategoryDropdownOpen(false);
-                setIsTypeDropdownOpen(false);
+                closeCategoryDropdown();
+                closeTypeDropdown();
               }}
               className={`w-full h-10 px-3 text-[13px] rounded-lg bg-surface-elevated text-main border transition-colors flex items-center justify-between gap-2 cursor-pointer font-medium ${
                 isYearDropdownOpen ? 'border-primary ring-1 ring-primary/20' : 'border-border-subtle hover:border-primary/50'
@@ -2552,8 +2786,8 @@ export default function ResourceManagementPage() {
               onClick={() => {
                 setIsStatusDropdownOpen((prev) => !prev);
                 setIsYearDropdownOpen(false);
-                setIsCategoryDropdownOpen(false);
-                setIsTypeDropdownOpen(false);
+                closeCategoryDropdown();
+                closeTypeDropdown();
               }}
               className={`w-full h-10 px-3 text-[13px] rounded-lg bg-surface-elevated text-main border transition-colors flex items-center justify-between gap-2 cursor-pointer font-medium ${
                 isStatusDropdownOpen ? 'border-primary ring-1 ring-primary/20' : 'border-border-subtle hover:border-primary/50'
@@ -2779,8 +3013,8 @@ export default function ResourceManagementPage() {
           ) : (
             <span>
               {t('resourceManagement.displayRange', {
-                start: (currentPage - 1) * pageSize + 1,
-                end: Math.min(currentPage * pageSize, totalCount),
+                start: (effectivePage - 1) * pageSize + 1,
+                end: Math.min(effectivePage * pageSize, totalCount),
                 total: totalCount,
               })}
             </span>
@@ -2805,7 +3039,7 @@ export default function ResourceManagementPage() {
       <ResourceTable
         items={paginatedDocuments}
         isLoading={isLoading}
-        currentPage={currentPage}
+        currentPage={effectivePage}
         totalPages={totalPages}
         pageSize={pageSize}
         totalCount={totalCount}
@@ -2962,7 +3196,7 @@ export default function ResourceManagementPage() {
       )}
 
       {/* TOAST THÔNG BÁO HOÀN TẤT THAO TÁC NỔI TRÊN CÙNG Z-[999999] */}
-      <Toast toast={toast} onClose={() => setToast(null)} />
+      <Toast toast={toast} onClose={handleCloseToast} />
     </div>
   );
 }

@@ -612,5 +612,56 @@ describe('CategoryManagementModal Component (Issue #233)', () => {
     expect(rows[1]).toHaveTextContent('Loại mới nhảy lên đầu');
     expect(screen.getByText('1–5')).toBeInTheDocument();
   });
+
+  it('supports unaccented search and ky_hieu filtering in Tab 2 parent category filter dropdown', () => {
+    const categoriesWithCodes: ResourceCategory[] = [
+      { id: 1, stt_uu_tien: 1, ky_hieu: 'NS-BL', ten_tai_lieu: 'Hồ sơ Nhân sự' },
+      { id: 2, stt_uu_tien: 2, ky_hieu: 'HDQT-01', ten_tai_lieu: 'Hội đồng Quản trị' },
+    ];
+    const sampleTypes: ResourceType[] = [
+      { id: 10, dm_tai_lieu: 1, ten_loai: 'Hợp đồng lao động', is_public: true },
+      { id: 20, dm_tai_lieu: 2, ten_loai: 'Nghị quyết HĐQT', is_public: true },
+    ];
+
+    render(
+      <CategoryManagementModal
+        isOpen={true}
+        onClose={onClose}
+        categories={categoriesWithCodes}
+        types={sampleTypes}
+        onSaveCategory={onSaveCategory}
+        onDeleteCategory={onDeleteCategory}
+        onSaveType={onSaveType}
+        onDeleteType={onDeleteType}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Loại tài liệu/i }));
+    const filterBtn = screen.getAllByLabelText('Lọc theo thư mục cha')[0];
+    fireEvent.click(filterBtn);
+
+    const searchInput = screen.getByPlaceholderText('Tìm kiếm thư mục...');
+    expect(searchInput).toBeInTheDocument();
+
+    // Tìm theo ký hiệu & không dấu
+    fireEvent.change(searchInput, { target: { value: 'hdqt' } });
+    expect(screen.getAllByRole('button', { name: /Hội đồng Quản trị/i })[0]).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Hồ sơ Nhân sự/i })).not.toBeInTheDocument();
+
+    // Không khớp -> thông báo rỗng
+    fireEvent.change(searchInput, { target: { value: 'khong-co' } });
+    expect(screen.getByText('Không tìm thấy thư mục phù hợp')).toBeInTheDocument();
+
+    // Xóa nhanh & chọn 'Hội đồng Quản trị' -> lọc bảng + reset search khi mở lại
+    fireEvent.click(screen.getByRole('button', { name: 'Xóa tìm kiếm' }));
+    expect(searchInput).toHaveValue('');
+    fireEvent.click(screen.getAllByRole('button', { name: /Hội đồng Quản trị/i })[0]);
+
+    expect(screen.getByText('Nghị quyết HĐQT')).toBeInTheDocument();
+    expect(screen.queryByText('Hợp đồng lao động')).not.toBeInTheDocument();
+
+    fireEvent.click(filterBtn);
+    expect(screen.getByPlaceholderText('Tìm kiếm thư mục...')).toHaveValue('');
+  });
 });
 

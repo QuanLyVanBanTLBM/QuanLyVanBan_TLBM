@@ -1,10 +1,14 @@
+import re
 import time
 from datetime import date
+from uuid import uuid4
 
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
+from birthdays.models import BirthdaySchedulerRun, BirthdaySchedulerStatus
+from birthdays.scheduler import VIETNAM_TIME_ZONE, run_status
 from birthdays.services import send_automated_birthday_emails
 
 
@@ -17,6 +21,9 @@ class Command(BaseCommand):
             help="Ngày cần gửi YYYY-MM-DD (mặc định: ngày hiện tại theo TIME_ZONE của dự án)",
         )
         parser.add_argument("--username", help="Chỉ gửi cho tài khoản chỉ định trong ngày cần gửi")
+        parser.add_argument("--scheduled-slot", choices=BirthdaySchedulerRun.Slot.values)
+        parser.add_argument("--github-run-id")
+        parser.add_argument("--github-run-attempt")
         parser.add_argument(
             "--trigger-source",
             choices=("SCHEDULED", "RECOVERY"),
@@ -46,11 +53,22 @@ class Command(BaseCommand):
             if target_date.isoformat() != options["date"]:
                 raise CommandError("--date phải theo định dạng YYYY-MM-DD.")
         else:
-            target_date = timezone.localdate()
+            target_date = timezone.localdate(timezone=VIETNAM_TIME_ZONE)
 
         trigger_source = options["trigger_source"] or (
             "RECOVERY" if options["date"] or options["username"] else "SCHEDULED"
         )
+        slot = options["scheduled_slot"]
+        github_run_id = options["github_run_id"]
+        github_run_attempt = options["github_run_attempt"]
+        if github_run_id is not None or github_run_attempt is not None:
+            if not all(re.fullmatch(r"[1-9][0-9]{0,23}", value or "") for value in (
+                github_run_id, github_run_attempt,
+            )):
+                raise CommandError("Cần GitHub run ID và run attempt hợp lệ.")
+            execution_id = f"github:{github_run_id}:{github_run_attempt}"
+        else:
+            execution_id = f"local:{uuid4()}"
 
         def _safe_write(writer, text):
             try:
@@ -60,8 +78,26 @@ class Command(BaseCommand):
                 writer(safe_text)
 
         started_at = timezone.now()
+        run, created = BirthdaySchedulerRun.objects.get_or_create(
+            execution_id=execution_id,
+            defaults={
+                "processing_date": target_date,
+                "trigger_source": trigger_source,
+                "scheduled_slot": slot,
+                "started_at": started_at,
+                "status": BirthdaySchedulerStatus.RUNNING,
+                "github_run_id": github_run_id,
+            },
+        )
+        if not created:
+            if (run.processing_date, run.trigger_source, run.scheduled_slot) != (target_date, trigger_source, slot):
+                raise CommandError(f"Birthday email execution {execution_id} has different run parameters.")
+            if run.status == BirthdaySchedulerStatus.SUCCESS:
+                self.stdout.write(f"Birthday email execution {execution_id} was already recorded.")
+                return
+            raise CommandError(f"Birthday email execution {execution_id} already exists: {run_status(run, started_at)}.")
         started_monotonic = time.monotonic()
-        started_at_local = timezone.localtime(started_at).isoformat(timespec="seconds")
+        started_at_local = started_at.astimezone(VIETNAM_TIME_ZONE).isoformat(timespec="seconds")
         _safe_write(
             self.stdout.write,
             "BIRTHDAY_EMAIL_START "
@@ -77,8 +113,16 @@ class Command(BaseCommand):
                 username=options["username"],
                 trigger_source=trigger_source,
             )
-        except Exception as exc:
-            ended_at_local = timezone.localtime(timezone.now()).isoformat(timespec="seconds")
+        except (Exception, KeyboardInterrupt) as exc:
+            ended_at = timezone.now()
+            run.ended_at = ended_at
+            run.status = (
+                BirthdaySchedulerStatus.UNKNOWN if isinstance(exc, KeyboardInterrupt)
+                else BirthdaySchedulerStatus.FAILED
+            )
+            run.error_reason = str(exc) if isinstance(exc, CommandError) else type(exc).__name__
+            run.save(update_fields=["ended_at", "status", "error_reason"])
+            ended_at_local = ended_at.astimezone(VIETNAM_TIME_ZONE).isoformat(timespec="seconds")
             duration_ms = int((time.monotonic() - started_monotonic) * 1000)
             _safe_write(
                 self.stdout.write,
@@ -89,6 +133,28 @@ class Command(BaseCommand):
                 f"outcome=error error_type={type(exc).__name__}",
             )
             raise
+
+        ended_at = timezone.now()
+        targeted_without_success = options["username"] is not None and not any(
+            detail.get("trang_thai") == "SUCCESS" for detail in results["details"]
+        )
+        error_reason = None
+        if results["failed_count"] or (results["total_eligible"] and results.get("stale_failed_count", 0)):
+            error_reason = "DELIVERY_FAILURE"
+        elif targeted_without_success:
+            error_reason = "TARGET_NOT_SENT"
+        run.ended_at = ended_at
+        run.status = BirthdaySchedulerStatus.FAILED if error_reason else BirthdaySchedulerStatus.SUCCESS
+        run.total_eligible = results["total_eligible"]
+        run.sent_count = results["sent_count"]
+        run.failed_count = results["failed_count"]
+        run.skipped_count = results["skipped_count"]
+        run.retry_count = results["retried_count"]
+        run.error_reason = error_reason
+        run.save(update_fields=[
+            "ended_at", "status", "total_eligible", "sent_count", "failed_count",
+            "skipped_count", "retry_count", "error_reason",
+        ])
 
         for detail in results["details"]:
             name = detail["full_name"]
@@ -108,12 +174,9 @@ class Command(BaseCommand):
             f"Thất bại: {results['failed_count']}"
         )
         _safe_write(self.stdout.write, summary)
-        ended_at_local = timezone.localtime(timezone.now()).isoformat(timespec="seconds")
+        ended_at_local = ended_at.astimezone(VIETNAM_TIME_ZONE).isoformat(timespec="seconds")
         duration_ms = int((time.monotonic() - started_monotonic) * 1000)
-        targeted_without_success = options["username"] is not None and not any(
-            detail.get("trang_thai") == "SUCCESS" for detail in results["details"]
-        )
-        outcome = "failed" if results["failed_count"] or targeted_without_success else "completed"
+        outcome = "failed" if error_reason else "completed"
         _safe_write(
             self.stdout.write,
             "BIRTHDAY_EMAIL_SUMMARY "
@@ -123,7 +186,7 @@ class Command(BaseCommand):
             f"skipped={results['skipped_count']} retry={results.get('retry_count', 0)} "
             f"stale={results.get('stale_failed_count', 0)} failed={results['failed_count']} outcome={outcome}",
         )
-        if results["failed_count"]:
+        if error_reason == "DELIVERY_FAILURE":
             raise CommandError("Có email chưa được xác nhận gửi thành công; xem nhật ký BirthdayEmailLog.")
         if targeted_without_success:
             raise CommandError("Tài khoản chưa có lần gửi thành công cho ngày được chọn.")
