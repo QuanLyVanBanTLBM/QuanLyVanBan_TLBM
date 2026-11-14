@@ -214,8 +214,11 @@
   transition: border-color var(--transition-fast);
 }
 
-.ai-sidebar-search input:focus {
-  border-color: var(--color-primary);
+.ai-chat-page-root .ai-sidebar-search input:focus,
+.ai-chat-page-root .ai-sidebar-search input:focus-visible {
+  border-color: var(--border-subtle) !important;
+  box-shadow: none !important;
+  outline: none !important;
 }
 
 .sidebar-search-clear-btn {
