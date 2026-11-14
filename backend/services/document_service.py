@@ -1,17 +1,68 @@
 import json
+import logging
 import os
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 from backend.config import DOCS_DIR, DOC_REGISTRY_PATH
 
+logger = logging.getLogger(__name__)
+
+DEFAULT_FILE_MODE = 0o640
+DEFAULT_DIR_MODE = 0o750
+
+
+def ensure_file_permissions(path: Path, mode: int = DEFAULT_FILE_MODE) -> None:
+    """Đảm bảo quyền truy cập an toàn cho tệp (mặc định 0640: owner rw, group r)."""
+    try:
+        if path.exists():
+            path.chmod(mode)
+    except OSError:
+        pass
+
+
+def ensure_dir_permissions(directory: Path, mode: int = DEFAULT_DIR_MODE) -> None:
+    """Đảm bảo quyền truy cập an toàn cho thư mục (mặc định 0750: owner rwx, group rx)."""
+    try:
+        if directory.exists():
+            directory.chmod(mode)
+    except OSError:
+        pass
+
+
+def cleanup_stale_staging_uploads(staging_dir: Path | None = None, max_age_seconds: int = 3600) -> int:
+    """Dọn dẹp các tệp tạm mồ côi trong .staging đã cũ hơn max_age_seconds (mặc định 1 giờ)."""
+    target_dir = staging_dir or (DOCS_DIR / ".staging")
+    if not target_dir.exists() or not target_dir.is_dir():
+        return 0
+
+    now = time.time()
+    cleaned = 0
+    try:
+        for item in target_dir.iterdir():
+            if item.is_file() and item.name.startswith("upload-"):
+                try:
+                    if now - item.stat().st_mtime > max_age_seconds:
+                        item.unlink(missing_ok=True)
+                        cleaned += 1
+                except OSError:
+                    pass
+    except OSError:
+        pass
+    return cleaned
+
 
 def stage_upload_file(file) -> tuple[Path, str, bool]:
     """Write an upload outside the visible document list until indexing succeeds."""
     DOCS_DIR.mkdir(parents=True, exist_ok=True)
+    ensure_dir_permissions(DOCS_DIR, DEFAULT_DIR_MODE)
     staging_dir = DOCS_DIR / ".staging"
     staging_dir.mkdir(parents=True, exist_ok=True)
+    ensure_dir_permissions(staging_dir, DEFAULT_DIR_MODE)
+    cleanup_stale_staging_uploads(staging_dir)
+
     filename = Path(file.name).name
     final_path = DOCS_DIR / filename
     descriptor, temporary_name = tempfile.mkstemp(
@@ -22,6 +73,7 @@ def stage_upload_file(file) -> tuple[Path, str, bool]:
         with os.fdopen(descriptor, "wb") as buffer:
             for chunk in file.chunks():
                 buffer.write(chunk)
+        ensure_file_permissions(temporary_path, DEFAULT_FILE_MODE)
     except Exception:
         temporary_path.unlink(missing_ok=True)
         raise
@@ -31,7 +83,9 @@ def stage_upload_file(file) -> tuple[Path, str, bool]:
 def commit_staged_upload(staged_path: Path, filename: str) -> Path:
     final_path = DOCS_DIR / Path(filename).name
     final_path.parent.mkdir(parents=True, exist_ok=True)
+    ensure_dir_permissions(final_path.parent, DEFAULT_DIR_MODE)
     staged_path.replace(final_path)
+    ensure_file_permissions(final_path, DEFAULT_FILE_MODE)
     return final_path
 
 
@@ -57,10 +111,12 @@ def load_registry() -> list[dict]:
 def save_registry(entries: list[dict]):
     """Ghi list entries vào doc_registry.json."""
     DOC_REGISTRY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    ensure_dir_permissions(DOC_REGISTRY_PATH.parent, DEFAULT_DIR_MODE)
     DOC_REGISTRY_PATH.write_text(
         json.dumps(entries, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+    ensure_file_permissions(DOC_REGISTRY_PATH, DEFAULT_FILE_MODE)
 
 
 def add_to_registry(filename: str, category: str, size: int):
