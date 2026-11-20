@@ -10,13 +10,15 @@ from django.contrib.auth import get_user_model
 from django.db import DatabaseError, connections, transaction
 from django.test import SimpleTestCase, TransactionTestCase
 
-from document_templates.models import DanhMucTaiLieu, TaiLieuChiTiet
+from accounts.models import EmployeeAssignment, Position
+from document_templates.models import ChiTietTaiLieuAttachment, DanhMucTaiLieu, TaiLieuChiTiet
 from documents.models import PhamVi, VanBanDen, VanBanDenAttachment, VanBanDi
 from organizations.models import DonVi, KhoiKhuVuc
 
 
 BASE_MIGRATION = importlib.import_module("documents.migrations.0010_ai_metadata_views")
 MIGRATION = importlib.import_module("documents.migrations.0014_ai_user_scoped_attachments")
+DOMAIN_MIGRATION = importlib.import_module("documents.migrations.0016_ai_rag_domain_standards")
 VIEW_NAMES = {
     "ai_vanbanden",
     "ai_vanbanden_nguoinhan",
@@ -28,11 +30,17 @@ VIEW_NAMES = {
     "ai_tailieu",
     "ai_vanbanden_attachment",
     "ai_vanbandi_attachment",
+    "ai_tailieu_attachment",
 }
 PARENT_VIEWS = {
-    "ai_vanbanden", "ai_vanbandi", "ai_tailieu",
-    "ai_vanbanden_attachment", "ai_vanbandi_attachment",
+    "ai_vanbanden",
+    "ai_vanbandi",
+    "ai_tailieu",
+    "ai_vanbanden_attachment",
+    "ai_vanbandi_attachment",
+    "ai_tailieu_attachment",
 }
+APPROVED_READONLY_RELATIONS = PARENT_VIEWS | {"ai_document_embedding"}
 AUXILIARY_VIEWS = VIEW_NAMES - PARENT_VIEWS
 CANONICAL_AUXILIARY_VIEW_COLUMNS = {
     "ai_vanbanden_nguoinhan": ("vanbanden_id", "employee_id"),
@@ -143,8 +151,8 @@ class AIMetadataViewColumnOrderTests(TransactionTestCase):
 
 
 class AIMetadataViewsMigrationContractTests(SimpleTestCase):
-    def test_migrations_create_all_ten_security_barrier_views(self):
-        sql = "\n".join((*BASE_MIGRATION.FORWARD_SQL, *MIGRATION.FORWARD_SQL))
+    def test_migrations_create_all_eleven_security_barrier_views(self):
+        sql = "\n".join((*BASE_MIGRATION.FORWARD_SQL, *MIGRATION.FORWARD_SQL, *DOMAIN_MIGRATION.FORWARD_SQL))
         created = set(
             re.findall(
                 r"CREATE\s+OR\s+REPLACE\s+VIEW\s+(ai_[a-z_]+)\s+WITH\s*\(security_barrier\)",
@@ -154,8 +162,8 @@ class AIMetadataViewsMigrationContractTests(SimpleTestCase):
         )
         self.assertEqual(created, VIEW_NAMES)
 
-    def test_role_grants_match_the_canonical_five_view_contract(self):
-        sql = "\n".join(MIGRATION.FORWARD_SQL)
+    def test_role_grants_match_the_canonical_approved_relation_contract(self):
+        sql = "\n".join(DOMAIN_MIGRATION.FORWARD_SQL)
         grant = re.search(
             r"GRANT\s+SELECT\s+ON(.*?)TO\s+qlvb_readonly",
             sql,
@@ -163,7 +171,7 @@ class AIMetadataViewsMigrationContractTests(SimpleTestCase):
         )
         self.assertIsNotNone(grant)
         granted = set(re.findall(r"\bai_[a-z_]+\b", grant.group(1), re.IGNORECASE))
-        self.assertEqual(granted, PARENT_VIEWS)
+        self.assertEqual(granted, APPROVED_READONLY_RELATIONS)
         for view in AUXILIARY_VIEWS:
             self.assertIn(view, sql)
         self.assertIn("c.relowner = current_user::regrole", sql)
@@ -180,23 +188,31 @@ class AIMetadataViewsMigrationContractTests(SimpleTestCase):
         self.assertNotIn("PASSWORD", sql.upper())
 
     def test_role_is_optional_and_views_do_not_load_mutable_ddl(self):
-        sql = "\n".join(MIGRATION.FORWARD_SQL)
+        sql = "\n".join(DOMAIN_MIGRATION.FORWARD_SQL)
         self.assertIn("IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'qlvb_readonly')", sql)
         self.assertIn("RAISE NOTICE", sql)
         self.assertNotIn("release_DDL.sql", sql)
         self.assertNotIn("read_text(", sql)
 
     def test_canonical_document_and_employee_filters_are_present(self):
-        sql = "\n".join((*BASE_MIGRATION.FORWARD_SQL, *MIGRATION.FORWARD_SQL))
+        sql = "\n".join((*BASE_MIGRATION.FORWARD_SQL, *MIGRATION.FORWARD_SQL, *DOMAIN_MIGRATION.FORWARD_SQL))
         self.assertIn("pham_vi = 'NOI_BO' AND hien_thi IS TRUE", sql)
         self.assertIn("current_setting('qlvb.employee_id', true)", sql)
         self.assertIn("e.is_active IS TRUE", sql)
         self.assertIn("e.trang_thai::text = 'LAM_VIEC'", sql)
         self.assertIn("t.hien_thi::text = 'TAT_CA'", sql)
         self.assertIn("t.hien_thi::text = 'NOI_BO_PHONG_BAN'", sql)
+        self.assertIn("accounts_employee_assignment", sql)
+        self.assertIn("t.nguoi_tao_id = e.id", sql)
+        self.assertIn("qlvb.can_view_expired_tailieu", sql)
+        self.assertIn("ai_tailieu_attachment", sql)
+        self.assertIn("CREATE EXTENSION IF NOT EXISTS pg_trgm", sql)
+        self.assertIn("ai_document_embedding_search_trgm_idx", sql)
 
     def test_graph_waits_for_both_source_scalar_migrations(self):
         self.assertIn(("documents", "0013_cho_admin_xoa_van_ban_han_che"), MIGRATION.Migration.dependencies)
+        self.assertIn(("documents", "0015_ai_document_embedding_pgvector"), DOMAIN_MIGRATION.Migration.dependencies)
+        self.assertIn(("accounts", "0010_employeeassignment"), DOMAIN_MIGRATION.Migration.dependencies)
 
 
 class AIMetadataViewsPostgreSQLAccessTests(TransactionTestCase):
@@ -317,6 +333,7 @@ class AIMetadataViewsPostgreSQLAccessTests(TransactionTestCase):
             ten_tai_lieu="C3 AI view test category",
             nguoi_lap=self.employee_a,
         )
+        self.template_category = category
         self.public_template = TaiLieuChiTiet.objects.create(
             dm_tai_lieu=category,
             tieu_de="C3 public metadata",
@@ -338,7 +355,7 @@ class AIMetadataViewsPostgreSQLAccessTests(TransactionTestCase):
             don_vi_id=self.unit_b.pk,
         )
 
-    def _readonly_ids(self, view_name, employee_id=None):
+    def _readonly_ids(self, view_name, employee_id=None, can_view_expired_tailieu=False):
         with transaction.atomic(using="readonly"):
             with connections["readonly"].cursor() as cursor:
                 identity = "" if employee_id is None else str(employee_id)
@@ -348,6 +365,10 @@ class AIMetadataViewsPostgreSQLAccessTests(TransactionTestCase):
                 )
                 cursor.execute("SELECT set_config('qlvb.can_view_vanbanden', 'on', TRUE)")
                 cursor.execute("SELECT set_config('qlvb.can_view_vanbandi', 'on', TRUE)")
+                cursor.execute(
+                    "SELECT set_config('qlvb.can_view_expired_tailieu', %s, TRUE)",
+                    ["on" if can_view_expired_tailieu else "off"],
+                )
                 cursor.execute(f"SELECT id FROM {view_name} ORDER BY id")
                 return {row[0] for row in cursor.fetchall()}
 
@@ -396,7 +417,7 @@ class AIMetadataViewsPostgreSQLAccessTests(TransactionTestCase):
                 "ALTER DEFAULT PRIVILEGES IN SCHEMA public "
                 "GRANT SELECT ON TABLES TO qlvb_readonly"
             )
-            for statement in MIGRATION.FORWARD_SQL:
+            for statement in DOMAIN_MIGRATION.FORWARD_SQL:
                 cursor.execute(statement)
 
             for relation in (
@@ -415,12 +436,12 @@ class AIMetadataViewsPostgreSQLAccessTests(TransactionTestCase):
                 )
                 self.assertFalse(cursor.fetchone()[0], relation)
 
-            for view in PARENT_VIEWS:
+            for relation in APPROVED_READONLY_RELATIONS:
                 cursor.execute(
                     "SELECT has_table_privilege('qlvb_readonly', %s, 'SELECT')",
-                    [f"public.{view}"],
+                    [f"public.{relation}"],
                 )
-                self.assertTrue(cursor.fetchone()[0], view)
+                self.assertTrue(cursor.fetchone()[0], relation)
 
             cursor.execute("CREATE TABLE public.c3_acl_future_table (id bigint)")
             cursor.execute(
@@ -476,3 +497,77 @@ class AIMetadataViewsPostgreSQLAccessTests(TransactionTestCase):
 
         nonworking = self._readonly_ids("ai_tailieu", self.employee_nonworking.pk)
         self.assertEqual(nonworking, {self.public_template.pk})
+
+    def test_tailieu_view_respects_validity_creator_assignments_and_attachment_view(self):
+        expired_template = TaiLieuChiTiet.objects.create(
+            dm_tai_lieu=self.template_category,
+            tieu_de="Expired template",
+            ngay_dang=date(2026, 10, 20),
+            hien_thi="TAT_CA",
+            hieu_luc="HET_HIEU_LUC",
+        )
+        creator_template = TaiLieuChiTiet.objects.create(
+            dm_tai_lieu=self.template_category,
+            tieu_de="Creator own unit B template",
+            ngay_dang=date(2026, 10, 20),
+            hien_thi="NOI_BO_PHONG_BAN",
+            don_vi_id=self.unit_b.pk,
+            nguoi_tao=self.employee_a,
+        )
+
+        pos = Position.objects.create(
+            display_order=Position.get_next_display_order(),
+            name="C3 AI Test Role",
+        )
+        EmployeeAssignment.objects.create(
+            employee=self.employee_a,
+            don_vi=self.unit_b,
+            chuc_vu=pos,
+        )
+
+        active_att = ChiTietTaiLieuAttachment.objects.create(
+            document=self.unit_a_template,
+            name="active-guide.pdf",
+            path="tai-lieu/active-guide.pdf",
+            is_deleted=False,
+        )
+        deleted_att = ChiTietTaiLieuAttachment.objects.create(
+            document=self.unit_a_template,
+            name="deleted-guide.pdf",
+            path="tai-lieu/deleted-guide.pdf",
+            is_deleted=True,
+        )
+        expired_att = ChiTietTaiLieuAttachment.objects.create(
+            document=expired_template,
+            name="expired-guide.pdf",
+            path="tai-lieu/expired-guide.pdf",
+            is_deleted=False,
+        )
+
+        visible_a = self._readonly_ids("ai_tailieu", self.employee_a.pk)
+        self.assertIn(self.public_template.pk, visible_a)
+        self.assertIn(self.unit_a_template.pk, visible_a)
+        self.assertIn(self.unit_b_template.pk, visible_a)
+        self.assertIn(creator_template.pk, visible_a)
+        self.assertNotIn(expired_template.pk, visible_a)
+
+        visible_a_with_expired = self._readonly_ids(
+            "ai_tailieu",
+            self.employee_a.pk,
+            can_view_expired_tailieu=True,
+        )
+        self.assertIn(expired_template.pk, visible_a_with_expired)
+
+        att_a = self._readonly_ids("ai_tailieu_attachment", self.employee_a.pk)
+        att_b = self._readonly_ids("ai_tailieu_attachment", self.employee_b.pk)
+        self.assertIn(active_att.pk, att_a)
+        self.assertNotIn(deleted_att.pk, att_a)
+        self.assertNotIn(expired_att.pk, att_a)
+        self.assertNotIn(active_att.pk, att_b)
+
+        att_a_with_expired = self._readonly_ids(
+            "ai_tailieu_attachment",
+            self.employee_a.pk,
+            can_view_expired_tailieu=True,
+        )
+        self.assertIn(expired_att.pk, att_a_with_expired)

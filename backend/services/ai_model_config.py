@@ -2,7 +2,7 @@
 
 MODEL_CONFIG = {
     "openai": {
-        "llm_models": ("gpt-6-luna",),
+        "llm_models": ("gpt-6-luna", "gpt-4o-mini", "gpt-4o"),
         "default_llm": "gpt-6-luna",
         "embed_model": "text-embedding-3-large",
     },

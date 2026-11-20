@@ -211,7 +211,33 @@
     "modelLoading": "Loading model...",
     "duplicateUploadError": "A document with this name was added during upload. Refresh the list and try again.",
     "replaceExistingTitle": "Document already exists",
-    "replaceExistingConfirm": "\"{filename}\" already exists in the library. It will only be replaced after indexing succeeds. Continue with the upload?"
+    "replaceExistingConfirm": "\"{filename}\" already exists in the library. It will only be replaced after indexing succeeds. Continue with the upload?",
+    "validity": {
+      "expired": "Expired",
+      "replaced": "Superseded",
+      "partial": "Partially valid"
+    },
+    "sync": {
+      "openBtn": "AI Sync",
+      "title": "AI Knowledge Base Sync Status",
+      "subtitle": "Automatically syncs on document changes and runs scheduled reconciliation to prune orphan vectors.",
+      "sqlDocs": "Indexed SQL documents",
+      "kbDocs": "Uploaded library documents",
+      "orphans": "Orphan vectors",
+      "pendingOcr": "Pending OCR/extraction",
+      "totalChunks": "Total chunks",
+      "schemaLabel": "AI SQL schema",
+      "schemaOk": "Healthy",
+      "schemaError": "Mismatch / Unavailable",
+      "eventModeLabel": "Event-driven sync",
+      "eventModeActive": "Active (automatic on create/update/delete)",
+      "scheduleLabel": "Automatic sync schedule",
+      "scheduleDaily": "Daily at {time} ({timezone})",
+      "scheduleDisabled": "Scheduled sync disabled (event-driven only)",
+      "nextRunLabel": "Next scheduled run",
+      "loadFailed": "Unable to load AI sync status.",
+      "close": "Close"
+    }
   },
   "floatingAI": {
     "title": "TLBM AI Assistant",
@@ -250,6 +276,11 @@
       "document": "Document",
       "businessSpec": "Business specification"
     },
-    "page": "page {page}"
+    "page": "page {page}",
+    "validity": {
+      "expired": "Expired",
+      "replaced": "Superseded",
+      "partial": "Partially valid"
+    }
   }
 }

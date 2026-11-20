@@ -211,7 +211,33 @@
     "modelLoading": "Đang tải cấu hình...",
     "duplicateUploadError": "Tài liệu cùng tên đã được thêm trong lúc tải lên. Tải lại danh sách và thử lại.",
     "replaceExistingTitle": "Tài liệu đã tồn tại",
-    "replaceExistingConfirm": "Tệp \"{filename}\" đã có trong kho. Chỉ thay thế sau khi lập chỉ mục thành công. Tiếp tục tải lên?"
+    "replaceExistingConfirm": "Tệp \"{filename}\" đã có trong kho. Chỉ thay thế sau khi lập chỉ mục thành công. Tiếp tục tải lên?",
+    "validity": {
+      "expired": "Hết hiệu lực",
+      "replaced": "Đã thay thế",
+      "partial": "Hiệu lực 1 phần"
+    },
+    "sync": {
+      "openBtn": "Đồng bộ AI",
+      "title": "Trạng thái đồng bộ kho tri thức AI",
+      "subtitle": "Hệ thống tự động đồng bộ khi thay đổi văn bản và quét đối soát định kỳ theo lịch để dọn vector mồ côi.",
+      "sqlDocs": "Văn bản CSDL đã lập chỉ mục",
+      "kbDocs": "Tài liệu kho tải lên",
+      "orphans": "Vector mồ côi",
+      "pendingOcr": "Tệp chờ OCR/trích xuất",
+      "totalChunks": "Tổng phân đoạn (chunks)",
+      "schemaLabel": "Lược đồ SQL AI",
+      "schemaOk": "Hợp lệ",
+      "schemaError": "Lệch / Chưa sẵn sàng",
+      "eventModeLabel": "Đồng bộ theo sự kiện",
+      "eventModeActive": "Đang bật (tự động khi thêm/sửa/xóa)",
+      "scheduleLabel": "Lịch đồng bộ tự động",
+      "scheduleDaily": "Hàng ngày lúc {time} ({timezone})",
+      "scheduleDisabled": "Đã tắt lịch định kỳ (chỉ theo sự kiện)",
+      "nextRunLabel": "Lần đối soát kế tiếp",
+      "loadFailed": "Không thể tải trạng thái đồng bộ AI.",
+      "close": "Đóng"
+    }
   },
   "floatingAI": {
     "title": "Trợ lý AI TLBM",
@@ -250,6 +276,11 @@
       "document": "Tài liệu",
       "businessSpec": "Tài liệu nghiệp vụ"
     },
-    "page": "trang {page}"
+    "page": "trang {page}",
+    "validity": {
+      "expired": "Hết hiệu lực",
+      "replaced": "Đã thay thế",
+      "partial": "Hiệu lực 1 phần"
+    }
   }
 }

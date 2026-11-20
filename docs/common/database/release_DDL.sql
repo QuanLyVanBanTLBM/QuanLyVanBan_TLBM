@@ -3127,17 +3127,40 @@ CREATE VIEW ai_tailieu WITH (security_barrier) AS
     SELECT t.id, t.ky_hieu, t.tieu_de, t.ngay_dang, t.noi_ban_hanh,
            t.hieu_luc, t.ngay_het_hieu_luc, t.ghi_chu, t.updated_at
     FROM records_chitiettailieu t
-    WHERE t.hien_thi::text = 'TAT_CA'
-       OR (
-           t.hien_thi::text = 'NOI_BO_PHONG_BAN'
-           AND t.don_vi_id = (
-               SELECT e.don_vi_id
-               FROM accounts_employee e
-               WHERE e.id = NULLIF(current_setting('qlvb.employee_id', true), '')::bigint
-                 AND e.is_active IS TRUE
-                 AND e.trang_thai::text = 'LAM_VIEC'
-           )
-       );
+    WHERE (
+        t.hien_thi::text = 'TAT_CA'
+        OR EXISTS (
+            SELECT 1
+            FROM accounts_employee e
+            WHERE e.id = NULLIF(current_setting('qlvb.employee_id', true), '')::bigint
+              AND e.is_active IS TRUE
+              AND e.trang_thai::text = 'LAM_VIEC'
+              AND (
+                  t.nguoi_tao_id = e.id
+                  OR (
+                      t.hien_thi::text = 'NOI_BO_PHONG_BAN'
+                      AND (
+                          t.don_vi_id = e.don_vi_id
+                          OR EXISTS (
+                              SELECT 1
+                              FROM accounts_employee_assignment a
+                              WHERE a.employee_id = e.id
+                                AND a.don_vi_id = t.don_vi_id
+                          )
+                      )
+                  )
+              )
+        )
+    ) AND (
+        t.hieu_luc::text IN ('CON_HIEU_LUC', 'CON_HIEU_LUC_1_PHAN')
+        OR current_setting('qlvb.can_view_expired_tailieu', true) = 'on'
+    );
+
+CREATE VIEW ai_tailieu_attachment WITH (security_barrier) AS
+    SELECT a.id, a.document_id, a.name, a.path
+    FROM records_chitiettailieu_attachment a
+    JOIN ai_tailieu t ON t.id = a.document_id
+    WHERE a.is_deleted IS FALSE;
 
 DO $$
 BEGIN
@@ -3159,7 +3182,8 @@ BEGIN
             ai_vanbandi,
             ai_tailieu,
             ai_vanbanden_attachment,
-            ai_vanbandi_attachment
+            ai_vanbandi_attachment,
+            ai_tailieu_attachment
         TO qlvb_readonly;
     ELSE
         RAISE NOTICE 'Role qlvb_readonly chưa tồn tại: bỏ qua cấp quyền chỉ đọc cho trợ lý AI';
@@ -3183,6 +3207,22 @@ CREATE TABLE IF NOT EXISTS ai_document_embedding (
 CREATE INDEX IF NOT EXISTS ai_document_embedding_metadata_idx ON ai_document_embedding USING GIN (metadata);
 CREATE INDEX IF NOT EXISTS ai_document_embedding_hnsw_idx ON ai_document_embedding
     USING hnsw ((embedding::halfvec(3072)) halfvec_cosine_ops);
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX IF NOT EXISTS ai_document_embedding_search_trgm_idx ON ai_document_embedding
+    USING gin ((
+        translate(
+            lower(
+                coalesce(content_text, '') || ' ' ||
+                coalesce(metadata ->> 'parent_context', '') || ' ' ||
+                coalesce(metadata ->> 'contextual_prefix', '') || ' ' ||
+                coalesce(metadata ->> 'doc_code', '') || ' ' ||
+                coalesce(metadata ->> 'file_name', '') || ' ' ||
+                coalesce(metadata ->> 'attachment_name', '')
+            ),
+            'áàảãạăắằẳẵặâấầẩẫậđéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵ',
+            'aaaaaaaaaaaaaaaaadeeeeeeeeeeeiiiiiooooooooooooooooouuuuuuuuuuuyyyyy'
+        )
+    ) gin_trgm_ops);
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'qlvb_readonly') THEN

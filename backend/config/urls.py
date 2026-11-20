@@ -74,6 +74,8 @@ urlpatterns = [
     path("api/ai/categories", ai_views.categories),
     path("api/ai/reclassify/<path:filename>", ai_views.reclassify),
     path("api/ai/settings", ai_views.ai_settings),
+    path("api/ai/sync/status", ai_views.ai_sync_status),
+    # Manual POST /api/ai/sync removed; reconciliation runs via event signals + Celery Beat.
 ]
 
 if settings.DEBUG:

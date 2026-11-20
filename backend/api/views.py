@@ -7,10 +7,10 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import unquote
+from urllib.parse import quote, unquote
 
 from django.conf import settings
-from django.core.cache import cache
+from django.core.cache import cache, caches
 from django.db import DatabaseError, connection
 from django.http import FileResponse, JsonResponse, StreamingHttpResponse
 from django.views.decorators.http import require_GET
@@ -27,6 +27,7 @@ from backend.services.document_service import (
     delete_document_file,
     list_categories,
     list_documents,
+    sanitize_document_filename,
     stage_upload_file,
     update_category_in_registry,
 )
@@ -79,6 +80,13 @@ def _job_cache_key(job_id):
     return f"ai:upload_job:{job_id}"
 
 
+def _job_cache():
+    try:
+        return caches["ai_faq"]
+    except Exception:
+        return cache
+
+
 def _set_job(job_id, **values):
     with _jobs_lock:
         current = dict(_jobs.get(job_id) or {})
@@ -86,21 +94,21 @@ def _set_job(job_id, **values):
         current["updated_at"] = datetime.now(timezone.utc).isoformat()
         _jobs[job_id] = current
     try:
-        cache.set(_job_cache_key(job_id), current, timeout=3600)
+        _job_cache().set(_job_cache_key(job_id), current, timeout=3600)
     except Exception:
         logger.debug("Upload job cache write unavailable for job_id=%s", job_id)
 
 
 def _get_job(job_id):
-    with _jobs_lock:
-        if job_id in _jobs:
-            return dict(_jobs[job_id])
     try:
-        cached = cache.get(_job_cache_key(job_id))
+        cached = _job_cache().get(_job_cache_key(job_id))
         if cached:
             return dict(cached)
     except Exception:
         logger.debug("Upload job cache read unavailable for job_id=%s", job_id)
+    with _jobs_lock:
+        if job_id in _jobs:
+            return dict(_jobs[job_id])
     return {}
 
 
@@ -397,11 +405,16 @@ def upload_async(request):
     staged_path, filename, is_reupload = stage_upload_file(upload)
     job_id = str(uuid.uuid4())
     _set_job(job_id, status="queued", message="Đang chờ xử lý...", filename=filename, category=None, result=None, error=None, started_at=datetime.now(timezone.utc).isoformat())
-    threading.Thread(
-        target=_run_index_job,
-        args=(job_id, staged_path, filename, replace_existing),
-        daemon=True,
-    ).start()
+    if getattr(settings, "REDIS_URL", "") and not getattr(settings, "CELERY_TASK_ALWAYS_EAGER", True):
+        from documents.tasks import index_uploaded_ai_document
+
+        index_uploaded_ai_document.delay(job_id, str(staged_path), filename, replace_existing)
+    else:
+        threading.Thread(
+            target=_run_index_job,
+            args=(job_id, staged_path, filename, replace_existing),
+            daemon=True,
+        ).start()
     return JsonResponse({"job_id": job_id, "filename": filename, "reupload": is_reupload, "message": "Đã nhận tệp, đang lập chỉ mục...", "poll_url": f"/api/ai/upload/progress/{job_id}"}, status=202)
 
 
@@ -490,10 +503,49 @@ def _list_accessible_postgres_documents(user, employee_id=None):
         except Exception:
             pass
 
+    den_ids = [
+        int(r["source_id"])
+        for r in records
+        if r.get("source_type") == "vanbanden" and r.get("source_id") is not None
+    ]
+    di_ids = [
+        int(r["source_id"])
+        for r in records
+        if r.get("source_type") == "vanbandi" and r.get("source_id") is not None
+    ]
+    eligible_den_ids = set(den_ids)
+    eligible_di_ids = set(di_ids)
+    if den_ids or di_ids:
+        try:
+            from documents.models import PhamVi, VanBanDen, VanBanDi
+
+            if den_ids:
+                eligible_den_ids = set(
+                    VanBanDen.objects.filter(
+                        id__in=den_ids,
+                        pham_vi=PhamVi.NOI_BO,
+                        hien_thi=True,
+                    ).values_list("id", flat=True)
+                )
+            if di_ids:
+                eligible_di_ids = set(
+                    VanBanDi.objects.filter(
+                        id__in=di_ids,
+                        pham_vi=PhamVi.NOI_BO,
+                        hien_thi=True,
+                    ).values_list("id", flat=True)
+                )
+        except Exception:
+            pass
+
     docs = []
     for r in records:
         source_type = r.get("source_type")
         source_id = r.get("source_id")
+        if source_type == "vanbanden" and source_id is not None and int(source_id) not in eligible_den_ids:
+            continue
+        if source_type == "vanbandi" and source_id is not None and int(source_id) not in eligible_di_ids:
+            continue
         display_name = str(r.get("display_name") or r.get("trich_yeu") or "Tài liệu")[:240]
         if source_type == "vanbanden":
             category = "Văn bản đến"
@@ -506,6 +558,7 @@ def _list_accessible_postgres_documents(user, employee_id=None):
             category = "Chưa phân loại"
 
         updated_at = r.get("updated_at")
+        expiry_at = r.get("ngay_het_hieu_luc")
         docs.append({
             "filename": display_name,
             "size": None,
@@ -513,6 +566,9 @@ def _list_accessible_postgres_documents(user, employee_id=None):
             "upload_time": updated_at.isoformat() if hasattr(updated_at, "isoformat") else updated_at,
             "source_type": source_type,
             "source_id": source_id,
+            "so_hieu": r.get("so_hieu"),
+            "hieu_luc": r.get("hieu_luc"),
+            "ngay_het_hieu_luc": expiry_at.isoformat() if hasattr(expiry_at, "isoformat") else expiry_at,
             "is_managed": True,
         })
     return docs
@@ -585,14 +641,21 @@ def categories(request):
     })
 
 
+def _safe_document_name(filename):
+    """Decode and validate a single path-safe document filename."""
+    raw_name = unquote(filename)
+    safe_name = sanitize_document_filename(raw_name)
+    return safe_name, bool(safe_name and safe_name == raw_name)
+
+
 @api_view(["DELETE"])
 @permission_classes([IsAuthenticated])
 def document_detail(request, filename):
     denied = _require_ai_admin(request)
     if denied:
         return denied
-    safe_name = Path(unquote(filename)).name
-    if safe_name != unquote(filename):
+    safe_name, is_valid = _safe_document_name(filename)
+    if not is_valid:
         return _error("Tên tệp không hợp lệ.", 400)
     if request.method != "DELETE":
         return _error("Phương thức không được hỗ trợ.", 405)
@@ -613,8 +676,8 @@ def document_file(request, filename):
     denied = _require_ai_access(request)
     if denied:
         return denied
-    safe_name = Path(unquote(filename)).name
-    if safe_name != unquote(filename):
+    safe_name, is_valid = _safe_document_name(filename)
+    if not is_valid:
         return _error("Tên tệp không hợp lệ.", 400)
     file_path = config.DOCS_DIR / safe_name
     if not file_path.is_file():
@@ -642,7 +705,11 @@ def document_file(request, filename):
         ".gif": "image/gif",
     }
     response = FileResponse(file_path.open("rb"), content_type=media_types.get(file_path.suffix.lower(), "application/octet-stream"), filename=safe_name)
-    response["Content-Disposition"] = f'inline; filename="{safe_name}"'
+    ascii_fallback = (
+        safe_name.encode("ascii", "ignore").decode("ascii").replace('"', "_").replace("\r", "").replace("\n", "")
+        or "document"
+    )
+    response["Content-Disposition"] = f'inline; filename="{ascii_fallback}"; filename*=UTF-8\'\'{quote(safe_name)}'
     return response
 
 
@@ -652,9 +719,9 @@ def preview_document(request, filename):
     denied = _require_ai_access(request)
     if denied:
         return denied
-    safe_name = Path(unquote(filename)).name
+    safe_name, is_valid = _safe_document_name(filename)
     file_path = config.DOCS_DIR / safe_name
-    if safe_name != unquote(filename) or not file_path.is_file():
+    if not is_valid or not file_path.is_file():
         return _error("Không tìm thấy tài liệu.", 404)
     suffix = file_path.suffix.lower()
     image_extensions = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif", ".gif"}
@@ -670,8 +737,9 @@ def preview_document(request, filename):
             full_text = read_docx(file_path)
             lines = full_text.splitlines()
             pages = [{"page": index // 60 + 1, "text": "\n".join(lines[index:index + 60])} for index in range(0, max(1, len(lines)), 60)]
-        except Exception as exc:
-            return _error(f"Không đọc được DOCX: {exc}", 500)
+        except Exception:
+            logger.exception("AI document preview failed for filename=%s", safe_name)
+            return _error("Không thể đọc nội dung tài liệu để xem trước.", 500)
     elif suffix == ".txt":
         try:
             full_text = file_path.read_text(encoding="utf-8", errors="replace")
@@ -681,8 +749,9 @@ def preview_document(request, filename):
                 if len(lines) > 60
                 else [{"page": 1, "text": full_text}]
             )
-        except OSError as exc:
-            return _error(f"Không đọc được TXT: {exc}", 500)
+        except OSError:
+            logger.exception("AI document preview failed for filename=%s", safe_name)
+            return _error("Không thể đọc nội dung tài liệu để xem trước.", 500)
     elif suffix in text_extract_extensions:
         try:
             from backend.services.rag_service import read_document_pages
@@ -696,8 +765,9 @@ def preview_document(request, filename):
             if not pages:
                 pages = [{"page": 1, "text": ""}]
             full_text = "\n\n".join(page["text"] for page in pages if page["text"])
-        except Exception as exc:
-            return _error(f"Không đọc được {suffix[1:].upper()}: {exc}", 500)
+        except Exception:
+            logger.exception("AI document preview failed for filename=%s", safe_name)
+            return _error("Không thể đọc nội dung tài liệu để xem trước.", 500)
     else:
         return _error(f"Không hỗ trợ xem trước định dạng '{suffix}'.", 400)
     return JsonResponse({"filename": safe_name, "file_type": suffix[1:].upper(), "render_mode": "text", "total_pages": len(pages), "pages": pages, "full_text": full_text})
@@ -709,7 +779,9 @@ def reclassify(request, filename):
     denied = _require_ai_admin(request)
     if denied:
         return denied
-    safe_name = Path(unquote(filename)).name
+    safe_name, is_valid = _safe_document_name(filename)
+    if not is_valid:
+        return _error("Tên tệp không hợp lệ.", 400)
     doc = next((item for item in list_documents() if item["filename"] == safe_name), None)
     if not doc:
         return _error("Không tìm thấy tài liệu.", 404)
@@ -730,8 +802,9 @@ def reclassify(request, filename):
         update_category_in_registry(safe_name, category)
         updated = update_document_category_vectors(safe_name, category)
         return JsonResponse({"message": "Đã phân loại lại tài liệu.", "filename": safe_name, "category": category, "updated_vectors": updated})
-    except Exception as exc:
-        return _error(f"Lỗi phân loại: {exc}", 500)
+    except Exception:
+        logger.exception("AI document reclassification failed for filename=%s", safe_name)
+        return _error("Không thể phân loại lại tài liệu lúc này.", 500)
 
 
 @api_view(["GET", "POST"])
@@ -747,6 +820,7 @@ def ai_settings(request):
         llm = active.get("llm_model") or provider_cfg["default_llm"]
         embed = active.get("embed_model") or provider_cfg["embed_model"]
         vision = active.get("vision_model") or llm
+        openai_k = (active.get("openai_api_key") or getattr(config, "OPENAI_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")).strip()
 
         model_options = {
             name: {"llm_models": list(values["llm_models"]), "embed_model": values["embed_model"]}
@@ -758,11 +832,11 @@ def ai_settings(request):
             "llm_model": llm,
             "embed_model": embed,
             "vision_model": vision,
+            "configured": bool(openai_k),
         }
         if not is_ai_admin(request.user):
             return JsonResponse(info)
 
-        openai_k = (active.get("openai_api_key") or getattr(config, "OPENAI_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")).strip()
         masked_key = f"{openai_k[:6]}...{openai_k[-4:]}" if len(openai_k) > 10 else ("********" if openai_k else "")
         return JsonResponse({
             **info,
@@ -853,4 +927,94 @@ def ai_settings(request):
         "llm_model": llm,
         "embed_model": embed,
         "api_key_masked": f"{key[:6]}...{key[-4:]}" if len(key) > 10 else "********",
+    })
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def ai_sync_status(request):
+    denied = _require_ai_admin(request)
+    if denied:
+        return denied
+
+    from backend.services.ai_sync_schedule import get_ai_sync_schedule_info
+    from backend.services.rag_service import get_vector_collection
+    from backend.services.sql_document_source import is_postgres_source, verify_sql_schema
+
+    active = get_active_ai_settings()
+    openai_k = (
+        active.get("openai_api_key")
+        or getattr(config, "OPENAI_API_KEY", "")
+        or os.getenv("OPENAI_API_KEY", "")
+    ).strip()
+
+    kb_entries = list_documents()
+    registered_names = {item.get("filename") for item in kb_entries if item.get("filename")}
+    collection = get_vector_collection()
+    kb_indexed_names = set()
+    try:
+        kb_indexed_names = set(collection.indexed_filenames())
+    except Exception:
+        logger.debug("Could not read indexed KB filenames", exc_info=True)
+    kb_orphan_names = sorted(kb_indexed_names - registered_names)
+
+    sql_eligible = {"vanbanden": 0, "vanbandi": 0, "tailieu": 0, "total": 0}
+    sql_indexed = {"vanbanden": 0, "vanbandi": 0, "tailieu": 0, "total": 0}
+    sql_pending_extraction = 0
+    total_chunks = 0
+
+    if is_postgres_source():
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        (SELECT COUNT(*) FROM documents_vanbanden WHERE pham_vi = 'NOI_BO' AND hien_thi IS TRUE),
+                        (SELECT COUNT(*) FROM documents_vanbandi WHERE pham_vi = 'NOI_BO' AND hien_thi IS TRUE),
+                        (SELECT COUNT(*) FROM records_chitiettailieu WHERE hien_thi IN ('TAT_CA', 'NOI_BO_PHONG_BAN'))
+                    """
+                )
+                row = cursor.fetchone() or (0, 0, 0)
+                sql_eligible = {
+                    "vanbanden": int(row[0] or 0),
+                    "vanbandi": int(row[1] or 0),
+                    "tailieu": int(row[2] or 0),
+                    "total": int((row[0] or 0) + (row[1] or 0) + (row[2] or 0)),
+                }
+
+                cursor.execute(
+                    """
+                    SELECT
+                        COUNT(DISTINCT CASE WHEN source_type = 'vanbanden' THEN source_id END),
+                        COUNT(DISTINCT CASE WHEN source_type = 'vanbandi' THEN source_id END),
+                        COUNT(DISTINCT CASE WHEN source_type = 'tailieu' THEN source_id END),
+                        COUNT(DISTINCT CASE WHEN metadata ->> 'attachment_extraction_pending' = 'true' THEN source_key END),
+                        COUNT(*)
+                    FROM ai_document_embedding
+                    """
+                )
+                idx_row = cursor.fetchone() or (0, 0, 0, 0, 0)
+                sql_indexed = {
+                    "vanbanden": int(idx_row[0] or 0),
+                    "vanbandi": int(idx_row[1] or 0),
+                    "tailieu": int(idx_row[2] or 0),
+                    "total": int((idx_row[0] or 0) + (idx_row[1] or 0) + (idx_row[2] or 0)),
+                }
+                sql_pending_extraction = int(idx_row[3] or 0)
+                total_chunks = int(idx_row[4] or 0)
+        except Exception:
+            logger.exception("Failed to collect AI sync metrics from PostgreSQL")
+
+    return JsonResponse({
+        "configured": bool(openai_k),
+        "schema": verify_sql_schema(),
+        "sql_eligible": sql_eligible,
+        "sql_indexed": sql_indexed,
+        "sql_pending_extraction": sql_pending_extraction,
+        "kb_registered": len(registered_names),
+        "kb_indexed": len(kb_indexed_names),
+        "kb_orphans": len(kb_orphan_names),
+        "kb_orphan_names": kb_orphan_names,
+        "total_chunks": total_chunks,
+        "schedule": get_ai_sync_schedule_info(),
     })
