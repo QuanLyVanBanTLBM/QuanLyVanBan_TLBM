@@ -253,6 +253,14 @@ class TestEnvironmentGuardTests(SimpleTestCase):
         ):
             self.assertFalse(is_ai_configured())
 
+    def test_is_ai_configured_returns_false_under_inline_discover_runner(self):
+        with (
+            patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test-should-not-fire"}, clear=False),
+            patch("sys.argv", ["-"]),
+            patch("backend.services.ai_settings_service.get_active_ai_settings", return_value={"openai_api_key": "sk-test-should-not-fire"}),
+        ):
+            self.assertFalse(is_ai_configured())
+
 
 class AiSyncScheduleTests(SimpleTestCase):
     def test_default_schedule_info_and_next_run_rollover(self):

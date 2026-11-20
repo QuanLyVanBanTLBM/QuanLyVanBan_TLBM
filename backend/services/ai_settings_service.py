@@ -20,6 +20,9 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 def _is_test_runtime() -> bool:
     if os.getenv("PYTEST_CURRENT_TEST"):
         return True
+    mail_mod = sys.modules.get("django.core.mail")
+    if mail_mod is not None and hasattr(mail_mod, "outbox"):
+        return True
     return len(sys.argv) >= 2 and sys.argv[1] == "test"
 
 

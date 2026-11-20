@@ -2589,6 +2589,9 @@ def _is_test_environment() -> bool:
         return False
     if "PYTEST_CURRENT_TEST" in os.environ:
         return True
+    mail_mod = sys.modules.get("django.core.mail")
+    if mail_mod is not None and hasattr(mail_mod, "outbox"):
+        return True
     argv = [str(arg) for arg in sys.argv]
     return len(argv) > 1 and argv[1] == "test"
 

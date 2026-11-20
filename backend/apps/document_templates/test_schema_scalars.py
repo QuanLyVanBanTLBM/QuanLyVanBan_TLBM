@@ -119,7 +119,7 @@ class DocumentTemplateSchemaScalarTests(TestCase):
 
         with transaction.atomic():
             with connection.cursor() as cursor:
-                cursor.execute("DROP VIEW IF EXISTS ai_tailieu")
+                cursor.execute("DROP VIEW IF EXISTS ai_tailieu CASCADE")
                 cursor.execute(
                     "ALTER TABLE records_chitiettailieu ALTER COLUMN hieu_luc TYPE varchar(30) "
                     "USING hieu_luc::text"
@@ -163,7 +163,7 @@ class DocumentTemplateSchemaScalarTests(TestCase):
 
         with transaction.atomic():
             with connection.cursor() as cursor:
-                cursor.execute("DROP VIEW IF EXISTS ai_tailieu")
+                cursor.execute("DROP VIEW IF EXISTS ai_tailieu CASCADE")
                 cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
                 cursor.execute(
                     "ALTER TABLE records_chitiettailieu ALTER COLUMN hien_thi TYPE varchar(30) "
