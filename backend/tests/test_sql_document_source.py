@@ -12,6 +12,7 @@ from django.db import connections
 from django.test import SimpleTestCase, TestCase
 
 from backend.services.sql_document_source import (
+    SQL_VIEW_COLUMNS,
     SqlDocumentAccessError,
     accessible_document_keys,
     accessible_documents,
@@ -231,6 +232,7 @@ class SqlDocumentSourceTests(TestCase):
         incoming_view_cursor = FakeCursor()
         outgoing_attachment_cursor = FakeCursor()
         outgoing_view_cursor = FakeCursor()
+        tailieu_attachment_cursor = FakeCursor()
         view_cursor = FakeCursor(
             columns=("source_type", "source_id", "so_hieu", "trich_yeu"),
             rows=(("tailieu", 12, "TL-12", "Quy chế nội bộ"),),
@@ -242,6 +244,7 @@ class SqlDocumentSourceTests(TestCase):
             incoming_view_cursor,
             outgoing_attachment_cursor,
             outgoing_view_cursor,
+            tailieu_attachment_cursor,
             view_cursor,
         ])
         db_connections = FakeConnections(readonly)
@@ -252,8 +255,14 @@ class SqlDocumentSourceTests(TestCase):
             rows = accessible_documents(self.user, employee_id=42)
 
         self.assertEqual([row["source_type"] for row in rows], ["tailieu"])
+        self.assertIn("ai_tailieu_attachment", SQL_VIEW_COLUMNS)
         self.assertIn("set_config('qlvb.employee_id'", identity_cursor.executed[0][0])
         self.assertEqual(identity_cursor.executed[0][1], ["42"])
+        self.assertIn(
+            ("SELECT set_config('qlvb.can_view_expired_tailieu', %s, true)", ["off"]),
+            identity_cursor.executed,
+        )
+        self.assertIn("FROM ai_tailieu_attachment", tailieu_attachment_cursor.executed[0][0])
         self.assertIn("FROM ai_tailieu", view_cursor.executed[0][0])
         self.assertNotIn("records_chitiettailieu ", view_cursor.executed[0][0])
         self.assertNotIn("file_dinh_kem", view_cursor.executed[0][0])

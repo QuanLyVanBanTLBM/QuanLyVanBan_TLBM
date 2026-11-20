@@ -28,6 +28,7 @@ SQL_VIEW_COLUMNS = {
     },
     "ai_vanbanden_attachment": {"id", "document_id", "name", "path"},
     "ai_vanbandi_attachment": {"id", "document_id", "name", "path"},
+    "ai_tailieu_attachment": {"id", "document_id", "name", "path"},
 }
 
 
@@ -193,6 +194,10 @@ def accessible_document_keys(user, employee_id=None) -> set[str]:
                             "on" if co_quyen_xem_het_hieu_luc(user, source_type) else "off",
                         ],
                     )
+                cursor.execute(
+                    "SELECT set_config('qlvb.can_view_expired_tailieu', %s, true)",
+                    ["off"],
+                )
                 union_parts = []
                 union_params = []
                 if document_ids["vanbanden"]:
@@ -314,6 +319,10 @@ def accessible_documents(user, employee_id=None):
                             "on" if co_quyen_xem_het_hieu_luc(user, source_type) else "off",
                         ],
                     )
+                cursor.execute(
+                    "SELECT set_config('qlvb.can_view_expired_tailieu', %s, true)",
+                    ["off"],
+                )
             for source_type in DOCUMENT_VIEWS:
                 attachments_by_document = {}
                 with readonly.cursor() as cursor:
@@ -330,11 +339,21 @@ def accessible_documents(user, employee_id=None):
                     row["attachments"] = attachments_by_document.get(row["source_id"], [])
                     docs.append(row)
             if can_read_tailieu:
+                tailieu_attachments_by_doc = {}
+                with readonly.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT id, document_id, name, path FROM ai_tailieu_attachment ORDER BY document_id, id"
+                    )
+                    for attachment in _dict_rows(cursor):
+                        tailieu_attachments_by_doc.setdefault(attachment["document_id"], []).append(
+                            {"id": attachment["id"], "name": attachment["name"], "path": attachment["path"]}
+                        )
                 with readonly.cursor() as cursor:
                     cursor.execute(queries["tailieu"])
                     rows = _dict_rows(cursor)
                 for row in rows:
                     row["display_name"] = f"{row['so_hieu'] or 'Tài liệu'} — {row['trich_yeu']}"[:240]
+                    row["attachments"] = tailieu_attachments_by_doc.get(row["source_id"], [])
                     docs.append(row)
     except SqlDocumentAccessError:
         raise

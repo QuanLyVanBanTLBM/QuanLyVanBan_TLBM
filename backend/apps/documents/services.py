@@ -80,23 +80,35 @@ def check_and_update_expired_documents() -> int:
     now = timezone.now()
     active_statuses = [HieuLuc.CON_HIEU_LUC, HieuLuc.CON_HIEU_LUC_1_PHAN]
 
-    count_den = VanBanDen.objects.filter(
+    den_qs = VanBanDen.objects.filter(
         hieu_luc__in=active_statuses,
         ngay_het_hieu_luc__isnull=False,
         ngay_het_hieu_luc__lte=now,
-    ).update(hieu_luc=HieuLuc.HET_HIEU_LUC)
+    )
+    expired_den_ids = list(den_qs.values_list("pk", flat=True))
+    count_den = den_qs.update(hieu_luc=HieuLuc.HET_HIEU_LUC) if expired_den_ids else 0
 
-    count_di = VanBanDi.objects.filter(
+    di_qs = VanBanDi.objects.filter(
         hieu_luc__in=active_statuses,
         ngay_het_hieu_luc__isnull=False,
         ngay_het_hieu_luc__lte=now,
-    ).update(hieu_luc=HieuLuc.HET_HIEU_LUC)
+    )
+    expired_di_ids = list(di_qs.values_list("pk", flat=True))
+    count_di = di_qs.update(hieu_luc=HieuLuc.HET_HIEU_LUC) if expired_di_ids else 0
 
     count_mat = VanBanMat.objects.filter(
         hieu_luc__in=active_statuses,
         ngay_het_hieu_luc__isnull=False,
         ngay_het_hieu_luc__lte=now,
     ).update(hieu_luc=HieuLuc.HET_HIEU_LUC)
+
+    if expired_den_ids or expired_di_ids:
+        from .signals import _trigger_sync
+
+        for doc_id in expired_den_ids:
+            _trigger_sync("vanbanden", doc_id)
+        for doc_id in expired_di_ids:
+            _trigger_sync("vanbandi", doc_id)
 
     return count_den + count_di + count_mat
 

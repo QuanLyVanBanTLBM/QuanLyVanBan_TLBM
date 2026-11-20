@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivePageId } from '@app-types/navigation';
+import { renderAiInlineMarkdown } from '@lib/aiInlineMarkdown';
 import { askQuestion, askQuestionStream, getAISettings, getDocuments } from '../../api';
 import { t as translate, useTranslation, type SupportedLanguage } from '@i18n/translate';
 
@@ -15,6 +16,9 @@ interface Source {
   source_id?: number | string | null;
   chunk_id?: string | number | null;
   index?: number | null;
+  hieu_luc?: string | null;
+  ngay_het_hieu_luc?: string | null;
+  doc_code?: string | null;
 }
 
 interface Message {
@@ -30,6 +34,24 @@ interface Message {
 interface DocumentOption {
   filename: string;
   category?: string;
+  hieu_luc?: string | null;
+  ngay_het_hieu_luc?: string | null;
+}
+
+function getFloatingValidityBadge(
+  hieuLuc: string | null | undefined,
+  tr: (key: string) => string
+): { label: string; className: string } | null {
+  if (hieuLuc === 'HET_HIEU_LUC') {
+    return { label: tr('floatingAI.validity.expired'), className: 'bg-danger-subtle text-danger' };
+  }
+  if (hieuLuc === 'HET_VA_THAY_THE') {
+    return { label: tr('floatingAI.validity.replaced'), className: 'bg-danger-subtle text-danger' };
+  }
+  if (hieuLuc === 'CON_HIEU_LUC_1_PHAN') {
+    return { label: tr('floatingAI.validity.partial'), className: 'bg-warning-subtle text-warning' };
+  }
+  return null;
 }
 
 interface AIConfig {
@@ -43,6 +65,13 @@ interface Position {
 }
 
 const MAX_WIDGET_QUESTION_LENGTH = 4000;
+
+function getSafeWidgetErrorDetail(error: unknown): string | null {
+  if (typeof error !== 'object' || error === null) return null;
+  const apiError = error as { data?: { detail?: unknown }; response?: { data?: { detail?: unknown } } };
+  const detail = apiError.data?.detail ?? apiError.response?.data?.detail;
+  return typeof detail === 'string' && detail.trim() ? detail : null;
+}
 
 let floatingMsgSeq = 0;
 function getNextAiMessageId(): string {
@@ -74,16 +103,6 @@ function createInitialMessages(language: SupportedLanguage): Message[] {
       ],
     },
   ];
-}
-
-function safeLinkTarget(href: string): string | null {
-  if (href.startsWith('/') && !href.startsWith('//')) return href;
-  try {
-    const parsed = new URL(href, window.location.origin);
-    return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? href : null;
-  } catch {
-    return null;
-  }
 }
 
 const BUSINESS_SPEC_PAGE_MAP: Record<string, ActivePageId> = {
@@ -151,6 +170,7 @@ function FloatingCitationsToggle({
         <div className="flex flex-wrap items-center gap-1">
           {visibleSources.map((source, index) => {
             const label = `${source.file_name || sourceTypeLabels[source.source_type || ''] || t('floatingAI.documentSource')}${source.page ? `, ${t('floatingAI.page', { page: source.page })}` : ''}`;
+            const validityBadge = getFloatingValidityBadge(source.hieu_luc, t);
             return (
               <button
                 key={`${source.source_type || 'doc'}-${source.source_id ?? source.file_name ?? index}-${index}`}
@@ -161,6 +181,11 @@ function FloatingCitationsToggle({
               >
                 <i className="fa-solid fa-link text-[9px]" />
                 <span className="truncate max-w-[180px]">{label}</span>
+                {validityBadge && (
+                  <span className={`px-1 py-0.5 rounded text-[9px] font-semibold shrink-0 ${validityBadge.className}`}>
+                    {validityBadge.label}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -175,48 +200,7 @@ function renderInline(
   keyPrefix: string,
   onInternalLink?: (href: string) => void
 ): React.ReactNode[] {
-  const pattern = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\$(?!\s)[^$\n]+?(?<!\s)\$(?!\d)|\[[^\]]+\]\((?:https?:\/\/|\/)[^)]+\))/g;
-  const nodes: React.ReactNode[] = [];
-  let cursor = 0;
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(text)) !== null) {
-    if (match.index > cursor) nodes.push(text.slice(cursor, match.index));
-    const token = match[0];
-    if (token.startsWith('**')) {
-      nodes.push(<strong key={`${keyPrefix}-${match.index}`}>{token.slice(2, -2)}</strong>);
-    } else if (token.startsWith('`')) {
-      nodes.push(<code key={`${keyPrefix}-${match.index}`} className="rounded bg-surface-hover px-1">{token.slice(1, -1)}</code>);
-    } else if (token.startsWith('$') && token.endsWith('$') && token.length > 2) {
-      nodes.push(<code key={`${keyPrefix}-${match.index}`} className="ai-math-inline">{token.slice(1, -1)}</code>);
-    } else if (token.startsWith('[')) {
-      const linkMatch = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(token);
-      const href = linkMatch ? safeLinkTarget(linkMatch[2]) : null;
-      nodes.push(href ? (
-        <a
-          key={`${keyPrefix}-${match.index}`}
-          href={href}
-          target={href.startsWith('/') ? undefined : '_blank'}
-          rel="noreferrer"
-          className="text-primary underline"
-          onClick={
-            href.startsWith('/') && onInternalLink
-              ? (event) => {
-                  event.preventDefault();
-                  onInternalLink(href);
-                }
-              : undefined
-          }
-        >
-          {linkMatch?.[1]}
-        </a>
-      ) : token);
-    } else {
-      nodes.push(<em key={`${keyPrefix}-${match.index}`}>{token.slice(1, -1)}</em>);
-    }
-    cursor = pattern.lastIndex;
-  }
-  if (cursor < text.length) nodes.push(text.slice(cursor));
-  return nodes;
+  return renderAiInlineMarkdown(text, keyPrefix, onInternalLink);
 }
 
 function FormattedMessage({
@@ -285,6 +269,11 @@ function FormattedMessage({
       </div>);
       continue;
     }
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
+      blocks.push(<hr key={`hr-${index}`} className="my-2 border-0 border-t border-subtle" />);
+      index += 1;
+      continue;
+    }
     if (/^#{1,3}\s/.test(trimmed)) {
       blocks.push(<h4 key={`heading-${index}`} className="my-1 font-bold">{renderInline(trimmed.replace(/^#{1,3}\s+/, ''), `heading-${index}`, onInternalLink)}</h4>);
       index += 1;
@@ -320,7 +309,8 @@ export default function FloatingAIBox({ onNavigate, onNavigateUrl }: FloatingAIB
   const [isMinimized, setIsMinimized] = useState(false);
   const [inputMessage, setInputMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const [error, setError] = useState('');
+  const [isWaitingForStream, setIsWaitingForStream] = useState(false);
+  const [error, setError] = useState<{ key?: string; text?: string } | null>(null);
   const [aiConfig, setAiConfig] = useState<AIConfig | null>(null);
   const [documents, setDocuments] = useState<DocumentOption[]>([]);
   const [selectedDocument, setSelectedDocument] = useState('');
@@ -607,7 +597,7 @@ export default function FloatingAIBox({ onNavigate, onNavigateUrl }: FloatingAIB
     if (!isOpen || typeof getDocuments !== 'function') return;
     let cancelled = false;
     getDocuments()
-      .then((data: { documents?: Array<{ filename?: string; category?: string }> }) => {
+      .then((data: { documents?: Array<{ filename?: string; category?: string; hieu_luc?: string | null; ngay_het_hieu_luc?: string | null }> }) => {
         if (!cancelled && Array.isArray(data?.documents)) {
           setDocuments(
             data.documents.filter(
@@ -632,12 +622,12 @@ export default function FloatingAIBox({ onNavigate, onNavigateUrl }: FloatingAIB
     const text = (textToSend ?? inputMessage).trim();
     if (!text || sendingRef.current) return;
     if (text.length > MAX_WIDGET_QUESTION_LENGTH) {
-      setError('aiAssistant.msg.questionTooLong');
+      setError({ key: 'aiAssistant.msg.questionTooLong' });
       return;
     }
 
     sendingRef.current = true;
-    setError('');
+    setError(null);
     setIsDocPickerOpen(false);
     const activeTarget = selectedDocument.trim();
     const previousMessages = messages.filter((message) => message.id !== 'msg-init');
@@ -651,12 +641,14 @@ export default function FloatingAIBox({ onNavigate, onNavigateUrl }: FloatingAIB
     ]);
     setInputMessage('');
     setIsTyping(true);
+    setIsWaitingForStream(true);
+
+    const aiMsgId = getNextAiMessageId();
+    let streamed = false;
 
     try {
       let accumulated = '';
       let streamedSources: Source[] = [];
-      const aiMsgId = getNextAiMessageId();
-      let streamed = false;
 
       try {
         await askQuestionStream(text, {
@@ -670,7 +662,7 @@ export default function FloatingAIBox({ onNavigate, onNavigateUrl }: FloatingAIB
             accumulated = full;
             if (!streamed) {
               streamed = true;
-              setIsTyping(false);
+              setIsWaitingForStream(false);
               setMessages((prev) => [...prev, createBoxMessage('ai', accumulated, { id: aiMsgId, sources: streamedSources })]);
             } else {
               setMessages((prev) => prev.map((m) => (m.id === aiMsgId ? { ...m, text: accumulated, sources: streamedSources } : m)));
@@ -679,16 +671,18 @@ export default function FloatingAIBox({ onNavigate, onNavigateUrl }: FloatingAIB
           onDone: (data) => {
             if (data?.answer) accumulated = data.answer;
             if (Array.isArray(data?.sources)) streamedSources = data.sources as Source[];
-            if (streamed) {
+            if (!streamed && accumulated.trim()) {
+              streamed = true;
+              setIsWaitingForStream(false);
+              setMessages((prev) => [...prev, createBoxMessage('ai', accumulated, { id: aiMsgId, sources: streamedSources })]);
+            } else if (streamed) {
               setMessages((prev) => prev.map((m) => (m.id === aiMsgId ? { ...m, text: accumulated, sources: streamedSources } : m)));
             }
           },
         });
       } catch (streamErr) {
         if (!streamed) {
-          const response = activeTarget
-            ? await askQuestion(text, history, null, activeTarget)
-            : await askQuestion(text, history);
+          const response = await askQuestion(text, history, null, activeTarget || null, currentLang);
           const answer = typeof response?.answer === 'string' && response.answer.trim()
             ? response.answer
             : t('floatingAI.emptyResponse');
@@ -698,11 +692,16 @@ export default function FloatingAIBox({ onNavigate, onNavigateUrl }: FloatingAIB
           throw streamErr;
         }
       }
-    } catch {
-      setError('floatingAI.requestFailed');
+    } catch (err) {
+      if (streamed) {
+        setMessages((prev) => prev.filter((m) => m.id !== aiMsgId));
+      }
+      const detail = getSafeWidgetErrorDetail(err);
+      setError(detail ? { text: detail } : { key: 'floatingAI.requestFailed' });
     } finally {
       sendingRef.current = false;
       setIsTyping(false);
+      setIsWaitingForStream(false);
     }
   };
 
@@ -713,7 +712,7 @@ export default function FloatingAIBox({ onNavigate, onNavigateUrl }: FloatingAIB
       setSelectedDocument('');
       setIsDocPickerOpen(false);
       setDocSearchQuery('');
-      setError('');
+      setError(null);
     }
   };
 
@@ -821,7 +820,7 @@ export default function FloatingAIBox({ onNavigate, onNavigateUrl }: FloatingAIB
             isDraggingWindow
               ? 'transition-none select-none ring-2 ring-primary/40 shadow-2xl cursor-grabbing'
               : 'transition-all duration-fast'
-          } ${isMinimized ? 'h-14' : 'h-fit max-h-[calc(100vh-120px)]'}`}
+          } ${isMinimized ? 'h-14' : 'h-fit max-h-[calc(100vh-176px)] sm:max-h-[calc(100vh-192px)]'}`}
         >
           <div
             className={`p-3 bg-surface border-b border-subtle flex items-center justify-between select-none touch-none ${
@@ -875,7 +874,7 @@ export default function FloatingAIBox({ onNavigate, onNavigateUrl }: FloatingAIB
 
           {!isMinimized && (
             <>
-              <div className="flex-none overflow-y-auto p-3.5 space-y-3 max-h-[min(55vh,24rem)]">
+              <div className="flex-1 min-h-0 overflow-y-auto p-3.5 space-y-3 max-h-[min(50vh,22rem)]">
                 {visibleMessages.map((message) => (
                   <div key={message.id} className={`flex gap-2.5 ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
                     {message.sender === 'ai' && <div className="w-7 h-7 rounded-lg bg-primary-subtle text-primary flex items-center justify-center text-xs shrink-0 mt-0.5"><i className="fa-solid fa-brain" /></div>}
@@ -911,7 +910,7 @@ export default function FloatingAIBox({ onNavigate, onNavigateUrl }: FloatingAIB
                     </div>
                   </div>
                 ))}
-                {isTyping && (
+                {isTyping && isWaitingForStream && (
                   <div className="flex gap-2.5 justify-start items-center">
                     <div className="w-7 h-7 rounded-lg bg-primary-subtle text-primary flex items-center justify-center text-xs shrink-0"><i className="fa-solid fa-brain" /></div>
                     <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-surface border border-subtle text-text-muted text-xs" role="status" aria-label={t('floatingAI.thinking')}>
@@ -972,6 +971,7 @@ export default function FloatingAIBox({ onNavigate, onNavigateUrl }: FloatingAIB
                     ) : (
                       filteredDocuments.map((doc) => {
                         const isSelected = selectedDocument === doc.filename;
+                        const validityBadge = getFloatingValidityBadge(doc.hieu_luc, t);
                         return (
                           <button
                             key={doc.filename}
@@ -985,7 +985,14 @@ export default function FloatingAIBox({ onNavigate, onNavigateUrl }: FloatingAIB
                             }}
                             title={doc.filename}
                           >
-                            <span className="truncate">{doc.filename}</span>
+                            <span className="flex items-center gap-1.5 min-w-0">
+                              <span className="truncate">{doc.filename}</span>
+                              {validityBadge && (
+                                <span className={`px-1 py-0.5 rounded text-[9px] font-semibold shrink-0 ${validityBadge.className}`}>
+                                  {validityBadge.label}
+                                </span>
+                              )}
+                            </span>
                             {isSelected && <i className="fa-solid fa-check text-[10px] shrink-0" />}
                           </button>
                         );
@@ -1028,7 +1035,7 @@ export default function FloatingAIBox({ onNavigate, onNavigateUrl }: FloatingAIB
                   <i className="fa-solid fa-paper-plane" />
                 </button>
               </form>
-              {error && <div className="px-3 pb-2 text-xs text-danger bg-surface" role="alert">{t(error)}</div>}
+              {error && <div className="px-3 pb-2 text-xs text-danger bg-surface" role="alert">{error.text ?? (error.key ? t(error.key) : '')}</div>}
             </>
           )}
         </div>

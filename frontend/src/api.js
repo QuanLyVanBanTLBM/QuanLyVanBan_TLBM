@@ -163,3 +163,7 @@ export async function getAISettings() {
 export async function updateAISettings(settings) {
   return apiClient.post(apiPath("/settings"), settings);
 }
+
+export async function getAISyncStatus() {
+  return apiClient(apiPath("/sync/status"));
+}

@@ -3,7 +3,9 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   askQuestion,
+  askQuestionStream,
   getAISettings,
+  getAISyncStatus,
   getCategories,
   getDocuments,
   previewDocument,
@@ -16,6 +18,7 @@ vi.mock('../../api', () => ({
   uploadDocumentAsync: vi.fn(),
   getUploadProgress: vi.fn(),
   askQuestion: vi.fn(),
+  askQuestionStream: vi.fn(),
   getDocuments: vi.fn(),
   getCategories: vi.fn(),
   getDocumentFile: vi.fn(),
@@ -25,6 +28,7 @@ vi.mock('../../api', () => ({
   reclassifyDocument: vi.fn(),
   getAISettings: vi.fn(),
   updateAISettings: vi.fn(),
+  getAISyncStatus: vi.fn(),
 }));
 
 vi.mock('@lib/permissions', () => ({
@@ -42,9 +46,11 @@ vi.mock('@i18n/translate', () => ({
 }));
 
 const mockedAskQuestion = vi.mocked(askQuestion);
+const mockedAskQuestionStream = vi.mocked(askQuestionStream);
 const mockedGetDocuments = vi.mocked(getDocuments);
 const mockedGetCategories = vi.mocked(getCategories);
 const mockedGetAISettings = vi.mocked(getAISettings);
+const mockedGetAISyncStatus = vi.mocked(getAISyncStatus);
 const mockedPreviewDocument = vi.mocked(previewDocument);
 const mockedReclassifyDocument = vi.mocked(reclassifyDocument);
 const mockedUsePermissions = vi.mocked(usePermissions);
@@ -74,6 +80,11 @@ describe('AiAssistantPage', () => {
       JSON.stringify({ username: 'tester', fullName: 'Test Officer' })
     );
     Element.prototype.scrollIntoView = vi.fn();
+    Object.defineProperty(window, 'innerWidth', {
+      writable: true,
+      configurable: true,
+      value: 1280,
+    });
     Object.defineProperty(window, 'matchMedia', {
       writable: true,
       value: vi.fn().mockImplementation((query: string) => ({
@@ -98,6 +109,29 @@ describe('AiAssistantPage', () => {
       api_key_masked: 'sk-...abcd',
       model_options: { openai: { llm_models: ['gpt-6-luna'] } },
     });
+    mockedGetAISyncStatus.mockResolvedValue({
+      configured: true,
+      schema: { status: 'ok' },
+      sql_eligible: { total: 4 },
+      sql_indexed: { total: 4 },
+      sql_pending_extraction: 0,
+      kb_registered: 2,
+      kb_indexed: 2,
+      kb_orphans: 0,
+      kb_orphan_names: [],
+      total_chunks: 18,
+      schedule: {
+        enabled: true,
+        mode: 'event_and_scheduled',
+        task: 'sync_all_ai_documents',
+        cron: '0 2 * * *',
+        hour: 2,
+        minute: 0,
+        time: '02:00',
+        timezone: 'Asia/Ho_Chi_Minh',
+        next_run_at: '2026-11-20T02:00:00+07:00',
+      },
+    });
     mockedGetCategories.mockResolvedValue({ categories: [] });
     mockedGetDocuments.mockResolvedValue({
       documents: [
@@ -105,6 +139,7 @@ describe('AiAssistantPage', () => {
         { filename: 'sub_item.docx', category: 'Folder / folder1' },
       ],
     });
+    mockedAskQuestionStream.mockRejectedValue(new Error('stream disabled in fallback tests'));
     mockedAskQuestion.mockResolvedValue({
       answer: 'Câu trả lời hợp lệ',
       sources: [],
@@ -395,5 +430,265 @@ describe('AiAssistantPage', () => {
     expect(screen.getByText('uploaded_guide.pdf')).toBeInTheDocument();
     expect(screen.queryByText('01/QD — Quy chế máy chủ')).not.toBeInTheDocument();
     expect(screen.queryByText('aiAssistant.inline.uploadedDocsSection')).not.toBeInTheDocument();
+  });
+
+  it('renders mobile sidebar open button below 860px and opens drawer dialog on click', async () => {
+    Object.defineProperty(window, 'innerWidth', {
+      writable: true,
+      configurable: true,
+      value: 390,
+    });
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: true,
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    });
+
+    renderAiPage();
+    await waitFor(() => expect(mockedGetDocuments).toHaveBeenCalled());
+
+    const openBtn = screen.getByRole('button', { name: 'aiAssistant.expandSidebar' });
+    expect(openBtn).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    fireEvent.click(openBtn);
+    expect(await screen.findByRole('dialog', { name: 'aiAssistant.inline.chatHistory' })).toBeInTheDocument();
+  });
+
+  it('reflects configured and has_api_key status on the AI status badge', async () => {
+    mockedGetAISettings.mockResolvedValueOnce({ provider: 'openai', llm_model: 'gpt-6-luna', configured: false });
+    const { unmount } = renderAiPage();
+    expect(await screen.findByText('aiAssistant.statusDisconnected')).toBeInTheDocument();
+    unmount();
+
+    mockedGetAISettings.mockResolvedValueOnce({ provider: 'openai', llm_model: 'gpt-6-luna', has_api_key: false });
+    const second = renderAiPage();
+    expect(await screen.findByText('aiAssistant.statusDisconnected')).toBeInTheDocument();
+    second.unmount();
+
+    mockedGetAISettings.mockResolvedValueOnce({ provider: 'openai', llm_model: 'gpt-6-luna', configured: true });
+    renderAiPage();
+    expect(await screen.findByText('aiAssistant.statusActive')).toBeInTheDocument();
+  });
+
+  it('syncs Kho tài liệu tab badge and chat history count badge with search filters', async () => {
+    const { container } = renderAiPage();
+    await waitFor(() => expect(mockedGetDocuments).toHaveBeenCalled());
+
+    // Create a second session so we have 2 sessions before filtering
+    fireEvent.click(screen.getByRole('button', { name: /aiAssistant\.newChat/ }));
+    const sessionCountBadge = container.querySelector('.session-count-badge');
+    expect(sessionCountBadge).toHaveTextContent('2');
+
+    const sessionSearch = screen.getByPlaceholderText('aiAssistant.searchSessionsPlaceholder');
+    fireEvent.change(sessionSearch, { target: { value: 'khong_khop_phien_nao' } });
+    expect(sessionCountBadge).toHaveTextContent('0');
+
+    const docsTabBtn = screen.getByRole('button', { name: /aiAssistant\.tabDocs/ });
+    fireEvent.click(docsTabBtn);
+    expect(docsTabBtn.querySelector('.sidebar-tab-badge')).toHaveTextContent('2');
+
+    const docSearch = screen.getByPlaceholderText('aiAssistant.searchDocsPlaceholder');
+    fireEvent.change(docSearch, { target: { value: 'quy_trinh' } });
+    expect(docsTabBtn.querySelector('.sidebar-tab-badge')).toHaveTextContent('1');
+  });
+
+  it('hides thinking card on first delta, shows Stop button while streaming, and aborts cleanly', async () => {
+    let resolveStream!: () => void;
+    let capturedSignal: AbortSignal | null | undefined;
+    mockedAskQuestionStream.mockImplementation(
+      (_question: string, options?: { signal?: AbortSignal | null; onDelta?: (d: string, full: string) => void }) => {
+        capturedSignal = options?.signal;
+        return new Promise((resolve, reject) => {
+          resolveStream = () => resolve({ answer: 'Xong', sources: [] });
+          options?.signal?.addEventListener('abort', () => {
+            reject(new DOMException('Aborted', 'AbortError'));
+          });
+          setTimeout(() => {
+            options?.onDelta?.('Đang stream...', 'Đang stream...');
+          }, 0);
+        });
+      }
+    );
+
+    renderAiPage();
+    await waitFor(() => expect(mockedGetDocuments).toHaveBeenCalled());
+
+    const textarea = screen.getByRole('textbox', { name: 'aiAssistant.inputPlaceholder' });
+    fireEvent.change(textarea, { target: { value: 'Test streaming stop' } });
+    fireEvent.click(screen.getByRole('button', { name: 'aiAssistant.send' }));
+
+    // Thinking indicator is shown before first delta and Stop button replaces Send
+    expect(screen.getByText('aiAssistant.inline.aiAssistantIsSearchingThe')).toBeInTheDocument();
+    const stopBtn = screen.getByRole('button', { name: 'aiAssistant.stop' });
+    expect(stopBtn).toBeInTheDocument();
+
+    // First delta arrives: thinking indicator hides, partial text appears, Stop button stays visible
+    await screen.findByText('Đang stream...', { selector: 'p' });
+    expect(screen.queryByText('aiAssistant.inline.aiAssistantIsSearchingThe')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'aiAssistant.stop' })).toBeInTheDocument();
+
+    // Clicking Stop aborts cleanly without error bubble or askQuestion fallback
+    fireEvent.click(screen.getByRole('button', { name: 'aiAssistant.stop' }));
+    expect(capturedSignal?.aborted).toBe(true);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'aiAssistant.send' })).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'aiAssistant.inline.retrySend' })).not.toBeInTheDocument();
+    expect(mockedAskQuestion).not.toHaveBeenCalled();
+    resolveStream?.();
+  });
+
+  it('renders document validity badges in sidebar and expanded citations', async () => {
+    mockedGetDocuments.mockResolvedValue({
+      documents: [
+        {
+          filename: '01/QC-CU — Quy chế cũ',
+          category: 'Văn bản đến',
+          is_managed: true,
+          source_type: 'vanbanden',
+          source_id: 1,
+          hieu_luc: 'HET_HIEU_LUC',
+        },
+      ],
+    });
+    mockedAskQuestion.mockResolvedValue({
+      answer: 'Văn bản đã sửa đổi',
+      sources: [
+        {
+          file_name: '02/QC-SUA — Quy chế sửa đổi',
+          source_type: 'vanbandi',
+          source_id: 2,
+          hieu_luc: 'CON_HIEU_LUC_1_PHAN',
+        },
+      ],
+    });
+
+    renderAiPage();
+    await waitFor(() => expect(mockedGetDocuments).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: /aiAssistant\.tabDocs/ }));
+    expect(await screen.findByText('aiAssistant.validity.expired')).toBeInTheDocument();
+
+    const textarea = screen.getByRole('textbox', { name: 'aiAssistant.inputPlaceholder' });
+    fireEvent.change(textarea, { target: { value: 'Kiểm tra hiệu lực' } });
+    fireEvent.click(screen.getByRole('button', { name: 'aiAssistant.send' }));
+
+    await screen.findByText('Văn bản đã sửa đổi', { selector: 'p' });
+    fireEvent.click(screen.getByRole('button', { name: 'aiAssistant.toggleCitationsExpand' }));
+    expect(await screen.findByText('aiAssistant.validity.partial')).toBeInTheDocument();
+  });
+
+  it('shows Admin AI Sync schedule modal only for admins without manual trigger button', async () => {
+    const { unmount } = renderAiPage();
+    await waitFor(() => expect(mockedGetDocuments).toHaveBeenCalled());
+    expect(screen.queryByRole('button', { name: 'aiAssistant.sync.openBtn' })).not.toBeInTheDocument();
+    unmount();
+
+    mockedUsePermissions.mockReturnValue({
+      loaded: true,
+      can: (perm: string) => perm === 'use_aiassistant',
+      isSuperuser: true,
+      isSystemAdmin: true,
+      refresh: vi.fn(),
+    } as unknown as ReturnType<typeof usePermissions>);
+    mockedGetAISyncStatus.mockResolvedValueOnce({
+      configured: true,
+      schema: { status: 'ok' },
+      sql_eligible: { total: 5 },
+      sql_indexed: { total: 5 },
+      sql_pending_extraction: 0,
+      kb_registered: 6,
+      kb_indexed: 6,
+      kb_orphans: 0,
+      kb_orphan_names: [],
+      total_chunks: 44,
+      schedule: {
+        enabled: true,
+        mode: 'event_and_scheduled',
+        task: 'sync_all_ai_documents',
+        cron: '0 2 * * *',
+        hour: 2,
+        minute: 0,
+        time: '02:00',
+        timezone: 'Asia/Ho_Chi_Minh',
+        next_run_at: '2026-11-20T02:00:00+07:00',
+      },
+    });
+
+    renderAiPage();
+    await waitFor(() => expect(mockedGetDocuments).toHaveBeenCalled());
+
+    const syncOpenBtn = screen.getByRole('button', { name: 'aiAssistant.sync.openBtn' });
+    fireEvent.click(syncOpenBtn);
+
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toBeInTheDocument();
+    expect(await screen.findByText('5 / 5')).toBeInTheDocument();
+    expect(screen.getByText('6 / 6')).toBeInTheDocument();
+    expect(screen.getByText('44')).toBeInTheDocument();
+    expect(screen.getByText('aiAssistant.sync.schemaOk')).toBeInTheDocument();
+    expect(screen.getByText('aiAssistant.sync.eventModeActive')).toBeInTheDocument();
+    expect(screen.getByText(/aiAssistant\.sync\.scheduleDaily/)).toBeInTheDocument();
+    expect(screen.getByText('aiAssistant.sync.nextRunLabel')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'aiAssistant.sync.syncNow' })).not.toBeInTheDocument();
+  });
+
+  it('allows safe internal links while stripping external and javascript markdown links', async () => {
+    mockedAskQuestion.mockResolvedValue({
+      answer:
+        'Tham khảo [Kho Tài Liệu](/resources) hoặc [Xem VB](/documents/incoming?detail=5). Không mở [Phishing](https://evil.example/steal) và [XSS](javascript:alert(1)).',
+      sources: [],
+    });
+
+    renderAiPage();
+    await waitFor(() => expect(mockedGetDocuments).toHaveBeenCalled());
+
+    const textarea = screen.getByRole('textbox', { name: 'aiAssistant.inputPlaceholder' });
+    fireEvent.change(textarea, { target: { value: 'Kiểm tra liên kết' } });
+    fireEvent.click(screen.getByRole('button', { name: 'aiAssistant.send' }));
+
+    const resourcesLink = await screen.findByRole('link', { name: 'Kho Tài Liệu' });
+    expect(resourcesLink).toHaveAttribute('href', '/resources');
+    const detailLink = screen.getByRole('link', { name: 'Xem VB' });
+    expect(detailLink).toHaveAttribute('href', '/documents/incoming?detail=5');
+
+    expect(screen.queryByRole('link', { name: 'Phishing' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'XSS' })).not.toBeInTheDocument();
+    expect(screen.getByText(/Phishing/)).toBeInTheDocument();
+    expect(screen.getByText(/XSS/)).toBeInTheDocument();
+
+    fireEvent.click(resourcesLink);
+    expect(await screen.findByTestId('location-probe')).toHaveTextContent('/resources');
+  });
+
+  it('renders horizontal rules and links nested inside italic and bold emphasis', async () => {
+    mockedAskQuestion.mockResolvedValue({
+      answer:
+        '---\n*Gợi ý: Để đối chiếu văn bản, tham khảo **[Kho Tài Liệu & Biểu Mẫu](/resources)** hoặc **[Phishing](https://evil.example/steal)**.* Thêm `**[NotALink](/resources)**`.',
+      sources: [],
+    });
+
+    renderAiPage();
+    await waitFor(() => expect(mockedGetDocuments).toHaveBeenCalled());
+
+    const textarea = screen.getByRole('textbox', { name: 'aiAssistant.inputPlaceholder' });
+    fireEvent.change(textarea, { target: { value: 'Kiểm tra nested markdown' } });
+    fireEvent.click(screen.getByRole('button', { name: 'aiAssistant.send' }));
+
+    const resourcesLink = await screen.findByRole('link', { name: 'Kho Tài Liệu & Biểu Mẫu' });
+    expect(screen.getByRole('separator')).toBeInTheDocument();
+    expect(resourcesLink).toHaveAttribute('href', '/resources');
+    expect(resourcesLink.closest('strong')).not.toBeNull();
+    expect(resourcesLink.closest('em')).not.toBeNull();
+    expect(screen.queryByText(/\[Kho Tài Liệu & Biểu Mẫu\]\(\/resources\)/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Phishing' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'NotALink' })).not.toBeInTheDocument();
+    expect(screen.getByText(/Phishing/)).toBeInTheDocument();
+
+    fireEvent.click(resourcesLink);
+    expect(await screen.findByTestId('location-probe')).toHaveTextContent('/resources');
   });
 });

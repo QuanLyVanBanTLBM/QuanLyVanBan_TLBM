@@ -6,6 +6,7 @@ container restarts, and deployment releases via a shared JSON file in DATA_DIR.
 import json
 import logging
 import os
+import sys
 from pathlib import Path
 
 import backend.config as config
@@ -13,6 +14,27 @@ from backend.services.ai_model_config import MODEL_CONFIG
 
 logger = logging.getLogger(__name__)
 SETTINGS_FILE_NAME = "ai_settings.json"
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _is_test_runtime() -> bool:
+    if os.getenv("PYTEST_CURRENT_TEST"):
+        return True
+    mail_mod = sys.modules.get("django.core.mail")
+    if mail_mod is not None and hasattr(mail_mod, "outbox"):
+        return True
+    return len(sys.argv) >= 2 and sys.argv[1] == "test"
+
+
+def _is_real_workspace_env_path(env_path: Path) -> bool:
+    try:
+        resolved = env_path.resolve()
+    except OSError:
+        return True
+    return resolved in {
+        (_REPO_ROOT / "backend" / ".env").resolve(),
+        (_REPO_ROOT / ".env").resolve(),
+    }
 
 
 def get_settings_file_path() -> Path:
@@ -122,6 +144,9 @@ def save_ai_settings(updates: dict) -> dict:
         "OPENAI_API_KEY": current.get("openai_api_key"),
     }
     for env_path in target_env_paths:
+        if _is_test_runtime() and _is_real_workspace_env_path(env_path):
+            logger.debug("Skipping workspace .env write to %s during test runtime", env_path)
+            continue
         try:
             lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
             seen = set()

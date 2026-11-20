@@ -242,6 +242,10 @@ def similarity_search(query, embed_model, limit=6, filters=None):
     ]
 
 
+def _escape_like(term: str) -> str:
+    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def keyword_search(keywords, limit=12, filters=None):
     """Search chunks by normalized ASCII/Vietnamese keywords across content and file names."""
     clean_terms = []
@@ -259,12 +263,18 @@ def keyword_search(keywords, limit=12, filters=None):
 
     filter_sql, filter_params = _compile_filters(filters) if filters else ("TRUE", [])
     searchable_expr = (
-        "translate(lower(coalesce(content_text, '') || ' ' "
-        "|| coalesce(metadata ->> 'parent_context', '') || ' ' "
-        "|| coalesce(metadata ->> 'contextual_prefix', '') || ' ' "
-        "|| coalesce(metadata ->> 'doc_code', '') || ' ' "
-        "|| coalesce(metadata ->> 'file_name', '') || ' ' "
-        "|| coalesce(metadata ->> 'attachment_name', '')), %s, %s)"
+        "translate("
+        "lower("
+        "coalesce(content_text, '') || ' ' || "
+        "coalesce(metadata ->> 'parent_context', '') || ' ' || "
+        "coalesce(metadata ->> 'contextual_prefix', '') || ' ' || "
+        "coalesce(metadata ->> 'doc_code', '') || ' ' || "
+        "coalesce(metadata ->> 'file_name', '') || ' ' || "
+        "coalesce(metadata ->> 'attachment_name', '')"
+        "), "
+        f"'{_VI_ACCENT_SRC}', "
+        f"'{_VI_ACCENT_DST}'"
+        ")"
     )
     filename_expr = (
         "translate(lower(coalesce(metadata ->> 'file_name', '') || ' ' "
@@ -278,11 +288,11 @@ def keyword_search(keywords, limit=12, filters=None):
     where_term_params = []
     for term in clean_terms:
         score_cases.append(f"CASE WHEN strpos({searchable_expr}, %s) > 0 THEN 1.0 ELSE 0.0 END")
-        score_params.extend((_VI_ACCENT_SRC, _VI_ACCENT_DST, term))
+        score_params.append(term)
         score_cases.append(f"CASE WHEN strpos({filename_expr}, %s) > 0 THEN 1.5 ELSE 0.0 END")
         score_params.extend((_VI_ACCENT_SRC, _VI_ACCENT_DST, term))
-        match_predicates.append(f"strpos({searchable_expr}, %s) > 0")
-        where_term_params.extend((_VI_ACCENT_SRC, _VI_ACCENT_DST, term))
+        match_predicates.append(f"{searchable_expr} LIKE %s")
+        where_term_params.append(f"%{_escape_like(term)}%")
 
     score_expr = " + ".join(score_cases)
     any_match_sql = " OR ".join(match_predicates)

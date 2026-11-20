@@ -3,7 +3,7 @@ from django.db import transaction
 from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 
-from .models import VanBanDen, VanBanDenAttachment, VanBanDi, VanBanDiAttachment
+from .models import VanBanDen, VanBanDenAttachment, VanBanDi, VanBanDiAttachment, VanBanDiNoiBanHanh
 from .tasks import sync_sql_document_vectors
 
 logger = logging.getLogger(__name__)
@@ -12,9 +12,20 @@ logger = logging.getLogger(__name__)
 def _trigger_sync(source_type: str, document_id: int):
     if not document_id:
         return
-    transaction.on_commit(
-        lambda: sync_sql_document_vectors.delay(source_type, int(document_id))
-    )
+    doc_id = int(document_id)
+
+    def _dispatch():
+        try:
+            sync_sql_document_vectors.delay(source_type, doc_id)
+        except Exception as exc:
+            logger.warning(
+                "Could not dispatch AI vector sync for %s:%s (%s)",
+                source_type,
+                doc_id,
+                type(exc).__name__,
+            )
+
+    transaction.on_commit(_dispatch)
 
 
 @receiver(post_save, sender=VanBanDen)
@@ -39,6 +50,12 @@ def handle_vanbandi_change(sender, instance, **kwargs):
 @receiver(post_delete, sender=VanBanDiAttachment)
 def handle_vanbandi_attachment_change(sender, instance, **kwargs):
     _trigger_sync("vanbandi", instance.document_id)
+
+
+@receiver(post_save, sender=VanBanDiNoiBanHanh)
+@receiver(post_delete, sender=VanBanDiNoiBanHanh)
+def handle_vanbandi_noibanhanh_change(sender, instance, **kwargs):
+    _trigger_sync("vanbandi", getattr(instance, "vanbandi_id", None))
 
 
 def handle_tailieu_change(sender, instance, **kwargs):
