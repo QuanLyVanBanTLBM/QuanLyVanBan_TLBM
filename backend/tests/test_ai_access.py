@@ -356,6 +356,67 @@ class AIAccessTests(TestCase):
         self.assertEqual(status_body["schedule"]["cron"], "0 2 * * *")
         self.assertTrue(status_body["schedule"]["next_run_at"])
 
+    def test_sync_status_reports_sql_orphans_separately_from_eligible_indexed(self):
+        import uuid
+        from django.db import connection
+        from documents.models import HieuLuc, PhamVi, VanBanDen
+        from backend.services.pgvector_store import _vector_literal
+
+        self.client.force_authenticate(self.superuser)
+        eligible_den = VanBanDen.objects.create(
+            nam=2098,
+            so_hieu="20/CV-ELIG",
+            so_thu_tu=40001,
+            trich_yeu="Văn bản hợp lệ",
+            pham_vi=PhamVi.NOI_BO,
+            hien_thi=True,
+            hieu_luc=HieuLuc.CON_HIEU_LUC,
+        )
+        hidden_den = VanBanDen.objects.create(
+            nam=2098,
+            so_hieu="21/CV-HIDE",
+            so_thu_tu=40002,
+            trich_yeu="Văn bản ẩn",
+            pham_vi=PhamVi.NOI_BO,
+            hien_thi=False,
+            hieu_luc=HieuLuc.CON_HIEU_LUC,
+        )
+        vec = _vector_literal([0.0] * 3072)
+        rows = [
+            (str(uuid.uuid4()), f"vanbanden:{eligible_den.pk}:c1", "vanbanden", eligible_den.pk, "h1", "chunk 1", vec, json.dumps({"sql_doc_key": f"vanbanden:{eligible_den.pk}", "sql_doc_type": "vanbanden", "sql_doc_id": eligible_den.pk})),
+            (str(uuid.uuid4()), f"vanbanden:{eligible_den.pk}:c2", "vanbanden", eligible_den.pk, "h2", "chunk 2", vec, json.dumps({"sql_doc_key": f"vanbanden:{eligible_den.pk}", "sql_doc_type": "vanbanden", "sql_doc_id": eligible_den.pk})),
+            (str(uuid.uuid4()), f"vanbanden:{hidden_den.pk}:c1", "vanbanden", hidden_den.pk, "h3", "hidden chunk 1", vec, json.dumps({"sql_doc_key": f"vanbanden:{hidden_den.pk}", "sql_doc_type": "vanbanden", "sql_doc_id": hidden_den.pk})),
+            (str(uuid.uuid4()), f"vanbanden:{hidden_den.pk}:c2", "vanbanden", hidden_den.pk, "h4", "hidden chunk 2", vec, json.dumps({"sql_doc_key": f"vanbanden:{hidden_den.pk}", "sql_doc_type": "vanbanden", "sql_doc_id": hidden_den.pk})),
+            (str(uuid.uuid4()), "vanbandi:99999999:c1", "vanbandi", 99999999, "h5", "deleted chunk", vec, json.dumps({"sql_doc_key": "vanbandi:99999999", "sql_doc_type": "vanbandi", "sql_doc_id": 99999999})),
+            (str(uuid.uuid4()), "stale_kb.pdf:c1", "ai_knowledge_base", 0, "h6", "kb chunk", vec, json.dumps({"source_class": "ai_knowledge_base", "file_name": "stale_kb.pdf"})),
+        ]
+        with connection.cursor() as cursor:
+            cursor.execute("DELETE FROM ai_document_embedding")
+            cursor.executemany(
+                """INSERT INTO ai_document_embedding
+                   (id, source_key, source_type, source_id, content_hash, content_text, embedding, metadata)
+                   VALUES (%s::uuid, %s, %s, %s, %s, %s, %s::vector, %s::jsonb)""",
+                rows,
+            )
+
+        fake_schema = {"status": "ok", "checked_views": 6, "missing_views": [], "missing_columns": {}}
+        with (
+            patch("api.views.list_documents", return_value=[]),
+            patch("backend.api.views.list_documents", return_value=[]),
+            patch("backend.services.sql_document_source.verify_sql_schema", return_value=fake_schema),
+        ):
+            status_resp = self.client.get("/api/ai/sync/status")
+
+        self.assertEqual(status_resp.status_code, 200)
+        body = status_resp.json()
+        self.assertEqual(body["sql_indexed"]["vanbanden"], 1)
+        self.assertEqual(body["sql_indexed"]["total"], 1)
+        self.assertLessEqual(body["sql_indexed"]["total"], body["sql_eligible"]["total"])
+        self.assertEqual(body["sql_orphans"], 2)
+        self.assertEqual(body["kb_orphans"], 1)
+        self.assertEqual(body["total_orphans"], 3)
+        self.assertEqual(body["total_chunks"], 6)
+
     def test_documents_endpoint_filters_restricted_and_hidden_official_docs_and_exposes_validity(self):
         from documents.models import HieuLuc, PhamVi, VanBanDen
 

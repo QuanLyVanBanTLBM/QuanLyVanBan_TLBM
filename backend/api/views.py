@@ -961,6 +961,7 @@ def ai_sync_status(request):
     sql_eligible = {"vanbanden": 0, "vanbandi": 0, "tailieu": 0, "total": 0}
     sql_indexed = {"vanbanden": 0, "vanbandi": 0, "tailieu": 0, "total": 0}
     sql_pending_extraction = 0
+    sql_orphans = 0
     total_chunks = 0
 
     if is_postgres_source():
@@ -985,15 +986,48 @@ def ai_sync_status(request):
                 cursor.execute(
                     """
                     SELECT
-                        COUNT(DISTINCT CASE WHEN source_type = 'vanbanden' THEN source_id END),
-                        COUNT(DISTINCT CASE WHEN source_type = 'vanbandi' THEN source_id END),
-                        COUNT(DISTINCT CASE WHEN source_type = 'tailieu' THEN source_id END),
-                        COUNT(DISTINCT CASE WHEN metadata ->> 'attachment_extraction_pending' = 'true' THEN source_key END),
-                        COUNT(*)
+                        COUNT(DISTINCT CASE
+                            WHEN source_type = 'vanbanden' AND EXISTS (
+                                SELECT 1 FROM documents_vanbanden d
+                                WHERE d.id = ai_document_embedding.source_id
+                                  AND d.pham_vi = 'NOI_BO' AND d.hien_thi IS TRUE
+                            ) THEN source_id END),
+                        COUNT(DISTINCT CASE
+                            WHEN source_type = 'vanbandi' AND EXISTS (
+                                SELECT 1 FROM documents_vanbandi d
+                                WHERE d.id = ai_document_embedding.source_id
+                                  AND d.pham_vi = 'NOI_BO' AND d.hien_thi IS TRUE
+                            ) THEN source_id END),
+                        COUNT(DISTINCT CASE
+                            WHEN source_type = 'tailieu' AND EXISTS (
+                                SELECT 1 FROM records_chitiettailieu t
+                                WHERE t.id = ai_document_embedding.source_id
+                                  AND t.hien_thi IN ('TAT_CA', 'NOI_BO_PHONG_BAN')
+                            ) THEN source_id END),
+                        COUNT(DISTINCT CASE WHEN metadata ->> 'attachment_extraction_pending' = 'true' THEN COALESCE(metadata ->> 'sql_doc_key', CONCAT(source_type, ':', source_id)) END),
+                        COUNT(*),
+                        COUNT(DISTINCT CASE
+                            WHEN (
+                                (source_type = 'vanbanden' AND NOT EXISTS (
+                                    SELECT 1 FROM documents_vanbanden d
+                                    WHERE d.id = ai_document_embedding.source_id
+                                      AND d.pham_vi = 'NOI_BO' AND d.hien_thi IS TRUE
+                                ))
+                                OR (source_type = 'vanbandi' AND NOT EXISTS (
+                                    SELECT 1 FROM documents_vanbandi d
+                                    WHERE d.id = ai_document_embedding.source_id
+                                      AND d.pham_vi = 'NOI_BO' AND d.hien_thi IS TRUE
+                                ))
+                                OR (source_type = 'tailieu' AND NOT EXISTS (
+                                    SELECT 1 FROM records_chitiettailieu t
+                                    WHERE t.id = ai_document_embedding.source_id
+                                      AND t.hien_thi IN ('TAT_CA', 'NOI_BO_PHONG_BAN')
+                                ))
+                            ) THEN CONCAT(source_type, ':', source_id) END)
                     FROM ai_document_embedding
                     """
                 )
-                idx_row = cursor.fetchone() or (0, 0, 0, 0, 0)
+                idx_row = cursor.fetchone() or (0, 0, 0, 0, 0, 0)
                 sql_indexed = {
                     "vanbanden": int(idx_row[0] or 0),
                     "vanbandi": int(idx_row[1] or 0),
@@ -1002,6 +1036,7 @@ def ai_sync_status(request):
                 }
                 sql_pending_extraction = int(idx_row[3] or 0)
                 total_chunks = int(idx_row[4] or 0)
+                sql_orphans = int(idx_row[5] or 0)
         except Exception:
             logger.exception("Failed to collect AI sync metrics from PostgreSQL")
 
@@ -1011,9 +1046,11 @@ def ai_sync_status(request):
         "sql_eligible": sql_eligible,
         "sql_indexed": sql_indexed,
         "sql_pending_extraction": sql_pending_extraction,
+        "sql_orphans": sql_orphans,
         "kb_registered": len(registered_names),
         "kb_indexed": len(kb_indexed_names),
         "kb_orphans": len(kb_orphan_names),
+        "total_orphans": len(kb_orphan_names) + sql_orphans,
         "kb_orphan_names": kb_orphan_names,
         "total_chunks": total_chunks,
         "schedule": get_ai_sync_schedule_info(),

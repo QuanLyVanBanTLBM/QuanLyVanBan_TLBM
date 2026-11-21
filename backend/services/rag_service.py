@@ -1798,6 +1798,14 @@ def build_sources(
     return selected
 
 
+SOURCE_TYPE_CONTEXT_LABELS = {
+    "vanbanden": "Văn bản đến",
+    "vanbandi": "Văn bản đi",
+    "tailieu": "Kho tài liệu nội bộ",
+    "business_spec": "Đặc tả nghiệp vụ hệ thống",
+}
+
+
 def build_context_from_sources(sources, max_chars: int | None = None):
     # Gộp các đoạn context từ cùng một file lại để LLM đọc mạch lạc
     file_blocks: dict[str, list] = {}
@@ -1844,6 +1852,12 @@ def build_context_from_sources(sources, max_chars: int | None = None):
             continue
 
         merged = " ".join(merged_parts)
+        source_type_raw = next(
+            (str(s.get("source_type") or "").strip().lower() for s in file_sources if s.get("source_type")),
+            "",
+        )
+        source_type_label = SOURCE_TYPE_CONTEXT_LABELS.get(source_type_raw, "")
+        source_type_tag = f" [Loại: {source_type_label}]" if source_type_label else ""
         hieu_luc = next((str(s.get("hieu_luc") or "").strip().upper() for s in file_sources if s.get("hieu_luc")), "")
         ngay_het = next((str(s.get("ngay_het_hieu_luc") or "").strip() for s in file_sources if s.get("ngay_het_hieu_luc")), "")
         expiry_note = f" - hết hạn: {ngay_het}" if ngay_het else ""
@@ -1852,7 +1866,7 @@ def build_context_from_sources(sources, max_chars: int | None = None):
             validity_tag = f" [CẢNH BÁO: VĂN BẢN ĐÃ HẾT HIỆU LỰC{expiry_note}]"
         elif hieu_luc == "CON_HIEU_LUC_1_PHAN":
             validity_tag = f" [LƯU Ý: VĂN BẢN CÒN HIỆU LỰC MỘT PHẦN{expiry_note}]"
-        context_blocks.append(f"[{global_idx}] {file_name}{validity_tag}\n{merged}")
+        context_blocks.append(f"[{global_idx}] {file_name}{source_type_tag}{validity_tag}\n{merged}")
         # Cập nhật lại index của source để citation khớp
         for s in file_sources:
             s["index"] = global_idx
@@ -3377,6 +3391,9 @@ BOT_SELF_PATTERNS = (
     "khoe khong ban", "dao nay the nao", "hom nay the nao", "ban lam duoc gi",
     "ban giup duoc gi", "chuc nang cua ban", "gioi thieu ban than",
     "gioi thieu ve ban", "ai tao ra ban",
+    "who are you", "what is your name", "how are you", "what can you do",
+    "what can you help", "how can you help", "introduce yourself",
+    "about yourself", "what are your functions", "what are your capabilities",
 )
 
 
@@ -3847,6 +3864,12 @@ def prepare_ask_document(
             sql_allowed=len(allowed_keys),
         )
 
+    from backend.services.business_knowledge import (
+        is_system_guide_query,
+        match_business_sources,
+    )
+
+    prefetched_business_sources = None
     # Đối chiếu một hoặc nhiều tên file theo phạm vi tài liệu mà người dùng được phép truy cập
     clean_filenames = resolve_target_filenames(
         filenames if filenames else filename,
@@ -3854,12 +3877,21 @@ def prepare_ask_document(
         sql_mode=sql_mode,
     )
     if not clean_filenames and not has_pinned_input:
-        extracted_targets = extract_targets_from_question(
-            question, allowed_keys=allowed_keys, sql_mode=sql_mode
+        has_explicit_code_or_ext = bool(
+            extract_document_code(question)
+            or re.search(r"\.[a-z0-9]{2,5}\b", str(question or "").lower())
         )
-        if extracted_targets:
-            clean_filenames = extracted_targets
-            print(f"🎯 Tự động phát hiện tài liệu từ câu hỏi: {clean_filenames}")
+        skip_target_extraction = False
+        if is_system_guide_query(question) and not has_explicit_code_or_ext:
+            prefetched_business_sources = match_business_sources(question)
+            skip_target_extraction = bool(prefetched_business_sources)
+        if not skip_target_extraction:
+            extracted_targets = extract_targets_from_question(
+                question, allowed_keys=allowed_keys, sql_mode=sql_mode
+            )
+            if extracted_targets:
+                clean_filenames = extracted_targets
+                print(f"🎯 Tự động phát hiện tài liệu từ câu hỏi: {clean_filenames}")
 
     clean_filename = clean_filenames[0] if len(clean_filenames) == 1 else (
         ", ".join(clean_filenames) if clean_filenames else None
@@ -3875,8 +3907,11 @@ def prepare_ask_document(
             set_fields(cache_hit=True)
             return "immediate", cached_result
 
-    from backend.services.business_knowledge import match_business_sources
-    business_sources = match_business_sources(question)
+    business_sources = (
+        prefetched_business_sources
+        if prefetched_business_sources is not None
+        else match_business_sources(question)
+    )
 
     with ai_stage("setup"):
         setup_llamaindex()
@@ -4152,10 +4187,17 @@ def prepare_ask_document(
             build_sources(nodes, question, max_sources=max_source_limit, target_filenames=clean_filenames)
             if nodes else []
         )
-        # Ưu tiên tài liệu thực tế trước, chỉ bổ sung business_sources vào slot còn trống
-        # (và không chèn business_sources khi đang lọc theo file hoặc chủ đề cụ thể)
+        # Ưu tiên tài liệu thực tế trước, nhưng giữ tối đa 2 slot cho business_sources
+        # khi câu hỏi hướng dẫn/nghiệp vụ hệ thống (không ghim file/lọc chủ đề).
         if clean_filenames or (category and category.strip()):
             sources = document_sources[:max_source_limit]
+        elif business_sources and (
+            is_system_guide_query(question)
+            or (not extract_document_code(question) and (business_sources[0].get("score") or 0) >= 3)
+        ):
+            reserved_biz = business_sources[:2]
+            doc_slots = max(0, MAX_VISIBLE_SOURCES - len(reserved_biz))
+            sources = (reserved_biz + document_sources[:doc_slots])[:MAX_VISIBLE_SOURCES]
         else:
             remaining_slots = max(0, MAX_VISIBLE_SOURCES - len(document_sources))
             sources = (
