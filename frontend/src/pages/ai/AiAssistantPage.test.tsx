@@ -657,8 +657,8 @@ describe('AiAssistantPage', () => {
 
     expect(screen.queryByRole('link', { name: 'Phishing' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'XSS' })).not.toBeInTheDocument();
-    expect(screen.getByText(/Phishing/)).toBeInTheDocument();
-    expect(screen.getByText(/XSS/)).toBeInTheDocument();
+    expect(screen.getByText(/Phishing/, { selector: 'p' })).toBeInTheDocument();
+    expect(screen.getByText(/XSS/, { selector: 'p' })).toBeInTheDocument();
 
     fireEvent.click(resourcesLink);
     expect(await screen.findByTestId('location-probe')).toHaveTextContent('/resources');
@@ -690,5 +690,116 @@ describe('AiAssistantPage', () => {
 
     fireEvent.click(resourcesLink);
     expect(await screen.findByTestId('location-probe')).toHaveTextContent('/resources');
+  });
+
+  it('strips markdown links from chat history snippets', async () => {
+    mockedAskQuestion.mockResolvedValueOnce({
+      answer: 'Truy cập **[Kho Tài Liệu & Biểu Mẫu](/resources)** để tải biểu mẫu.',
+      sources: [],
+    });
+
+    const { container } = renderAiPage();
+    await waitFor(() => expect(mockedGetDocuments).toHaveBeenCalled());
+
+    const textarea = screen.getByRole('textbox', { name: 'aiAssistant.inputPlaceholder' });
+    fireEvent.change(textarea, { target: { value: 'Tìm biểu mẫu' } });
+    fireEvent.click(screen.getByRole('button', { name: 'aiAssistant.send' }));
+
+    await screen.findByRole('link', { name: 'Kho Tài Liệu & Biểu Mẫu' });
+    const snippetEl = container.querySelector('.session-item-snippet');
+    expect(snippetEl?.textContent).toContain('Kho Tài Liệu & Biểu Mẫu');
+    expect(snippetEl?.textContent).not.toContain('(/resources)');
+    expect(snippetEl?.textContent).not.toContain('[');
+  });
+
+  it('pins duplicate SQL document filenames independently by source_type and source_id', async () => {
+    mockedGetDocuments.mockResolvedValue({
+      documents: [
+        {
+          filename: '3667/AD — Văn bản trùng tên',
+          category: 'Văn bản đến',
+          is_managed: true,
+          source_type: 'vanbanden',
+          source_id: 101,
+        },
+        {
+          filename: '3667/AD — Văn bản trùng tên',
+          category: 'Văn bản đến',
+          is_managed: true,
+          source_type: 'vanbanden',
+          source_id: 202,
+        },
+      ],
+    });
+
+    const { container } = renderAiPage();
+    await waitFor(() => expect(mockedGetDocuments).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: /aiAssistant\.tabDocs/ }));
+    const pinButtons = await screen.findAllByTitle('aiAssistant.inline.targetThisDocumentForQ');
+    expect(pinButtons).toHaveLength(2);
+
+    fireEvent.click(pinButtons[0]);
+    expect(container.querySelectorAll('.sidebar-doc-row.is-targeted')).toHaveLength(1);
+    expect(container.querySelectorAll('.target-doc-pinned-badge')).toHaveLength(1);
+  });
+
+  it('blurs active sidebar focus before closing mobile drawer and displays total orphans in sync modal', async () => {
+    Object.defineProperty(window, 'innerWidth', {
+      writable: true,
+      configurable: true,
+      value: 390,
+    });
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: true,
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    });
+
+    mockedUsePermissions.mockReturnValue({
+      loaded: true,
+      can: (perm: string) => perm === 'use_aiassistant',
+      isSuperuser: true,
+      isSystemAdmin: true,
+      refresh: vi.fn(),
+    } as unknown as ReturnType<typeof usePermissions>);
+    mockedGetAISyncStatus.mockResolvedValueOnce({
+      configured: true,
+      schema: { status: 'ok' },
+      sql_eligible: { total: 147 },
+      sql_indexed: { total: 146 },
+      sql_pending_extraction: 1,
+      sql_orphans: 5,
+      kb_registered: 2,
+      kb_indexed: 2,
+      kb_orphans: 1,
+      total_orphans: 6,
+      kb_orphan_names: ['stale.pdf'],
+      total_chunks: 471,
+      schedule: { enabled: true, time: '02:00', timezone: 'Asia/Ho_Chi_Minh', next_run_at: '2026-11-22T02:00:00+07:00' },
+    });
+
+    const { container } = renderAiPage();
+    await waitFor(() => expect(mockedGetDocuments).toHaveBeenCalled());
+
+    const openBtn = screen.getByRole('button', { name: 'aiAssistant.expandSidebar' });
+    fireEvent.click(openBtn);
+
+    const sidebar = container.querySelector('aside.ai-chat-sidebar') as HTMLElement;
+    const collapseBtn = screen.getByRole('button', { name: 'aiAssistant.collapseSidebar' });
+    collapseBtn.focus();
+    expect(sidebar.contains(document.activeElement)).toBe(true);
+
+    fireEvent.click(collapseBtn);
+    await waitFor(() => expect(sidebar).toHaveAttribute('aria-hidden', 'true'));
+    expect(sidebar.contains(document.activeElement)).toBe(false);
+
+    fireEvent.click(screen.getByRole('button', { name: 'aiAssistant.sync.openBtn' }));
+    expect(await screen.findByText('146 / 147')).toBeInTheDocument();
+    expect(screen.getByText('6')).toBeInTheDocument();
   });
 });

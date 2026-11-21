@@ -50,6 +50,9 @@ interface TargetDocInfo {
   filename: string;
   label?: string;
   category?: string;
+  docKey?: string;
+  source_type?: string | null;
+  source_id?: number | string | null;
 }
 
 interface ChatMessage {
@@ -93,9 +96,11 @@ interface AISyncStatusData {
   sql_eligible?: { vanbanden?: number; vanbandi?: number; tailieu?: number; total?: number };
   sql_indexed?: { vanbanden?: number; vanbandi?: number; tailieu?: number; total?: number };
   sql_pending_extraction?: number;
+  sql_orphans?: number;
   kb_registered?: number;
   kb_indexed?: number;
   kb_orphans?: number;
+  total_orphans?: number;
   kb_orphan_names?: string[];
   total_chunks?: number;
   schedule?: {
@@ -149,6 +154,29 @@ function splitSoftFallbackNote(text: string): { body: string; note: string | nul
 
 function createMessageTimestamp(): number {
   return Date.now();
+}
+
+function formatSessionSnippet(rawText: string): string {
+  const cleaned = String(rawText || '')
+    .replace(/\[([^\]]+)\]\((?:[^()]+|\([^()]*\))*\)/g, '$1')
+    .replace(/^\s{0,3}(?:-{3,}|\*{3,}|_{3,})\s*$/gm, ' ')
+    .replace(/[*#`_~|>\n]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned.length > 65 ? `${cleaned.slice(0, 65)}...` : cleaned;
+}
+
+function getDocumentKey(doc: {
+  filename: string;
+  docKey?: string;
+  source_type?: string | null;
+  source_id?: number | string | null;
+}): string {
+  if (doc.docKey) return doc.docKey;
+  if (doc.source_type && doc.source_id !== undefined && doc.source_id !== null) {
+    return `${doc.source_type}:${doc.source_id}`;
+  }
+  return `kb:${doc.filename}`;
 }
 
 interface AIConfig {
@@ -907,14 +935,35 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     return true;
   });
   const sidebarRef = useRef<HTMLElement>(null);
+  const mobileMenuBtnRef = useRef<HTMLButtonElement>(null);
+  const wasMobileSidebarOpenRef = useRef(false);
+
+  const blurSidebarFocus = () => {
+    if (typeof document !== 'undefined') {
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && sidebarRef.current?.contains(active)) {
+        active.blur();
+      }
+    }
+  };
+
+  const closeSidebar = () => {
+    blurSidebarFocus();
+    setIsSidebarOpen(false);
+  };
 
   // Tự động đóng mở sidebar và cập nhật isMobile khi chuyển đổi giữa Desktop và Mobile
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const mql = window.matchMedia('(max-width: 860px)');
     const handler = (e: MediaQueryListEvent) => {
+      if (e.matches) {
+        blurSidebarFocus();
+        setIsSidebarOpen(false);
+      } else {
+        setIsSidebarOpen(true);
+      }
       setIsMobile(e.matches);
-      setIsSidebarOpen(!e.matches);
     };
     mql.addEventListener('change', handler);
     return () => mql.removeEventListener('change', handler);
@@ -929,6 +978,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
+        blurSidebarFocus();
         setIsSidebarOpen(false);
         return;
       }
@@ -952,6 +1002,13 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
+  }, [isMobile, isSidebarOpen]);
+  useEffect(() => {
+    const isMobileOpenNow = isMobile && isSidebarOpen;
+    if (wasMobileSidebarOpenRef.current && !isMobileOpenNow && isMobile) {
+      mobileMenuBtnRef.current?.focus();
+    }
+    wasMobileSidebarOpenRef.current = isMobileOpenNow;
   }, [isMobile, isSidebarOpen]);
   const [sidebarTab, setSidebarTab] = useState<'sessions' | 'docs'>('sessions');
   const [sessionSearch, setSessionSearch] = useState('');
@@ -1138,37 +1195,50 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
       aiConfig.api_key_configured !== false
     : false;
 
-  const isDocumentPinned = (filename: string) =>
-    targetDocuments.some((doc) => doc.filename === filename);
+  const isDocumentPinned = (
+    doc: Pick<DocItem, 'filename' | 'source_type' | 'source_id'> | TargetDocInfo | string
+  ) => {
+    if (typeof doc === 'string') {
+      return targetDocuments.some((item) => item.filename === doc);
+    }
+    const targetKey = getDocumentKey(doc);
+    return targetDocuments.some((item) => getDocumentKey(item) === targetKey);
+  };
 
   const pinTargetDocument = (doc: TargetDocInfo) => {
+    const docWithKey: TargetDocInfo = { ...doc, docKey: getDocumentKey(doc) };
     setTargetDocuments((prev) => {
-      if (prev.some((item) => item.filename === doc.filename)) return prev;
+      if (prev.some((item) => getDocumentKey(item) === docWithKey.docKey)) return prev;
       if (prev.length >= MAX_PINNED_DOCUMENTS) {
         setAiAlertMsg(t('aiAssistant.inline.maxPinnedDocuments', { max: MAX_PINNED_DOCUMENTS }));
         setAiAlertOpen(true);
         return prev;
       }
-      return [...prev, doc];
+      return [...prev, docWithKey];
     });
   };
 
   const toggleTargetDocument = (doc: TargetDocInfo) => {
+    const docWithKey: TargetDocInfo = { ...doc, docKey: getDocumentKey(doc) };
     setTargetDocuments((prev) => {
-      if (prev.some((item) => item.filename === doc.filename)) {
-        return prev.filter((item) => item.filename !== doc.filename);
+      if (prev.some((item) => getDocumentKey(item) === docWithKey.docKey)) {
+        return prev.filter((item) => getDocumentKey(item) !== docWithKey.docKey);
       }
       if (prev.length >= MAX_PINNED_DOCUMENTS) {
         setAiAlertMsg(t('aiAssistant.inline.maxPinnedDocuments', { max: MAX_PINNED_DOCUMENTS }));
         setAiAlertOpen(true);
         return prev;
       }
-      return [...prev, doc];
+      return [...prev, docWithKey];
     });
   };
 
-  const removeTargetDocument = (filename: string) => {
-    setTargetDocuments((prev) => prev.filter((item) => item.filename !== filename));
+  const removeTargetDocument = (docKeyOrFilename: string) => {
+    setTargetDocuments((prev) =>
+      prev.filter(
+        (item) => getDocumentKey(item) !== docKeyOrFilename && item.filename !== docKeyOrFilename
+      )
+    );
   };
 
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -1332,7 +1402,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     setSelectedCategory('');
     setTargetDocuments([]);
     if (typeof window !== 'undefined' && window.innerWidth <= 860) {
-      setIsSidebarOpen(false);
+      closeSidebar();
     }
   };
 
@@ -1557,7 +1627,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     const title = isFirstQuestion
       ? (text.length > 60 ? `${text.slice(0, 60).trimEnd()}...` : text)
       : (sessionAtSend?.title || text);
-    const initialSnippet = text.length > 55 ? `${text.slice(0, 55)}...` : text;
+    const initialSnippet = formatSessionSnippet(text);
 
     updateChatHistory((prev) => prev.map((session) => session.id === sessionId
       ? { ...session, title, snippet: initialSnippet, messages: newMessages }
@@ -1588,8 +1658,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
             t('aiAssistant.msg.followUpBasis'),
           ],
         };
-        const cleanAiText = answerText.replace(/[*#`_\n]/g, ' ').replace(/\s+/g, ' ').trim();
-        const updatedSnippet = cleanAiText.length > 65 ? `${cleanAiText.slice(0, 65)}...` : cleanAiText;
+        const updatedSnippet = formatSessionSnippet(answerText);
 
         updateChatHistory((prev) => prev.map((session) => {
           if (session.id !== sessionId) return session;
@@ -1970,18 +2039,26 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                       <div className="sidebar-doc-list">
                         {sub.docs.map((d) => {
                           const itemLabel = d.filename;
-                          const isPinned = isDocumentPinned(d.filename);
+                          const docKey = getDocumentKey(d);
+                          const isPinned = isDocumentPinned(d);
                           const validityBadge = getValidityBadgeInfo(d.hieu_luc, t);
 
                           return (
                             <div
-                              key={d.filename}
+                              key={docKey}
                               className={`sidebar-doc-row ${isPinned ? 'is-targeted' : ''}`}
                               draggable={true}
                               onDragStart={(e) => {
                                 e.dataTransfer.setData(
                                   'application/x-tlbm-doc',
-                                  JSON.stringify({ filename: d.filename, label: itemLabel, category: d.category })
+                                  JSON.stringify({
+                                    filename: d.filename,
+                                    label: itemLabel,
+                                    category: d.category,
+                                    source_type: d.source_type ?? null,
+                                    source_id: d.source_id ?? null,
+                                    docKey,
+                                  })
                                 );
                                 e.dataTransfer.effectAllowed = 'copy';
                               }}
@@ -2011,7 +2088,14 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                                 <button
                                   type="button"
                                   className={`sidebar-doc-btn pin-btn ${isPinned ? 'is-active text-primary' : ''}`}
-                                  onClick={() => toggleTargetDocument({ filename: d.filename, label: itemLabel, category: d.category })}
+                                  onClick={() => toggleTargetDocument({
+                                    filename: d.filename,
+                                    label: itemLabel,
+                                    category: d.category,
+                                    source_type: d.source_type ?? null,
+                                    source_id: d.source_id ?? null,
+                                    docKey,
+                                  })}
                                   title={
                                     isPinned
                                       ? (t('aiAssistant.inline.unpinTargetDocument'))
@@ -2069,17 +2153,25 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
               {root.directDocs.length > 0 && (
                 <div className="sidebar-doc-list">
                   {root.directDocs.map((d) => {
-                    const isPinned = isDocumentPinned(d.filename);
+                    const docKey = getDocumentKey(d);
+                    const isPinned = isDocumentPinned(d);
                     const validityBadge = getValidityBadgeInfo(d.hieu_luc, t);
                     return (
                     <div
-                      key={d.filename}
+                      key={docKey}
                       className={`sidebar-doc-row ${isPinned ? 'is-targeted' : ''}`}
                       draggable={true}
                       onDragStart={(e) => {
                         e.dataTransfer.setData(
                           'application/x-tlbm-doc',
-                          JSON.stringify({ filename: d.filename, label: d.filename, category: d.category })
+                          JSON.stringify({
+                            filename: d.filename,
+                            label: d.filename,
+                            category: d.category,
+                            source_type: d.source_type ?? null,
+                            source_id: d.source_id ?? null,
+                            docKey,
+                          })
                         );
                         e.dataTransfer.effectAllowed = 'copy';
                       }}
@@ -2106,7 +2198,14 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                         <button
                           type="button"
                           className={`sidebar-doc-btn pin-btn ${isPinned ? 'is-active text-primary' : ''}`}
-                          onClick={() => toggleTargetDocument({ filename: d.filename, label: d.filename, category: d.category })}
+                          onClick={() => toggleTargetDocument({
+                            filename: d.filename,
+                            label: d.filename,
+                            category: d.category,
+                            source_type: d.source_type ?? null,
+                            source_id: d.source_id ?? null,
+                            docKey,
+                          })}
                           title={
                             isPinned
                               ? (t('aiAssistant.inline.unpinTargetDocument'))
@@ -2175,7 +2274,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
       {isSidebarOpen && (
         <button
           className="ai-sidebar-mobile-backdrop"
-          onClick={() => setIsSidebarOpen(false)}
+          onClick={closeSidebar}
           aria-label={t('aiAssistant.msg.closeSidebar')}
           type="button"
         />
@@ -2203,7 +2302,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
             type="button"
             className="sidebar-toggle-btn"
             aria-label={isSidebarOpen ? t('aiAssistant.collapseSidebar') : t('aiAssistant.expandSidebar')}
-            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            onClick={() => (isSidebarOpen ? closeSidebar() : setIsSidebarOpen(true))}
             title={isSidebarOpen ? t('aiAssistant.collapseSidebar') : t('aiAssistant.expandSidebar')}
           >
             <i className={`fa-solid ${isSidebarOpen ? 'fa-angles-left' : 'fa-angles-right'}`} />
@@ -2355,7 +2454,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                         : s.title;
                       const sessionSnippet = isDefaultSessionSnippet(s.snippet)
                         ? t('aiAssistant.defaultSession.snippet')
-                        : s.snippet;
+                        : formatSessionSnippet(s.snippet);
                       return (
                       <div key={s.id} className="session-item-row">
                         <button
@@ -2364,7 +2463,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                           onClick={() => {
                             setActiveSessionId(s.id);
                             if (typeof window !== 'undefined' && window.innerWidth <= 860) {
-                              setIsSidebarOpen(false);
+                              closeSidebar();
                             }
                           }}
                           title={sessionTitle}
@@ -2547,6 +2646,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
           <div className="top-header-left">
             {isMobile && !isSidebarOpen && (
               <button
+                ref={mobileMenuBtnRef}
                 type="button"
                 className="open-sidebar-btn"
                 onClick={() => setIsSidebarOpen(true)}
@@ -2796,7 +2896,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                     {msg.sender === 'user' && (msg.targetDocs?.length || msg.targetDoc) && (
                       <div className="message-target-doc-list">
                         {(msg.targetDocs && msg.targetDocs.length > 0 ? msg.targetDocs : msg.targetDoc ? [msg.targetDoc] : []).map((doc) => (
-                          <div key={doc.filename} className="message-target-doc-tag">
+                          <div key={getDocumentKey(doc)} className="message-target-doc-tag">
                             <i className={`fa-solid ${doc.filename.toLowerCase().endsWith('.pdf') ? 'fa-file-pdf' : 'fa-file-lines'}`} />
                             <span>{doc.label || doc.filename}</span>
                           </div>
@@ -2953,8 +3053,10 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                 )}
               </div>
               <div className="target-doc-pinned-items">
-                {targetDocuments.map((doc) => (
-                  <div key={doc.filename} className="target-doc-pinned-badge">
+                {targetDocuments.map((doc) => {
+                  const docKey = getDocumentKey(doc);
+                  return (
+                  <div key={docKey} className="target-doc-pinned-badge">
                     <div className="target-doc-badge-left">
                       <i
                         className={`fa-solid ${
@@ -2970,13 +3072,14 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                     <button
                       type="button"
                       className="target-doc-remove-btn"
-                      onClick={() => removeTargetDocument(doc.filename)}
+                      onClick={() => removeTargetDocument(docKey)}
                       title={t('aiAssistant.inline.clearTargetedDocument')}
                     >
                       <i className="fa-solid fa-xmark" />
                     </button>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -3205,9 +3308,16 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                     </div>
                     <div className="ai-sync-card">
                       <span className="ai-sync-card-label">{t('aiAssistant.sync.orphans')}</span>
-                      <span className={`ai-sync-card-value ${(syncStatus.kb_orphans ?? 0) > 0 ? 'is-warning' : 'is-success'}`}>
-                        {syncStatus.kb_orphans ?? 0}
-                      </span>
+                      {(() => {
+                        const orphanCount =
+                          syncStatus.total_orphans ??
+                          (syncStatus.kb_orphans ?? 0) + (syncStatus.sql_orphans ?? 0);
+                        return (
+                          <span className={`ai-sync-card-value ${orphanCount > 0 ? 'is-warning' : 'is-success'}`}>
+                            {orphanCount}
+                          </span>
+                        );
+                      })()}
                     </div>
                     <div className="ai-sync-card">
                       <span className="ai-sync-card-label">{t('aiAssistant.sync.pendingOcr')}</span>

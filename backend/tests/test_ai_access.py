@@ -356,6 +356,40 @@ class AIAccessTests(TestCase):
         self.assertEqual(status_body["schedule"]["cron"], "0 2 * * *")
         self.assertTrue(status_body["schedule"]["next_run_at"])
 
+    def test_sync_status_reports_sql_orphans_separately_from_eligible_indexed(self):
+        self.client.force_authenticate(self.superuser)
+        mock_collection = MagicMock()
+        mock_collection.indexed_filenames.return_value = {"kept.pdf", "orphan.pdf"}
+        fake_schema = {"status": "ok", "checked_views": 6, "missing_views": [], "missing_columns": {}}
+
+        fake_cursor = MagicMock()
+        fake_cursor.fetchone.side_effect = [
+            (19, 20, 108),
+            (19, 20, 107, 1, 471, 5),
+        ]
+        fake_cursor.__enter__.return_value = fake_cursor
+        fake_cursor.__exit__.return_value = False
+
+        with (
+            patch("api.views.list_documents", return_value=[{"filename": "kept.pdf"}]),
+            patch("backend.api.views.list_documents", return_value=[{"filename": "kept.pdf"}]),
+            patch("backend.services.rag_service.get_vector_collection", return_value=mock_collection),
+            patch("backend.services.sql_document_source.is_postgres_source", return_value=True),
+            patch("backend.services.sql_document_source.verify_sql_schema", return_value=fake_schema),
+            patch("backend.api.views.connection.cursor", return_value=fake_cursor),
+            patch("api.views.connection.cursor", return_value=fake_cursor),
+        ):
+            status_resp = self.client.get("/api/ai/sync/status")
+
+        self.assertEqual(status_resp.status_code, 200)
+        body = status_resp.json()
+        self.assertEqual(body["sql_eligible"]["total"], 147)
+        self.assertEqual(body["sql_indexed"]["total"], 146)
+        self.assertEqual(body["sql_orphans"], 5)
+        self.assertEqual(body["kb_orphans"], 1)
+        self.assertEqual(body["total_orphans"], 6)
+        self.assertEqual(body["sql_pending_extraction"], 1)
+
     def test_documents_endpoint_filters_restricted_and_hidden_official_docs_and_exposes_validity(self):
         from documents.models import HieuLuc, PhamVi, VanBanDen
 
