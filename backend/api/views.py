@@ -1004,7 +1004,7 @@ def ai_sync_status(request):
                                 WHERE t.id = ai_document_embedding.source_id
                                   AND t.hien_thi IN ('TAT_CA', 'NOI_BO_PHONG_BAN')
                             ) THEN source_id END),
-                        COUNT(DISTINCT CASE WHEN metadata ->> 'attachment_extraction_pending' = 'true' THEN source_key END),
+                        COUNT(DISTINCT CASE WHEN metadata ->> 'attachment_extraction_pending' = 'true' THEN COALESCE(metadata ->> 'sql_doc_key', CONCAT(source_type, ':', source_id)) END),
                         COUNT(*),
                         COUNT(DISTINCT CASE
                             WHEN (
@@ -1023,7 +1023,7 @@ def ai_sync_status(request):
                                     WHERE t.id = ai_document_embedding.source_id
                                       AND t.hien_thi IN ('TAT_CA', 'NOI_BO_PHONG_BAN')
                                 ))
-                            ) THEN source_key END)
+                            ) THEN CONCAT(source_type, ':', source_id) END)
                     FROM ai_document_embedding
                     """
                 )
