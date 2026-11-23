@@ -19,8 +19,10 @@ describe('filterModulesByPermission', () => {
     expect(pagesOf(['view_hoso'])).not.toContain('roles');
   });
 
-  it('chỉ hiện Trình Ký khi có view_trinhky', () => {
-    expect(pagesOf(['view_trinhky'])).toContain('approvals');
+  it('hiện Trình Ký khi có bất kỳ mã quyền Trình ký nào, khớp backend (#849)', () => {
+    for (const code of ['view_trinhky', 'add_trinhky', 'manage_signing_process', 'send_trinhky', 'sign_trinhky', 'cancel_trinhky', 'view_signing_audit', 'view_all_trinhky']) {
+      expect(pagesOf([code]), code).toContain('approvals');
+    }
     expect(pagesOf(['view_hoso'])).not.toContain('approvals');
     expect(pagesOf([])).not.toContain('approvals');
   });
