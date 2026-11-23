@@ -63,7 +63,14 @@ class DocumentAttachmentSerializer(serializers.ModelSerializer):
     def get_file(self, obj):
         doc_id = getattr(obj, "document_id", None) or getattr(obj, "vanbanden_id", None) or getattr(obj, "vanbandi_id", None) or getattr(obj, "vanbanmat_id", None)
         if doc_id:
-            return f"/api/documents/{doc_id}/attachments/{obj.pk}/download/"
+            loai = "DI" if (isinstance(obj, VanBanDiAttachment) or getattr(obj, "vanbandi_id", None) or hasattr(obj, "vanbandi")) else "DEN"
+            try:
+                doc = getattr(obj, "document", None)
+            except Exception:
+                doc = None
+            is_hc = getattr(doc, "pham_vi", None) == PhamVi.HAN_CHE or getattr(doc, "loai", None) == "MAT"
+            pv_suffix = "&pham_vi=HAN_CHE" if is_hc else ""
+            return f"/api/documents/{doc_id}/attachments/{obj.pk}/download/?loai={loai}{pv_suffix}"
         if obj.file:
             try:
                 return obj.file.url
@@ -84,7 +91,12 @@ class VanBanDenAttachmentSerializer(serializers.ModelSerializer):
     def get_file(self, obj):
         doc_id = getattr(obj, "document_id", None) or getattr(obj, "vanbanden_id", None)
         if doc_id:
-            return f"/api/documents/{doc_id}/attachments/{obj.pk}/download/"
+            try:
+                doc = getattr(obj, "document", None)
+            except Exception:
+                doc = None
+            pv_suffix = "&pham_vi=HAN_CHE" if getattr(doc, "pham_vi", None) == PhamVi.HAN_CHE else ""
+            return f"/api/documents/{doc_id}/attachments/{obj.pk}/download/?loai=DEN{pv_suffix}"
         if obj.file:
             try:
                 return obj.file.url
@@ -105,7 +117,12 @@ class VanBanDiAttachmentSerializer(serializers.ModelSerializer):
     def get_file(self, obj):
         doc_id = getattr(obj, "document_id", None) or getattr(obj, "vanbandi_id", None)
         if doc_id:
-            return f"/api/documents/{doc_id}/attachments/{obj.pk}/download/"
+            try:
+                doc = getattr(obj, "document", None)
+            except Exception:
+                doc = None
+            pv_suffix = "&pham_vi=HAN_CHE" if getattr(doc, "pham_vi", None) == PhamVi.HAN_CHE else ""
+            return f"/api/documents/{doc_id}/attachments/{obj.pk}/download/?loai=DI{pv_suffix}"
         if obj.file:
             try:
                 return obj.file.url
@@ -126,7 +143,7 @@ class VanBanMatAttachmentSerializer(serializers.ModelSerializer):
     def get_file(self, obj):
         doc_id = getattr(obj, "document_id", None) or getattr(obj, "vanbanmat_id", None)
         if doc_id:
-            return f"/api/documents/{doc_id}/attachments/{obj.pk}/download/"
+            return f"/api/documents/{doc_id}/attachments/{obj.pk}/download/?loai=MAT&pham_vi=HAN_CHE"
         if obj.file:
             try:
                 return obj.file.url
@@ -354,7 +371,10 @@ class DocumentListSerializer(serializers.Serializer):
                 request = self.context.get("request")
                 doc_id = getattr(att, "vanbanden_id", None) or getattr(att, "vanbandi_id", None) or getattr(att, "vanbanmat_id", None) or getattr(obj, "pk", None)
                 if doc_id:
-                    rel_url = f"/api/documents/{doc_id}/attachments/{att.pk}/download/"
+                    loai = "DI" if (isinstance(att, VanBanDiAttachment) or getattr(att, "vanbandi_id", None) or hasattr(att, "vanbandi") or getattr(obj, "document_kind", "") == "vanbandi" or getattr(obj, "loai", "") == "DI") else "DEN"
+                    is_hc = getattr(obj, "pham_vi", None) == PhamVi.HAN_CHE or getattr(obj, "loai", None) == "MAT"
+                    pv_suffix = "&pham_vi=HAN_CHE" if is_hc else ""
+                    rel_url = f"/api/documents/{doc_id}/attachments/{att.pk}/download/?loai={loai}{pv_suffix}"
                     if request:
                         return request.build_absolute_uri(rel_url)
                     return rel_url
