@@ -95,7 +95,7 @@ export default function AppSidebar({
   if (isCollapsed) {
     return (
       <aside
-        className="w-full h-full flex flex-col items-center justify-between bg-sidebar border-r border-subtle rounded-none select-none py-3 px-1.5 transition-all duration-300 overflow-hidden"
+        className="w-full h-full flex flex-col items-center justify-between bg-sidebar border-r border-subtle rounded-none select-none py-3 px-1.5 transition-all duration-150 ease-out overflow-hidden"
         aria-label="Thanh điều hướng thu gọn"
       >
         {/* 1. Header: Nút mở rộng menu điều hướng (tránh trùng Logo với Header) */}

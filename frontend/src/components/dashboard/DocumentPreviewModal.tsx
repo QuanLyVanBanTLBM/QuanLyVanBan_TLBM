@@ -2,6 +2,8 @@ import React, { useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from '@i18n/translate';
 import { Badge } from '@components/common';
+import { apiClientBlob, downloadBlob } from '@lib/apiClient';
+import { getAbsoluteFileUrl } from '@lib/fileUtils';
 import { DocumentItem, DocumentAttachment } from './ModernDashboardView';
 
 export interface DocumentPreviewModalProps {
@@ -659,16 +661,41 @@ ${t('documentPreview.signDate')} ${document.date}
     URL.revokeObjectURL(url);
   };
 
+  const resolveAttachmentUrl = (att: DocumentAttachment) => {
+    if (att.url && !att.url.startsWith('oldfile/') && !att.url.startsWith('den/') && !att.url.startsWith('di/')) {
+      return att.url;
+    }
+    if (document?.id && att.id) {
+      return `/api/documents/${document.id}/attachments/${att.id}/download/`;
+    }
+    return att.url || '';
+  };
+
   // 1. Tự động tải về khi người dùng ấn vào tệp định dạng Word (.doc / .docx)
-  const downloadDocFile = (att: DocumentAttachment) => {
-    if (att.url) {
-      const link = window.document.createElement('a');
-      link.href = att.url;
-      link.download = att.name;
-      window.document.body.appendChild(link);
-      link.click();
-      window.document.body.removeChild(link);
-      return;
+  const downloadDocFile = async (att: DocumentAttachment) => {
+    const fileUrl = resolveAttachmentUrl(att);
+
+    if (fileUrl) {
+      if (fileUrl.startsWith('/demo_files/')) {
+        const link = window.document.createElement('a');
+        link.href = fileUrl;
+        link.download = att.name;
+        window.document.body.appendChild(link);
+        link.click();
+        window.document.body.removeChild(link);
+        return;
+      }
+      try {
+        await downloadBlob(fileUrl, att.name);
+        return;
+      } catch (err) {
+        console.error('Lỗi khi tải tệp tin Word:', err);
+        const directUrl = getAbsoluteFileUrl(fileUrl);
+        if (directUrl) {
+          window.open(directUrl, '_blank', 'noopener,noreferrer');
+          return;
+        }
+      }
     }
 
     const wordContent = `=====================================================
@@ -719,27 +746,83 @@ Ngày ký: ${document.date}
   };
 
   // 2. Tự động mở cửa sổ mới trên web để xem trước đối với các định dạng khác (PDF, PNG, Excel...)
-  const previewFileInNewWindow = (att: DocumentAttachment) => {
-    if (att.url) {
-      window.open(att.url, '_blank', 'noopener,noreferrer');
+  const previewFileInNewWindow = async (att: DocumentAttachment) => {
+    const fileUrl = resolveAttachmentUrl(att);
+
+    // Trường hợp tệp demo tĩnh trong thư mục public
+    if (fileUrl && fileUrl.startsWith('/demo_files/')) {
+      window.open(fileUrl, '_blank', 'noopener,noreferrer');
       return;
+    }
+
+    // Trường hợp tệp từ máy chủ / API
+    if (fileUrl) {
+      try {
+        const rawBlob = await apiClientBlob(fileUrl);
+        const lower = (att.name || '').toLowerCase();
+        let mimeType = rawBlob.type;
+        if (lower.endsWith('.pdf')) {
+          mimeType = 'application/pdf';
+        } else if (lower.endsWith('.png')) {
+          mimeType = 'image/png';
+        } else if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
+          mimeType = 'image/jpeg';
+        } else if (lower.endsWith('.webp')) {
+          mimeType = 'image/webp';
+        } else if (lower.endsWith('.gif')) {
+          mimeType = 'image/gif';
+        } else if (lower.endsWith('.svg')) {
+          mimeType = 'image/svg+xml';
+        } else if (lower.endsWith('.txt')) {
+          mimeType = 'text/plain';
+        }
+
+        const viewBlob = mimeType ? new Blob([rawBlob], { type: mimeType }) : rawBlob;
+        const blobUrl = window.URL.createObjectURL(viewBlob);
+        const newWindow = window.open(blobUrl, '_blank', 'noopener,noreferrer');
+        if (!newWindow) {
+          const link = window.document.createElement('a');
+          link.href = blobUrl;
+          link.target = '_blank';
+          link.rel = 'noopener,noreferrer';
+          window.document.body.appendChild(link);
+          link.click();
+          window.document.body.removeChild(link);
+        }
+        setTimeout(() => window.URL.revokeObjectURL(blobUrl), 120000);
+        return;
+      } catch (err) {
+        console.error('Lỗi khi mở xem tệp tin:', err);
+        const directUrl = getAbsoluteFileUrl(fileUrl);
+        if (directUrl) {
+          window.open(directUrl, '_blank', 'noopener,noreferrer');
+          return;
+        }
+      }
     }
 
     const previewHtml = generateDocumentPreviewHtml(document, docMeta, att);
     const blob = new Blob([previewHtml], { type: 'text/html;charset=utf-8' });
     const blobUrl = URL.createObjectURL(blob);
-    const newWindow = window.open(blobUrl, '_blank');
+    const newWindow = window.open(blobUrl, '_blank', 'noopener,noreferrer');
     if (!newWindow) {
-      window.open(blobUrl, '_self');
+      const link = window.document.createElement('a');
+      link.href = blobUrl;
+      link.target = '_blank';
+      link.rel = 'noopener,noreferrer';
+      window.document.body.appendChild(link);
+      link.click();
+      window.document.body.removeChild(link);
     }
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
   };
 
   // Bộ điều hướng hành vi tệp đính kèm theo quy chuẩn
   const handleAttachmentAction = (att: DocumentAttachment) => {
     if (isDocFile(att)) {
-      downloadDocFile(att);
+      void downloadDocFile(att);
     } else {
-      previewFileInNewWindow(att);
+      void previewFileInNewWindow(att);
     }
   };
 

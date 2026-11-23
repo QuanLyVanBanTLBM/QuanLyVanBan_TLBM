@@ -4,6 +4,15 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import DocumentPreviewModal from './DocumentPreviewModal';
 import { DocumentItem } from './ModernDashboardView';
 
+vi.mock('@lib/apiClient', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@lib/apiClient')>();
+  return {
+    ...actual,
+    apiClientBlob: vi.fn().mockResolvedValue(new Blob(['mock-pdf-content'], { type: 'application/pdf' })),
+    downloadBlob: vi.fn().mockResolvedValue(undefined),
+  };
+});
+
 describe('DocumentPreviewModal Component (Group 2 Detail & PDF Reader View)', () => {
   const mockDoc: DocumentItem = {
     code: '56/NQ-HĐND',
@@ -225,6 +234,52 @@ describe('DocumentPreviewModal Component (Group 2 Detail & PDF Reader View)', ()
     expect(linkClickSpy).toHaveBeenCalled();
 
     vi.restoreAllMocks();
+  });
+
+  it('fetches authenticated blob with apiClientBlob for server-provided PDF attachment', async () => {
+    const { apiClientBlob } = await import('@lib/apiClient');
+    const originalOpen = window.open;
+    const windowOpenSpy = vi.fn().mockReturnValue({});
+    window.open = windowOpenSpy;
+
+    const serverDoc: DocumentItem = {
+      ...mockDoc,
+      id: 125,
+      code: '125/BQP',
+      title: 'test',
+      attachments: [
+        {
+          name: 'Django cơ bản _ Thực hành 4.pdf',
+          url: '/api/documents/125/attachments/12/download/',
+          type: 'pdf',
+          size: '1.8 MB',
+        },
+      ],
+    };
+
+    render(
+      <DocumentPreviewModal
+        isOpen={true}
+        onClose={vi.fn()}
+        document={serverDoc}
+        docType="incoming"
+      />
+    );
+
+    const pdfAttachment = screen.getByText(/Django cơ bản _ Thực hành 4\.pdf/i);
+    expect(pdfAttachment).toBeInTheDocument();
+    fireEvent.click(pdfAttachment);
+
+    await vi.waitFor(() => {
+      expect(apiClientBlob).toHaveBeenCalledWith('/api/documents/125/attachments/12/download/');
+      expect(windowOpenSpy).toHaveBeenCalledWith(
+        expect.stringContaining('blob:'),
+        '_blank',
+        'noopener,noreferrer'
+      );
+    });
+
+    window.open = originalOpen;
   });
 });
 

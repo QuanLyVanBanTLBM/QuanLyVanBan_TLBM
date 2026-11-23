@@ -415,7 +415,7 @@ export const MeetingsPage: React.FC = () => {
         <div
           role="status"
           aria-live="polite"
-          className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl text-sm font-semibold transition-all transform animate-fadeIn ${toastMessage.type === 'success'
+          className={`fixed top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl text-sm font-semibold transition-all transform animate-fadeIn ${toastMessage.type === 'success'
               ? 'bg-success text-white border border-success-hover'
               : 'bg-danger text-white border border-danger-hover'
             }`}
