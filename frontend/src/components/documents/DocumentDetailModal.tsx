@@ -90,19 +90,39 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
     return ['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'txt'].includes(ext);
   };
 
+  const resolveAttachmentUrl = (url: string | null | undefined): string => {
+    if (!url) return '';
+    let target = url;
+    const docLoai = document?.loai || 'DEN';
+    const docPhamVi = document?.pham_vi;
+
+    // Chỉ gắn tham số định tuyến cho các endpoint tải tệp của API văn bản (/api/documents/ hoặc /attachments/ hoặc /download)
+    const isDocDownloadApi =
+      target.includes('/api/documents/') || target.includes('/attachments/') || target.includes('/download');
+    if (isDocDownloadApi && !target.includes('loai=')) {
+      const sep = target.includes('?') ? '&' : '?';
+      target = `${target}${sep}loai=${encodeURIComponent(docLoai)}`;
+      if (docPhamVi === 'HAN_CHE' && !target.includes('pham_vi=')) {
+        target = `${target}&pham_vi=HAN_CHE`;
+      }
+    }
+    return target;
+  };
+
   const handlePreviewAttachment = async (fileUrl: string | null | undefined, fileName: string, fileId: number) => {
     if (!fileUrl) return;
+    const resolvedUrl = resolveAttachmentUrl(fileUrl);
     // Đối với tệp tin không hỗ trợ hiển thị trực tiếp trong tab trình duyệt (Word .doc, .docx, Excel .xls, .xlsx...):
     // Tự động tải về máy với đúng tên gốc và đuôi mở rộng để mở bằng ứng dụng trên máy tính
     if (!isBrowserPreviewable(fileName)) {
-      await handleDownloadAttachment(fileUrl, fileName, fileId);
+      await handleDownloadAttachment(resolvedUrl, fileName, fileId);
       return;
     }
 
     try {
       setLoadingFileId(fileId);
       setLoadingAction('preview');
-      const rawBlob = await apiClientBlob(fileUrl);
+      const rawBlob = await apiClientBlob(resolvedUrl);
       const lower = (fileName || '').toLowerCase();
       let mimeType = rawBlob.type;
       if (lower.endsWith('.pdf')) {
@@ -125,7 +145,7 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
       window.open(blobUrl, '_blank');
     } catch (err: unknown) {
       console.error('Lỗi khi mở xem tệp tin:', err);
-      const directUrl = getAbsoluteFileUrl(fileUrl);
+      const directUrl = getAbsoluteFileUrl(resolvedUrl);
       if (directUrl) {
         window.open(directUrl, '_blank');
       }
@@ -137,14 +157,15 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
 
   const handleDownloadAttachment = async (fileUrl: string | null | undefined, fileName: string, fileId: number) => {
     if (!fileUrl) return;
+    const resolvedUrl = resolveAttachmentUrl(fileUrl);
 
     try {
       setLoadingFileId(fileId);
       setLoadingAction('download');
-      await downloadBlob(fileUrl, fileName);
+      await downloadBlob(resolvedUrl, fileName);
     } catch (err: unknown) {
       console.error('Lỗi khi tải tệp tin:', err);
-      const directUrl = getAbsoluteFileUrl(fileUrl);
+      const directUrl = getAbsoluteFileUrl(resolvedUrl);
       if (directUrl) {
         window.open(directUrl, '_blank');
       }
