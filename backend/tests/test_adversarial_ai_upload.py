@@ -113,15 +113,56 @@ class AdversarialAIUploadTests(unittest.TestCase):
     def test_adv_5_save_ai_settings_chmod_resilience(self):
         """Phản biện 5: save_ai_settings phải bọc bắt lỗi nếu chmod thất bại."""
         with TemporaryDirectory() as temp_dir:
-            settings_path = Path(temp_dir) / "ai_settings.json"
+            temp_root = Path(temp_dir)
+            (temp_root / "backend").mkdir()
+            settings_path = temp_root / "ai_settings.json"
 
             with (
+                patch.dict("os.environ", {}, clear=False),
                 patch("backend.services.ai_settings_service.get_settings_file_path", return_value=settings_path),
+                patch.multiple(
+                    "backend.services.ai_settings_service.config",
+                    BASE_DIR=temp_root,
+                    DATA_DIR=temp_root,
+                    OPENAI_API_KEY="",
+                    MODEL_PROVIDER="openai",
+                    LLM_MODEL="gpt-6-luna",
+                    EMBED_MODEL="text-embedding-3-large",
+                    VISION_MODEL="gpt-6-luna",
+                ),
                 patch.object(Path, "chmod", side_effect=OSError("Read-only system")),
             ):
                 result = save_ai_settings({"provider": "openai", "openai_api_key": "sk-dummy"})
                 self.assertEqual(result.get("openai_api_key"), "sk-dummy")
                 self.assertTrue(settings_path.exists())
+                self.assertTrue((temp_root / "backend" / ".env").exists())
+
+    def test_adv_6_save_ai_settings_skips_real_env_in_test_runtime(self):
+        """Phản biện 6: Khi chạy test, save_ai_settings tuyệt đối không ghi đè .env thật của workspace."""
+        repo_root = Path(__file__).resolve().parents[2]
+        real_env = Path(__file__).resolve().parents[1] / ".env"
+        before_stat = (real_env.stat().st_mtime_ns, real_env.stat().st_size) if real_env.exists() else None
+
+        with TemporaryDirectory() as temp_dir:
+            settings_path = Path(temp_dir) / "ai_settings.json"
+            with (
+                patch.dict("os.environ", {"PYTEST_CURRENT_TEST": "test_adv_6"}, clear=False),
+                patch("backend.services.ai_settings_service.get_settings_file_path", return_value=settings_path),
+                patch.multiple(
+                    "backend.services.ai_settings_service.config",
+                    BASE_DIR=repo_root,
+                    OPENAI_API_KEY="",
+                    MODEL_PROVIDER="openai",
+                    LLM_MODEL="gpt-6-luna",
+                    EMBED_MODEL="text-embedding-3-large",
+                    VISION_MODEL="gpt-6-luna",
+                ),
+            ):
+                save_ai_settings({"provider": "openai", "openai_api_key": "sk-dummy-guard"})
+                self.assertTrue(settings_path.exists())
+
+        after_stat = (real_env.stat().st_mtime_ns, real_env.stat().st_size) if real_env.exists() else None
+        self.assertEqual(after_stat, before_stat)
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom';
 import AlertModal from '@components/common/AlertModal';
 import { ActivePageId } from '@app-types/navigation';
+import { renderAiInlineMarkdown } from '@lib/aiInlineMarkdown';
 import { pageIdToPath } from '@lib/routes';
 import {
   uploadDocumentAsync,
@@ -16,6 +17,7 @@ import {
   previewDocument,
   reclassifyDocument,
   getAISettings,
+  getAISyncStatus,
 } from '../../api';
 import { t as translate, useTranslation, type SupportedLanguage } from '@i18n/translate';
 import { usePermissions } from '@lib/permissions';
@@ -39,12 +41,18 @@ interface CitationSource {
   code?: string;
   targetPage?: ActivePageId;
   type?: 'incoming' | 'outgoing' | 'confidential' | 'approval';
+  hieu_luc?: string | null;
+  ngay_het_hieu_luc?: string | null;
+  doc_code?: string | null;
 }
 
 interface TargetDocInfo {
   filename: string;
   label?: string;
   category?: string;
+  docKey?: string;
+  source_type?: string | null;
+  source_id?: number | string | null;
 }
 
 interface ChatMessage {
@@ -77,6 +85,35 @@ interface DocItem {
   source_type?: string;
   source_id?: number;
   is_managed?: boolean;
+  so_hieu?: string | null;
+  hieu_luc?: string | null;
+  ngay_het_hieu_luc?: string | null;
+}
+
+interface AISyncStatusData {
+  configured?: boolean;
+  schema?: { status?: string; [key: string]: unknown };
+  sql_eligible?: { vanbanden?: number; vanbandi?: number; tailieu?: number; total?: number };
+  sql_indexed?: { vanbanden?: number; vanbandi?: number; tailieu?: number; total?: number };
+  sql_pending_extraction?: number;
+  sql_orphans?: number;
+  kb_registered?: number;
+  kb_indexed?: number;
+  kb_orphans?: number;
+  total_orphans?: number;
+  kb_orphan_names?: string[];
+  total_chunks?: number;
+  schedule?: {
+    enabled?: boolean;
+    mode?: string;
+    task?: string;
+    cron?: string;
+    hour?: number;
+    minute?: number;
+    time?: string;
+    timezone?: string;
+    next_run_at?: string | null;
+  };
 }
 
 interface CategoryItem {
@@ -119,10 +156,36 @@ function createMessageTimestamp(): number {
   return Date.now();
 }
 
+function formatSessionSnippet(rawText: string): string {
+  const cleaned = String(rawText || '')
+    .replace(/\[([^\]]+)\]\((?:[^()]+|\([^()]*\))*\)/g, '$1')
+    .replace(/^\s{0,3}(?:-{3,}|\*{3,}|_{3,})\s*$/gm, ' ')
+    .replace(/[*#`_~|>\n]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned.length > 65 ? `${cleaned.slice(0, 65)}...` : cleaned;
+}
+
+function getDocumentKey(doc: {
+  filename: string;
+  docKey?: string;
+  source_type?: string | null;
+  source_id?: number | string | null;
+}): string {
+  if (doc.docKey) return doc.docKey;
+  if (doc.source_type && doc.source_id !== undefined && doc.source_id !== null) {
+    return `${doc.source_type}:${doc.source_id}`;
+  }
+  return `kb:${doc.filename}`;
+}
+
 interface AIConfig {
   provider?: string;
   llm_model?: string;
   api_key?: string;
+  configured?: boolean;
+  has_api_key?: boolean;
+  api_key_configured?: boolean;
   [key: string]: unknown;
 }
 
@@ -163,6 +226,23 @@ function getSafeApiErrorDetail(error: unknown, fallback: string): string {
   const apiError = error as ApiError;
   const detail = apiError.data?.detail ?? apiError.response?.data?.detail;
   return typeof detail === 'string' && detail.trim() ? detail : fallback;
+}
+
+const SCHEDULE_LOCALE_BY_LANG: Record<SupportedLanguage, string> = {
+  vi: 'vi-VN',
+  en: 'en-US',
+};
+
+function formatScheduledRunTime(iso: string, lang: SupportedLanguage): string {
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return iso;
+  return new Intl.DateTimeFormat(SCHEDULE_LOCALE_BY_LANG[lang] || 'vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(parsed);
 }
 
 function createDefaultSession(id: string = 'session-default', lang: SupportedLanguage = 'vi'): ChatSession {
@@ -266,54 +346,7 @@ function formatInline(
   str: string = '',
   onInternalLink?: (href: string) => void
 ): React.ReactNode[] {
-  const parts: React.ReactNode[] = [];
-  const regex = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\$(?!\s)[^$\n]+?(?<!\s)\$(?!\d)|\[[^\]]+\]\((?:https?:\/\/|\/)[^)]+\))/g;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = regex.exec(str)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(str.substring(lastIndex, match.index));
-    }
-    const token = match[0];
-    if (token.startsWith('**') && token.endsWith('**')) {
-      parts.push(<strong key={match.index}>{token.slice(2, -2)}</strong>);
-    } else if (token.startsWith('`') && token.endsWith('`')) {
-      parts.push(<code key={match.index} className="rounded bg-surface-hover px-1">{token.slice(1, -1)}</code>);
-    } else if (token.startsWith('$') && token.endsWith('$') && token.length > 2) {
-      parts.push(<code key={match.index} className="ai-math-inline">{token.slice(1, -1)}</code>);
-    } else if (token.startsWith('[')) {
-      const link = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(token);
-      const href = link?.[2];
-      const safeHref = href && ((href.startsWith('/') && !href.startsWith('//')) || /^https?:\/\//i.test(href));
-      parts.push(safeHref ? (
-        <a
-          key={match.index}
-          href={href}
-          target={href?.startsWith('/') ? undefined : '_blank'}
-          rel="noreferrer"
-          className="text-primary underline"
-          onClick={
-            href?.startsWith('/') && onInternalLink
-              ? (event) => {
-                  event.preventDefault();
-                  onInternalLink(href);
-                }
-              : undefined
-          }
-        >
-          {link?.[1]}
-        </a>
-      ) : token);
-    } else {
-      parts.push(<em key={match.index}>{token.slice(1, -1)}</em>);
-    }
-    lastIndex = regex.lastIndex;
-  }
-  if (lastIndex < str.length) {
-    parts.push(str.substring(lastIndex));
-  }
-  return parts.length > 0 ? parts : [str];
+  return renderAiInlineMarkdown(str, 'ai', onInternalLink);
 }
 
 // Formatter Markdown đa dòng
@@ -394,6 +427,11 @@ function FormattedMessage({
           </table>
         </div>
       );
+      continue;
+    }
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
+      elements.push(<hr key={`hr-${lineIdx}`} className="my-2 border-0 border-t border-border-subtle" />);
+      lineIdx += 1;
       continue;
     }
     if (/^#{1,3}\s/.test(trimmed)) {
@@ -714,6 +752,22 @@ const BUSINESS_SPEC_PAGE_MAP: Record<string, ActivePageId> = {
   'branch-07-system': 'organizations',
 };
 
+function getValidityBadgeInfo(
+  hieuLuc: string | null | undefined,
+  tr: (key: string) => string
+): { label: string; variant: 'expired' | 'partial' } | null {
+  if (hieuLuc === 'HET_HIEU_LUC') {
+    return { label: tr('aiAssistant.validity.expired'), variant: 'expired' };
+  }
+  if (hieuLuc === 'HET_VA_THAY_THE') {
+    return { label: tr('aiAssistant.validity.replaced'), variant: 'expired' };
+  }
+  if (hieuLuc === 'CON_HIEU_LUC_1_PHAN') {
+    return { label: tr('aiAssistant.validity.partial'), variant: 'partial' };
+  }
+  return null;
+}
+
 function deduplicateCitations(sources: CitationSource[]): CitationSource[] {
   const seen = new Set<string>();
   return sources.filter((src) => {
@@ -806,6 +860,8 @@ function CitationsBox({
             }
           };
 
+          const validityBadge = getValidityBadgeInfo(src.hieu_luc, t);
+
           return (
             <button
               key={`${src.source_type || 'doc'}-${src.source_id ?? src.file_name ?? idx}-${idx}`}
@@ -826,6 +882,11 @@ function CitationsBox({
                 }`}
               />
               <span className="citation-name">{fileName}</span>
+              {validityBadge && (
+                <span className={`doc-validity-badge is-${validityBadge.variant}`}>
+                  {validityBadge.label}
+                </span>
+              )}
               {isBusinessSpec && <span className="citation-code">{t('aiAssistant.businessSpec')}</span>}
               <span className="citation-code">{code}</span>
               <i className="fa-solid fa-arrow-up-right-from-square citation-ext-icon" />
@@ -874,14 +935,35 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     return true;
   });
   const sidebarRef = useRef<HTMLElement>(null);
+  const mobileMenuBtnRef = useRef<HTMLButtonElement>(null);
+  const wasMobileSidebarOpenRef = useRef(false);
+
+  const blurSidebarFocus = () => {
+    if (typeof document !== 'undefined') {
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && sidebarRef.current?.contains(active)) {
+        active.blur();
+      }
+    }
+  };
+
+  const closeSidebar = () => {
+    blurSidebarFocus();
+    setIsSidebarOpen(false);
+  };
 
   // Tự động đóng mở sidebar và cập nhật isMobile khi chuyển đổi giữa Desktop và Mobile
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const mql = window.matchMedia('(max-width: 860px)');
     const handler = (e: MediaQueryListEvent) => {
+      if (e.matches) {
+        blurSidebarFocus();
+        setIsSidebarOpen(false);
+      } else {
+        setIsSidebarOpen(true);
+      }
       setIsMobile(e.matches);
-      setIsSidebarOpen(!e.matches);
     };
     mql.addEventListener('change', handler);
     return () => mql.removeEventListener('change', handler);
@@ -896,6 +978,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
+        blurSidebarFocus();
         setIsSidebarOpen(false);
         return;
       }
@@ -919,6 +1002,13 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
+  }, [isMobile, isSidebarOpen]);
+  useEffect(() => {
+    const isMobileOpenNow = isMobile && isSidebarOpen;
+    if (wasMobileSidebarOpenRef.current && !isMobileOpenNow && isMobile) {
+      mobileMenuBtnRef.current?.focus();
+    }
+    wasMobileSidebarOpenRef.current = isMobileOpenNow;
   }, [isMobile, isSidebarOpen]);
   const [sidebarTab, setSidebarTab] = useState<'sessions' | 'docs'>('sessions');
   const [sessionSearch, setSessionSearch] = useState('');
@@ -1081,7 +1171,9 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
   // Chat input states
   const [inputVal, setInputVal] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isWaitingForStream, setIsWaitingForStream] = useState(false);
   const isGeneratingRef = useRef(false);
+  const streamAbortRef = useRef<AbortController | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const [reclassifyingDoc, setReclassifyingDoc] = useState<string | null>(null);
@@ -1092,42 +1184,61 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
   const [aiAlertMsg, setAiAlertMsg] = useState('');
   const [targetDocuments, setTargetDocuments] = useState<TargetDocInfo[]>([]);
   const [isChatDragOver, setIsChatDragOver] = useState(false);
+  const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<AISyncStatusData | null>(null);
+  const [syncStatusLoading, setSyncStatusLoading] = useState(false);
+  const [syncStatusError, setSyncStatusError] = useState<string | null>(null);
 
   const isAiConnected = aiConfig
-    ? aiConfig.configured !== false && aiConfig.api_key_configured !== false
+    ? aiConfig.configured !== false &&
+      aiConfig.has_api_key !== false &&
+      aiConfig.api_key_configured !== false
     : false;
 
-  const isDocumentPinned = (filename: string) =>
-    targetDocuments.some((doc) => doc.filename === filename);
+  const isDocumentPinned = (
+    doc: Pick<DocItem, 'filename' | 'source_type' | 'source_id'> | TargetDocInfo | string
+  ) => {
+    if (typeof doc === 'string') {
+      return targetDocuments.some((item) => item.filename === doc);
+    }
+    const targetKey = getDocumentKey(doc);
+    return targetDocuments.some((item) => getDocumentKey(item) === targetKey);
+  };
 
   const pinTargetDocument = (doc: TargetDocInfo) => {
+    const docWithKey: TargetDocInfo = { ...doc, docKey: getDocumentKey(doc) };
     setTargetDocuments((prev) => {
-      if (prev.some((item) => item.filename === doc.filename)) return prev;
+      if (prev.some((item) => getDocumentKey(item) === docWithKey.docKey)) return prev;
       if (prev.length >= MAX_PINNED_DOCUMENTS) {
         setAiAlertMsg(t('aiAssistant.inline.maxPinnedDocuments', { max: MAX_PINNED_DOCUMENTS }));
         setAiAlertOpen(true);
         return prev;
       }
-      return [...prev, doc];
+      return [...prev, docWithKey];
     });
   };
 
   const toggleTargetDocument = (doc: TargetDocInfo) => {
+    const docWithKey: TargetDocInfo = { ...doc, docKey: getDocumentKey(doc) };
     setTargetDocuments((prev) => {
-      if (prev.some((item) => item.filename === doc.filename)) {
-        return prev.filter((item) => item.filename !== doc.filename);
+      if (prev.some((item) => getDocumentKey(item) === docWithKey.docKey)) {
+        return prev.filter((item) => getDocumentKey(item) !== docWithKey.docKey);
       }
       if (prev.length >= MAX_PINNED_DOCUMENTS) {
         setAiAlertMsg(t('aiAssistant.inline.maxPinnedDocuments', { max: MAX_PINNED_DOCUMENTS }));
         setAiAlertOpen(true);
         return prev;
       }
-      return [...prev, doc];
+      return [...prev, docWithKey];
     });
   };
 
-  const removeTargetDocument = (filename: string) => {
-    setTargetDocuments((prev) => prev.filter((item) => item.filename !== filename));
+  const removeTargetDocument = (docKeyOrFilename: string) => {
+    setTargetDocuments((prev) =>
+      prev.filter(
+        (item) => getDocumentKey(item) !== docKeyOrFilename && item.filename !== docKeyOrFilename
+      )
+    );
   };
 
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -1138,9 +1249,13 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
 
-  // Giải phóng pollTimerRef, recognitionRef và speechSynthesis khi unmount
+  // Giải phóng pollTimerRef, streamAbortRef, recognitionRef và speechSynthesis khi unmount
   useEffect(() => {
     return () => {
+      if (streamAbortRef.current) {
+        streamAbortRef.current.abort();
+        streamAbortRef.current = null;
+      }
       if (pollTimerRef.current !== null) {
         clearInterval(pollTimerRef.current);
         pollTimerRef.current = null;
@@ -1201,6 +1316,41 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     await loadCategories();
   }, [loadDocuments, loadCategories]);
 
+  const loadSyncStatus = useCallback(async () => {
+    setSyncStatusLoading(true);
+    setSyncStatusError(null);
+    try {
+      const data = await getAISyncStatus();
+      setSyncStatus(data as AISyncStatusData);
+    } catch (err: unknown) {
+      setSyncStatusError(getSafeApiErrorDetail(err, t('aiAssistant.sync.loadFailed')));
+    } finally {
+      setSyncStatusLoading(false);
+    }
+  }, [t]);
+
+  const closeSyncModal = useCallback(() => {
+    setIsSyncModalOpen(false);
+  }, []);
+
+  const openSyncModal = useCallback(() => {
+    setSyncStatusError(null);
+    setIsSyncModalOpen(true);
+    void loadSyncStatus();
+  }, [loadSyncStatus]);
+
+  useEffect(() => {
+    if (!isSyncModalOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeSyncModal();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isSyncModalOpen, closeSyncModal]);
+
   useEffect(() => {
     if (!canUseAI) return;
     let cancelled = false;
@@ -1252,7 +1402,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     setSelectedCategory('');
     setTargetDocuments([]);
     if (typeof window !== 'undefined' && window.innerWidth <= 860) {
-      setIsSidebarOpen(false);
+      closeSidebar();
     }
   };
 
@@ -1429,6 +1579,10 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     }
   };
 
+  const handleStopGenerating = () => {
+    streamAbortRef.current?.abort();
+  };
+
   // Gửi câu hỏi đến AI
   const handleSend = async (overrideText?: string, removeErrorMsgId?: string) => {
     if (isGeneratingRef.current || !canUseAI || !isChatHistoryReady) return;
@@ -1444,6 +1598,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
       (document.activeElement instanceof HTMLElement && document.activeElement.closest('.input-box-container') !== null);
     isGeneratingRef.current = true;
     setIsGenerating(true);
+    setIsWaitingForStream(true);
     const sessionId = activeSessionId;
     const sessionAtSend = sessions.find((session) => session.id === sessionId);
     const baseMessages = (sessionAtSend?.messages || []).filter(
@@ -1472,7 +1627,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     const title = isFirstQuestion
       ? (text.length > 60 ? `${text.slice(0, 60).trimEnd()}...` : text)
       : (sessionAtSend?.title || text);
-    const initialSnippet = text.length > 55 ? `${text.slice(0, 55)}...` : text;
+    const initialSnippet = formatSessionSnippet(text);
 
     updateChatHistory((prev) => prev.map((session) => session.id === sessionId
       ? { ...session, title, snippet: initialSnippet, messages: newMessages }
@@ -1480,6 +1635,9 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
     if (shouldAppendUserMsg) {
       setInputVal('');
     }
+
+    const abortController = new AbortController();
+    streamAbortRef.current = abortController;
 
     try {
       const aiMsgId = `ai-${sessionId}-${messageTimestamp}`;
@@ -1500,8 +1658,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
             t('aiAssistant.msg.followUpBasis'),
           ],
         };
-        const cleanAiText = answerText.replace(/[*#`_\n]/g, ' ').replace(/\s+/g, ' ').trim();
-        const updatedSnippet = cleanAiText.length > 65 ? `${cleanAiText.slice(0, 65)}...` : cleanAiText;
+        const updatedSnippet = formatSessionSnippet(answerText);
 
         updateChatHistory((prev) => prev.map((session) => {
           if (session.id !== sessionId) return session;
@@ -1524,6 +1681,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
           filename: singleFilename,
           filenames: multipleFilenames,
           language: currentLang,
+          signal: abortController.signal,
           onSources: (sources) => {
             streamedSources = (sources || []) as CitationSource[];
             if (messageStreamed) {
@@ -1534,7 +1692,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
             accumulatedText = full;
             if (!messageStreamed) {
               messageStreamed = true;
-              setIsGenerating(false);
+              setIsWaitingForStream(false);
             }
             updateOrAddAiMessage(accumulatedText, streamedSources);
           },
@@ -1545,6 +1703,13 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
           },
         });
       } catch (streamError: unknown) {
+        const isAbortError =
+          abortController.signal.aborted ||
+          (streamError instanceof DOMException && streamError.name === 'AbortError') ||
+          (typeof streamError === 'object' && streamError !== null && (streamError as { name?: string }).name === 'AbortError');
+        if (isAbortError) {
+          return;
+        }
         if (!messageStreamed) {
           console.warn('Stream failed, falling back to askQuestion:', streamError);
           const response = await askQuestion(text, history, selectedCategory || null, singleFilename, currentLang, multipleFilenames);
@@ -1570,8 +1735,10 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
         ? { ...session, messages: [...newMessages, errMsg] }
         : session));
     } finally {
+      streamAbortRef.current = null;
       isGeneratingRef.current = false;
       setIsGenerating(false);
+      setIsWaitingForStream(false);
     }
   };
 
@@ -1872,17 +2039,26 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                       <div className="sidebar-doc-list">
                         {sub.docs.map((d) => {
                           const itemLabel = d.filename;
-                          const isPinned = isDocumentPinned(d.filename);
+                          const docKey = getDocumentKey(d);
+                          const isPinned = isDocumentPinned(d);
+                          const validityBadge = getValidityBadgeInfo(d.hieu_luc, t);
 
                           return (
                             <div
-                              key={d.filename}
+                              key={docKey}
                               className={`sidebar-doc-row ${isPinned ? 'is-targeted' : ''}`}
                               draggable={true}
                               onDragStart={(e) => {
                                 e.dataTransfer.setData(
                                   'application/x-tlbm-doc',
-                                  JSON.stringify({ filename: d.filename, label: itemLabel, category: d.category })
+                                  JSON.stringify({
+                                    filename: d.filename,
+                                    label: itemLabel,
+                                    category: d.category,
+                                    source_type: d.source_type ?? null,
+                                    source_id: d.source_id ?? null,
+                                    docKey,
+                                  })
                                 );
                                 e.dataTransfer.effectAllowed = 'copy';
                               }}
@@ -1901,13 +2077,25 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                                 <span className="sidebar-doc-name">
                                   {itemLabel}
                                 </span>
+                                {validityBadge && (
+                                  <span className={`doc-validity-badge is-${validityBadge.variant}`}>
+                                    {validityBadge.label}
+                                  </span>
+                                )}
                               </div>
                               <div className="sidebar-doc-actions">
                                 {/* Nút chỉ định nhanh */}
                                 <button
                                   type="button"
                                   className={`sidebar-doc-btn pin-btn ${isPinned ? 'is-active text-primary' : ''}`}
-                                  onClick={() => toggleTargetDocument({ filename: d.filename, label: itemLabel, category: d.category })}
+                                  onClick={() => toggleTargetDocument({
+                                    filename: d.filename,
+                                    label: itemLabel,
+                                    category: d.category,
+                                    source_type: d.source_type ?? null,
+                                    source_id: d.source_id ?? null,
+                                    docKey,
+                                  })}
                                   title={
                                     isPinned
                                       ? (t('aiAssistant.inline.unpinTargetDocument'))
@@ -1965,16 +2153,25 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
               {root.directDocs.length > 0 && (
                 <div className="sidebar-doc-list">
                   {root.directDocs.map((d) => {
-                    const isPinned = isDocumentPinned(d.filename);
+                    const docKey = getDocumentKey(d);
+                    const isPinned = isDocumentPinned(d);
+                    const validityBadge = getValidityBadgeInfo(d.hieu_luc, t);
                     return (
                     <div
-                      key={d.filename}
+                      key={docKey}
                       className={`sidebar-doc-row ${isPinned ? 'is-targeted' : ''}`}
                       draggable={true}
                       onDragStart={(e) => {
                         e.dataTransfer.setData(
                           'application/x-tlbm-doc',
-                          JSON.stringify({ filename: d.filename, label: d.filename, category: d.category })
+                          JSON.stringify({
+                            filename: d.filename,
+                            label: d.filename,
+                            category: d.category,
+                            source_type: d.source_type ?? null,
+                            source_id: d.source_id ?? null,
+                            docKey,
+                          })
                         );
                         e.dataTransfer.effectAllowed = 'copy';
                       }}
@@ -1991,12 +2188,24 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                           }`}
                         />
                         <span className="sidebar-doc-name">{d.filename}</span>
+                        {validityBadge && (
+                          <span className={`doc-validity-badge is-${validityBadge.variant}`}>
+                            {validityBadge.label}
+                          </span>
+                        )}
                       </div>
                       <div className="sidebar-doc-actions">
                         <button
                           type="button"
                           className={`sidebar-doc-btn pin-btn ${isPinned ? 'is-active text-primary' : ''}`}
-                          onClick={() => toggleTargetDocument({ filename: d.filename, label: d.filename, category: d.category })}
+                          onClick={() => toggleTargetDocument({
+                            filename: d.filename,
+                            label: d.filename,
+                            category: d.category,
+                            source_type: d.source_type ?? null,
+                            source_id: d.source_id ?? null,
+                            docKey,
+                          })}
                           title={
                             isPinned
                               ? (t('aiAssistant.inline.unpinTargetDocument'))
@@ -2065,7 +2274,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
       {isSidebarOpen && (
         <button
           className="ai-sidebar-mobile-backdrop"
-          onClick={() => setIsSidebarOpen(false)}
+          onClick={closeSidebar}
           aria-label={t('aiAssistant.msg.closeSidebar')}
           type="button"
         />
@@ -2079,6 +2288,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
         className={`ai-chat-sidebar ${isSidebarOpen ? 'is-open' : 'is-collapsed'}`}
         role={isMobile && isSidebarOpen ? 'dialog' : undefined}
         aria-modal={isMobile && isSidebarOpen ? true : undefined}
+        aria-hidden={isMobile && !isSidebarOpen ? true : undefined}
         aria-label={t('aiAssistant.inline.chatHistory')}
       >
         {/* Nút Tạo Đoạn chat mới & Thu gọn */}
@@ -2092,7 +2302,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
             type="button"
             className="sidebar-toggle-btn"
             aria-label={isSidebarOpen ? t('aiAssistant.collapseSidebar') : t('aiAssistant.expandSidebar')}
-            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            onClick={() => (isSidebarOpen ? closeSidebar() : setIsSidebarOpen(true))}
             title={isSidebarOpen ? t('aiAssistant.collapseSidebar') : t('aiAssistant.expandSidebar')}
           >
             <i className={`fa-solid ${isSidebarOpen ? 'fa-angles-left' : 'fa-angles-right'}`} />
@@ -2136,7 +2346,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                       ? managedDocs.length
                       : docSourceFilter === 'uploaded'
                       ? uploadedDocs.length
-                      : documents.length}
+                      : filteredDocs.length}
                   </span>
                 )}
                 <i
@@ -2223,7 +2433,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                 <div className="session-group-title">
                   <span>{t('aiAssistant.inline.chatHistory')}</span>
                   {sessions.length > 0 && (
-                    <span className="session-count-badge">{sessions.length}</span>
+                    <span className="session-count-badge">{filteredSessions.length}</span>
                   )}
                 </div>
 
@@ -2244,7 +2454,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                         : s.title;
                       const sessionSnippet = isDefaultSessionSnippet(s.snippet)
                         ? t('aiAssistant.defaultSession.snippet')
-                        : s.snippet;
+                        : formatSessionSnippet(s.snippet);
                       return (
                       <div key={s.id} className="session-item-row">
                         <button
@@ -2253,7 +2463,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                           onClick={() => {
                             setActiveSessionId(s.id);
                             if (typeof window !== 'undefined' && window.innerWidth <= 860) {
-                              setIsSidebarOpen(false);
+                              closeSidebar();
                             }
                           }}
                           title={sessionTitle}
@@ -2434,6 +2644,18 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
         {/* Top Header */}
         <header className="ai-chat-top-header">
           <div className="top-header-left">
+            {isMobile && !isSidebarOpen && (
+              <button
+                ref={mobileMenuBtnRef}
+                type="button"
+                className="open-sidebar-btn"
+                onClick={() => setIsSidebarOpen(true)}
+                aria-label={t('aiAssistant.expandSidebar')}
+                title={t('aiAssistant.expandSidebar')}
+              >
+                <i className="fa-solid fa-bars" aria-hidden="true" />
+              </button>
+            )}
             <div className="ai-brand-badge">
               <div className="ai-brand-icon">
                 <i className="fa-solid fa-robot" />
@@ -2520,6 +2742,20 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                   {isAiConnected ? t('aiAssistant.statusActive') : t('aiAssistant.statusDisconnected')}
                 </span>
               </div>
+            )}
+
+            {/* Nút Đồng bộ kho AI (chỉ Quản trị viên) */}
+            {currentUser.isAdmin && (
+              <button
+                type="button"
+                className="chat-action-btn"
+                onClick={openSyncModal}
+                title={t('aiAssistant.sync.title')}
+                aria-label={t('aiAssistant.sync.openBtn')}
+              >
+                <i className="fa-solid fa-clock-rotate-left" />
+                <span className="hidden xl:inline">{t('aiAssistant.sync.openBtn')}</span>
+              </button>
             )}
 
             {/* Nút Xuất file */}
@@ -2660,7 +2896,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                     {msg.sender === 'user' && (msg.targetDocs?.length || msg.targetDoc) && (
                       <div className="message-target-doc-list">
                         {(msg.targetDocs && msg.targetDocs.length > 0 ? msg.targetDocs : msg.targetDoc ? [msg.targetDoc] : []).map((doc) => (
-                          <div key={doc.filename} className="message-target-doc-tag">
+                          <div key={getDocumentKey(doc)} className="message-target-doc-tag">
                             <i className={`fa-solid ${doc.filename.toLowerCase().endsWith('.pdf') ? 'fa-file-pdf' : 'fa-file-lines'}`} />
                             <span>{doc.label || doc.filename}</span>
                           </div>
@@ -2747,7 +2983,7 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
             })}
 
             {/* Trạng thái AI đang suy nghĩ / tra cứu */}
-            {isGenerating && (
+            {isGenerating && isWaitingForStream && (
               <div className="ai-chat-message-row is-ai">
                 <div className="message-avatar">
                   <i className="fa-solid fa-brain" />
@@ -2817,8 +3053,10 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                 )}
               </div>
               <div className="target-doc-pinned-items">
-                {targetDocuments.map((doc) => (
-                  <div key={doc.filename} className="target-doc-pinned-badge">
+                {targetDocuments.map((doc) => {
+                  const docKey = getDocumentKey(doc);
+                  return (
+                  <div key={docKey} className="target-doc-pinned-badge">
                     <div className="target-doc-badge-left">
                       <i
                         className={`fa-solid ${
@@ -2834,13 +3072,14 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                     <button
                       type="button"
                       className="target-doc-remove-btn"
-                      onClick={() => removeTargetDocument(doc.filename)}
+                      onClick={() => removeTargetDocument(docKey)}
                       title={t('aiAssistant.inline.clearTargetedDocument')}
                     >
                       <i className="fa-solid fa-xmark" />
                     </button>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -2974,17 +3213,29 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
               <i className="fa-solid fa-microphone" />
             </button>
 
-            {/* Nút Gửi */}
-            <button
-              type="button"
-              className="send-message-btn"
-              disabled={!inputVal.trim() || isGenerating || !isChatHistoryReady}
-              onClick={() => handleSend()}
-              title={t('aiAssistant.send')}
-              aria-label={t('aiAssistant.send')}
-            >
-              <i className="fa-solid fa-paper-plane" />
-            </button>
+            {/* Nút Gửi / Dừng */}
+            {isGenerating ? (
+              <button
+                type="button"
+                className="send-message-btn is-stopping"
+                onClick={handleStopGenerating}
+                title={t('aiAssistant.stop')}
+                aria-label={t('aiAssistant.stop')}
+              >
+                <i className="fa-solid fa-stop" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="send-message-btn"
+                disabled={!inputVal.trim() || !isChatHistoryReady}
+                onClick={() => handleSend()}
+                title={t('aiAssistant.send')}
+                aria-label={t('aiAssistant.send')}
+              >
+                <i className="fa-solid fa-paper-plane" />
+              </button>
+            )}
           </div>
         </footer>
       </main>
@@ -2996,6 +3247,148 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
           filename={previewFilename}
           onClose={() => setPreviewFilename(null)}
         />
+      )}
+
+      {/* Modal Trạng Thái Đồng Bộ Kho Tri Thức AI (chỉ Quản trị viên) */}
+      {isSyncModalOpen && (
+        <div
+          className="ai-settings-backdrop"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              closeSyncModal();
+            }
+          }}
+        >
+          <div
+            className="ai-settings-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="ai-sync-modal-title"
+          >
+            <div className="ai-settings-header">
+              <h3 id="ai-sync-modal-title" className="ai-settings-title">
+                <i className="fa-solid fa-database text-primary" />
+                <span>{t('aiAssistant.sync.title')}</span>
+              </h3>
+              <button
+                type="button"
+                className="preview-close-btn"
+                onClick={closeSyncModal}
+                aria-label={t('aiAssistant.sync.close')}
+                title={t('aiAssistant.sync.close')}
+              >
+                <i className="fa-solid fa-xmark" />
+              </button>
+            </div>
+
+            <div className="ai-settings-body">
+              <p className="ai-settings-subtitle">{t('aiAssistant.sync.subtitle')}</p>
+
+              {syncStatusLoading && !syncStatus && (
+                <div className="ai-sync-loading" role="status">
+                  <i className="fa-solid fa-circle-notch fa-spin text-primary" />
+                  <span>{t('aiAssistant.modelLoading')}</span>
+                </div>
+              )}
+
+              {syncStatus && (
+                <>
+                  <div className="ai-sync-grid">
+                    <div className="ai-sync-card">
+                      <span className="ai-sync-card-label">{t('aiAssistant.sync.sqlDocs')}</span>
+                      <span className="ai-sync-card-value">
+                        {`${syncStatus.sql_indexed?.total ?? 0} / ${syncStatus.sql_eligible?.total ?? 0}`}
+                      </span>
+                    </div>
+                    <div className="ai-sync-card">
+                      <span className="ai-sync-card-label">{t('aiAssistant.sync.kbDocs')}</span>
+                      <span className="ai-sync-card-value">
+                        {`${syncStatus.kb_indexed ?? 0} / ${syncStatus.kb_registered ?? 0}`}
+                      </span>
+                    </div>
+                    <div className="ai-sync-card">
+                      <span className="ai-sync-card-label">{t('aiAssistant.sync.orphans')}</span>
+                      {(() => {
+                        const orphanCount =
+                          syncStatus.total_orphans ??
+                          (syncStatus.kb_orphans ?? 0) + (syncStatus.sql_orphans ?? 0);
+                        return (
+                          <span className={`ai-sync-card-value ${orphanCount > 0 ? 'is-warning' : 'is-success'}`}>
+                            {orphanCount}
+                          </span>
+                        );
+                      })()}
+                    </div>
+                    <div className="ai-sync-card">
+                      <span className="ai-sync-card-label">{t('aiAssistant.sync.pendingOcr')}</span>
+                      <span className={`ai-sync-card-value ${(syncStatus.sql_pending_extraction ?? 0) > 0 ? 'is-warning' : ''}`}>
+                        {syncStatus.sql_pending_extraction ?? 0}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="ai-sync-status-row">
+                    <span>{t('aiAssistant.sync.totalChunks')}</span>
+                    <strong>{syncStatus.total_chunks ?? 0}</strong>
+                  </div>
+
+                  <div className="ai-sync-status-row">
+                    <span>{t('aiAssistant.sync.schemaLabel')}</span>
+                    <span className={`ai-sync-card-value ${syncStatus.schema?.status === 'ok' ? 'is-success' : 'is-danger'}`}>
+                      {syncStatus.schema?.status === 'ok'
+                        ? t('aiAssistant.sync.schemaOk')
+                        : t('aiAssistant.sync.schemaError')}
+                    </span>
+                  </div>
+
+                  <div className="ai-sync-status-row">
+                    <span>{t('aiAssistant.sync.eventModeLabel')}</span>
+                    <span className="ai-sync-card-value is-success">
+                      {t('aiAssistant.sync.eventModeActive')}
+                    </span>
+                  </div>
+
+                  <div className="ai-sync-status-row">
+                    <span>{t('aiAssistant.sync.scheduleLabel')}</span>
+                    <span className={`ai-sync-card-value ${syncStatus.schedule?.enabled !== false ? 'is-success' : 'is-warning'}`}>
+                      {syncStatus.schedule?.enabled !== false
+                        ? t('aiAssistant.sync.scheduleDaily', {
+                            time: syncStatus.schedule?.time || '02:00',
+                            timezone: syncStatus.schedule?.timezone || 'Asia/Ho_Chi_Minh',
+                          })
+                        : t('aiAssistant.sync.scheduleDisabled')}
+                    </span>
+                  </div>
+
+                  {syncStatus.schedule?.enabled !== false && syncStatus.schedule?.next_run_at && (
+                    <div className="ai-sync-status-row">
+                      <span>{t('aiAssistant.sync.nextRunLabel')}</span>
+                      <strong>
+                        {formatScheduledRunTime(syncStatus.schedule.next_run_at, currentLang)}
+                      </strong>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {syncStatusError && (
+                <div className="ai-settings-error" role="alert">
+                  {syncStatusError}
+                </div>
+              )}
+            </div>
+
+            <div className="ai-settings-actions">
+              <button
+                type="button"
+                className="ai-settings-btn-cancel"
+                onClick={closeSyncModal}
+              >
+                {t('aiAssistant.sync.close')}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       <AlertModal open={aiAlertOpen} onClose={()=>setAiAlertOpen(false)} message={aiAlertMsg} />

@@ -480,7 +480,7 @@ class AttachmentRetrievalTests(unittest.TestCase):
         self.assertIn("Nội dung chính", fallback_reply)
         self.assertIn("Chữ ký chuẩn & Nơi nhận", fallback_reply)
         self.assertIn("Trân trọng cảm ơn", fallback_reply)
-        self.assertIn("(/documents)", fallback_reply)
+        self.assertIn("(/resources)", fallback_reply)
 
     def test_unpinned_drafting_and_advisory_filter_out_noisy_keyword_sources(self):
         from backend.services.rag_service import ask_document
@@ -518,7 +518,7 @@ class AttachmentRetrievalTests(unittest.TestCase):
                 language="vi",
             )
             self.assertEqual(result["sources"], [])
-            self.assertIn("(/documents)", result["answer"])
+            self.assertIn("(/resources)", result["answer"])
 
     def test_detect_drafting_intent_rejects_unrelated_topics(self):
         from backend.services.rag_service import (
@@ -723,6 +723,179 @@ class AttachmentRetrievalTests(unittest.TestCase):
             self.assertEqual(done_payload["sources"], [])
             self.assertGreaterEqual(len(sources_events), 1)
             self.assertEqual(sources_events[-1], [])
+
+    def test_validate_upload_allows_legacy_doc_extension(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from backend.api.views import _validate_upload
+
+        self.assertEqual(_validate_upload(SimpleUploadedFile("legacy.doc", b"abc")), "")
+
+    def test_domain_ocr_and_classify_prompts_follow_nd30_and_qlvb_categories(self):
+        from backend.services.rag_service import VISION_OCR_PROMPT, classify_document
+
+        self.assertIn("Quốc hiệu", VISION_OCR_PROMPT)
+        self.assertIn("Số, ký hiệu văn bản", VISION_OCR_PROMPT)
+        self.assertIn("Trích yếu", VISION_OCR_PROMPT)
+        self.assertIn("Nghị định 30/2020/NĐ-CP", VISION_OCR_PROMPT)
+
+        mock_llm = MagicMock()
+        mock_llm.complete.return_value = "Quyết định"
+        with patch("backend.services.rag_service.Settings") as mock_settings:
+            mock_settings.llm = mock_llm
+            result = classify_document("Quyết định số 12/QĐ-UBND ban hành quy chế nội bộ")
+
+        self.assertEqual(result, "Quyết định")
+        prompt_sent = mock_llm.complete.call_args[0][0]
+        self.assertIn("Quyết định", prompt_sent)
+        self.assertIn("Công văn", prompt_sent)
+        self.assertNotIn("Vật lý", prompt_sent)
+        self.assertNotIn("Hóa học", prompt_sent)
+
+    def test_extract_targets_matches_doc_code_without_hardcoded_demo_folder(self):
+        from backend.services.rag_service import extract_targets_from_question
+
+        with patch(
+            "backend.services.rag_service._get_scoped_indexed_filenames",
+            return_value=["123_QD_UBND_quy_che.pdf", "45_CV_VP_bao_cao.pdf"],
+        ):
+            self.assertEqual(
+                extract_targets_from_question("Cho tôi xem quyết định số 123/QĐ-UBND"),
+                ["123_QD_UBND_quy_che.pdf"],
+            )
+            self.assertEqual(
+                extract_targets_from_question("Thư mục 1, item 1 nói gì"),
+                [],
+            )
+
+    def test_unpinned_drafting_gates_noisy_low_dense_hybrid_hits_to_soft_fallback(self):
+        from backend.services.rag_service import SOFT_FALLBACK_NOTE_VI, ask_document
+
+        noisy_dense_node = SimpleNamespace(
+            text="Công văn 09/CV-KH đề nghị phối hợp báo cáo tiến độ dự án quý I.",
+            metadata={
+                "file_name": "09_CV_KH.pdf",
+                "doc_code": "09/CV-KH",
+                "chunk_id": "1-1",
+                "parent_context": "Công văn 09/CV-KH đề nghị phối hợp báo cáo tiến độ dự án quý I.",
+            },
+            score=0.45,
+        )
+        noisy_kw_node = SimpleNamespace(
+            text="Công văn 09/CV-KH đề nghị phối hợp báo cáo tiến độ dự án quý I.",
+            metadata={
+                "file_name": "09_CV_KH.pdf",
+                "doc_code": "09/CV-KH",
+                "chunk_id": "1-1",
+                "parent_context": "Công văn 09/CV-KH đề nghị phối hợp báo cáo tiến độ dự án quý I.",
+            },
+            score=0.80,
+        )
+        ranked = _rerank_hybrid_nodes(
+            [noisy_dense_node],
+            [noisy_kw_node],
+            "Soạn công văn đôn đốc nộp báo cáo tháng",
+        )
+        self.assertAlmostEqual(ranked[0].node.metadata["dense_score"], 0.45)
+
+        mock_retriever = MagicMock()
+        mock_retriever.retrieve.return_value = [ranked[0]]
+        mock_index = MagicMock()
+        mock_index.as_retriever.return_value = mock_retriever
+        mock_llm = MagicMock()
+        mock_llm.complete.return_value = (
+            "1. **Tiêu đề / Chủ đề:** Công văn đôn đốc nộp báo cáo tháng\n"
+            "2. **Kính gửi:** Các phòng ban chuyên môn."
+        )
+
+        with (
+            patch("backend.services.ai_access.has_permission_codename", return_value=True),
+            patch("backend.services.sql_document_source.is_postgres_source", return_value=True),
+            patch("backend.services.sql_document_source.accessible_document_keys", return_value={"vanbandi:9"}),
+            patch("backend.services.business_knowledge.match_business_sources", return_value=[]),
+            patch("backend.services.rag_service.setup_llamaindex"),
+            patch("backend.services.rag_service.get_index", return_value=mock_index),
+            patch("backend.services.faq_response_cache.get_cached_answer", return_value=None),
+            patch("backend.services.rag_service.Settings") as mock_settings,
+        ):
+            mock_settings.llm = mock_llm
+            result = ask_document(
+                "Soạn công văn đôn đốc nộp báo cáo tháng",
+                user=SimpleNamespace(is_authenticated=True, id=1),
+                filename=None,
+                language="vi",
+            )
+
+        self.assertEqual(result["sources"], [])
+        self.assertIn(SOFT_FALLBACK_NOTE_VI, result["answer"])
+        prompt_sent = mock_llm.complete.call_args[0][0]
+        self.assertIn(SOFT_FALLBACK_NOTE_VI, prompt_sent)
+        self.assertIn("(/resources)", prompt_sent)
+        self.assertNotIn("09_CV_KH.pdf", prompt_sent)
+
+    def test_hieu_luc_lifecycle_propagates_across_prefix_context_sources_and_prompts(self):
+        from backend.services.rag_service import (
+            SECRETARY_SYSTEM_PROMPT,
+            SECRETARY_SYSTEM_PROMPT_EN,
+            build_context_from_sources,
+            build_contextual_prefix,
+            public_sources,
+        )
+
+        prefix = build_contextual_prefix(
+            file_name="01/QC — Quy chế cũ",
+            hieu_luc="HET_HIEU_LUC",
+            ngay_het_hieu_luc="2025-12-31",
+            page=1,
+        )
+        self.assertIn("Hết hiệu lực", prefix)
+        self.assertIn("2025-12-31", prefix)
+
+        sources = [
+            {
+                "file_name": "01/QC — Quy chế cũ",
+                "context": "Nội dung điều 1",
+                "hieu_luc": "HET_HIEU_LUC",
+                "ngay_het_hieu_luc": "2025-12-31",
+            },
+            {
+                "file_name": "02/QD — Quy chế sửa đổi",
+                "context": "Nội dung điều 2",
+                "hieu_luc": "CON_HIEU_LUC_1_PHAN",
+                "ngay_het_hieu_luc": "2026-06-30",
+            },
+        ]
+        rendered_ctx = build_context_from_sources(sources)
+        self.assertIn("[CẢNH BÁO: VĂN BẢN ĐÃ HẾT HIỆU LỰC - hết hạn: 2025-12-31]", rendered_ctx)
+        self.assertIn("[LƯU Ý: VĂN BẢN CÒN HIỆU LỰC MỘT PHẦN - hết hạn: 2026-06-30]", rendered_ctx)
+
+        exported = public_sources(sources)
+        self.assertEqual(exported[0]["hieu_luc"], "HET_HIEU_LUC")
+        self.assertEqual(exported[0]["ngay_het_hieu_luc"], "2025-12-31")
+        self.assertEqual(exported[1]["hieu_luc"], "CON_HIEU_LUC_1_PHAN")
+        self.assertIn("Kiểm soát hiệu lực văn bản", SECRETARY_SYSTEM_PROMPT)
+        self.assertIn("Document Validity Control", SECRETARY_SYSTEM_PROMPT_EN)
+
+    def test_sync_documents_prunes_orphan_kb_vectors_and_clears_faq_cache(self):
+        from backend.services.rag_service import sync_documents_if_needed
+
+        mock_collection = MagicMock()
+        mock_collection.indexed_filenames.return_value = {"kept.pdf", "orphan.gif"}
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__.return_value = mock_cursor
+        mock_cursor.__exit__.return_value = False
+
+        with (
+            patch("django.db.connection.cursor", return_value=mock_cursor),
+            patch("backend.services.rag_service.get_vector_collection", return_value=mock_collection),
+            patch("backend.services.document_service.load_registry", return_value=[{"filename": "kept.pdf", "category": "Quyết định"}]),
+            patch("backend.services.faq_response_cache.clear_faq_cache") as mock_clear_cache,
+        ):
+            sync_documents_if_needed()
+
+        mock_collection.delete.assert_called_once_with(
+            where={"$and": [{"file_name": "orphan.gif"}, {"sql_doc_key": {"$exists": False}}]}
+        )
+        mock_clear_cache.assert_called_once_with()
 
 
 

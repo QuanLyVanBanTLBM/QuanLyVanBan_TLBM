@@ -78,7 +78,7 @@ describe('FloatingAIBox', () => {
     });
     fireEvent.submit(screen.getByRole('textbox', { name: 'floatingAI.placeholder' }).closest('form')!);
 
-    await waitFor(() => expect(mockedAskQuestion).toHaveBeenCalledWith('Fallback question', []));
+    await waitFor(() => expect(mockedAskQuestion).toHaveBeenCalledWith('Fallback question', [], null, null, 'en'));
     expect(await screen.findByText('Fallback answer', { selector: 'strong' })).toBeInTheDocument();
   });
 
@@ -206,5 +206,159 @@ describe('FloatingAIBox', () => {
         ],
       })),
     );
+  });
+
+  it('renders answer when onDone arrives without prior onDelta', async () => {
+    mockedAskQuestionStream.mockImplementation(async (_text, options?: { onDone?: (data: { answer: string; sources: unknown[] }) => void }) => {
+      options?.onDone?.({ answer: 'Chỉ có sự kiện done', sources: [] });
+      return { answer: 'Chỉ có sự kiện done', sources: [] };
+    });
+
+    render(<FloatingAIBox />);
+    fireEvent.click(screen.getByRole('button', { name: 'floatingAI.openTitle' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'floatingAI.placeholder' }), {
+      target: { value: 'Hỏi done-only' },
+    });
+    fireEvent.submit(screen.getByRole('textbox', { name: 'floatingAI.placeholder' }).closest('form')!);
+
+    expect(await screen.findByText('Chỉ có sự kiện done')).toBeInTheDocument();
+    expect(mockedAskQuestion).not.toHaveBeenCalled();
+  });
+
+  it('hides thinking dots on first delta while keeping send disabled until stream finishes', async () => {
+    let finishStream!: () => void;
+    mockedAskQuestionStream.mockImplementation((_text, options?: { onDelta?: (d: string, a: string) => void; onDone?: (data: { answer: string; sources: unknown[] }) => void }) => {
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          options?.onDelta?.('Đang trả lời...', 'Đang trả lời...');
+        }, 0);
+        finishStream = () => {
+          options?.onDone?.({ answer: 'Đang trả lời... xong', sources: [] });
+          resolve({ answer: 'Đang trả lời... xong', sources: [] });
+        };
+      });
+    });
+
+    render(<FloatingAIBox />);
+    fireEvent.click(screen.getByRole('button', { name: 'floatingAI.openTitle' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'floatingAI.placeholder' }), {
+      target: { value: 'Kiểm tra streaming' },
+    });
+    fireEvent.submit(screen.getByRole('textbox', { name: 'floatingAI.placeholder' }).closest('form')!);
+
+    expect(screen.getByRole('status', { name: 'floatingAI.thinking' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'floatingAI.send' })).toBeDisabled();
+
+    await screen.findByText('Đang trả lời...');
+    expect(screen.queryByRole('status', { name: 'floatingAI.thinking' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'floatingAI.send' })).toBeDisabled();
+
+    await act(async () => {
+      finishStream();
+    });
+    expect(await screen.findByText('Đang trả lời... xong')).toBeInTheDocument();
+  });
+
+  it('displays safe backend detail message on API failure', async () => {
+    mockedAskQuestionStream.mockRejectedValue(new Error('Stream error'));
+    mockedAskQuestion.mockRejectedValue({ data: { detail: 'Không thể truy cập nguồn dữ liệu AI lúc này.' } });
+
+    render(<FloatingAIBox />);
+    fireEvent.click(screen.getByRole('button', { name: 'floatingAI.openTitle' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'floatingAI.placeholder' }), {
+      target: { value: 'Hỏi lỗi API' },
+    });
+    fireEvent.submit(screen.getByRole('textbox', { name: 'floatingAI.placeholder' }).closest('form')!);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Không thể truy cập nguồn dữ liệu AI lúc này.');
+  });
+
+  it('renders validity badges on expired citations and document picker items', async () => {
+    mockedGetDocuments.mockResolvedValue({
+      documents: [
+        { filename: 'old_policy.pdf', category: 'Policy', hieu_luc: 'HET_HIEU_LUC' },
+      ],
+    });
+    mockedAskQuestionStream.mockImplementation(async (_text, options?: { onDone?: (data: { answer: string; sources: unknown[] }) => void }) => {
+      options?.onDone?.({
+        answer: 'Văn bản đã hết hiệu lực.',
+        sources: [
+          {
+            file_name: '01/QD-CU',
+            source_type: 'vanbanden',
+            source_id: 9,
+            hieu_luc: 'HET_HIEU_LUC',
+          },
+        ],
+      });
+      return { answer: 'Văn bản đã hết hiệu lực.', sources: [] };
+    });
+
+    render(<FloatingAIBox />);
+    fireEvent.click(screen.getByRole('button', { name: 'floatingAI.openTitle' }));
+    await waitFor(() => expect(mockedGetDocuments).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: 'floatingAI.selectDocument' }));
+    expect(await screen.findByText('floatingAI.validity.expired')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'floatingAI.placeholder' }), {
+      target: { value: 'Kiểm tra quy chế cũ' },
+    });
+    fireEvent.submit(screen.getByRole('textbox', { name: 'floatingAI.placeholder' }).closest('form')!);
+
+    await screen.findByText('Văn bản đã hết hiệu lực.');
+    fireEvent.click(screen.getByRole('button', { name: 'aiAssistant.toggleCitationsExpand' }));
+    expect(screen.getByText('floatingAI.validity.expired')).toBeInTheDocument();
+  });
+
+  it('renders allowed internal markdown links and neutralizes external or script links', async () => {
+    mockedAskQuestionStream.mockImplementation(async (_text, options?: { onDone?: (data: { answer: string; sources: unknown[] }) => void }) => {
+      options?.onDone?.({
+        answer:
+          'Mở [Kho Tài Liệu](/resources), nhưng bỏ qua [Phishing](https://evil.example/steal) và [XSS](javascript:alert(1)).',
+        sources: [],
+      });
+      return { answer: '', sources: [] };
+    });
+
+    render(<FloatingAIBox onNavigateUrl={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'floatingAI.openTitle' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'floatingAI.placeholder' }), {
+      target: { value: 'Kiểm tra link' },
+    });
+    fireEvent.submit(screen.getByRole('textbox', { name: 'floatingAI.placeholder' }).closest('form')!);
+
+    const link = await screen.findByRole('link', { name: 'Kho Tài Liệu' });
+    expect(link).toHaveAttribute('href', '/resources');
+    expect(screen.queryByRole('link', { name: 'Phishing' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'XSS' })).not.toBeInTheDocument();
+    expect(screen.getByText(/Phishing/)).toBeInTheDocument();
+    expect(screen.getByText(/XSS/)).toBeInTheDocument();
+  });
+
+  it('renders hr and clickable internal links nested inside italic and bold emphasis', async () => {
+    const onNavigateUrl = vi.fn();
+    mockedAskQuestionStream.mockImplementation(async (_text, options?: { onDone?: (data: { answer: string; sources: unknown[] }) => void }) => {
+      options?.onDone?.({
+        answer:
+          '---\n*Gợi ý: **[Kho Tài Liệu & Biểu Mẫu](/resources)** và **[XSS](javascript:alert(1))**.*',
+        sources: [],
+      });
+      return { answer: '', sources: [] };
+    });
+
+    render(<FloatingAIBox onNavigateUrl={onNavigateUrl} />);
+    fireEvent.click(screen.getByRole('button', { name: 'floatingAI.openTitle' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'floatingAI.placeholder' }), {
+      target: { value: 'Kiểm tra link lồng nhau' },
+    });
+    fireEvent.submit(screen.getByRole('textbox', { name: 'floatingAI.placeholder' }).closest('form')!);
+
+    const link = await screen.findByRole('link', { name: 'Kho Tài Liệu & Biểu Mẫu' });
+    expect(screen.getByRole('separator')).toBeInTheDocument();
+    expect(link).toHaveAttribute('href', '/resources');
+    expect(screen.queryByRole('link', { name: 'XSS' })).not.toBeInTheDocument();
+    fireEvent.click(link);
+    expect(onNavigateUrl).toHaveBeenCalledWith('/resources');
   });
 });

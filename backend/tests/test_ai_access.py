@@ -8,9 +8,10 @@ from unittest.mock import MagicMock, patch
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, Permission
 from django.test import TestCase
-from rest_framework.test import APIClient
+from rest_framework.test import APIClient, APIRequestFactory, force_authenticate
 
 from authorization.models import GroupInfo
+from backend.api.views import document_file
 from backend.services.ai_access import has_permission_codename, is_ai_admin, resolve_employee_id
 
 User = get_user_model()
@@ -100,8 +101,11 @@ class AIAccessTests(TestCase):
         self.client.force_authenticate(self.ai_user)
         response = self.client.get("/api/ai/settings")
         self.assertEqual(response.status_code, 200)
-        self.assertNotIn("api_key_masked", response.json())
-        self.assertNotIn("has_api_key", response.json())
+        payload = response.json()
+        self.assertIn("configured", payload)
+        self.assertIsInstance(payload["configured"], bool)
+        self.assertNotIn("api_key_masked", payload)
+        self.assertNotIn("has_api_key", payload)
 
     def test_superuser_can_read_ai_settings(self):
         self.client.force_authenticate(self.superuser)
@@ -109,7 +113,10 @@ class AIAccessTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("api_key_masked", response.json())
         self.assertEqual(response.json()["provider"], "openai")
-        self.assertEqual(response.json()["model_options"]["openai"]["llm_models"], ["gpt-6-luna"])
+        self.assertEqual(
+            response.json()["model_options"]["openai"]["llm_models"],
+            ["gpt-6-luna", "gpt-4o-mini", "gpt-4o"],
+        )
 
     def test_chat_passes_authenticated_employee_id_not_request_body(self):
         self.client.force_authenticate(self.ai_user)
@@ -264,3 +271,226 @@ class AIAccessTests(TestCase):
         self.assertEqual(mock_accessible.call_count, 2)
         for call in mock_accessible.call_args_list:
             self.assertEqual(call.kwargs["employee_id"], self.ai_user.pk)
+
+    def test_reclassify_rejects_path_traversal(self):
+        self.client.force_authenticate(self.superuser)
+        response = self.client.post("/api/ai/reclassify/..%2Fsecret.txt")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["detail"], "Tên tệp không hợp lệ.")
+
+    def test_preview_and_reclassify_hide_raw_exception_details(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            docs_dir = Path(temp_dir)
+            sample_file = docs_dir / "tài liệu mẫu.docx"
+            sample_file.write_bytes(b"not-a-valid-docx")
+
+            self.client.force_authenticate(self.ai_user)
+            with (
+                patch("backend.config.DOCS_DIR", docs_dir),
+                patch("backend.services.rag_service.read_docx", side_effect=RuntimeError("SECRET_STACK_TRACE")),
+            ):
+                preview_resp = self.client.get("/api/ai/documents/t%C3%A0i%20li%E1%BB%87u%20m%E1%BA%ABu.docx/preview")
+            self.assertEqual(preview_resp.status_code, 500)
+            self.assertNotIn("SECRET_STACK_TRACE", preview_resp.json()["detail"])
+
+            self.client.force_authenticate(self.superuser)
+            with (
+                patch("api.views.list_documents", return_value=[{"filename": "tài liệu mẫu.docx", "path": str(sample_file)}]),
+                patch("backend.api.views.list_documents", return_value=[{"filename": "tài liệu mẫu.docx", "path": str(sample_file)}]),
+                patch("backend.services.rag_service.setup_llamaindex", side_effect=RuntimeError("SECRET_RECLASSIFY_ERR")),
+            ):
+                reclassify_resp = self.client.post("/api/ai/reclassify/t%C3%A0i%20li%E1%BB%87u%20m%E1%BA%ABu.docx")
+            self.assertEqual(reclassify_resp.status_code, 500)
+            self.assertNotIn("SECRET_RECLASSIFY_ERR", reclassify_resp.json()["detail"])
+
+    def test_document_file_uses_rfc5987_content_disposition(self):
+        factory = APIRequestFactory()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            docs_dir = Path(temp_dir)
+            sample_file = docs_dir / "tài liệu mẫu.txt"
+            sample_file.write_text("hello", encoding="utf-8")
+
+            request = factory.get("/api/ai/documents/t%C3%A0i%20li%E1%BB%87u%20m%E1%BA%ABu.txt/file")
+            force_authenticate(request, user=self.ai_user)
+            with patch("backend.config.DOCS_DIR", docs_dir):
+                response = document_file(request, "tài liệu mẫu.txt")
+            try:
+                self.assertEqual(response.status_code, 200)
+                disposition = response.headers.get("Content-Disposition", "")
+                self.assertIn("inline;", disposition)
+                self.assertIn("filename*=UTF-8''t%C3%A0i%20li%E1%BB%87u%20m%E1%BA%ABu.txt", disposition)
+            finally:
+                for closer in list(getattr(response, "_resource_closers", ())):
+                    closer()
+                response._resource_closers.clear()
+
+    def test_sync_status_endpoint_requires_admin_and_returns_schedule_telemetry(self):
+        self.client.force_authenticate(self.ai_user)
+        self.assertEqual(self.client.get("/api/ai/sync/status").status_code, 403)
+        self.assertEqual(self.client.post("/api/ai/sync", {}, format="json").status_code, 404)
+
+        self.client.force_authenticate(self.superuser)
+        mock_collection = MagicMock()
+        mock_collection.indexed_filenames.return_value = {"kept.pdf", "orphan.gif"}
+        fake_schema = {"status": "ok", "checked_views": 6, "missing_views": [], "missing_columns": {}}
+
+        with (
+            patch("api.views.list_documents", return_value=[{"filename": "kept.pdf"}]),
+            patch("backend.api.views.list_documents", return_value=[{"filename": "kept.pdf"}]),
+            patch("backend.services.rag_service.get_vector_collection", return_value=mock_collection),
+            patch("backend.services.sql_document_source.is_postgres_source", return_value=False),
+            patch("backend.services.sql_document_source.verify_sql_schema", return_value=fake_schema),
+        ):
+            status_resp = self.client.get("/api/ai/sync/status")
+
+        self.assertEqual(status_resp.status_code, 200)
+        status_body = status_resp.json()
+        self.assertEqual(status_body["kb_registered"], 1)
+        self.assertEqual(status_body["kb_indexed"], 2)
+        self.assertEqual(status_body["kb_orphans"], 1)
+        self.assertEqual(status_body["kb_orphan_names"], ["orphan.gif"])
+        self.assertEqual(status_body["schema"]["status"], "ok")
+        self.assertEqual(status_body["schedule"]["enabled"], True)
+        self.assertEqual(status_body["schedule"]["task"], "sync_all_ai_documents")
+        self.assertEqual(status_body["schedule"]["time"], "02:00")
+        self.assertEqual(status_body["schedule"]["cron"], "0 2 * * *")
+        self.assertTrue(status_body["schedule"]["next_run_at"])
+
+    def test_sync_status_reports_sql_orphans_separately_from_eligible_indexed(self):
+        import uuid
+        from django.db import connection
+        from documents.models import HieuLuc, PhamVi, VanBanDen
+        from backend.services.pgvector_store import _vector_literal
+
+        self.client.force_authenticate(self.superuser)
+        eligible_den = VanBanDen.objects.create(
+            nam=2098,
+            so_hieu="20/CV-ELIG",
+            so_thu_tu=40001,
+            trich_yeu="Văn bản hợp lệ",
+            pham_vi=PhamVi.NOI_BO,
+            hien_thi=True,
+            hieu_luc=HieuLuc.CON_HIEU_LUC,
+        )
+        hidden_den = VanBanDen.objects.create(
+            nam=2098,
+            so_hieu="21/CV-HIDE",
+            so_thu_tu=40002,
+            trich_yeu="Văn bản ẩn",
+            pham_vi=PhamVi.NOI_BO,
+            hien_thi=False,
+            hieu_luc=HieuLuc.CON_HIEU_LUC,
+        )
+        vec = _vector_literal([0.0] * 3072)
+        rows = [
+            (str(uuid.uuid4()), f"vanbanden:{eligible_den.pk}:c1", "vanbanden", eligible_den.pk, "h1", "chunk 1", vec, json.dumps({"sql_doc_key": f"vanbanden:{eligible_den.pk}", "sql_doc_type": "vanbanden", "sql_doc_id": eligible_den.pk})),
+            (str(uuid.uuid4()), f"vanbanden:{eligible_den.pk}:c2", "vanbanden", eligible_den.pk, "h2", "chunk 2", vec, json.dumps({"sql_doc_key": f"vanbanden:{eligible_den.pk}", "sql_doc_type": "vanbanden", "sql_doc_id": eligible_den.pk})),
+            (str(uuid.uuid4()), f"vanbanden:{hidden_den.pk}:c1", "vanbanden", hidden_den.pk, "h3", "hidden chunk 1", vec, json.dumps({"sql_doc_key": f"vanbanden:{hidden_den.pk}", "sql_doc_type": "vanbanden", "sql_doc_id": hidden_den.pk})),
+            (str(uuid.uuid4()), f"vanbanden:{hidden_den.pk}:c2", "vanbanden", hidden_den.pk, "h4", "hidden chunk 2", vec, json.dumps({"sql_doc_key": f"vanbanden:{hidden_den.pk}", "sql_doc_type": "vanbanden", "sql_doc_id": hidden_den.pk})),
+            (str(uuid.uuid4()), "vanbandi:99999999:c1", "vanbandi", 99999999, "h5", "deleted chunk", vec, json.dumps({"sql_doc_key": "vanbandi:99999999", "sql_doc_type": "vanbandi", "sql_doc_id": 99999999})),
+            (str(uuid.uuid4()), "stale_kb.pdf:c1", "ai_knowledge_base", 0, "h6", "kb chunk", vec, json.dumps({"source_class": "ai_knowledge_base", "file_name": "stale_kb.pdf"})),
+        ]
+        with connection.cursor() as cursor:
+            cursor.execute("DELETE FROM ai_document_embedding")
+            cursor.executemany(
+                """INSERT INTO ai_document_embedding
+                   (id, source_key, source_type, source_id, content_hash, content_text, embedding, metadata)
+                   VALUES (%s::uuid, %s, %s, %s, %s, %s, %s::vector, %s::jsonb)""",
+                rows,
+            )
+
+        fake_schema = {"status": "ok", "checked_views": 6, "missing_views": [], "missing_columns": {}}
+        with (
+            patch("api.views.list_documents", return_value=[]),
+            patch("backend.api.views.list_documents", return_value=[]),
+            patch("backend.services.sql_document_source.verify_sql_schema", return_value=fake_schema),
+        ):
+            status_resp = self.client.get("/api/ai/sync/status")
+
+        self.assertEqual(status_resp.status_code, 200)
+        body = status_resp.json()
+        self.assertEqual(body["sql_indexed"]["vanbanden"], 1)
+        self.assertEqual(body["sql_indexed"]["total"], 1)
+        self.assertLessEqual(body["sql_indexed"]["total"], body["sql_eligible"]["total"])
+        self.assertEqual(body["sql_orphans"], 2)
+        self.assertEqual(body["kb_orphans"], 1)
+        self.assertEqual(body["total_orphans"], 3)
+        self.assertEqual(body["total_chunks"], 6)
+
+    def test_documents_endpoint_filters_restricted_and_hidden_official_docs_and_exposes_validity(self):
+        from documents.models import HieuLuc, PhamVi, VanBanDen
+
+        self.client.force_authenticate(self.ai_user)
+        internal_den = VanBanDen.objects.create(
+            nam=2099,
+            so_hieu="10/CV-NOIBO",
+            so_thu_tu=30001,
+            trich_yeu="Văn bản nội bộ",
+            pham_vi=PhamVi.NOI_BO,
+            hien_thi=True,
+            hieu_luc=HieuLuc.CON_HIEU_LUC_1_PHAN,
+        )
+        restricted_den = VanBanDen.objects.create(
+            nam=2099,
+            so_hieu="11/CV-HANCHE",
+            so_thu_tu=30002,
+            trich_yeu="Văn bản hạn chế",
+            pham_vi=PhamVi.HAN_CHE,
+            hien_thi=True,
+            hieu_luc=HieuLuc.CON_HIEU_LUC,
+        )
+        hidden_den = VanBanDen.objects.create(
+            nam=2099,
+            so_hieu="12/CV-AN",
+            so_thu_tu=30003,
+            trich_yeu="Văn bản ẩn",
+            pham_vi=PhamVi.NOI_BO,
+            hien_thi=False,
+            hieu_luc=HieuLuc.CON_HIEU_LUC,
+        )
+
+        mock_records = [
+            {
+                "source_type": "vanbanden",
+                "source_id": internal_den.pk,
+                "display_name": "10/CV-NOIBO — Văn bản nội bộ",
+                "so_hieu": "10/CV-NOIBO",
+                "hieu_luc": HieuLuc.CON_HIEU_LUC_1_PHAN,
+                "ngay_het_hieu_luc": None,
+                "updated_at": None,
+            },
+            {
+                "source_type": "vanbanden",
+                "source_id": restricted_den.pk,
+                "display_name": "11/CV-HANCHE — Văn bản hạn chế",
+                "so_hieu": "11/CV-HANCHE",
+                "hieu_luc": HieuLuc.CON_HIEU_LUC,
+                "ngay_het_hieu_luc": None,
+                "updated_at": None,
+            },
+            {
+                "source_type": "vanbanden",
+                "source_id": hidden_den.pk,
+                "display_name": "12/CV-AN — Văn bản ẩn",
+                "so_hieu": "12/CV-AN",
+                "hieu_luc": HieuLuc.CON_HIEU_LUC,
+                "ngay_het_hieu_luc": None,
+                "updated_at": None,
+            },
+        ]
+
+        with (
+            patch("api.views.list_documents", return_value=[]),
+            patch("backend.api.views.list_documents", return_value=[]),
+            patch("backend.services.sql_document_source.is_postgres_source", return_value=True),
+            patch("backend.services.sql_document_source.accessible_documents", return_value=mock_records),
+        ):
+            resp = self.client.get("/api/ai/documents")
+
+        self.assertEqual(resp.status_code, 200)
+        docs = resp.json()["documents"]
+        self.assertEqual(len(docs), 1)
+        self.assertEqual(docs[0]["source_id"], internal_den.pk)
+        self.assertEqual(docs[0]["so_hieu"], "10/CV-NOIBO")
+        self.assertEqual(docs[0]["hieu_luc"], HieuLuc.CON_HIEU_LUC_1_PHAN)
+        self.assertIsNone(docs[0]["ngay_het_hieu_luc"])
