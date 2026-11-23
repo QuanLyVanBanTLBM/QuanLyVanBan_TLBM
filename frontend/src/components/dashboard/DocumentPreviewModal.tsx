@@ -586,19 +586,14 @@ export default function DocumentPreviewModal({
       '56/NQ-HĐND': 0,   // 0. TB Chieu sinh... (PDF - Test case modal)
     };
 
-    // Mỗi một mục văn bản CHỈ CÓ ĐÚNG 1 tệp đính kèm duy nhất
+    // Tệp đính kèm văn bản
     let attachments: DocumentAttachment[];
     if (document.attachments && document.attachments.length > 0) {
-      attachments = [document.attachments[0]];
+      attachments = document.attachments;
+    } else if (document.code && SPECIFIC_DOC_FILE_MAP[document.code] !== undefined) {
+      attachments = [DEMO_TEST_FILES[SPECIFIC_DOC_FILE_MAP[document.code]]];
     } else {
-      const mappedIdx = SPECIFIC_DOC_FILE_MAP[document.code];
-      if (mappedIdx !== undefined) {
-        attachments = [DEMO_TEST_FILES[mappedIdx]];
-      } else {
-        const codeNum = parseInt(document.code.match(/\d+/)?.[0] || '0', 10);
-        const idx = Math.abs(codeNum) % DEMO_TEST_FILES.length;
-        attachments = [DEMO_TEST_FILES[idx]];
-      }
+      attachments = [];
     }
 
     return {
@@ -1078,75 +1073,82 @@ Ngày ký: ${document.date}
               </span>
             </div>
 
-            <div className={docMeta.attachments.length === 1 ? 'grid grid-cols-1' : 'grid grid-cols-1 sm:grid-cols-2 gap-3'}>
-              {docMeta.attachments.map((att, idx) => {
-                const isDoc = isDocFile(att);
-                return (
-                  <div
-                    key={idx}
-                    onClick={() => handleOpenFile(att)}
-                    className="p-3.5 rounded-2xl border border-border-subtle bg-surface hover:bg-surface-subtle transition-all flex items-center justify-between gap-3 group shadow-xs cursor-pointer"
-                    title={isDoc ? `Tải về tệp ${att.name}` : `Mở xem trước ${att.name} trong cửa sổ mới`}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div
-                        className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 text-xl border ${
-                          att.type === 'excel' || att.name.endsWith('.xlsx')
-                            ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
-                            : isDoc
-                            ? 'bg-blue-500/10 text-blue-600 border-blue-500/20'
-                            : att.type === 'image' || att.name.match(/\.(jpg|jpeg|png|webp|gif)$/i)
-                            ? 'bg-amber-500/10 text-amber-500 border-amber-500/20'
-                            : 'bg-red-500/10 text-red-500 border-red-500/20'
-                        }`}
-                      >
-                        {att.type === 'excel' || att.name.endsWith('.xlsx') ? (
-                          <i className="fa-solid fa-file-excel" />
-                        ) : isDoc ? (
-                          <i className="fa-solid fa-file-word" />
-                        ) : att.type === 'image' || att.name.match(/\.(jpg|jpeg|png|webp|gif)$/i) ? (
-                          <i className="fa-solid fa-file-image" />
-                        ) : (
-                          <i className="fa-solid fa-file-pdf" />
-                        )}
-                      </div>
-
-                      <div className="min-w-0">
+            {docMeta.attachments.length === 0 ? (
+              <div className="py-6 px-4 bg-surface-subtle border border-border-subtle rounded-xl text-center text-xs text-secondary">
+                <i className="fa-solid fa-file-circle-xmark text-lg text-muted mb-1 block" />
+                <span>{t('documentPreview.noAttachments') || 'Không có tệp đính kèm nào'}</span>
+              </div>
+            ) : (
+              <div className={docMeta.attachments.length === 1 ? 'grid grid-cols-1' : 'grid grid-cols-1 sm:grid-cols-2 gap-3'}>
+                {docMeta.attachments.map((att, idx) => {
+                  const isDoc = isDocFile(att);
+                  return (
+                    <div
+                      key={idx}
+                      onClick={() => handleOpenFile(att)}
+                      className="p-3.5 rounded-2xl border border-border-subtle bg-surface hover:bg-surface-subtle transition-all flex items-center justify-between gap-3 group shadow-xs cursor-pointer"
+                      title={isDoc ? `Tải về tệp ${att.name}` : `Mở xem trước ${att.name} trong cửa sổ mới`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
                         <div
-                          className="text-sm font-bold text-main truncate group-hover:text-primary transition-colors flex items-center gap-1.5"
-                          title={att.name}
+                          className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 text-xl border ${
+                            att.type === 'excel' || att.name.endsWith('.xlsx')
+                              ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
+                              : isDoc
+                              ? 'bg-blue-500/10 text-blue-600 border-blue-500/20'
+                              : att.type === 'image' || att.name.match(/\.(jpg|jpeg|png|webp|gif)$/i)
+                              ? 'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                              : 'bg-red-500/10 text-red-500 border-red-500/20'
+                          }`}
                         >
-                          <span className="truncate">{att.name}</span>
-                          {!isDoc && (
-                            <i className="fa-solid fa-arrow-up-right-from-square text-[11px] text-primary opacity-0 group-hover:opacity-100 transition-opacity" />
+                          {att.type === 'excel' || att.name.endsWith('.xlsx') ? (
+                            <i className="fa-solid fa-file-excel" />
+                          ) : isDoc ? (
+                            <i className="fa-solid fa-file-word" />
+                          ) : att.type === 'image' || att.name.match(/\.(jpg|jpeg|png|webp|gif)$/i) ? (
+                            <i className="fa-solid fa-file-image" />
+                          ) : (
+                            <i className="fa-solid fa-file-pdf" />
                           )}
                         </div>
-                        <div className="text-xs text-muted mt-0.5">
-                          {att.size || '1.8 MB'} • {att.date || document.date}
+
+                        <div className="min-w-0">
+                          <div
+                            className="text-sm font-bold text-main truncate group-hover:text-primary transition-colors flex items-center gap-1.5"
+                            title={att.name}
+                          >
+                            <span className="truncate">{att.name}</span>
+                            {!isDoc && (
+                              <i className="fa-solid fa-arrow-up-right-from-square text-[11px] text-primary opacity-0 group-hover:opacity-100 transition-opacity" />
+                            )}
+                          </div>
+                          <div className="text-xs text-muted mt-0.5">
+                            {att.size || '1.8 MB'} • {att.date || document.date}
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleOpenFile(att);
-                      }}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 shrink-0 shadow-xs cursor-pointer ${
-                        isDoc
-                          ? 'bg-surface border-border-subtle text-main hover:bg-primary hover:text-white hover:border-primary'
-                          : 'bg-primary-subtle border-primary/30 text-primary hover:bg-primary hover:text-white hover:border-primary'
-                      }`}
-                      title={isDoc ? `Tải về tệp ${att.name}` : `Mở xem trước ${att.name} trong tab mới`}
-                    >
-                      <i className={`text-xs ${isDoc ? 'fa-solid fa-download' : 'fa-solid fa-arrow-up-right-from-square'}`} />
-                      <span>{isDoc ? t('documentPreview.downloadFile') : t('documentPreview.previewFile')}</span>
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenFile(att);
+                        }}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 shrink-0 shadow-xs cursor-pointer ${
+                          isDoc
+                            ? 'bg-surface border-border-subtle text-main hover:bg-primary hover:text-white hover:border-primary'
+                            : 'bg-primary-subtle border-primary/30 text-primary hover:bg-primary hover:text-white hover:border-primary'
+                        }`}
+                        title={isDoc ? `Tải về tệp ${att.name}` : `Mở xem trước ${att.name} trong tab mới`}
+                      >
+                        <i className={`text-xs ${isDoc ? 'fa-solid fa-download' : 'fa-solid fa-arrow-up-right-from-square'}`} />
+                        <span>{isDoc ? t('documentPreview.downloadFile') : t('documentPreview.previewFile')}</span>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 

@@ -8,6 +8,7 @@ import { apiClient } from '@lib/apiClient';
 import { Badge } from '@components/common';
 import BirthdaysWidget, { BirthdayEmployee } from './BirthdaysWidget';
 import DocumentPreviewModal from './DocumentPreviewModal';
+import DocumentDetailModal from '@components/documents/DocumentDetailModal';
 import TaskDetailModal from './TaskDetailModal';
 
 export interface TaskItem {
@@ -269,6 +270,9 @@ export default function ModernDashboardView({
     }
   };
 
+  const [detailDocId, setDetailDocId] = useState<number | null>(null);
+  const [detailDocLoai, setDetailDocLoai] = useState<'DEN' | 'DI'>('DEN');
+
   const filteredIncoming = useMemo(() => {
     if (serverIncoming !== null) return serverIncoming;
     if (!searchTerm.trim()) return incomingDocuments;
@@ -286,6 +290,26 @@ export default function ModernDashboardView({
       (doc) => doc.code.toLowerCase().includes(term) || doc.title.toLowerCase().includes(term)
     );
   }, [outgoingDocuments, searchTerm, serverOutgoing]);
+
+  const handleIncomingRowClick = (row: DocumentItem, list: DocumentItem[]) => {
+    const numericId = typeof row.id === 'number' ? row.id : parseInt(String(row.id || ''), 10);
+    if (!isNaN(numericId) && numericId > 0) {
+      setDetailDocId(numericId);
+      setDetailDocLoai('DEN');
+    } else {
+      handleOpenPreview(row, 'incoming', list);
+    }
+  };
+
+  const handleOutgoingRowClick = (row: DocumentItem, list: DocumentItem[]) => {
+    const numericId = typeof row.id === 'number' ? row.id : parseInt(String(row.id || ''), 10);
+    if (!isNaN(numericId) && numericId > 0) {
+      setDetailDocId(numericId);
+      setDetailDocLoai('DI');
+    } else {
+      handleOpenPreview(row, 'outgoing', list);
+    }
+  };
 
   const filteredTasks = useMemo(() => {
     return tasks.filter((task) => task.status === taskFilter);
@@ -525,81 +549,7 @@ export default function ModernDashboardView({
           </div>
         </div>
       </div>
-
-        {/* Bảng / Biểu đồ so sánh số lượng văn bản đi & đến qua các năm (Dòng 15) */}
-        <div className="bg-surface border border-border-subtle rounded-xl md:rounded-2xl p-3.5 sm:p-5 shadow-2xs">
-          <div className="flex items-center justify-between gap-3 mb-3 pb-2.5 border-b border-border-subtle/70">
-            <div className="flex items-center gap-2">
-              <i className="fa-solid fa-chart-simple text-primary text-sm" />
-              <h4 className="text-xs sm:text-sm font-bold text-main uppercase tracking-wider">
-                {t('dashboardDetails.yearlyComparison') || 'So sánh số lượng văn bản đi & đến qua các năm'}
-              </h4>
-            </div>
-            <div className="flex items-center gap-3.5 text-xs font-semibold text-secondary">
-              <span className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-primary" />
-                <span className="hidden xs:inline">Văn bản</span> đến
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-                <span className="hidden xs:inline">Văn bản</span> đi
-              </span>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {availableYears.slice(0, 3).map((yr) => {
-              const isSelected = yr === selectedYear;
-              const inVal = isSelected ? incomingCount : Math.max(12, Math.round(incomingCount * (yr === 2025 ? 0.85 : 0.65)));
-              const outVal = isSelected ? outgoingCount : Math.max(8, Math.round(outgoingCount * (yr === 2025 ? 0.75 : 0.55)));
-              const totalVal = inVal + outVal;
-              return (
-                <div
-                  key={yr}
-                  onClick={() => onYearChange?.(yr)}
-                  className={`p-3 rounded-xl border transition-all cursor-pointer ${
-                    isSelected
-                      ? 'bg-primary-subtle/30 border-primary/50 shadow-xs ring-1 ring-primary/30'
-                      : 'bg-surface-elevated/40 border-border-subtle hover:border-primary/40'
-                  }`}
-                  title={`Bấm để xem thống kê năm ${yr}`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-bold text-main">Năm {yr}</span>
-                    <span className="text-[11px] text-muted font-semibold">{totalVal} văn bản</span>
-                  </div>
-                  <div className="space-y-1.5">
-                    <div>
-                      <div className="flex justify-between text-[11px] mb-0.5">
-                        <span className="text-primary font-medium">Đến: {inVal}</span>
-                        <span className="text-muted text-[10px]">{Math.round((inVal / (totalVal || 1)) * 100)}%</span>
-                      </div>
-                      <div className="w-full h-1.5 rounded-full bg-border-subtle overflow-hidden">
-                        <div
-                          className="h-full bg-primary rounded-full transition-all duration-300"
-                          style={{ width: `${Math.min(100, Math.max(8, (inVal / (totalVal || 1)) * 100))}%` }}
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex justify-between text-[11px] mb-0.5">
-                        <span className="text-emerald-600 dark:text-emerald-400 font-medium">Đi: {outVal}</span>
-                        <span className="text-muted text-[10px]">{Math.round((outVal / (totalVal || 1)) * 100)}%</span>
-                      </div>
-                      <div className="w-full h-1.5 rounded-full bg-border-subtle overflow-hidden">
-                        <div
-                          className="h-full bg-emerald-500 rounded-full transition-all duration-300"
-                          style={{ width: `${Math.min(100, Math.max(8, (outVal / (totalVal || 1)) * 100))}%` }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
+    </div>
 
       {/* Dải Marquee Chúc Mừng Sinh Nhật CBNV */}
       <BirthdaysWidget birthdays={birthdays} />
@@ -635,7 +585,7 @@ export default function ModernDashboardView({
                     {filteredIncoming.map((row, idx) => (
                       <tr
                         key={idx}
-                        onClick={() => handleOpenPreview(row, 'incoming', filteredIncoming)}
+                        onClick={() => handleIncomingRowClick(row, filteredIncoming)}
                         className="border-b border-border-subtle hover:bg-primary-subtle/30 transition-colors cursor-pointer group"
                         title={t('documentPreview.clickToPreview') || 'Bấm để xem chi tiết văn bản'}
                       >
@@ -646,7 +596,7 @@ export default function ModernDashboardView({
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleOpenPreview(row, 'incoming', filteredIncoming);
+                                handleIncomingRowClick(row, filteredIncoming);
                               }}
                               className="opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-primary-subtle text-primary transition-all text-xs cursor-pointer shrink-0"
                               title={t('documentPreview.clickToPreview') || 'Xem chi tiết văn bản'}
@@ -710,7 +660,7 @@ export default function ModernDashboardView({
                     {filteredOutgoing.map((row, idx) => (
                       <tr
                         key={idx}
-                        onClick={() => handleOpenPreview(row, 'outgoing', filteredOutgoing)}
+                        onClick={() => handleOutgoingRowClick(row, filteredOutgoing)}
                         className="border-b border-border-subtle hover:bg-success-subtle/30 transition-colors cursor-pointer group"
                         title={t('documentPreview.clickToPreview') || 'Bấm để xem chi tiết văn bản'}
                       >
@@ -721,7 +671,7 @@ export default function ModernDashboardView({
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleOpenPreview(row, 'outgoing', filteredOutgoing);
+                                handleOutgoingRowClick(row, filteredOutgoing);
                               }}
                               className="opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-success-subtle text-success transition-all text-xs cursor-pointer shrink-0"
                               title={t('documentPreview.clickToPreview') || 'Xem chi tiết văn bản'}
@@ -1120,6 +1070,14 @@ export default function ModernDashboardView({
           </button>
         </div>
       </div>
+
+      {/* Modal Xem Chi Tiết Văn Bản Chính Thức (Nhóm 2) */}
+      <DocumentDetailModal
+        isOpen={detailDocId !== null}
+        onClose={() => setDetailDocId(null)}
+        documentId={detailDocId}
+        loai={detailDocLoai}
+      />
 
       {/* Modal Xem Trước Văn Bản Số Hóa (PDF Reader) */}
       <DocumentPreviewModal
