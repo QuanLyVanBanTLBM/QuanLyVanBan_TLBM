@@ -51,6 +51,15 @@ describe('PagePermissionGuard', () => {
     expect(screen.getByText('noi dung trang')).toBeInTheDocument();
   });
 
+  it('Trình ký mở được với tài khoản chỉ có quyền kiểm toán Trình ký hoặc chỉ có quyền gửi (#849)', () => {
+    for (const code of ['view_signing_audit', 'send_trinhky']) {
+      state.perms = new Set([code]);
+      const { unmount } = renderAt('/approvals');
+      expect(screen.getByText('noi dung trang'), code).toBeInTheDocument();
+      unmount();
+    }
+  });
+
   it('cho vào khi có quyền xem tương ứng', () => {
     state.perms = new Set(['view_nhomquyen']);
     renderAt('/roles');
