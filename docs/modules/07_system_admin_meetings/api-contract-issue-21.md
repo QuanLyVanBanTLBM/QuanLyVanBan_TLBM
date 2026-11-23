@@ -15,7 +15,7 @@ Nguồn chuẩn: DDL base của đồ án, nhánh `ddl_base_v0`, file `docs/comm
 - Backend là lớp bảo mật chính. Frontend chỉ ẩn/hiện thao tác dựa trên `GET /api/auth/me/permissions/`.
 - Chưa đăng nhập: `401`. Đăng nhập nhưng thiếu quyền: `403`, body `{"detail": "<i18n key>"}`.
 - `has_perm(codename, obj)` với `obj` khác `None` luôn trả `False`: `RbacBackend` chỉ trả lời quyền chức năng, không có quyền theo từng đối tượng. Đừng dùng `DjangoObjectPermissions` hay `has_perm(..., obj)`; quy tắc theo dữ liệu tự kiểm trong queryset (xem điểm về `has_perm` ở trên).
-- Năm nhóm chuẩn (`VT`, `CV`, `TP`, `BGD`, `ADMIN`) không đổi tên và không xóa được (`400`, `roles.messages.groupProtected`); quyền của chúng vẫn chỉnh được, riêng `ADMIN` phải luôn giữ `view/add/change/delete_nhomquyen` (`400`, `roles.messages.adminPermissionsRequired`) để quản trị không tự khóa mình khỏi trang Phân quyền.
+- Năm nhóm chuẩn (`VT`, `CV`, `TP`, `BGD`, `ADMIN`) không đổi tên và không xóa được (`400`, `roles.messages.groupProtected`); quyền của chúng vẫn chỉnh được, riêng `ADMIN` phải luôn giữ `view/add/change/delete_nhomquyen` (`400`, `roles.messages.adminPermissionsRequired`) để quản trị không tự khóa mình khỏi trang Phân quyền. Ngược lại, chỉ `ADMIN` được giữ 4 quyền này: gán cho nhóm khác (kể cả nhóm tự tạo, kể cả khi người thao tác là superuser) trả `400` `roles.messages.roleManagementAdminOnly` ở `POST /api/roles/`, `PUT/PATCH /api/roles/{id}/` và `PUT /api/roles/{id}/permissions/` (issue #846: nhóm khác giữ `change_nhomquyen` thì người trong nhóm tự sửa được tập quyền của nhóm mình).
 - `/api/roles/{id}/` kiểm quyền trước khi tra bản ghi: người thiếu quyền nhận `403` cả với id không tồn tại, nên không dò được id nhóm.
 
 ## 2. Cách dùng trong code nhóm khác
@@ -213,10 +213,10 @@ Văn bản mật đã bỏ khỏi DDL base (PR #81). Bốn quyền `*_vanbanmat`
 
 | Codename | Mô tả |
 |---|---|
-| `view_nhomquyen` | Xem danh sách nhóm quyền (bổ sung) |
-| `add_nhomquyen` | Thêm nhóm quyền (bổ sung) |
-| `change_nhomquyen` | Sửa nhóm quyền (bổ sung) |
-| `delete_nhomquyen` | Xóa nhóm quyền (bổ sung) |
+| `view_nhomquyen` | Xem danh sách nhóm quyền (bổ sung; chỉ nhóm `ADMIN`) |
+| `add_nhomquyen` | Thêm nhóm quyền (bổ sung; chỉ nhóm `ADMIN`) |
+| `change_nhomquyen` | Sửa nhóm quyền (bổ sung; chỉ nhóm `ADMIN`) |
+| `delete_nhomquyen` | Xóa nhóm quyền (bổ sung; chỉ nhóm `ADMIN`) |
 
 ### Đối chiếu tên trong Issue #21 với DDL
 

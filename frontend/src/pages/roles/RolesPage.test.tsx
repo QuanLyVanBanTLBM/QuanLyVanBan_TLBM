@@ -38,14 +38,21 @@ const ROLES = [
   { id: 12, name: 'Nhóm tự tạo', ma_nhom_quyen: null, user_count: 3, permission_count: 0, permission_ids: [] },
 ];
 
-function mockApi(options: { permissions?: string[]; rolesError?: unknown } = {}) {
-  const { permissions = ALL_ROLE_PERMISSIONS, rolesError } = options;
+const ROLE_MANAGEMENT_PERMISSION = {
+  id: 4,
+  name: 'Sửa nhóm quyền',
+  codename: 'change_nhomquyen',
+  module_ten: 'Phân quyền',
+};
+
+function mockApi(options: { permissions?: string[]; rolesError?: unknown; permissionList?: typeof PERMISSIONS } = {}) {
+  const { permissions = ALL_ROLE_PERMISSIONS, rolesError, permissionList = PERMISSIONS } = options;
   mockedApiClient.mockImplementation(async (endpoint: string) => {
     if (endpoint.includes('/auth/me/permissions/')) {
       return { is_superuser: false, permissions };
     }
     if (endpoint.startsWith('/api/permissions/')) {
-      return PERMISSIONS;
+      return permissionList;
     }
     if (endpoint.startsWith('/api/roles/')) {
       if (rolesError) throw rolesError;
@@ -228,6 +235,25 @@ describe('RolesPage (Issue #21)', () => {
     expect(screen.getByRole('button', { name: /^Xóa$/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^Lưu$/ })).toBeInTheDocument();
     (await screen.findAllByRole('checkbox')).forEach((checkbox) => expect(checkbox).toBeEnabled());
+  });
+
+  it('locks role-management permissions for a non-admin role and select all skips them (#846)', async () => {
+    mockApi({ permissionList: [...PERMISSIONS, ROLE_MANAGEMENT_PERMISSION] });
+    renderPage();
+
+    await selectRole('Văn thư');
+    let checkboxes = await screen.findAllByRole('checkbox');
+    expect(checkboxes[3]).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: /Chọn tất cả/ }));
+    checkboxes = await screen.findAllByRole('checkbox');
+    expect(checkboxes.map((c) => (c as HTMLInputElement).checked)).toEqual([true, true, true, false]);
+
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    await selectRole('Quản trị hệ thống');
+    checkboxes = await screen.findAllByRole('checkbox');
+    expect(checkboxes[3]).toBeEnabled();
+    expect(screen.queryByText('Chỉ nhóm Quản trị hệ thống được cấp quyền này.')).not.toBeInTheDocument();
+    confirmSpy.mockRestore();
   });
 
   it('saves the changed permissions of the selected role', async () => {

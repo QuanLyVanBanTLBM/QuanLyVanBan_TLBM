@@ -100,7 +100,7 @@ class AuthorizationAPITest(TestCase):
 
     def test_create_group_201(self):
         response = self.admin_client.post(
-            "/api/roles/", {"name": "New Role", "permission_ids": [self.view_perm.id]}, format="json"
+            "/api/roles/", {"name": "New Role", "permission_ids": [self.some_permission.id]}, format="json"
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["name"], "New Role")
@@ -156,15 +156,17 @@ class AuthorizationAPITest(TestCase):
         self.assertEqual(self.group.name, "Renamed Role")
 
     def test_update_group_permissions_200(self):
+        # Quyền quản lý nhóm quyền chỉ nhóm ADMIN được giữ (#846), nên dùng quyền nghiệp vụ thường.
+        add_donvi = Permission.objects.get(codename="add_donvi")
         response = self.admin_client.put(
             f"/api/roles/{self.group.id}/",
-            {"name": "Test Role Alpha", "permission_ids": [self.add_perm.id, self.change_perm.id]},
+            {"name": "Test Role Alpha", "permission_ids": [self.some_permission.id, add_donvi.id]},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.group.refresh_from_db()
         perm_ids = set(self.group.permissions.values_list("id", flat=True))
-        self.assertEqual(perm_ids, {self.add_perm.id, self.change_perm.id})
+        self.assertEqual(perm_ids, {self.some_permission.id, add_donvi.id})
 
     def test_update_group_clear_permissions(self):
         response = self.admin_client.put(

@@ -127,4 +127,27 @@ describe('PermissionMatrix', () => {
     fireEvent.click(checkboxes[1]);
     expect(onToggle).not.toHaveBeenCalled();
   });
+
+  it('locks an unticked locked permission with its hint but still lets a ticked one be removed (#846)', () => {
+    const onToggle = vi.fn();
+    render(
+      <PermissionMatrix
+        permissions={PERMISSIONS}
+        selectedIds={new Set([2])}
+        onToggle={onToggle}
+        lockedIds={new Set([1, 2])}
+        lockedHintKey="roles.messages.roleManagementAdminOnlyHint"
+      />,
+    );
+    const checkboxes = screen.getAllByRole('checkbox');
+    expect(checkboxes[0]).toBeDisabled();
+    expect(checkboxes[1]).toBeEnabled();
+    expect(checkboxes[2]).toBeEnabled();
+    expect(screen.getAllByText('Chỉ nhóm Quản trị hệ thống được cấp quyền này.')).toHaveLength(2);
+
+    fireEvent.click(checkboxes[0]);
+    expect(onToggle).not.toHaveBeenCalled();
+    fireEvent.click(checkboxes[1]);
+    expect(onToggle).toHaveBeenCalledWith(2);
+  });
 });
