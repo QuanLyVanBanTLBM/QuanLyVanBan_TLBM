@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import AppSidebar from '@components/layout/AppSidebar';
 import AppHeader from '@components/layout/AppHeader';
-import TopSubNav from '@components/layout/TopSubNav';
 import MobileAssistiveTouch from '@components/layout/MobileAssistiveTouch';
 import FloatingAIBox from '@components/ai/FloatingAIBox';
 import AppFooter from '@components/layout/AppFooter';

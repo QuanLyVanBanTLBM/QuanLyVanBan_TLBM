@@ -187,11 +187,8 @@ export interface TopSubNavProps {
   isScrolled?: boolean;
 }
 
-export default function TopSubNav({
-  activePage,
-  onNavigate,
-  isScrolled = false,
-}: TopSubNavProps) {
+export default function TopSubNav(props?: TopSubNavProps) {
+  void props;
   // Đã loại bỏ cụm tab con thừa thãi theo yêu cầu QA (Dòng 20)
   return null;
 }
