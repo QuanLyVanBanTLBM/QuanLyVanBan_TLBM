@@ -227,27 +227,27 @@ export default function NotificationStreams() {
       });
   }, [t, currentLang, readIds]);
 
-  const handleOpenDoc = (item: NotificationItem) => {
-    // 1. Đánh dấu thông báo cụ thể này đã đọc và trừ số đếm chưa đọc trên từng mục
-    if (!readIds.has(item.id)) {
-      const newReadIds = new Set(readIds);
-      newReadIds.add(item.id);
-      saveReadIds(newReadIds);
+  const handleMarkItemRead = (itemId: string) => {
+    const newReadIds = new Set(readIds);
+    newReadIds.add(itemId);
+    saveReadIds(newReadIds);
 
-      setStreams((prev) =>
-        prev.map((stream) => {
-          const hasItem = stream.items.some((i) => i.id === item.id);
-          if (!hasItem) return stream;
-          const target = stream.items.find((i) => i.id === item.id);
-          const wasUnread = target && !target.isRead;
-          return {
-            ...stream,
-            unreadCount: wasUnread ? Math.max(0, stream.unreadCount - 1) : stream.unreadCount,
-            items: stream.items.map((i) => (i.id === item.id ? { ...i, isRead: true } : i)),
-          };
-        })
-      );
-    }
+    setStreams((prev) =>
+      prev.map((stream) => {
+        const target = stream.items.find((i) => i.id === itemId);
+        const wasUnread = target ? !target.isRead : false;
+        return {
+          ...stream,
+          unreadCount: wasUnread ? Math.max(0, stream.unreadCount - 1) : stream.unreadCount,
+          items: stream.items.map((i) => (i.id === itemId ? { ...i, isRead: true } : i)),
+        };
+      })
+    );
+  };
+
+  const handleOpenDoc = (item: NotificationItem) => {
+    // 1. Đánh dấu thông báo cụ thể này đã đọc và trừ số đếm chưa đọc trên từng mục (Dòng 18)
+    handleMarkItemRead(item.id);
 
     setIsOpen(false);
     // 2. Chuyển hướng hoặc mở xem trước
@@ -418,6 +418,20 @@ export default function NotificationStreams() {
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
                       {!item.isRead && (
                         <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" title="Chưa đọc" />
+                      )}
+                      {!item.isRead && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleMarkItemRead(item.id);
+                          }}
+                          className="ml-auto text-[10px] text-primary hover:underline font-semibold bg-transparent border-0 cursor-pointer flex items-center gap-1"
+                          title="Đánh dấu đã đọc"
+                        >
+                          <i className="fa-solid fa-check text-[9px]" />
+                          <span>Đã đọc</span>
+                        </button>
                       )}
                       <span className="px-1.5 py-0.5 rounded text-[11px] font-mono font-medium bg-surface border border-subtle text-text-secondary">
                         {item.code}

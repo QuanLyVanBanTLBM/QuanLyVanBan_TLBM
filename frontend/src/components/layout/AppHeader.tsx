@@ -65,10 +65,10 @@ export default function AppHeader({
         )}
       </div>
 
-      {/* 2. Middle Section: Dynamic Header Bar khi lăn chuột (Chỉ hiển thị trên Desktop >= 1024px khi có đủ khoảng trống) */}
+      {/* 2. Middle Section: Dynamic Header Bar khi lăn chuột (Hiển thị breadcrumb tinh gọn khi cuộn) */}
       <div className="hidden lg:flex flex-1 items-center justify-start min-w-0 px-4 overflow-hidden">
         {isScrolled && activePage && (
-          <div className="w-full max-w-3xl transition-all duration-300 ease-out animate-in fade-in slide-in-from-top-1">
+          <div className="w-full max-w-3xl transition-opacity duration-150 ease-out animate-in fade-in">
             <SubNavContent
               activePage={activePage}
               onNavigate={onNavigate}

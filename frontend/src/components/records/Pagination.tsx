@@ -16,7 +16,7 @@ export default function Pagination({ page, pageSize, count, onChange }: Paginati
   const lastItem = Math.min(page * pageSize, count);
 
   return (
-    <div className="flex flex-col gap-3 border-t border-border-subtle px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex flex-col gap-3 border-t border-border-subtle px-4 pr-16 sm:pr-20 py-3 sm:flex-row sm:items-center sm:justify-between">
       <p className="m-0 text-xs text-muted">
         {t('records.pagination.summary', {
           first: String(firstItem),

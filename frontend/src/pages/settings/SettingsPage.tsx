@@ -123,7 +123,7 @@ export default function SettingsPage() {
     <div className="max-w-4xl mx-auto my-4 sm:my-6 flex flex-col gap-6 animate-in fade-in duration-200">
       {/* Toast thông báo lưu thành công */}
       {showSavedToast && (
-        <div className="fixed top-20 right-6 z-50 bg-surface border border-success/30 shadow-lg rounded-xl p-4 flex items-center gap-3 animate-in slide-in-from-top-2">
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[99999] bg-surface border border-success/30 shadow-2xl rounded-xl p-4 flex items-center gap-3 animate-in slide-in-from-top-2">
           <div className="w-8 h-8 rounded-full bg-success/15 text-success flex items-center justify-center shrink-0">
             <i className="fa-solid fa-circle-check" />
           </div>
@@ -292,7 +292,7 @@ export default function SettingsPage() {
           </div>
           <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-primary-subtle text-primary border border-primary/30 flex items-center gap-1.5 shadow-2xs">
             <i className="fa-solid fa-circle-check text-xs" />
-            <span>{t('settings.aiModelActive')}OPENAI · GPT-6-LUNA</span>
+            <span>{t('settings.aiModelActive')}GOOGLE · GEMINI-1.5-FLASH</span>
           </span>
         </div>
 
