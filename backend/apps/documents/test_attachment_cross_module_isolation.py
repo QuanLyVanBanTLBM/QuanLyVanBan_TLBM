@@ -3,10 +3,12 @@ Kiểm thử tính cô lập nghiêm ngặt của tệp đính kèm giữa các 
 Văn bản Đến vs Văn bản Đi, và Thường vs Hạn chế (Confidential).
 Đảm bảo ngăn ngừa tuyệt đối lỗi hiển thị chéo tệp (ID collision & cross-model fallback).
 """
+import shutil
+import tempfile
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -26,6 +28,7 @@ from documents.serializers import (
 )
 
 User = get_user_model()
+TEMP_STORAGE = tempfile.mkdtemp()
 
 
 def make_user(username, is_staff=False, perms=()):
@@ -45,7 +48,13 @@ def api_for(user):
     return client
 
 
+@override_settings(DOCUMENT_STORAGE_ROOT=TEMP_STORAGE, MEDIA_ROOT=TEMP_STORAGE)
 class AttachmentCrossModuleIsolationTest(TestCase):
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        shutil.rmtree(TEMP_STORAGE, ignore_errors=True)
+
     def setUp(self):
         self.admin_user = make_user("admin_test", is_staff=True, perms=(
             "view_vanbanden", "view_vanbandi", "view_han_che_vanbanden", "view_han_che_vanbandi"
