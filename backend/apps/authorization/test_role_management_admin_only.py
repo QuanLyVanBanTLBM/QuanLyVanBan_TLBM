@@ -1,10 +1,11 @@
 """
 Issue #846: chỉ nhóm ADMIN được giữ view/add/change/delete_nhomquyen. Nhóm khác giữ change_nhomquyen thì người trong nhóm
 tự sửa được tập quyền của nhóm mình (leo thang đặc quyền). Cả 3 đường ghi quyền của nhóm đều chặn, kể cả superuser;
-migration 0020 gỡ các lượt gán sẵn có khỏi nhóm khác ADMIN và chạy lại không đổi thêm.
+migration 0020 gỡ các lượt gán sẵn có khỏi nhóm khác ADMIN và khỏi quyền gán thẳng cho người dùng, chạy lại không đổi thêm.
 """
 from importlib import import_module
 
+from django.apps import apps as django_apps
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, Permission
 from django.db import connection
@@ -28,6 +29,7 @@ ERROR_KEY = "roles.messages.roleManagementAdminOnly"
 
 class SchemaEditorStub:
     connection = connection
+    quote_name = staticmethod(connection.ops.quote_name)
 
 
 def ids(*codenames):
@@ -124,11 +126,35 @@ class RoleManagementMigrationTest(TestCase):
             group.permissions.add(*role_perms)
         custom.permissions.add(Permission.objects.get(codename="view_donvi"))
         tp_other = codenames_of(tp) - ROLE_CODENAMES
+        # Quyền gán thẳng cho người dùng cũng được RbacBackend cộng vào, nên phải gỡ theo
+        user = get_user_model().objects.create_user(username="nq846_direct", password="Test@12345")
+        user.user_permissions.add(*role_perms, Permission.objects.get(codename="view_donvi"))
 
-        migration.remove_role_management_from_non_admin(None, SchemaEditorStub)
-        migration.remove_role_management_from_non_admin(None, SchemaEditorStub)
+        migration.remove_role_management_from_non_admin(django_apps, SchemaEditorStub)
+        migration.remove_role_management_from_non_admin(django_apps, SchemaEditorStub)
 
         self.assertEqual(codenames_of(tp), tp_other)
         self.assertFalse(ROLE_CODENAMES & codenames_of(vt))
         self.assertEqual(codenames_of(custom), {"view_donvi"})
         self.assertTrue(ROLE_CODENAMES <= codenames_of(admin_group))
+        self.assertEqual(set(user.user_permissions.values_list("codename", flat=True)), {"view_donvi"})
+
+
+class RoleManagementUserLevelGrantTest(TestCase):
+    def test_direct_grant_no_longer_lets_non_admin_edit_roles_after_migration(self):
+        tp = group_of("TP")
+        user = get_user_model().objects.create_user(username="nq846_tp_direct", password="Test@12345")
+        user.groups.add(tp)
+        user.user_permissions.add(Permission.objects.get(codename="change_nhomquyen"))
+        tp_before = codenames_of(tp)
+
+        migration.remove_role_management_from_non_admin(django_apps, SchemaEditorStub)
+
+        user = get_user_model().objects.get(pk=user.pk)
+        client = APIClient()
+        client.force_authenticate(user=user)
+        response = client.put(
+            f"/api/roles/{tp.pk}/permissions/", {"permission_ids": ids("view_donvi", "export_donvi")}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(codenames_of(tp), tp_before)
