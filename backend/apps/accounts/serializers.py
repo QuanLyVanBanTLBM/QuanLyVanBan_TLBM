@@ -246,6 +246,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
     nhom_quyen = serializers.SerializerMethodField()
     trang_thai_display = serializers.CharField(source="get_trang_thai_display", read_only=True)
     has_sensitive_permission = serializers.SerializerMethodField()
+    is_2fa_enabled = serializers.SerializerMethodField()
     temporary_password = serializers.SerializerMethodField()
     assignments = serializers.SerializerMethodField()
 
@@ -273,6 +274,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
             "ghi_chu",
             "nhom_quyen",
             "has_sensitive_permission",
+            "is_2fa_enabled",
             "temporary_password",
             "assignments",
             "created_at",
@@ -300,6 +302,13 @@ class EmployeeSerializer(serializers.ModelSerializer):
 
     def get_has_sensitive_permission(self, obj) -> bool:
         return self._can_view_sensitive(obj)
+
+    def get_is_2fa_enabled(self, obj):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if self._is_own_profile(obj) or is_system_admin(user):
+            return bool(getattr(obj, "is_2fa_enabled", False))
+        return None
 
     def get_ngay_sinh(self, obj):
         if not obj.ngay_sinh:

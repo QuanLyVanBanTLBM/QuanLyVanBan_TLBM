@@ -42,6 +42,7 @@ export interface Employee {
   ghi_chu: string | null;
   nhom_quyen: EmployeeGroup[];
   has_sensitive_permission: boolean;
+  is_2fa_enabled?: boolean | null;
   temporary_password?: string | null;
   assignments?: EmployeeAssignmentItem[];
   created_at: string;

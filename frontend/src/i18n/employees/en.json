@@ -32,7 +32,9 @@
       "editUsername": "Edit username",
       "cancelUsernameEdit": "Cancel username editing",
       "editBirthday": "Enter a new birthday",
-      "cancelBirthdayEdit": "Cancel birthday edit"
+      "cancelBirthdayEdit": "Cancel birthday edit",
+      "resetTwoFactor": "Disable 2FA",
+      "confirmResetTwoFactor": "Confirm Disable 2FA"
     },
     "table": {
       "employee": "Employee",
@@ -143,6 +145,11 @@
       "title": "Employee Details",
       "noGroups": "No permission groups assigned."
     },
+    "twofa": {
+      "label": "Two-Factor Auth (2FA)",
+      "enabled": "Enabled",
+      "disabled": "Disabled"
+    },
     "delete": {
       "confirmTitle": "Confirm Employee Deletion",
       "confirmDesc": "Are you sure you want to delete employee \"{name}\"? The associated user account will also be permanently deleted.",
@@ -222,6 +229,8 @@
       "passwordChangeError": "Could not change the password. Please try again.",
       "passwordMismatch": "The new password and confirmation do not match.",
       "passwordNotAccepted": "The password does not meet the system security requirements.",
+      "twofaResetSuccess": "2FA disabled for this account.",
+      "twofaResetError": "Could not disable 2FA.",
       "deleteSuccess": "Employee deleted successfully!",
       "deleteError": "Cannot delete this employee.",
       "cannotDeleteSelf": "You cannot delete your own account.",

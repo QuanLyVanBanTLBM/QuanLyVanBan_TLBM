@@ -28,12 +28,15 @@ TOTP_PERIOD_SECONDS = 30
 TOTP_VALID_WINDOW = 1
 TEMP_LOGIN_TTL_SECONDS = 300
 SETUP_TOKEN_TTL_SECONDS = 600
+TRUSTED_DEVICE_TTL_SECONDS = 30 * 24 * 60 * 60
+TRUSTED_DEVICE_COOKIE_NAME = "qlvb_trusted_device"
 MAX_FAILED_ATTEMPTS = 5
 LOCKOUT_MINUTES = 5
 BACKUP_CODE_COUNT = 10
 
 LOGIN_SALT = "accounts.2fa.login"
 SETUP_SALT = "accounts.2fa.setup"
+TRUSTED_DEVICE_SALT = "accounts.2fa.trusted_device"
 
 # Loại trừ 0/O/I/1 để tránh nhầm lẫn khi cán bộ nhập tay mã dự phòng
 _BACKUP_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
@@ -196,15 +199,73 @@ def find_matching_totp_step(raw_secret: str, code: str, last_used_step: int | No
     return None
 
 
-def create_login_challenge_token(user_id: int, auth_provider: str) -> str:
+def create_login_challenge_token(user_id: int, auth_provider: str, login_ver: str = "") -> str:
     return signing.dumps(
         {
             "uid": user_id,
             "provider": auth_provider,
+            "ver": login_ver,
             "jti": uuid.uuid4().hex,
         },
         salt=LOGIN_SALT,
     )
+
+
+def _trusted_secret_fingerprint(user) -> str:
+    raw = f"{user.id}:{getattr(user, 'totp_secret', '') or ''}".encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()[:16]
+
+
+def create_trusted_device_token(user) -> str:
+    return signing.dumps(
+        {
+            "uid": user.id,
+            "sec": _trusted_secret_fingerprint(user),
+            "jti": uuid.uuid4().hex,
+        },
+        salt=TRUSTED_DEVICE_SALT,
+    )
+
+
+def is_trusted_device_valid(token: str | None, user) -> bool:
+    if not token or not user or not getattr(user, "is_2fa_enabled", False):
+        return False
+    try:
+        payload = signing.loads(
+            token,
+            salt=TRUSTED_DEVICE_SALT,
+            max_age=TRUSTED_DEVICE_TTL_SECONDS,
+        )
+    except signing.BadSignature:
+        return False
+
+    return (
+        payload.get("uid") == user.id
+        and payload.get("sec") == _trusted_secret_fingerprint(user)
+    )
+
+
+def clear_user_twofa_state(user) -> None:
+    """Tắt 2FA và xóa toàn bộ secret/backup codes/lockout của người dùng."""
+    UserModel = get_user_model()
+    with transaction.atomic():
+        locked_user = UserModel.objects.select_for_update().get(pk=user.pk)
+        locked_user.is_2fa_enabled = False
+        locked_user.totp_secret = ""
+        locked_user.twofa_backup_codes = []
+        locked_user.totp_last_used_step = None
+        locked_user.twofa_failed_attempts = 0
+        locked_user.twofa_locked_until = None
+        locked_user.save(
+            update_fields=[
+                "is_2fa_enabled",
+                "totp_secret",
+                "twofa_backup_codes",
+                "totp_last_used_step",
+                "twofa_failed_attempts",
+                "twofa_locked_until",
+            ]
+        )
 
 
 def load_login_challenge_token(temp_token: str) -> dict:

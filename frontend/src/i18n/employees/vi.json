@@ -32,7 +32,9 @@
       "editUsername": "Chỉnh sửa tên đăng nhập",
       "cancelUsernameEdit": "Hủy chỉnh sửa tên đăng nhập",
       "editBirthday": "Nhập ngày sinh mới",
-      "cancelBirthdayEdit": "Hủy sửa ngày sinh"
+      "cancelBirthdayEdit": "Hủy sửa ngày sinh",
+      "resetTwoFactor": "Tắt 2FA",
+      "confirmResetTwoFactor": "Xác nhận tắt 2FA"
     },
     "table": {
       "employee": "Cán bộ nhân viên",
@@ -143,6 +145,11 @@
       "title": "Thông Tin Chi Tiết Cán Bộ Nhân Viên",
       "noGroups": "Chưa được gán nhóm quyền nào."
     },
+    "twofa": {
+      "label": "Xác thực 2 bước (2FA)",
+      "enabled": "Đang bật",
+      "disabled": "Chưa bật"
+    },
     "delete": {
       "confirmTitle": "Xác nhận xóa cán bộ nhân viên",
       "confirmDesc": "Bạn có chắc chắn muốn xóa cán bộ \"{name}\"? Tài khoản người dùng liên kết cũng sẽ bị xóa vĩnh viễn khỏi hệ thống.",
@@ -222,6 +229,8 @@
       "passwordChangeError": "Không thể đổi mật khẩu. Vui lòng thử lại.",
       "passwordMismatch": "Mật khẩu mới và xác nhận mật khẩu không khớp.",
       "passwordNotAccepted": "Mật khẩu chưa đạt yêu cầu bảo mật của hệ thống.",
+      "twofaResetSuccess": "Đã tắt xác thực 2FA cho tài khoản.",
+      "twofaResetError": "Không thể tắt xác thực 2FA.",
       "deleteSuccess": "Đã xóa cán bộ nhân viên thành công!",
       "deleteError": "Không thể xóa cán bộ nhân viên này.",
       "cannotDeleteSelf": "Bạn không thể tự xóa tài khoản của chính mình.",

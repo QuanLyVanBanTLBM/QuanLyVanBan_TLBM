@@ -130,8 +130,13 @@ export async function apiClient<T = unknown>(
     });
   }
 
-  // Xử lý tự động làm mới token nếu gặp 401 Unauthorized và không phải endpoint login/refresh
-  if (response.status === 401 && !endpoint.includes('/auth/login/') && !endpoint.includes('/token/refresh/')) {
+  // Xử lý tự động làm mới token nếu gặp 401 Unauthorized và không phải endpoint login/2FA/refresh
+  if (
+    response.status === 401 &&
+    !endpoint.includes('/auth/login/') &&
+    !endpoint.includes('/auth/verify-2fa/') &&
+    !endpoint.includes('/token/refresh/')
+  ) {
     const refreshToken = localStorage.getItem('tlbm_refresh_token');
 
     if (refreshToken) {

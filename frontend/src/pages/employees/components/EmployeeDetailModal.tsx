@@ -152,6 +152,14 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
                 ) : (
                   <Badge variant="secondary">{t('employees.fields.internalOnly')}</Badge>
                 )}
+                {typeof employee.is_2fa_enabled === 'boolean' && (
+                  <Badge variant={employee.is_2fa_enabled ? 'success' : 'secondary'}>
+                    {t('employees.twofa.label')}:{' '}
+                    {employee.is_2fa_enabled
+                      ? t('employees.twofa.enabled')
+                      : t('employees.twofa.disabled')}
+                  </Badge>
+                )}
               </div>
               <p className="text-sm text-secondary truncate mt-0.5">
                 @{employee.username} • {employee.email}

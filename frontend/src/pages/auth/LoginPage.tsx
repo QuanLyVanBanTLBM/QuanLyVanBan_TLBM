@@ -2,12 +2,13 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import confetti from 'canvas-confetti';
 import { ActivePageId } from '@app-types/navigation';
-import { TwoFactorChallenge, UserSession } from '@app-types/auth';
+import { OtpChannel, TwoFactorChallenge, UserSession } from '@app-types/auth';
 import { useTranslation } from '@i18n/translate';
 import LanguageSwitcher from '@components/layout/LanguageSwitcher';
 import LoginBanner from '@components/auth/LoginBanner';
 import LoginForm from '@components/auth/LoginForm';
 import TwoFactorStep from '@components/auth/TwoFactorStep';
+import ForgotPasswordStep from '@components/auth/ForgotPasswordStep';
 import authService, { TwoFactorRequiredError } from '@lib/authService';
 import { ApiError } from '@lib/apiClient';
 import '@styles/login-characters.css';
@@ -28,8 +29,10 @@ export default function LoginPage({ onNavigate, onLoginSuccess }: LoginPageProps
 
   const [errorState, setErrorState] = useState<TranslatedErrorState | null>(null);
   const [customError, setCustomError] = useState<string>('');
+  const [infoMessage, setInfoMessage] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isSuccess, setIsSuccess] = useState<boolean>(false);
+  const [isForgotPassword, setIsForgotPassword] = useState<boolean>(false);
   const [twoFactorChallenge, setTwoFactorChallenge] = useState<TwoFactorChallenge | null>(null);
 
   const completeLoginSuccess = (session: UserSession) => {
@@ -93,6 +96,22 @@ export default function LoginPage({ onNavigate, onLoginSuccess }: LoginPageProps
         setErrorState({ key: 'auth.twofa.errors.sessionInvalid' });
         return;
       }
+      if (code === 'otp_token_expired' || code === 'otp_token_invalid' || code === 'otp_token_missing') {
+        setErrorState({ key: 'auth.twofa.errors.otpTokenExpired' });
+        return;
+      }
+      if (code === 'otp_cooldown') {
+        const seconds = Number(err.data?.retry_after_seconds || 60);
+        setErrorState({
+          key: 'auth.twofa.errors.cooldown',
+          params: { seconds: String(seconds) },
+        });
+        return;
+      }
+      if (code === 'otp_delivery_failed' || code === 'sms_not_configured') {
+        setCustomError(String(err.data?.detail || err.data?.error || t('auth.twofa.errors.sendFailed')));
+        return;
+      }
 
       if (err.status === 401 || err.status === 400) {
         const detail = (err.data?.error || err.data?.detail || '').toLowerCase();
@@ -128,6 +147,7 @@ export default function LoginPage({ onNavigate, onLoginSuccess }: LoginPageProps
   const handleLoginSubmit = async ({ username, password }: { username: string; password: string }) => {
     setErrorState(null);
     setCustomError('');
+    setInfoMessage('');
     setIsLoading(true);
 
     try {
@@ -143,7 +163,33 @@ export default function LoginPage({ onNavigate, onLoginSuccess }: LoginPageProps
     }
   };
 
-  const handleTwoFactorSubmit = async (code: string) => {
+  const handleSendTwoFactorOtp = async (channel: OtpChannel, previousOtpToken?: string) => {
+    if (!twoFactorChallenge) {
+      throw new Error('Missing challenge');
+    }
+    setErrorState(null);
+    setCustomError('');
+    try {
+      return await authService.sendTwoFactorOtp({
+        tempToken: twoFactorChallenge.tempToken,
+        channel,
+        previousOtpToken,
+      });
+    } catch (err: unknown) {
+      applyApiError(err);
+      throw err;
+    }
+  };
+
+  const handleTwoFactorSubmit = async ({
+    code,
+    otpToken,
+    trustDevice,
+  }: {
+    code: string;
+    otpToken?: string;
+    trustDevice: boolean;
+  }) => {
     if (!twoFactorChallenge) return;
     setErrorState(null);
     setCustomError('');
@@ -154,6 +200,8 @@ export default function LoginPage({ onNavigate, onLoginSuccess }: LoginPageProps
         tempToken: twoFactorChallenge.tempToken,
         code,
         username: twoFactorChallenge.username,
+        otpToken,
+        trustDevice,
       });
       completeLoginSuccess(session);
     } catch (err: unknown) {
@@ -164,6 +212,7 @@ export default function LoginPage({ onNavigate, onLoginSuccess }: LoginPageProps
 
   const handleBackToLogin = () => {
     setTwoFactorChallenge(null);
+    setIsForgotPassword(false);
     setErrorState(null);
     setCustomError('');
     setIsLoading(false);
@@ -198,14 +247,28 @@ export default function LoginPage({ onNavigate, onLoginSuccess }: LoginPageProps
         {/* Nửa trái: Khung nhận diện thương hiệu Bảo Long */}
         <LoginBanner />
 
-        {/* Nửa phải: Form đăng nhập hoặc bước xác thực 2FA */}
+        {/* Nửa phải: Form đăng nhập, bước xác thực 2FA hoặc Quên mật khẩu */}
         {twoFactorChallenge ? (
           <TwoFactorStep
             username={twoFactorChallenge.username}
+            availableChannels={twoFactorChallenge.availableChannels}
+            maskedEmail={twoFactorChallenge.maskedEmail}
+            maskedPhone={twoFactorChallenge.maskedPhone}
             isLoading={isLoading}
             isSuccess={isSuccess}
             error={activeError}
+            onSendOtp={handleSendTwoFactorOtp}
             onSubmitCode={handleTwoFactorSubmit}
+            onBackToLogin={handleBackToLogin}
+          />
+        ) : isForgotPassword ? (
+          <ForgotPasswordStep
+            onSuccess={(msg) => {
+              setIsForgotPassword(false);
+              setErrorState(null);
+              setCustomError('');
+              setInfoMessage(msg);
+            }}
             onBackToLogin={handleBackToLogin}
           />
         ) : (
@@ -213,7 +276,14 @@ export default function LoginPage({ onNavigate, onLoginSuccess }: LoginPageProps
             isLoading={isLoading}
             isSuccess={isSuccess}
             error={activeError}
+            infoMessage={infoMessage}
             onSubmit={handleLoginSubmit}
+            onForgotPassword={() => {
+              setErrorState(null);
+              setCustomError('');
+              setInfoMessage('');
+              setIsForgotPassword(true);
+            }}
             onUsernameFocusChange={() => {}}
             onPasswordFocusChange={() => {}}
             onShowPasswordChange={() => {}}

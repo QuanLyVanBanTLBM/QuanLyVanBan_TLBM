@@ -1162,4 +1162,47 @@ describe('EmployeesPage Component (Issue #24)', () => {
       );
     });
   });
+
+  it('allows admin to disable 2FA for an employee in edit modal', async () => {
+    const employeesWith2fa = [
+      { ...mockEmployeeData[0], is_2fa_enabled: true },
+      { ...mockEmployeeData[1], is_2fa_enabled: false },
+    ];
+    mockedApiClient.mockImplementation(async (endpoint: string) => {
+      if (endpoint.includes('/api/auth/me/permissions/')) {
+        return { is_superuser: true, permissions: ['view_list_cbnv', 'change_full_cbnv'] };
+      }
+      if (endpoint.includes('/accounts/employees/')) {
+        return { count: 2, next: null, previous: null, results: employeesWith2fa };
+      }
+      if (endpoint.includes('/organizations/donvis/')) {
+        return { results: [] };
+      }
+      return [];
+    });
+
+    render(
+      <MemoryRouter>
+        <EmployeesPage />
+      </MemoryRouter>
+    );
+
+    await screen.findByText('Nguyễn Văn Bình');
+    fireEvent.click((await screen.findAllByTitle('Chỉnh sửa'))[0]);
+    await screen.findByText('Chỉnh Sửa Hồ Sơ Nhân Viên');
+
+    expect(screen.getByText('Xác thực 2 bước (2FA)')).toBeInTheDocument();
+    expect(screen.getByText('Đang bật')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tắt 2FA' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Xác nhận tắt 2FA' }));
+
+    await waitFor(() => {
+      expect(mockedApiClient.post).toHaveBeenCalledWith(
+        '/api/accounts/employees/1/reset-2fa/',
+        {},
+      );
+    });
+    expect(await screen.findByText('Chưa bật')).toBeInTheDocument();
+  });
 });
