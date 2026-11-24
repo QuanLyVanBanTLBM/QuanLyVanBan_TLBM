@@ -44,8 +44,21 @@ def _recent_documents(user, loai, date_field, extra_field, extra_key, extra_defa
 
     attachments = {}
     for att in tep_dinh_kem_hien_hanh(loai, [d.pk for d in documents]):
+        doc_id = (
+            getattr(att, "document_id", None)
+            or getattr(att, "vanbanden_id", None)
+            or getattr(att, "vanbandi_id", None)
+            or getattr(att, "vanbanmat_id", None)
+        )
+        download_url = f"/api/documents/{doc_id}/attachments/{att.pk}/download/" if doc_id else (att.path or "")
         attachments.setdefault(att.document_id, []).append(
-            {"name": att.name, "url": att.path, "type": _attachment_type(att.name), "size": ""}
+            {
+                "id": att.pk,
+                "name": att.name,
+                "url": download_url,
+                "type": _attachment_type(att.name),
+                "size": "",
+            }
         )
 
     items = []

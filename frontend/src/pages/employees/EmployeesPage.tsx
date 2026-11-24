@@ -738,7 +738,7 @@ export default function EmployeesPage() {
         <div
           role="alert"
           aria-live="assertive"
-          className={`fixed bottom-6 right-6 z-[9999] max-w-md px-5 py-3.5 rounded-xl shadow-2xl flex items-center gap-3 animate-fade-in border ${
+          className={`fixed top-6 left-1/2 -translate-x-1/2 z-[9999] max-w-md px-5 py-3.5 rounded-xl shadow-2xl flex items-center gap-3 animate-fade-in border ${
             toastMessage.isError
               ? 'bg-danger text-white border-red-300/40 shadow-red-900/30'
               : 'bg-success text-white border-emerald-300/40 shadow-emerald-900/30'

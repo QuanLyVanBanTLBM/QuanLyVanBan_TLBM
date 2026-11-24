@@ -945,7 +945,7 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
       )}
 
       {/* Thanh Phân Trang (Pagination Footer) */}
-      <div className="px-4 py-3 border-t border-border-subtle bg-surface-elevated/40 flex flex-wrap items-center justify-between gap-3 text-sm">
+      <div className="px-4 pr-16 sm:pr-20 py-3 border-t border-border-subtle bg-surface-elevated/40 flex flex-wrap items-center justify-between gap-3 text-sm">
         <div className="text-muted flex items-center gap-2">
           <span>
             {t('documents_ui.table.showing') || 'Hiển thị'}{' '}

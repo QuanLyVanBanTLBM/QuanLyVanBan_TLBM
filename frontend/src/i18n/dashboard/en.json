@@ -215,6 +215,7 @@
     "replacedBy": "Superseded By:",
     "notesLabel": "Notes:",
     "attachmentsTitle": "ATTACHMENTS",
+    "noAttachments": "No attachments available",
     "openFile": "Open",
     "downloadFile": "Download",
     "previewFile": "Preview",

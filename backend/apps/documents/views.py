@@ -447,32 +447,47 @@ class DocumentViewSet(viewsets.ViewSet):
         raw_data = getattr(self.request, "data", None)
         data_loai = raw_data.get("loai") if (raw_data and hasattr(raw_data, "get")) else None
         loai = self.request.query_params.get("loai") or self.request.query_params.get("type") or data_loai
+        pham_vi_param = self.request.query_params.get("pham_vi")
 
         # Fallback suy luận loai từ referer nếu request không truyền kèm param
         if not loai and hasattr(self.request, "headers"):
             referer = (self.request.headers.get("referer") or "").lower()
-            if "van-ban-di" in referer or "outbound" in referer:
+            if "van-ban-di" in referer or "outbound" in referer or "outgoing" in referer:
                 loai = "DI"
-            elif "van-ban-den" in referer or "inbound" in referer:
+            elif "van-ban-den" in referer or "inbound" in referer or "incoming" in referer:
                 loai = "DEN"
-            elif "van-ban-mat" in referer or "confidential" in referer:
+            elif "van-ban-mat" in referer or "confidential" in referer or "restricted" in referer:
                 loai = "MAT"
 
         found_doc = None
         if loai:
             model = get_document_model(loai)
             found_doc = model.objects.filter(pk=pk).first()
-
-        if not found_doc and tep_id:
-            for model in (VanBanMat, VanBanDi, VanBanDen):
-                obj = model.objects.filter(pk=pk).first()
-                if obj and obj.attachments.filter(pk=tep_id, is_deleted=False).exists():
-                    found_doc = obj
-                    break
-
-        if not found_doc:
-            order = (VanBanDi, VanBanDen, VanBanMat) if str(loai).upper() in ("DI", "VANBANDI") else (VanBanDen, VanBanDi, VanBanMat)
-            for model in order:
+            if not found_doc:
+                raise NotFound(f"Không tìm thấy văn bản với ID {pk}.")
+            # Nếu người dùng yêu cầu rõ văn bản hạn chế nhưng văn bản tìm thấy không phải hạn chế
+            if pham_vi_param == "HAN_CHE" and getattr(found_doc, "pham_vi", None) != PhamVi.HAN_CHE:
+                raise NotFound(f"Không tìm thấy văn bản hạn chế với ID {pk}.")
+        elif tep_id:
+            # Khi không truyền loai nhưng có tep_id, kiểm tra xác định chính xác từ bảng attachment
+            di_att = VanBanDiAttachment.objects.filter(pk=tep_id, document_id=pk, is_deleted=False).select_related("document").first()
+            den_att = VanBanDenAttachment.objects.filter(pk=tep_id, document_id=pk, is_deleted=False).select_related("document").first()
+            if di_att and not den_att:
+                found_doc = di_att.document
+            elif den_att and not di_att:
+                found_doc = den_att.document
+            elif di_att and den_att:
+                # Xảy ra va chạm ID ở cả 2 bảng: ưu tiên VanBanDi nếu referer có dấu vết đi, ngược lại VanBanDen
+                referer = (getattr(self.request, "headers", {}).get("referer") or "").lower() if hasattr(self.request, "headers") else ""
+                if "van-ban-di" in referer or "outbound" in referer or "outgoing" in referer:
+                    found_doc = di_att.document
+                else:
+                    found_doc = den_att.document
+            else:
+                raise NotFound(f"Không tìm thấy tệp đính kèm với ID {tep_id} cho văn bản {pk}.")
+        else:
+            # Fallback khi không có loai và không có tep_id
+            for model in (VanBanDi, VanBanDen):
                 obj = model.objects.filter(pk=pk).first()
                 if obj:
                     found_doc = obj

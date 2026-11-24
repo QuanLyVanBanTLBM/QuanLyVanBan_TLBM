@@ -187,25 +187,8 @@ export interface TopSubNavProps {
   isScrolled?: boolean;
 }
 
-export default function TopSubNav({
-  activePage,
-  onNavigate,
-  isScrolled = false,
-}: TopSubNavProps) {
-  return (
-    <nav
-      className={`top-subnav px-4 sm:px-6 bg-app flex items-center justify-between shrink-0 select-none transition-all duration-300 ease-in-out ${
-        isScrolled
-          ? 'lg:h-0 lg:max-h-0 lg:opacity-0 lg:overflow-hidden lg:py-0 lg:border-transparent lg:pointer-events-none'
-          : 'h-11 max-h-11 opacity-100 overflow-x-auto border-b border-subtle'
-      }`}
-      aria-label="Điều hướng phân hệ con"
-    >
-      <SubNavContent
-        activePage={activePage}
-        onNavigate={onNavigate}
-        isCompact={false}
-      />
-    </nav>
-  );
+export default function TopSubNav(props?: TopSubNavProps) {
+  void props;
+  // Đã loại bỏ cụm tab con thừa thãi theo yêu cầu QA (Dòng 20)
+  return null;
 }

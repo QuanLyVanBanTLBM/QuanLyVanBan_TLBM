@@ -8,6 +8,7 @@ import { apiClient } from '@lib/apiClient';
 import { Badge } from '@components/common';
 import BirthdaysWidget, { BirthdayEmployee } from './BirthdaysWidget';
 import DocumentPreviewModal from './DocumentPreviewModal';
+import DocumentDetailModal from '@components/documents/DocumentDetailModal';
 import TaskDetailModal from './TaskDetailModal';
 
 export interface TaskItem {
@@ -25,6 +26,7 @@ export interface TaskItem {
 }
 
 export interface DocumentAttachment {
+  id?: number | string;
   name: string;
   size: string;
   type?: 'pdf' | 'excel' | 'word' | 'docx' | 'xlsx' | string;
@@ -268,6 +270,9 @@ export default function ModernDashboardView({
     }
   };
 
+  const [detailDocId, setDetailDocId] = useState<number | null>(null);
+  const [detailDocLoai, setDetailDocLoai] = useState<'DEN' | 'DI'>('DEN');
+
   const filteredIncoming = useMemo(() => {
     if (serverIncoming !== null) return serverIncoming;
     if (!searchTerm.trim()) return incomingDocuments;
@@ -285,6 +290,26 @@ export default function ModernDashboardView({
       (doc) => doc.code.toLowerCase().includes(term) || doc.title.toLowerCase().includes(term)
     );
   }, [outgoingDocuments, searchTerm, serverOutgoing]);
+
+  const handleIncomingRowClick = (row: DocumentItem, list: DocumentItem[]) => {
+    const numericId = typeof row.id === 'number' ? row.id : parseInt(String(row.id || ''), 10);
+    if (!isNaN(numericId) && numericId > 0) {
+      setDetailDocId(numericId);
+      setDetailDocLoai('DEN');
+    } else {
+      handleOpenPreview(row, 'incoming', list);
+    }
+  };
+
+  const handleOutgoingRowClick = (row: DocumentItem, list: DocumentItem[]) => {
+    const numericId = typeof row.id === 'number' ? row.id : parseInt(String(row.id || ''), 10);
+    if (!isNaN(numericId) && numericId > 0) {
+      setDetailDocId(numericId);
+      setDetailDocLoai('DI');
+    } else {
+      handleOpenPreview(row, 'outgoing', list);
+    }
+  };
 
   const filteredTasks = useMemo(() => {
     return tasks.filter((task) => task.status === taskFilter);
@@ -524,7 +549,7 @@ export default function ModernDashboardView({
           </div>
         </div>
       </div>
-      </div>
+    </div>
 
       {/* Dải Marquee Chúc Mừng Sinh Nhật CBNV */}
       <BirthdaysWidget birthdays={birthdays} />
@@ -560,7 +585,7 @@ export default function ModernDashboardView({
                     {filteredIncoming.map((row, idx) => (
                       <tr
                         key={idx}
-                        onClick={() => handleOpenPreview(row, 'incoming', filteredIncoming)}
+                        onClick={() => handleIncomingRowClick(row, filteredIncoming)}
                         className="border-b border-border-subtle hover:bg-primary-subtle/30 transition-colors cursor-pointer group"
                         title={t('documentPreview.clickToPreview') || 'Bấm để xem chi tiết văn bản'}
                       >
@@ -571,7 +596,7 @@ export default function ModernDashboardView({
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleOpenPreview(row, 'incoming', filteredIncoming);
+                                handleIncomingRowClick(row, filteredIncoming);
                               }}
                               className="opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-primary-subtle text-primary transition-all text-xs cursor-pointer shrink-0"
                               title={t('documentPreview.clickToPreview') || 'Xem chi tiết văn bản'}
@@ -635,7 +660,7 @@ export default function ModernDashboardView({
                     {filteredOutgoing.map((row, idx) => (
                       <tr
                         key={idx}
-                        onClick={() => handleOpenPreview(row, 'outgoing', filteredOutgoing)}
+                        onClick={() => handleOutgoingRowClick(row, filteredOutgoing)}
                         className="border-b border-border-subtle hover:bg-success-subtle/30 transition-colors cursor-pointer group"
                         title={t('documentPreview.clickToPreview') || 'Bấm để xem chi tiết văn bản'}
                       >
@@ -646,7 +671,7 @@ export default function ModernDashboardView({
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleOpenPreview(row, 'outgoing', filteredOutgoing);
+                                handleOutgoingRowClick(row, filteredOutgoing);
                               }}
                               className="opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-success-subtle text-success transition-all text-xs cursor-pointer shrink-0"
                               title={t('documentPreview.clickToPreview') || 'Xem chi tiết văn bản'}
@@ -1045,6 +1070,14 @@ export default function ModernDashboardView({
           </button>
         </div>
       </div>
+
+      {/* Modal Xem Chi Tiết Văn Bản Chính Thức (Nhóm 2) */}
+      <DocumentDetailModal
+        isOpen={detailDocId !== null}
+        onClose={() => setDetailDocId(null)}
+        documentId={detailDocId}
+        loai={detailDocLoai}
+      />
 
       {/* Modal Xem Trước Văn Bản Số Hóa (PDF Reader) */}
       <DocumentPreviewModal

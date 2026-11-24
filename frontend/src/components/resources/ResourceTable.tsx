@@ -758,7 +758,7 @@ export const ResourceTable: React.FC<ResourceTableProps> = ({
       {/* Chân bảng: Chọn số dòng hiển thị + Thanh phân trang thông minh */}
       <div
         ref={paginationRef}
-        className="flex flex-col md:flex-row items-center justify-between gap-3 px-3 sm:px-4 py-3 border-t border-border-subtle text-xs text-secondary bg-surface"
+        className="flex flex-col md:flex-row items-center justify-between gap-3 px-3 sm:px-4 pr-16 sm:pr-20 py-3 border-t border-border-subtle text-xs text-secondary bg-surface"
       >
         {/* Bên trái chân bảng: Dropdown chọn số dòng & Thông tin tổng số */}
         <div className="flex items-center gap-2 sm:gap-2.5 shrink-0 select-none">

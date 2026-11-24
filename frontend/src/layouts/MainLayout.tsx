@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import AppSidebar from '@components/layout/AppSidebar';
 import AppHeader from '@components/layout/AppHeader';
-import TopSubNav from '@components/layout/TopSubNav';
 import MobileAssistiveTouch from '@components/layout/MobileAssistiveTouch';
 import FloatingAIBox from '@components/ai/FloatingAIBox';
 import AppFooter from '@components/layout/AppFooter';
@@ -148,7 +147,7 @@ export default function MainLayout({
     }
     hoverLeaveTimerRef.current = setTimeout(() => {
       setIsSidebarHovered(false);
-    }, 75);
+    }, 40);
   };
 
   useEffect(() => {
@@ -430,15 +429,7 @@ export default function MainLayout({
           onScrollToTop={handleScrollToTop}
         />
 
-        {/* Thanh điều hướng phân hệ phụ nằm ngang - Ẩn khi vào trang Trợ lý AI */}
-        {currentActivePage !== 'ai_assistant' && location.pathname !== '/ai-assistant' && (
-          <TopSubNav
-            activePage={currentActivePage}
-            isHoveredPreview={previewPage !== null}
-            onNavigate={handleNavigate}
-            isScrolled={isScrolled}
-          />
-        )}
+        {/* Đã loại bỏ cụm tab con TopSubNav thừa thãi theo yêu cầu QA (Dòng 20) */}
 
         {/* Viewport nội dung trang động: ổn định, êm ái, chuyên nghiệp */}
         {(() => {
