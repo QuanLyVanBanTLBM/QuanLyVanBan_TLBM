@@ -13,6 +13,9 @@ import { filterPermissions } from './components/permissionFilter';
 // Thiếu quyền xem: chỉ báo một lần trong khung danh sách, không thêm toast.
 const PERMISSION_DENIED_KEY = 'roles.messages.permissionDenied';
 
+// Chỉ nhóm ADMIN được giữ quyền quản lý nhóm quyền (#846); backend trả 400 nếu gán cho nhóm khác.
+const ROLE_MANAGEMENT_CODENAMES = new Set(['view_nhomquyen', 'add_nhomquyen', 'change_nhomquyen', 'delete_nhomquyen']);
+
 export default function RolesPage() {
   const { t, currentLang } = useTranslation();
   // Chỉ ẩn/hiện thao tác cho gọn giao diện; backend vẫn kiểm quyền thật (view/add/change/delete_nhomquyen).
@@ -69,12 +72,23 @@ export default function RolesPage() {
       Array.from(selectedPermissionIds).some((id) => !savedPermissionIds.has(id)));
   const confirmDiscardChanges = () => !hasUnsavedChanges || window.confirm(t('roles.messages.unsavedConfirm'));
 
-  // "Chọn tất cả" / "Bỏ chọn" chỉ tác động lên các quyền đang hiện theo ô tìm, giữ nguyên quyền đang ẩn
+  // Nhóm khác ADMIN không được tick thêm quyền quản lý nhóm quyền
+  const lockedPermissionIds = new Set(
+    selectedRole && selectedRole.ma_nhom_quyen !== 'ADMIN'
+      ? permissions.filter((p) => ROLE_MANAGEMENT_CODENAMES.has(p.codename)).map((p) => p.id)
+      : [],
+  );
+
+  // "Chọn tất cả" / "Bỏ chọn" chỉ tác động lên các quyền đang hiện theo ô tìm, giữ nguyên quyền đang ẩn;
+  // "Chọn tất cả" bỏ qua quyền bị khóa với nhóm đang chọn
   const setVisiblePermissions = (checked: boolean) => {
     const visibleIds = filterPermissions(permissions, permissionQuery).map((p) => p.id);
     setSelectedPermissionIds((prev) => {
       const next = new Set(prev);
-      visibleIds.forEach((id) => (checked ? next.add(id) : next.delete(id)));
+      visibleIds.forEach((id) => {
+        if (!checked) next.delete(id);
+        else if (!lockedPermissionIds.has(id)) next.add(id);
+      });
       return next;
     });
   };
@@ -415,6 +429,8 @@ export default function RolesPage() {
                 query={permissionQuery}
                 onQueryChange={setPermissionQuery}
                 readOnly={!canChange}
+                lockedIds={lockedPermissionIds}
+                lockedHintKey="roles.messages.roleManagementAdminOnlyHint"
               />
             )}
           </div>

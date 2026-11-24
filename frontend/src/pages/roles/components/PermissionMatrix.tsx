@@ -13,6 +13,10 @@ interface PermissionMatrixProps {
   onQueryChange?: (query: string) => void;
   /** Chỉ xem: người dùng không có quyền sửa nhóm quyền thì không bật/tắt được ô nào (backend vẫn chặn thật). */
   readOnly?: boolean;
+  /** Quyền không được cấp cho nhóm đang chọn (#846): ô chưa tick thì khóa, ô đã tick vẫn bỏ được. */
+  lockedIds?: Set<number>;
+  /** Lý do hiện dưới tên quyền bị khóa. */
+  lockedHintKey?: string;
 }
 
 interface ModuleGroup {
@@ -41,6 +45,8 @@ export const PermissionMatrix: React.FC<PermissionMatrixProps> = ({
   query,
   onQueryChange,
   readOnly = false,
+  lockedIds,
+  lockedHintKey,
 }) => {
   const { t } = useTranslation();
   const [ownQuery, setOwnQuery] = useState('');
@@ -83,28 +89,36 @@ export const PermissionMatrix: React.FC<PermissionMatrixProps> = ({
             {idx + 1}. {getModuleLabel(group.label)}
           </h4>
           <div className="space-y-1 pl-2">
-            {group.items.map((perm) => (
-              <label
-                key={perm.id}
-                className={`flex items-center justify-between gap-3 py-1 px-2 -mx-2 text-sm text-main select-none hover:bg-surface-hover rounded-lg transition-colors ${
-                  readOnly ? 'cursor-default' : 'cursor-pointer'
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  <i className="fa-solid fa-arrow-right-long text-muted text-xs" />
-                  {getPermissionLabel(perm)}
-                </span>
-                <input
-                  type="checkbox"
-                  checked={selectedIds.has(perm.id)}
-                  onChange={() => {
-                    if (!readOnly) onToggle(perm.id);
-                  }}
-                  disabled={readOnly}
-                  className="h-4 w-4 rounded border-border-subtle text-primary focus:ring-primary cursor-pointer shrink-0 disabled:cursor-default"
-                />
-              </label>
-            ))}
+            {group.items.map((perm) => {
+              const checked = selectedIds.has(perm.id);
+              const locked = !!lockedIds?.has(perm.id);
+              const disabled = readOnly || (locked && !checked);
+              return (
+                <label
+                  key={perm.id}
+                  className={`flex items-center justify-between gap-3 py-1 px-2 -mx-2 text-sm text-main select-none hover:bg-surface-hover rounded-lg transition-colors ${
+                    disabled ? 'cursor-default' : 'cursor-pointer'
+                  }`}
+                >
+                  <span className="flex min-w-0 flex-col">
+                    <span className="flex items-center gap-2">
+                      <i className="fa-solid fa-arrow-right-long text-muted text-xs" />
+                      {getPermissionLabel(perm)}
+                    </span>
+                    {locked && lockedHintKey && <span className="pl-5 text-xs text-muted">{t(lockedHintKey)}</span>}
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => {
+                      if (!disabled) onToggle(perm.id);
+                    }}
+                    disabled={disabled}
+                    className="h-4 w-4 rounded border-border-subtle text-primary focus:ring-primary cursor-pointer shrink-0 disabled:cursor-default"
+                  />
+                </label>
+              );
+            })}
           </div>
         </div>
       ))}

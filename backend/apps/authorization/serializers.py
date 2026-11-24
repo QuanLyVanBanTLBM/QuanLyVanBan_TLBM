@@ -3,7 +3,8 @@ from rest_framework import serializers
 
 from .models import GroupInfo, PermissionInfo
 
-# Quyền mà nhóm ADMIN luôn phải giữ để quản trị còn vào được trang Phân quyền (tránh tự khóa).
+# Quyền quản lý nhóm quyền: nhóm ADMIN luôn phải giữ (tránh tự khóa khỏi trang Phân quyền) và chỉ nhóm ADMIN được giữ
+# (issue #846: nhóm khác giữ change_nhomquyen thì người trong nhóm tự sửa được tập quyền của nhóm mình).
 ADMIN_REQUIRED_CODENAMES = ("view_nhomquyen", "add_nhomquyen", "change_nhomquyen", "delete_nhomquyen")
 
 
@@ -67,8 +68,12 @@ class GroupSerializer(serializers.ModelSerializer):
         return name_stripped
 
     def validate(self, attrs):
-        if self.instance is not None and "permissions" in attrs and standard_code(self.instance) == "ADMIN":
-            granted = {perm.codename for perm in attrs["permissions"]}
+        if "permissions" not in attrs:
+            return attrs
+        granted = {perm.codename for perm in attrs["permissions"]}
+        if standard_code(self.instance) == "ADMIN":
             if not set(ADMIN_REQUIRED_CODENAMES) <= granted:
                 raise serializers.ValidationError({"permission_ids": ["roles.messages.adminPermissionsRequired"]})
+        elif granted & set(ADMIN_REQUIRED_CODENAMES):
+            raise serializers.ValidationError({"permission_ids": ["roles.messages.roleManagementAdminOnly"]})
         return attrs

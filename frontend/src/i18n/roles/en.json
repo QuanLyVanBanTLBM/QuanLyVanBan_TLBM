@@ -61,6 +61,8 @@
       "groupHasUsers": "Cannot delete this role because it is still assigned to one or more users.",
       "groupProtected": "This is a built-in system role: it cannot be renamed or deleted.",
       "adminPermissionsRequired": "The System Administrator role must always keep the role-management permissions (view, add, change, delete).",
+      "roleManagementAdminOnly": "Only the System Administrator role can hold the role-management permissions (view, add, change, delete).",
+      "roleManagementAdminOnlyHint": "Only the System Administrator role can be granted this permission.",
       "nameRequired": "Role name cannot be empty.",
       "nameExists": "This role name already exists.",
       "nameTooLong": "Role name must be at most 150 characters.",

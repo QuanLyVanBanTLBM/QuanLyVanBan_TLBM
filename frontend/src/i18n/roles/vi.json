@@ -61,6 +61,8 @@
       "groupHasUsers": "Không thể xóa vì nhóm quyền này vẫn đang được gán cho một hoặc nhiều người dùng.",
       "groupProtected": "Đây là nhóm quyền chuẩn của hệ thống: không đổi tên và không xóa được.",
       "adminPermissionsRequired": "Nhóm Quản trị hệ thống phải luôn giữ các quyền quản lý nhóm quyền (xem, thêm, sửa, xóa).",
+      "roleManagementAdminOnly": "Chỉ nhóm Quản trị hệ thống được giữ các quyền quản lý nhóm quyền (xem, thêm, sửa, xóa).",
+      "roleManagementAdminOnlyHint": "Chỉ nhóm Quản trị hệ thống được cấp quyền này.",
       "nameRequired": "Tên nhóm quyền không được để trống.",
       "nameExists": "Tên nhóm quyền này đã tồn tại.",
       "nameTooLong": "Tên nhóm quyền tối đa 150 ký tự.",
