@@ -681,6 +681,16 @@ export default function EmployeesPage() {
           });
           showToast(t('employees.messages.passwordChangeSuccess'));
         }}
+        onResetTwoFactor={async (employeeId) => {
+          await apiClient.post(`/api/accounts/employees/${employeeId}/reset-2fa/`, {});
+          setEmployees((prev) =>
+            prev.map((emp) => (emp.id === employeeId ? { ...emp, is_2fa_enabled: false } : emp))
+          );
+          setEditingEmployee((prev) =>
+            prev && prev.id === employeeId ? { ...prev, is_2fa_enabled: false } : prev
+          );
+          showToast(t('employees.messages.twofaResetSuccess'));
+        }}
       />
 
       <EmployeeDetailModal

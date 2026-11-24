@@ -1,4 +1,6 @@
+from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model
+from django.contrib.auth.models import update_last_login
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -9,10 +11,11 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
 
-from authorization.permissions import require_permission
+from authorization.permissions import is_system_admin, require_permission
+from .models import EmployeePasswordResetAudit
 from .serializers import ChangePasswordSerializer
 from .alpaca_auth import check_alpaca_auth
-from . import twofa
+from . import otp_service, twofa
 
 
 def _provision_alpaca_employee(username, user_info):
@@ -97,8 +100,25 @@ def _build_user_payload(user):
     }
 
 
+def _find_user_by_identifier(identifier: str):
+    """Tìm nhân viên theo username chính xác hoặc email (không phân biệt hoa thường nếu duy nhất)."""
+    cleaned = str(identifier or "").strip()
+    if not cleaned:
+        return None
+    UserModel = get_user_model()
+    user = UserModel.objects.filter(username=cleaned).first()
+    if user is not None:
+        return user
+    if "@" in cleaned:
+        matches = list(UserModel.objects.filter(email__iexact=cleaned)[:2])
+        if len(matches) == 1:
+            return matches[0]
+    return None
+
+
 def _issue_jwt_response(user, auth_provider: str, verified_via: str | None = None):
     """Cấp cặp access/refresh JWT và payload user thống nhất sau khi xác thực hoàn tất."""
+    update_last_login(None, user)
     refresh = RefreshToken.for_user(user)
     access_token = str(refresh.access_token)
 
@@ -118,9 +138,14 @@ def _issue_jwt_response(user, auth_provider: str, verified_via: str | None = Non
     return Response(body, status=status.HTTP_200_OK)
 
 
-def _login_or_2fa_response(user, auth_provider: str):
-    """Kiểm tra trạng thái 2FA: trả phiên challenge tạm thời nếu bật 2FA, ngược lại cấp JWT."""
+def _login_or_2fa_response(request, user, auth_provider: str):
+    """Kiểm tra trạng thái 2FA và thiết bị tin cậy: bỏ qua 2FA nếu có cookie hợp lệ, ngược lại trả challenge."""
     if getattr(user, "is_2fa_enabled", False) and getattr(user, "totp_secret", ""):
+        trusted_cookie = request.COOKIES.get(twofa.TRUSTED_DEVICE_COOKIE_NAME)
+        if twofa.is_trusted_device_valid(trusted_cookie, user):
+            return _issue_jwt_response(user, auth_provider, verified_via="trusted_device")
+
+        channels = otp_service.get_available_otp_channels(user)
         return Response(
             {
                 "success": True,
@@ -128,6 +153,14 @@ def _login_or_2fa_response(user, auth_provider: str):
                 "temp_token": twofa.create_login_challenge_token(user.id, auth_provider),
                 "method": "totp",
                 "auth_provider": auth_provider,
+                "available_channels": {
+                    "totp": True,
+                    "backup": True,
+                    "email": channels["email"],
+                    "sms": channels["sms"],
+                },
+                "masked_email": channels["masked_email"],
+                "masked_phone": channels["masked_phone"],
             },
             status=status.HTTP_200_OK,
         )
@@ -154,21 +187,21 @@ def login_view(request):
       Response 200: { "success": true, "token": "...", "access": "...", "user": { ... } }
       Response 401: { "success": false, "error": "...", "detail": "..." }
     """
-    username = request.data.get("username", "").strip()
+    identifier = request.data.get("username", "").strip()
     password = request.data.get("password", "")
 
-    if not username or not password:
+    if not identifier or not password:
         msg = "Vui lòng nhập đầy đủ tài khoản và mật khẩu."
         return Response(
             {"success": False, "error": msg, "detail": msg},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    UserModel = get_user_model()
-    target_user = UserModel.objects.filter(username=username).first()
+    target_user = _find_user_by_identifier(identifier)
+    lookup_username = target_user.username if target_user else identifier
 
     # 1. Thử xác thực cục bộ (Local Auth)
-    user = authenticate(request, username=username, password=password)
+    user = authenticate(request, username=lookup_username, password=password)
 
     if user is not None:
         if not user.is_active:
@@ -178,7 +211,7 @@ def login_view(request):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        return _login_or_2fa_response(user, "local")
+        return _login_or_2fa_response(request, user, "local")
 
     # 2. Xử lý khi xác thực cục bộ thất bại:
     # 2.1. Nếu tài khoản cục bộ tồn tại nhưng bị vô hiệu hóa và đúng mật khẩu
@@ -200,7 +233,7 @@ def login_view(request):
         )
 
     # 3. Kích hoạt xác thực kép qua API Ngân hàng Bảo Long (Alpaca)
-    alpaca_res = check_alpaca_auth(username, password)
+    alpaca_res = check_alpaca_auth(lookup_username, password)
 
     if alpaca_res.get("success"):
         # [Điểm 3 & Điểm 4 từ Nhóm 7]:
@@ -219,7 +252,7 @@ def login_view(request):
                     status=status.HTTP_403_FORBIDDEN,
                 )
 
-            target_user = _provision_alpaca_employee(username, user_info)
+            target_user = _provision_alpaca_employee(lookup_username, user_info)
 
         if not target_user.is_active:
             msg = "Tài khoản đã bị vô hiệu hóa. Vui lòng liên hệ Quản trị viên."
@@ -231,7 +264,7 @@ def login_view(request):
         # [Điểm 2 từ Nhóm 7]:
         # KHÔNG ghi đè mật khẩu cục bộ của tài khoản (không gọi target_user.set_password).
         # Cấp token JWT trực tiếp cho phiên làm việc hiện tại của nhân viên.
-        return _login_or_2fa_response(target_user, "alpaca_api")
+        return _login_or_2fa_response(request, target_user, "alpaca_api")
     else:
         # Nếu Alpaca thông báo tài khoản bị khóa hoặc vô hiệu hóa
         if alpaca_res.get("status") in (0, 3):
@@ -552,26 +585,99 @@ def _verify_sensitive_2fa_action(user, data) -> None:
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
-def verify_2fa_view(request):
-    """Bước 2 đăng nhập: xác thực TOTP 6 chữ số hoặc Backup Code từ temp_token để cấp JWT."""
+def twofa_send_otp_view(request):
+    """Gửi mã OTP 6 chữ số qua Email hoặc SĐT cho phiên đăng nhập 2FA."""
     temp_token = str(request.data.get("temp_token") or "").strip()
-    raw_code = str(request.data.get("code") or "").strip()
+    channel = str(request.data.get("channel") or "").strip().lower()
+    previous_otp_token = str(request.data.get("previous_otp_token") or "").strip() or None
 
     try:
         challenge = twofa.load_login_challenge_token(temp_token)
-        verified_user, verified_method = twofa.verify_user_twofa_code(
-            challenge["uid"],
-            raw_code,
-            allow_backup_code=True,
+        UserModel = get_user_model()
+        user = UserModel.objects.filter(pk=challenge["uid"]).first()
+        if not user:
+            raise twofa.TwoFactorError(
+                "user_not_found",
+                "Không tìm thấy tài khoản.",
+                http_status=status.HTTP_401_UNAUTHORIZED,
+            )
+        if not user.is_active:
+            raise twofa.TwoFactorError(
+                "account_disabled",
+                "Tài khoản đã bị vô hiệu hóa. Vui lòng liên hệ Quản trị viên.",
+                http_status=status.HTTP_403_FORBIDDEN,
+            )
+        if not user.is_2fa_enabled or not user.totp_secret:
+            raise twofa.TwoFactorError(
+                "twofa_not_enabled",
+                "Tài khoản chưa kích hoạt xác thực hai yếu tố.",
+                http_status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        result = otp_service.send_otp_challenge(
+            user=user,
+            channel=channel,
+            purpose=otp_service.OTP_PURPOSE_2FA_LOGIN,
+            previous_token=previous_otp_token,
         )
     except twofa.TwoFactorError as exc:
         return _twofa_error_response(exc)
 
-    return _issue_jwt_response(
+    return Response(
+        {
+            "success": True,
+            "otp_token": result["token"],
+            "channel": result["channel"],
+            "masked_destination": result["masked_destination"],
+            "expires_in": result["expires_in"],
+            "cooldown_seconds": result["cooldown_seconds"],
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def verify_2fa_view(request):
+    """Bước 2 đăng nhập: xác thực TOTP, Backup Code hoặc Email/SMS OTP từ temp_token để cấp JWT."""
+    temp_token = str(request.data.get("temp_token") or "").strip()
+    raw_code = str(request.data.get("code") or "").strip()
+    otp_token = str(request.data.get("otp_token") or "").strip()
+    trust_device = bool(request.data.get("trust_device"))
+
+    try:
+        challenge = twofa.load_login_challenge_token(temp_token)
+        if otp_token:
+            verified_user, verified_method = otp_service.verify_otp_challenge(
+                otp_token=otp_token,
+                raw_code=raw_code,
+                purpose=otp_service.OTP_PURPOSE_2FA_LOGIN,
+                expected_user_id=challenge["uid"],
+            )
+        else:
+            verified_user, verified_method = twofa.verify_user_twofa_code(
+                challenge["uid"],
+                raw_code,
+                allow_backup_code=True,
+            )
+    except twofa.TwoFactorError as exc:
+        return _twofa_error_response(exc)
+
+    response = _issue_jwt_response(
         verified_user,
         auth_provider=challenge.get("provider") or "local",
         verified_via=verified_method,
     )
+    if trust_device:
+        response.set_cookie(
+            key=twofa.TRUSTED_DEVICE_COOKIE_NAME,
+            value=twofa.create_trusted_device_token(verified_user),
+            max_age=twofa.TRUSTED_DEVICE_TTL_SECONDS,
+            httponly=True,
+            samesite="Lax",
+            secure=bool(getattr(settings, "SESSION_COOKIE_SECURE", False)),
+        )
+    return response
 
 
 @api_view(["GET"])
@@ -689,25 +795,7 @@ def twofa_disable_view(request):
     except twofa.TwoFactorError as exc:
         return _twofa_error_response(exc)
 
-    UserModel = get_user_model()
-    with transaction.atomic():
-        locked_user = UserModel.objects.select_for_update().get(pk=request.user.id)
-        locked_user.is_2fa_enabled = False
-        locked_user.totp_secret = ""
-        locked_user.twofa_backup_codes = []
-        locked_user.totp_last_used_step = None
-        locked_user.twofa_failed_attempts = 0
-        locked_user.twofa_locked_until = None
-        locked_user.save(
-            update_fields=[
-                "is_2fa_enabled",
-                "totp_secret",
-                "twofa_backup_codes",
-                "totp_last_used_step",
-                "twofa_failed_attempts",
-                "twofa_locked_until",
-            ]
-        )
+    twofa.clear_user_twofa_state(request.user)
 
     return Response(
         {"success": True, "enabled": False, "backup_codes_remaining": 0},
@@ -745,6 +833,189 @@ def twofa_regenerate_backup_codes_view(request):
             "backup_codes": plain_codes,
             "backup_codes_remaining": len(plain_codes),
         },
+        status=status.HTTP_200_OK,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Tự đặt lại mật khẩu (Forgot Password qua OTP Email / SMS)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _assert_self_reset_eligible(user):
+    """Kiểm tra tài khoản được phép tự đặt lại mật khẩu (chặn admin cấp cao và tài khoản Bảo Long)."""
+    if not user.is_active:
+        raise twofa.TwoFactorError(
+            "account_disabled",
+            "Tài khoản đã bị vô hiệu hóa. Vui lòng liên hệ Quản trị viên.",
+            http_status=status.HTTP_403_FORBIDDEN,
+        )
+    if user.is_superuser or user.is_staff or is_system_admin(user):
+        raise twofa.TwoFactorError(
+            "self_reset_restricted",
+            "Tài khoản quản trị cấp cao không hỗ trợ tự đặt lại mật khẩu. Vui lòng liên hệ Quản trị viên tối cao.",
+            http_status=status.HTTP_403_FORBIDDEN,
+        )
+    if not user.has_usable_password():
+        raise twofa.TwoFactorError(
+            "external_auth_restricted",
+            "Tài khoản đăng nhập qua hệ thống Bảo Long. Vui lòng đổi mật khẩu trên cổng Bảo Long hoặc liên hệ Quản trị viên.",
+            http_status=status.HTTP_403_FORBIDDEN,
+        )
+
+
+def _resolve_self_reset_user(identifier: str):
+    """Tìm tài khoản theo username/email và kiểm tra điều kiện tự đặt lại mật khẩu."""
+    cleaned = str(identifier or "").strip()
+    if not cleaned:
+        raise twofa.TwoFactorError(
+            "identifier_required",
+            "Vui lòng nhập tên đăng nhập hoặc email.",
+            http_status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    user = _find_user_by_identifier(cleaned)
+    if not user:
+        raise twofa.TwoFactorError(
+            "account_not_found",
+            "Không tìm thấy tài khoản phù hợp.",
+            http_status=status.HTTP_404_NOT_FOUND,
+        )
+    _assert_self_reset_eligible(user)
+
+    channels = otp_service.get_available_otp_channels(user)
+    if not channels["email"] and not channels["sms"]:
+        raise twofa.TwoFactorError(
+            "no_recovery_channel",
+            "Tài khoản chưa có email hoặc số điện thoại nhận mã. Vui lòng liên hệ Quản trị viên.",
+            http_status=status.HTTP_400_BAD_REQUEST,
+        )
+    return user, channels
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def forgot_password_lookup_view(request):
+    """Kiểm tra tài khoản và trả về kênh nhận OTP đã che (Email / SĐT)."""
+    identifier = (
+        request.data.get("identifier")
+        or request.data.get("username")
+        or request.data.get("email")
+        or ""
+    )
+    try:
+        _user, channels = _resolve_self_reset_user(str(identifier))
+    except twofa.TwoFactorError as exc:
+        return _twofa_error_response(exc)
+
+    return Response(
+        {
+            "success": True,
+            "channels": {
+                "email": channels["email"],
+                "sms": channels["sms"],
+            },
+            "masked_email": channels["masked_email"],
+            "masked_phone": channels["masked_phone"],
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def forgot_password_send_otp_view(request):
+    """Gửi mã OTP 6 chữ số qua Email hoặc SĐT để tự đặt lại mật khẩu."""
+    identifier = (
+        request.data.get("identifier")
+        or request.data.get("username")
+        or request.data.get("email")
+        or ""
+    )
+    channel = str(request.data.get("channel") or "").strip().lower()
+    previous_reset_token = str(request.data.get("previous_reset_token") or "").strip() or None
+
+    try:
+        user, _channels = _resolve_self_reset_user(str(identifier))
+        result = otp_service.send_otp_challenge(
+            user=user,
+            channel=channel,
+            purpose=otp_service.OTP_PURPOSE_PASSWORD_RESET,
+            previous_token=previous_reset_token,
+        )
+    except twofa.TwoFactorError as exc:
+        return _twofa_error_response(exc)
+
+    return Response(
+        {
+            "success": True,
+            "reset_token": result["token"],
+            "channel": result["channel"],
+            "masked_destination": result["masked_destination"],
+            "expires_in": result["expires_in"],
+            "cooldown_seconds": result["cooldown_seconds"],
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def forgot_password_confirm_view(request):
+    """Xác thực OTP và cập nhật mật khẩu mới cho tài khoản đủ điều kiện."""
+    reset_token = str(request.data.get("reset_token") or "").strip()
+    raw_code = str(request.data.get("code") or "").strip()
+    new_password = str(request.data.get("new_password") or "")
+    confirm_password = str(request.data.get("confirm_password") or "")
+
+    if not new_password or not confirm_password:
+        return Response(
+            {"detail": "Vui lòng nhập đầy đủ mật khẩu mới và xác nhận mật khẩu.", "code": "password_required"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if new_password != confirm_password:
+        return Response(
+            {"detail": "Mật khẩu xác nhận không khớp.", "code": "password_mismatch"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        verified_user, _channel = otp_service.verify_otp_challenge(
+            otp_token=reset_token,
+            raw_code=raw_code,
+            purpose=otp_service.OTP_PURPOSE_PASSWORD_RESET,
+        )
+        _assert_self_reset_eligible(verified_user)
+    except twofa.TwoFactorError as exc:
+        return _twofa_error_response(exc)
+
+    try:
+        validate_password(new_password, user=verified_user)
+    except ValidationError as exc:
+        return Response(
+            {
+                "detail": "; ".join(exc.messages),
+                "errors": list(exc.messages),
+                "code": "password_invalid",
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    with transaction.atomic():
+        verified_user.set_password(new_password)
+        verified_user.twofa_failed_attempts = 0
+        verified_user.twofa_locked_until = None
+        verified_user.save(update_fields=["password", "twofa_failed_attempts", "twofa_locked_until"])
+        EmployeePasswordResetAudit.objects.create(
+            actor=None,
+            target=verified_user,
+            actor_username="self_service",
+            target_username=verified_user.get_username(),
+            reason_code=EmployeePasswordResetAudit.Reason.FORGOT_PASSWORD,
+            reason_detail=None,
+        )
+
+    return Response(
+        {"success": True, "message": "Đặt lại mật khẩu thành công."},
         status=status.HTTP_200_OK,
     )
 

@@ -265,4 +265,60 @@ describe('authService Unit Tests (Issue #8 Django Auth & Session Management)', (
     expect(localStorage.getItem('tlbm_access_token')).toBe('final-jwt-access');
     expect(authService.isAuthenticated()).toBe(true);
   });
+
+  it('sends OTP token and trust_device flag when verifying 2FA via email/sms', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/auth/2fa/send-otp/')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'content-type': 'application/json' }),
+          json: async () => ({
+            success: true,
+            otp_token: 'otp-tok-1',
+            channel: 'email',
+            masked_destination: 'u***@baolong.vn',
+            expires_in: 300,
+            cooldown_seconds: 60,
+          }),
+        });
+      }
+      if (url.includes('/api/auth/verify-2fa/')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'content-type': 'application/json' }),
+          json: async () => ({
+            success: true,
+            access: 'trusted-jwt-access',
+            user: { id: 8, username: 'user_mail', role: 'staff', is_2fa_enabled: true },
+          }),
+        });
+      }
+      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+    });
+    globalThis.fetch = fetchMock;
+
+    const otpRes = await authService.sendTwoFactorOtp({
+      tempToken: 'temp-tok-1',
+      channel: 'email',
+    });
+    expect(otpRes.otp_token).toBe('otp-tok-1');
+
+    const session = await authService.verifyTwoFactor({
+      tempToken: 'temp-tok-1',
+      otpToken: otpRes.otp_token,
+      code: '123456',
+      trustDevice: true,
+      username: 'user_mail',
+    });
+    expect(session.token).toBe('trusted-jwt-access');
+    const verifyBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(verifyBody).toEqual({
+      temp_token: 'temp-tok-1',
+      code: '123456',
+      otp_token: 'otp-tok-1',
+      trust_device: true,
+    });
+  });
 });

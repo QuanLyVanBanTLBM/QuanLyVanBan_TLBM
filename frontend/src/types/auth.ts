@@ -16,11 +16,49 @@ export interface UserSession {
   has_usable_credential?: boolean;
 }
 
+export type OtpChannel = 'email' | 'sms';
+
 export interface TwoFactorChallenge {
   tempToken: string;
   method: 'totp';
   authProvider: string;
   username: string;
+  availableChannels?: {
+    totp: boolean;
+    backup: boolean;
+    email: boolean;
+    sms: boolean;
+  };
+  maskedEmail?: string;
+  maskedPhone?: string;
+}
+
+export interface TwoFactorSendOtpResult {
+  success: boolean;
+  otp_token: string;
+  channel: OtpChannel;
+  masked_destination: string;
+  expires_in: number;
+  cooldown_seconds: number;
+}
+
+export interface ForgotPasswordLookupResult {
+  success: boolean;
+  channels: {
+    email: boolean;
+    sms: boolean;
+  };
+  masked_email: string;
+  masked_phone: string;
+}
+
+export interface ForgotPasswordSendOtpResult {
+  success: boolean;
+  reset_token: string;
+  channel: OtpChannel;
+  masked_destination: string;
+  expires_in: number;
+  cooldown_seconds: number;
 }
 
 export interface TwoFactorStatus {

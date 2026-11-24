@@ -35,6 +35,7 @@ from .serializers import (
 from .excel_cbnv import generate_cbnv_template, import_cbnv_from_excel, export_cbnv_to_excel
 from authorization.permissions import is_system_admin
 from .permissions import CanChangeEmployeePermission, CanViewGroupPermission, IsEmployeeAdminOnly, require_permission
+from . import twofa
 
 
 SAFE_ORDERING_FIELDS = {
@@ -329,6 +330,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             permission_classes = [IsAuthenticated, CanChangeEmployeePermission]
         elif self.action == "change_password":
             permission_classes = [IsAuthenticated, IsEmployeeAdminOnly]
+        elif self.action == "reset_2fa":
+            permission_classes = [IsAuthenticated, IsEmployeeAdminOnly]
         elif self.action == "destroy":
             permission_classes = [IsAuthenticated, IsEmployeeAdminOnly]
         elif self.action in ["import_excel", "import_excel_async", "import_job_status"]:
@@ -534,6 +537,24 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             )
         return Response(
             {"detail": "employees.messages.passwordChangeSuccess"},
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["post"], url_path="reset-2fa")
+    def reset_2fa(self, request, pk=None):
+        employee = self.get_object()
+        if employee.is_superuser and not request.user.is_superuser:
+            return Response(
+                {"detail": "roles.messages.permissionDenied"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        twofa.clear_user_twofa_state(employee)
+        return Response(
+            {
+                "success": True,
+                "is_2fa_enabled": False,
+                "detail": "employees.messages.twofaResetSuccess",
+            },
             status=status.HTTP_200_OK,
         )
 

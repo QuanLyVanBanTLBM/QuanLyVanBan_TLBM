@@ -27,13 +27,19 @@ urlpatterns = [
     # Đăng xuất
     path("logout/", views.logout_view, name="logout"),
 
-    # Xác thực hai yếu tố (2FA TOTP)
+    # Xác thực hai yếu tố (2FA TOTP / Email / SMS)
     path("verify-2fa/", views.verify_2fa_view, name="verify_2fa"),
+    path("2fa/send-otp/", views.twofa_send_otp_view, name="twofa_send_otp"),
     path("2fa/status/", views.twofa_status_view, name="twofa_status"),
     path("2fa/setup/", views.twofa_setup_view, name="twofa_setup"),
     path("2fa/confirm/", views.twofa_confirm_view, name="twofa_confirm"),
     path("2fa/disable/", views.twofa_disable_view, name="twofa_disable"),
     path("2fa/backup-codes/regenerate/", views.twofa_regenerate_backup_codes_view, name="twofa_regenerate_backup_codes"),
+
+    # Tự đặt lại mật khẩu (Quên mật khẩu)
+    path("forgot-password/lookup/", views.forgot_password_lookup_view, name="forgot_password_lookup"),
+    path("forgot-password/send-otp/", views.forgot_password_send_otp_view, name="forgot_password_send_otp"),
+    path("forgot-password/confirm/", views.forgot_password_confirm_view, name="forgot_password_confirm"),
 
     # Danh sách cán bộ nhân viên
     path("staffs/", views.staffs_view, name="staffs"),

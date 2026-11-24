@@ -206,9 +206,6 @@ export const TwoFactorSecurityCard: React.FC = () => {
             <h3 className="text-sm font-bold text-main">
               {t('settings.twofa.sectionTitle')}
             </h3>
-            <p className="text-xs text-muted">
-              {t('settings.twofa.sectionDesc')}
-            </p>
           </div>
         </div>
 

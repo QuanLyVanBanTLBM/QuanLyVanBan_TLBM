@@ -26,6 +26,7 @@ interface EmployeeModalProps {
     reasonCode: string,
     reasonDetail?: string
   ) => Promise<void>;
+  onResetTwoFactor?: (employeeId: number) => Promise<void>;
 }
 
 const PASSWORD_ERROR_FALLBACKS: Record<string, { vi: string; en: string }> = {
@@ -74,6 +75,7 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
   isLoading = false,
   isAdmin = false,
   onChangePassword,
+  onResetTwoFactor,
 }) => {
   const { t, currentLang } = useTranslation();
   const formRef = useRef<HTMLFormElement>(null);
@@ -179,6 +181,10 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
   const [showInitialPassword, setShowInitialPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false);
+  const [isTwoFactorEnabled, setIsTwoFactorEnabled] = useState(Boolean(initialData?.is_2fa_enabled));
+  const [confirmResetTwoFactor, setConfirmResetTwoFactor] = useState(false);
+  const [isResettingTwoFactor, setIsResettingTwoFactor] = useState(false);
+  const [twofaError, setTwofaError] = useState<string | null>(null);
 
   const getPasswordErrorText = (key: string): string => {
     const translated = t(key);
@@ -336,6 +342,26 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
       setPasswordError(message);
     } finally {
       setIsChangingPassword(false);
+    }
+  };
+
+  const handleResetTwoFactor = async () => {
+    if (!initialData || !onResetTwoFactor || isResettingTwoFactor) return;
+    setTwofaError(null);
+    setIsResettingTwoFactor(true);
+    try {
+      await onResetTwoFactor(initialData.id);
+      setIsTwoFactorEnabled(false);
+      setConfirmResetTwoFactor(false);
+    } catch (error: unknown) {
+      if (error instanceof ApiError && typeof error.data?.detail === 'string') {
+        const translated = t(error.data.detail);
+        setTwofaError(translated !== error.data.detail ? translated : error.data.detail);
+      } else {
+        setTwofaError(t('employees.messages.twofaResetError'));
+      }
+    } finally {
+      setIsResettingTwoFactor(false);
     }
   };
 
@@ -780,6 +806,62 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                       </Button>
                     </div>
                   </div>
+                )}
+              </section>
+            )}
+
+            {initialData && isAdmin && typeof initialData.is_2fa_enabled === 'boolean' && (
+              <section className="p-3 bg-surface-elevated border border-border rounded-lg space-y-2">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="flex items-center gap-2.5">
+                    <h3 className="text-sm font-semibold text-main">{t('employees.twofa.label')}</h3>
+                    <Badge variant={isTwoFactorEnabled ? 'success' : 'secondary'}>
+                      {isTwoFactorEnabled ? t('employees.twofa.enabled') : t('employees.twofa.disabled')}
+                    </Badge>
+                  </div>
+                  {isTwoFactorEnabled && onResetTwoFactor && (
+                    <div className="flex items-center gap-2">
+                      {confirmResetTwoFactor ? (
+                        <>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            disabled={isResettingTwoFactor}
+                            onClick={() => setConfirmResetTwoFactor(false)}
+                          >
+                            {t('employees.actions.cancel')}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="danger"
+                            size="sm"
+                            isLoading={isResettingTwoFactor}
+                            onClick={handleResetTwoFactor}
+                          >
+                            {t('employees.actions.confirmResetTwoFactor')}
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="danger"
+                          size="sm"
+                          onClick={() => {
+                            setTwofaError(null);
+                            setConfirmResetTwoFactor(true);
+                          }}
+                        >
+                          {t('employees.actions.resetTwoFactor')}
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {twofaError && (
+                  <p role="alert" className="text-sm text-danger">
+                    {twofaError}
+                  </p>
                 )}
               </section>
             )}

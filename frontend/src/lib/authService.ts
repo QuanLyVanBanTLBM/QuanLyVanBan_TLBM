@@ -1,7 +1,11 @@
 import {
+  ForgotPasswordLookupResult,
+  ForgotPasswordSendOtpResult,
+  OtpChannel,
   TwoFactorChallenge,
   TwoFactorConfirmResult,
   TwoFactorRegenerateResult,
+  TwoFactorSendOtpResult,
   TwoFactorSetupPayload,
   TwoFactorStatus,
   UserSession,
@@ -15,6 +19,14 @@ export interface LoginResponse {
   method?: 'totp';
   auth_provider?: string;
   verified_via?: string;
+  available_channels?: {
+    totp: boolean;
+    backup: boolean;
+    email: boolean;
+    sms: boolean;
+  };
+  masked_email?: string;
+  masked_phone?: string;
   token?: string;
   access?: string;
   refresh?: string;
@@ -137,6 +149,9 @@ export const authService = {
         method: data.method || 'totp',
         authProvider: data.auth_provider || 'local',
         username: cleanUsername,
+        availableChannels: data.available_channels,
+        maskedEmail: data.masked_email,
+        maskedPhone: data.masked_phone,
       });
     }
 
@@ -144,18 +159,69 @@ export const authService = {
   },
 
   /**
-   * Hoàn tất đăng nhập bước 2 bằng mã TOTP 6 chữ số hoặc Backup Code.
+   * Gửi mã OTP 6 chữ số qua Email hoặc SĐT cho phiên đăng nhập 2FA.
+   */
+  async sendTwoFactorOtp(params: {
+    tempToken: string;
+    channel: OtpChannel;
+    previousOtpToken?: string;
+  }): Promise<TwoFactorSendOtpResult> {
+    return apiClient.post<TwoFactorSendOtpResult>('/api/auth/2fa/send-otp/', {
+      temp_token: params.tempToken,
+      channel: params.channel,
+      ...(params.previousOtpToken ? { previous_otp_token: params.previousOtpToken } : {}),
+    });
+  },
+
+  /**
+   * Hoàn tất đăng nhập bước 2 bằng mã TOTP, Email/SMS OTP hoặc Backup Code.
    */
   async verifyTwoFactor(params: {
     tempToken: string;
     code: string;
     username?: string;
+    otpToken?: string;
+    trustDevice?: boolean;
   }): Promise<UserSession> {
     const data = await apiClient.post<LoginResponse>('/api/auth/verify-2fa/', {
       temp_token: params.tempToken,
       code: params.code.trim(),
+      ...(params.otpToken ? { otp_token: params.otpToken } : {}),
+      ...(params.trustDevice ? { trust_device: true } : {}),
     });
     return persistSessionFromAuthResponse(data, params.username || '');
+  },
+
+  async lookupForgotPassword(identifier: string): Promise<ForgotPasswordLookupResult> {
+    return apiClient.post<ForgotPasswordLookupResult>('/api/auth/forgot-password/lookup/', {
+      identifier: identifier.trim(),
+    });
+  },
+
+  async sendForgotPasswordOtp(params: {
+    identifier: string;
+    channel: OtpChannel;
+    previousResetToken?: string;
+  }): Promise<ForgotPasswordSendOtpResult> {
+    return apiClient.post<ForgotPasswordSendOtpResult>('/api/auth/forgot-password/send-otp/', {
+      identifier: params.identifier.trim(),
+      channel: params.channel,
+      ...(params.previousResetToken ? { previous_reset_token: params.previousResetToken } : {}),
+    });
+  },
+
+  async confirmForgotPassword(params: {
+    resetToken: string;
+    code: string;
+    newPassword: string;
+    confirmPassword: string;
+  }): Promise<{ success: boolean; message: string }> {
+    return apiClient.post<{ success: boolean; message: string }>('/api/auth/forgot-password/confirm/', {
+      reset_token: params.resetToken,
+      code: params.code.trim(),
+      new_password: params.newPassword,
+      confirm_password: params.confirmPassword,
+    });
   },
 
   async getTwoFactorStatus(): Promise<TwoFactorStatus> {

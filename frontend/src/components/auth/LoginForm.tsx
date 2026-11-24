@@ -5,7 +5,9 @@ export interface LoginFormProps {
   isLoading: boolean;
   isSuccess: boolean;
   error?: string;
+  infoMessage?: string;
   onSubmit: (credentials: { username: string; password: string }) => void;
+  onForgotPassword?: () => void;
   onUsernameFocusChange: (focused: boolean) => void;
   onPasswordFocusChange: (focused: boolean) => void;
   onShowPasswordChange: (show: boolean) => void;
@@ -16,7 +18,9 @@ export const LoginForm: React.FC<LoginFormProps> = ({
   isLoading,
   isSuccess,
   error,
+  infoMessage,
   onSubmit,
+  onForgotPassword,
   onUsernameFocusChange,
   onPasswordFocusChange,
   onShowPasswordChange,
@@ -40,12 +44,16 @@ export const LoginForm: React.FC<LoginFormProps> = ({
 
   return (
     <div className="w-full md:w-[55%] bg-surface !rounded-none !shadow-none !border-none relative flex flex-col justify-center p-4 sm:p-6 md:p-8">
-      <h2 className="text-2xl font-extrabold text-main tracking-tight mb-0.5">
+      <h2 className="text-2xl font-extrabold text-main tracking-tight mb-4">
         {t('auth.welcomeBack')}
       </h2>
-      <p className="text-xs text-muted mb-4">
-        {t('auth.welcomeDesc')}
-      </p>
+
+      {infoMessage && (
+        <div className="bg-success/10 border border-success/30 rounded-md p-2.5 text-xs text-success mb-3 flex items-center gap-2 animate-fade-in">
+          <i className="fa-solid fa-circle-check" />
+          <span>{infoMessage}</span>
+        </div>
+      )}
 
       {error && (
         <div className="bg-danger-subtle border border-danger-border rounded-md p-2.5 text-xs text-danger mb-3 flex items-center gap-2 animate-fade-in">
@@ -113,16 +121,19 @@ export const LoginForm: React.FC<LoginFormProps> = ({
             />
             <span>{t('auth.rememberMe')}</span>
           </label>
-          <a
-            href="#forgot"
-            onClick={(e) => {
-              e.preventDefault();
-              alert(t('auth.forgotPasswordAlert'));
+          <button
+            type="button"
+            onClick={() => {
+              if (onForgotPassword) {
+                onForgotPassword();
+              } else {
+                alert(t('auth.forgotPasswordAlert'));
+              }
             }}
             className="font-semibold text-main hover:text-primary transition-fast hover:underline"
           >
             {t('auth.forgotPassword')}
-          </a>
+          </button>
         </div>
 
         <button
