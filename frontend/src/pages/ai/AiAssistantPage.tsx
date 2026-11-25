@@ -1652,11 +1652,13 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
           text: answerText,
           time: new Date().toLocaleTimeString(currentLang === 'en' ? 'en-US' : 'vi-VN', { hour: '2-digit', minute: '2-digit' }),
           citations: sources,
-          quickPrompts: [
-            t('aiAssistant.msg.followUpSummary'),
-            t('aiAssistant.msg.followUpFigures'),
-            t('aiAssistant.msg.followUpBasis'),
-          ],
+          quickPrompts: sources.length > 0
+            ? [
+              t('aiAssistant.msg.followUpSummary'),
+              t('aiAssistant.msg.followUpFigures'),
+              t('aiAssistant.msg.followUpBasis'),
+            ]
+            : undefined,
         };
         const updatedSnippet = formatSessionSnippet(answerText);
 
@@ -2866,7 +2868,13 @@ export default function AiAssistantPage({ onNavigate }: AiAssistantPageProps) {
                 : { body: displayedText, note: null };
               const displayedQuickPrompts = isWelcomeMessage
                 ? [1, 2, 3, 4].map((index) => t(`aiAssistant.defaultSession.quickPrompt${index}`))
-                : msg.quickPrompts;
+                : (msg.citations && msg.citations.length > 0
+                  ? [
+                    t('aiAssistant.msg.followUpSummary'),
+                    t('aiAssistant.msg.followUpFigures'),
+                    t('aiAssistant.msg.followUpBasis'),
+                  ]
+                  : undefined);
               return (
               <div
                 key={msg.id}

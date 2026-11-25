@@ -802,4 +802,49 @@ describe('AiAssistantPage', () => {
     expect(await screen.findByText('146 / 147')).toBeInTheDocument();
     expect(screen.getByText('6')).toBeInTheDocument();
   });
+
+  it('hides follow-up suggestion chips on ungrounded/refusal replies and shows them only when citations exist', async () => {
+    mockedAskQuestionStream.mockImplementationOnce(async (_q, options) => {
+      options?.onSources?.([]);
+      options?.onDone?.({
+        answer: 'Nội dung này nằm ngoài phạm vi tra cứu văn bản.',
+        sources: [],
+      });
+    });
+
+    renderAiPage();
+    await waitFor(() => expect(mockedGetDocuments).toHaveBeenCalled());
+
+    const textarea = screen.getByRole('textbox', { name: 'aiAssistant.inputPlaceholder' });
+    fireEvent.change(textarea, { target: { value: '1+1-999 = ?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'aiAssistant.send' }));
+
+    expect((await screen.findAllByText(/Nội dung này nằm ngoài phạm vi tra cứu văn bản/)).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('button', { name: 'aiAssistant.msg.followUpSummary' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'aiAssistant.msg.followUpFigures' })).not.toBeInTheDocument();
+
+    mockedAskQuestionStream.mockImplementationOnce(async (_q, options) => {
+      const cites = [
+        {
+          index: 1,
+          file_name: 'quy_trinh.pdf',
+          page: 1,
+          preview: 'Trích đoạn quy trình hợp lệ.',
+        },
+      ];
+      options?.onSources?.(cites);
+      options?.onDone?.({
+        answer: 'Theo Tài liệu [1], quy trình gồm 3 bước.',
+        sources: cites,
+      });
+    });
+
+    fireEvent.change(textarea, { target: { value: 'Quy trình xử lý thế nào?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'aiAssistant.send' }));
+
+    expect((await screen.findAllByText(/Theo Tài liệu \[1\], quy trình gồm 3 bước/)).length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'aiAssistant.msg.followUpSummary' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'aiAssistant.msg.followUpFigures' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'aiAssistant.msg.followUpBasis' })).toBeInTheDocument();
+  });
 });

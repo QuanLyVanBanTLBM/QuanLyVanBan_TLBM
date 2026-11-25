@@ -598,7 +598,12 @@ class AttachmentRetrievalTests(unittest.TestCase):
         import json
         from types import SimpleNamespace
         from unittest.mock import MagicMock, patch
-        from backend.services.rag_service import NO_ANSWER_VI, ask_document, ask_document_stream
+        from backend.services.rag_service import (
+            ask_document,
+            ask_document_stream,
+            build_contextual_no_answer,
+            is_no_answer,
+        )
 
         mock_retriever = MagicMock()
         mock_retriever.retrieve.return_value = []
@@ -623,8 +628,12 @@ class AttachmentRetrievalTests(unittest.TestCase):
                 "Viết code Python sắp xếp mảng",
                 "1 + 1 bằng mấy?",
             ):
+                expected = build_contextual_no_answer(question=query, language="vi")
                 result = ask_document(query, user=user, filename=None, language="vi")
-                self.assertEqual(result["answer"], NO_ANSWER_VI)
+                self.assertEqual(result["answer"], expected)
+                self.assertNotIn("Xin lỗi", result["answer"])
+                self.assertIn("ngoài phạm vi", result["answer"])
+                self.assertTrue(is_no_answer(result["answer"]))
                 self.assertEqual(result["sources"], [])
 
                 raw_sse = "".join(ask_document_stream(query, user=user, filename=None, language="vi"))
@@ -640,7 +649,7 @@ class AttachmentRetrievalTests(unittest.TestCase):
                         elif ev == "done":
                             done_payload = data
                 self.assertIsNotNone(done_payload)
-                self.assertEqual(done_payload["answer"], NO_ANSWER_VI)
+                self.assertEqual(done_payload["answer"], expected)
                 self.assertEqual(done_payload["sources"], [])
                 self.assertTrue(all(ev == [] for ev in sources_events))
 
@@ -651,7 +660,13 @@ class AttachmentRetrievalTests(unittest.TestCase):
         import json
         from types import SimpleNamespace
         from unittest.mock import MagicMock, patch
-        from backend.services.rag_service import NO_ANSWER_VI, ask_document, ask_document_stream
+        from backend.services.rag_service import (
+            LLM_REFUSAL_SENTINEL_VI,
+            ask_document,
+            ask_document_stream,
+            build_contextual_no_answer,
+            is_no_answer,
+        )
 
         matched_node = SimpleNamespace(
             score=0.92,
@@ -671,10 +686,10 @@ class AttachmentRetrievalTests(unittest.TestCase):
         mock_collection = SimpleNamespace(list_filenames=lambda allowed_keys=None: ["quyet_dinh.pdf"])
         mock_settings = MagicMock()
         mock_settings.llm = MagicMock()
-        mock_settings.llm.complete.return_value = SimpleNamespace(text=NO_ANSWER_VI)
+        mock_settings.llm.complete.return_value = SimpleNamespace(text=LLM_REFUSAL_SENTINEL_VI)
         mock_settings.llm.stream_complete.return_value = [
-            SimpleNamespace(delta=NO_ANSWER_VI[:12]),
-            SimpleNamespace(delta=NO_ANSWER_VI[12:]),
+            SimpleNamespace(delta=LLM_REFUSAL_SENTINEL_VI[:12]),
+            SimpleNamespace(delta=LLM_REFUSAL_SENTINEL_VI[12:]),
         ]
         user = SimpleNamespace(is_authenticated=True, is_active=True, is_superuser=True, id=1)
 
@@ -689,13 +704,20 @@ class AttachmentRetrievalTests(unittest.TestCase):
             patch("backend.services.business_knowledge.match_business_sources", return_value=[]),
             patch("backend.services.faq_response_cache.get_cached_answer", return_value=None),
         ):
+            expected = build_contextual_no_answer(
+                question="Cách nấu phở bò ngon?",
+                language="vi",
+                clean_filenames=["quyet_dinh.pdf"],
+            )
             result = ask_document(
                 "Cách nấu phở bò ngon?",
                 user=user,
                 filename="quyet_dinh.pdf",
                 language="vi",
             )
-            self.assertEqual(result["answer"], NO_ANSWER_VI)
+            self.assertEqual(result["answer"], expected)
+            self.assertNotIn("Xin lỗi", result["answer"])
+            self.assertTrue(is_no_answer(result["answer"]))
             self.assertEqual(result["sources"], [])
 
             raw_sse = "".join(
@@ -719,7 +741,7 @@ class AttachmentRetrievalTests(unittest.TestCase):
                         done_payload = data
 
             self.assertIsNotNone(done_payload)
-            self.assertEqual(done_payload["answer"], NO_ANSWER_VI)
+            self.assertEqual(done_payload["answer"], expected)
             self.assertEqual(done_payload["sources"], [])
             self.assertGreaterEqual(len(sources_events), 1)
             self.assertEqual(sources_events[-1], [])
@@ -896,6 +918,200 @@ class AttachmentRetrievalTests(unittest.TestCase):
             where={"$and": [{"file_name": "orphan.gif"}, {"sql_doc_key": {"$exists": False}}]}
         )
         mock_clear_cache.assert_called_once_with()
+
+    def test_authorized_attachment_strips_media_url_prefix_before_reading_storage(self):
+        import io
+        import os
+        import tempfile
+        from pathlib import Path
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from backend.services.rag_service import (
+            _authorized_attachment_fingerprints,
+            _normalize_storage_relpath,
+            _read_authorized_attachment_pages,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_root:
+            rel_file = Path(tmp_root) / "mau-van-ban" / "2026" / "11" / "ebanking.docx"
+            rel_file.parent.mkdir(parents=True, exist_ok=True)
+            rel_file.write_bytes(b"fake-docx-bytes")
+
+            fake_storage = SimpleNamespace(
+                base_url="/media/",
+                path=lambda name: str(Path(tmp_root) / name),
+                open=lambda name, mode="rb": open(Path(tmp_root) / name, mode),
+            )
+            self.assertEqual(
+                _normalize_storage_relpath("/media/mau-van-ban/2026/11/ebanking.docx", fake_storage),
+                "mau-van-ban/2026/11/ebanking.docx",
+            )
+            self.assertEqual(
+                _normalize_storage_relpath(
+                    "https://staging-quanlyvanban.bhbl.vn/media/mau-van-ban/2026/11/ebanking.docx",
+                    fake_storage,
+                ),
+                "mau-van-ban/2026/11/ebanking.docx",
+            )
+
+            record = {
+                "source_id": 15,
+                "display_name": "QTEBANKING — Quy trình Bảo Long Banking",
+                "attachments": [
+                    {
+                        "id": 99,
+                        "name": "Quy trình Ebanking_BPC_rev_31.07.26.docx",
+                        "path": "/media/mau-van-ban/2026/11/ebanking.docx",
+                    }
+                ],
+            }
+            with (
+                patch("document_storage.get_document_storage", return_value=fake_storage),
+                patch(
+                    "backend.services.rag_service.read_document_pages",
+                    return_value=[{"page": 1, "text": "BLBanking là hệ thống thanh toán điện tử.", "reader": "docx"}],
+                ),
+            ):
+                fps = _authorized_attachment_fingerprints(record)
+                self.assertEqual(len(fps), 1)
+                self.assertTrue(fps[0]["sha256"])
+                pages, pending = _read_authorized_attachment_pages(record, fps)
+
+            self.assertFalse(pending)
+            self.assertEqual(len(pages), 1)
+            self.assertIn("BLBanking là hệ thống thanh toán điện tử.", pages[0]["text"])
+
+    def test_metadata_only_pinned_target_expands_safely_within_authorized_scope(self):
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock, patch
+        from backend.services.rag_service import (
+            build_contextual_no_answer,
+            prepare_ask_document,
+        )
+
+        pinned_label = "QTEBANKING — Quy trình Bảo Long Banking"
+        proc_filename = "Quy trình Ebanking_BPC_rev_31.07.26.docx"
+
+        meta_only_node = SimpleNamespace(
+            score=0.45,
+            text="Số hiệu: QTEBANKING\nTrích yếu: Quy trình Bảo Long Banking\nHiệu lực: Còn hiệu lực",
+            metadata={
+                "file_name": pinned_label,
+                "reader": "ai-sql-view",
+                "chunk_id": "1-1",
+                "sql_doc_key": "tailieu:10",
+                "sql_doc_type": "tailieu",
+                "sql_doc_id": 10,
+                "parent_context": "Số hiệu: QTEBANKING\nTrích yếu: Quy trình Bảo Long Banking",
+            },
+        )
+        ebanking_body_node = SimpleNamespace(
+            score=0.78,
+            text="BLBanking (Bảo Long Banking) là nền tảng ngân hàng số nội bộ hỗ trợ tra cứu và đối soát thu hộ.",
+            metadata={
+                "file_name": proc_filename,
+                "reader": "docx",
+                "page": 1,
+                "chunk_id": "1-1",
+                "source_class": "ai_knowledge_base",
+                "parent_context": "BLBanking (Bảo Long Banking) là nền tảng ngân hàng số nội bộ hỗ trợ tra cứu và đối soát thu hộ.",
+            },
+        )
+        unauthorized_body_node = SimpleNamespace(
+            score=0.95,
+            text="BLBanking mật dành cho tài khoản không có quyền.",
+            metadata={
+                "file_name": "Mat_BLBanking.docx",
+                "reader": "docx",
+                "page": 1,
+                "chunk_id": "1-1",
+                "sql_doc_key": "tailieu:999",
+                "parent_context": "BLBanking mật dành cho tài khoản không có quyền.",
+            },
+        )
+
+        def _retrieve_side_effect(query):
+            # Initial filtered retrieval gets metadata-only chunk; supplemental retrieval gets authorized + unauthorized candidates
+            return [meta_only_node, unauthorized_body_node, ebanking_body_node]
+
+        mock_retriever = MagicMock()
+        mock_retriever.retrieve.side_effect = _retrieve_side_effect
+        mock_index = MagicMock()
+        mock_index.as_retriever.return_value = mock_retriever
+        mock_collection = SimpleNamespace(
+            list_filenames=lambda allowed_keys=None: [pinned_label, proc_filename],
+            get=lambda where=None, include=None: {
+                "ids": ["1"],
+                "documents": [meta_only_node.text],
+                "metadatas": [meta_only_node.metadata],
+            },
+        )
+        user = SimpleNamespace(is_authenticated=True, is_active=True, is_superuser=False, id=7)
+
+        # Case 1: Metadata-only pinned doc expands safely to authorized ebanking procedure file
+        with (
+            patch("backend.services.ai_access.has_permission_codename", return_value=True),
+            patch("backend.services.rag_service.setup_llamaindex"),
+            patch("backend.services.rag_service.get_index", return_value=mock_index),
+            patch("backend.services.rag_service.get_vector_collection", return_value=mock_collection),
+            patch("backend.services.sql_document_source.is_postgres_source", return_value=True),
+            patch("backend.services.sql_document_source.accessible_document_keys", return_value={"tailieu:10"}),
+            patch("backend.services.business_knowledge.match_business_sources", return_value=[]),
+            patch("backend.services.faq_response_cache.get_cached_answer", return_value=None),
+        ):
+            prep_type, payload = prepare_ask_document(
+                question="banking là gì",
+                user=user,
+                employee_id=7,
+                filename=pinned_label,
+                language="vi",
+            )
+
+        self.assertEqual(prep_type, "prompt")
+        returned_files = [s["file_name"] for s in payload["sources"]]
+        self.assertIn(proc_filename, returned_files)
+        self.assertNotIn("Mat_BLBanking.docx", returned_files)
+
+        # Case 2: Metadata-only pinned doc with NO matching supplemental file returns Reason 2 immediately
+        mock_retriever.retrieve.side_effect = None
+        mock_retriever.retrieve.return_value = [meta_only_node]
+        with (
+            patch("backend.services.ai_access.has_permission_codename", return_value=True),
+            patch("backend.services.rag_service.setup_llamaindex"),
+            patch("backend.services.rag_service.get_index", return_value=mock_index),
+            patch("backend.services.rag_service.get_vector_collection", return_value=mock_collection),
+            patch("backend.services.sql_document_source.is_postgres_source", return_value=True),
+            patch("backend.services.sql_document_source.accessible_document_keys", return_value={"tailieu:10"}),
+            patch("backend.services.business_knowledge.match_business_sources", return_value=[]),
+            patch("backend.services.faq_response_cache.get_cached_answer", return_value=None),
+        ):
+            prep_empty, payload_empty = prepare_ask_document(
+                question="banking có thể làm gì",
+                user=user,
+                employee_id=7,
+                filename=pinned_label,
+                language="vi",
+            )
+            prep_meta, payload_meta = prepare_ask_document(
+                question="Số hiệu và hiệu lực của tài liệu này là gì?",
+                user=user,
+                employee_id=7,
+                filename=pinned_label,
+                language="vi",
+            )
+
+        self.assertEqual(prep_empty, "immediate")
+        self.assertEqual(
+            payload_empty["answer"],
+            build_contextual_no_answer(
+                question="banking có thể làm gì",
+                language="vi",
+                clean_filenames=[pinned_label],
+                metadata_only=True,
+            ),
+        )
+        self.assertEqual(prep_meta, "prompt")
+        self.assertEqual(payload_meta["sources"][0]["file_name"], pinned_label)
 
 
 
