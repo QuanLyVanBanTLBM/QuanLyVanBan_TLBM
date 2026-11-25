@@ -1113,6 +1113,65 @@ class AttachmentRetrievalTests(unittest.TestCase):
         self.assertEqual(prep_meta, "prompt")
         self.assertEqual(payload_meta["sources"][0]["file_name"], pinned_label)
 
+        # Case 3: Unrelated body doc sharing only generic words ("luu", "tru", "quan") must NOT expand
+        meta_kho = SimpleNamespace(
+            score=0.45,
+            text="Số hiệu: QTMETA999\nTrích yếu: Quy định Lưu trữ Kho Ngoại quan Tạm thời\nHiệu lực: Còn hiệu lực",
+            metadata={
+                "file_name": "QTMETA999 — Quy định Lưu trữ Kho Ngoại quan Tạm thời",
+                "reader": "ai-sql-view",
+                "chunk_id": "1-1",
+                "sql_doc_key": "tailieu:11",
+                "sql_doc_type": "tailieu",
+                "sql_doc_id": 11,
+                "parent_context": "Số hiệu: QTMETA999\nTrích yếu: Quy định Lưu trữ Kho Ngoại quan Tạm thời",
+            },
+        )
+        unrelated_retention_node = SimpleNamespace(
+            score=0.72,
+            text="Điều 1. Thời hạn bảo quản hồ sơ lưu trữ vĩnh viễn và văn bản hành chính.",
+            metadata={
+                "file_name": "Folder_folder1_item3.docx",
+                "reader": "docx+vision",
+                "chunk_id": "1-1",
+                "source_class": "ai_knowledge_base",
+                "parent_context": "Điều 1. Thời hạn bảo quản hồ sơ lưu trữ vĩnh viễn và văn bản hành chính.",
+            },
+        )
+        kho_collection = SimpleNamespace(
+            list_filenames=lambda allowed_keys=None: [
+                "QTMETA999 — Quy định Lưu trữ Kho Ngoại quan Tạm thời",
+                "Folder_folder1_item3.docx",
+            ],
+            get=lambda where=None, include=None: {
+                "ids": ["1"],
+                "documents": [meta_kho.text],
+                "metadatas": [meta_kho.metadata],
+            },
+        )
+        mock_retriever.retrieve.side_effect = None
+        mock_retriever.retrieve.return_value = [meta_kho, unrelated_retention_node]
+        with (
+            patch("backend.services.ai_access.has_permission_codename", return_value=True),
+            patch("backend.services.rag_service.setup_llamaindex"),
+            patch("backend.services.rag_service.get_index", return_value=mock_index),
+            patch("backend.services.rag_service.get_vector_collection", return_value=kho_collection),
+            patch("backend.services.sql_document_source.is_postgres_source", return_value=True),
+            patch("backend.services.sql_document_source.accessible_document_keys", return_value={"tailieu:11"}),
+            patch("backend.services.business_knowledge.match_business_sources", return_value=[]),
+            patch("backend.services.faq_response_cache.get_cached_answer", return_value=None),
+        ):
+            prep_kho, payload_kho = prepare_ask_document(
+                question="Chi tiết quy trình kiểm kê hàng tuần trong kho ngoại quan như thế nào?",
+                user=user,
+                employee_id=7,
+                filename="QTMETA999 — Quy định Lưu trữ Kho Ngoại quan Tạm thời",
+                language="vi",
+            )
+        self.assertEqual(prep_kho, "immediate")
+        self.assertEqual(payload_kho["sources"], [])
+        self.assertIn("chỉ ghi nhận thông tin danh mục hành chính", payload_kho["answer"])
+
 
 
 

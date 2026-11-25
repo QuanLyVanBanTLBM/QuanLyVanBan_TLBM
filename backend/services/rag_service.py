@@ -3750,6 +3750,58 @@ def _extract_distinctive_title_terms(filenames: list[str]) -> list[str]:
     return terms
 
 
+def _matches_metadata_target_candidate(
+    cand,
+    cand_meta: dict,
+    clean_filenames: list[str],
+    topic_terms: list[str],
+) -> bool:
+    """Chỉ ghép tài liệu bổ sung khi khớp mã, tiêu đề/tên tệp hoặc phần lớn từ khóa đặc trưng."""
+    cand_title_norm = normalize_for_match(
+        f"{cand_meta.get('file_name') or ''} {cand_meta.get('attachment_name') or ''} "
+        f"{cand_meta.get('so_hieu') or ''}"
+    )
+    cand_title_words = set(re.findall(r"[a-z0-9]+", cand_title_norm))
+    topic_set = {t for t in topic_terms if t}
+    if cand_title_words & topic_set:
+        return True
+
+    cand_body_norm = normalize_for_match(
+        cand_meta.get("parent_context") or getattr(cand, "text", "") or ""
+    )
+    cand_all_words = cand_title_words | set(re.findall(r"[a-z0-9]+", cand_body_norm))
+
+    strong_tokens = {
+        t
+        for t in topic_set
+        if any(ch.isdigit() for ch in t) or len(t) >= 8
+    }
+    for fn in clean_filenames or []:
+        code = normalize_for_match(extract_document_code(fn) or "")
+        for code_tok in re.findall(r"[a-z0-9]+", code):
+            if any(ch.isalpha() for ch in code_tok) and len(code_tok) >= 4 and code_tok not in _GENERIC_DOC_TITLE_TOKENS:
+                strong_tokens.add(code_tok)
+        compact_code = re.sub(r"[^a-z0-9]+", "", code)
+        if len(compact_code) >= 4:
+            strong_tokens.add(compact_code)
+    if cand_all_words & strong_tokens:
+        return True
+
+    for fn in clean_filenames or []:
+        base_words = [
+            tok
+            for tok in re.findall(r"[a-z0-9]+", normalize_for_match(fn))
+            if len(tok) >= 3
+            and tok not in _GENERIC_DOC_TITLE_TOKENS
+            and tok not in HYBRID_STOPWORDS
+        ]
+        if len(base_words) >= 2:
+            matched_count = sum(1 for tok in set(base_words) if tok in cand_all_words)
+            if matched_count / len(set(base_words)) >= 0.75:
+                return True
+    return False
+
+
 def _is_document_overview_query(question: str) -> bool:
     if not question:
         return False
@@ -4479,11 +4531,7 @@ def prepare_ask_document(
                         cand_score = float(getattr(cand, "score", 0.0) or 0.0)
                         if cand_score < 0.35:
                             continue
-                        cand_blob = normalize_for_match(
-                            f"{cand_meta.get('file_name') or ''} {cand_meta.get('attachment_name') or ''} "
-                            f"{cand_meta.get('parent_context') or getattr(cand, 'text', '') or ''}"
-                        )
-                        if any(term in cand_blob for term in topic_terms):
+                        if _matches_metadata_target_candidate(cand, cand_meta, clean_filenames, topic_terms):
                             matched_supp.append(cand)
                 if matched_supp:
                     supp_hits = matched_supp[:6]
